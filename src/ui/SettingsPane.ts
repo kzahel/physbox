@@ -4,7 +4,7 @@ export class SettingsPane {
     private container: HTMLElement;
     private content: HTMLElement;
     private game: Game;
-    private isCollapsed: boolean = false;
+    private isCollapsed: boolean = true;
 
     constructor(game: Game) {
         this.game = game;
@@ -38,7 +38,7 @@ export class SettingsPane {
         title.style.fontSize = '16px';
 
         const toggleBtn = document.createElement('button');
-        toggleBtn.textContent = '▼';
+        toggleBtn.textContent = '▲';
         toggleBtn.style.background = 'none';
         toggleBtn.style.border = 'none';
         toggleBtn.style.color = '#fff';
@@ -51,7 +51,7 @@ export class SettingsPane {
 
         // Content container
         this.content = document.createElement('div');
-        this.content.style.display = 'flex';
+        this.content.style.display = 'none';
         this.content.style.flexDirection = 'column';
         this.content.style.gap = '10px';
         this.container.appendChild(this.content);

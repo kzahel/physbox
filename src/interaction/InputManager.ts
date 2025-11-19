@@ -28,6 +28,8 @@ export class InputManager {
     private initialPinchDistance: number | null = null;
     private isPinching: boolean = false;
     private touchStartTime: number = 0;
+    private lastTapTime: number = 0;
+    private wallStartPoint: { x: number, y: number } | null = null;
     private keysPressed: { [key: string]: boolean } = {};
 
     constructor(element: HTMLElement, camera: Camera, game: Game) {
@@ -360,13 +362,7 @@ export class InputManager {
                     const safeRatio = Math.max(0.9, Math.min(ratio, 1.1));
 
                     // Invert for camera zoom? 
-                    // Camera.zoom(amount): scale *= amount.
-                    // If we pinch out (distance increases), we want to zoom in? Or out?
-                    // Usually pinch out = zoom in (enlarge).
-                    // If distance increases, ratio > 1.
-                    // Camera.zoom(1.1) -> scale increases -> view gets smaller? 
-                    // Let's check Camera.ts:
-                    // zoom(amount) { this.scale *= amount; }
+                    // Camera.zoom(amount) { this.scale *= amount; }
                     // updateBounds() { width = w * scale; }
                     // If scale increases, width increases -> we see MORE of the world -> Zoom OUT.
                     // So if we pinch out (ratio > 1), we want to Zoom IN -> scale should DECREASE.
@@ -391,6 +387,34 @@ export class InputManager {
                     this.lastTouchPos = { x: touch.clientX, y: touch.clientY };
                 }
             }
+
+            // Update wall preview if drawing
+            if (this.isDrawing && this.drawStartPos && e.touches.length === 1) {
+                const touch = e.touches[0];
+                const worldPos = this.camera.screenToWorld(touch.clientX, touch.clientY);
+
+                if (this.drawPreviewBody) {
+                    Matter.Composite.remove(this.game.getEngine().world, this.drawPreviewBody);
+                }
+
+                const dx = worldPos.x - this.drawStartPos.x;
+                const dy = worldPos.y - this.drawStartPos.y;
+                const length = Math.sqrt(dx * dx + dy * dy);
+                const angle = Math.atan2(dy, dx);
+                const x = (worldPos.x + this.drawStartPos.x) / 2;
+                const y = (worldPos.y + this.drawStartPos.y) / 2;
+
+                const w = Math.max(length, 10);
+                const h = 20;
+
+                this.drawPreviewBody = Matter.Bodies.rectangle(x, y, w, h, {
+                    isStatic: true,
+                    angle: angle,
+                    render: { fillStyle: '#888', opacity: 0.5 },
+                    collisionFilter: { group: -1, category: 0, mask: 0 }
+                });
+                Matter.Composite.add(this.game.getEngine().world, this.drawPreviewBody);
+            }
         }, { passive: false });
 
         this.element.addEventListener('touchend', (e) => {
@@ -404,8 +428,57 @@ export class InputManager {
 
                 if (dist < 10 && timeDiff < 300) {
                     // It's a tap!
-                    // Handle placement
-                    if (this.mode === 'erase') {
+                    const now = Date.now();
+                    const isDoubleTap = (now - this.lastTapTime) < 300;
+                    this.lastTapTime = now;
+
+                    if (this.mode === 'create' && this.currentTemplate && this.currentTemplate.name === 'Draw Wall') {
+                        if (isDoubleTap) {
+                            // Double tap to start wall
+                            const worldPos = this.camera.screenToWorld(touch.clientX, touch.clientY);
+                            this.wallStartPoint = worldPos;
+                            this.isDrawing = true;
+                            this.drawStartPos = worldPos;
+                            // Create initial preview point
+                            this.drawPreviewBody = Matter.Bodies.circle(worldPos.x, worldPos.y, 5, {
+                                isStatic: true,
+                                render: { fillStyle: '#888' },
+                                collisionFilter: { group: -1, category: 0, mask: 0 }
+                            });
+                            Matter.Composite.add(this.game.getEngine().world, this.drawPreviewBody);
+                        } else if (this.wallStartPoint) {
+                            // Single tap to end wall (if started)
+                            const worldPos = this.camera.screenToWorld(touch.clientX, touch.clientY);
+
+                            // Create final wall
+                            const dx = worldPos.x - this.wallStartPoint.x;
+                            const dy = worldPos.y - this.wallStartPoint.y;
+                            const length = Math.sqrt(dx * dx + dy * dy);
+                            const angle = Math.atan2(dy, dx);
+                            const x = (worldPos.x + this.wallStartPoint.x) / 2;
+                            const y = (worldPos.y + this.wallStartPoint.y) / 2;
+
+                            if (length > 10) {
+                                const wall = Matter.Bodies.rectangle(x, y, length, 20, {
+                                    isStatic: true,
+                                    angle: angle,
+                                    render: { fillStyle: '#888' },
+                                    label: 'Ground'
+                                });
+                                wall.friction = this.game.groundFriction;
+                                Matter.Composite.add(this.game.getEngine().world, wall);
+                            }
+
+                            // Cleanup
+                            if (this.drawPreviewBody) {
+                                Matter.Composite.remove(this.game.getEngine().world, this.drawPreviewBody);
+                                this.drawPreviewBody = null;
+                            }
+                            this.isDrawing = false;
+                            this.drawStartPos = null;
+                            this.wallStartPoint = null;
+                        }
+                    } else if (this.mode === 'erase') {
                         this.eraseAt(touch.clientX, touch.clientY);
                     } else if (this.mode === 'create' && this.currentTemplate && !this.currentTemplate.isTool) {
                         this.placeCurrentTemplate(touch.clientX, touch.clientY);
@@ -460,9 +533,8 @@ export class InputManager {
         bodiesToRemove.forEach(body => {
             // Don't erase the preview body itself!
             if (body === this.previewBody || body === this.drawPreviewBody) return;
-            // Don't erase walls/ground? User said "remove any items".
-            // Maybe keep ground?
-            if (body.label === 'Ground') return;
+            // Allow erasing Ground/Walls now as per user request
+            // if (body.label === 'Ground') return;
 
             // Check if body belongs to a composite in the world
             // We iterate through world.composites to find if this body is part of one
