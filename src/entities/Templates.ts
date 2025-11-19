@@ -29,6 +29,11 @@ export const Templates: EntityTemplate[] = [
         create: (_x, _y) => { throw new Error('Tool template cannot be created directly'); }
     },
     {
+        name: 'Eraser',
+        isTool: true,
+        create: (_x, _y) => { throw new Error('Tool template cannot be created directly'); }
+    },
+    {
         name: 'Car',
         create: (x, y) => {
             const group = Matter.Body.nextGroup(true);
