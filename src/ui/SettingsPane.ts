@@ -138,5 +138,86 @@ export class SettingsPane {
         this.addSection('Cars');
         this.addSlider('Torque', -1, 1, 0.05, this.game.wheelTorque, (v) => this.game.wheelTorque = v);
         this.addSlider('Max Speed', 0, 5, 0.1, this.game.maxCarSpeed, (v) => this.game.maxCarSpeed = v);
+
+        // Framerate Settings
+        this.addSection('Performance');
+        this.initFramerateControl();
+
+        // Stats
+        this.addSection('Stats');
+        this.initStatsDisplay();
+    }
+
+    private async initFramerateControl() {
+        const wrapper = document.createElement('div');
+        wrapper.style.display = 'flex';
+        wrapper.style.justifyContent = 'space-between';
+        wrapper.style.alignItems = 'center';
+        wrapper.style.marginBottom = '5px';
+
+        const label = document.createElement('label');
+        label.textContent = 'Max FPS:';
+        label.style.fontSize = '12px';
+
+        const select = document.createElement('select');
+        select.style.background = '#333';
+        select.style.color = '#fff';
+        select.style.border = '1px solid #555';
+        select.style.borderRadius = '4px';
+        select.style.padding = '2px';
+
+        wrapper.appendChild(label);
+        wrapper.appendChild(select);
+        this.content.appendChild(wrapper);
+
+        // Detect refresh rate
+        const refreshRate = await this.game.detectRefreshRate();
+        // Round to nearest 10 to handle slight variances (e.g. 59.9 -> 60)
+        const roundedRate = Math.round(refreshRate / 10) * 10;
+
+        const options = [30, 60, 120, 240];
+        const validOptions = options.filter(opt => opt <= roundedRate);
+        // Ensure at least 60 is there if screen is 60, or just use what we found
+        if (validOptions.length === 0) validOptions.push(60);
+
+        validOptions.forEach(opt => {
+            const option = document.createElement('option');
+            option.value = opt.toString();
+            option.textContent = opt.toString();
+            select.appendChild(option);
+        });
+
+        // Set default to 60 or max available if less
+        const defaultFPS = 60;
+        if (validOptions.includes(defaultFPS)) {
+            select.value = defaultFPS.toString();
+            this.game.setTargetFPS(defaultFPS);
+        } else {
+            select.value = validOptions[validOptions.length - 1].toString();
+            this.game.setTargetFPS(validOptions[validOptions.length - 1]);
+        }
+
+        select.onchange = () => {
+            this.game.setTargetFPS(parseInt(select.value));
+        };
+    }
+
+    private initStatsDisplay() {
+        const fpsEl = document.createElement('div');
+        fpsEl.style.fontSize = '12px';
+        fpsEl.style.color = '#aaa';
+        this.content.appendChild(fpsEl);
+
+        const objEl = document.createElement('div');
+        objEl.style.fontSize = '12px';
+        objEl.style.color = '#aaa';
+        this.content.appendChild(objEl);
+
+        setInterval(() => {
+            if (!this.isCollapsed) {
+                fpsEl.textContent = `FPS: ${this.game.getCurrentFPS()}`;
+                objEl.textContent = `Dynamic Objects: ${this.game.getObjectCount()}`;
+            }
+        }, 500);
     }
 }
