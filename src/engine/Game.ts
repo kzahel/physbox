@@ -107,33 +107,7 @@ export class Game {
             const context = this.render.context;
             const bounds = this.render.bounds;
 
-            // Only draw if dead zone is within view (optimization)
-            // Actually, we should just draw it. Canvas clipping handles the rest?
-            // We need to transform to world coordinates.
-
-            // Matter.Render.startViewTransform(this.render); // This is internal/not exposed easily on type?
-            // Actually render.context is just a CanvasRenderingContext2D.
-            // The Render module applies transform before drawing bodies.
-            // 'afterRender' happens after bodies are drawn but BEFORE restore?
-            // No, 'afterRender' is triggered at the end of Render.world.
-            // Let's check if we need to apply transform manually.
-            // Matter.Render.world does: startViewTransform -> draw bodies -> endViewTransform.
-            // Then triggers 'afterRender'.
-            // So we are back to screen coordinates.
-
-            // We need to manually apply the view transform to draw in world coordinates
-            // OR map the world coordinates to screen coordinates.
-
-            // Let's map world coords to screen coords.
-            // Dead Zone Y = 2000.
-            // We need to find where Y=2000 is on screen.
-
-            // Camera.screenToWorld is inverse. We need WorldToScreen.
-            // But we can just use the bounds.
-            // scale = canvas.width / (bounds.max.x - bounds.min.x)
-            // screenY = (worldY - bounds.min.y) * scaleY
-
-            // const scaleX = this.render.canvas.width / (bounds.max.x - bounds.min.x);
+            // Calculate screen position of the dead zone line
             const scaleY = this.render.canvas.height / (bounds.max.y - bounds.min.y);
 
             const screenY = (this.DEAD_ZONE_Y - bounds.min.y) * scaleY;
