@@ -16,7 +16,7 @@ export class Camera {
     public zoom(amount: number, _x: number, _y: number) {
         this.scale *= amount;
         // Clamp scale
-        this.scale = Math.max(0.1, Math.min(this.scale, 5));
+        this.scale = Math.max(0.1, Math.min(this.scale, 20));
 
         // TODO: Zoom towards mouse position (x, y)
         // For now just zoom center

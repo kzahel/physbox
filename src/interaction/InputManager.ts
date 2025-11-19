@@ -470,6 +470,8 @@ export class InputManager {
         const bodies = Matter.Composite.allBodies(this.game.getEngine().world);
         const bodiesToRemove = Matter.Query.region(bodies, bounds);
 
+        const world = this.game.getEngine().world;
+
         bodiesToRemove.forEach(body => {
             // Don't erase the preview body itself!
             if (body === this.previewBody || body === this.drawPreviewBody) return;
@@ -477,10 +479,25 @@ export class InputManager {
             // Maybe keep ground?
             if (body.label === 'Ground') return;
 
-            // If it's part of a composite (like a car), remove the whole composite?
-            // Matter.js bodies don't strictly know their parent composite.
-            // But we can try to remove the body.
-            Matter.Composite.remove(this.game.getEngine().world, body);
+            // Check if body belongs to a composite in the world
+            // We iterate through world.composites to find if this body is part of one
+            let parentComposite: Matter.Composite | null = null;
+
+            // Check direct composites (like Cars)
+            for (const composite of world.composites) {
+                const allBodiesInComposite = Matter.Composite.allBodies(composite);
+                if (allBodiesInComposite.includes(body)) {
+                    parentComposite = composite;
+                    break;
+                }
+            }
+
+            if (parentComposite) {
+                Matter.Composite.remove(world, parentComposite);
+            } else {
+                // It's likely a direct body
+                Matter.Composite.remove(world, body);
+            }
         });
     }
 }

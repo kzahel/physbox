@@ -73,24 +73,43 @@ export class Toolbar {
         settingsGroup.style.flexDirection = 'column';
         settingsGroup.style.gap = '5px';
 
-        // Wheel Speed Slider
+        // Car Torque Slider
         const wheelSpeedContainer = document.createElement('div');
         const wheelSpeedLabel = document.createElement('label');
-        wheelSpeedLabel.textContent = 'Wheel Speed: ' + this.game.wheelTorque;
+        wheelSpeedLabel.textContent = 'Car Torque: ' + this.game.wheelTorque;
         const wheelSpeedSlider = document.createElement('input');
         wheelSpeedSlider.type = 'range';
-        wheelSpeedSlider.min = '0';
+        wheelSpeedSlider.min = '-1';
         wheelSpeedSlider.max = '1';
         wheelSpeedSlider.step = '0.05';
         wheelSpeedSlider.value = this.game.wheelTorque.toString();
         wheelSpeedSlider.oninput = (e) => {
             const val = parseFloat((e.target as HTMLInputElement).value);
             this.game.wheelTorque = val;
-            wheelSpeedLabel.textContent = 'Wheel Speed: ' + val;
+            wheelSpeedLabel.textContent = 'Car Torque: ' + val;
         };
         wheelSpeedContainer.appendChild(wheelSpeedLabel);
         wheelSpeedContainer.appendChild(wheelSpeedSlider);
         settingsGroup.appendChild(wheelSpeedContainer);
+
+        // Car Max Speed Slider
+        const maxSpeedContainer = document.createElement('div');
+        const maxSpeedLabel = document.createElement('label');
+        maxSpeedLabel.textContent = 'Car Max Speed: ' + this.game.maxCarSpeed;
+        const maxSpeedSlider = document.createElement('input');
+        maxSpeedSlider.type = 'range';
+        maxSpeedSlider.min = '0';
+        maxSpeedSlider.max = '2';
+        maxSpeedSlider.step = '0.05';
+        maxSpeedSlider.value = this.game.maxCarSpeed.toString();
+        maxSpeedSlider.oninput = (e) => {
+            const val = parseFloat((e.target as HTMLInputElement).value);
+            this.game.maxCarSpeed = val;
+            maxSpeedLabel.textContent = 'Car Max Speed: ' + val;
+        };
+        maxSpeedContainer.appendChild(maxSpeedLabel);
+        maxSpeedContainer.appendChild(maxSpeedSlider);
+        settingsGroup.appendChild(maxSpeedContainer);
 
         // Ground Friction Slider
         const frictionContainer = document.createElement('div');

@@ -10,8 +10,10 @@ export class Game {
     private camera: Camera;
     private inputManager: InputManager;
     public wheelTorque: number = 0.1;
+    public maxCarSpeed: number = 0.5;
     public groundFriction: number = 0.5;
     private mouseConstraint: Matter.MouseConstraint;
+    private readonly DEAD_ZONE_Y = 2000;
 
     constructor(containerId: string) {
         this.canvasContainer = document.getElementById(containerId)!;
@@ -60,15 +62,94 @@ export class Game {
         this.inputManager = new InputManager(this.canvasContainer, this.camera, this);
 
         Matter.Events.on(this.engine, 'beforeUpdate', () => {
-            const bodies = Matter.Composite.allBodies(this.engine.world);
-            bodies.forEach(body => {
-                const direction = body.plugin.direction || 1;
-                if (body.label === 'CarWheel') {
-                    body.torque = this.wheelTorque * direction;
-                } else if (body.label === 'Monster') {
-                    body.torque = 0.2 * direction;
+            const world = this.engine.world;
+
+            // 1. Check Composites (e.g. Cars)
+            // We iterate backwards to safely remove
+            for (let i = world.composites.length - 1; i >= 0; i--) {
+                const composite = world.composites[i];
+                const bodies = Matter.Composite.allBodies(composite);
+                let isDead = false;
+                for (const body of bodies) {
+                    if (body.position.y > this.DEAD_ZONE_Y) {
+                        isDead = true;
+                        break;
+                    }
                 }
-            });
+                if (isDead) {
+                    Matter.Composite.remove(world, composite);
+                } else {
+                    // Update torque for cars if alive
+                    bodies.forEach(body => {
+                        const direction = body.plugin.direction || 1;
+                        if (body.label === 'CarWheel') {
+                            // Only apply torque if below max speed
+                            if (Math.abs(body.angularVelocity) < this.maxCarSpeed) {
+                                body.torque = this.wheelTorque * direction;
+                            }
+                        } else if (body.label === 'Monster') {
+                            body.torque = 0.2 * direction;
+                        }
+                    });
+                }
+            }
+
+            // 2. Check Direct Bodies (e.g. Boxes, Balls)
+            for (let i = world.bodies.length - 1; i >= 0; i--) {
+                const body = world.bodies[i];
+                if (body.position.y > this.DEAD_ZONE_Y) {
+                    Matter.Composite.remove(world, body);
+                }
+            }
+        });
+
+        Matter.Events.on(this.render, 'afterRender', () => {
+            const context = this.render.context;
+            const bounds = this.render.bounds;
+
+            // Only draw if dead zone is within view (optimization)
+            // Actually, we should just draw it. Canvas clipping handles the rest?
+            // We need to transform to world coordinates.
+
+            // Matter.Render.startViewTransform(this.render); // This is internal/not exposed easily on type?
+            // Actually render.context is just a CanvasRenderingContext2D.
+            // The Render module applies transform before drawing bodies.
+            // 'afterRender' happens after bodies are drawn but BEFORE restore?
+            // No, 'afterRender' is triggered at the end of Render.world.
+            // Let's check if we need to apply transform manually.
+            // Matter.Render.world does: startViewTransform -> draw bodies -> endViewTransform.
+            // Then triggers 'afterRender'.
+            // So we are back to screen coordinates.
+
+            // We need to manually apply the view transform to draw in world coordinates
+            // OR map the world coordinates to screen coordinates.
+
+            // Let's map world coords to screen coords.
+            // Dead Zone Y = 2000.
+            // We need to find where Y=2000 is on screen.
+
+            // Camera.screenToWorld is inverse. We need WorldToScreen.
+            // But we can just use the bounds.
+            // scale = canvas.width / (bounds.max.x - bounds.min.x)
+            // screenY = (worldY - bounds.min.y) * scaleY
+
+            // const scaleX = this.render.canvas.width / (bounds.max.x - bounds.min.x);
+            const scaleY = this.render.canvas.height / (bounds.max.y - bounds.min.y);
+
+            const screenY = (this.DEAD_ZONE_Y - bounds.min.y) * scaleY;
+
+            if (screenY < this.render.canvas.height) {
+                context.fillStyle = 'rgba(50, 50, 50, 0.8)'; // Dark grey
+                context.fillRect(0, screenY, this.render.canvas.width, this.render.canvas.height - screenY);
+
+                // Draw line
+                context.beginPath();
+                context.moveTo(0, screenY);
+                context.lineTo(this.render.canvas.width, screenY);
+                context.strokeStyle = '#FF0000';
+                context.lineWidth = 2;
+                context.stroke();
+            }
         });
     }
 
