@@ -1,4 +1,5 @@
 # PhysBox
+[Live Demo](https://kyle.graehl.org/physbox/)
 
 A physics sandbox built with Matter.js.
 

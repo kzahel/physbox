@@ -26,8 +26,8 @@ export class Toolbar {
         modeSelect.style.borderRadius = '4px';
 
         const modes = [
-            { value: 'view', label: 'View' },
-            { value: 'edit', label: 'Edit' }
+            { value: 'edit', label: 'Edit' },
+            { value: 'view', label: 'View' }
         ];
 
         modes.forEach(m => {
@@ -42,7 +42,7 @@ export class Toolbar {
         // Object Selectors
         const objectGroup = document.createElement('div');
         objectGroup.className = 'toolbar-group templates';
-        objectGroup.style.display = 'none'; // Hidden by default (View mode)
+        objectGroup.style.display = 'flex'; // Visible by default (Edit mode)
         objectGroup.style.gap = '5px';
         objectGroup.style.flexWrap = 'wrap';
 
@@ -84,6 +84,7 @@ export class Toolbar {
         if (Templates.length > 0) {
             // Default to first template
             const firstTemplate = Templates[0];
+            this.game.getInputManager().setMode('create');
             this.game.getInputManager().setTemplate(firstTemplate);
             if (objectGroup.firstElementChild) {
                 objectGroup.firstElementChild.classList.add('active');
