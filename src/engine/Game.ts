@@ -252,6 +252,10 @@ export class Game {
         this.frameInterval = 1000 / fps;
     }
 
+    public getTargetFPS(): number {
+        return this.targetFPS;
+    }
+
     public getCurrentFPS(): number {
         return this.currentFPS;
     }
