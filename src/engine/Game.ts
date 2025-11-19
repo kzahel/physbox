@@ -110,6 +110,36 @@ export class Game {
             // Calculate screen position of the dead zone line
             const scaleY = this.render.canvas.height / (bounds.max.y - bounds.min.y);
 
+            // Draw Ball Spokes
+            const bodies = Matter.Composite.allBodies(this.engine.world);
+            context.beginPath();
+            bodies.forEach(body => {
+                if (body.label === 'Ball') {
+                    const radius = 25; // We know the radius from Templates
+                    // Calculate end point of spoke
+                    const endX = body.position.x + Math.cos(body.angle) * radius;
+                    const endY = body.position.y + Math.sin(body.angle) * radius;
+
+                    // Map to screen coordinates
+                    // We need a reliable WorldToScreen function.
+                    // Re-deriving scaleX/scaleY from bounds is safest.
+                    const scaleX = this.render.canvas.width / (bounds.max.x - bounds.min.x);
+                    // scaleY is already calculated above
+
+                    const screenX = (body.position.x - bounds.min.x) * scaleX;
+                    const screenY = (body.position.y - bounds.min.y) * scaleY;
+
+                    const screenEndX = (endX - bounds.min.x) * scaleX;
+                    const screenEndY = (endY - bounds.min.y) * scaleY;
+
+                    context.moveTo(screenX, screenY);
+                    context.lineTo(screenEndX, screenEndY);
+                }
+            });
+            context.strokeStyle = 'black';
+            context.lineWidth = 2;
+            context.stroke();
+
             const screenY = (this.DEAD_ZONE_Y - bounds.min.y) * scaleY;
 
             if (screenY < this.render.canvas.height) {

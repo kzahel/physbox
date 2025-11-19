@@ -13,7 +13,15 @@ export const Templates: EntityTemplate[] = [
     },
     {
         name: 'Ball',
-        create: (x, y) => Matter.Bodies.circle(x, y, 25, { render: { fillStyle: '#35F' }, restitution: 0.9 })
+        create: (x, y) => Matter.Bodies.circle(x, y, 25, {
+            label: 'Ball',
+            render: {
+                fillStyle: '#35F',
+                strokeStyle: 'black',
+                lineWidth: 2
+            },
+            restitution: 0.9
+        })
     },
     {
         name: 'Floor',
