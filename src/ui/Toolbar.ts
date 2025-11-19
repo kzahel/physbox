@@ -1,5 +1,6 @@
 import { Game } from '../engine/Game';
 import { Templates } from '../entities/Templates';
+import { SettingsPane } from './SettingsPane';
 
 export class Toolbar {
     private container: HTMLElement;
@@ -19,120 +20,82 @@ export class Toolbar {
         const controlsGroup = document.createElement('div');
         controlsGroup.className = 'toolbar-group';
 
-        const playPauseBtn = document.createElement('button');
-        playPauseBtn.textContent = 'Pause';
-        playPauseBtn.onclick = () => {
-            this.game.togglePause();
-            playPauseBtn.textContent = playPauseBtn.textContent === 'Pause' ? 'Play' : 'Pause';
-        };
-        controlsGroup.appendChild(playPauseBtn);
-
+        // Mode Selector
         const modeSelect = document.createElement('select');
-        modeSelect.innerHTML = `
-      <option value="play">Play Mode</option>
-      <option value="edit">Edit Mode</option>
-    `;
-        modeSelect.onchange = (e) => {
-            const mode = (e.target as HTMLSelectElement).value as 'play' | 'edit';
-            this.game.getInputManager().setMode(mode);
-            templateGroup.style.display = mode === 'edit' ? 'flex' : 'none';
-        };
+        modeSelect.style.padding = '5px';
+        modeSelect.style.borderRadius = '4px';
+
+        const modes = [
+            { value: 'view', label: 'View' },
+            { value: 'edit', label: 'Edit' }
+        ];
+
+        modes.forEach(m => {
+            const option = document.createElement('option');
+            option.value = m.value;
+            option.textContent = m.label;
+            modeSelect.appendChild(option);
+        });
+
         controlsGroup.appendChild(modeSelect);
 
-        toolbar.appendChild(controlsGroup);
+        // Object Selectors
+        const objectGroup = document.createElement('div');
+        objectGroup.className = 'toolbar-group templates';
+        objectGroup.style.display = 'none'; // Hidden by default (View mode)
+        objectGroup.style.gap = '5px';
+        objectGroup.style.flexWrap = 'wrap';
 
-        // Templates Group
-        const templateGroup = document.createElement('div');
-        templateGroup.className = 'toolbar-group templates';
-        templateGroup.style.display = 'none'; // Hidden by default (Play mode)
+        modeSelect.onchange = (e) => {
+            const mode = (e.target as HTMLSelectElement).value;
+            if (mode === 'view') {
+                this.game.getInputManager().setMode('view');
+                objectGroup.style.display = 'none';
+            } else {
+                // Edit mode: show tools and set to create mode (or last used)
+                // Default to create mode with currently selected template if any
+                this.game.getInputManager().setMode('create');
+                objectGroup.style.display = 'flex';
+            }
+        };
 
         Templates.forEach(template => {
+            // Removed check for isTool to allow all templates including tools (like Wall)
+
             const btn = document.createElement('button');
             btn.textContent = template.name;
+            btn.style.padding = '5px 10px';
+            btn.style.cursor = 'pointer';
             btn.onclick = () => {
-                this.game.getInputManager().setTemplate(template);
+                if (template.name === 'Eraser') {
+                    this.game.getInputManager().setMode('erase');
+                } else {
+                    this.game.getInputManager().setMode('create');
+                    this.game.getInputManager().setTemplate(template);
+                }
                 // Highlight selected
-                Array.from(templateGroup.children).forEach(c => c.classList.remove('active'));
+                Array.from(objectGroup.children).forEach(c => c.classList.remove('active'));
                 btn.classList.add('active');
             };
-            templateGroup.appendChild(btn);
+            objectGroup.appendChild(btn);
         });
 
         // Select first template by default
         if (Templates.length > 0) {
-            this.game.getInputManager().setTemplate(Templates[0]);
-            if (templateGroup.firstElementChild) {
-                templateGroup.firstElementChild.classList.add('active');
+            // Default to first template
+            const firstTemplate = Templates[0];
+            this.game.getInputManager().setTemplate(firstTemplate);
+            if (objectGroup.firstElementChild) {
+                objectGroup.firstElementChild.classList.add('active');
             }
         }
 
-        // Settings Group
-        const settingsGroup = document.createElement('div');
-        settingsGroup.className = 'toolbar-group settings';
-        settingsGroup.style.display = 'flex';
-        settingsGroup.style.flexDirection = 'column';
-        settingsGroup.style.gap = '5px';
+        toolbar.appendChild(controlsGroup);
+        toolbar.appendChild(objectGroup);
 
-        // Car Torque Slider
-        const wheelSpeedContainer = document.createElement('div');
-        const wheelSpeedLabel = document.createElement('label');
-        wheelSpeedLabel.textContent = 'Car Torque: ' + this.game.wheelTorque;
-        const wheelSpeedSlider = document.createElement('input');
-        wheelSpeedSlider.type = 'range';
-        wheelSpeedSlider.min = '-1';
-        wheelSpeedSlider.max = '1';
-        wheelSpeedSlider.step = '0.05';
-        wheelSpeedSlider.value = this.game.wheelTorque.toString();
-        wheelSpeedSlider.oninput = (e) => {
-            const val = parseFloat((e.target as HTMLInputElement).value);
-            this.game.wheelTorque = val;
-            wheelSpeedLabel.textContent = 'Car Torque: ' + val;
-        };
-        wheelSpeedContainer.appendChild(wheelSpeedLabel);
-        wheelSpeedContainer.appendChild(wheelSpeedSlider);
-        settingsGroup.appendChild(wheelSpeedContainer);
+        // Initialize Settings Pane
+        new SettingsPane(this.game);
 
-        // Car Max Speed Slider
-        const maxSpeedContainer = document.createElement('div');
-        const maxSpeedLabel = document.createElement('label');
-        maxSpeedLabel.textContent = 'Car Max Speed: ' + this.game.maxCarSpeed;
-        const maxSpeedSlider = document.createElement('input');
-        maxSpeedSlider.type = 'range';
-        maxSpeedSlider.min = '0';
-        maxSpeedSlider.max = '2';
-        maxSpeedSlider.step = '0.05';
-        maxSpeedSlider.value = this.game.maxCarSpeed.toString();
-        maxSpeedSlider.oninput = (e) => {
-            const val = parseFloat((e.target as HTMLInputElement).value);
-            this.game.maxCarSpeed = val;
-            maxSpeedLabel.textContent = 'Car Max Speed: ' + val;
-        };
-        maxSpeedContainer.appendChild(maxSpeedLabel);
-        maxSpeedContainer.appendChild(maxSpeedSlider);
-        settingsGroup.appendChild(maxSpeedContainer);
-
-        // Ground Friction Slider
-        const frictionContainer = document.createElement('div');
-        const frictionLabel = document.createElement('label');
-        frictionLabel.textContent = 'Friction: ' + this.game.groundFriction;
-        const frictionSlider = document.createElement('input');
-        frictionSlider.type = 'range';
-        frictionSlider.min = '0';
-        frictionSlider.max = '1';
-        frictionSlider.step = '0.1';
-        frictionSlider.value = this.game.groundFriction.toString();
-        frictionSlider.oninput = (e) => {
-            const val = parseFloat((e.target as HTMLInputElement).value);
-            this.game.setGroundFriction(val);
-            frictionLabel.textContent = 'Friction: ' + val;
-        };
-        frictionContainer.appendChild(frictionLabel);
-        frictionContainer.appendChild(frictionSlider);
-        settingsGroup.appendChild(frictionContainer);
-
-        toolbar.appendChild(settingsGroup);
-
-        toolbar.appendChild(templateGroup);
         this.container.appendChild(toolbar);
     }
 }

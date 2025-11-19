@@ -1,8 +1,9 @@
 import Matter from 'matter-js';
+import { Game } from '../engine/Game';
 
 export interface EntityTemplate {
     name: string;
-    create: (x: number, y: number) => Matter.Body | Matter.Composite;
+    create: (x: number, y: number, game: Game) => Matter.Body | Matter.Composite;
     isTool?: boolean;
 }
 
@@ -13,14 +14,15 @@ export const Templates: EntityTemplate[] = [
     },
     {
         name: 'Ball',
-        create: (x, y) => Matter.Bodies.circle(x, y, 25, {
+        create: (x, y, game) => Matter.Bodies.circle(x, y, game.ballSize, {
             label: 'Ball',
             render: {
                 fillStyle: '#35F',
                 strokeStyle: 'black',
                 lineWidth: 2
             },
-            restitution: 0.9
+            restitution: game.ballElasticity,
+            frictionAir: game.globalAirFriction
         })
     },
     {

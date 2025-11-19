@@ -12,6 +12,11 @@ export class Game {
     public wheelTorque: number = 0.1;
     public maxCarSpeed: number = 0.5;
     public groundFriction: number = 0.5;
+
+    // New Global Settings
+    public ballSize: number = 25;
+    public ballElasticity: number = 0.9;
+    public globalAirFriction: number = 0.01;
     private mouseConstraint: Matter.MouseConstraint;
     private readonly DEAD_ZONE_Y = 2000;
 
@@ -165,6 +170,32 @@ export class Game {
                 body.friction = friction;
             }
         });
+    }
+
+    public setGlobalAirFriction(friction: number) {
+        this.globalAirFriction = friction;
+        const bodies = Matter.Composite.allBodies(this.engine.world);
+        bodies.forEach(body => {
+            body.frictionAir = friction;
+        });
+    }
+
+    public setSimulationSpeed(speed: number) {
+        // Matter.js runner timing
+        // Default timeScale is 1.
+        this.engine.timing.timeScale = speed;
+    }
+
+    public setGravity(y: number) {
+        this.engine.gravity.y = y;
+    }
+
+    public getSimulationSpeed(): number {
+        return this.engine.timing.timeScale;
+    }
+
+    public getGravity(): number {
+        return this.engine.gravity.y;
     }
 
     public start() {

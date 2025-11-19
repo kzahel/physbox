@@ -3,7 +3,7 @@ import { Camera } from '../engine/Camera';
 import { Game } from '../engine/Game';
 import type { EntityTemplate } from '../entities/Templates';
 
-export type InteractionMode = 'play' | 'edit';
+export type InteractionMode = 'view' | 'create' | 'erase';
 
 export class InputManager {
     private element: HTMLElement;
@@ -12,7 +12,7 @@ export class InputManager {
     private isDragging: boolean = false;
     private lastMousePos: { x: number, y: number } = { x: 0, y: 0 };
 
-    private mode: InteractionMode = 'play';
+    private mode: InteractionMode = 'view';
     private currentTemplate: EntityTemplate | null = null;
 
     private previewBody: Matter.Body | Matter.Composite | null = null;
@@ -64,14 +64,6 @@ export class InputManager {
 
     public setMode(mode: InteractionMode) {
         this.mode = mode;
-        // Update mouse constraint visibility based on mode?
-        // Actually, in edit mode we might want to disable mouse constraint so we don't accidentally drag things while trying to place?
-        // Or just keep it.
-        const mouseConstraint = this.game.getEngine().world.constraints.find(c => c.label === 'Mouse Constraint');
-        if (mouseConstraint) {
-            // We can't easily disable it without removing it, but we can change collision filter or something.
-            // For now, let's just keep it.
-        }
         this.clearPreview();
         this.isDrawing = false;
         if (this.drawPreviewBody) {
@@ -105,7 +97,7 @@ export class InputManager {
         if (!this.currentTemplate || this.currentTemplate.isTool) return;
 
         const worldPos = this.camera.screenToWorld(x, y);
-        const body = this.currentTemplate.create(worldPos.x, worldPos.y);
+        const body = this.currentTemplate.create(worldPos.x, worldPos.y, this.game);
         Matter.Composite.add(this.game.getEngine().world, body);
     }
 
@@ -134,19 +126,16 @@ export class InputManager {
         });
 
         this.element.addEventListener('mousedown', (e) => {
-            if (e.button === 1 || (e.button === 2 && this.mode === 'play')) { // Middle or Right click (in play mode)
+            if (e.button === 1 || (e.button === 2 && this.mode === 'view')) { // Middle or Right click (in view mode)
                 this.isDragging = true;
                 this.lastMousePos = { x: e.clientX, y: e.clientY };
                 e.preventDefault();
             } else if (e.button === 0) { // Left click
-                if (this.mode === 'edit' && this.currentTemplate) {
+                if (this.mode === 'create' && this.currentTemplate) {
                     if (this.currentTemplate.isTool && this.currentTemplate.name === 'Draw Wall') {
                         const worldPos = this.camera.screenToWorld(e.clientX, e.clientY);
                         this.isDrawing = true;
                         this.drawStartPos = worldPos;
-                    } else if (this.currentTemplate.isTool && this.currentTemplate.name === 'Eraser') {
-                        this.isDragging = true; // Use dragging flag for continuous erasing
-                        this.eraseAt(e.clientX, e.clientY);
                     } else if (!this.currentTemplate.isTool) {
                         if (e.shiftKey) {
                             this.placeCurrentTemplate(e.clientX, e.clientY);
@@ -157,10 +146,12 @@ export class InputManager {
                             this.placeCurrentTemplate(e.clientX, e.clientY);
                         }
                     }
+                } else if (this.mode === 'erase') {
+                    this.isDragging = true; // Use dragging flag for continuous erasing
+                    this.eraseAt(e.clientX, e.clientY);
                 }
-            } else if (e.button === 2 && this.mode === 'edit') { // Right click in edit mode
+            } else if (e.button === 2 && this.mode === 'create') { // Right click in create mode (rotation?)
                 // Rotation toggle logic handled in contextmenu or here?
-                // contextmenu event fires after mousedown, usually.
                 // Let's handle it here to be responsive.
                 const worldPos = this.camera.screenToWorld(e.clientX, e.clientY);
                 const bodies = Matter.Composite.allBodies(this.game.getEngine().world);
@@ -179,7 +170,7 @@ export class InputManager {
             const worldPos = this.camera.screenToWorld(e.clientX, e.clientY);
 
             if (this.isDragging) {
-                if (this.mode === 'edit' && this.currentTemplate?.name === 'Eraser') {
+                if (this.mode === 'erase') {
                     this.eraseAt(e.clientX, e.clientY);
                 } else {
                     const dx = e.clientX - this.lastMousePos.x;
@@ -190,43 +181,39 @@ export class InputManager {
             }
 
             // Preview logic
-            if (this.mode === 'edit' && this.currentTemplate && !this.isDrawing) {
-                if (this.currentTemplate.name === 'Eraser') {
+            if (this.mode === 'create' && this.currentTemplate && !this.isDrawing) {
+                if (!this.currentTemplate.isTool) {
                     if (!this.previewBody) {
-                        this.previewBody = Matter.Bodies.rectangle(worldPos.x, worldPos.y, 50, 50, {
-                            isStatic: true,
-                            isSensor: true,
-                            render: { fillStyle: '#FF0000', opacity: 0.3 },
-                            collisionFilter: { group: -1, category: 0, mask: 0 }
-                        });
-                        Matter.Composite.add(this.game.getEngine().world, this.previewBody);
-                    } else {
-                        Matter.Body.setPosition(this.previewBody as Matter.Body, worldPos);
-                    }
-                } else if (!this.currentTemplate.isTool) {
-                    if (!this.previewBody) {
-                        this.previewBody = this.currentTemplate.create(worldPos.x, worldPos.y);
+                        this.previewBody = this.currentTemplate.create(worldPos.x, worldPos.y, this.game);
                         this.makeBodyPreview(this.previewBody);
                         Matter.Composite.add(this.game.getEngine().world, this.previewBody);
                     } else {
                         // Update position
-                        // For composite, we need to translate. For body, setPosition.
-                        // Simplest is to remove and recreate, but that's heavy.
-                        // Let's try to move it.
                         if (this.previewBody.type === 'body') {
                             Matter.Body.setPosition(this.previewBody as Matter.Body, worldPos);
                         } else {
-                            // Composite: calculate delta
-                            // This is hard because we don't track center of composite easily.
-                            // Recreating is safer for now to ensure correct relative positioning.
+                            // Composite: recreate
                             Matter.Composite.remove(this.game.getEngine().world, this.previewBody);
-                            this.previewBody = this.currentTemplate.create(worldPos.x, worldPos.y);
+                            this.previewBody = this.currentTemplate.create(worldPos.x, worldPos.y, this.game);
                             this.makeBodyPreview(this.previewBody);
                             Matter.Composite.add(this.game.getEngine().world, this.previewBody);
                         }
                     }
                 } else {
                     this.clearPreview();
+                }
+            } else if (this.mode === 'erase') {
+                // Eraser Preview
+                if (!this.previewBody) {
+                    this.previewBody = Matter.Bodies.rectangle(worldPos.x, worldPos.y, 50, 50, {
+                        isStatic: true,
+                        isSensor: true,
+                        render: { fillStyle: '#FF0000', opacity: 0.3 },
+                        collisionFilter: { group: -1, category: 0, mask: 0 }
+                    });
+                    Matter.Composite.add(this.game.getEngine().world, this.previewBody);
+                } else {
+                    Matter.Body.setPosition(this.previewBody as Matter.Body, worldPos);
                 }
             } else {
                 this.clearPreview();
@@ -395,7 +382,7 @@ export class InputManager {
                 }
             } else if (this.isDragging && e.touches.length === 1) {
                 const touch = e.touches[0];
-                if (this.mode === 'edit' && this.currentTemplate?.name === 'Eraser') {
+                if (this.mode === 'erase') {
                     this.eraseAt(touch.clientX, touch.clientY);
                 } else if (this.lastTouchPos) {
                     const dx = touch.clientX - this.lastTouchPos.x;
@@ -418,12 +405,10 @@ export class InputManager {
                 if (dist < 10 && timeDiff < 300) {
                     // It's a tap!
                     // Handle placement
-                    if (this.mode === 'edit' && this.currentTemplate) {
-                        if (this.currentTemplate.name === 'Eraser') {
-                            this.eraseAt(touch.clientX, touch.clientY);
-                        } else if (!this.currentTemplate.isTool) {
-                            this.placeCurrentTemplate(touch.clientX, touch.clientY);
-                        }
+                    if (this.mode === 'erase') {
+                        this.eraseAt(touch.clientX, touch.clientY);
+                    } else if (this.mode === 'create' && this.currentTemplate && !this.currentTemplate.isTool) {
+                        this.placeCurrentTemplate(touch.clientX, touch.clientY);
                     }
                 }
             }
