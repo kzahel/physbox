@@ -110,6 +110,24 @@ export class SettingsPane {
     private initControls() {
         // Controls
         this.addSection('Controls');
+
+        const resetBtn = document.createElement('button');
+        resetBtn.textContent = 'Reset World';
+        resetBtn.style.width = '100%';
+        resetBtn.style.padding = '5px';
+        resetBtn.style.marginBottom = '5px';
+        resetBtn.style.cursor = 'pointer';
+        resetBtn.style.backgroundColor = '#d32f2f'; // Red color for destructive action
+        resetBtn.style.color = 'white';
+        resetBtn.style.border = 'none';
+        resetBtn.style.borderRadius = '4px';
+        resetBtn.onclick = () => {
+            if (confirm('Are you sure you want to reset the world?')) {
+                this.game.reset();
+            }
+        };
+        this.content.appendChild(resetBtn);
+
         const pauseBtn = document.createElement('button');
         pauseBtn.textContent = 'Pause';
         pauseBtn.style.width = '100%';

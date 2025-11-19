@@ -329,4 +329,30 @@ export class Game {
     public getMouseConstraint() {
         return this.mouseConstraint;
     }
+
+    public reset() {
+        Matter.Composite.clear(this.engine.world, false);
+        Matter.Engine.clear(this.engine);
+
+        // Re-add mouse constraint
+        Matter.Composite.add(this.engine.world, this.mouseConstraint);
+
+        // Re-create initial objects
+        const width = this.render.options.width!;
+        const height = this.render.options.height!;
+
+        const ground = Matter.Bodies.rectangle(width / 2, height - 20, width, 40, {
+            isStatic: true,
+            render: { fillStyle: '#333' },
+            label: 'Ground',
+            friction: this.groundFriction
+        });
+
+        const box = Matter.Bodies.rectangle(width / 2, 200, 80, 80, {
+            render: { fillStyle: '#F35' },
+            label: 'Box'
+        });
+
+        Matter.Composite.add(this.engine.world, [ground, box]);
+    }
 }
