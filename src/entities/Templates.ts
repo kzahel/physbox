@@ -129,5 +129,97 @@ export const Templates: EntityTemplate[] = [
 
             return body;
         }
+    },
+    {
+        name: 'Player',
+        create: (x, y) => {
+            const group = Matter.Body.nextGroup(true);
+            const bodyWidth = 40;
+            const bodyHeight = 80;
+            const wheelSize = 15;
+
+            // Main Body (Robot Torso)
+            const torso = Matter.Bodies.rectangle(x, y - 20, bodyWidth, bodyHeight, {
+                collisionFilter: { group: group },
+                render: { fillStyle: '#555' },
+                label: 'PlayerBodyPart'
+            });
+
+            // Head (Cute Face)
+            const headSize = 30;
+            const head = Matter.Bodies.rectangle(x, y - 70, headSize, headSize, {
+                collisionFilter: { group: group },
+                render: { fillStyle: '#DDD' },
+                label: 'PlayerHead'
+            });
+
+            // Eyes
+            const eyeLeft = Matter.Bodies.circle(x - 8, y - 75, 3, {
+                collisionFilter: { group: group },
+                render: { fillStyle: '#000' }
+            });
+            const eyeRight = Matter.Bodies.circle(x + 8, y - 75, 3, {
+                collisionFilter: { group: group },
+                render: { fillStyle: '#000' }
+            });
+
+            // Mouth (Simple rectangle for now)
+            const mouth = Matter.Bodies.rectangle(x, y - 65, 10, 3, {
+                collisionFilter: { group: group },
+                render: { fillStyle: '#000' }
+            });
+
+            // Combine torso and head parts into one rigid body
+            const mainBody = Matter.Body.create({
+                parts: [torso, head, eyeLeft, eyeRight, mouth],
+                collisionFilter: { group: group },
+                inertia: Infinity, // Prevent rotation
+                frictionAir: 0.05,
+                label: 'PlayerBody'
+            });
+
+            // Helper to create a wheel with a spoke
+            const createWheel = (wx: number, wy: number) => {
+                const circle = Matter.Bodies.circle(wx, wy, wheelSize, {
+                    render: { fillStyle: '#333' }
+                });
+                const spoke = Matter.Bodies.rectangle(wx, wy, wheelSize * 1.8, 4, {
+                    render: { fillStyle: '#EEE' }
+                });
+
+                return Matter.Body.create({
+                    parts: [circle, spoke],
+                    collisionFilter: { group: group },
+                    friction: 0.8,
+                    label: 'PlayerWheel'
+                });
+            };
+
+            const wheelA = createWheel(x - bodyWidth / 2, y + bodyHeight / 2 - 20);
+            const wheelB = createWheel(x + bodyWidth / 2, y + bodyHeight / 2 - 20);
+
+            // Axles - Use dynamic offsets to prevent snapping
+            const axelA = Matter.Constraint.create({
+                bodyB: mainBody,
+                bodyA: wheelA,
+                pointB: { x: wheelA.position.x - mainBody.position.x, y: wheelA.position.y - mainBody.position.y },
+                stiffness: 1,
+                length: 0
+            });
+
+            const axelB = Matter.Constraint.create({
+                bodyB: mainBody,
+                bodyA: wheelB,
+                pointB: { x: wheelB.position.x - mainBody.position.x, y: wheelB.position.y - mainBody.position.y },
+                stiffness: 1,
+                length: 0
+            });
+
+            return Matter.Composite.create({
+                bodies: [mainBody, wheelA, wheelB],
+                constraints: [axelA, axelB],
+                label: 'Player'
+            });
+        }
     }
 ];

@@ -80,7 +80,7 @@ export class Game {
         Matter.Events.on(this.engine, 'beforeUpdate', () => {
             const world = this.engine.world;
 
-            // 1. Check Composites (e.g. Cars)
+            // 1. Check Composites (e.g. Cars, Players)
             for (let i = world.composites.length - 1; i >= 0; i--) {
                 const composite = world.composites[i];
                 const bodies = Matter.Composite.allBodies(composite);
@@ -103,6 +103,24 @@ export class Game {
                             }
                         } else if (body.label === 'Monster') {
                             body.torque = 0.2 * direction;
+                        } else if (body.label === 'PlayerWheel') {
+                            // Player Control: Left/Right
+                            const speed = 0.6; // Increased speed
+                            if (this.inputManager.isKeyDown('ArrowLeft')) {
+                                Matter.Body.setAngularVelocity(body, -speed);
+                            } else if (this.inputManager.isKeyDown('ArrowRight')) {
+                                Matter.Body.setAngularVelocity(body, speed);
+                            } else {
+                                Matter.Body.setAngularVelocity(body, 0);
+                            }
+                        } else if (body.label === 'PlayerBody') {
+                            // Player Control: Up/Down
+                            if (this.inputManager.isKeyDown('ArrowUp')) {
+                                Matter.Body.applyForce(body, body.position, { x: 0, y: -0.05 });
+                            }
+                            if (this.inputManager.isKeyDown('ArrowDown')) {
+                                Matter.Body.applyForce(body, body.position, { x: 0, y: 0.05 });
+                            }
                         }
                     });
                 }
@@ -162,6 +180,22 @@ export class Game {
             context.strokeStyle = '#FF0000';
             context.lineWidth = 2;
             context.stroke();
+        }
+
+        // Draw Jetpack Thruster
+        if (this.inputManager.isKeyDown('ArrowUp')) {
+            const bodies = Matter.Composite.allBodies(this.engine.world);
+            bodies.forEach(body => {
+                if (body.label === 'PlayerBody') {
+                    const width = 20;
+                    const height = 20;
+                    const x = (body.position.x - bounds.min.x) * scaleX - width / 2;
+                    const y = (body.position.y - bounds.min.y) * scaleY + 40; // Below the body
+
+                    context.fillStyle = '#FF4500'; // Orange-Red
+                    context.fillRect(x, y, width, height);
+                }
+            });
         }
     }
 

@@ -54,14 +54,19 @@ export class InputManager {
         let dx = 0;
         let dy = 0;
 
-        if (this.keysPressed['ArrowLeft']) dx -= panSpeed;
-        if (this.keysPressed['ArrowRight']) dx += panSpeed;
-        if (this.keysPressed['ArrowUp']) dy -= panSpeed;
-        if (this.keysPressed['ArrowDown']) dy += panSpeed;
+        // Removed Arrow keys for panning to allow player control
+        if (this.keysPressed['a'] || this.keysPressed['A']) dx -= panSpeed;
+        if (this.keysPressed['d'] || this.keysPressed['D']) dx += panSpeed;
+        if (this.keysPressed['w'] || this.keysPressed['W']) dy -= panSpeed;
+        if (this.keysPressed['s'] || this.keysPressed['S']) dy += panSpeed;
 
         if (dx !== 0 || dy !== 0) {
             this.camera.pan(dx, dy);
         }
+    }
+
+    public isKeyDown(key: string): boolean {
+        return !!this.keysPressed[key];
     }
 
     public setMode(mode: InteractionMode) {
