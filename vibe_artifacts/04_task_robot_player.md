@@ -1,0 +1,23 @@
+# Task: Implement Player-Controllable Robot
+
+- [x] Planning and Research <!-- id: 0 -->
+    - [x] Explore `src/entities/Templates.ts` to understand template structure <!-- id: 1 -->
+    - [x] Explore `src/ui/Toolbar.ts` to understand toolbar addition <!-- id: 2 -->
+    - [x] Explore `src/interaction/InputManager.ts` for input handling <!-- id: 3 -->
+    - [x] Explore `src/engine/Game.ts` for physics and update loop <!-- id: 4 -->
+    - [x] Create Implementation Plan <!-- id: 5 -->
+- [/] Implementation <!-- id: 6 -->
+    - [x] Create Robot Template in `src/entities/Templates.ts` <!-- id: 7 -->
+    - [ ] Update Toolbar in `src/ui/Toolbar.ts` <!-- id: 8 -->
+    - [x] Modify InputManager in `src/interaction/InputManager.ts` to remove camera panning and add robot controls <!-- id: 9 -->
+    - [x] Implement Robot Physics/Control Logic in `src/engine/Game.ts` (or appropriate location) <!-- id: 10 -->
+- [/] Verification <!-- id: 11 -->
+    - [x] Verify Robot placement <!-- id: 12 -->
+    - [ ] Verify Robot movement (Left/Right/Up/Down) <!-- id: 13 -->
+    - [x] Verify Camera panning is removed from arrow keys <!-- id: 14 -->
+    - [x] Verify Robot stays upright <!-- id: 15 -->
+- [x] Fixes <!-- id: 16 -->
+    - [x] Fix Wheel Positioning (Constraints) <!-- id: 17 -->
+    - [x] Fix Wheel Visuals (Spokes) <!-- id: 18 -->
+    - [x] Fix Movement (Friction/Velocity) <!-- id: 19 -->
+- [/] Final Verification <!-- id: 20 -->
