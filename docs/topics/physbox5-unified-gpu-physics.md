@@ -342,6 +342,17 @@ color count, convergence, or conflict state may not be required to advance the
 step. A fixed bounded color schedule is acceptable only with explicit overflow
 and fallback failure, never silently dropped constraints.
 
+The S1.4 laboratory implements both portable experiments without selecting
+between them. Its Jacobi lane constructs body incidence on the GPU through
+integer-atomic count, prefix, and scatter passes, emits one equal-and-opposite
+pair per contact, and gathers per body. Its colored lane assigns a deterministic
+GPU greedy color and executes a fixed 32-color schedule; a 33-edge shared-body
+fixture produces an explicit failed capacity record. Both lanes retain authored
+anchors across Soft-Step substeps, refresh separation from current poses, and
+place unbiased relaxation after pose integration. The scalar-compatible
+contact-pass mode remains available for first-divergence traces. These are
+candidate facts, not a production solver decision; S1.6 still owns that choice.
+
 Other portable fallbacks that may be measured include segmented `f32`
 reduction and bounded fixed-point integer atomic accumulation with documented
 precision, range, saturation, and overflow diagnostics.

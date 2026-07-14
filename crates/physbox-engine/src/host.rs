@@ -5,7 +5,7 @@ use wgpu::util::DeviceExt;
 use crate::{
     EngineConfig, FrameInput, StepRequest,
     clock::{FIXED_STEP_HZ, FIXED_STEP_SECONDS, InteractiveClockInput, SimulationClock},
-    gpu_solver::{GpuSolverCandidate, GpuSolverLab},
+    gpu_solver::{GpuSolverCandidate, GpuSolverLab, GpuSolverMode},
     renderer::RenderFrameContext,
     report::{FrameReport, SCENE_CONTRACT_VERSION, ScenarioResult, SceneContract},
     scenario::authored_chain_scenario,
@@ -160,9 +160,10 @@ impl EngineHost {
             ValidationScenario::SolverColored => Some(GpuSolverCandidate::ColoredSoftTgs),
         };
         let solver_lab = solver_candidate.map(|candidate| {
-            let scenario = authored_chain_scenario(64, 91)
+            let mut scenario = authored_chain_scenario(64, 91)
                 .expect("engine-owned solver validation scenario is valid");
-            GpuSolverLab::new(device, &scenario, candidate)
+            scenario.settings.gravity = physbox_contracts::Vec2::ZERO;
+            GpuSolverLab::new(device, &scenario, candidate, GpuSolverMode::SoftStep)
                 .expect("engine-owned solver validation lab is valid")
         });
         let solver_bind_group = solver_lab.as_ref().map(|lab| {

@@ -115,8 +115,7 @@ passes now construct the Jacobi body incidence on the GPU. A deterministic GPU
 greedy pass assigns a fixed 32-color schedule without reading the color count
 to advance the solve. A 33-edge shared-body fixture proves that the colored
 lane reports capacity overflow and preserves the failure instead of dropping
-the conflict, while the gather lane accepts the same topology. The remaining
-S1.4 implementation work is the full substep/fixed-step candidate exercise.
+the conflict, while the gather lane accepts the same topology.
 
 Cross-host evidence, 2026-07-14: `solver-jacobi` and `solver-colored` are now
 engine-owned launch scenarios. The one shared host dispatches the same
@@ -128,9 +127,17 @@ readback. The connected Pixel 7a is currently locked, and the physical-device
 runner diagnoses that availability gap rather than substituting AVD evidence
 for a device measurement.
 
+Soft-Step evidence, 2026-07-14: both candidates now execute a complete authored
+fixed step with gravity integration, retained local anchors, separation and
+effective-mass refresh from current poses, biased substep solves, pose
+integration, and unbiased relaxation plus restitution. The scalar-compatible
+single-pass mode remains separate for first-divergence diagnosis. One- versus
+four-substep chain runs are deterministic, preserve finite/capacity gates, and
+reduce the adjacent-velocity residual for both accumulation architectures.
+
 - [x] Implement contact-centric Jacobi with equal-and-opposite contribution
   records and per-body gather.
-- [ ] Implement graph-colored or disjoint-batch Soft-TGS without CPU-driven
+- [x] Implement graph-colored or disjoint-batch Soft-TGS without CPU-driven
   convergence or silently dropped conflicts.
 - [ ] Optionally implement one rigid XPBD or split position/velocity comparator
   only if the first two leave a material unanswered question.

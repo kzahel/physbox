@@ -96,7 +96,7 @@ fn write_trace(index: u32, stage: u32, iteration: u32, point: PreparedPoint,
     traces[index].identity = vec4u(stage, iteration, point.ids.z, point.ids.w);
     traces[index].values0 = values0;
     traces[index].values1 = values1;
-    traces[index].tail = vec4u(value_count, 0u, 0u, 0u);
+    traces[index].tail = vec4u(value_count, u32(params.floats1.w), 0u, 0u);
 }
 
 fn emit_pair(point_index: u32, point: PreparedPoint, impulse: vec2f) {
@@ -184,6 +184,29 @@ fn color_contacts(@builtin(global_invocation_id) id: vec3u) {
 }
 
 @compute @workgroup_size(64)
+fn integrate_velocity(@builtin(global_invocation_id) id: vec3u) {
+    let body_index = id.x;
+    if (body_index >= params.uints0.x) { return; }
+    var body = bodies_source[body_index];
+    if (body.inverse_mass > 0.0) {
+        body.linear_velocity += params.floats1.yz * params.floats0.x;
+    }
+    bodies_source[body_index] = body;
+}
+
+@compute @workgroup_size(64)
+fn integrate_position(@builtin(global_invocation_id) id: vec3u) {
+    let body_index = id.x;
+    if (body_index >= params.uints0.x) { return; }
+    var body = bodies_source[body_index];
+    if (body.inverse_mass > 0.0) {
+        body.position += body.linear_velocity * params.floats0.x;
+        body.angle += body.angular_velocity * params.floats0.x;
+    }
+    bodies_source[body_index] = body;
+}
+
+@compute @workgroup_size(64)
 fn prepare(@builtin(global_invocation_id) id: vec3u) {
     let point_index = id.x;
     if (point_index >= params.uints0.y) { return; }
@@ -211,6 +234,42 @@ fn prepare(@builtin(global_invocation_id) id: vec3u) {
     write_trace(params.uints1.z + point_index, 0u, 0u, point,
         vec4f(anchor_a.x, anchor_a.y, anchor_b.x, anchor_b.y),
         vec4f(initial_velocity, point.data0.y, point.data0.w, point.data0.z), 8u);
+}
+
+@compute @workgroup_size(64)
+fn refresh_contacts(@builtin(global_invocation_id) id: vec3u) {
+    let point_index = id.x;
+    if (point_index >= params.uints0.y) { return; }
+    let input = point_inputs[point_index];
+    let body_a = bodies_source[input.ids.x];
+    let body_b = bodies_source[input.ids.y];
+    let anchor_a = rotate(input.local_anchor_a, body_a.angle);
+    let anchor_b = rotate(input.local_anchor_b, body_b.angle);
+    let tangent = vec2f(input.normal.y, -input.normal.x);
+    let initial_velocity = dot(point_velocity(body_b, anchor_b) -
+                               point_velocity(body_a, anchor_a), input.normal);
+    var point = prepared_points[point_index];
+    point.normal = input.normal;
+    point.tangent = tangent;
+    point.anchor_a = anchor_a;
+    point.anchor_b = anchor_b;
+    let reset_impulses = params.uints0.w != 0u;
+    let retained_initial_velocity = point.data0.x;
+    point.data0 = vec4f(select(retained_initial_velocity, initial_velocity, reset_impulses),
+        effective_mass(body_a, body_b, anchor_a, anchor_b, input.normal),
+        effective_mass(body_a, body_b, anchor_a, anchor_b, tangent),
+        dot((body_b.position + anchor_b) - (body_a.position + anchor_a), input.normal));
+    if (reset_impulses) {
+        point.data1.z = 0.0;
+        point.data1.w = 0.0;
+        point.data2 = vec4f(0.0);
+    }
+    prepared_points[point_index] = point;
+    if (params.uints0.z != 0u) {
+        write_trace(params.uints1.z + point_index, 0u, 0u, point,
+            vec4f(anchor_a.x, anchor_a.y, anchor_b.x, anchor_b.y),
+            vec4f(initial_velocity, point.data0.y, point.data0.w, point.data0.z), 8u);
+    }
 }
 
 @compute @workgroup_size(64)

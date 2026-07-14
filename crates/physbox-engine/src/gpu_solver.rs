@@ -26,6 +26,12 @@ pub enum GpuSolverCandidate {
     ColoredSoftTgs,
 }
 
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub(crate) enum GpuSolverMode {
+    ContactPass,
+    SoftStep,
+}
+
 impl GpuSolverCandidate {
     pub const fn name(self) -> &'static str {
         match self {
@@ -131,11 +137,14 @@ enum PipelineKind {
     TopologyPrefix,
     TopologyScatter,
     TopologyColor,
+    IntegrateVelocity,
     Prepare,
+    Refresh,
     Warm,
     Normal,
     Tangent,
     Restitution,
+    IntegratePosition,
     Gather,
     Colored,
 }
@@ -227,11 +236,14 @@ pub(crate) struct GpuSolverLab {
     topology_prefix_pipeline: wgpu::ComputePipeline,
     topology_scatter_pipeline: wgpu::ComputePipeline,
     topology_color_pipeline: wgpu::ComputePipeline,
+    integrate_velocity_pipeline: wgpu::ComputePipeline,
     prepare_pipeline: wgpu::ComputePipeline,
+    refresh_pipeline: wgpu::ComputePipeline,
     warm_pipeline: wgpu::ComputePipeline,
     normal_pipeline: wgpu::ComputePipeline,
     tangent_pipeline: wgpu::ComputePipeline,
     restitution_pipeline: wgpu::ComputePipeline,
+    integrate_position_pipeline: wgpu::ComputePipeline,
     gather_pipeline: wgpu::ComputePipeline,
     colored_pipeline: wgpu::ComputePipeline,
     operations: Vec<Operation>,
@@ -248,6 +260,7 @@ impl GpuSolverLab {
         device: &wgpu::Device,
         scenario: &ScenarioV1,
         candidate: GpuSolverCandidate,
+        mode: GpuSolverMode,
     ) -> Result<Self, String> {
         scenario.validate().map_err(|error| error.to_string())?;
         let bodies = scenario.bodies.iter().map(body_raw).collect::<Vec<_>>();
@@ -256,13 +269,19 @@ impl GpuSolverLab {
             return Err("GPU solver laboratory requires authored contact points".to_owned());
         }
         let topology_layout = TopologyLayout::new(bodies.len(), points.len())?;
-        let trace_count = points.len() * (5 + 2 * scenario.settings.iterations as usize);
+        let solve_count = match mode {
+            GpuSolverMode::ContactPass => 1,
+            GpuSolverMode::SoftStep => scenario.settings.substeps as usize,
+        };
+        let trace_count =
+            points.len() * (5 + 2 * scenario.settings.iterations as usize) * solve_count;
         let (parameters, operations) = operations(
             candidate,
             scenario,
             points.len(),
             bodies.len(),
             topology_layout,
+            mode,
         );
 
         let body_a = storage_init(
@@ -397,11 +416,20 @@ impl GpuSolverLab {
             topology_prefix_pipeline: pipeline("solver_topology_prefix", "prefix_edges"),
             topology_scatter_pipeline: pipeline("solver_topology_scatter", "scatter_edges"),
             topology_color_pipeline: pipeline("solver_topology_color", "color_contacts"),
+            integrate_velocity_pipeline: pipeline(
+                "solver_integrate_velocity",
+                "integrate_velocity",
+            ),
             prepare_pipeline: pipeline("solver_prepare", "prepare"),
+            refresh_pipeline: pipeline("solver_refresh", "refresh_contacts"),
             warm_pipeline: pipeline("solver_warm", "emit_warm"),
             normal_pipeline: pipeline("solver_normal", "emit_normal"),
             tangent_pipeline: pipeline("solver_tangent", "emit_tangent"),
             restitution_pipeline: pipeline("solver_restitution", "emit_restitution"),
+            integrate_position_pipeline: pipeline(
+                "solver_integrate_position",
+                "integrate_position",
+            ),
             gather_pipeline: pipeline("solver_gather", "gather"),
             colored_pipeline: pipeline("solver_colored", "colored_stage"),
             operations,
@@ -426,11 +454,14 @@ impl GpuSolverLab {
                 PipelineKind::TopologyPrefix => &self.topology_prefix_pipeline,
                 PipelineKind::TopologyScatter => &self.topology_scatter_pipeline,
                 PipelineKind::TopologyColor => &self.topology_color_pipeline,
+                PipelineKind::IntegrateVelocity => &self.integrate_velocity_pipeline,
                 PipelineKind::Prepare => &self.prepare_pipeline,
+                PipelineKind::Refresh => &self.refresh_pipeline,
                 PipelineKind::Warm => &self.warm_pipeline,
                 PipelineKind::Normal => &self.normal_pipeline,
                 PipelineKind::Tangent => &self.tangent_pipeline,
                 PipelineKind::Restitution => &self.restitution_pipeline,
+                PipelineKind::IntegratePosition => &self.integrate_position_pipeline,
                 PipelineKind::Gather => &self.gather_pipeline,
                 PipelineKind::Colored => &self.colored_pipeline,
             });
@@ -522,11 +553,28 @@ pub async fn run_gpu_solver_case(
     scenario: &ScenarioV1,
     candidate: GpuSolverCandidate,
 ) -> Result<GpuSolverOutput, String> {
+    run_gpu_solver_mode(scenario, candidate, GpuSolverMode::ContactPass).await
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn run_gpu_soft_step_case(
+    scenario: &ScenarioV1,
+    candidate: GpuSolverCandidate,
+) -> Result<GpuSolverOutput, String> {
+    run_gpu_solver_mode(scenario, candidate, GpuSolverMode::SoftStep).await
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+async fn run_gpu_solver_mode(
+    scenario: &ScenarioV1,
+    candidate: GpuSolverCandidate,
+    mode: GpuSolverMode,
+) -> Result<GpuSolverOutput, String> {
     let instance = create_instance();
     let adapter = request_adapter(&instance, None).await?;
     let diagnostics = AdapterDiagnostics::from_adapter(&adapter);
     let (device, queue) = request_device(&adapter).await?;
-    let lab = GpuSolverLab::new(&device, scenario, candidate)?;
+    let lab = GpuSolverLab::new(&device, scenario, candidate, mode)?;
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
         label: Some("solver_validation_encoder"),
     });
@@ -693,6 +741,7 @@ fn operations(
     point_count: usize,
     body_count: usize,
     topology: TopologyLayout,
+    mode: GpuSolverMode,
 ) -> (Vec<PassParamsRaw>, Vec<Operation>) {
     let mut parameters = Vec::new();
     let mut operations = Vec::new();
@@ -739,178 +788,295 @@ fn operations(
             topology_operation(PipelineKind::TopologyColor, 1);
         }
     }
-    let base = |stage, iteration, trace_base, use_bias, topology_offset, count| PassParamsRaw {
+    let substeps = match mode {
+        GpuSolverMode::ContactPass => 1,
+        GpuSolverMode::SoftStep => scenario.settings.substeps,
+    };
+    for substep in 0..substeps {
+        if mode == GpuSolverMode::SoftStep {
+            push_operation(
+                &mut parameters,
+                &mut operations,
+                pass_params(
+                    scenario,
+                    body_count,
+                    point_count,
+                    0,
+                    0,
+                    trace_base,
+                    0,
+                    substep,
+                ),
+                PipelineKind::IntegrateVelocity,
+                BufferDirection::AtoB,
+                body_workgroups,
+            );
+        }
+
+        let mut prepare = pass_params(
+            scenario,
+            body_count,
+            point_count,
+            0,
+            0,
+            trace_base,
+            0,
+            substep,
+        );
+        let prepare_pipeline = if mode == GpuSolverMode::SoftStep && substep > 0 {
+            prepare.uints0[2] = 1;
+            prepare.uints0[3] = 1;
+            PipelineKind::Refresh
+        } else {
+            PipelineKind::Prepare
+        };
+        push_operation(
+            &mut parameters,
+            &mut operations,
+            prepare,
+            prepare_pipeline,
+            BufferDirection::AtoB,
+            point_workgroups,
+        );
+        trace_base += point_count as u32;
+
+        candidate_stage(
+            candidate,
+            &mut parameters,
+            &mut operations,
+            pass_params(
+                scenario,
+                body_count,
+                point_count,
+                1,
+                0,
+                trace_base,
+                0,
+                substep,
+            ),
+            PipelineKind::Warm,
+            BufferDirection::AtoB,
+            point_workgroups,
+            body_workgroups,
+            topology,
+        );
+        trace_base += point_count as u32;
+        for iteration in 0..scenario.settings.iterations {
+            candidate_stage(
+                candidate,
+                &mut parameters,
+                &mut operations,
+                pass_params(
+                    scenario,
+                    body_count,
+                    point_count,
+                    2,
+                    iteration,
+                    trace_base,
+                    1,
+                    substep,
+                ),
+                PipelineKind::Normal,
+                BufferDirection::BtoA,
+                point_workgroups,
+                body_workgroups,
+                topology,
+            );
+            trace_base += point_count as u32;
+            candidate_stage(
+                candidate,
+                &mut parameters,
+                &mut operations,
+                pass_params(
+                    scenario,
+                    body_count,
+                    point_count,
+                    3,
+                    iteration,
+                    trace_base,
+                    0,
+                    substep,
+                ),
+                PipelineKind::Tangent,
+                BufferDirection::AtoB,
+                point_workgroups,
+                body_workgroups,
+                topology,
+            );
+            trace_base += point_count as u32;
+        }
+
+        if mode == GpuSolverMode::SoftStep {
+            let integrated_direction = match candidate {
+                GpuSolverCandidate::JacobiGather => BufferDirection::BtoA,
+                GpuSolverCandidate::ColoredSoftTgs => BufferDirection::AtoB,
+            };
+            push_operation(
+                &mut parameters,
+                &mut operations,
+                pass_params(
+                    scenario,
+                    body_count,
+                    point_count,
+                    0,
+                    0,
+                    trace_base,
+                    0,
+                    substep,
+                ),
+                PipelineKind::IntegratePosition,
+                integrated_direction,
+                body_workgroups,
+            );
+            let mut refresh = pass_params(
+                scenario,
+                body_count,
+                point_count,
+                0,
+                0,
+                trace_base,
+                0,
+                substep,
+            );
+            refresh.uints0[2] = 0;
+            refresh.uints0[3] = 0;
+            push_operation(
+                &mut parameters,
+                &mut operations,
+                refresh,
+                PipelineKind::Refresh,
+                integrated_direction,
+                point_workgroups,
+            );
+        }
+
+        candidate_stage(
+            candidate,
+            &mut parameters,
+            &mut operations,
+            pass_params(
+                scenario,
+                body_count,
+                point_count,
+                4,
+                0,
+                trace_base,
+                0,
+                substep,
+            ),
+            PipelineKind::Normal,
+            BufferDirection::BtoA,
+            point_workgroups,
+            body_workgroups,
+            topology,
+        );
+        trace_base += point_count as u32;
+        candidate_stage(
+            candidate,
+            &mut parameters,
+            &mut operations,
+            pass_params(
+                scenario,
+                body_count,
+                point_count,
+                5,
+                0,
+                trace_base,
+                0,
+                substep,
+            ),
+            PipelineKind::Tangent,
+            BufferDirection::AtoB,
+            point_workgroups,
+            body_workgroups,
+            topology,
+        );
+        trace_base += point_count as u32;
+        candidate_stage(
+            candidate,
+            &mut parameters,
+            &mut operations,
+            pass_params(
+                scenario,
+                body_count,
+                point_count,
+                6,
+                0,
+                trace_base,
+                0,
+                substep,
+            ),
+            PipelineKind::Restitution,
+            BufferDirection::BtoA,
+            point_workgroups,
+            body_workgroups,
+            topology,
+        );
+        trace_base += point_count as u32;
+    }
+    (parameters, operations)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn pass_params(
+    scenario: &ScenarioV1,
+    body_count: usize,
+    point_count: usize,
+    stage: u32,
+    iteration: u32,
+    trace_base: u32,
+    use_bias: u32,
+    substep: u32,
+) -> PassParamsRaw {
+    PassParamsRaw {
         floats0: [
             scenario.settings.fixed_dt.get() / scenario.settings.substeps as f32,
             scenario.settings.bias_rate.get(),
             scenario.settings.mass_coefficient.get(),
             scenario.settings.impulse_coefficient.get(),
         ],
-        floats1: [scenario.settings.restitution_threshold.get(), 0.0, 0.0, 0.0],
-        uints0: [
-            body_count as u32,
-            point_count as u32,
-            topology_offset,
-            count,
+        floats1: [
+            scenario.settings.restitution_threshold.get(),
+            scenario.settings.gravity.x,
+            scenario.settings.gravity.y,
+            substep as f32,
         ],
+        uints0: [body_count as u32, point_count as u32, 0, 0],
         uints1: [iteration, stage, trace_base, use_bias],
-    };
-    push_operation(
-        &mut parameters,
-        &mut operations,
-        base(0, 0, trace_base, 0, 0, 0),
-        PipelineKind::Prepare,
-        BufferDirection::AtoB,
-        point_workgroups,
-    );
-    trace_base += point_count as u32;
-    match candidate {
-        GpuSolverCandidate::JacobiGather => {
-            jacobi_stage(
-                &mut parameters,
-                &mut operations,
-                base(1, 0, trace_base, 0, 0, 0),
-                PipelineKind::Warm,
-                BufferDirection::AtoB,
-                point_workgroups,
-                body_workgroups,
-                topology.incident_base,
-            );
-            trace_base += point_count as u32;
-            for iteration in 0..scenario.settings.iterations {
-                jacobi_stage(
-                    &mut parameters,
-                    &mut operations,
-                    base(2, iteration, trace_base, 1, 0, 0),
-                    PipelineKind::Normal,
-                    BufferDirection::BtoA,
-                    point_workgroups,
-                    body_workgroups,
-                    topology.incident_base,
-                );
-                trace_base += point_count as u32;
-                jacobi_stage(
-                    &mut parameters,
-                    &mut operations,
-                    base(3, iteration, trace_base, 0, 0, 0),
-                    PipelineKind::Tangent,
-                    BufferDirection::AtoB,
-                    point_workgroups,
-                    body_workgroups,
-                    topology.incident_base,
-                );
-                trace_base += point_count as u32;
-            }
-            jacobi_stage(
-                &mut parameters,
-                &mut operations,
-                base(4, 0, trace_base, 0, 0, 0),
-                PipelineKind::Normal,
-                BufferDirection::BtoA,
-                point_workgroups,
-                body_workgroups,
-                topology.incident_base,
-            );
-            trace_base += point_count as u32;
-            jacobi_stage(
-                &mut parameters,
-                &mut operations,
-                base(5, 0, trace_base, 0, 0, 0),
-                PipelineKind::Tangent,
-                BufferDirection::AtoB,
-                point_workgroups,
-                body_workgroups,
-                topology.incident_base,
-            );
-            trace_base += point_count as u32;
-            jacobi_stage(
-                &mut parameters,
-                &mut operations,
-                base(6, 0, trace_base, 0, 0, 0),
-                PipelineKind::Restitution,
-                BufferDirection::BtoA,
-                point_workgroups,
-                body_workgroups,
-                topology.incident_base,
-            );
-        }
-        GpuSolverCandidate::ColoredSoftTgs => {
-            colored_stage(
-                &mut parameters,
-                &mut operations,
-                &base,
-                topology.color_base,
-                point_workgroups,
-                1,
-                0,
-                trace_base,
-                0,
-            );
-            trace_base += point_count as u32;
-            for iteration in 0..scenario.settings.iterations {
-                colored_stage(
-                    &mut parameters,
-                    &mut operations,
-                    &base,
-                    topology.color_base,
-                    point_workgroups,
-                    2,
-                    iteration,
-                    trace_base,
-                    1,
-                );
-                trace_base += point_count as u32;
-                colored_stage(
-                    &mut parameters,
-                    &mut operations,
-                    &base,
-                    topology.color_base,
-                    point_workgroups,
-                    3,
-                    iteration,
-                    trace_base,
-                    0,
-                );
-                trace_base += point_count as u32;
-            }
-            colored_stage(
-                &mut parameters,
-                &mut operations,
-                &base,
-                topology.color_base,
-                point_workgroups,
-                4,
-                0,
-                trace_base,
-                0,
-            );
-            trace_base += point_count as u32;
-            colored_stage(
-                &mut parameters,
-                &mut operations,
-                &base,
-                topology.color_base,
-                point_workgroups,
-                5,
-                0,
-                trace_base,
-                0,
-            );
-            trace_base += point_count as u32;
-            colored_stage(
-                &mut parameters,
-                &mut operations,
-                &base,
-                topology.color_base,
-                point_workgroups,
-                6,
-                0,
-                trace_base,
-                0,
-            );
-        }
     }
-    (parameters, operations)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn candidate_stage(
+    candidate: GpuSolverCandidate,
+    parameters: &mut Vec<PassParamsRaw>,
+    operations: &mut Vec<Operation>,
+    parameter: PassParamsRaw,
+    pipeline: PipelineKind,
+    direction: BufferDirection,
+    point_workgroups: u32,
+    body_workgroups: u32,
+    topology: TopologyLayout,
+) {
+    match candidate {
+        GpuSolverCandidate::JacobiGather => jacobi_stage(
+            parameters,
+            operations,
+            parameter,
+            pipeline,
+            direction,
+            point_workgroups,
+            body_workgroups,
+            topology.incident_base,
+        ),
+        GpuSolverCandidate::ColoredSoftTgs => colored_stage(
+            parameters,
+            operations,
+            parameter,
+            topology.color_base,
+            point_workgroups,
+        ),
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -948,19 +1114,18 @@ fn jacobi_stage(
 fn colored_stage(
     parameters: &mut Vec<PassParamsRaw>,
     operations: &mut Vec<Operation>,
-    base: &impl Fn(u32, u32, u32, u32, u32, u32) -> PassParamsRaw,
+    parameter: PassParamsRaw,
     color_base: u32,
     point_workgroups: u32,
-    stage: u32,
-    iteration: u32,
-    trace_base: u32,
-    use_bias: u32,
 ) {
     for color in 0..MAX_COLORS {
+        let mut color_parameter = parameter;
+        color_parameter.uints0[2] = color_base;
+        color_parameter.uints0[3] = color;
         push_operation(
             parameters,
             operations,
-            base(stage, iteration, trace_base, use_bias, color_base, color),
+            color_parameter,
             PipelineKind::Colored,
             BufferDirection::AtoB,
             point_workgroups,
@@ -1043,7 +1208,7 @@ fn trace_record(raw: &TraceRaw) -> Result<TraceRecordV1, String> {
         .collect::<Result<Vec<_>, String>>()?;
     let record = TraceRecordV1 {
         step: 0,
-        substep: 0,
+        substep: raw.tail[1],
         iteration: raw.meta[1],
         stage,
         manifold_id: raw.meta[2],
