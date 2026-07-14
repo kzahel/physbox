@@ -16,6 +16,107 @@ impl Display for ScenarioBuildError {
 
 impl std::error::Error for ScenarioBuildError {}
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AnalyticFixtureKind {
+    CircleFloor,
+    RectangleFloor,
+    BoxOnBox,
+}
+
+pub fn analytic_fixture_scenario(
+    kind: AnalyticFixtureKind,
+    requested_steps: u32,
+) -> Result<ScenarioV1, ScenarioBuildError> {
+    if requested_steps == 0 {
+        return Err(ScenarioBuildError(
+            "analytic fixture requires at least one requested step".to_owned(),
+        ));
+    }
+    let dynamic_id = BodyId {
+        slot: 0,
+        generation: 1,
+    };
+    let fixed_id = BodyId {
+        slot: 1,
+        generation: 1,
+    };
+    let material = MaterialV1 {
+        friction: finite(0.5),
+        restitution: finite(0.0),
+    };
+    let (id, dynamic_shape, dynamic_position, fixed_shape, fixed_position) = match kind {
+        AnalyticFixtureKind::CircleFloor => (
+            "analytic-circle-floor",
+            ShapeV1::Circle {
+                radius: finite(0.5),
+            },
+            Vec2::new(0.0, 1.5),
+            ShapeV1::Rectangle {
+                half_extents: Vec2::new(8.0, 0.25),
+            },
+            Vec2::new(0.0, -0.25),
+        ),
+        AnalyticFixtureKind::RectangleFloor => (
+            "analytic-rectangle-floor",
+            ShapeV1::Rectangle {
+                half_extents: Vec2::new(0.5, 0.5),
+            },
+            Vec2::new(0.0, 1.5),
+            ShapeV1::Rectangle {
+                half_extents: Vec2::new(8.0, 0.25),
+            },
+            Vec2::new(0.0, -0.25),
+        ),
+        AnalyticFixtureKind::BoxOnBox => (
+            "analytic-box-on-box",
+            ShapeV1::Rectangle {
+                half_extents: Vec2::new(0.5, 0.5),
+            },
+            Vec2::new(0.0, 0.99),
+            ShapeV1::Rectangle {
+                half_extents: Vec2::new(0.5, 0.5),
+            },
+            Vec2::ZERO,
+        ),
+    };
+    Ok(ScenarioV1 {
+        schema_version: SCHEMA_VERSION,
+        id: id.to_owned(),
+        seed: 0,
+        requested_steps,
+        settings: default_settings(),
+        bodies: vec![
+            BodyStateV1 {
+                id: dynamic_id,
+                shape: dynamic_shape,
+                position: dynamic_position,
+                angle: finite(0.0),
+                linear_velocity: Vec2::ZERO,
+                angular_velocity: finite(0.0),
+                inverse_mass: finite(1.0),
+                inverse_inertia: finite(2.0),
+                material,
+                sleeping: false,
+            },
+            BodyStateV1 {
+                id: fixed_id,
+                shape: fixed_shape,
+                position: fixed_position,
+                angle: finite(0.0),
+                linear_velocity: Vec2::ZERO,
+                angular_velocity: finite(0.0),
+                inverse_mass: finite(0.0),
+                inverse_inertia: finite(0.0),
+                material,
+                sleeping: false,
+            },
+        ],
+        manifolds: Vec::new(),
+        contact_cache: Vec::new(),
+        actions: Vec::new(),
+    })
+}
+
 pub fn authored_one_contact_scenario(seed: u64) -> ScenarioV1 {
     let mut random = StableRandom::new(seed);
     let horizontal_offset = random.signed(0.18);
@@ -245,5 +346,22 @@ mod tests {
             .unwrap()
             .validate()
             .unwrap();
+    }
+
+    #[test]
+    fn analytic_fixture_scenarios_are_shared_valid_and_replayable() {
+        for kind in [
+            AnalyticFixtureKind::CircleFloor,
+            AnalyticFixtureKind::RectangleFloor,
+            AnalyticFixtureKind::BoxOnBox,
+        ] {
+            let scenario = analytic_fixture_scenario(kind, 120).unwrap();
+            scenario.validate().unwrap();
+            assert_eq!(
+                canonical_json(&scenario).unwrap(),
+                canonical_json(&analytic_fixture_scenario(kind, 120).unwrap()).unwrap()
+            );
+        }
+        assert!(analytic_fixture_scenario(AnalyticFixtureKind::CircleFloor, 0).is_err());
     }
 }

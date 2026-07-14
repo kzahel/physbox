@@ -1,7 +1,7 @@
 # Scalar contact specification
 
-Status: pass equations and analytic baselines implemented, 2026-07-14;
-multi-step fixture contact regeneration is pending in S1.2.
+Status: S1.2 executable pass equations, analytic baselines, and scoped
+multi-step fixture contact regeneration implemented, 2026-07-14.
 
 Governing direction:
 [one GPU-resident 2D physics world](physbox5-unified-gpu-physics.md).
@@ -79,10 +79,10 @@ new_tangent_impulse = clamp(candidate, -limit, limit)
 ```
 
 The relaxation pass repeats normal and tangent projection with no penetration
-bias, `mass_scale = 1`, and `impulse_scale = 0`. The later multi-step fixture
-runner will place position integration between biased solve and relaxation;
-the current captured-pass entry point exposes the equations without claiming a
-complete world step.
+bias, `mass_scale = 1`, and `impulse_scale = 0`. The captured-pass entry point
+exposes these equations directly. The analytic multi-step runner places
+position integration between biased solve and relaxation and refreshes
+separation from the moved body transforms before relaxing.
 
 Restitution is eligible only when material restitution is positive, the
 prepared impact velocity is below the negative configured threshold, and the
@@ -120,6 +120,46 @@ Metamorphic gates cover translation, a quarter-turn rotation, swapped manifold
 orientation under the canonical normal rule, and total linear/angular momentum
 for an isolated frictionless pair. Tests perturb an early trace value and
 require the comparator to identify that exact first divergence.
+
+## Scoped fixture contact regeneration
+
+The shared engine scenario registry owns three neutral analytic families:
+circle/floor, rectangle/floor, and axis-aligned box-on-box. They carry bodies,
+shapes, requested exact step count, and solver settings but no authored
+manifolds. The laboratory generator rebuilds manifolds from those shared bodies
+at every substep, using stable feature identifiers so accumulated impulses can
+warm start across regeneration.
+
+Supported geometry is intentionally exhaustive rather than approximate:
+
+- a circle against an axis-aligned fixed rectangle's top face;
+- an axis-aligned or oriented rectangle against an axis-aligned fixed floor,
+  with two points when flat and one deepest vertex when rotated; and
+- an axis-aligned rectangle pair on the minimum-overlap axis, including
+  vertical and side contact.
+
+Circle/circle, general circle/rectangle, oriented box/box, floor edges, SAT
+clipping, broadphase, and arbitrary feature persistence are rejected or out of
+range; they are not silently approximated. Those belong to P5.2. The fixture
+material projection uses geometric-mean friction and maximum restitution only
+inside this validation generator. It is not a product material-policy
+selection.
+
+An exact fixture step prepares regenerated contacts, integrates gravity,
+warm-starts and solves, integrates positions, refreshes separation, relaxes,
+applies restitution, and stores the next cache. Sleeping input skips gravity
+and integration and is checked for exact no-drift; no sleep or wake policy is
+invented here. Authored manifolds and neutral actions are rejected by this
+entry point so there is no ambiguous ownership.
+
+At the checked 60 Hz, four-substep laboratory inputs, 180-step circle/floor
+settling ends at `y = 0.49999994` with zero vertical velocity. Rectangle/floor
+settling remains within `0.00034` of the support height with less than `0.007`
+linear residual speed. A 60-step sliding fixture reduces horizontal speed from
+`2.0` to approximately `0.00013`. Tests primarily gate deterministic replay,
+exact integration-record count, bounded support/velocity, friction reduction,
+and sleeping no-drift; these observations do not freeze product settings or
+accepted solver quality.
 
 ## Reconsideration triggers
 

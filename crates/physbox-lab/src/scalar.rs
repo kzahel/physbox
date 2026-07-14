@@ -5,6 +5,8 @@ use physbox_contracts::{
     TraceRecordV1, TraceStageV1, TraceValueV1, Validate, Vec2,
 };
 
+use crate::fixture_contacts::generate_fixture_contacts;
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ScalarError(pub String);
 
@@ -48,6 +50,8 @@ struct PreparedContact {
 struct PreparedPoint {
     feature_a: physbox_contracts::FeatureIdV1,
     feature_b: physbox_contracts::FeatureIdV1,
+    local_anchor_a: Vec2,
+    local_anchor_b: Vec2,
     anchor_a: Vec2,
     anchor_b: Vec2,
     separation: f32,
@@ -133,19 +137,112 @@ pub fn solve_authored_contact_pass(
         )?;
     }
 
-    let mut contact_cache = Vec::new();
-    for contact in contacts {
-        let body_a = bodies[contact.body_a].id;
-        let body_b = bodies[contact.body_b].id;
-        for point in contact.points {
-            contact_cache.push(ContactCachePointV1 {
-                body_a,
-                body_b,
-                feature_a: point.feature_a,
-                feature_b: point.feature_b,
-                normal_impulse: finite_result(point.normal_impulse, "cached normal impulse")?,
-                tangent_impulse: finite_result(point.tangent_impulse, "cached tangent impulse")?,
-            });
+    let contact_cache = collect_contact_cache(&contacts, &bodies)?;
+    Ok(ScalarSolveResult {
+        bodies,
+        contact_cache,
+        traces,
+    })
+}
+
+pub fn solve_analytic_fixture_steps(
+    scenario: &ScenarioV1,
+) -> Result<ScalarSolveResult, ScalarError> {
+    scenario
+        .validate()
+        .map_err(|error| ScalarError(error.to_string()))?;
+    if !scenario.manifolds.is_empty() {
+        return Err(ScalarError(
+            "analytic fixture steps regenerate contacts and require an empty authored manifold list"
+                .to_owned(),
+        ));
+    }
+    if !scenario.actions.is_empty() {
+        return Err(ScalarError(
+            "analytic fixture steps do not support actions".to_owned(),
+        ));
+    }
+    let mut bodies = scenario.bodies.clone();
+    let mut contact_cache = scenario.contact_cache.clone();
+    let mut traces = Vec::new();
+    let substep_dt = scenario.settings.fixed_dt.get() / scenario.settings.substeps as f32;
+    for step in 0..scenario.requested_steps {
+        for substep in 0..scenario.settings.substeps {
+            let manifolds = generate_fixture_contacts(&bodies)
+                .map_err(|error| ScalarError(error.to_string()))?;
+            let trace_start = traces.len();
+            let mut contacts = Vec::with_capacity(manifolds.len());
+            for manifold in &manifolds {
+                contacts.push(prepare_contact(
+                    &bodies,
+                    manifold,
+                    &contact_cache,
+                    &mut traces,
+                )?);
+            }
+
+            integrate_velocities(&mut bodies, scenario.settings.gravity, substep_dt)?;
+            for contact in &contacts {
+                warm_start(contact, &mut bodies, &mut traces)?;
+            }
+            for iteration in 0..scenario.settings.iterations {
+                for contact in &mut contacts {
+                    solve_normal(
+                        contact,
+                        &mut bodies,
+                        substep_dt,
+                        scenario.settings.bias_rate.get(),
+                        scenario.settings.mass_coefficient.get(),
+                        scenario.settings.impulse_coefficient.get(),
+                        true,
+                        iteration,
+                        TraceStageV1::NormalSolve,
+                        &mut traces,
+                    )?;
+                    solve_tangent(
+                        contact,
+                        &mut bodies,
+                        iteration,
+                        TraceStageV1::TangentSolve,
+                        &mut traces,
+                    )?;
+                }
+            }
+
+            integrate_positions(&mut bodies, substep_dt, &mut traces)?;
+            refresh_separations(&mut contacts, &bodies);
+            for contact in &mut contacts {
+                solve_normal(
+                    contact,
+                    &mut bodies,
+                    substep_dt,
+                    scenario.settings.bias_rate.get(),
+                    scenario.settings.mass_coefficient.get(),
+                    scenario.settings.impulse_coefficient.get(),
+                    false,
+                    0,
+                    TraceStageV1::Relaxation,
+                    &mut traces,
+                )?;
+                solve_tangent(
+                    contact,
+                    &mut bodies,
+                    0,
+                    TraceStageV1::Relaxation,
+                    &mut traces,
+                )?;
+                apply_restitution(
+                    contact,
+                    &mut bodies,
+                    scenario.settings.restitution_threshold.get(),
+                    &mut traces,
+                )?;
+            }
+            contact_cache = collect_contact_cache(&contacts, &bodies)?;
+            for trace in &mut traces[trace_start..] {
+                trace.step = step;
+                trace.substep = substep;
+            }
         }
     }
     Ok(ScalarSolveResult {
@@ -258,6 +355,8 @@ fn prepare_contact(
         let prepared = PreparedPoint {
             feature_a: point.feature_a,
             feature_b: point.feature_b,
+            local_anchor_a: point.local_anchor_a,
+            local_anchor_b: point.local_anchor_b,
             anchor_a,
             anchor_b,
             separation: point.separation.get(),
@@ -492,6 +591,93 @@ fn apply_restitution(
     Ok(())
 }
 
+fn integrate_velocities(
+    bodies: &mut [BodyStateV1],
+    gravity: Vec2,
+    substep_dt: f32,
+) -> Result<(), ScalarError> {
+    for body in bodies {
+        if body.inverse_mass.get() == 0.0 || body.sleeping {
+            continue;
+        }
+        let velocity = add(body.linear_velocity, scale(gravity, substep_dt));
+        velocity
+            .validate()
+            .map_err(|_| ScalarError("gravity produced a non-finite velocity".to_owned()))?;
+        body.linear_velocity = velocity;
+    }
+    Ok(())
+}
+
+fn integrate_positions(
+    bodies: &mut [BodyStateV1],
+    substep_dt: f32,
+    traces: &mut Vec<TraceRecordV1>,
+) -> Result<(), ScalarError> {
+    for (body_index, body) in bodies.iter_mut().enumerate() {
+        if body.inverse_mass.get() != 0.0 && !body.sleeping {
+            let position = add(body.position, scale(body.linear_velocity, substep_dt));
+            position.validate().map_err(|_| {
+                ScalarError("integration produced a non-finite position".to_owned())
+            })?;
+            body.position = position;
+            body.angle = finite_result(
+                body.angle.get() + substep_dt * body.angular_velocity.get(),
+                "integrated angle",
+            )?;
+        }
+        traces.push(trace(
+            TraceStageV1::Integrate,
+            u32::MAX,
+            body_index,
+            0,
+            vec![
+                ("angle", body.angle.get()),
+                ("angularVelocity", body.angular_velocity.get()),
+                ("positionX", body.position.x),
+                ("positionY", body.position.y),
+                ("velocityX", body.linear_velocity.x),
+                ("velocityY", body.linear_velocity.y),
+            ],
+        )?);
+    }
+    Ok(())
+}
+
+fn refresh_separations(contacts: &mut [PreparedContact], bodies: &[BodyStateV1]) {
+    for contact in contacts {
+        for point in &mut contact.points {
+            let current_anchor_a = rotate(point.local_anchor_a, bodies[contact.body_a].angle.get());
+            let current_anchor_b = rotate(point.local_anchor_b, bodies[contact.body_b].angle.get());
+            let world_a = add(bodies[contact.body_a].position, current_anchor_a);
+            let world_b = add(bodies[contact.body_b].position, current_anchor_b);
+            point.separation = dot(sub(world_b, world_a), contact.normal);
+        }
+    }
+}
+
+fn collect_contact_cache(
+    contacts: &[PreparedContact],
+    bodies: &[BodyStateV1],
+) -> Result<Vec<ContactCachePointV1>, ScalarError> {
+    let mut cache = Vec::new();
+    for contact in contacts {
+        let body_a = bodies[contact.body_a].id;
+        let body_b = bodies[contact.body_b].id;
+        for point in &contact.points {
+            cache.push(ContactCachePointV1 {
+                body_a,
+                body_b,
+                feature_a: point.feature_a,
+                feature_b: point.feature_b,
+                normal_impulse: finite_result(point.normal_impulse, "cached normal impulse")?,
+                tangent_impulse: finite_result(point.tangent_impulse, "cached tangent impulse")?,
+            });
+        }
+    }
+    Ok(cache)
+}
+
 fn apply_pair_impulse(
     bodies: &mut [BodyStateV1],
     index_a: usize,
@@ -683,7 +869,9 @@ fn rotate(vector: Vec2, angle: f32) -> Vec2 {
 #[cfg(test)]
 mod tests {
     use physbox_contracts::{AuthoredContactPointV1, FeatureIdV1, MaterialV1, ShapeV1};
-    use physbox_engine::authored_one_contact_scenario;
+    use physbox_engine::{
+        AnalyticFixtureKind, analytic_fixture_scenario, authored_one_contact_scenario,
+    };
 
     use super::*;
 
@@ -868,6 +1056,102 @@ mod tests {
             .expect("altered trace must diverge");
         assert_eq!(divergence.record_index, 2);
         assert_eq!(divergence.value_name, actual[2].values[0].name);
+    }
+
+    #[test]
+    fn circle_and_rectangle_contacts_regenerate_through_exact_step_counts() {
+        for kind in [
+            AnalyticFixtureKind::CircleFloor,
+            AnalyticFixtureKind::RectangleFloor,
+        ] {
+            let scenario = analytic_fixture_scenario(kind, 180).unwrap();
+            let result = solve_analytic_fixture_steps(&scenario).unwrap();
+            eprintln!(
+                "{kind:?}: position={:?} velocity={:?} angle={} traces={}",
+                result.bodies[0].position,
+                result.bodies[0].linear_velocity,
+                result.bodies[0].angle.get(),
+                result.traces.len()
+            );
+            assert!((0.45..=0.55).contains(&result.bodies[0].position.y));
+            assert!(result.bodies[0].linear_velocity.y.abs() <= 0.1);
+            assert!(
+                result
+                    .traces
+                    .iter()
+                    .any(|trace| trace.stage == TraceStageV1::Prepare)
+            );
+            assert_eq!(
+                result
+                    .traces
+                    .iter()
+                    .filter(|trace| trace.stage == TraceStageV1::Integrate)
+                    .count(),
+                scenario.requested_steps as usize
+                    * scenario.settings.substeps as usize
+                    * scenario.bodies.len()
+            );
+            assert_eq!(
+                result.traces.last().map(|trace| trace.step),
+                Some(scenario.requested_steps - 1)
+            );
+            assert_eq!(result, solve_analytic_fixture_steps(&scenario).unwrap());
+        }
+    }
+
+    #[test]
+    fn sliding_friction_reduces_speed_and_sleeping_input_does_not_drift() {
+        let mut sliding =
+            analytic_fixture_scenario(AnalyticFixtureKind::RectangleFloor, 60).unwrap();
+        sliding.bodies[0].position.y = 0.5;
+        sliding.bodies[0].linear_velocity.x = 2.0;
+        let result = solve_analytic_fixture_steps(&sliding).unwrap();
+        eprintln!(
+            "sliding: position={:?} velocity={:?} angle={}",
+            result.bodies[0].position,
+            result.bodies[0].linear_velocity,
+            result.bodies[0].angle.get()
+        );
+        assert!(result.bodies[0].linear_velocity.x.abs() < 2.0);
+        assert!(result.bodies[0].linear_velocity.x >= -0.05);
+
+        let mut sleeping = analytic_fixture_scenario(AnalyticFixtureKind::CircleFloor, 20).unwrap();
+        sleeping.bodies[0].position.y = 0.5;
+        sleeping.bodies[0].sleeping = true;
+        let result = solve_analytic_fixture_steps(&sleeping).unwrap();
+        assert_eq!(result.bodies[0], sleeping.bodies[0]);
+        assert!(
+            result
+                .traces
+                .iter()
+                .any(|trace| trace.stage == TraceStageV1::Prepare)
+        );
+    }
+
+    #[test]
+    fn fixture_stepper_rejects_authored_manifolds_and_actions() {
+        let mut authored = analytic_fixture_scenario(AnalyticFixtureKind::CircleFloor, 1).unwrap();
+        authored.manifolds = authored_one_contact_scenario(1).manifolds;
+        assert!(
+            solve_analytic_fixture_steps(&authored)
+                .unwrap_err()
+                .0
+                .contains("empty authored manifold")
+        );
+
+        let mut action = analytic_fixture_scenario(AnalyticFixtureKind::CircleFloor, 1).unwrap();
+        action
+            .actions
+            .push(physbox_contracts::NeutralActionV1::SetGravity {
+                step: 0,
+                gravity: Vec2::ZERO,
+            });
+        assert!(
+            solve_analytic_fixture_steps(&action)
+                .unwrap_err()
+                .0
+                .contains("do not support actions")
+        );
     }
 
     fn two_dynamic_scenario() -> ScenarioV1 {

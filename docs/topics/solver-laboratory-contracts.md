@@ -107,6 +107,12 @@ use a versioned fixed integer generator whose seed and complete canonical
 scenario are recorded. Replaying the same `(family, parameters, seed)` must
 produce byte-identical scenario JSON.
 
+The engine also owns the neutral circle/floor, rectangle/floor, and
+box-on-box analytic fixture families. They contain no private contact data;
+the scoped scalar generator projects their shared body state into regenerated
+manifolds. General collision detection remains deferred rather than becoming a
+second fixture source.
+
 The laboratory independently checks finite vectors, equal-and-opposite
 contributions, nonnegative normal impulse, Coulomb tangent projection,
 body-label swap symmetry, and capacity validity. Tests include deliberately

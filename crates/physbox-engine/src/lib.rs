@@ -17,4 +17,7 @@ pub use gpu_context::{AdapterDiagnostics, create_instance};
 pub use renderer::OffscreenRenderer;
 pub use renderer::SurfaceRenderer;
 pub use report::{FrameReport, ScenarioResult, SceneContract};
-pub use scenario::{ScenarioBuildError, authored_chain_scenario, authored_one_contact_scenario};
+pub use scenario::{
+    AnalyticFixtureKind, ScenarioBuildError, analytic_fixture_scenario, authored_chain_scenario,
+    authored_one_contact_scenario,
+};
