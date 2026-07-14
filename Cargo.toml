@@ -9,6 +9,7 @@ members = [
   "crates/physbox-lab",
   "crates/physbox-launch",
   "crates/physbox-shell",
+  "tools/oracles/box2d",
 ]
 resolver = "2"
 
@@ -19,6 +20,7 @@ version = "0.1.0"
 publish = false
 
 [workspace.dependencies]
+bindgen = "0.72.1"
 bytemuck = { version = "1", features = ["derive"] }
 console_error_panic_hook = "0.1"
 form_urlencoded = "1"

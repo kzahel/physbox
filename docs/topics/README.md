@@ -23,6 +23,9 @@ a running log.
 - [Scalar contact specification](scalar-contact-specification.md) — executable
   contact preparation, accumulated impulse, friction, bias, relaxation,
   restitution, trace ordering, and analytic/metamorphic baselines.
+- [Box2D rigid authority](box2d-rigid-authority.md) — clean source pin, frozen
+  deterministic build/world settings, shared process projection, direct public
+  narrowphase, rejection policy, and microscope trigger.
 
 ## Conventions
 

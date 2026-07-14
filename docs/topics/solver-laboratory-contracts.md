@@ -16,8 +16,8 @@ performance tooling. It contains serializable data and validation only: no
 
 Version 1 defines bodies, authored manifolds and contact points, contact-cache
 impulses, solver settings, neutral actions, scenarios, oracle requests and
-results, pass traces, work/timing metrics, capacity records, failures, and
-complete run/build/runtime provenance.
+results (including public narrowphase manifolds), pass traces, work/timing
+metrics, capacity records, failures, and complete run/build/runtime provenance.
 
 ## Canonical bytes and hashes
 

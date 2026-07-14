@@ -41,6 +41,18 @@ if (/<(?:button|nav|aside|header|footer|section|form)\b/i.test(webHtml)) {
 const workspace = await readFile(join(root, "Cargo.toml"), "utf8");
 if (/\brapier\b|physbox-rigid/i.test(workspace)) failures.push("Cargo.toml: inherited CPU rigid backend is forbidden");
 
+const oracleDependency = /physbox-box2d-oracle\s*=/i;
+for (const rootName of ["apps", "crates"]) {
+  for (const path of await files(join(root, rootName))) {
+    if (path.endsWith("Cargo.toml") && oracleDependency.test(await readFile(path, "utf8"))) {
+      failures.push(`${relative(root, path)}: native Box2D oracle dependency is forbidden outside test tooling`);
+    }
+  }
+}
+if (!oracleDependency.test('physbox-box2d-oracle = { path = "../../tools/oracles/box2d" }')) {
+  failures.push("boundary self-test failed: native Box2D oracle dependency");
+}
+
 for (const rule of rules) {
   const negativeFixture = rule.name.includes("WGSL")
     ? "app.create_compute_pipeline();"

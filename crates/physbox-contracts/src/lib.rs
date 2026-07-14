@@ -622,6 +622,7 @@ pub struct OracleResultV1 {
     pub projection_hash: String,
     pub provenance: ProvenanceV1,
     pub bodies: Vec<BodyStateV1>,
+    pub manifolds: Vec<AuthoredManifoldV1>,
     pub traces: Vec<TraceRecordV1>,
     pub metrics: MetricsV1,
     pub failure: Option<FailureV1>,
@@ -640,6 +641,13 @@ impl Validate for OracleResultV1 {
         validate_sorted_unique(self.bodies.iter().map(|body| body.id), "result body ids")?;
         for body in &self.bodies {
             body.validate()?;
+        }
+        validate_sorted_unique(
+            self.manifolds.iter().map(|manifold| manifold.id),
+            "result manifold ids",
+        )?;
+        for manifold in &self.manifolds {
+            manifold.validate()?;
         }
         for trace in &self.traces {
             trace.validate()?;

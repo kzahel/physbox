@@ -81,20 +81,20 @@ Gate: analytic expectations and all invariant fixtures pass without Box2D.
 
 ### S1.3 — Box2D authority and microscope lanes
 
-- [ ] Validate the unmodified source pin with
+- [x] Validate the unmodified source pin with
   `npm run references:status`, then pin the single-threaded Box2D authority
   build and options.
-- [ ] Build a process-isolated native authority executable that links the
+- [x] Build a process-isolated native authority executable that links the
   unmodified library, consumes the shared scenario projection, and emits the
   canonical result schema.
-- [ ] Keep schema parsing and emission in a thin Rust CLI over direct Box2D C
+- [x] Keep schema parsing and emission in a thin Rust CLI over direct Box2D C
   FFI; no engine or app crate may depend on the adapter.
-- [ ] Reject unsupported projection features without approximating them or
+- [x] Reject unsupported projection features without approximating them or
   introducing a second authored format.
-- [ ] Compare public circle/polygon collision manifolds directly, including
+- [x] Compare public circle/polygon collision manifolds directly, including
   the fixture contact generator's manifolds on its supported geometries.
-- [ ] Add the separately identified, patch-digested microscope lane if scalar
-  and public Box2D output cannot localize a failure.
+- [x] Evaluate the microscope trigger; scalar traces and public Box2D output
+  localize the current fixtures, so no patched lane is added.
 - [ ] Produce synchronized scalar/Box2D playback for behavioral fixtures.
 
 Gate: the native authority result is reproducible from recorded provenance and

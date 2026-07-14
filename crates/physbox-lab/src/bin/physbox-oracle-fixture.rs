@@ -87,6 +87,7 @@ fn success_result(
             runtime_settings: Vec::new(),
         },
         bodies: request.scenario.bodies.clone(),
+        manifolds: request.scenario.manifolds.clone(),
         traces: Vec::new(),
         metrics: MetricsV1 {
             work: WorkVectorV1 {
