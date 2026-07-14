@@ -1400,6 +1400,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "physbox-android-gpu-benchmark"
+version = "0.1.0"
+dependencies = [
+ "physbox-contracts",
+ "physbox-engine",
+ "pollster",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "physbox-box2d-benchmark"
 version = "0.1.0"
 dependencies = [

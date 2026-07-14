@@ -162,6 +162,12 @@ Release/SIMD build with fresh atomic artifacts and named one-/four-worker
 settings. Its full-world scope remains distinct from authored-contact GPU
 solver-only timing in the final matrix.
 
+Android has a true headless Vulkan measurement lane for both candidates and
+all four primitives. A 1K-contact/10K-primitive run completed on the
+`jstorrent-tablet` AVD; the connected Pixel 7a remained locked and was rejected
+before execution. The final package must retain both the AVD measurements and
+that physical-device availability state unless a later retry succeeds.
+
 - [x] Minimize randomized failures and promote reproducers into the corpus.
   The initial deterministic 16-seed run covered 32 scenarios and 64 candidate
   executions with zero failures, so it produced no permanent reproducer;

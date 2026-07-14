@@ -11,6 +11,7 @@ members = [
   "crates/physbox-shell",
   "tools/oracles/box2d",
   "tools/benchmarks/box2d",
+  "tools/benchmarks/android-gpu",
 ]
 resolver = "2"
 

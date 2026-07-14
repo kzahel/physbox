@@ -5,6 +5,8 @@
   "scripts": {
     "android:apk": "bash android/build-apk.sh",
     "android:avd": "bash android/validate-avd.sh",
+    "android:benchmark-avd": "bash android/benchmark-gpu.sh --avd",
+    "android:benchmark-device": "bash android/benchmark-gpu.sh --device",
     "android:device": "bash android/validate-device.sh",
     "android:env": "bash android/check-env.sh",
     "build:web": "node scripts/build-web.mjs",

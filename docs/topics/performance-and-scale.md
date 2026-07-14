@@ -330,6 +330,15 @@ capacity records, and has correctness coverage through 30K elements. Primitive
 curve generation and cross-adapter publication remain S1.5 evidence work, not
 an implied production primitive selection.
 
+Android measurement uses a shell-executed native benchmark binary built with
+the maintained NDK toolchain, rather than estimating compute cost from APK
+startup or frame cadence. It calls the same solver and primitive benchmark
+APIs, runs through the target's Vulkan adapter, and records raw GPU timestamp,
+CPU encode/submit, host-completion, dispatch, and capacity samples. The
+`jstorrent-tablet` AVD is the repeatable lane; a connected physical device uses
+the identical binary and protocol. A locked or absent device remains a named
+gap rather than being replaced silently by emulator data.
+
 ## Result validity
 
 A timing result is invalid and excluded from comparisons when any of the
