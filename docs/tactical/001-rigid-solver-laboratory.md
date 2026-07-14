@@ -152,8 +152,10 @@ pass with no simulation-dependent readback.
 Measurement foundation, 2026-07-14: the shared solver now has a trace-free
 benchmark mode with out-of-window state reset, explicit warmup, separate CPU
 encode/submit and host-completion samples, and delayed timestamp-query
-resolution when supported. Matrix generation and its acceptance gates remain
-open below.
+resolution when supported. Engine-owned prefix-scan, stable radix-sort, unique,
+and compaction WGSL primitives use the same protocol and validate complete
+outputs through 30K elements. Matrix generation and its acceptance gates
+remain open below.
 
 - [x] Minimize randomized failures and promote reproducers into the corpus.
   The initial deterministic 16-seed run covered 32 scenarios and 64 candidate

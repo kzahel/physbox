@@ -312,6 +312,14 @@ is explicitly requested, pass-boundary queries are resolved only after the
 final sample, and the timestamp period is retained; otherwise GPU time remains
 explicitly unavailable.
 
+The same measurement path now covers engine-owned portable WGSL primitives:
+a hierarchical exclusive prefix scan, stable four-bit-pass radix sort, ordered
+unique, and predicate compaction. Each primitive validates its complete output
+with one final readback after timing, exposes dispatch and allocated/high-water
+capacity records, and has correctness coverage through 30K elements. Primitive
+curve generation and cross-adapter publication remain S1.5 evidence work, not
+an implied production primitive selection.
+
 ## Result validity
 
 A timing result is invalid and excluded from comparisons when any of the
