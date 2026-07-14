@@ -67,15 +67,15 @@ the exact requested count independent of wall cadence.
 
 ### S1.2 — scalar executable specification
 
-- [ ] Implement contact preparation, effective mass, accumulated normal and
+- [x] Implement contact preparation, effective mass, accumulated normal and
   tangent impulses, restitution, bias, and relaxation in scalar Rust.
-- [ ] Emit pass-level traces that identify the first divergent value.
-- [ ] Check analytic one-contact cases and metamorphic variants.
+- [x] Emit pass-level traces that identify the first divergent value.
+- [x] Check analytic one-contact cases and metamorphic variants.
 - [ ] Implement the scoped analytic fixture contact generator (circle/floor,
   rectangle/floor, axis-aligned box-on-box) so settling, sliding, and sleep
   fixtures can regenerate contacts across fixed steps; it must not grow SAT
   clipping, general feature persistence, or broadphase behavior.
-- [ ] Establish tightly bounded scalar baseline fixtures.
+- [x] Establish tightly bounded scalar baseline fixtures.
 
 Gate: analytic expectations and all invariant fixtures pass without Box2D.
 

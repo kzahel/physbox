@@ -20,6 +20,9 @@ a running log.
 - [Solver laboratory contracts](solver-laboratory-contracts.md) — versioned
   body/manifold/scenario/oracle/trace/metric/capacity/failure schemas,
   canonical JSON, hashes, provenance, and validity rules.
+- [Scalar contact specification](scalar-contact-specification.md) — executable
+  contact preparation, accumulated impulse, friction, bias, relaxation,
+  restitution, trace ordering, and analytic/metamorphic baselines.
 
 ## Conventions
 
@@ -35,7 +38,6 @@ a running log.
   broadening an unrelated document.
 - Add every active topic to this index in the same commit that creates it.
 
-Likely next topics include the scalar contact specification, contact
-persistence and feature identifiers, GPU accumulation strategies, GPU sleeping
-and island-wake strategy, broadphase bake-off results, and
-oracle/failure-artifact schemas.
+Likely next topics include contact persistence and feature identifiers, GPU
+accumulation strategies, GPU sleeping and island-wake strategy, broadphase
+bake-off results, and oracle/failure-artifact schemas.

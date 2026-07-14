@@ -1,0 +1,989 @@
+use std::fmt::{Display, Formatter};
+
+use physbox_contracts::{
+    AuthoredManifoldV1, BodyId, BodyStateV1, ContactCachePointV1, FiniteF32, ScenarioV1,
+    TraceRecordV1, TraceStageV1, TraceValueV1, Validate, Vec2,
+};
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ScalarError(pub String);
+
+impl Display for ScalarError {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for ScalarError {}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ScalarSolveResult {
+    pub bodies: Vec<BodyStateV1>,
+    pub contact_cache: Vec<ContactCachePointV1>,
+    pub traces: Vec<TraceRecordV1>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct TraceDivergence {
+    pub record_index: usize,
+    pub value_name: String,
+    pub expected: Option<f32>,
+    pub actual: Option<f32>,
+    pub reason: String,
+}
+
+#[derive(Clone, Debug)]
+struct PreparedContact {
+    manifold_id: u32,
+    body_a: usize,
+    body_b: usize,
+    normal: Vec2,
+    tangent: Vec2,
+    friction: f32,
+    restitution: f32,
+    points: Vec<PreparedPoint>,
+}
+
+#[derive(Clone, Debug)]
+struct PreparedPoint {
+    feature_a: physbox_contracts::FeatureIdV1,
+    feature_b: physbox_contracts::FeatureIdV1,
+    anchor_a: Vec2,
+    anchor_b: Vec2,
+    separation: f32,
+    normal_mass: f32,
+    tangent_mass: f32,
+    initial_normal_velocity: f32,
+    normal_impulse: f32,
+    tangent_impulse: f32,
+    total_normal_impulse: f32,
+}
+
+pub fn solve_authored_contact_pass(
+    scenario: &ScenarioV1,
+) -> Result<ScalarSolveResult, ScalarError> {
+    scenario
+        .validate()
+        .map_err(|error| ScalarError(error.to_string()))?;
+    let mut bodies = scenario.bodies.clone();
+    let mut traces = Vec::new();
+    let mut contacts = Vec::with_capacity(scenario.manifolds.len());
+    for manifold in &scenario.manifolds {
+        contacts.push(prepare_contact(
+            &bodies,
+            manifold,
+            &scenario.contact_cache,
+            &mut traces,
+        )?);
+    }
+
+    for contact in &contacts {
+        warm_start(contact, &mut bodies, &mut traces)?;
+    }
+    for iteration in 0..scenario.settings.iterations {
+        for contact in &mut contacts {
+            solve_normal(
+                contact,
+                &mut bodies,
+                scenario.settings.fixed_dt.get() / scenario.settings.substeps as f32,
+                scenario.settings.bias_rate.get(),
+                scenario.settings.mass_coefficient.get(),
+                scenario.settings.impulse_coefficient.get(),
+                true,
+                iteration,
+                TraceStageV1::NormalSolve,
+                &mut traces,
+            )?;
+            solve_tangent(
+                contact,
+                &mut bodies,
+                iteration,
+                TraceStageV1::TangentSolve,
+                &mut traces,
+            )?;
+        }
+    }
+    for contact in &mut contacts {
+        solve_normal(
+            contact,
+            &mut bodies,
+            scenario.settings.fixed_dt.get() / scenario.settings.substeps as f32,
+            scenario.settings.bias_rate.get(),
+            scenario.settings.mass_coefficient.get(),
+            scenario.settings.impulse_coefficient.get(),
+            false,
+            0,
+            TraceStageV1::Relaxation,
+            &mut traces,
+        )?;
+        solve_tangent(
+            contact,
+            &mut bodies,
+            0,
+            TraceStageV1::Relaxation,
+            &mut traces,
+        )?;
+    }
+    for contact in &mut contacts {
+        apply_restitution(
+            contact,
+            &mut bodies,
+            scenario.settings.restitution_threshold.get(),
+            &mut traces,
+        )?;
+    }
+
+    let mut contact_cache = Vec::new();
+    for contact in contacts {
+        let body_a = bodies[contact.body_a].id;
+        let body_b = bodies[contact.body_b].id;
+        for point in contact.points {
+            contact_cache.push(ContactCachePointV1 {
+                body_a,
+                body_b,
+                feature_a: point.feature_a,
+                feature_b: point.feature_b,
+                normal_impulse: finite_result(point.normal_impulse, "cached normal impulse")?,
+                tangent_impulse: finite_result(point.tangent_impulse, "cached tangent impulse")?,
+            });
+        }
+    }
+    Ok(ScalarSolveResult {
+        bodies,
+        contact_cache,
+        traces,
+    })
+}
+
+pub fn first_trace_divergence(
+    expected: &[TraceRecordV1],
+    actual: &[TraceRecordV1],
+    absolute_tolerance: f32,
+    relative_tolerance: f32,
+) -> Option<TraceDivergence> {
+    let count = expected.len().max(actual.len());
+    for record_index in 0..count {
+        let Some(expected_record) = expected.get(record_index) else {
+            return Some(structural_divergence(
+                record_index,
+                "unexpected actual record",
+            ));
+        };
+        let Some(actual_record) = actual.get(record_index) else {
+            return Some(structural_divergence(record_index, "missing actual record"));
+        };
+        if trace_identity(expected_record) != trace_identity(actual_record) {
+            return Some(structural_divergence(
+                record_index,
+                "trace record identity differs",
+            ));
+        }
+        if expected_record.values.len() != actual_record.values.len() {
+            return Some(structural_divergence(
+                record_index,
+                "trace value count differs",
+            ));
+        }
+        for (expected_value, actual_value) in
+            expected_record.values.iter().zip(&actual_record.values)
+        {
+            if expected_value.name != actual_value.name {
+                return Some(structural_divergence(
+                    record_index,
+                    "trace value name differs",
+                ));
+            }
+            let expected_number = expected_value.value.get();
+            let actual_number = actual_value.value.get();
+            let tolerance = absolute_tolerance
+                + relative_tolerance * expected_number.abs().max(actual_number.abs());
+            if (expected_number - actual_number).abs() > tolerance {
+                return Some(TraceDivergence {
+                    record_index,
+                    value_name: expected_value.name.clone(),
+                    expected: Some(expected_number),
+                    actual: Some(actual_number),
+                    reason: format!(
+                        "value differs by more than absolute {absolute_tolerance} plus relative {relative_tolerance}"
+                    ),
+                });
+            }
+        }
+    }
+    None
+}
+
+fn prepare_contact(
+    bodies: &[BodyStateV1],
+    manifold: &AuthoredManifoldV1,
+    cache: &[ContactCachePointV1],
+    traces: &mut Vec<TraceRecordV1>,
+) -> Result<PreparedContact, ScalarError> {
+    let body_a = find_body(bodies, manifold.body_a)?;
+    let body_b = find_body(bodies, manifold.body_b)?;
+    if body_a == body_b {
+        return Err(ScalarError(format!(
+            "manifold {} references the same body twice",
+            manifold.id
+        )));
+    }
+    let normal = manifold.normal;
+    let tangent = right_perpendicular(normal);
+    let mut points = Vec::with_capacity(manifold.points.len());
+    for (point_index, point) in manifold.points.iter().enumerate() {
+        let anchor_a = rotate(point.local_anchor_a, bodies[body_a].angle.get());
+        let anchor_b = rotate(point.local_anchor_b, bodies[body_b].angle.get());
+        let normal_mass =
+            effective_mass(&bodies[body_a], &bodies[body_b], anchor_a, anchor_b, normal);
+        let tangent_mass = effective_mass(
+            &bodies[body_a],
+            &bodies[body_b],
+            anchor_a,
+            anchor_b,
+            tangent,
+        );
+        let initial_normal_velocity = dot(
+            sub(
+                point_velocity(&bodies[body_b], anchor_b),
+                point_velocity(&bodies[body_a], anchor_a),
+            ),
+            normal,
+        );
+        let cached = cache.iter().find(|cached| {
+            cached.body_a == manifold.body_a
+                && cached.body_b == manifold.body_b
+                && cached.feature_a == point.feature_a
+                && cached.feature_b == point.feature_b
+        });
+        let prepared = PreparedPoint {
+            feature_a: point.feature_a,
+            feature_b: point.feature_b,
+            anchor_a,
+            anchor_b,
+            separation: point.separation.get(),
+            normal_mass,
+            tangent_mass,
+            initial_normal_velocity,
+            normal_impulse: cached.map_or(0.0, |cached| cached.normal_impulse.get()),
+            tangent_impulse: cached.map_or(0.0, |cached| cached.tangent_impulse.get()),
+            total_normal_impulse: 0.0,
+        };
+        traces.push(trace(
+            TraceStageV1::Prepare,
+            manifold.id,
+            point_index,
+            0,
+            vec![
+                ("anchorAX", anchor_a.x),
+                ("anchorAY", anchor_a.y),
+                ("anchorBX", anchor_b.x),
+                ("anchorBY", anchor_b.y),
+                ("initialNormalVelocity", initial_normal_velocity),
+                ("normalMass", normal_mass),
+                ("separation", prepared.separation),
+                ("tangentMass", tangent_mass),
+            ],
+        )?);
+        points.push(prepared);
+    }
+    Ok(PreparedContact {
+        manifold_id: manifold.id,
+        body_a,
+        body_b,
+        normal,
+        tangent,
+        friction: manifold.material.friction.get(),
+        restitution: manifold.material.restitution.get(),
+        points,
+    })
+}
+
+fn warm_start(
+    contact: &PreparedContact,
+    bodies: &mut [BodyStateV1],
+    traces: &mut Vec<TraceRecordV1>,
+) -> Result<(), ScalarError> {
+    for (point_index, point) in contact.points.iter().enumerate() {
+        let impulse = add(
+            scale(contact.normal, point.normal_impulse),
+            scale(contact.tangent, point.tangent_impulse),
+        );
+        apply_pair_impulse(
+            bodies,
+            contact.body_a,
+            contact.body_b,
+            point.anchor_a,
+            point.anchor_b,
+            impulse,
+        )?;
+        traces.push(trace(
+            TraceStageV1::WarmStart,
+            contact.manifold_id,
+            point_index,
+            0,
+            vec![
+                ("appliedImpulseX", impulse.x),
+                ("appliedImpulseY", impulse.y),
+                ("normalImpulse", point.normal_impulse),
+                ("tangentImpulse", point.tangent_impulse),
+            ],
+        )?);
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn solve_normal(
+    contact: &mut PreparedContact,
+    bodies: &mut [BodyStateV1],
+    substep_dt: f32,
+    bias_rate: f32,
+    configured_mass_scale: f32,
+    configured_impulse_scale: f32,
+    use_bias: bool,
+    iteration: u32,
+    stage: TraceStageV1,
+    traces: &mut Vec<TraceRecordV1>,
+) -> Result<(), ScalarError> {
+    for (point_index, point) in contact.points.iter_mut().enumerate() {
+        let normal_velocity = relative_velocity(
+            bodies,
+            contact.body_a,
+            contact.body_b,
+            point.anchor_a,
+            point.anchor_b,
+            contact.normal,
+        );
+        let (velocity_bias, mass_scale, impulse_scale) = if point.separation > 0.0 {
+            (point.separation / substep_dt, 1.0, 0.0)
+        } else if use_bias {
+            (
+                bias_rate * point.separation / substep_dt,
+                configured_mass_scale,
+                configured_impulse_scale,
+            )
+        } else {
+            (0.0, 1.0, 0.0)
+        };
+        let old_impulse = point.normal_impulse;
+        let candidate = -point.normal_mass * (mass_scale * normal_velocity + velocity_bias)
+            - impulse_scale * old_impulse;
+        point.normal_impulse = (old_impulse + candidate).max(0.0);
+        let applied_impulse = point.normal_impulse - old_impulse;
+        point.total_normal_impulse += applied_impulse.max(0.0);
+        apply_pair_impulse(
+            bodies,
+            contact.body_a,
+            contact.body_b,
+            point.anchor_a,
+            point.anchor_b,
+            scale(contact.normal, applied_impulse),
+        )?;
+        traces.push(trace(
+            stage.clone(),
+            contact.manifold_id,
+            point_index,
+            iteration,
+            vec![
+                ("appliedNormalImpulse", applied_impulse),
+                ("impulseScale", impulse_scale),
+                ("massScale", mass_scale),
+                ("normalImpulse", point.normal_impulse),
+                ("normalVelocity", normal_velocity),
+                ("velocityBias", velocity_bias),
+            ],
+        )?);
+    }
+    Ok(())
+}
+
+fn solve_tangent(
+    contact: &mut PreparedContact,
+    bodies: &mut [BodyStateV1],
+    iteration: u32,
+    stage: TraceStageV1,
+    traces: &mut Vec<TraceRecordV1>,
+) -> Result<(), ScalarError> {
+    for (point_index, point) in contact.points.iter_mut().enumerate() {
+        let tangent_velocity = relative_velocity(
+            bodies,
+            contact.body_a,
+            contact.body_b,
+            point.anchor_a,
+            point.anchor_b,
+            contact.tangent,
+        );
+        let old_impulse = point.tangent_impulse;
+        let maximum = contact.friction * point.normal_impulse;
+        point.tangent_impulse =
+            (old_impulse - point.tangent_mass * tangent_velocity).clamp(-maximum, maximum);
+        let applied_impulse = point.tangent_impulse - old_impulse;
+        apply_pair_impulse(
+            bodies,
+            contact.body_a,
+            contact.body_b,
+            point.anchor_a,
+            point.anchor_b,
+            scale(contact.tangent, applied_impulse),
+        )?;
+        traces.push(trace(
+            stage.clone(),
+            contact.manifold_id,
+            point_index,
+            iteration,
+            vec![
+                ("appliedTangentImpulse", applied_impulse),
+                ("frictionLimit", maximum),
+                ("tangentImpulse", point.tangent_impulse),
+                ("tangentVelocity", tangent_velocity),
+            ],
+        )?);
+    }
+    Ok(())
+}
+
+fn apply_restitution(
+    contact: &mut PreparedContact,
+    bodies: &mut [BodyStateV1],
+    threshold: f32,
+    traces: &mut Vec<TraceRecordV1>,
+) -> Result<(), ScalarError> {
+    for (point_index, point) in contact.points.iter_mut().enumerate() {
+        let normal_velocity = relative_velocity(
+            bodies,
+            contact.body_a,
+            contact.body_b,
+            point.anchor_a,
+            point.anchor_b,
+            contact.normal,
+        );
+        let old_impulse = point.normal_impulse;
+        let eligible = contact.restitution > 0.0
+            && point.initial_normal_velocity < -threshold
+            && point.total_normal_impulse > 0.0;
+        if eligible {
+            let candidate = -point.normal_mass
+                * (normal_velocity + contact.restitution * point.initial_normal_velocity);
+            point.normal_impulse = (old_impulse + candidate).max(0.0);
+        }
+        let applied_impulse = point.normal_impulse - old_impulse;
+        apply_pair_impulse(
+            bodies,
+            contact.body_a,
+            contact.body_b,
+            point.anchor_a,
+            point.anchor_b,
+            scale(contact.normal, applied_impulse),
+        )?;
+        traces.push(trace(
+            TraceStageV1::Restitution,
+            contact.manifold_id,
+            point_index,
+            0,
+            vec![
+                ("appliedRestitutionImpulse", applied_impulse),
+                ("eligible", if eligible { 1.0 } else { 0.0 }),
+                ("initialNormalVelocity", point.initial_normal_velocity),
+                ("normalImpulse", point.normal_impulse),
+                ("normalVelocity", normal_velocity),
+            ],
+        )?);
+    }
+    Ok(())
+}
+
+fn apply_pair_impulse(
+    bodies: &mut [BodyStateV1],
+    index_a: usize,
+    index_b: usize,
+    anchor_a: Vec2,
+    anchor_b: Vec2,
+    impulse: Vec2,
+) -> Result<(), ScalarError> {
+    let (body_a, body_b) = body_pair_mut(bodies, index_a, index_b);
+    let velocity_a = sub(
+        body_a.linear_velocity,
+        scale(impulse, body_a.inverse_mass.get()),
+    );
+    let angular_a =
+        body_a.angular_velocity.get() - body_a.inverse_inertia.get() * cross(anchor_a, impulse);
+    let velocity_b = add(
+        body_b.linear_velocity,
+        scale(impulse, body_b.inverse_mass.get()),
+    );
+    let angular_b =
+        body_b.angular_velocity.get() + body_b.inverse_inertia.get() * cross(anchor_b, impulse);
+    velocity_a
+        .validate()
+        .map_err(|_| ScalarError("contact impulse produced non-finite velocity A".to_owned()))?;
+    velocity_b
+        .validate()
+        .map_err(|_| ScalarError("contact impulse produced non-finite velocity B".to_owned()))?;
+    body_a.linear_velocity = velocity_a;
+    body_a.angular_velocity = finite_result(angular_a, "angular velocity A")?;
+    body_b.linear_velocity = velocity_b;
+    body_b.angular_velocity = finite_result(angular_b, "angular velocity B")?;
+    Ok(())
+}
+
+fn body_pair_mut(
+    bodies: &mut [BodyStateV1],
+    index_a: usize,
+    index_b: usize,
+) -> (&mut BodyStateV1, &mut BodyStateV1) {
+    if index_a < index_b {
+        let (left, right) = bodies.split_at_mut(index_b);
+        (&mut left[index_a], &mut right[0])
+    } else {
+        let (left, right) = bodies.split_at_mut(index_a);
+        (&mut right[0], &mut left[index_b])
+    }
+}
+
+fn relative_velocity(
+    bodies: &[BodyStateV1],
+    body_a: usize,
+    body_b: usize,
+    anchor_a: Vec2,
+    anchor_b: Vec2,
+    axis: Vec2,
+) -> f32 {
+    dot(
+        sub(
+            point_velocity(&bodies[body_b], anchor_b),
+            point_velocity(&bodies[body_a], anchor_a),
+        ),
+        axis,
+    )
+}
+
+fn point_velocity(body: &BodyStateV1, anchor: Vec2) -> Vec2 {
+    add(
+        body.linear_velocity,
+        cross_scalar_vector(body.angular_velocity.get(), anchor),
+    )
+}
+
+fn effective_mass(
+    body_a: &BodyStateV1,
+    body_b: &BodyStateV1,
+    anchor_a: Vec2,
+    anchor_b: Vec2,
+    axis: Vec2,
+) -> f32 {
+    let cross_a = cross(anchor_a, axis);
+    let cross_b = cross(anchor_b, axis);
+    let inverse = body_a.inverse_mass.get()
+        + body_b.inverse_mass.get()
+        + body_a.inverse_inertia.get() * cross_a * cross_a
+        + body_b.inverse_inertia.get() * cross_b * cross_b;
+    if inverse > 0.0 { 1.0 / inverse } else { 0.0 }
+}
+
+fn find_body(bodies: &[BodyStateV1], id: BodyId) -> Result<usize, ScalarError> {
+    bodies
+        .binary_search_by_key(&id, |body| body.id)
+        .map_err(|_| ScalarError(format!("manifold references missing body {id:?}")))
+}
+
+fn trace(
+    stage: TraceStageV1,
+    manifold_id: u32,
+    point_index: usize,
+    iteration: u32,
+    mut values: Vec<(&str, f32)>,
+) -> Result<TraceRecordV1, ScalarError> {
+    values.sort_unstable_by_key(|(name, _)| *name);
+    let record = TraceRecordV1 {
+        step: 0,
+        substep: 0,
+        iteration,
+        stage,
+        manifold_id,
+        point_index: point_index as u32,
+        values: values
+            .into_iter()
+            .map(|(name, value)| {
+                Ok(TraceValueV1 {
+                    name: name.to_owned(),
+                    value: finite_result(value, name)?,
+                    bits: value.to_bits(),
+                })
+            })
+            .collect::<Result<Vec<_>, ScalarError>>()?,
+    };
+    record
+        .validate()
+        .map_err(|error| ScalarError(error.to_string()))?;
+    Ok(record)
+}
+
+fn trace_identity(record: &TraceRecordV1) -> (u32, u32, u32, &TraceStageV1, u32, u32) {
+    (
+        record.step,
+        record.substep,
+        record.iteration,
+        &record.stage,
+        record.manifold_id,
+        record.point_index,
+    )
+}
+
+fn structural_divergence(record_index: usize, reason: &str) -> TraceDivergence {
+    TraceDivergence {
+        record_index,
+        value_name: "<structure>".to_owned(),
+        expected: None,
+        actual: None,
+        reason: reason.to_owned(),
+    }
+}
+
+fn finite_result(value: f32, name: &str) -> Result<FiniteF32, ScalarError> {
+    FiniteF32::new(value)
+        .map_err(|_| ScalarError(format!("scalar {name} produced a non-finite value")))
+}
+
+fn add(a: Vec2, b: Vec2) -> Vec2 {
+    Vec2::new(a.x + b.x, a.y + b.y)
+}
+
+fn sub(a: Vec2, b: Vec2) -> Vec2 {
+    Vec2::new(a.x - b.x, a.y - b.y)
+}
+
+fn scale(a: Vec2, scalar: f32) -> Vec2 {
+    Vec2::new(a.x * scalar, a.y * scalar)
+}
+
+fn dot(a: Vec2, b: Vec2) -> f32 {
+    a.x * b.x + a.y * b.y
+}
+
+fn cross(a: Vec2, b: Vec2) -> f32 {
+    a.x * b.y - a.y * b.x
+}
+
+fn cross_scalar_vector(scalar: f32, vector: Vec2) -> Vec2 {
+    Vec2::new(-scalar * vector.y, scalar * vector.x)
+}
+
+fn right_perpendicular(vector: Vec2) -> Vec2 {
+    Vec2::new(vector.y, -vector.x)
+}
+
+fn rotate(vector: Vec2, angle: f32) -> Vec2 {
+    let (sin, cos) = angle.sin_cos();
+    Vec2::new(
+        cos * vector.x - sin * vector.y,
+        sin * vector.x + cos * vector.y,
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use physbox_contracts::{AuthoredContactPointV1, FeatureIdV1, MaterialV1, ShapeV1};
+    use physbox_engine::authored_one_contact_scenario;
+
+    use super::*;
+
+    fn finite(value: f32) -> FiniteF32 {
+        FiniteF32::new(value).unwrap()
+    }
+
+    #[test]
+    fn central_frictionless_impact_has_analytic_impulse_and_effective_mass() {
+        let mut scenario = authored_one_contact_scenario(7);
+        scenario.manifolds[0].material.friction = finite(0.0);
+        scenario.manifolds[0].material.restitution = finite(0.0);
+        scenario.bodies[0].linear_velocity = Vec2::new(0.0, -2.0);
+        let result = solve_authored_contact_pass(&scenario).unwrap();
+        assert_close(result.bodies[0].linear_velocity.y, 0.0);
+        assert_eq!(
+            result.contact_cache[0].normal_impulse.get().to_bits(),
+            2.0f32.to_bits()
+        );
+        assert_eq!(
+            trace_value(&result.traces[0], "normalMass").to_bits(),
+            1.0f32.to_bits()
+        );
+    }
+
+    #[test]
+    fn friction_projects_the_accumulated_tangent_impulse() {
+        let mut scenario = authored_one_contact_scenario(7);
+        scenario.manifolds[0].material.restitution = finite(0.0);
+        scenario.bodies[0].linear_velocity = Vec2::new(2.0, -2.0);
+        let result = solve_authored_contact_pass(&scenario).unwrap();
+        assert_close(result.contact_cache[0].normal_impulse.get(), 2.0);
+        assert_close(result.contact_cache[0].tangent_impulse.get(), -1.0);
+        assert_close(result.bodies[0].linear_velocity.x, 1.0);
+    }
+
+    #[test]
+    fn restitution_uses_the_pre_solve_impact_velocity_and_threshold() {
+        let mut scenario = authored_one_contact_scenario(7);
+        scenario.manifolds[0].material.friction = finite(0.0);
+        scenario.manifolds[0].material.restitution = finite(0.5);
+        scenario.bodies[0].linear_velocity = Vec2::new(0.0, -4.0);
+        let result = solve_authored_contact_pass(&scenario).unwrap();
+        assert_close(result.bodies[0].linear_velocity.y, 2.0);
+
+        scenario.settings.restitution_threshold = finite(5.0);
+        let below_threshold = solve_authored_contact_pass(&scenario).unwrap();
+        assert_close(below_threshold.bodies[0].linear_velocity.y, 0.0);
+    }
+
+    #[test]
+    fn separating_speculative_contact_generates_no_normal_impulse() {
+        let mut scenario = authored_one_contact_scenario(7);
+        scenario.manifolds[0].material.restitution = finite(0.0);
+        scenario.manifolds[0].points[0].separation = finite(0.1);
+        scenario.bodies[0].linear_velocity = Vec2::new(0.0, 1.0);
+        let result = solve_authored_contact_pass(&scenario).unwrap();
+        assert_eq!(result.contact_cache[0].normal_impulse.get(), 0.0);
+        assert_eq!(result.bodies[0].linear_velocity.y, 1.0);
+    }
+
+    #[test]
+    fn off_center_effective_mass_includes_rotational_response() {
+        let mut scenario = authored_one_contact_scenario(7);
+        scenario.manifolds[0].points[0].local_anchor_a = Vec2::new(1.0, 0.0);
+        scenario.bodies[0].inverse_inertia = finite(2.0);
+        let result = solve_authored_contact_pass(&scenario).unwrap();
+        assert_eq!(
+            trace_value(&result.traces[0], "normalMass").to_bits(),
+            (1.0f32 / 3.0).to_bits()
+        );
+    }
+
+    #[test]
+    fn bias_relaxation_and_warm_start_have_explicit_pass_baselines() {
+        let mut biased = authored_one_contact_scenario(7);
+        biased.manifolds[0].material.restitution = finite(0.0);
+        biased.manifolds[0].points[0].separation = finite(-0.01);
+        biased.bodies[0].linear_velocity = Vec2::ZERO;
+        let result = solve_authored_contact_pass(&biased).unwrap();
+        assert_close(trace_value(&result.traces[2], "velocityBias"), -0.48);
+        assert_close(trace_value(&result.traces[2], "appliedNormalImpulse"), 0.48);
+        assert_close(
+            trace_value(&result.traces[4], "appliedNormalImpulse"),
+            -0.48,
+        );
+
+        let mut warm = authored_one_contact_scenario(7);
+        warm.manifolds[0].material.restitution = finite(0.0);
+        warm.bodies[0].linear_velocity = Vec2::new(0.0, -2.0);
+        warm.contact_cache = vec![ContactCachePointV1 {
+            body_a: warm.manifolds[0].body_a,
+            body_b: warm.manifolds[0].body_b,
+            feature_a: warm.manifolds[0].points[0].feature_a,
+            feature_b: warm.manifolds[0].points[0].feature_b,
+            normal_impulse: finite(1.0),
+            tangent_impulse: finite(0.0),
+        }];
+        warm.settings.mass_coefficient = finite(0.5);
+        warm.settings.impulse_coefficient = finite(0.25);
+        let result = solve_authored_contact_pass(&warm).unwrap();
+        assert_close(trace_value(&result.traces[1], "normalImpulse"), 1.0);
+        assert_close(trace_value(&result.traces[2], "massScale"), 0.5);
+        assert_close(trace_value(&result.traces[2], "impulseScale"), 0.25);
+        assert_close(result.contact_cache[0].normal_impulse.get(), 2.0);
+    }
+
+    #[test]
+    fn finite_input_that_overflows_scalar_math_is_a_diagnosed_error() {
+        let mut scenario = authored_one_contact_scenario(7);
+        scenario.bodies[0].angular_velocity = finite(f32::MAX);
+        scenario.manifolds[0].points[0].local_anchor_a = Vec2::new(f32::MAX, 0.0);
+        let error = solve_authored_contact_pass(&scenario).unwrap_err();
+        assert!(error.0.contains("non-finite"));
+    }
+
+    #[test]
+    fn translation_rotation_and_normal_convention_are_metamorphic() {
+        let mut scenario = two_dynamic_scenario();
+        let original = solve_authored_contact_pass(&scenario).unwrap();
+
+        for body in &mut scenario.bodies {
+            body.position = add(body.position, Vec2::new(17.0, -9.0));
+        }
+        scenario.manifolds[0].points[0].world_point = add(
+            scenario.manifolds[0].points[0].world_point,
+            Vec2::new(17.0, -9.0),
+        );
+        let translated = solve_authored_contact_pass(&scenario).unwrap();
+        assert_eq!(original.contact_cache, translated.contact_cache);
+        assert_eq!(
+            original.bodies[0].linear_velocity,
+            translated.bodies[0].linear_velocity
+        );
+        assert_eq!(
+            original.bodies[1].linear_velocity,
+            translated.bodies[1].linear_velocity
+        );
+
+        let swapped = swap_manifold_orientation(&scenario);
+        let swapped_result = solve_authored_contact_pass(&swapped).unwrap();
+        for (expected, actual) in original.bodies.iter().zip(&swapped_result.bodies) {
+            assert_vec_close(expected.linear_velocity, actual.linear_velocity);
+            assert_close(
+                expected.angular_velocity.get(),
+                actual.angular_velocity.get(),
+            );
+        }
+
+        let rotated = rotate_scenario_quarter_turn(&scenario);
+        let rotated_result = solve_authored_contact_pass(&rotated).unwrap();
+        for (expected, actual) in translated.bodies.iter().zip(&rotated_result.bodies) {
+            assert_vec_close(
+                quarter_turn(expected.linear_velocity),
+                actual.linear_velocity,
+            );
+            assert_close(
+                expected.angular_velocity.get(),
+                actual.angular_velocity.get(),
+            );
+        }
+    }
+
+    #[test]
+    fn isolated_frictionless_contact_conserves_linear_and_angular_momentum() {
+        let scenario = two_dynamic_scenario();
+        let before_linear = linear_momentum(&scenario.bodies);
+        let before_angular = angular_momentum(&scenario.bodies);
+        let result = solve_authored_contact_pass(&scenario).unwrap();
+        assert_vec_close(before_linear, linear_momentum(&result.bodies));
+        assert_close(before_angular, angular_momentum(&result.bodies));
+    }
+
+    #[test]
+    fn first_divergence_names_the_earliest_pass_value() {
+        let result = solve_authored_contact_pass(&authored_one_contact_scenario(9)).unwrap();
+        let mut actual = result.traces.clone();
+        let value = &mut actual[2].values[0];
+        value.value = finite(value.value.get() + 0.25);
+        value.bits = value.value.get().to_bits();
+        let divergence = first_trace_divergence(&result.traces, &actual, 1.0e-6, 1.0e-6)
+            .expect("altered trace must diverge");
+        assert_eq!(divergence.record_index, 2);
+        assert_eq!(divergence.value_name, actual[2].values[0].name);
+    }
+
+    fn two_dynamic_scenario() -> ScenarioV1 {
+        let mut scenario = authored_one_contact_scenario(3);
+        scenario.bodies[0].shape = ShapeV1::Circle {
+            radius: finite(0.5),
+        };
+        scenario.bodies[0].position = Vec2::new(-0.5, 0.0);
+        scenario.bodies[0].linear_velocity = Vec2::new(2.0, 0.0);
+        scenario.bodies[0].inverse_mass = finite(0.5);
+        scenario.bodies[0].inverse_inertia = finite(1.0);
+        scenario.bodies[1].shape = ShapeV1::Circle {
+            radius: finite(0.5),
+        };
+        scenario.bodies[1].position = Vec2::new(0.5, 0.0);
+        scenario.bodies[1].linear_velocity = Vec2::new(-1.0, 0.0);
+        scenario.bodies[1].inverse_mass = finite(1.0);
+        scenario.bodies[1].inverse_inertia = finite(2.0);
+        let material = MaterialV1 {
+            friction: finite(0.0),
+            restitution: finite(0.0),
+        };
+        scenario.manifolds = vec![AuthoredManifoldV1 {
+            id: 0,
+            body_a: scenario.bodies[0].id,
+            body_b: scenario.bodies[1].id,
+            normal: Vec2::new(1.0, 0.0),
+            material,
+            points: vec![AuthoredContactPointV1 {
+                local_anchor_a: Vec2::new(0.5, 0.0),
+                local_anchor_b: Vec2::new(-0.5, 0.0),
+                world_point: Vec2::ZERO,
+                separation: finite(0.0),
+                feature_a: FeatureIdV1 {
+                    feature_type: 0,
+                    feature_index: 0,
+                },
+                feature_b: FeatureIdV1 {
+                    feature_type: 0,
+                    feature_index: 0,
+                },
+            }],
+        }];
+        scenario.contact_cache.clear();
+        scenario
+    }
+
+    fn swap_manifold_orientation(scenario: &ScenarioV1) -> ScenarioV1 {
+        let mut swapped = scenario.clone();
+        let manifold = &mut swapped.manifolds[0];
+        std::mem::swap(&mut manifold.body_a, &mut manifold.body_b);
+        manifold.normal = scale(manifold.normal, -1.0);
+        for point in &mut manifold.points {
+            std::mem::swap(&mut point.local_anchor_a, &mut point.local_anchor_b);
+            std::mem::swap(&mut point.feature_a, &mut point.feature_b);
+        }
+        swapped
+    }
+
+    fn rotate_scenario_quarter_turn(scenario: &ScenarioV1) -> ScenarioV1 {
+        let mut rotated = scenario.clone();
+        for body in &mut rotated.bodies {
+            body.position = quarter_turn(body.position);
+            body.angle = finite(body.angle.get() + std::f32::consts::FRAC_PI_2);
+            body.linear_velocity = quarter_turn(body.linear_velocity);
+        }
+        for manifold in &mut rotated.manifolds {
+            manifold.normal = quarter_turn(manifold.normal);
+            for point in &mut manifold.points {
+                point.world_point = quarter_turn(point.world_point);
+            }
+        }
+        rotated
+    }
+
+    fn quarter_turn(vector: Vec2) -> Vec2 {
+        Vec2::new(-vector.y, vector.x)
+    }
+
+    fn linear_momentum(bodies: &[BodyStateV1]) -> Vec2 {
+        bodies.iter().fold(Vec2::ZERO, |sum, body| {
+            add(
+                sum,
+                scale(body.linear_velocity, 1.0 / body.inverse_mass.get()),
+            )
+        })
+    }
+
+    fn angular_momentum(bodies: &[BodyStateV1]) -> f32 {
+        bodies.iter().fold(0.0, |sum, body| {
+            let mass = 1.0 / body.inverse_mass.get();
+            let inertia = 1.0 / body.inverse_inertia.get();
+            sum + inertia * body.angular_velocity.get()
+                + cross(body.position, scale(body.linear_velocity, mass))
+        })
+    }
+
+    fn trace_value(record: &TraceRecordV1, name: &str) -> f32 {
+        record
+            .values
+            .iter()
+            .find(|value| value.name == name)
+            .unwrap()
+            .value
+            .get()
+    }
+
+    fn assert_vec_close(actual: Vec2, expected: Vec2) {
+        assert_close(actual.x, expected.x);
+        assert_close(actual.y, expected.y);
+    }
+
+    fn assert_close(actual: f32, expected: f32) {
+        assert!(
+            (actual - expected).abs() <= 2.0e-5,
+            "actual {actual} expected {expected}"
+        );
+    }
+}
