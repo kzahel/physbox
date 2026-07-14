@@ -108,13 +108,18 @@ now executes both candidate equations in portable WGSL. The Jacobi lane emits
 one shared impulse and equal-and-opposite body records before a body gather;
 the colored lane applies disjoint contact batches in place. Both match the
 scalar trace for the isolated-contact corpus and replay a 64-body chain
-deterministically with explicit dispatch and allocation records. The
-checklist remains open: this equation-isolation slice still supplies authored
-adjacency and colors during setup, and does not yet prove GPU-owned topology,
-fixed bounded conflict failure, cross-host execution, or the full evidence
-matrix.
+deterministically with explicit dispatch and allocation records.
 
-- [ ] Implement contact-centric Jacobi with equal-and-opposite contribution
+GPU topology evidence, 2026-07-14: integer-atomic count, prefix, and scatter
+passes now construct the Jacobi body incidence on the GPU. A deterministic GPU
+greedy pass assigns a fixed 32-color schedule without reading the color count
+to advance the solve. A 33-edge shared-body fixture proves that the colored
+lane reports capacity overflow and preserves the failure instead of dropping
+the conflict, while the gather lane accepts the same topology. The remaining
+S1.4 work is the full substep/fixed-step candidate exercise and shared
+cross-host corpus.
+
+- [x] Implement contact-centric Jacobi with equal-and-opposite contribution
   records and per-body gather.
 - [ ] Implement graph-colored or disjoint-batch Soft-TGS without CPU-driven
   convergence or silently dropped conflicts.

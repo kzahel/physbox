@@ -62,8 +62,44 @@ fn authored_chain_runs_both_accumulation_architectures_without_overflow() {
         capacity_is_valid(&first.capacities).unwrap();
         if candidate == GpuSolverCandidate::ColoredSoftTgs {
             assert!(first.color_count >= 2);
+            assert_eq!(first.contact_colors.len(), 63);
+            assert!(first.contact_colors.iter().all(|color| *color < 32));
+            assert!(
+                first
+                    .contact_colors
+                    .windows(2)
+                    .all(|colors| colors[0] != colors[1])
+            );
+        } else {
+            assert!(first.contact_colors.is_empty());
         }
     }
+}
+
+#[test]
+fn bounded_gpu_coloring_reports_high_degree_overflow_without_harming_gather() {
+    let mut scenario = authored_chain_scenario(34, 117).unwrap();
+    let center = scenario.bodies[0].id;
+    for (index, manifold) in scenario.manifolds.iter_mut().enumerate() {
+        manifold.body_a = center;
+        manifold.body_b = scenario.bodies[index + 1].id;
+    }
+
+    let jacobi = pollster::block_on(run_gpu_solver_case(
+        &scenario,
+        GpuSolverCandidate::JacobiGather,
+    ))
+    .unwrap();
+    capacity_is_valid(&jacobi.capacities).unwrap();
+
+    let colored = pollster::block_on(run_gpu_solver_case(
+        &scenario,
+        GpuSolverCandidate::ColoredSoftTgs,
+    ))
+    .unwrap();
+    assert_eq!(colored.color_count, 32);
+    assert_eq!(colored.contact_colors.last(), Some(&u32::MAX));
+    assert!(capacity_is_valid(&colored.capacities).is_err());
 }
 
 fn assert_close(expected: f32, actual: f32) {

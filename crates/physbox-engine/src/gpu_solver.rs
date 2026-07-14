@@ -1,4 +1,4 @@
-use std::{collections::BTreeSet, mem::size_of, sync::mpsc};
+use std::{mem::size_of, sync::mpsc};
 
 use bytemuck::{Pod, Zeroable};
 use physbox_contracts::{
@@ -11,6 +11,7 @@ use crate::gpu_context::{AdapterDiagnostics, create_instance, request_adapter, r
 
 const WORKGROUP_SIZE: u32 = 64;
 const PARAMETER_STRIDE: usize = 256;
+const MAX_COLORS: u32 = 32;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum GpuSolverCandidate {
@@ -47,6 +48,7 @@ pub struct GpuSolverOutput {
     pub capacities: Vec<CapacityRecordV1>,
     pub dispatches: u32,
     pub color_count: u32,
+    pub contact_colors: Vec<u32>,
 }
 
 #[repr(C)]
@@ -117,6 +119,11 @@ struct PassParamsRaw {
 
 #[derive(Clone, Copy)]
 enum PipelineKind {
+    TopologyClear,
+    TopologyCount,
+    TopologyPrefix,
+    TopologyScatter,
+    TopologyColor,
     Prepare,
     Warm,
     Normal,
@@ -146,13 +153,73 @@ struct PointIdentity {
     feature_b: FeatureIdV1,
 }
 
+#[derive(Clone, Copy)]
+struct TopologyLayout {
+    incident_base: u32,
+    cursor_base: u32,
+    color_base: u32,
+    color_mask_base: u32,
+    status_index: u32,
+    color_count_index: u32,
+    element_count: u32,
+}
+
+impl TopologyLayout {
+    fn new(body_count: usize, point_count: usize) -> Result<Self, String> {
+        let body_count = u32::try_from(body_count)
+            .map_err(|_| "GPU solver body count exceeds u32".to_owned())?;
+        let point_count = u32::try_from(point_count)
+            .map_err(|_| "GPU solver point count exceeds u32".to_owned())?;
+        let incident_base = body_count
+            .checked_mul(2)
+            .ok_or_else(|| "GPU topology body records overflow u32".to_owned())?;
+        let cursor_base = incident_base
+            .checked_add(
+                point_count
+                    .checked_mul(2)
+                    .ok_or_else(|| "GPU topology incidents overflow u32".to_owned())?,
+            )
+            .ok_or_else(|| "GPU topology incident range overflows u32".to_owned())?;
+        let color_base = cursor_base
+            .checked_add(body_count)
+            .ok_or_else(|| "GPU topology cursors overflow u32".to_owned())?;
+        let color_mask_base = color_base
+            .checked_add(point_count)
+            .ok_or_else(|| "GPU topology colors overflow u32".to_owned())?;
+        let status_index = color_mask_base
+            .checked_add(body_count)
+            .ok_or_else(|| "GPU topology masks overflow u32".to_owned())?;
+        let color_count_index = status_index
+            .checked_add(1)
+            .ok_or_else(|| "GPU topology status overflows u32".to_owned())?;
+        let element_count = color_count_index
+            .checked_add(1)
+            .ok_or_else(|| "GPU topology element count overflows u32".to_owned())?;
+        Ok(Self {
+            incident_base,
+            cursor_base,
+            color_base,
+            color_mask_base,
+            status_index,
+            color_count_index,
+            element_count,
+        })
+    }
+}
+
 struct GpuSolverLab {
     body_a: wgpu::Buffer,
     prepared: wgpu::Buffer,
     contributions: wgpu::Buffer,
+    topology: wgpu::Buffer,
     traces: wgpu::Buffer,
     bind_ab: wgpu::BindGroup,
     bind_ba: wgpu::BindGroup,
+    topology_clear_pipeline: wgpu::ComputePipeline,
+    topology_count_pipeline: wgpu::ComputePipeline,
+    topology_prefix_pipeline: wgpu::ComputePipeline,
+    topology_scatter_pipeline: wgpu::ComputePipeline,
+    topology_color_pipeline: wgpu::ComputePipeline,
     prepare_pipeline: wgpu::ComputePipeline,
     warm_pipeline: wgpu::ComputePipeline,
     normal_pipeline: wgpu::ComputePipeline,
@@ -165,7 +232,7 @@ struct GpuSolverLab {
     body_count: usize,
     point_count: usize,
     trace_count: usize,
-    color_count: u32,
+    topology_layout: TopologyLayout,
     capacity_records: Vec<CapacityRecordV1>,
 }
 
@@ -181,16 +248,14 @@ impl GpuSolverLab {
         if points.is_empty() {
             return Err("GPU solver laboratory requires authored contact points".to_owned());
         }
-        let colors = graph_colors(&points, bodies.len());
-        let (topology, incident_base, color_ranges) = topology(&points, bodies.len(), &colors);
+        let topology_layout = TopologyLayout::new(bodies.len(), points.len())?;
         let trace_count = points.len() * (5 + 2 * scenario.settings.iterations as usize);
         let (parameters, operations) = operations(
             candidate,
             scenario,
             points.len(),
             bodies.len(),
-            incident_base,
-            &color_ranges,
+            topology_layout,
         );
 
         let body_a = storage_init(
@@ -219,11 +284,11 @@ impl GpuSolverLab {
             points.len() * 2,
             true,
         );
-        let topology_buffer = storage_init(
+        let topology = storage_empty::<u32>(
             device,
             "solver_topology",
-            bytemuck::cast_slice(&topology),
-            false,
+            topology_layout.element_count as usize,
+            true,
         );
         let traces = storage_empty::<TraceRaw>(device, "solver_traces", trace_count, true);
         let mut parameter_bytes = vec![0_u8; parameters.len() * PARAMETER_STRIDE];
@@ -246,7 +311,7 @@ impl GpuSolverLab {
                 storage_entry(2, true),
                 storage_entry(3, false),
                 storage_entry(4, false),
-                storage_entry(5, true),
+                storage_entry(5, false),
                 storage_entry(6, false),
                 wgpu::BindGroupLayoutEntry {
                     binding: 7,
@@ -269,7 +334,7 @@ impl GpuSolverLab {
             &point_buffer,
             &prepared,
             &contributions,
-            &topology_buffer,
+            &topology,
             &traces,
             &parameter_buffer,
         );
@@ -282,7 +347,7 @@ impl GpuSolverLab {
             &point_buffer,
             &prepared,
             &contributions,
-            &topology_buffer,
+            &topology,
             &traces,
             &parameter_buffer,
         );
@@ -309,16 +374,22 @@ impl GpuSolverLab {
             bodies.len(),
             points.len(),
             operations.len(),
-            topology.len(),
+            topology_layout.element_count as usize,
             trace_count,
         );
         Ok(Self {
             body_a,
             prepared,
             contributions,
+            topology,
             traces,
             bind_ab,
             bind_ba,
+            topology_clear_pipeline: pipeline("solver_topology_clear", "clear_topology"),
+            topology_count_pipeline: pipeline("solver_topology_count", "count_edges"),
+            topology_prefix_pipeline: pipeline("solver_topology_prefix", "prefix_edges"),
+            topology_scatter_pipeline: pipeline("solver_topology_scatter", "scatter_edges"),
+            topology_color_pipeline: pipeline("solver_topology_color", "color_contacts"),
             prepare_pipeline: pipeline("solver_prepare", "prepare"),
             warm_pipeline: pipeline("solver_warm", "emit_warm"),
             normal_pipeline: pipeline("solver_normal", "emit_normal"),
@@ -331,7 +402,7 @@ impl GpuSolverLab {
             body_count: bodies.len(),
             point_count: points.len(),
             trace_count,
-            color_count: colors.len() as u32,
+            topology_layout,
             capacity_records,
         })
     }
@@ -343,6 +414,11 @@ impl GpuSolverLab {
         });
         for operation in &self.operations {
             pass.set_pipeline(match operation.pipeline {
+                PipelineKind::TopologyClear => &self.topology_clear_pipeline,
+                PipelineKind::TopologyCount => &self.topology_count_pipeline,
+                PipelineKind::TopologyPrefix => &self.topology_prefix_pipeline,
+                PipelineKind::TopologyScatter => &self.topology_scatter_pipeline,
+                PipelineKind::TopologyColor => &self.topology_color_pipeline,
                 PipelineKind::Prepare => &self.prepare_pipeline,
                 PipelineKind::Warm => &self.warm_pipeline,
                 PipelineKind::Normal => &self.normal_pipeline,
@@ -369,10 +445,12 @@ impl GpuSolverLab {
         let prepared_bytes = self.point_count * size_of::<PreparedPointRaw>();
         let contribution_bytes = self.point_count * 2 * size_of::<ContributionRaw>();
         let trace_bytes = self.trace_count * size_of::<TraceRaw>();
+        let topology_bytes = self.topology_layout.element_count as usize * size_of::<u32>();
         let prepared_offset = body_bytes;
         let contribution_offset = prepared_offset + prepared_bytes;
         let trace_offset = contribution_offset + contribution_bytes;
-        let total = trace_offset + trace_bytes;
+        let topology_offset = trace_offset + trace_bytes;
+        let total = topology_offset + topology_bytes;
         let buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("solver_readback"),
             size: total as u64,
@@ -401,11 +479,19 @@ impl GpuSolverLab {
             trace_offset as u64,
             trace_bytes as u64,
         );
+        encoder.copy_buffer_to_buffer(
+            &self.topology,
+            0,
+            &buffer,
+            topology_offset as u64,
+            topology_bytes as u64,
+        );
         Readback {
             buffer,
             prepared_offset,
             contribution_offset,
             trace_offset,
+            topology_offset,
             total,
         }
     }
@@ -416,6 +502,7 @@ struct Readback {
     prepared_offset: usize,
     contribution_offset: usize,
     trace_offset: usize,
+    topology_offset: usize,
     total: usize,
 }
 
@@ -456,7 +543,11 @@ pub async fn run_gpu_solver_case(
         bytemuck::cast_slice(&mapped[readback.prepared_offset..readback.contribution_offset]);
     let contribution_raw: &[ContributionRaw] =
         bytemuck::cast_slice(&mapped[readback.contribution_offset..readback.trace_offset]);
-    let trace_raw: &[TraceRaw] = bytemuck::cast_slice(&mapped[readback.trace_offset..]);
+    let trace_raw: &[TraceRaw] =
+        bytemuck::cast_slice(&mapped[readback.trace_offset..readback.topology_offset]);
+    let topology_raw: &[u32] = bytemuck::cast_slice(&mapped[readback.topology_offset..]);
+    let topology_overflowed = topology_raw[lab.topology_layout.status_index as usize] != 0;
+    let color_count = topology_raw[lab.topology_layout.color_count_index as usize];
     let mut bodies = scenario.bodies.clone();
     for (body, raw) in bodies.iter_mut().zip(body_raw) {
         body.position = Vec2::new(raw.position[0], raw.position[1]);
@@ -481,6 +572,7 @@ pub async fn run_gpu_solver_case(
         .collect::<Result<Vec<_>, String>>()?;
     let traces = trace_raw
         .iter()
+        .filter(|trace| !topology_overflowed || trace.tail[0] != 0)
         .map(trace_record)
         .collect::<Result<Vec<_>, _>>()?;
     let contributions = if candidate == GpuSolverCandidate::JacobiGather {
@@ -497,6 +589,18 @@ pub async fn run_gpu_solver_case(
     } else {
         Vec::new()
     };
+    let contact_colors = if candidate == GpuSolverCandidate::ColoredSoftTgs {
+        let start = lab.topology_layout.color_base as usize;
+        topology_raw[start..start + lab.point_count].to_vec()
+    } else {
+        Vec::new()
+    };
+    let mut capacities = lab.capacity_records;
+    capacities
+        .iter_mut()
+        .find(|record| record.class == "topology")
+        .expect("GPU solver topology capacity is recorded")
+        .overflowed = topology_overflowed;
     drop(mapped);
     readback.buffer.unmap();
     Ok(GpuSolverOutput {
@@ -506,9 +610,10 @@ pub async fn run_gpu_solver_case(
         contact_cache,
         traces,
         contributions,
-        capacities: lab.capacity_records,
+        capacities,
         dispatches: lab.operations.len() as u32,
-        color_count: lab.color_count,
+        color_count,
+        contact_colors,
     })
 }
 
@@ -524,6 +629,12 @@ fn point_inputs(scenario: &ScenarioV1) -> Result<(Vec<PointInputRaw>, Vec<PointI
             .bodies
             .binary_search_by_key(&manifold.body_b, |body| body.id)
             .map_err(|_| format!("missing manifold body {:?}", manifold.body_b))?;
+        if body_a == body_b {
+            return Err(format!(
+                "manifold {} references the same body twice",
+                manifold.id
+            ));
+        }
         for (point_index, point) in manifold.points.iter().enumerate() {
             let cached = scenario.contact_cache.iter().find(|cached| {
                 cached.body_a == manifold.body_a
@@ -565,71 +676,58 @@ fn point_inputs(scenario: &ScenarioV1) -> Result<(Vec<PointInputRaw>, Vec<PointI
     Ok((points, identities))
 }
 
-fn graph_colors(points: &[PointInputRaw], body_count: usize) -> Vec<Vec<u32>> {
-    let mut colors: Vec<(Vec<u32>, BTreeSet<u32>)> = Vec::new();
-    for (point_index, point) in points.iter().enumerate() {
-        let color = colors.iter().position(|(_, bodies)| {
-            !bodies.contains(&point.ids[0]) && !bodies.contains(&point.ids[1])
-        });
-        let color = color.unwrap_or_else(|| {
-            colors.push((Vec::new(), BTreeSet::new()));
-            colors.len() - 1
-        });
-        colors[color].0.push(point_index as u32);
-        colors[color].1.insert(point.ids[0]);
-        colors[color].1.insert(point.ids[1]);
-    }
-    debug_assert!(
-        points
-            .iter()
-            .all(|point| point.ids[0] < body_count as u32 && point.ids[1] < body_count as u32)
-    );
-    colors.into_iter().map(|(points, _)| points).collect()
-}
-
-fn topology(
-    points: &[PointInputRaw],
-    body_count: usize,
-    colors: &[Vec<u32>],
-) -> (Vec<u32>, u32, Vec<(u32, u32)>) {
-    let mut incidents = vec![Vec::new(); body_count];
-    for (point_index, point) in points.iter().enumerate() {
-        incidents[point.ids[0] as usize].push((point_index * 2) as u32);
-        incidents[point.ids[1] as usize].push((point_index * 2 + 1) as u32);
-    }
-    let incident_base = (body_count * 2) as u32;
-    let mut output = Vec::with_capacity(body_count * 2 + points.len() * 2 + points.len());
-    let mut start = 0_u32;
-    for body in &incidents {
-        output.push(start);
-        output.push(body.len() as u32);
-        start += body.len() as u32;
-    }
-    for body in incidents {
-        output.extend(body);
-    }
-    let mut ranges = Vec::new();
-    for color in colors {
-        let offset = output.len() as u32;
-        output.extend(color);
-        ranges.push((offset, color.len() as u32));
-    }
-    (output, incident_base, ranges)
-}
-
 fn operations(
     candidate: GpuSolverCandidate,
     scenario: &ScenarioV1,
     point_count: usize,
     body_count: usize,
-    incident_base: u32,
-    color_ranges: &[(u32, u32)],
+    topology: TopologyLayout,
 ) -> (Vec<PassParamsRaw>, Vec<Operation>) {
     let mut parameters = Vec::new();
     let mut operations = Vec::new();
     let point_workgroups = workgroups(point_count);
     let body_workgroups = workgroups(body_count);
     let mut trace_base = 0_u32;
+    let topology_parameter = PassParamsRaw {
+        floats0: [0.0; 4],
+        floats1: [0.0; 4],
+        uints0: [
+            body_count as u32,
+            point_count as u32,
+            topology.incident_base,
+            topology.cursor_base,
+        ],
+        uints1: [
+            topology.color_base,
+            topology.color_mask_base,
+            topology.status_index,
+            topology.element_count,
+        ],
+    };
+    let mut topology_operation = |pipeline, dispatches| {
+        push_operation(
+            &mut parameters,
+            &mut operations,
+            topology_parameter,
+            pipeline,
+            BufferDirection::AtoB,
+            dispatches,
+        );
+    };
+    topology_operation(
+        PipelineKind::TopologyClear,
+        workgroups(topology.element_count as usize),
+    );
+    match candidate {
+        GpuSolverCandidate::JacobiGather => {
+            topology_operation(PipelineKind::TopologyCount, point_workgroups);
+            topology_operation(PipelineKind::TopologyPrefix, 1);
+            topology_operation(PipelineKind::TopologyScatter, point_workgroups);
+        }
+        GpuSolverCandidate::ColoredSoftTgs => {
+            topology_operation(PipelineKind::TopologyColor, 1);
+        }
+    }
     let base = |stage, iteration, trace_base, use_bias, topology_offset, count| PassParamsRaw {
         floats0: [
             scenario.settings.fixed_dt.get() / scenario.settings.substeps as f32,
@@ -665,7 +763,7 @@ fn operations(
                 BufferDirection::AtoB,
                 point_workgroups,
                 body_workgroups,
-                incident_base,
+                topology.incident_base,
             );
             trace_base += point_count as u32;
             for iteration in 0..scenario.settings.iterations {
@@ -677,7 +775,7 @@ fn operations(
                     BufferDirection::BtoA,
                     point_workgroups,
                     body_workgroups,
-                    incident_base,
+                    topology.incident_base,
                 );
                 trace_base += point_count as u32;
                 jacobi_stage(
@@ -688,7 +786,7 @@ fn operations(
                     BufferDirection::AtoB,
                     point_workgroups,
                     body_workgroups,
-                    incident_base,
+                    topology.incident_base,
                 );
                 trace_base += point_count as u32;
             }
@@ -700,7 +798,7 @@ fn operations(
                 BufferDirection::BtoA,
                 point_workgroups,
                 body_workgroups,
-                incident_base,
+                topology.incident_base,
             );
             trace_base += point_count as u32;
             jacobi_stage(
@@ -711,7 +809,7 @@ fn operations(
                 BufferDirection::AtoB,
                 point_workgroups,
                 body_workgroups,
-                incident_base,
+                topology.incident_base,
             );
             trace_base += point_count as u32;
             jacobi_stage(
@@ -722,7 +820,7 @@ fn operations(
                 BufferDirection::BtoA,
                 point_workgroups,
                 body_workgroups,
-                incident_base,
+                topology.incident_base,
             );
         }
         GpuSolverCandidate::ColoredSoftTgs => {
@@ -730,7 +828,8 @@ fn operations(
                 &mut parameters,
                 &mut operations,
                 &base,
-                color_ranges,
+                topology.color_base,
+                point_workgroups,
                 1,
                 0,
                 trace_base,
@@ -742,7 +841,8 @@ fn operations(
                     &mut parameters,
                     &mut operations,
                     &base,
-                    color_ranges,
+                    topology.color_base,
+                    point_workgroups,
                     2,
                     iteration,
                     trace_base,
@@ -753,7 +853,8 @@ fn operations(
                     &mut parameters,
                     &mut operations,
                     &base,
-                    color_ranges,
+                    topology.color_base,
+                    point_workgroups,
                     3,
                     iteration,
                     trace_base,
@@ -765,7 +866,8 @@ fn operations(
                 &mut parameters,
                 &mut operations,
                 &base,
-                color_ranges,
+                topology.color_base,
+                point_workgroups,
                 4,
                 0,
                 trace_base,
@@ -776,7 +878,8 @@ fn operations(
                 &mut parameters,
                 &mut operations,
                 &base,
-                color_ranges,
+                topology.color_base,
+                point_workgroups,
                 5,
                 0,
                 trace_base,
@@ -787,7 +890,8 @@ fn operations(
                 &mut parameters,
                 &mut operations,
                 &base,
-                color_ranges,
+                topology.color_base,
+                point_workgroups,
                 6,
                 0,
                 trace_base,
@@ -834,20 +938,21 @@ fn colored_stage(
     parameters: &mut Vec<PassParamsRaw>,
     operations: &mut Vec<Operation>,
     base: &impl Fn(u32, u32, u32, u32, u32, u32) -> PassParamsRaw,
-    color_ranges: &[(u32, u32)],
+    color_base: u32,
+    point_workgroups: u32,
     stage: u32,
     iteration: u32,
     trace_base: u32,
     use_bias: u32,
 ) {
-    for &(offset, count) in color_ranges {
+    for color in 0..MAX_COLORS {
         push_operation(
             parameters,
             operations,
-            base(stage, iteration, trace_base, use_bias, offset, count),
+            base(stage, iteration, trace_base, use_bias, color_base, color),
             PipelineKind::Colored,
             BufferDirection::AtoB,
-            workgroups(count as usize),
+            point_workgroups,
         );
     }
 }

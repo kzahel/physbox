@@ -57,7 +57,7 @@ struct PassParams {
 @group(0) @binding(2) var<storage, read> point_inputs: array<PointInput>;
 @group(0) @binding(3) var<storage, read_write> prepared_points: array<PreparedPoint>;
 @group(0) @binding(4) var<storage, read_write> contributions: array<Contribution>;
-@group(0) @binding(5) var<storage, read> topology: array<u32>;
+@group(0) @binding(5) var<storage, read_write> topology: array<atomic<u32>>;
 @group(0) @binding(6) var<storage, read_write> traces: array<Trace>;
 @group(0) @binding(7) var<uniform> params: PassParams;
 
@@ -117,6 +117,70 @@ fn apply_impulse(body: Body, signed_impulse: vec2f, anchor: vec2f) -> Body {
     output.linear_velocity += signed_impulse * body.inverse_mass;
     output.angular_velocity += body.inverse_inertia * cross(anchor, signed_impulse);
     return output;
+}
+
+@compute @workgroup_size(64)
+fn clear_topology(@builtin(global_invocation_id) id: vec3u) {
+    if (id.x >= params.uints1.w) { return; }
+    atomicStore(&topology[id.x], 0u);
+}
+
+@compute @workgroup_size(64)
+fn count_edges(@builtin(global_invocation_id) id: vec3u) {
+    let point_index = id.x;
+    if (point_index >= params.uints0.y) { return; }
+    let point = point_inputs[point_index];
+    atomicAdd(&topology[point.ids.x * 2u + 1u], 1u);
+    atomicAdd(&topology[point.ids.y * 2u + 1u], 1u);
+}
+
+@compute @workgroup_size(1)
+fn prefix_edges(@builtin(global_invocation_id) id: vec3u) {
+    if (id.x != 0u) { return; }
+    var running = 0u;
+    for (var body = 0u; body < params.uints0.x; body += 1u) {
+        let count = atomicLoad(&topology[body * 2u + 1u]);
+        atomicStore(&topology[body * 2u], running);
+        atomicStore(&topology[params.uints0.w + body], running);
+        running += count;
+    }
+}
+
+@compute @workgroup_size(64)
+fn scatter_edges(@builtin(global_invocation_id) id: vec3u) {
+    let point_index = id.x;
+    if (point_index >= params.uints0.y) { return; }
+    let point = point_inputs[point_index];
+    let slot_a = atomicAdd(&topology[params.uints0.w + point.ids.x], 1u);
+    let slot_b = atomicAdd(&topology[params.uints0.w + point.ids.y], 1u);
+    atomicStore(&topology[params.uints0.z + slot_a], point_index * 2u);
+    atomicStore(&topology[params.uints0.z + slot_b], point_index * 2u + 1u);
+}
+
+@compute @workgroup_size(1)
+fn color_contacts(@builtin(global_invocation_id) id: vec3u) {
+    if (id.x != 0u) { return; }
+    var color_count = 0u;
+    for (var point_index = 0u; point_index < params.uints0.y; point_index += 1u) {
+        let point = point_inputs[point_index];
+        let used = atomicLoad(&topology[params.uints1.y + point.ids.x]) |
+                   atomicLoad(&topology[params.uints1.y + point.ids.y]);
+        var color = 0u;
+        while (color < 32u && (used & (1u << color)) != 0u) {
+            color += 1u;
+        }
+        if (color == 32u) {
+            atomicStore(&topology[params.uints1.x + point_index], 0xffffffffu);
+            atomicStore(&topology[params.uints1.z], 1u);
+        } else {
+            let color_bit = 1u << color;
+            atomicStore(&topology[params.uints1.x + point_index], color);
+            atomicOr(&topology[params.uints1.y + point.ids.x], color_bit);
+            atomicOr(&topology[params.uints1.y + point.ids.y], color_bit);
+            color_count = max(color_count, color + 1u);
+        }
+    }
+    atomicStore(&topology[params.uints1.z + 1u], color_count);
 }
 
 @compute @workgroup_size(64)
@@ -237,10 +301,11 @@ fn gather(@builtin(global_invocation_id) id: vec3u) {
     let body_index = id.x;
     if (body_index >= params.uints0.x) { return; }
     var body = bodies_source[body_index];
-    let start = topology[body_index * 2u];
-    let count = topology[body_index * 2u + 1u];
+    let start = atomicLoad(&topology[body_index * 2u]);
+    let count = atomicLoad(&topology[body_index * 2u + 1u]);
     for (var index = 0u; index < count; index += 1u) {
-        let contribution = contributions[topology[params.uints1.w + start + index]];
+        let contribution_index = atomicLoad(&topology[params.uints1.w + start + index]);
+        let contribution = contributions[contribution_index];
         body = apply_impulse(body, contribution.impulse, contribution.anchor);
     }
     bodies_destination[body_index] = body;
@@ -248,8 +313,9 @@ fn gather(@builtin(global_invocation_id) id: vec3u) {
 
 @compute @workgroup_size(64)
 fn colored_stage(@builtin(global_invocation_id) id: vec3u) {
-    if (id.x >= params.uints0.w) { return; }
-    let point_index = topology[params.uints0.z + id.x];
+    let point_index = id.x;
+    if (point_index >= params.uints0.y ||
+        atomicLoad(&topology[params.uints0.z + point_index]) != params.uints0.w) { return; }
     var point = prepared_points[point_index];
     var body_a = bodies_source[point.ids.x];
     var body_b = bodies_source[point.ids.y];
