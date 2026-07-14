@@ -93,6 +93,7 @@ fn effective_mass(body_a: Body, body_b: Body, anchor_a: vec2f,
 
 fn write_trace(index: u32, stage: u32, iteration: u32, point: PreparedPoint,
                values0: vec4f, values1: vec4f, value_count: u32) {
+    if (params.floats1.w < 0.0) { return; }
     traces[index].identity = vec4u(stage, iteration, point.ids.z, point.ids.w);
     traces[index].values0 = values0;
     traces[index].values1 = values1;

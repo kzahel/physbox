@@ -75,10 +75,17 @@ pub(crate) async fn request_adapter(
 pub(crate) async fn request_device(
     adapter: &wgpu::Adapter,
 ) -> Result<(wgpu::Device, wgpu::Queue), String> {
+    request_device_with_features(adapter, wgpu::Features::empty()).await
+}
+
+pub(crate) async fn request_device_with_features(
+    adapter: &wgpu::Adapter,
+    required_features: wgpu::Features,
+) -> Result<(wgpu::Device, wgpu::Queue), String> {
     adapter
         .request_device(&wgpu::DeviceDescriptor {
             label: Some("physbox5_device"),
-            required_features: wgpu::Features::empty(),
+            required_features,
             required_limits: wgpu::Limits::default().using_resolution(adapter.limits()),
             ..Default::default()
         })

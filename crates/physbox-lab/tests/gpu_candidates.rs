@@ -1,6 +1,6 @@
 use physbox_engine::{
     GpuSolverCandidate, authored_chain_scenario, authored_one_contact_scenario,
-    run_gpu_soft_step_case, run_gpu_solver_case,
+    benchmark_gpu_soft_step_case, run_gpu_soft_step_case, run_gpu_solver_case,
 };
 use physbox_lab::{
     capacity_is_valid, equal_and_opposite,
@@ -130,6 +130,56 @@ fn soft_step_retains_anchors_across_substeps_and_converges_the_chain() {
         assert_eq!(four.traces.iter().map(|trace| trace.substep).max(), Some(3));
         capacity_is_valid(&four.capacities).unwrap();
     }
+}
+
+#[test]
+fn benchmark_mode_warms_resets_and_delays_timestamp_readback() {
+    let scenario = authored_chain_scenario(8, 91).unwrap();
+    let result = pollster::block_on(benchmark_gpu_soft_step_case(
+        &scenario,
+        GpuSolverCandidate::JacobiGather,
+        2,
+        3,
+    ))
+    .unwrap();
+    assert_eq!(result.warmup_steps, 2);
+    assert_eq!(result.samples, 3);
+    assert_eq!(result.host_completion_seconds.len(), 3);
+    assert_eq!(result.cpu_encode_submit_seconds.len(), 3);
+    assert!(
+        result
+            .host_completion_seconds
+            .iter()
+            .all(|sample| *sample > 0.0)
+    );
+    assert!(
+        result
+            .cpu_encode_submit_seconds
+            .iter()
+            .all(|sample| *sample > 0.0)
+    );
+    assert_eq!(
+        result
+            .capacities
+            .iter()
+            .find(|record| record.class == "traces")
+            .unwrap()
+            .capacity_elements,
+        1
+    );
+    match (
+        &result.gpu_step_seconds,
+        result.timestamp_period_nanoseconds,
+    ) {
+        (Some(samples), Some(period)) => {
+            assert_eq!(samples.len(), 3);
+            assert!(period > 0.0);
+            assert!(samples.iter().all(|sample| *sample > 0.0));
+        }
+        (None, None) => {}
+        mismatch => panic!("inconsistent timestamp evidence: {mismatch:?}"),
+    }
+    capacity_is_valid(&result.capacities).unwrap();
 }
 
 fn chain_velocity_residual(bodies: &[physbox_contracts::BodyStateV1]) -> f32 {

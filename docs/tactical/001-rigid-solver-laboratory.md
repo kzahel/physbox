@@ -149,6 +149,12 @@ pass with no simulation-dependent readback.
 
 ### S1.5 — failure automation and performance matrix
 
+Measurement foundation, 2026-07-14: the shared solver now has a trace-free
+benchmark mode with out-of-window state reset, explicit warmup, separate CPU
+encode/submit and host-completion samples, and delayed timestamp-query
+resolution when supported. Matrix generation and its acceptance gates remain
+open below.
+
 - [ ] Minimize randomized failures and promote reproducers into the corpus.
 - [ ] Generate the correctness, convergence, capacity, and timing matrix
   required by the performance and scale contract.

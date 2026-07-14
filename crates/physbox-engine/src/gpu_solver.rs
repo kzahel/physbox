@@ -4,6 +4,8 @@ use std::mem::size_of;
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::sync::mpsc;
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::Instant;
 
 use bytemuck::{Pod, Zeroable};
 use physbox_contracts::{
@@ -14,7 +16,9 @@ use wgpu::util::DeviceExt;
 
 use crate::gpu_context::AdapterDiagnostics;
 #[cfg(not(target_arch = "wasm32"))]
-use crate::gpu_context::{create_instance, request_adapter, request_device};
+use crate::gpu_context::{
+    create_instance, request_adapter, request_device, request_device_with_features,
+};
 
 const WORKGROUP_SIZE: u32 = 64;
 const PARAMETER_STRIDE: usize = 256;
@@ -30,6 +34,7 @@ pub enum GpuSolverCandidate {
 pub(crate) enum GpuSolverMode {
     ContactPass,
     SoftStep,
+    BenchmarkSoftStep,
 }
 
 impl GpuSolverCandidate {
@@ -62,6 +67,21 @@ pub struct GpuSolverOutput {
     pub dispatches: u32,
     pub color_count: u32,
     pub contact_colors: Vec<u32>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Clone, Debug)]
+pub struct GpuSolverBenchmarkOutput {
+    pub candidate: GpuSolverCandidate,
+    pub adapter: AdapterDiagnostics,
+    pub warmup_steps: u32,
+    pub samples: u32,
+    pub gpu_step_seconds: Option<Vec<f64>>,
+    pub host_completion_seconds: Vec<f64>,
+    pub cpu_encode_submit_seconds: Vec<f64>,
+    pub timestamp_period_nanoseconds: Option<f32>,
+    pub capacities: Vec<CapacityRecordV1>,
+    pub dispatches: u32,
 }
 
 #[repr(C)]
@@ -225,6 +245,7 @@ impl TopologyLayout {
 
 pub(crate) struct GpuSolverLab {
     body_a: wgpu::Buffer,
+    body_b: wgpu::Buffer,
     prepared: wgpu::Buffer,
     contributions: wgpu::Buffer,
     topology: wgpu::Buffer,
@@ -272,9 +293,10 @@ impl GpuSolverLab {
         let solve_count = match mode {
             GpuSolverMode::ContactPass => 1,
             GpuSolverMode::SoftStep => scenario.settings.substeps as usize,
+            GpuSolverMode::BenchmarkSoftStep => 0,
         };
         let trace_count =
-            points.len() * (5 + 2 * scenario.settings.iterations as usize) * solve_count;
+            (points.len() * (5 + 2 * scenario.settings.iterations as usize) * solve_count).max(1);
         let (parameters, operations) = operations(
             candidate,
             scenario,
@@ -405,6 +427,7 @@ impl GpuSolverLab {
         );
         Ok(Self {
             body_a,
+            body_b,
             prepared,
             contributions,
             topology,
@@ -443,9 +466,23 @@ impl GpuSolverLab {
     }
 
     pub(crate) fn encode(&self, encoder: &mut wgpu::CommandEncoder) {
+        self.encode_with_timestamps(encoder, None);
+    }
+
+    fn encode_with_timestamps(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        timestamps: Option<(&wgpu::QuerySet, u32, u32)>,
+    ) {
         let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some("solver_candidate_passes"),
-            timestamp_writes: None,
+            timestamp_writes: timestamps.map(|(query_set, beginning, end)| {
+                wgpu::ComputePassTimestampWrites {
+                    query_set,
+                    beginning_of_pass_write_index: Some(beginning),
+                    end_of_pass_write_index: Some(end),
+                }
+            }),
         });
         for operation in &self.operations {
             pass.set_pipeline(match operation.pipeline {
@@ -480,6 +517,13 @@ impl GpuSolverLab {
 
     pub(crate) fn body_buffer(&self) -> &wgpu::Buffer {
         &self.body_a
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn reset_bodies(&self, queue: &wgpu::Queue, bodies: &[BodyRaw]) {
+        let bytes = bytemuck::cast_slice(bodies);
+        queue.write_buffer(&self.body_a, 0, bytes);
+        queue.write_buffer(&self.body_b, 0, bytes);
     }
 
     fn copy_readback(&self, device: &wgpu::Device, encoder: &mut wgpu::CommandEncoder) -> Readback {
@@ -562,6 +606,157 @@ pub async fn run_gpu_soft_step_case(
     candidate: GpuSolverCandidate,
 ) -> Result<GpuSolverOutput, String> {
     run_gpu_solver_mode(scenario, candidate, GpuSolverMode::SoftStep).await
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn benchmark_gpu_soft_step_case(
+    scenario: &ScenarioV1,
+    candidate: GpuSolverCandidate,
+    warmup_steps: u32,
+    samples: u32,
+) -> Result<GpuSolverBenchmarkOutput, String> {
+    if warmup_steps == 0 || samples == 0 {
+        return Err("GPU solver benchmark requires non-zero warmup and samples".to_owned());
+    }
+    let query_count = samples
+        .checked_mul(2)
+        .ok_or_else(|| "GPU solver benchmark query count overflow".to_owned())?;
+    let instance = create_instance();
+    let adapter = request_adapter(&instance, None).await?;
+    let diagnostics = AdapterDiagnostics::from_adapter(&adapter);
+    let timestamps_available = adapter.features().contains(wgpu::Features::TIMESTAMP_QUERY);
+    let required_features = if timestamps_available {
+        wgpu::Features::TIMESTAMP_QUERY
+    } else {
+        wgpu::Features::empty()
+    };
+    let (device, queue) = request_device_with_features(&adapter, required_features).await?;
+    let lab = GpuSolverLab::new(
+        &device,
+        scenario,
+        candidate,
+        GpuSolverMode::BenchmarkSoftStep,
+    )?;
+    let body_raw = scenario.bodies.iter().map(body_raw).collect::<Vec<_>>();
+    let query_resources = timestamps_available.then(|| {
+        let query_set = device.create_query_set(&wgpu::QuerySetDescriptor {
+            label: Some("solver_benchmark_timestamps"),
+            ty: wgpu::QueryType::Timestamp,
+            count: query_count,
+        });
+        let byte_count = u64::from(query_count) * size_of::<u64>() as u64;
+        let resolve = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("solver_benchmark_timestamp_resolve"),
+            size: byte_count,
+            usage: wgpu::BufferUsages::QUERY_RESOLVE | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+        let readback = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("solver_benchmark_timestamp_readback"),
+            size: byte_count,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        (query_set, resolve, readback)
+    });
+
+    for _ in 0..warmup_steps {
+        lab.reset_bodies(&queue, &body_raw);
+        device
+            .poll(wgpu::PollType::Wait)
+            .map_err(|error| format!("poll GPU solver warmup reset: {error}"))?;
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("solver_benchmark_warmup"),
+        });
+        lab.encode(&mut encoder);
+        queue.submit([encoder.finish()]);
+        device
+            .poll(wgpu::PollType::Wait)
+            .map_err(|error| format!("poll GPU solver warmup: {error}"))?;
+    }
+
+    let mut host_completion_seconds = Vec::with_capacity(samples as usize);
+    let mut cpu_encode_submit_seconds = Vec::with_capacity(samples as usize);
+    for sample in 0..samples {
+        lab.reset_bodies(&queue, &body_raw);
+        device
+            .poll(wgpu::PollType::Wait)
+            .map_err(|error| format!("poll GPU solver sample reset: {error}"))?;
+        let started = Instant::now();
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("solver_benchmark_sample"),
+        });
+        let timestamps = query_resources
+            .as_ref()
+            .map(|(query_set, _, _)| (query_set, sample * 2, sample * 2 + 1));
+        lab.encode_with_timestamps(&mut encoder, timestamps);
+        queue.submit([encoder.finish()]);
+        cpu_encode_submit_seconds.push(started.elapsed().as_secs_f64());
+        device
+            .poll(wgpu::PollType::Wait)
+            .map_err(|error| format!("poll GPU solver benchmark sample: {error}"))?;
+        host_completion_seconds.push(started.elapsed().as_secs_f64());
+    }
+
+    let (gpu_step_seconds, timestamp_period_nanoseconds) =
+        if let Some((query_set, resolve, readback)) = &query_resources {
+            let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("solver_benchmark_timestamp_copy"),
+            });
+            encoder.resolve_query_set(query_set, 0..query_count, resolve, 0);
+            encoder.copy_buffer_to_buffer(resolve, 0, readback, 0, u64::from(query_count) * 8);
+            queue.submit([encoder.finish()]);
+            let values = map_timestamp_readback(&device, readback, query_count as usize)?;
+            let period = queue.get_timestamp_period();
+            let seconds = values
+                .chunks_exact(2)
+                .map(|pair| pair[1].saturating_sub(pair[0]) as f64 * f64::from(period) * 1.0e-9)
+                .collect();
+            (Some(seconds), Some(period))
+        } else {
+            (None, None)
+        };
+
+    Ok(GpuSolverBenchmarkOutput {
+        candidate,
+        adapter: diagnostics,
+        warmup_steps,
+        samples,
+        gpu_step_seconds,
+        host_completion_seconds,
+        cpu_encode_submit_seconds,
+        timestamp_period_nanoseconds,
+        capacities: lab.capacity_records,
+        dispatches: lab.operations.len() as u32,
+    })
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn map_timestamp_readback(
+    device: &wgpu::Device,
+    buffer: &wgpu::Buffer,
+    count: usize,
+) -> Result<Vec<u64>, String> {
+    let slice = buffer.slice(..);
+    let (sender, receiver) = mpsc::sync_channel(1);
+    slice.map_async(wgpu::MapMode::Read, move |result| {
+        let _ = sender.send(result.map_err(|error| error.to_string()));
+    });
+    device
+        .poll(wgpu::PollType::Wait)
+        .map_err(|error| format!("poll GPU timestamp readback: {error}"))?;
+    receiver
+        .recv()
+        .map_err(|error| error.to_string())?
+        .map_err(|error| format!("map GPU timestamp readback: {error}"))?;
+    let mapped = slice.get_mapped_range();
+    let values = bytemuck::cast_slice::<u8, u64>(&mapped)
+        .get(..count)
+        .ok_or_else(|| "GPU timestamp readback length mismatch".to_owned())?
+        .to_vec();
+    drop(mapped);
+    buffer.unmap();
+    Ok(values)
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -790,10 +985,16 @@ fn operations(
     }
     let substeps = match mode {
         GpuSolverMode::ContactPass => 1,
-        GpuSolverMode::SoftStep => scenario.settings.substeps,
+        GpuSolverMode::SoftStep | GpuSolverMode::BenchmarkSoftStep => scenario.settings.substeps,
     };
     for substep in 0..substeps {
-        if mode == GpuSolverMode::SoftStep {
+        let soft_step = mode != GpuSolverMode::ContactPass;
+        let trace_substep = if mode == GpuSolverMode::BenchmarkSoftStep {
+            -1.0
+        } else {
+            substep as f32
+        };
+        if soft_step {
             push_operation(
                 &mut parameters,
                 &mut operations,
@@ -805,7 +1006,7 @@ fn operations(
                     0,
                     trace_base,
                     0,
-                    substep,
+                    trace_substep,
                 ),
                 PipelineKind::IntegrateVelocity,
                 BufferDirection::AtoB,
@@ -821,9 +1022,9 @@ fn operations(
             0,
             trace_base,
             0,
-            substep,
+            trace_substep,
         );
-        let prepare_pipeline = if mode == GpuSolverMode::SoftStep && substep > 0 {
+        let prepare_pipeline = if soft_step && substep > 0 {
             prepare.uints0[2] = 1;
             prepare.uints0[3] = 1;
             PipelineKind::Refresh
@@ -852,7 +1053,7 @@ fn operations(
                 0,
                 trace_base,
                 0,
-                substep,
+                trace_substep,
             ),
             PipelineKind::Warm,
             BufferDirection::AtoB,
@@ -874,7 +1075,7 @@ fn operations(
                     iteration,
                     trace_base,
                     1,
-                    substep,
+                    trace_substep,
                 ),
                 PipelineKind::Normal,
                 BufferDirection::BtoA,
@@ -895,7 +1096,7 @@ fn operations(
                     iteration,
                     trace_base,
                     0,
-                    substep,
+                    trace_substep,
                 ),
                 PipelineKind::Tangent,
                 BufferDirection::AtoB,
@@ -906,7 +1107,7 @@ fn operations(
             trace_base += point_count as u32;
         }
 
-        if mode == GpuSolverMode::SoftStep {
+        if soft_step {
             let integrated_direction = match candidate {
                 GpuSolverCandidate::JacobiGather => BufferDirection::BtoA,
                 GpuSolverCandidate::ColoredSoftTgs => BufferDirection::AtoB,
@@ -922,7 +1123,7 @@ fn operations(
                     0,
                     trace_base,
                     0,
-                    substep,
+                    trace_substep,
                 ),
                 PipelineKind::IntegratePosition,
                 integrated_direction,
@@ -936,7 +1137,7 @@ fn operations(
                 0,
                 trace_base,
                 0,
-                substep,
+                trace_substep,
             );
             refresh.uints0[2] = 0;
             refresh.uints0[3] = 0;
@@ -962,7 +1163,7 @@ fn operations(
                 0,
                 trace_base,
                 0,
-                substep,
+                trace_substep,
             ),
             PipelineKind::Normal,
             BufferDirection::BtoA,
@@ -983,7 +1184,7 @@ fn operations(
                 0,
                 trace_base,
                 0,
-                substep,
+                trace_substep,
             ),
             PipelineKind::Tangent,
             BufferDirection::AtoB,
@@ -1004,7 +1205,7 @@ fn operations(
                 0,
                 trace_base,
                 0,
-                substep,
+                trace_substep,
             ),
             PipelineKind::Restitution,
             BufferDirection::BtoA,
@@ -1026,7 +1227,7 @@ fn pass_params(
     iteration: u32,
     trace_base: u32,
     use_bias: u32,
-    substep: u32,
+    trace_substep: f32,
 ) -> PassParamsRaw {
     PassParamsRaw {
         floats0: [
@@ -1039,7 +1240,7 @@ fn pass_params(
             scenario.settings.restitution_threshold.get(),
             scenario.settings.gravity.x,
             scenario.settings.gravity.y,
-            substep as f32,
+            trace_substep,
         ],
         uints0: [body_count as u32, point_count as u32, 0, 0],
         uints1: [iteration, stage, trace_base, use_bias],
@@ -1313,7 +1514,7 @@ fn storage_init(device: &wgpu::Device, label: &str, bytes: &[u8], copy: bool) ->
         contents: bytes,
         usage: wgpu::BufferUsages::STORAGE
             | if copy {
-                wgpu::BufferUsages::COPY_SRC
+                wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST
             } else {
                 wgpu::BufferUsages::empty()
             },

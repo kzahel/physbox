@@ -303,6 +303,15 @@ Every result contains P50/P95/P99 total physics time, applicable per-pass GPU
 time, CPU encode/submit time, full-frame time, dispatch count, the complete
 work vector, and memory/capacity high-water. Average FPS alone is insufficient.
 
+P5.0a implementation note, 2026-07-14: the authored-contact GPU benchmark mode
+uses the exact Soft-Step operation schedule while disabling full trace writes,
+resets both solver body buffers before (and outside) every timed step, and
+performs pipeline warmup before sampling. It records CPU encode/submit and
+host-completion samples independently. When `timestamp-query` is supported it
+is explicitly requested, pass-boundary queries are resolved only after the
+final sample, and the timestamp period is retained; otherwise GPU time remains
+explicitly unavailable.
+
 ## Result validity
 
 A timing result is invalid and excluded from comparisons when any of the
