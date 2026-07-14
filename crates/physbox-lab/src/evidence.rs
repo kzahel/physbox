@@ -187,7 +187,7 @@ pub fn generate_evidence(config: &EvidenceConfig) -> Result<EvidenceManifest, St
     }
     let source_patch_digest = dirty_digest(&repository, status)?;
     let toolchain = command_text(Command::new("rustc").arg("--version"), "query rustc")?;
-    fs::create_dir(&config.output).map_err(|error| {
+    fs::create_dir_all(&config.output).map_err(|error| {
         format!(
             "create fresh evidence directory {}: {error}",
             config.output.display()
