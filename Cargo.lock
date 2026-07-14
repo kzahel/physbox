@@ -1460,6 +1460,7 @@ dependencies = [
  "physbox-contracts",
  "physbox-engine",
  "pollster",
+ "serde",
  "serde_json",
 ]
 

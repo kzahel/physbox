@@ -119,6 +119,16 @@ contributions, nonnegative normal impulse, Coulomb tangent projection,
 body-label swap symmetry, and capacity validity. Tests include deliberately
 broken responses for every invariant so a vacuous checker cannot pass.
 
+P5.0a failure automation, 2026-07-14: the deterministic corpus applies exact
+scalar trace comparison only to isolated authored contacts, where execution
+order is shared. Multi-contact candidates are checked for canonical replay,
+finite state, projected impulses, capacity, and paired Jacobi contributions;
+their different parallel schedules are not incorrectly compared with a
+sequential scalar ordering. A failing case is reduced only while the original
+failure signature persists, across manifolds, actions, bodies, and requested
+step windows. Injected failures prove deterministic reduction, and a clean run
+publishes no invented reproducer.
+
 ## Synchronized playback
 
 `PlaybackArtifactV1` is the shared presentation contract for scalar/oracle and

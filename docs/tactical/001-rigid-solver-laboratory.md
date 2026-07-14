@@ -155,7 +155,10 @@ encode/submit and host-completion samples, and delayed timestamp-query
 resolution when supported. Matrix generation and its acceptance gates remain
 open below.
 
-- [ ] Minimize randomized failures and promote reproducers into the corpus.
+- [x] Minimize randomized failures and promote reproducers into the corpus.
+  The initial deterministic 16-seed run covered 32 scenarios and 64 candidate
+  executions with zero failures, so it produced no permanent reproducer;
+  injected failure tests prove the reducer rather than fabricating one.
 - [ ] Generate the correctness, convergence, capacity, and timing matrix
   required by the performance and scale contract.
 - [ ] Benchmark solver-only fixtures after warmup at 1–32 and 1K, 10K, and at
