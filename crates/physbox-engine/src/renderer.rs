@@ -214,7 +214,7 @@ impl OffscreenRenderer {
         )
     }
 
-    pub fn read_bootstrap_state(&self) -> Result<[f32; 8], String> {
+    pub fn read_capture_state(&self) -> Result<[f32; 8], String> {
         read_state(&self.device, &self.queue, self.host.state_buffer())
     }
 }

@@ -13,13 +13,19 @@ LOG="${PHYSBOX5_ANDROID_LOGCAT:-/tmp/physbox5-android-avd-logcat.txt}"
 PROVENANCE="$SCREENSHOT.json"
 SKIP_BUILD=0
 KEEP_EMULATOR=0
+SCENARIO="bootstrap"
 while (($#)); do
     case "$1" in
         --skip-build) SKIP_BUILD=1; shift ;;
         --keep-emulator) KEEP_EMULATOR=1; shift ;;
-        *) echo "Usage: $0 [--skip-build] [--keep-emulator]" >&2; exit 2 ;;
+        --scenario) SCENARIO="${2:?--scenario requires a value}"; shift 2 ;;
+        *) echo "Usage: $0 [--skip-build] [--keep-emulator] [--scenario NAME]" >&2; exit 2 ;;
     esac
 done
+case "$SCENARIO" in
+    bootstrap|solver-jacobi|solver-colored) ;;
+    *) echo "error: unsupported shared scenario: $SCENARIO" >&2; exit 2 ;;
+esac
 "$EMULATOR" -list-avds | grep -qx "$AVD_NAME" || { echo "error: AVD $AVD_NAME not found" >&2; exit 1; }
 rm -f "$SCREENSHOT" "$PROVENANCE" "$LOG"
 
@@ -49,7 +55,9 @@ APK="$ANDROID_DIR/app/build/outputs/apk/debug/app-debug.apk"
 "$ADB" -s "$SERIAL" install -r "$APK" >/dev/null
 "$ADB" -s "$SERIAL" logcat -c
 "$ADB" -s "$SERIAL" shell am force-stop com.kzahel.physbox5
-"$ADB" -s "$SERIAL" shell am start -n com.kzahel.physbox5/android.app.NativeActivity >/dev/null
+STARTUP_ARGV="[\"--scenario\",\"$SCENARIO\"]"
+START_COMMAND="am start -n com.kzahel.physbox5/android.app.NativeActivity --es physbox5.startup.argv '$STARTUP_ARGV'"
+"$ADB" -s "$SERIAL" shell "$START_COMMAND" >/dev/null
 
 PASSED=0
 for _ in $(seq 1 90); do
@@ -61,16 +69,23 @@ done
 [[ "$PASSED" -eq 1 ]] || { echo "error: Android shared scenario did not pass; see $LOG" >&2; exit 1; }
 "$ADB" -s "$SERIAL" exec-out screencap -p > "$SCREENSHOT"
 REPORT="$(rg 'PHYSBOX5_MARK_FRAME_RENDERED ' "$LOG" | tail -1 | sed 's/^.*PHYSBOX5_MARK_FRAME_RENDERED //')"
+[[ "$(node -e 'console.log(JSON.parse(process.argv[1]).scenario.name)' "$REPORT")" = "$SCENARIO" ]] || {
+    echo "error: Android reported the wrong shared scenario; see $LOG" >&2; exit 1;
+}
 ADAPTER="$(rg 'PHYSBOX5_MARK_ADAPTER ' "$LOG" | tail -1 | sed 's/^.*PHYSBOX5_MARK_ADAPTER //' || true)"
 REVISION="$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
 DIRTY=false; [[ -n "$(git -C "$REPO_ROOT" status --porcelain)" ]] && DIRTY=true
+MODEL="$("$ADB" -s "$SERIAL" shell getprop ro.product.model | tr -d '\r')"
+PRODUCT="$("$ADB" -s "$SERIAL" shell getprop ro.product.device | tr -d '\r')"
 node -e '
   const fs = require("fs");
-  const [path, runId, revision, dirty, report, adapter] = process.argv.slice(1);
+  const [path, runId, revision, dirty, report, adapter, scenario, avd, serial, model, product] = process.argv.slice(1);
   fs.writeFileSync(path, JSON.stringify({
     runId, sourceRevision: revision, sourceDirty: dirty === "true", host: "android",
-    capturePhase: "bootstrap-final", report: JSON.parse(report),
+    capturePhase: `${scenario}-final`, report: JSON.parse(report),
+    device: { avd, serial, model, product },
     adapter: adapter ? JSON.parse(adapter) : null,
   }, null, 2) + "\n");
-' "$PROVENANCE" "$(date +%s)-$$" "$REVISION" "$DIRTY" "$REPORT" "$ADAPTER"
-echo "PHYSBOX5_VALIDATION_SUCCESS host=android avd=$AVD_NAME screenshot=$SCREENSHOT provenance=$PROVENANCE"
+' "$PROVENANCE" "$(date +%s)-$$" "$REVISION" "$DIRTY" "$REPORT" "$ADAPTER" "$SCENARIO" \
+  "$AVD_NAME" "$SERIAL" "$MODEL" "$PRODUCT"
+echo "PHYSBOX5_VALIDATION_SUCCESS host=android avd=$AVD_NAME scenario=$SCENARIO screenshot=$SCREENSHOT provenance=$PROVENANCE"

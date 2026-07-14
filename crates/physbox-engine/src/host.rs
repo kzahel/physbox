@@ -5,18 +5,21 @@ use wgpu::util::DeviceExt;
 use crate::{
     EngineConfig, FrameInput, StepRequest,
     clock::{FIXED_STEP_HZ, FIXED_STEP_SECONDS, InteractiveClockInput, SimulationClock},
+    gpu_solver::{GpuSolverCandidate, GpuSolverLab},
     renderer::RenderFrameContext,
     report::{FrameReport, SCENE_CONTRACT_VERSION, ScenarioResult, SceneContract},
+    scenario::authored_chain_scenario,
 };
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
 struct BootstrapState {
     position: [f32; 2],
-    velocity: [f32; 2],
     angle: f32,
+    inverse_mass: f32,
+    linear_velocity: [f32; 2],
     angular_velocity: f32,
-    padding: [f32; 2],
+    inverse_inertia: f32,
 }
 
 #[repr(C)]
@@ -36,6 +39,9 @@ pub struct EngineHost {
     bind_group: wgpu::BindGroup,
     compute_pipeline: wgpu::ComputePipeline,
     render_pipeline: wgpu::RenderPipeline,
+    solver_lab: Option<GpuSolverLab>,
+    solver_bind_group: Option<wgpu::BindGroup>,
+    solver_executed: bool,
     clock: SimulationClock,
     frame_index: u64,
     fixed_steps_total: u64,
@@ -50,10 +56,11 @@ impl EngineHost {
     ) -> Self {
         let initial_state = BootstrapState {
             position: [-0.56, 0.25],
-            velocity: [0.42, -0.18],
             angle: 0.18,
+            inverse_mass: 1.0,
+            linear_velocity: [0.42, -0.18],
             angular_velocity: 0.72,
-            padding: [0.0; 2],
+            inverse_inertia: 1.0,
         };
         let state_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("physbox5_bootstrap_state"),
@@ -147,6 +154,33 @@ impl EngineHost {
             multiview: None,
             cache: None,
         });
+        let solver_candidate = match config.scenario {
+            ValidationScenario::Bootstrap => None,
+            ValidationScenario::SolverJacobi => Some(GpuSolverCandidate::JacobiGather),
+            ValidationScenario::SolverColored => Some(GpuSolverCandidate::ColoredSoftTgs),
+        };
+        let solver_lab = solver_candidate.map(|candidate| {
+            let scenario = authored_chain_scenario(64, 91)
+                .expect("engine-owned solver validation scenario is valid");
+            GpuSolverLab::new(device, &scenario, candidate)
+                .expect("engine-owned solver validation lab is valid")
+        });
+        let solver_bind_group = solver_lab.as_ref().map(|lab| {
+            device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("physbox5_solver_render_bind_group"),
+                layout: &bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: lab.body_buffer().as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: params_buffer.as_entire_binding(),
+                    },
+                ],
+            })
+        });
 
         Self {
             config,
@@ -156,6 +190,9 @@ impl EngineHost {
             bind_group,
             compute_pipeline,
             render_pipeline,
+            solver_lab,
+            solver_bind_group,
+            solver_executed: false,
             clock: SimulationClock::default(),
             frame_index: 0,
             fixed_steps_total: 0,
@@ -192,16 +229,23 @@ impl EngineHost {
             .queue
             .write_buffer(&self.params_buffer, 0, bytemuck::bytes_of(&params));
 
-        for _ in 0..steps {
-            let mut pass = context
-                .encoder
-                .begin_compute_pass(&wgpu::ComputePassDescriptor {
-                    label: Some("physbox5_bootstrap_step"),
-                    timestamp_writes: None,
-                });
-            pass.set_pipeline(&self.compute_pipeline);
-            pass.set_bind_group(0, &self.bind_group, &[]);
-            pass.dispatch_workgroups(1, 1, 1);
+        if let Some(lab) = &self.solver_lab {
+            for _ in 0..steps {
+                lab.encode(context.encoder);
+                self.solver_executed = true;
+            }
+        } else {
+            for _ in 0..steps {
+                let mut pass = context
+                    .encoder
+                    .begin_compute_pass(&wgpu::ComputePassDescriptor {
+                        label: Some("physbox5_bootstrap_step"),
+                        timestamp_writes: None,
+                    });
+                pass.set_pipeline(&self.compute_pipeline);
+                pass.set_bind_group(0, &self.bind_group, &[]);
+                pass.dispatch_workgroups(1, 1, 1);
+            }
         }
 
         {
@@ -227,7 +271,11 @@ impl EngineHost {
                     occlusion_query_set: None,
                 });
             pass.set_pipeline(&self.render_pipeline);
-            pass.set_bind_group(0, &self.bind_group, &[]);
+            pass.set_bind_group(
+                0,
+                self.solver_bind_group.as_ref().unwrap_or(&self.bind_group),
+                &[],
+            );
             pass.draw(0..3, 0..1);
         }
 
@@ -237,22 +285,36 @@ impl EngineHost {
             version: SCENE_CONTRACT_VERSION,
             engine: "physbox5",
             state_owner: "gpu",
-            body_count: 1,
+            body_count: if self.solver_lab.is_some() { 64 } else { 1 },
             fixed_step_hz: FIXED_STEP_HZ,
             scenario: self.config.scenario.name(),
         };
-        let complete = self.fixed_steps_total >= 3;
         let scenario = match self.config.scenario {
-            ValidationScenario::Bootstrap => ScenarioResult {
-                name: "bootstrap",
-                complete,
-                passed: complete,
-                reason: if complete {
-                    "shared GPU host advanced and rendered"
-                } else {
-                    "waiting for shared GPU frames"
-                },
-            },
+            ValidationScenario::Bootstrap => {
+                let complete = self.fixed_steps_total >= 3;
+                ScenarioResult {
+                    name: "bootstrap",
+                    complete,
+                    passed: complete,
+                    reason: if complete {
+                        "shared GPU host advanced and rendered"
+                    } else {
+                        "waiting for shared GPU frames"
+                    },
+                }
+            }
+            ValidationScenario::SolverJacobi | ValidationScenario::SolverColored => {
+                ScenarioResult {
+                    name: self.config.scenario.name(),
+                    complete: self.solver_executed,
+                    passed: self.solver_executed,
+                    reason: if self.solver_executed {
+                        "shared GPU authored-contact candidate dispatched"
+                    } else {
+                        "waiting for one shared GPU solver step"
+                    },
+                }
+            }
         };
         FrameReport {
             frame_index: self.frame_index,
@@ -268,6 +330,8 @@ impl EngineHost {
 
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn state_buffer(&self) -> &wgpu::Buffer {
-        &self.state_buffer
+        self.solver_lab
+            .as_ref()
+            .map_or(&self.state_buffer, GpuSolverLab::body_buffer)
     }
 }

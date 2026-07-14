@@ -1,9 +1,10 @@
 struct BootstrapState {
     position: vec2f,
-    velocity: vec2f,
     angle: f32,
+    inverse_mass: f32,
+    linear_velocity: vec2f,
     angular_velocity: f32,
-    padding: vec2f,
+    inverse_inertia: f32,
 };
 
 struct FrameParams {
@@ -18,24 +19,24 @@ struct FrameParams {
 
 @compute @workgroup_size(1)
 fn step_main() {
-    state.position += state.velocity * params.dt;
+    state.position += state.linear_velocity * params.dt;
     state.angle += state.angular_velocity * params.dt;
 
     if (state.position.x > 0.72) {
         state.position.x = 0.72;
-        state.velocity.x = -abs(state.velocity.x);
+        state.linear_velocity.x = -abs(state.linear_velocity.x);
     }
     if (state.position.x < -0.72) {
         state.position.x = -0.72;
-        state.velocity.x = abs(state.velocity.x);
+        state.linear_velocity.x = abs(state.linear_velocity.x);
     }
     if (state.position.y > 0.56) {
         state.position.y = 0.56;
-        state.velocity.y = -abs(state.velocity.y);
+        state.linear_velocity.y = -abs(state.linear_velocity.y);
     }
     if (state.position.y < -0.56) {
         state.position.y = -0.56;
-        state.velocity.y = abs(state.velocity.y);
+        state.linear_velocity.y = abs(state.linear_velocity.y);
     }
 }
 

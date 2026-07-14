@@ -116,8 +116,17 @@ greedy pass assigns a fixed 32-color schedule without reading the color count
 to advance the solve. A 33-edge shared-body fixture proves that the colored
 lane reports capacity overflow and preserves the failure instead of dropping
 the conflict, while the gather lane accepts the same topology. The remaining
-S1.4 work is the full substep/fixed-step candidate exercise and shared
-cross-host corpus.
+S1.4 implementation work is the full substep/fixed-step candidate exercise.
+
+Cross-host evidence, 2026-07-14: `solver-jacobi` and `solver-colored` are now
+engine-owned launch scenarios. The one shared host dispatches the same
+64-body authored chain and renders directly from its GPU body buffer on native
+headless Metal, Chrome WebGPU/Metal, and the `jstorrent-tablet` Android AVD's
+Vulkan SwiftShader adapter. Only the bounded native lane maps the final state
+for scalar trace acceptance; browser and Android advance without solver
+readback. The connected Pixel 7a is currently locked, and the physical-device
+runner diagnoses that availability gap rather than substituting AVD evidence
+for a device measurement.
 
 - [x] Implement contact-centric Jacobi with equal-and-opposite contribution
   records and per-body gather.
@@ -125,7 +134,7 @@ cross-host corpus.
   convergence or silently dropped conflicts.
 - [ ] Optionally implement one rigid XPBD or split position/velocity comparator
   only if the first two leave a material unanswered question.
-- [ ] Compare every declared pass with the scalar trace and run the same
+- [x] Compare every declared pass with the scalar trace and run the same
   authored-manifold corpus on native, browser, Android, and headless.
 
 Gate: pass-level tolerances, invariants, capacity, and cross-adapter behavior

@@ -17,10 +17,10 @@ struct Provenance<'a> {
     source_revision: String,
     source_dirty: bool,
     host: &'static str,
-    capture_phase: &'static str,
+    capture_phase: String,
     adapter: &'a physbox_engine::AdapterDiagnostics,
     report: &'a FrameReport,
-    bootstrap_state: [f32; 8],
+    gpu_state: [f32; 8],
 }
 
 fn main() {
@@ -77,9 +77,9 @@ fn run() -> Result<(), String> {
         return Err(format!("scenario did not pass: {}", report.scenario.reason));
     }
     let pixels = renderer.read_pixels()?;
-    let bootstrap_state = renderer.read_bootstrap_state()?;
-    if !bootstrap_state.iter().all(|value| value.is_finite()) {
-        return Err("GPU bootstrap state contains a non-finite value".to_owned());
+    let gpu_state = renderer.read_capture_state()?;
+    if !gpu_state.iter().all(|value| value.is_finite()) {
+        return Err("GPU capture state contains a non-finite value".to_owned());
     }
     write_png(output, options.width, options.height, &pixels)?;
 
@@ -89,10 +89,10 @@ fn run() -> Result<(), String> {
         source_dirty: git_output(&["status", "--porcelain"])
             .is_none_or(|status| !status.is_empty()),
         host: "headless",
-        capture_phase: "bootstrap-final",
+        capture_phase: format!("{}-final", report.scenario.name),
         adapter: renderer.diagnostics(),
         report: &report,
-        bootstrap_state,
+        gpu_state,
     };
     let json = serde_json::to_vec_pretty(&provenance)
         .map_err(|error| format!("failed to serialize provenance: {error}"))?;

@@ -8,6 +8,7 @@ import { startServer } from "./server.mjs";
 const root = resolve(import.meta.dirname, "..");
 const screenshot = "/tmp/physbox5-web.png";
 const provenancePath = "/tmp/physbox5-web.json";
+const scenario = process.env.PHYSBOX5_SCENARIO ?? "bootstrap";
 await rm(screenshot, { force: true });
 await rm(provenancePath, { force: true });
 run(process.execPath, [resolve(root, "scripts/build-web.mjs")]);
@@ -28,10 +29,11 @@ try {
   const page = await browser.newPage({ viewport: { width: 960, height: 600 } });
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto(`http://127.0.0.1:${port}/`, { waitUntil: "networkidle" });
+  await page.goto(`http://127.0.0.1:${port}/?scenario=${encodeURIComponent(scenario)}`, { waitUntil: "networkidle" });
   await page.waitForFunction(() => globalThis.__physbox5?.ready, null, { timeout: 30_000 });
   const before = await page.evaluate(() => globalThis.__physbox5);
   if (!before.ok || !before.frame?.scenario?.passed) throw new Error(`shared scenario failed: ${JSON.stringify(before)}`);
+  if (before.frame.scenario.name !== scenario) throw new Error(`wrong shared scenario: ${JSON.stringify(before.frame.scenario)}`);
   const bounds = await page.locator("#physbox-canvas").boundingBox();
   if (!bounds || bounds.x !== 0 || bounds.y !== 0 || bounds.width !== 960 || bounds.height !== 600) {
     throw new Error(`canvas does not fill viewport: ${JSON.stringify(bounds)}`);
@@ -54,7 +56,7 @@ try {
     sourceRevision: git(["rev-parse", "HEAD"]) ?? "unknown",
     sourceDirty: (git(["status", "--porcelain"]) ?? "unknown") !== "",
     host: "web",
-    capturePhase: "bootstrap-pointer-transport",
+    capturePhase: `${scenario}-pointer-transport`,
     adapter: after.diagnostics,
     viewport: after.viewport,
     report: after.frame,

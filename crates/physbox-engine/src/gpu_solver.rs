@@ -1,4 +1,9 @@
-use std::{mem::size_of, sync::mpsc};
+#![cfg_attr(target_arch = "wasm32", allow(dead_code))]
+
+use std::mem::size_of;
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::sync::mpsc;
 
 use bytemuck::{Pod, Zeroable};
 use physbox_contracts::{
@@ -7,7 +12,9 @@ use physbox_contracts::{
 };
 use wgpu::util::DeviceExt;
 
-use crate::gpu_context::{AdapterDiagnostics, create_instance, request_adapter, request_device};
+use crate::gpu_context::AdapterDiagnostics;
+#[cfg(not(target_arch = "wasm32"))]
+use crate::gpu_context::{create_instance, request_adapter, request_device};
 
 const WORKGROUP_SIZE: u32 = 64;
 const PARAMETER_STRIDE: usize = 256;
@@ -207,7 +214,7 @@ impl TopologyLayout {
     }
 }
 
-struct GpuSolverLab {
+pub(crate) struct GpuSolverLab {
     body_a: wgpu::Buffer,
     prepared: wgpu::Buffer,
     contributions: wgpu::Buffer,
@@ -237,7 +244,7 @@ struct GpuSolverLab {
 }
 
 impl GpuSolverLab {
-    fn new(
+    pub(crate) fn new(
         device: &wgpu::Device,
         scenario: &ScenarioV1,
         candidate: GpuSolverCandidate,
@@ -407,7 +414,7 @@ impl GpuSolverLab {
         })
     }
 
-    fn encode(&self, encoder: &mut wgpu::CommandEncoder) {
+    pub(crate) fn encode(&self, encoder: &mut wgpu::CommandEncoder) {
         let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some("solver_candidate_passes"),
             timestamp_writes: None,
@@ -438,6 +445,10 @@ impl GpuSolverLab {
             );
             pass.dispatch_workgroups(operation.workgroups, 1, 1);
         }
+    }
+
+    pub(crate) fn body_buffer(&self) -> &wgpu::Buffer {
+        &self.body_a
     }
 
     fn copy_readback(&self, device: &wgpu::Device, encoder: &mut wgpu::CommandEncoder) -> Readback {
