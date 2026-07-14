@@ -12,11 +12,24 @@ next milestone is an oracle-driven rigid-contact solver laboratory.
 
 Read:
 
-- [Vision](docs/vision.md)
+- [Authoritative GPU-physics direction](docs/topics/physbox5-unified-gpu-physics.md)
+- [Vision summary](docs/vision.md)
 - [Bring-up plan](docs/bringup-plan.md)
 - [Platform architecture](docs/platform-architecture.md)
+- [Topic index and conventions](docs/topics/README.md)
+- [Tactical workstreams and conventions](docs/tactical/README.md)
 - [Source provenance](docs/source-provenance.md)
 - [Deployment](docs/deployment.md)
+
+## PhysBox 4 lineage
+
+PhysBox 4 is the preserved evidence archive for the split CPU-rigid/GPU-fluid
+investigation that motivated this engine. It is available locally at
+`../physbox4` and in the private
+[PhysBox 4 repository](https://github.com/kzahel/physbox4). PhysBox 5 keeps
+fresh Git history and does not inherit PhysBox 4 runtime modules, scenes, or
+product compatibility. Selective reuse must cite the PhysBox 4 source revision
+and be reshaped behind a PhysBox 5 contract.
 
 ## Quick start
 

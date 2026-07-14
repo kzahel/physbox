@@ -1,8 +1,25 @@
 # PhysBox 5 agent rules
 
-Read `README.md`, `docs/vision.md`, `docs/bringup-plan.md`, and
-`docs/platform-architecture.md` before changing runtime, rendering, input,
-scheduling, validation, deployment, or platform code.
+Read `README.md`, `docs/topics/physbox5-unified-gpu-physics.md`,
+`docs/bringup-plan.md`, and `docs/platform-architecture.md` before changing
+runtime, rendering, input, scheduling, validation, deployment, or platform
+code. Read `docs/topics/README.md` and `docs/tactical/README.md` before adding
+or reorganizing project documentation.
+
+## Repository documentation
+
+`docs/topics/physbox5-unified-gpu-physics.md` is the authoritative technical
+direction. `docs/vision.md` is only its compact entry point. A topic document
+is a durable record of a technical concern: decision state, evidence,
+alternatives, validation, and reconsideration triggers. Topic filenames are
+unnumbered kebab-case and the topic index must list every active topic.
+
+Tactical documents are executable workstream plans. Their filenames use a
+three-digit zero-padded prefix assigned in first Git-creation order; never
+renumber or reuse a number. `docs/tactical/README.md` is the unnumbered status
+index. A tactical must define its goal, exclusions, ownership constraints,
+ordered delivery slices, gates, and completion condition. Update its status and
+checkboxes in the same change that makes them true.
 
 ## One shared host
 
@@ -59,6 +76,37 @@ successful push of `main`. It deploys the exact pushed SHA to
 deployment of an uncommitted working tree. Keep Wrangler resource names and
 custom-domain configuration owned by `worker/wrangler.toml` and
 `scripts/deploy-web.sh`.
+
+## Commit messages
+
+These rules define message format when a commit is requested; they do not by
+themselves authorize committing or pushing.
+
+Use an imperative Conventional Commit subject:
+
+```text
+<type>(<scope>): <specific outcome>
+```
+
+The scope may be omitted for repository-wide documentation or tooling. Use
+`feat`, `fix`, `refactor`, `perf`, `test`, `docs`, `build`, `ci`, or `chore`.
+Prefer stable scopes such as `engine`, `launch`, `shell`, `validation`, `web`,
+`android`, and `deploy`. Keep the subject concise, lowercase after the colon,
+without a trailing period. Examples:
+
+```text
+feat(engine): add scalar contact preparation
+test(validation): compare floor impacts with Box2D
+docs: define tactical workstream conventions
+```
+
+Use the body for why the change was made, non-obvious tradeoffs, and the exact
+validation run. Any intentional physics-default, tolerance, oracle, numerical
+baseline, or performance-gate change must state measured before/after results
+and the reason. Selective PhysBox 4 reuse must cite its source commit. Avoid
+vague subjects such as `update`, `fix stuff`, or milestone-only labels. The
+fresh-history bootstrap root commit predates this convention and is not a
+template for later subjects.
 
 ## Required gates
 

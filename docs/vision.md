@@ -2,6 +2,11 @@
 
 Status: active direction, 2026-07-14.
 
+This is the compact entry point. The authoritative, research-backed direction
+is [PhysBox 5: one GPU-resident 2D physics world](topics/physbox5-unified-gpu-physics.md),
+which owns the detailed solver, contact, broadphase, oracle, performance, and
+acceptance contracts.
+
 PhysBox 5 is a small, purpose-built 2D physics world whose live mechanical
 state stays on the GPU. It should eventually feel like a deliberately
 simplified Box2D with a native liquid material—not a 3D engine constrained to

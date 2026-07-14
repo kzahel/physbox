@@ -17,6 +17,9 @@ installed, and the tree contains only the retained platform rim.
 
 ## P5.0a — oracle foundation and solver laboratory
 
+Execution tracker:
+[S1 rigid solver laboratory](tactical/001-rigid-solver-laboratory.md).
+
 1. Define versioned body, authored-manifold, scenario, trace, metric, capacity,
    and failure schemas.
 2. Add scalar Rust contact preparation and solve specification.

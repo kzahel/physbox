@@ -4,12 +4,20 @@ PhysBox 5 was initialized as a new Git repository on 2026-07-14. No `.git`
 history, generated media, credentials, or untracked reference checkout was
 copied from PhysBox 4.
 
-The design/archive source was PhysBox 4 revision
-`b4700c99201e09ba6058a82414e62afbb2d19119`, with uncommitted documentation
+The bootstrap design/archive source was PhysBox 4 revision
+`b4700c99201e09ba6058a82414e62afbb2d19119`, with then-uncommitted handoff
 changes in `docs/topics/physbox5-unified-gpu-physics.md`,
 `docs/tactical/README.md`, and
-`docs/tactical/019-physbox5-fresh-repository-bootstrap.md`. Those changes are
-the handoff record, not imported runtime code.
+`docs/tactical/019-physbox5-fresh-repository-bootstrap.md`. PhysBox 4 later
+preserved that handoff as commit
+`4295957e15480ef701e6006c7cafb5f0728ef101`.
+
+PhysBox 5 subsequently imported the authoritative
+`docs/topics/physbox5-unified-gpu-physics.md` text from that handoff commit and
+rewrote its archival local links to pinned or PhysBox 4 web references. No
+PhysBox 4 runtime code accompanied it. The PhysBox 4 tactical numbering and
+completed bootstrap tactical remain archive history; PhysBox 5 begins its own
+tactical sequence at `001`.
 
 Pinned references:
 
