@@ -103,6 +103,17 @@ never used as acceptance truth.
 
 ### S1.4 — portable GPU candidates
 
+Implementation evidence, 2026-07-14: the first native authored-manifold pass
+now executes both candidate equations in portable WGSL. The Jacobi lane emits
+one shared impulse and equal-and-opposite body records before a body gather;
+the colored lane applies disjoint contact batches in place. Both match the
+scalar trace for the isolated-contact corpus and replay a 64-body chain
+deterministically with explicit dispatch and allocation records. The
+checklist remains open: this equation-isolation slice still supplies authored
+adjacency and colors during setup, and does not yet prove GPU-owned topology,
+fixed bounded conflict failure, cross-host execution, or the full evidence
+matrix.
+
 - [ ] Implement contact-centric Jacobi with equal-and-opposite contribution
   records and per-body gather.
 - [ ] Implement graph-colored or disjoint-batch Soft-TGS without CPU-driven

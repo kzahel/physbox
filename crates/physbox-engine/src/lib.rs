@@ -4,6 +4,7 @@ mod clock;
 mod config;
 mod frame;
 mod gpu_context;
+mod gpu_solver;
 mod host;
 mod renderer;
 mod report;
@@ -13,6 +14,9 @@ pub use clock::{InteractiveClockAction, PacingMode, PacingReport};
 pub use config::EngineConfig;
 pub use frame::{FrameInput, PointerButton, PointerEvent, PointerPhase, StepRequest};
 pub use gpu_context::{AdapterDiagnostics, create_instance};
+#[cfg(not(target_arch = "wasm32"))]
+pub use gpu_solver::run_gpu_solver_case;
+pub use gpu_solver::{GpuContributionEvidence, GpuSolverCandidate, GpuSolverOutput};
 #[cfg(not(target_arch = "wasm32"))]
 pub use renderer::OffscreenRenderer;
 pub use renderer::SurfaceRenderer;
