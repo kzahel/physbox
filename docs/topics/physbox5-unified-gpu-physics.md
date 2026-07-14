@@ -353,6 +353,17 @@ place unbiased relaxation after pose integration. The scalar-compatible
 contact-pass mode remains available for first-divergence traces. These are
 candidate facts, not a production solver decision; S1.6 still owns that choice.
 
+The completed S1.5 review package is
+[`evidence/p5.0a-s1.5`](../../evidence/p5.0a-s1.5/README.md). Its provisional
+recommendation is contact-centric Jacobi with GPU body gather because the
+current portable implementation has a much smaller fixed dispatch schedule,
+passes the zero-overflow 30K lane, and can buy additional convergence with
+substeps at lower measured cost than the colored comparator. The colored lane
+retains better per-substep convergence but currently pays a 32-color bound and
+786 dispatches at the four-substep setting. This is evidence for the S1.6 human
+checkpoint, not a selected family, accepted physical default, or authorization
+to begin P5.1. The tactical and bring-up status remain open until review.
+
 Other portable fallbacks that may be measured include segmented `f32`
 reduction and bounded fixed-point integer atomic accumulation with documented
 precision, range, saturation, and overflow diagnostics.

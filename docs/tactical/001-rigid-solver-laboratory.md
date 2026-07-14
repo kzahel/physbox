@@ -176,8 +176,15 @@ candidate playback. The clean full-scale run at
 `../../evidence/p5.0a-s1.5/matrix.json` retains 30 samples after five warmups,
 covers 1–32 plus 1K/10K/30K authored contacts, replays 64 randomized seeds, and
 has valid finite-state, capacity, primitive, Box2D provenance, and subprocess
-sentinel results. The remaining unchecked items require the compact comparison
-report and authority playback; the raw matrix alone does not make them true.
+sentinel results.
+
+Review package, 2026-07-15: `../../evidence/p5.0a-s1.5/README.md` now condenses
+the objective matrix, convergence-versus-cost sweep, native and AVD primitive
+curves, separately scoped optimized Box2D rows, cross-host captures, known
+limits, reconsideration triggers, and two synchronized playback sets. The
+connected Pixel 7a remains an explicit locked-device gap. S1.5 is complete;
+the report contains a Jacobi-gather recommendation but does not select or
+promote it. Work stops at the unchecked S1.6 human decision below.
 
 - [x] Minimize randomized failures and promote reproducers into the corpus.
   The initial deterministic 16-seed run covered 32 scenarios and 64 candidate
@@ -193,13 +200,13 @@ report and authority playback; the raw matrix alone does not make them true.
 - [x] Run the separate optimized Box2D performance lane where the authored
   fixture has a valid shared projection; do not use the deterministic authority
   lane as the sole CPU comparison.
-- [ ] Benchmark the shared prefix-scan, radix-sort, unique, and compaction
+- [x] Benchmark the shared prefix-scan, radix-sort, unique, and compaction
   primitives at 1K, 10K, and 30K element scales on the same named adapters and
   include their curves in the comparison report.
 - [x] Name the Android reference device and record at least one solver-only
   and primitive measurement on it; if no device is available, record that gap
   explicitly rather than omitting the lane.
-- [ ] Generate one comparison report and synchronized playback set.
+- [x] Generate one comparison report and synchronized playback set.
 
 Gate: failures are actionable without rereading logs, every accepted run has
 zero overflow, performance results name their source revision and adapter, and
