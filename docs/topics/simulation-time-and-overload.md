@@ -1,7 +1,8 @@
 # Simulation time and overload
 
-Status: decided default contract, 2026-07-14. The current bootstrap scheduler
-still has a documented implementation gap described below.
+Status: decided default contract, 2026-07-14. Interactive slow-clock admission
+is implemented; exact-count headless execution remains the next implementation
+slice described below.
 
 Governing direction:
 [one GPU-resident 2D physics world](physbox5-unified-gpu-physics.md).
@@ -244,18 +245,19 @@ quality reduction, and optional strict real-time modes. Those remain evidence,
 not inherited requirements. PhysBox 5 initially selects fixed-delta slow time
 with no interactive catch-up and measures it before considering more policy.
 
-## Current bootstrap implementation gap
+## Current implementation status
 
-At this decision date,
-[`crates/physbox-engine/src/host.rs`](../../crates/physbox-engine/src/host.rs)
-still carries the bootstrap accumulator inherited from the retained platform
-rim: it clamps elapsed input to 250 ms and may encode up to eight steps in one
-frame. That is not the intended PhysBox 5 product behavior.
+The shared engine clock now admits zero or one interactive step, keeps only a
+fractional remainder below one fixed `dt`, records excess whole-step time as
+permanent overload slip, and accounts for lifecycle/clamp discard separately.
+Deterministic tests cover the required cadence, stall, time-scale, pause,
+single-step, and suspend/resume sequences. The 250 ms discontinuity bound is
+engine-owned rather than applied by a platform adapter.
 
-Replace it with the shared slow-clock/explicit-step contract before accepting
-P5.0a performance evidence or building product interactions that depend on
-timing. Do not expand the current catch-up slots, reports, or tests as if they
-were the new architecture.
+Headless capture still feeds nominal wall intervals through that interactive
+mode. The next slice adds the distinct exact-count request before accepting
+P5.0a performance evidence; it will reuse the same outer-step encoding rather
+than adding a platform scheduler.
 
 ## Reconsideration triggers
 

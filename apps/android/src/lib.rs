@@ -117,7 +117,10 @@ mod android {
                     if let Some(report) = outcome.report
                         && (report.frame_index == 1 || report.scenario.complete)
                     {
-                        log::info!("PHYSBOX5_MARK_FRAME_RENDERED {}", report.marker_json());
+                        log::info!(
+                            "PHYSBOX5_MARK_FRAME_RENDERED {}",
+                            report.compact_marker_json()
+                        );
                     }
                     if outcome.exit_requested {
                         event_loop.exit();

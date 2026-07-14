@@ -51,14 +51,16 @@ impl WebApp {
     }
 
     pub fn render(&mut self, timestamp_ms: f64) -> Result<String, JsValue> {
-        let elapsed_seconds = self.last_timestamp_ms.map_or(1.0 / 60.0, |last| {
-            ((timestamp_ms - last) / 1000.0).clamp(0.0, 0.25)
-        });
+        let elapsed_seconds = self
+            .last_timestamp_ms
+            .map_or(1.0 / 60.0, |last| (timestamp_ms - last) / 1000.0);
         self.last_timestamp_ms = Some(timestamp_ms);
         let report = self
             .renderer
             .render(FrameInput {
                 elapsed_seconds,
+                requested_time_scale: 1.0,
+                clock_action: Default::default(),
                 pointer_events: std::mem::take(&mut self.pending_pointer_events),
             })
             .map_err(js_error)?;

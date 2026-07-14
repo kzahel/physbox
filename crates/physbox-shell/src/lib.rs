@@ -168,6 +168,8 @@ impl WinitFrameDriver {
                 self.last_frame = Some(now);
                 let input = FrameInput {
                     elapsed_seconds: elapsed,
+                    requested_time_scale: 1.0,
+                    clock_action: Default::default(),
                     pointer_events: std::mem::take(&mut self.pending_pointer_events),
                 };
                 let report = self

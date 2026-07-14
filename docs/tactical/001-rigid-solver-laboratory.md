@@ -40,9 +40,9 @@ Rapier2D comparator are outside this tactical.
 
 - [ ] Replace the bootstrap eight-step catch-up loop with engine-owned
   interactive slow-clock and explicit-step modes.
-- [ ] Define requested/effective scale, active wall time, overload slip,
+- [x] Define requested/effective scale, active wall time, overload slip,
   lifecycle discard, completed-step, and pacing-mode report fields.
-- [ ] Add deterministic 120/60/50/30/15 Hz, long-stall, pause/single-step, and
+- [x] Add deterministic 120/60/50/30/15 Hz, long-stall, pause/single-step, and
   suspend/resume timing sequences that reject multi-step interactive frames or
   retained whole-step debt.
 - [ ] Define versioned body, authored-manifold, contact-cache, scenario,

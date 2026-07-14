@@ -4,12 +4,10 @@ use wgpu::util::DeviceExt;
 
 use crate::{
     EngineConfig, FrameInput,
+    clock::{FIXED_STEP_HZ, FIXED_STEP_SECONDS, InteractiveClockInput, SimulationClock},
     renderer::RenderFrameContext,
     report::{FrameReport, SCENE_CONTRACT_VERSION, ScenarioResult, SceneContract},
 };
-
-const FIXED_STEP_SECONDS: f64 = 1.0 / 60.0;
-const MAX_STEPS_PER_FRAME: u32 = 8;
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -38,7 +36,7 @@ pub struct EngineHost {
     bind_group: wgpu::BindGroup,
     compute_pipeline: wgpu::ComputePipeline,
     render_pipeline: wgpu::RenderPipeline,
-    accumulator_seconds: f64,
+    clock: SimulationClock,
     frame_index: u64,
     fixed_steps_total: u64,
     pointer_events_total: u64,
@@ -158,7 +156,7 @@ impl EngineHost {
             bind_group,
             compute_pipeline,
             render_pipeline,
-            accumulator_seconds: 0.0,
+            clock: SimulationClock::default(),
             frame_index: 0,
             fixed_steps_total: 0,
             pointer_events_total: 0,
@@ -170,13 +168,12 @@ impl EngineHost {
         input: FrameInput,
         context: RenderFrameContext<'_>,
     ) -> FrameReport {
-        self.accumulator_seconds += input.elapsed_seconds.clamp(0.0, 0.25);
         self.pointer_events_total += input.pointer_events.len() as u64;
-        let mut steps = 0;
-        while self.accumulator_seconds >= FIXED_STEP_SECONDS && steps < MAX_STEPS_PER_FRAME {
-            self.accumulator_seconds -= FIXED_STEP_SECONDS;
-            steps += 1;
-        }
+        let (steps, pacing) = self.clock.admit(InteractiveClockInput {
+            elapsed_seconds: input.elapsed_seconds,
+            requested_time_scale: input.requested_time_scale,
+            action: input.clock_action,
+        });
 
         let params = FrameParams {
             dt: FIXED_STEP_SECONDS as f32,
@@ -234,7 +231,7 @@ impl EngineHost {
             engine: "physbox5",
             state_owner: "gpu",
             body_count: 1,
-            fixed_step_hz: 60,
+            fixed_step_hz: FIXED_STEP_HZ,
             scenario: self.config.scenario.name(),
         };
         let complete = self.frame_index >= 5 && self.fixed_steps_total >= 3;
@@ -256,6 +253,7 @@ impl EngineHost {
             fixed_steps_this_frame: steps,
             pointer_events_total: self.pointer_events_total,
             target_size: context.target.size,
+            pacing,
             scene_contract: contract,
             scenario,
         }

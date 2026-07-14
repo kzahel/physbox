@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+mod clock;
 mod config;
 mod frame;
 mod gpu_context;
@@ -7,6 +8,7 @@ mod host;
 mod renderer;
 mod report;
 
+pub use clock::{InteractiveClockAction, PacingMode, PacingReport};
 pub use config::EngineConfig;
 pub use frame::{FrameInput, PointerButton, PointerEvent, PointerPhase};
 pub use gpu_context::{AdapterDiagnostics, create_instance};
