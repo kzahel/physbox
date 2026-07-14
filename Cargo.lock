@@ -1337,6 +1337,7 @@ name = "physbox-engine"
 version = "0.1.0"
 dependencies = [
  "bytemuck",
+ "physbox-contracts",
  "physbox-launch",
  "serde",
  "serde_json",
@@ -1352,6 +1353,15 @@ dependencies = [
  "png",
  "pollster",
  "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "physbox-lab"
+version = "0.1.0"
+dependencies = [
+ "physbox-contracts",
+ "physbox-engine",
  "serde_json",
 ]
 

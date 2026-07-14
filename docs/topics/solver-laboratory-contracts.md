@@ -55,3 +55,17 @@ sentinel are runner responsibilities built on this schema in the next slice.
 Reconsider JSON only when trace volume measurably dominates validation time or
 storage. Any denser encoding must preserve a human-inspectable manifest,
 stable hashes, finite-number enforcement, and explicit version negotiation.
+
+## Scenario ownership and replay
+
+The scenario registry and deterministic parameterized generators live in
+`physbox-engine`; `physbox-lab` calls that registry and never maintains a
+second fixture definition. The current authored one-contact and chain families
+use a versioned fixed integer generator whose seed and complete canonical
+scenario are recorded. Replaying the same `(family, parameters, seed)` must
+produce byte-identical scenario JSON.
+
+The laboratory independently checks finite vectors, equal-and-opposite
+contributions, nonnegative normal impulse, Coulomb tangent projection,
+body-label swap symmetry, and capacity validity. Tests include deliberately
+broken responses for every invariant so a vacuous checker cannot pass.

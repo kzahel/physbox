@@ -51,9 +51,9 @@ Rapier2D comparator are outside this tactical.
   canonical JSON serialization, unsupported-feature rejection, source scenario
   hash, settings, provenance, atomic result creation, and
   `PHYSBOX5_ORACLE_SUCCESS`.
-- [ ] Add finite-state, equal-and-opposite, symmetry, projected-impulse,
+- [x] Add finite-state, equal-and-opposite, symmetry, projected-impulse,
   capacity, and repeatability invariants.
-- [ ] Add deterministic authored fixtures, randomized generation, and replayable
+- [x] Add deterministic authored fixtures, randomized generation, and replayable
   reproducer serialization.
 - [ ] Add negative fixtures for a bad source/projection hash, wrong oracle pin,
   unsupported feature, timeout, stale or partial result, and missing success

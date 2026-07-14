@@ -7,6 +7,7 @@ mod gpu_context;
 mod host;
 mod renderer;
 mod report;
+mod scenario;
 
 pub use clock::{InteractiveClockAction, PacingMode, PacingReport};
 pub use config::EngineConfig;
@@ -16,3 +17,4 @@ pub use gpu_context::{AdapterDiagnostics, create_instance};
 pub use renderer::OffscreenRenderer;
 pub use renderer::SurfaceRenderer;
 pub use report::{FrameReport, ScenarioResult, SceneContract};
+pub use scenario::{ScenarioBuildError, authored_chain_scenario, authored_one_contact_scenario};

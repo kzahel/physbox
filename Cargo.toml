@@ -6,6 +6,7 @@ members = [
   "apps/web",
   "crates/physbox-engine",
   "crates/physbox-contracts",
+  "crates/physbox-lab",
   "crates/physbox-launch",
   "crates/physbox-shell",
 ]
