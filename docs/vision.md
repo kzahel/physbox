@@ -7,7 +7,8 @@ is [PhysBox 5: one GPU-resident 2D physics world](topics/physbox5-unified-gpu-ph
 which owns the detailed solver, contact, broadphase, oracle, and acceptance
 contracts. The sibling [performance and scale contract](topics/performance-and-scale.md)
 owns benchmark workloads, CPU/GPU comparison, timing validity, capacity, and
-scale claims.
+scale claims. The [simulation time and overload contract](topics/simulation-time-and-overload.md)
+owns fixed-step pacing and the default slow-motion response to missed budgets.
 
 PhysBox 5 is a small, purpose-built 2D physics world whose live mechanical
 state stays on the GPU. It should eventually feel like a deliberately
@@ -68,6 +69,12 @@ delayed diagnostics. No GPU result may be required to advance the next
 interactive step. Bounded validation may flush complete state only after its
 last step.
 
+Interactive pacing admits zero or one outer 60 Hz fixed step per engine frame.
+If wall time advances faster than the engine can present frames, excess time is
+slipped permanently and the entire world runs in slow motion; later frames do
+not batch steps to catch up. Exact-count headless validation remains independent
+of wall time.
+
 The initial body contract is a stable generational handle, shape and
 dimensions, position and angle, linear and angular velocity, inverse mass and
 scalar inverse inertia, material/collision flags, and sleep state. True 2D
@@ -76,7 +83,8 @@ means no quaternions, 3D inertia tensors, gyroscopic terms, or tangent planes.
 ## Solver decision before collision complexity
 
 The first real physics milestone is an engine-owned solver laboratory fed by
-authored manifolds. A scalar Rust executable specification and GPU variants
+authored manifolds plus a scoped analytic fixture contact generator for
+multi-step fixtures. A scalar Rust executable specification and GPU variants
 consume the same contact records:
 
 1. contact-centric Jacobi with per-body gather (portable leading candidate);
@@ -149,7 +157,8 @@ Scale evidence begins in the solver laboratory rather than after rigid parity.
 The initial shorthand is that 10K bodies prove useful scale, 30K should begin
 to demonstrate an advantage on realistic contact-rich scenes, and 100K is a
 qualified frontier whose meaning depends on awake bodies, candidate pairs,
-contacts, solver work, and shape mix.
+contacts, solver work, and shape mix. Phones are a first-class target with a
+smaller early-measured envelope owned by the performance contract.
 
 Oracle precedence is explicit rather than a majority vote. Invariants and the
 scalar specification own mathematical/pass correctness; Box2D owns the rigid

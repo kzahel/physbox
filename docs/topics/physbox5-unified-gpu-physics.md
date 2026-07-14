@@ -109,7 +109,9 @@ better product than a high-count scene whose objects trampoline, lag, pin, or
 require scene-specific damping. Correctness does not make scale optional: the
 sibling [performance and scale contract](performance-and-scale.md) requires
 qualified CPU/GPU crossover and stress evidence from the solver laboratory
-onward.
+onward. The [simulation-time contract](simulation-time-and-overload.md) keeps
+the outer delta fixed and makes coherent slow motion, rather than multi-step
+catch-up, the default response to overload.
 
 The initial rigid experience should remain playable throughout development:
 
@@ -152,6 +154,13 @@ those readbacks may be required to advance the next simulation step.
 "GPU-resident" therefore does not mean placing the entire application in a
 shader. It means that every value participating in mechanical feedback is
 current and available to the same GPU solve graph.
+
+The shared interactive clock advances that graph by zero or one outer fixed
+step per engine frame. When wall time outruns completed frames, excess
+whole-step time slips permanently and all world behavior slows together; it is
+not retained for a later catch-up batch. Exact-count validation and throughput
+benchmarks request explicit steps independently of wall pacing. The full
+contract is [simulation time and overload](simulation-time-and-overload.md).
 
 One authoritative state does not require one constraint formulation for every
 material. A Box2D-like velocity-impulse rigid solver may later coexist with
@@ -265,6 +274,18 @@ one contact, symmetric and off-center impact, two-body chains, two-, five-, and
 ten-body stacks, pyramids, thin-edge landings, friction, restitution, extreme
 mass ratios, and fixed-step/substep sweeps. Every variant consumes the same
 precomputed manifolds and emits the same versioned result schema.
+
+Precomputed manifolds cover single-step and few-step fixtures. The most
+diagnostic fixtures — stacks settling over hundreds of fixed steps, long
+friction slides, and sleep candidates — need contacts regenerated as bodies
+move, and anchor-based separation updates only cover substeps within one fixed
+step. The laboratory therefore includes a deliberately scoped analytic fixture
+contact generator limited to the fixture geometries: circle/floor,
+rectangle/floor, and axis-aligned box-on-box resting contact. It is validation
+tooling checked against Box2D's public collision functions on those
+geometries. It must not grow SAT clipping, general feature persistence, or
+broadphase behavior; P5.2 replaces it and never promotes it into the product
+narrowphase.
 
 Compare variants using:
 
@@ -779,7 +800,8 @@ shared GPU host:
 
 - shared desktop, browser, Android, and headless frame boundary;
 - Rust/`wgpu` device and surface ownership;
-- fixed-step scheduling and catch-up policy;
+- fixed-step scheduling ownership, while replacing its catch-up behavior with
+  the PhysBox 5 slow-time contract;
 - portable WGSL particle integration and PBF/XPBD passes;
 - sparse particle grid, prefix scans, compaction, and diagnostics;
 - analytic circle, rectangle, and other collider math;
@@ -859,8 +881,18 @@ product implementation indefinitely.
   direct public narrowphase comparison, and optional patch-digested microscope
   build.
 - Implement the scalar executable specification and pass-level GPU comparison.
+- Add the scoped analytic fixture contact generator for multi-step fixtures;
+  fixture geometries only, checked against Box2D's public collision functions,
+  replaced by P5.2.
 - Compare portable contact-centric Jacobi/gather, graph-colored Soft-TGS, and
   optional rigid XPBD or split alternatives on the same precomputed contacts.
+- Benchmark the shared prefix-scan, radix-sort, unique, and compaction
+  primitives the adjacency build requires; several of them run more than once
+  per step, so their measured cost is a solver-selection input that caps
+  broadphase, persistence, and solver scale.
+- Name the desktop and Android reference adapters and record at least one
+  solver-laboratory measurement on the Android device before the solver
+  decision.
 - Select the solver foundation from numerical behavior, cross-adapter behavior,
   GPU cost, memory, and one side-by-side review.
 
@@ -1021,6 +1053,9 @@ universal promise or a substitute for measured curves on named adapters.
 Fluid work does not begin until all of the following are true:
 
 - No GPU-to-CPU result is required to advance rigid simulation.
+- Interactive frames execute zero or one outer fixed step, slip excess wall
+  time without debt, and report effective scale; explicit-step validation
+  completes the authored count independently of machine speed.
 - Desktop, browser, Android, and headless run the same body state, collision
   stages, solver, scene, and neutral action sequence.
 - The selected solver passed the precomputed-contact laboratory against its
@@ -1048,9 +1083,10 @@ Fluid work does not begin until all of the following are true:
 Rigid validation should record body position/angle, linear/angular velocity,
 penetration, manifold/contact counts, sleep transitions, energy summaries,
 overflow counters, candidate amplification, solver work, memory high-water,
-and per-pass GPU time where supported. Exact full-trajectory equality with
-Box2D is neither required nor expected; exact or tightly bounded pass-level
-comparison with the PhysBox scalar specification is required where declared.
+per-pass GPU time where supported, pacing mode, effective time scale, and
+slipped wall time. Exact full-trajectory equality with Box2D is neither
+required nor expected; exact or tightly bounded pass-level comparison with the
+PhysBox scalar specification is required where declared.
 
 ### Later coupled-fluid acceptance
 
@@ -1111,6 +1147,9 @@ The first rigid work begins with these defaults:
   multi-cell grid are the first scalable bakeoff.
 - Persistent contacts use canonical body handles with generations plus stable
   geometric feature identifiers, transferred by sorted merge.
+- Interactive frames execute at most one outer fixed step and permanently slip
+  excess wall time; solver substeps and explicit validation steps are separate
+  concepts.
 - Box2D commit `3a4f0da8374af61293a03021c9a0b3ebcfe67948`
   is the initial rigid oracle source; a process-isolated native adapter plus
   exact build and world settings are frozen by P5.0a.
@@ -1129,6 +1168,12 @@ The solver laboratory and early pipeline must still answer:
   global-barrier dispatches for portable WebGPU?
 - At what measured body/contact distributions does SAP, grid, or later LBVH win
   on browser, desktop, and Android adapters?
+- Which sleep and island policy fits GPU residency? Box2D's island-based
+  sleeping is a connected-components problem that is awkward without readback;
+  the likely shape is per-body sleep timers with bounded neighbor wake
+  propagation, whose behavioral differences from island sleeping
+  (partial-stack sleep, wake waves) need their own fixtures and bands before
+  P5.4 acceptance.
 - Which scenario-specific trajectory, manifold, energy, penetration, and sleep
   bands distinguish healthy parallel ordering variation from a materially
   different or unstable result?

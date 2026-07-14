@@ -5,7 +5,10 @@ weak solver, incomplete pair generation, or host synchronization.
 Performance evidence follows the
 [performance and scale contract](topics/performance-and-scale.md) from the
 solver laboratory onward; P5.4 is the first complete rigid-engine claim, not
-the first time scale is measured.
+the first time scale is measured. Interactive scheduling follows the
+[simulation time and overload contract](topics/simulation-time-and-overload.md):
+fixed `dt`, at most one outer step per engine frame, and permanent wall-time
+slip instead of catch-up.
 
 ## P5.0 — lean shared-host bootstrap (current)
 
@@ -24,24 +27,34 @@ installed, and the tree contains only the retained platform rim.
 Execution tracker:
 [S1 rigid solver laboratory](tactical/001-rigid-solver-laboratory.md).
 
-1. Define versioned body, authored-manifold, scenario, trace, metric, capacity,
+1. Replace the bootstrap eight-step catch-up accumulator with the shared
+   slow-clock/explicit-step modes, diagnostics, and timing-sequence tests.
+2. Define versioned body, authored-manifold, scenario, trace, metric, capacity,
    and failure schemas.
-2. Add scalar Rust contact preparation and solve specification.
-3. Add a process-isolated native, pinned, single-threaded Box2D authority
+3. Add scalar Rust contact preparation and solve specification.
+4. Add the scoped analytic fixture contact generator so multi-step fixtures
+   can regenerate contacts; fixture geometries only, checked against Box2D
+   public collision functions, replaced by P5.2 and never promoted.
+5. Add a process-isolated native, pinned, single-threaded Box2D authority
    executable and direct public narrowphase harness; keep both outside the
    product dependency graph.
-4. Add invariant/metamorphic generators and failure minimization.
-5. Implement GPU Jacobi/gather and graph-colored Soft-TGS against precomputed
+6. Add invariant/metamorphic generators and failure minimization.
+7. Implement GPU Jacobi/gather and graph-colored Soft-TGS against precomputed
    manifolds; optionally add one XPBD/split comparator.
-6. Record the numerical, cross-adapter, capacity, and 1K/10K/30K authored-contact
-   performance matrix required by the scale contract.
-7. Select the solver family and freeze its first checked baselines through one
-   explicit human review.
+8. Benchmark the shared prefix-scan, radix-sort, unique, and compaction
+   primitives on named adapters; their measured cost is a solver-selection
+   input.
+9. Record the numerical, cross-adapter, capacity, and 1K/10K/30K authored-contact
+   performance matrix required by the scale contract, including at least one
+   measurement on the named Android reference device.
+10. Select the solver family and freeze its first checked baselines through
+    one explicit human review.
 
 Exit: exact/tightly bounded scalar pass comparisons, behavior matrix, no
-readback dependency, no overflow, and a documented solver decision. Do not
-build a production broadphase before this exit. PhysBox 3 browser automation,
-LiquidFun, and a Rapier2D comparator are not part of this stage.
+readback dependency, no overflow, no interactive multi-step catch-up, and a
+documented solver decision. Do not build a production broadphase before this
+exit. PhysBox 3 browser automation, LiquidFun, and a Rapier2D comparator are
+not part of this stage.
 
 ## P5.1 — minimal rigid state and fixed-floor contact
 
@@ -52,7 +65,8 @@ LiquidFun, and a Rapier2D comparator are not part of this stage.
 - Add reset and engine-owned neutral grab actions.
 - Prove the same scenario and scene contract on every host.
 - Record bytes per body and free-flight integration/rendering curves at 1K,
-  10K, and 100K before freezing the body layout.
+  10K, and 100K on the named reference adapters, including Android, before
+  freezing the body layout.
 
 ## P5.2 — small-world collision and persistence
 
@@ -82,8 +96,10 @@ LiquidFun, and a Rapier2D comparator are not part of this stage.
   3K, 10K, 30K, and 100K where each scene family is applicable. Extend sparse
   and mostly-sleeping cases to 300K+ where useful.
 - Track P50/P95/P99 GPU/CPU timing, dispatches, active work, amplification,
-  memory high-water, and every overflow. A performance result is invalid when
-  correctness or capacity fails.
+  memory high-water, every overflow, effective interactive time scale, and
+  slipped wall time. A performance result is invalid when correctness or
+  capacity fails; slow-time pacing cannot be reported as sustained 60 Hz
+  throughput.
 
 ## P5.5 — first construction loop
 

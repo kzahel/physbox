@@ -1,7 +1,8 @@
 # PhysBox 5 agent rules
 
 Read `README.md`, `docs/topics/physbox5-unified-gpu-physics.md`,
-`docs/topics/performance-and-scale.md`, `docs/bringup-plan.md`, and
+`docs/topics/performance-and-scale.md`,
+`docs/topics/simulation-time-and-overload.md`, `docs/bringup-plan.md`, and
 `docs/platform-architecture.md` before changing physics, runtime, rendering,
 input, scheduling, validation, deployment, or platform code. Read
 `docs/topics/README.md` and `docs/tactical/README.md` before adding or
@@ -11,11 +12,13 @@ reorganizing project documentation.
 
 `docs/topics/physbox5-unified-gpu-physics.md` is the authoritative technical
 direction. `docs/topics/performance-and-scale.md` owns the benchmark, capacity,
-CPU-comparison, and scale-claim contract. `docs/vision.md` is only a compact
-entry point. A topic document is a durable record of a technical concern:
-decision state, evidence, alternatives, validation, and reconsideration
-triggers. Topic filenames are unnumbered kebab-case and the topic index must
-list every active topic.
+CPU-comparison, and scale-claim contract.
+`docs/topics/simulation-time-and-overload.md` owns interactive pacing and the
+no-catch-up slow-time contract. `docs/vision.md` is only a compact entry point.
+A topic document is a durable record of a technical concern: decision state,
+evidence, alternatives, validation, and reconsideration triggers. Topic
+filenames are unnumbered kebab-case and the topic index must list every active
+topic.
 
 Tactical documents are executable workstream plans. Their filenames use a
 three-digit zero-padded prefix assigned in first Git-creation order; never
@@ -38,6 +41,13 @@ product defaults.
 boundary. No GPU result may be required on the CPU to advance the next
 interactive frame. Compact diagnostics may arrive asynchronously; bounded
 headless validation may flush after its final frame.
+
+Interactive scheduling preserves the selected fixed `dt` but never repays wall
+time with multi-step catch-up. An interactive engine frame executes zero or one
+outer fixed step; excess whole-step wall time slips permanently and the whole
+simulated world slows. Solver substeps and explicitly requested headless
+validation steps are not catch-up. Platform adapters must not own accumulators,
+time dilation, step admission, or alternate overload behavior.
 
 The browser document is a fullscreen canvas host. Do not add ordinary product
 UI, debug panels, status chrome, or diagnostics in HTML/CSS. A minimal DOM

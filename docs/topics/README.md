@@ -14,6 +14,9 @@ a running log.
 - [Performance and scale contract](performance-and-scale.md) — workload and
   scene matrix, CPU/GPU comparison lanes, timing/capacity validity, provisional
   scale expectations, and milestone/regression gates.
+- [Simulation time and overload](simulation-time-and-overload.md) — fixed-delta
+  slow motion under load, zero-or-one interactive steps, permanent wall-time
+  slip, explicit-step validation, and scheduler diagnostics.
 
 ## Conventions
 
@@ -30,5 +33,6 @@ a running log.
 - Add every active topic to this index in the same commit that creates it.
 
 Likely next topics include the scalar contact specification, contact
-persistence and feature identifiers, GPU accumulation strategies, broadphase
-bake-off results, and oracle/failure-artifact schemas.
+persistence and feature identifiers, GPU accumulation strategies, GPU sleeping
+and island-wake strategy, broadphase bake-off results, and
+oracle/failure-artifact schemas.

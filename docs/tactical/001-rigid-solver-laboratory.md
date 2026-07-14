@@ -20,12 +20,16 @@ This tactical tracks execution; it does not restate or revise the direction's:
 - [layered oracle model](../topics/physbox5-unified-gpu-physics.md#layered-rigid-oracle-model);
 - [oracle execution and precedence](../topics/physbox5-unified-gpu-physics.md#oracle-execution-topology-and-precedence); and
 - [failure-artifact](../topics/physbox5-unified-gpu-physics.md#oracle-driven-development-and-failure-artifacts)
-  requirements; and
+  requirements;
 - [performance and scale](../topics/performance-and-scale.md), including its
   workload vector, solver-only scope, timing validity, and CPU comparison
-  lanes.
+  lanes; and
+- [simulation time and overload](../topics/simulation-time-and-overload.md),
+  including zero-or-one interactive steps, permanent wall-time slip, and
+  explicit-step validation.
 
-P5.0a operates on authored manifolds. Production broadphase, general
+P5.0a operates on authored manifolds plus the deliberately scoped analytic
+fixture contact generator. Production broadphase, general
 narrowphase, product tools, liquid, and scene breadth remain later stages.
 Original LiquidFun, the PhysBox 3 sidecar and web product, and an optional
 Rapier2D comparator are outside this tactical.
@@ -34,6 +38,13 @@ Rapier2D comparator are outside this tactical.
 
 ### S1.1 — schemas and invariants
 
+- [ ] Replace the bootstrap eight-step catch-up loop with engine-owned
+  interactive slow-clock and explicit-step modes.
+- [ ] Define requested/effective scale, active wall time, overload slip,
+  lifecycle discard, completed-step, and pacing-mode report fields.
+- [ ] Add deterministic 120/60/50/30/15 Hz, long-stall, pause/single-step, and
+  suspend/resume timing sequences that reject multi-step interactive frames or
+  retained whole-step debt.
 - [ ] Define versioned body, authored-manifold, contact-cache, scenario,
   metric, trace, capacity, and failure-result schemas.
 - [ ] Define the versioned native-oracle request/result protocol, including
@@ -50,7 +61,9 @@ Rapier2D comparator are outside this tactical.
 
 Gate: schema round trips, generators replay exactly, deliberately broken
 implementations trip every invariant, and every transport/provenance negative
-fails deterministically without accepting an old result.
+fails deterministically without accepting an old result. Interactive timing
+never executes more than one outer step, while explicit-step fixtures complete
+the exact requested count independent of wall cadence.
 
 ### S1.2 — scalar executable specification
 
@@ -58,6 +71,10 @@ fails deterministically without accepting an old result.
   tangent impulses, restitution, bias, and relaxation in scalar Rust.
 - [ ] Emit pass-level traces that identify the first divergent value.
 - [ ] Check analytic one-contact cases and metamorphic variants.
+- [ ] Implement the scoped analytic fixture contact generator (circle/floor,
+  rectangle/floor, axis-aligned box-on-box) so settling, sliding, and sleep
+  fixtures can regenerate contacts across fixed steps; it must not grow SAT
+  clipping, general feature persistence, or broadphase behavior.
 - [ ] Establish tightly bounded scalar baseline fixtures.
 
 Gate: analytic expectations and all invariant fixtures pass without Box2D.
@@ -74,7 +91,8 @@ Gate: analytic expectations and all invariant fixtures pass without Box2D.
   FFI; no engine or app crate may depend on the adapter.
 - [ ] Reject unsupported projection features without approximating them or
   introducing a second authored format.
-- [ ] Compare public circle/polygon collision manifolds directly.
+- [ ] Compare public circle/polygon collision manifolds directly, including
+  the fixture contact generator's manifolds on its supported geometries.
 - [ ] Add the separately identified, patch-digested microscope lane if scalar
   and public Box2D output cannot localize a failure.
 - [ ] Produce synchronized scalar/Box2D playback for behavioral fixtures.
@@ -110,12 +128,19 @@ pass with no simulation-dependent readback.
 - [ ] Run the separate optimized Box2D performance lane where the authored
   fixture has a valid shared projection; do not use the deterministic authority
   lane as the sole CPU comparison.
+- [ ] Benchmark the shared prefix-scan, radix-sort, unique, and compaction
+  primitives at 1K, 10K, and 30K element scales on the same named adapters and
+  include their curves in the comparison report.
+- [ ] Name the Android reference device and record at least one solver-only
+  and primitive measurement on it; if no device is available, record that gap
+  explicitly rather than omitting the lane.
 - [ ] Generate one comparison report and synchronized playback set.
 
 Gate: failures are actionable without rereading logs, every accepted run has
 zero overflow, performance results name their source revision and adapter, and
-the solver decision includes convergence-versus-cost curves that expose any
-dispatch, bandwidth, scratch, or capacity limit at useful scale.
+the solver decision includes convergence-versus-cost curves — including shared
+primitive cost and the Android measurement or its recorded absence — that
+expose any dispatch, bandwidth, scratch, or capacity limit at useful scale.
 
 ### S1.6 — solver decision
 

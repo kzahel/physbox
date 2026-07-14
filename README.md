@@ -14,6 +14,7 @@ Read:
 
 - [Authoritative GPU-physics direction](docs/topics/physbox5-unified-gpu-physics.md)
 - [Performance and scale contract](docs/topics/performance-and-scale.md)
+- [Simulation time and overload contract](docs/topics/simulation-time-and-overload.md)
 - [Vision summary](docs/vision.md)
 - [Bring-up plan](docs/bringup-plan.md)
 - [Platform architecture](docs/platform-architecture.md)

@@ -32,6 +32,12 @@ The initial planning shorthand is:
 - **100K defines a qualified frontier.** It is plausible for sparse,
   mostly-sleeping, or bounded-neighbor scenes, not a promise for arbitrary
   dense stacks.
+- **Phones are a first-class target with a smaller envelope.** The provisional
+  planning band is 3K–10K awake contact-rich bodies on a named Android
+  reference device — still far beyond a CPU phone engine and sufficient for
+  the sandbox product. Mobile bandwidth, dispatch overhead, and thermal
+  throttling interact badly with fixed-step pacing, so this band is measured
+  early rather than extrapolated from desktop.
 
 These are hypotheses to measure and revise. They are not portable absolute
 acceptance thresholds yet.
@@ -177,6 +183,24 @@ not acceptable to choose a formulation only from tiny correctness fixtures and
 discover later that dispatches, coloring, gather bandwidth, or scratch growth
 prevent scale.
 
+## Throughput versus interactive pacing
+
+The [simulation time and overload contract](simulation-time-and-overload.md)
+allows an overloaded interactive world to run in slow motion, but that product
+behavior is not a performance exemption.
+
+Solver-only, collision-only, and end-to-end throughput benchmarks request an
+explicit number of fixed steps independent of wall pacing and report time per
+step. Full-frame interactive benchmarks use the zero-or-one-step slow clock and
+add requested/effective time scale plus current and cumulative slipped wall
+time. A smooth 30 FPS presentation that completes 30 outer 60 Hz steps per wall
+second is approximately 0.5x simulation and must not be labeled sustained
+60 Hz physics.
+
+Every artifact names its pacing mode. Multi-step batches are permitted only
+when an explicit validation or throughput request authored those steps; they
+are never presented as interactive catch-up behavior.
+
 ## CPU comparison lanes
 
 Box2D has two separate roles and therefore two separate configurations:
@@ -250,6 +274,10 @@ WebGPU's `timestamp-query` feature is optional. Request it when supported and
 record the feature state. When unavailable, retain end-to-end measurements and
 mark per-pass GPU time unavailable; never label CPU submission time as GPU
 execution time. See the [WebGPU specification](https://gpuweb.github.io/gpuweb/#timestamp-query).
+Browser implementations may also quantize timestamp queries (Chromium coarsens
+them to roughly 100 µs). Record the known or suspected quantization granularity
+with the result and do not interpret per-pass differences below that
+granularity as real.
 
 The initial protocol is:
 
@@ -267,8 +295,9 @@ The initial protocol is:
    and compact counter results arrive through bounded delayed readback or are
    flushed only after the final benchmark step.
 7. Record adapter, backend, device/driver, OS, browser/version where relevant,
-   power mode, revision/dirty state, scenario hash, capacity contract, and all
-   physics settings.
+   power mode, revision/dirty state, scenario hash, capacity contract, pacing
+   mode, and all physics settings. Interactive results additionally record
+   effective scale and slipped wall time.
 
 Every result contains P50/P95/P99 total physics time, applicable per-pass GPU
 time, CPU encode/submit time, full-frame time, dispatch count, the complete
@@ -290,6 +319,8 @@ following is true:
   mixed into a steady-state number without being labeled separately;
 - the benchmark did not reach its declared steady-state or transient window;
 - timestamp capability or the clock being reported is ambiguous;
+- the pacing mode is missing or slow-time behavior is presented as real-time
+  throughput;
 - provenance, source scenario hash, or exact adapter identity is incomplete;
   or
 - a result was copied from an earlier run and presented as current evidence.
@@ -333,7 +364,10 @@ production broadphase exists:
 - treat dispatch count and global barriers as solver-selection inputs,
   especially for graph coloring and repeated substeps;
 - share prefix-scan, radix-sort, unique, adjacency, and compaction
-  infrastructure rather than create pass-local host orchestration;
+  infrastructure rather than create pass-local host orchestration, and
+  benchmark those primitives as first-class artifacts from P5.0a onward —
+  several run more than once per step, so their cost caps every downstream
+  stage;
 - isolate very large static shapes from a uniform-grid cell-size decision; and
 - preserve the same logical algorithm on portable and optional accelerated
   capability tiers.
@@ -348,7 +382,9 @@ first emit the complete canonical pair set.
 
 - **P5.0a solver laboratory:** establish the benchmark schema, work vector,
   timestamp/counter path, capacity failures, and 1K/10K/30K authored-contact
-  convergence-versus-cost curves.
+  convergence-versus-cost curves; benchmark the shared scan/sort/compaction
+  primitives; name the desktop and Android reference adapters and record at
+  least one Android solver-laboratory measurement.
 - **P5.1 body state:** measure bytes per body and free-flight integration plus
   rendering at 1K, 10K, and 100K before layouts become expensive to change.
 - **P5.2 collision/persistence:** keep all-pairs deliberately small, but record
@@ -397,6 +433,8 @@ revised from measurements, but not silently weakened after an unfavorable run.
 The first implementation work must resolve:
 
 - the named integrated, discrete, browser, and Android reference adapters;
+  the Android device is named during P5.0a and measured before the solver
+  decision rather than deferred to P5.4;
 - the product physics-time envelope within a 60 Hz frame;
 - warmup length, measurement-window length, repetition count, and noise model;
 - the first optimized Box2D worker-count policy for cross-engine reports;
