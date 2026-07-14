@@ -25,7 +25,7 @@ for (const path of await files(appRoot)) {
   for (const rule of rules) {
     if (rule.pattern.test(source)) failures.push(`${relative(root, path)}: ${rule.name}`);
   }
-  for (const flag of ["--width", "--height", "--frames", "--fps", "--output", "--report", "--scenario"]) {
+  for (const flag of ["--width", "--height", "--frames", "--fps", "--steps", "--output", "--report", "--scenario"]) {
     if (source.includes(`"${flag}"`)) failures.push(`${relative(root, path)}: launch option ${flag} belongs to physbox-launch`);
   }
 }

@@ -48,6 +48,7 @@ pub struct LaunchOptions {
     pub height: u32,
     pub frames: u32,
     pub fps: u32,
+    pub steps: Option<u32>,
     pub output: Option<PathBuf>,
     pub report: Option<PathBuf>,
     pub scenario: ValidationScenario,
@@ -60,6 +61,7 @@ impl Default for LaunchOptions {
             height: DEFAULT_HEIGHT,
             frames: DEFAULT_CAPTURE_FRAMES,
             fps: DEFAULT_CAPTURE_FPS,
+            steps: None,
             output: None,
             report: None,
             scenario: ValidationScenario::Bootstrap,
@@ -146,7 +148,7 @@ pub fn parse_android_json(json: &str) -> Result<LaunchRequest, LaunchError> {
 
 pub fn usage(program: &str, host: LaunchHost) -> String {
     let capture = if host.supports_capture() {
-        "\n  --frames N       rendered frames (default 12)\n  --fps N          fixed capture cadence (default 60)\n  --output PATH    required PNG output\n  --report PATH    required JSON provenance"
+        "\n  --frames N       wall-paced rendered frames (default 12)\n  --fps N          wall-paced capture cadence (default 60)\n  --steps N        exact fixed steps in one rendered frame\n  --output PATH    required PNG output\n  --report PATH    required JSON provenance"
     } else {
         ""
     };
@@ -172,6 +174,9 @@ fn apply_option(
         }
         "--frames" if host.supports_capture() => options.frames = parse_positive(argument, &value)?,
         "--fps" if host.supports_capture() => options.fps = parse_positive(argument, &value)?,
+        "--steps" if host.supports_capture() => {
+            options.steps = Some(parse_positive(argument, &value)?)
+        }
         "--output" if host.supports_capture() => options.output = Some(PathBuf::from(value)),
         "--report" if host.supports_capture() => options.report = Some(PathBuf::from(value)),
         _ => {
@@ -241,5 +246,22 @@ mod tests {
     fn android_uses_json_argv_transport() {
         let request = parse_android_json(r#"["--width","800"]"#).unwrap();
         assert_eq!(request.options.width, 800);
+    }
+
+    #[test]
+    fn headless_accepts_an_exact_step_count() {
+        let request = parse_tokens(
+            LaunchHost::Headless,
+            [
+                "--steps",
+                "600",
+                "--output",
+                "/tmp/out.png",
+                "--report",
+                "/tmp/out.json",
+            ],
+        )
+        .unwrap();
+        assert_eq!(request.options.steps, Some(600));
     }
 }

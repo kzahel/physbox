@@ -21,6 +21,7 @@ pub enum InteractiveClockAction {
 #[serde(rename_all = "kebab-case")]
 pub enum PacingMode {
     InteractiveSlowClock,
+    ExplicitStep,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -193,6 +194,36 @@ impl SimulationClock {
         )
     }
 
+    pub(crate) fn admit_exact(&mut self, steps: u32) -> PacingReport {
+        self.completed_outer_steps_total += u64::from(steps);
+        self.simulated_seconds_total += f64::from(steps) * FIXED_STEP_SECONDS;
+        PacingReport {
+            mode: PacingMode::ExplicitStep,
+            fixed_step_hz: FIXED_STEP_HZ,
+            fixed_dt_seconds: FIXED_STEP_SECONDS,
+            requested_time_scale: self.requested_time_scale,
+            completed_outer_steps_this_frame: steps,
+            completed_outer_steps_total: self.completed_outer_steps_total,
+            simulated_seconds_total: self.simulated_seconds_total,
+            admitted_active_wall_seconds_this_frame: 0.0,
+            admitted_active_wall_seconds_total: self.admitted_active_wall_seconds_total,
+            overload_slipped_wall_seconds_this_frame: 0.0,
+            overload_slipped_wall_seconds_total: self.overload_slipped_wall_seconds_total,
+            lifecycle_discarded_wall_seconds_this_frame: 0.0,
+            lifecycle_discarded_wall_seconds_total: self.lifecycle_discarded_wall_seconds_total,
+            retained_fraction_seconds: self.retained_fraction_seconds,
+            effective_simulation_scale: if self.scale_window_wall_seconds > 0.0 {
+                self.scale_window_simulated_seconds / self.scale_window_wall_seconds
+            } else {
+                0.0
+            },
+            presented_frame_hz: 0.0,
+            zero_step_frames_total: self.zero_step_frames_total,
+            one_step_frames_total: self.one_step_frames_total,
+            paused: self.paused,
+        }
+    }
+
     fn push_scale_sample(&mut self, wall_seconds: f64, simulated_seconds: f64) {
         self.scale_window
             .push_back((wall_seconds, simulated_seconds));
@@ -343,5 +374,17 @@ mod tests {
         assert_eq!(report.completed_outer_steps_this_frame, 0);
         assert_eq!(report.retained_fraction_seconds, 0.0);
         assert_eq!(report.lifecycle_discarded_wall_seconds_this_frame, 60.0);
+    }
+
+    #[test]
+    fn exact_mode_completes_the_authored_count_without_wall_time() {
+        let mut clock = SimulationClock::default();
+        let report = clock.admit_exact(600);
+        assert_eq!(report.mode, PacingMode::ExplicitStep);
+        assert_eq!(report.completed_outer_steps_this_frame, 600);
+        assert_eq!(report.completed_outer_steps_total, 600);
+        assert_eq!(report.admitted_active_wall_seconds_this_frame, 0.0);
+        assert_eq!(report.overload_slipped_wall_seconds_this_frame, 0.0);
+        assert!((report.simulated_seconds_total - 10.0).abs() < 1e-12);
     }
 }

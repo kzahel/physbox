@@ -4,7 +4,8 @@
 use physbox_engine::PointerButton;
 #[cfg(target_arch = "wasm32")]
 use physbox_engine::{
-    EngineConfig, FrameInput, PointerEvent, PointerPhase, SurfaceRenderer, create_instance,
+    EngineConfig, FrameInput, PointerEvent, PointerPhase, StepRequest, SurfaceRenderer,
+    create_instance,
 };
 #[cfg(target_arch = "wasm32")]
 use physbox_launch::parse_web_query;
@@ -58,9 +59,11 @@ impl WebApp {
         let report = self
             .renderer
             .render(FrameInput {
-                elapsed_seconds,
-                requested_time_scale: 1.0,
-                clock_action: Default::default(),
+                step_request: StepRequest::Interactive {
+                    elapsed_seconds,
+                    requested_time_scale: 1.0,
+                    action: Default::default(),
+                },
                 pointer_events: std::mem::take(&mut self.pending_pointer_events),
             })
             .map_err(js_error)?;

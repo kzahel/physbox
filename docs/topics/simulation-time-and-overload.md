@@ -1,8 +1,6 @@
 # Simulation time and overload
 
-Status: decided default contract, 2026-07-14. Interactive slow-clock admission
-is implemented; exact-count headless execution remains the next implementation
-slice described below.
+Status: decided and implemented default contract, 2026-07-14.
 
 Governing direction:
 [one GPU-resident 2D physics world](physbox5-unified-gpu-physics.md).
@@ -254,10 +252,10 @@ Deterministic tests cover the required cadence, stall, time-scale, pause,
 single-step, and suspend/resume sequences. The 250 ms discontinuity bound is
 engine-owned rather than applied by a platform adapter.
 
-Headless capture still feeds nominal wall intervals through that interactive
-mode. The next slice adds the distinct exact-count request before accepting
-P5.0a performance evidence; it will reuse the same outer-step encoding rather
-than adding a platform scheduler.
+Headless capture may either feed nominal wall intervals through interactive
+mode or request an explicit positive step count. Exact mode encodes the
+authored count through the same outer-step path, reports no admitted wall time,
+and makes no real-time throughput claim.
 
 ## Reconsideration triggers
 

@@ -3,7 +3,7 @@ use physbox_launch::ValidationScenario;
 use wgpu::util::DeviceExt;
 
 use crate::{
-    EngineConfig, FrameInput,
+    EngineConfig, FrameInput, StepRequest,
     clock::{FIXED_STEP_HZ, FIXED_STEP_SECONDS, InteractiveClockInput, SimulationClock},
     renderer::RenderFrameContext,
     report::{FrameReport, SCENE_CONTRACT_VERSION, ScenarioResult, SceneContract},
@@ -169,11 +169,18 @@ impl EngineHost {
         context: RenderFrameContext<'_>,
     ) -> FrameReport {
         self.pointer_events_total += input.pointer_events.len() as u64;
-        let (steps, pacing) = self.clock.admit(InteractiveClockInput {
-            elapsed_seconds: input.elapsed_seconds,
-            requested_time_scale: input.requested_time_scale,
-            action: input.clock_action,
-        });
+        let (steps, pacing) = match input.step_request {
+            StepRequest::Interactive {
+                elapsed_seconds,
+                requested_time_scale,
+                action,
+            } => self.clock.admit(InteractiveClockInput {
+                elapsed_seconds,
+                requested_time_scale,
+                action,
+            }),
+            StepRequest::Exact { steps } => (steps, self.clock.admit_exact(steps)),
+        };
 
         let params = FrameParams {
             dt: FIXED_STEP_SECONDS as f32,
@@ -234,7 +241,7 @@ impl EngineHost {
             fixed_step_hz: FIXED_STEP_HZ,
             scenario: self.config.scenario.name(),
         };
-        let complete = self.frame_index >= 5 && self.fixed_steps_total >= 3;
+        let complete = self.fixed_steps_total >= 3;
         let scenario = match self.config.scenario {
             ValidationScenario::Bootstrap => ScenarioResult {
                 name: "bootstrap",

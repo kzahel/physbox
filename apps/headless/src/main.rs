@@ -63,10 +63,14 @@ fn run() -> Result<(), String> {
         renderer.diagnostics().marker_json()
     );
 
-    let elapsed = 1.0 / f64::from(options.fps);
     let mut report = None;
-    for _ in 0..options.frames {
-        report = Some(renderer.render(FrameInput::new(elapsed)));
+    if let Some(steps) = options.steps {
+        report = Some(renderer.render(FrameInput::exact(steps)));
+    } else {
+        let elapsed = 1.0 / f64::from(options.fps);
+        for _ in 0..options.frames {
+            report = Some(renderer.render(FrameInput::new(elapsed)));
+        }
     }
     let report = report.ok_or_else(|| "capture rendered no frames".to_owned())?;
     if !report.scenario.complete || !report.scenario.passed {

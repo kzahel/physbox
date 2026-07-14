@@ -5,7 +5,7 @@ use std::time::Instant;
 
 use physbox_engine::{
     AdapterDiagnostics, EngineConfig, FrameInput, FrameReport, PointerButton, PointerEvent,
-    PointerPhase, SurfaceRenderer, create_instance,
+    PointerPhase, StepRequest, SurfaceRenderer, create_instance,
 };
 use winit::event::{ElementState, MouseButton, TouchPhase, WindowEvent};
 use winit::event_loop::ActiveEventLoop;
@@ -167,9 +167,11 @@ impl WinitFrameDriver {
                     .map_or(1.0 / 60.0, |last| now.duration_since(last).as_secs_f64());
                 self.last_frame = Some(now);
                 let input = FrameInput {
-                    elapsed_seconds: elapsed,
-                    requested_time_scale: 1.0,
-                    clock_action: Default::default(),
+                    step_request: StepRequest::Interactive {
+                        elapsed_seconds: elapsed,
+                        requested_time_scale: 1.0,
+                        action: Default::default(),
+                    },
                     pointer_events: std::mem::take(&mut self.pending_pointer_events),
                 };
                 let report = self

@@ -38,7 +38,7 @@ Rapier2D comparator are outside this tactical.
 
 ### S1.1 — schemas and invariants
 
-- [ ] Replace the bootstrap eight-step catch-up loop with engine-owned
+- [x] Replace the bootstrap eight-step catch-up loop with engine-owned
   interactive slow-clock and explicit-step modes.
 - [x] Define requested/effective scale, active wall time, overload slip,
   lifecycle discard, completed-step, and pacing-mode report fields.
