@@ -45,7 +45,7 @@ Rapier2D comparator are outside this tactical.
 - [x] Add deterministic 120/60/50/30/15 Hz, long-stall, pause/single-step, and
   suspend/resume timing sequences that reject multi-step interactive frames or
   retained whole-step debt.
-- [ ] Define versioned body, authored-manifold, contact-cache, scenario,
+- [x] Define versioned body, authored-manifold, contact-cache, scenario,
   metric, trace, capacity, and failure-result schemas.
 - [ ] Define the versioned native-oracle request/result protocol, including
   canonical JSON serialization, unsupported-feature rejection, source scenario

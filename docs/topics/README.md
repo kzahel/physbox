@@ -17,6 +17,9 @@ a running log.
 - [Simulation time and overload](simulation-time-and-overload.md) — fixed-delta
   slow motion under load, zero-or-one interactive steps, permanent wall-time
   slip, explicit-step validation, and scheduler diagnostics.
+- [Solver laboratory contracts](solver-laboratory-contracts.md) — versioned
+  body/manifold/scenario/oracle/trace/metric/capacity/failure schemas,
+  canonical JSON, hashes, provenance, and validity rules.
 
 ## Conventions
 
