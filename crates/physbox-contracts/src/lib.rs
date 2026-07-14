@@ -370,9 +370,17 @@ pub struct ProvenanceV1 {
 
 impl Validate for ProvenanceV1 {
     fn validate(&self) -> Result<(), ContractError> {
-        if self.run_id.is_empty() || self.source_revision.is_empty() || self.host.is_empty() {
+        if self.run_id.is_empty()
+            || self.source_revision.is_empty()
+            || self.host.is_empty()
+            || self.adapter.is_empty()
+            || self.backend.is_empty()
+            || self.driver.is_empty()
+            || self.toolchain.is_empty()
+        {
             return Err(ContractError(
-                "run id, source revision, and host are required".to_owned(),
+                "complete run, source, host, adapter, backend, driver, and toolchain provenance is required"
+                    .to_owned(),
             ));
         }
         validate_sorted_unique(
@@ -629,6 +637,7 @@ impl Validate for OracleResultV1 {
             return Err(ContractError("invalid result identity hashes".to_owned()));
         }
         self.provenance.validate()?;
+        validate_sorted_unique(self.bodies.iter().map(|body| body.id), "result body ids")?;
         for body in &self.bodies {
             body.validate()?;
         }

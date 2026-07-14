@@ -48,7 +48,49 @@ normal impulse, mismatched trace bits, unsorted identifiers/settings, invalid
 timing percentiles, inconsistent capacity high-water, and malformed hashes.
 
 Process freshness, atomic result creation, timeout, pin checks, and the success
-sentinel are runner responsibilities built on this schema in the next slice.
+sentinel are runner responsibilities. The runner rejects unknown versions and
+incomplete native provenance before a result can be accepted.
+
+## Native process protocol
+
+Each adapter is launched in a unique run directory with:
+
+```text
+ADAPTER [adapter options] --request oracle-request.json \
+  --result oracle-result.partial.json
+```
+
+The request is atomically written before launch. The adapter parses that exact
+file, writes one canonical result to the supplied staging path, closes it, and
+prints an exact `PHYSBOX5_ORACLE_SUCCESS` line only after its work succeeds.
+Adapter diagnostics go to captured stdout and stderr logs; they are never
+parsed as result data.
+
+The sentinel alone never accepts a result. The shared runner applies a bounded
+timeout, kills and waits for an overrun process, validates the result schema,
+then matches all of the following against the current request and the
+preflight-verified oracle source:
+
+- run id in both the result and provenance;
+- source scenario SHA-256;
+- projection SHA-256 over the exact request bytes;
+- source revision, dirty state, and optional patch digest; and
+- an absent structured oracle failure.
+
+Only after those checks does the runner atomically rename the staging result
+to `oracle-result.json` and sync the run directory. Valid but unacceptable
+payloads become `oracle-result.rejected.json`; malformed or interrupted writes
+remain visibly partial. Neither can be mistaken for accepted evidence.
+
+Run ids are portable filename components and never reuse an existing run
+directory. A pre-existing directory is a stale-result failure, even if the old
+payload would otherwise validate. Clean authority checkouts are verified by
+exact Git revision plus an empty tracked/untracked status before launch.
+
+The transport fixture is a subprocess used only to prove the runner. Its
+deliberately stale, wrong-hash, wrong-pin, unsupported, partial,
+missing-sentinel, and timeout modes are not an oracle or a behavioral
+baseline.
 
 ## Reconsideration triggers
 

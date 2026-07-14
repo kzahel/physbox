@@ -47,7 +47,7 @@ Rapier2D comparator are outside this tactical.
   retained whole-step debt.
 - [x] Define versioned body, authored-manifold, contact-cache, scenario,
   metric, trace, capacity, and failure-result schemas.
-- [ ] Define the versioned native-oracle request/result protocol, including
+- [x] Define the versioned native-oracle request/result protocol, including
   canonical JSON serialization, unsupported-feature rejection, source scenario
   hash, settings, provenance, atomic result creation, and
   `PHYSBOX5_ORACLE_SUCCESS`.
@@ -55,7 +55,7 @@ Rapier2D comparator are outside this tactical.
   capacity, and repeatability invariants.
 - [x] Add deterministic authored fixtures, randomized generation, and replayable
   reproducer serialization.
-- [ ] Add negative fixtures for a bad source/projection hash, wrong oracle pin,
+- [x] Add negative fixtures for a bad source/projection hash, wrong oracle pin,
   unsupported feature, timeout, stale or partial result, and missing success
   sentinel.
 

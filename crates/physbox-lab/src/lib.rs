@@ -4,6 +4,8 @@ use std::fmt::{Display, Formatter};
 
 use physbox_contracts::{CapacityRecordV1, FiniteF32, Vec2};
 
+pub mod oracle_transport;
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct InvariantViolation {
     pub invariant: &'static str,
