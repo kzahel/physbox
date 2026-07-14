@@ -1,0 +1,58 @@
+schema_version = 1
+
+[[checkout]]
+name = "box2d"
+path = "reference/box2d"
+repository = "https://github.com/erincatto/box2d.git"
+revision = "3a4f0da8374af61293a03021c9a0b3ebcfe67948"
+purpose = "Unmodified rigid authority and public narrowphase source"
+required = true
+
+[[checkout]]
+name = "physx"
+path = "reference/physx"
+repository = "https://github.com/NVIDIA-Omniverse/PhysX.git"
+revision = "b4b286abff6f2b3debd1d1acb120dc428765cf2e"
+purpose = "GPU-resident organization, batching, capacity, and diagnostics reference"
+required = true
+
+[[checkout]]
+name = "wgmath"
+path = "reference/wgmath"
+repository = "https://github.com/wgmath/wgmath.git"
+revision = "ac89dceb8a33778e895303cd606da38afb015192"
+purpose = "Portable WebGPU broadphase, coloring, and solver research reference"
+required = true
+
+[[sibling]]
+name = "physbox3"
+path = "../physbox3"
+repository = "git@github.com:kzahel/physbox3.git"
+revision = "4169eba477201fe8220b49d95473555c4ac22995"
+purpose = "Web-product calibration and subjective behavior reference"
+required = true
+allowed_dirty_paths = ["worker/index.js", "worker/wrangler.toml"]
+
+[[sibling]]
+name = "physbox3-liquidfun"
+path = "../physbox3/reference/liquidfun"
+repository = "https://github.com/google/liquidfun.git"
+revision = "7f20402173fd143a3988c921bc384459c6a858f2"
+purpose = "Secondary native historical fluid engine, algorithms, scenarios, and tests"
+required = true
+
+[[sibling]]
+name = "physbox3-box2d3-wasm"
+path = "../physbox3/vendor/box2d3-wasm"
+repository = "git@github.com:kzahel/box2d3-wasm.git"
+revision = "9288709b4c04e0c7a1a1d325b74b6e114cbc3750"
+purpose = "Primary later native sidecar oracle plus PhysBox 3 binding and build path"
+required = true
+
+[[sibling]]
+name = "physbox3-box2d"
+path = "../physbox3/vendor/box2d3-wasm/box2d"
+repository = "https://github.com/erincatto/box2d.git"
+revision = "3a4f0da8374af61293a03021c9a0b3ebcfe67948"
+purpose = "Exact Box2D v3 source used by the PhysBox 3 product"
+required = true

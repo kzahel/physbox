@@ -19,16 +19,35 @@ PhysBox 4 runtime code accompanied it. The PhysBox 4 tactical numbering and
 completed bootstrap tactical remain archive history; PhysBox 5 begins its own
 tactical sequence at `001`.
 
-Pinned references:
+The machine-readable pin set is [reference/pins.toml](../reference/pins.toml),
+and [the reference map](../reference/README.md) describes each source's oracle
+role and exact workspace path. It records independent Box2D, PhysX, and wgmath
+checkouts plus the PhysBox 3 sibling, its LiquidFun checkout, its Box2D v3
+source, and its WASM bridge revision.
 
-- Box2D: `3a4f0da8374af61293a03021c9a0b3ebcfe67948`.
-- PhysX 5.6.1: `b4b286abff6f2b3debd1d1acb120dc428765cf2e`.
-- wgmath research snapshot: `ac89dceb8a33778e895303cd606da38afb015192`.
-- PhysBox 3: `4169eba477201fe8220b49d95473555c4ac22995`;
-  its working tree had pre-existing changes in `worker/index.js` and
-  `worker/wrangler.toml` and is not itself a clean oracle artifact.
+At bootstrap the PhysBox 3 sibling was at
+`4169eba477201fe8220b49d95473555c4ac22995` with pre-existing changes in
+`worker/index.js` and `worker/wrangler.toml`; the root web product is a
+calibration reference, not a clean acceptance artifact. Its nested clean
+sidecar repository supplies the later native coupled-behavior source. Its
+nested Box2D source was the same
+`3a4f0da8374af61293a03021c9a0b3ebcfe67948` revision selected for the
+independent unmodified authority checkout. Its LiquidFun source was pinned at
+`7f20402173fd143a3988c921bc384459c6a858f2`.
 
-References are inspected from separately pinned checkouts. They are not
-product dependencies. Any future copied source must be identified explicitly
-and preserve its license; ordinary work should independently implement the
-documented algorithmic contract.
+Run `npm run references:status` before relying on local source and include its
+result in oracle provenance. References are not product dependencies. Any
+future copied source must be identified explicitly and preserve its license;
+ordinary work should independently implement the documented algorithmic
+contract.
+
+Native-oracle feasibility was checked on 2026-07-14 on arm64 macOS with CMake
+4.2.3 and AppleClang 21. The pinned Box2D v3 source built as a native static
+library. The pinned original LiquidFun source built its Box2D 2.3 plus particle
+solver static library with `CMAKE_POLICY_VERSION_MINIMUM=3.5`, with compiler
+warnings but no errors. PhysBox 3's `particle_bridge.cpp` and
+`particle_system.cpp` sidecar sources compiled independently as native C++20
+objects against its pinned Box2D v3 and box2cpp headers; no Emscripten header
+was needed for those objects. This established build feasibility only: no
+oracle adapter or acceptance result was created, and no reference source was
+copied into PhysBox 5.

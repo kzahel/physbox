@@ -10,3 +10,6 @@
 /android/local.properties
 /captures/*
 !/captures/.gitkeep
+/reference/*
+!/reference/README.md
+!/reference/pins.toml

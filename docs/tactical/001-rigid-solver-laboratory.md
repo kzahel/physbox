@@ -17,13 +17,18 @@ This tactical tracks execution; it does not restate or revise the direction's:
 
 - [solver-laboratory purpose and selection criteria](../topics/physbox5-unified-gpu-physics.md#solver-laboratory-before-the-product-pipeline);
 - [portable accumulation constraints](../topics/physbox5-unified-gpu-physics.md#portable-and-accelerated-accumulation);
-- [layered oracle model](../topics/physbox5-unified-gpu-physics.md#layered-rigid-oracle-model); or
+- [layered oracle model](../topics/physbox5-unified-gpu-physics.md#layered-rigid-oracle-model);
+- [oracle execution and precedence](../topics/physbox5-unified-gpu-physics.md#oracle-execution-topology-and-precedence); and
 - [failure-artifact](../topics/physbox5-unified-gpu-physics.md#oracle-driven-development-and-failure-artifacts)
-  and [performance](../topics/physbox5-unified-gpu-physics.md#performance-and-capacity-gates)
-  requirements.
+  requirements; and
+- [performance and scale](../topics/performance-and-scale.md), including its
+  workload vector, solver-only scope, timing validity, and CPU comparison
+  lanes.
 
 P5.0a operates on authored manifolds. Production broadphase, general
 narrowphase, product tools, liquid, and scene breadth remain later stages.
+Original LiquidFun, the PhysBox 3 sidecar and web product, and an optional
+Rapier2D comparator are outside this tactical.
 
 ## Delivery slices
 
@@ -31,13 +36,21 @@ narrowphase, product tools, liquid, and scene breadth remain later stages.
 
 - [ ] Define versioned body, authored-manifold, contact-cache, scenario,
   metric, trace, capacity, and failure-result schemas.
+- [ ] Define the versioned native-oracle request/result protocol, including
+  canonical JSON serialization, unsupported-feature rejection, source scenario
+  hash, settings, provenance, atomic result creation, and
+  `PHYSBOX5_ORACLE_SUCCESS`.
 - [ ] Add finite-state, equal-and-opposite, symmetry, projected-impulse,
   capacity, and repeatability invariants.
 - [ ] Add deterministic authored fixtures, randomized generation, and replayable
   reproducer serialization.
+- [ ] Add negative fixtures for a bad source/projection hash, wrong oracle pin,
+  unsupported feature, timeout, stale or partial result, and missing success
+  sentinel.
 
-Gate: schema round trips, generators replay exactly, and deliberately broken
-implementations trip every invariant through negative fixtures.
+Gate: schema round trips, generators replay exactly, deliberately broken
+implementations trip every invariant, and every transport/provenance negative
+fails deterministically without accepting an old result.
 
 ### S1.2 — scalar executable specification
 
@@ -51,15 +64,24 @@ Gate: analytic expectations and all invariant fixtures pass without Box2D.
 
 ### S1.3 — Box2D authority and microscope lanes
 
-- [ ] Pin the unmodified single-threaded Box2D authority build and options.
-- [ ] Project the shared scenario schema without a second authored format.
+- [ ] Validate the unmodified source pin with
+  `npm run references:status`, then pin the single-threaded Box2D authority
+  build and options.
+- [ ] Build a process-isolated native authority executable that links the
+  unmodified library, consumes the shared scenario projection, and emits the
+  canonical result schema.
+- [ ] Keep schema parsing and emission in a thin Rust CLI over direct Box2D C
+  FFI; no engine or app crate may depend on the adapter.
+- [ ] Reject unsupported projection features without approximating them or
+  introducing a second authored format.
 - [ ] Compare public circle/polygon collision manifolds directly.
 - [ ] Add the separately identified, patch-digested microscope lane if scalar
   and public Box2D output cannot localize a failure.
 - [ ] Produce synchronized scalar/Box2D playback for behavioral fixtures.
 
-Gate: authority results are reproducible from recorded provenance; microscope
-output is never used as acceptance truth.
+Gate: the native authority result is reproducible from recorded provenance and
+one shared projection; it links no product runtime, and microscope output is
+never used as acceptance truth.
 
 ### S1.4 — portable GPU candidates
 
@@ -79,13 +101,21 @@ pass with no simulation-dependent readback.
 
 - [ ] Minimize randomized failures and promote reproducers into the corpus.
 - [ ] Generate the correctness, convergence, capacity, and timing matrix
-  required by the direction's performance contract.
-- [ ] Benchmark solver-only fixtures after warmup at micro and representative
-  contact counts on named adapters and revisions.
+  required by the performance and scale contract.
+- [ ] Benchmark solver-only fixtures after warmup at 1–32 and 1K, 10K, and at
+  least one 30K authored-contact workload on named adapters and revisions.
+- [ ] Record bodies, contacts, solver work, dispatches, GPU and CPU timing,
+  scratch/allocation high-water, and every capacity counter for each solver
+  candidate at equivalent accepted quality.
+- [ ] Run the separate optimized Box2D performance lane where the authored
+  fixture has a valid shared projection; do not use the deterministic authority
+  lane as the sole CPU comparison.
 - [ ] Generate one comparison report and synchronized playback set.
 
 Gate: failures are actionable without rereading logs, every accepted run has
-zero overflow, and performance results name their source revision and adapter.
+zero overflow, performance results name their source revision and adapter, and
+the solver decision includes convergence-versus-cost curves that expose any
+dispatch, bandwidth, scratch, or capacity limit at useful scale.
 
 ### S1.6 — solver decision
 

@@ -13,12 +13,14 @@ next milestone is an oracle-driven rigid-contact solver laboratory.
 Read:
 
 - [Authoritative GPU-physics direction](docs/topics/physbox5-unified-gpu-physics.md)
+- [Performance and scale contract](docs/topics/performance-and-scale.md)
 - [Vision summary](docs/vision.md)
 - [Bring-up plan](docs/bringup-plan.md)
 - [Platform architecture](docs/platform-architecture.md)
 - [Topic index and conventions](docs/topics/README.md)
 - [Tactical workstreams and conventions](docs/tactical/README.md)
 - [Source provenance](docs/source-provenance.md)
+- [Local source references and oracle map](reference/README.md)
 - [Deployment](docs/deployment.md)
 
 ## PhysBox 4 lineage

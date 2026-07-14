@@ -4,8 +4,10 @@ Status: active direction, 2026-07-14.
 
 This is the compact entry point. The authoritative, research-backed direction
 is [PhysBox 5: one GPU-resident 2D physics world](topics/physbox5-unified-gpu-physics.md),
-which owns the detailed solver, contact, broadphase, oracle, performance, and
-acceptance contracts.
+which owns the detailed solver, contact, broadphase, oracle, and acceptance
+contracts. The sibling [performance and scale contract](topics/performance-and-scale.md)
+owns benchmark workloads, CPU/GPU comparison, timing validity, capacity, and
+scale claims.
 
 PhysBox 5 is a small, purpose-built 2D physics world whose live mechanical
 state stays on the GPU. It should eventually feel like a deliberately
@@ -124,13 +126,18 @@ The oracles form layers, not a product fallback:
 | Invariants | PhysBox specification | finite state, equal/opposite response, symmetry, monotonic projected impulses, no overflow |
 | Pass-level | scalar Rust specification | exact or tightly bounded prepared constraints and one-iteration deltas |
 | Narrowphase | public Box2D collision functions | manifold normal, points, separation, and stable features |
-| Behavior | pinned unmodified Box2D | trajectories, settling, energy, sleep/wake, and aggregate bands |
-| Feel | synchronized playback | stacks, edge contacts, sliding, rolling, bounce, and grab/release |
-| Performance | named PhysBox revision/adapters | per-pass and end-to-end timing only after correctness passes |
+| Rigid behavior | native pinned unmodified Box2D v3 | trajectories, settling, energy, sleep/wake, and aggregate bands |
+| Later coupled behavior | native PhysBox 3 sidecar plus its Box2D v3 | particle/body exchange, buoyancy, torque, wake, and aggregate bands |
+| Historical fluid reference | native original LiquidFun | algorithms, fixtures, and secondary behavior comparison |
+| Product calibration | fresh PhysBox 3 web traces and synchronized playback | settings, interaction sequence, and subjective feel |
+| Performance | [performance and scale contract](topics/performance-and-scale.md) | correctness-qualified CPU/GPU curves, capacity, crossover, and end-to-end timing |
 
 One shared Rust scenario owns bodies, actions, completion, metrics, and result
-schema. Oracle adapters consume its versioned neutral projection. JavaScript,
+schema. Routine oracle adapters are separate native processes that consume its
+versioned neutral projection and emit the canonical result schema. JavaScript,
 Playwright, shell, ADB, and platform crates do not recreate physics scenarios.
+PhysBox 3 browser automation is an infrequent calibration lane, not a routine
+correctness dependency.
 
 Use an unmodified pinned Box2D build as the behavioral authority. A separate
 instrumented “microscope” build may expose contact and solver traces, but its
@@ -138,7 +145,25 @@ patch digest and output are diagnostic evidence, never the acceptance oracle.
 Random/adversarial generators should minimize failures into permanent corpus
 fixtures.
 
+Scale evidence begins in the solver laboratory rather than after rigid parity.
+The initial shorthand is that 10K bodies prove useful scale, 30K should begin
+to demonstrate an advantage on realistic contact-rich scenes, and 100K is a
+qualified frontier whose meaning depends on awake bodies, candidate pairs,
+contacts, solver work, and shape mix.
+
+Oracle precedence is explicit rather than a majority vote. Invariants and the
+scalar specification own mathematical/pass correctness; Box2D owns the rigid
+behavior target; the native PhysBox 3 sidecar later owns the coupled-behavior
+target. Original LiquidFun and any future Rapier2D lane are secondary evidence
+that may reveal overfitting or an engine-sensitive scenario but do not silently
+change acceptance.
+
 ## References and boundaries
+
+The reproducible checkout pins and the workspace-local paths into the PhysBox
+3 behavior oracle are maintained in the
+[local reference map](../reference/README.md). Run
+`npm run references:status` before producing oracle evidence.
 
 - Box2D commit `3a4f0da8374af61293a03021c9a0b3ebcfe67948` is the first
   rigid authority. Inspect its public collision functions and solver stages;
@@ -147,7 +172,7 @@ fixtures.
   is an organization reference for resident state, SoA layouts, compaction,
   batching, fixed-capacity buffers, and overflow policy. Do not import its 3D,
   CUDA, warp, float-atomic, or CPU-fallback assumptions. See the
-  [PhysX GPU rigid-body guide](https://nvidia-omniverse.github.io/PhysX/physx/5.2.1/docs/GPURigidBodies.html).
+  [PhysX GPU rigid-body guide](https://nvidia-omniverse.github.io/PhysX/physx/5.6.1/docs/GPURigidBodies.html).
 - `wgmath` commit `ac89dceb8a33778e895303cd606da38afb015192` is the
   closest WebGPU research reference for LBVH, graph coloring, Soft-TGS, and
   Jacobi. Study it, but do not accept GPU-count readbacks or host-driven
@@ -158,8 +183,13 @@ fixtures.
   [Jax2D](https://github.com/MichaelTMatthews/Jax2D), and
   [GPU Gems broadphase](https://developer.nvidia.com/gpugems/gpugems3/part-v-physics-simulation/chapter-32-broad-phase-collision-detection-cuda)
   are secondary algorithm references.
-- PhysBox 3 commit `4169eba477201fe8220b49d95473555c4ac22995` and its
-  pinned LiquidFun source become the later fluid-behavior oracle.
+- PhysBox 3 commit `4169eba477201fe8220b49d95473555c4ac22995`, its
+  LiquidFun checkout at `7f20402173fd143a3988c921bc384459c6a858f2`, and its
+  actual nested Box2D/WASM source become the later fluid-behavior oracle.
+- Rapier2D is a real compile-time 2D specialization despite sharing source with
+  Rapier3D. It remains an optional, non-gating dissent comparator after the
+  Box2D lane is established, not an initial dependency or implementation
+  authority. See the [Rapier repository architecture](https://github.com/dimforge/rapier/blob/master/ARCHITECTURE.md).
 
 ## Acceptance before liquid
 

@@ -1,18 +1,21 @@
 # PhysBox 5 agent rules
 
 Read `README.md`, `docs/topics/physbox5-unified-gpu-physics.md`,
-`docs/bringup-plan.md`, and `docs/platform-architecture.md` before changing
-runtime, rendering, input, scheduling, validation, deployment, or platform
-code. Read `docs/topics/README.md` and `docs/tactical/README.md` before adding
-or reorganizing project documentation.
+`docs/topics/performance-and-scale.md`, `docs/bringup-plan.md`, and
+`docs/platform-architecture.md` before changing physics, runtime, rendering,
+input, scheduling, validation, deployment, or platform code. Read
+`docs/topics/README.md` and `docs/tactical/README.md` before adding or
+reorganizing project documentation.
 
 ## Repository documentation
 
 `docs/topics/physbox5-unified-gpu-physics.md` is the authoritative technical
-direction. `docs/vision.md` is only its compact entry point. A topic document
-is a durable record of a technical concern: decision state, evidence,
-alternatives, validation, and reconsideration triggers. Topic filenames are
-unnumbered kebab-case and the topic index must list every active topic.
+direction. `docs/topics/performance-and-scale.md` owns the benchmark, capacity,
+CPU-comparison, and scale-claim contract. `docs/vision.md` is only a compact
+entry point. A topic document is a durable record of a technical concern:
+decision state, evidence, alternatives, validation, and reconsideration
+triggers. Topic filenames are unnumbered kebab-case and the topic index must
+list every active topic.
 
 Tactical documents are executable workstream plans. Their filenames use a
 three-digit zero-padded prefix assigned in first Git-creation order; never
@@ -43,13 +46,57 @@ message is allowed only when WebGPU startup fails before the engine can render.
 ## Physics direction
 
 The product physics path is GPU-resident and portable WebGPU. Do not add a CPU
-physics backend, Rapier dependency, platform fallback, or backend-substitution
-facade. Box2D and PhysBox 3 are validation oracles only. PhysX, wgmath, and
-PhysBox 4 are source references, not dependencies.
+physics backend, Rapier product dependency, platform fallback, or
+backend-substitution facade. Native CPU engines may exist only in isolated
+test tooling under the oracle execution contract. Box2D and the later PhysBox
+3 sidecar are validation oracles only. PhysX, wgmath, and PhysBox 4 are source
+references, not dependencies. Rapier2D is not part of P5.0a; adding an optional
+non-gating comparator requires an explicit measured decision in the
+authoritative topic.
 
 The first physics milestone is the engine-owned rigid solver laboratory from
 `docs/bringup-plan.md`. Do not add liquid, joints, tools, settings UI, scene
 compatibility, or deferred product features before its gates are satisfied.
+Every solver, layout, pipeline, broadphase, sleeping, and capacity decision
+must produce the scale evidence required by
+`docs/topics/performance-and-scale.md`; do not defer performance design until
+the full rigid engine exists.
+
+## Local references and oracle hygiene
+
+Read `reference/README.md` and `reference/pins.toml` before implementing or
+instrumenting physics from an external engine. Run `npm run references:status`
+before relying on a checkout and `npm run references:sync` to obtain or restore
+the clean pinned checkouts. The ignored checkout contents must never be added
+to this repository.
+
+The clean `reference/box2d` checkout is the rigid acceptance authority.
+`../physbox3` is the product-behavior oracle; its nested LiquidFun, Box2D, and
+WASM bridge paths are mapped and pinned in `reference/README.md`. Do not confuse
+an instrumented reference, a dirty sibling tree, or PhysBox 3 product behavior
+with the unmodified Box2D authority lane. Oracle artifacts must record every
+relevant revision, build option, and dirty or patch digest.
+
+Routine oracle automation uses process-isolated native executables that
+consume the engine-owned neutral scenario projection and emit the canonical
+result schema. They do not link into the product engine or author their own
+fixtures. Use native unmodified Box2D v3 for rigid acceptance. Later, use the
+PhysBox 3 particle sidecar compiled natively with its pinned Box2D v3 source as
+the primary coupled-behavior oracle and original native LiquidFun as a
+secondary algorithm/scenario reference. The PhysBox 3 web product is a small
+calibration and subjective-review lane, not a routine correctness dependency.
+
+Oracle precedence is declared, not voted: invariants and the scalar
+specification own mathematical/pass correctness; Box2D owns the selected rigid
+behavior target; the native PhysBox 3 sidecar owns the later coupled-behavior
+target. Original LiquidFun, a web calibration trace, or any future Rapier2D
+lane may expose disagreement but may not overrule those authorities silently.
+
+References are source material and validation inputs, not product
+dependencies. Do not edit a clean checkout in place for microscope tracing:
+create a separate worktree or clone and record its base revision and patch
+digest. Copied code requires explicit provenance and license preservation;
+prefer an independent implementation of the documented contract.
 
 ## Launch and validation ownership
 

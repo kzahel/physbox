@@ -9,8 +9,11 @@ a running log.
 
 - [PhysBox 5: one GPU-resident 2D physics world](physbox5-unified-gpu-physics.md)
   — authoritative engine direction; rigid-first GPU pipeline, solver lab,
-  contacts, broadphase, layered oracles, performance gates, and later coupled
-  fluid acceptance.
+  contacts, broadphase, process-isolated native oracle hierarchy, and later
+  coupled-fluid acceptance.
+- [Performance and scale contract](performance-and-scale.md) — workload and
+  scene matrix, CPU/GPU comparison lanes, timing/capacity validity, provisional
+  scale expectations, and milestone/regression gates.
 
 ## Conventions
 

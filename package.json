@@ -12,6 +12,8 @@
     "deploy": "bash scripts/deploy-web.sh",
     "deploy:dry-run": "bash scripts/deploy-web.sh --dry-run",
     "hooks:install": "bash scripts/install-git-hooks.sh",
+    "references:status": "node scripts/references.mjs status",
+    "references:sync": "node scripts/references.mjs sync",
     "serve:web": "node scripts/serve-web.mjs",
     "test:web": "node scripts/browser-smoke.mjs",
     "prepare": "bash scripts/install-git-hooks.sh"

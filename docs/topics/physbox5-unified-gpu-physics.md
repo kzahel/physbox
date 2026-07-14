@@ -34,11 +34,12 @@ The first simulation slice is a rigid-only foundation:
 - side-by-side validation against a test-only Box2D oracle.
 
 Liquid begins only after the GPU rigid solver reproduces a deliberate suite of
-basic 2D behaviors convincingly. Particle coupling will then use
-Box2D/LiquidFun and PhysBox 3 as its behavioral oracle. Body joints, capsules,
-convex polygons, chains, ragdolls, machines, soft bodies, terrain, CCD, and the
-broader PhysBox tool set likewise follow only after the minimal rigid world is
-trustworthy.
+basic 2D behaviors convincingly. Particle coupling will then use the PhysBox 3
+sidecar compiled natively as its primary behavioral oracle, original LiquidFun
+as a secondary reference, and the web-only PhysBox 3 product as a calibration
+lane. Body joints, capsules, convex polygons, chains, ragdolls, machines, soft
+bodies, terrain, CCD, and the broader PhysBox tool set likewise follow only
+after the minimal rigid world is trustworthy.
 
 ## Why this is a new engine direction
 
@@ -105,7 +106,10 @@ Consistency and feel take priority over headline particle count. GPU residency
 exists to make one rich world possible at useful scale, not to justify a
 larger but less convincing particle number. A lower-count coherent scene is a
 better product than a high-count scene whose objects trampoline, lag, pin, or
-require scene-specific damping.
+require scene-specific damping. Correctness does not make scale optional: the
+sibling [performance and scale contract](performance-and-scale.md) requires
+qualified CPU/GPU crossover and stress evidence from the solver laboratory
+onward.
 
 The initial rigid experience should remain playable throughout development:
 
@@ -406,18 +410,22 @@ No capacity failure may discard a pair silently.
 ### Box2D rigid oracle
 
 The first milestone should run the GPU solver beside an unmodified, test-only
-Box2D world. One engine-owned scenario definition supplies the same authored
-bodies, initial states, gravity, fixed step, and neutral action sequence to
-both. Box2D is an oracle and comparison harness, not a product backend, browser
-fallback, or second scene format.
+native Box2D world. One engine-owned scenario definition supplies the same
+authored bodies, initial states, gravity, fixed step, and neutral action
+sequence to both. Box2D is an oracle and comparison harness, not a product
+backend, browser fallback, or second scene format.
 
-The initial source reference is the Box2D checkout already used by PhysBox 3,
-commit `3a4f0da8374af61293a03021c9a0b3ebcfe67948` (currently
-`v3.1.1-18-g3a4f0da`). Freeze the exact revision, build options, world settings,
-worker count, and scenario projection. The deterministic oracle lane should use
-a single-threaded/unthreaded configuration; a separate PhysBox 3 product lane
-may preserve the original worker and LiquidFun settings. An oracle result is
-not reproducible if it records only "Box2D" without this configuration.
+The initial source reference is commit
+`3a4f0da8374af61293a03021c9a0b3ebcfe67948` (currently
+`v3.1.1-18-g3a4f0da`). The [local reference map](../../reference/README.md)
+distinguishes the clean `reference/box2d` authority checkout from the same
+revision under the `../physbox3` behavioral oracle and its WASM build. Freeze
+the exact revision, build options, world settings, worker count, and scenario
+projection. The deterministic oracle lane should use a
+single-threaded/unthreaded configuration; a separate PhysBox 3 product lane
+may preserve the original worker and LiquidFun settings only for web
+calibration. An oracle result is not reproducible if it records only "Box2D"
+without this configuration.
 
 Use Box2D as the primary reference for rigid behavior:
 
@@ -469,8 +477,8 @@ failures. Validation should form a hierarchy:
 | Narrowphase | Public Box2D collision functions | Same manifold topology and bounded normal, point, separation, and feature results |
 | Broadphase | Brute-force AABB enumeration | No missing canonical pairs |
 | Contact solve | Analytic invariants plus scalar solver | Correct impulse signs, limits, and equal-and-opposite response |
-| Full rigid scenario | Pinned unmodified Box2D world | Scenario-specific trajectory and stability bands |
-| Product behavior | PhysBox 3 traces and synchronized playback | Intended neutral interaction and subjective feel |
+| Full rigid scenario | Native pinned unmodified Box2D v3 world | Scenario-specific trajectory and stability bands |
+| Product calibration | Fresh PhysBox 3 web traces and synchronized playback | Intended neutral interaction and subjective feel |
 | Cross-host behavior | Same PhysBox GPU scenario on each host | Same structural outcome and justified numerical bands |
 
 The scalar Rust solver mirrors the selected GPU equations and buffer ordering.
@@ -497,14 +505,79 @@ contacts, action sequences, and fixture windows. The minimized reproducer joins
 the permanent corpus. Checked numerical baselines are reviewed artifacts; a
 failing tolerance is not widened or regenerated automatically.
 
+### Oracle execution topology and precedence
+
+Routine oracle automation uses process-isolated native executables rather than
+driving a browser or linking a CPU engine into the PhysBox product. The shared
+Rust runner owns the only authored scenario and result contract:
+
+```text
+shared versioned scenario
+    |-> neutral projection -> native oracle process -> canonical oracle result
+    `-> PhysBox GPU/headless run                 -> canonical GPU result
+canonical results -> shared diff, metrics, minimization, and playback
+```
+
+Each adapter accepts a versioned projection containing the source scenario
+hash, fixed step, settings, bodies, shapes, and neutral actions. It must reject
+an unsupported feature with a deterministic reason instead of approximating it
+or inventing a private fixture. It emits the canonical result/trace schema plus
+its source revision, build options, runtime settings, and dirty or patch
+digest. The shared runner, not the foreign-engine adapter, owns tolerances,
+expected structural outcomes, comparison, minimization, and presentation.
+
+Start with an inspectable canonical JSON request and result written to explicit
+paths. A thin Rust CLI for each adapter should depend on the shared schema-only
+validation crate, parse and emit that schema, and call the foreign C/C++ engine
+through a narrow C ABI or direct C FFI. Foreign source, CMake glue, and shims
+belong under test/oracle tooling; no engine or app crate may depend on an
+adapter. The runner validates the pin before launch, applies a timeout, requires
+an atomic fresh result plus `PHYSBOX5_ORACLE_SUCCESS`, and treats adapter logs
+as diagnostics rather than schema. Canonical JSON uses UTF-8, stable struct
+field ordering and stable identifier ordering, finite numbers only, and no
+unordered object maps in hashed payloads. Preserve the source scenario hash
+from the shared runner and record a separate projection hash over the exact
+request bytes. Version the protocol before replacing JSON with a denser trace
+encoding.
+
+Keep foreign engines in separate processes. In particular, Box2D v3 and
+original LiquidFun's Box2D 2.3 are distinct source generations and must not
+force their APIs, symbols, build systems, or lifetime rules into one binary.
+Process isolation keeps this boundary mechanically visible and prevents a
+direct interactive fallback path.
+
+Authority is declared by layer; engines do not vote:
+
+| Question | Authority | Status of other engines |
+| --- | --- | --- |
+| Mathematical and physical invariants | PhysBox specification | A violation fails regardless of engine agreement |
+| Declared pass equations and ordering | Scalar Rust executable specification | Exact or tightly bounded hard gate |
+| Rigid manifold and world behavior | Native unmodified pinned Box2D v3 | Primary rigid acceptance authority |
+| Later coupled particle/body behavior | Native PhysBox 3 sidecar plus its pinned Box2D v3 | Primary coupled-behavior authority |
+| Historical LiquidFun algorithms and scenarios | Native original LiquidFun/Box2D 2.3 | Secondary reference, not an exact PhysBox 3 substitute |
+| Product settings and subjective feel | Fresh PhysBox 3 web calibration corpus | Calibration and review, not routine CI execution |
+| Independent rigid disagreement | Optional native Rapier2D | Non-gating diagnostic evidence only |
+
+When two engines disagree, label the fixture engine-sensitive and inspect the
+invariants, scenario projection, settings, and intended product behavior. Do
+not choose the majority result, widen a band, or change authority silently.
+Rapier2D is not part of P5.0a; it may be added later only when the Box2D lane is
+green and a measured ambiguity or suspected Box2D overfit justifies the cost.
+
 ### Box2D authority and microscope builds
 
-Keep two distinct Box2D lanes:
+Keep two distinct native Box2D lanes:
 
-- The authoritative lane links an unmodified pinned Box2D library. Its public
-  state, events, manifolds, and debug draw data own pass/fail comparisons.
+- The process-isolated authoritative executable links an unmodified pinned
+  Box2D library. Its public state, events, manifolds, and debug draw data own
+  pass/fail comparisons.
 - A separately patched microscope build records internal stages for diagnosis.
   Its patch digest is provenance, and its output never becomes the authority.
+
+On 2026-07-14 the pinned Box2D source built successfully as a native static
+library on arm64 macOS with CMake 4.2.3 and AppleClang 21. P5.0a still needs to
+build the adapter protocol and freeze single-threaded world/build options; the
+library build alone is feasibility evidence, not an oracle result.
 
 The microscope may trace broadphase pair creation, manifolds before and after
 feature matching, prepared effective masses and bias values, constraint graph
@@ -518,7 +591,7 @@ For exact narrowphase comparison, call Box2D's public `b2CollideCircles`,
 return the small public manifolds and stable feature identifiers that PhysBox
 needs to reproduce; a complete Box2D world step is unnecessary for this layer.
 
-### LiquidFun and PhysBox 3 fluid oracle
+### LiquidFun and PhysBox 3 fluid oracles
 
 Only after the rigid fixture set passes should PhysBox 5 restore liquid. Use
 LiquidFun and PhysBox 3 as the behavioral reference for:
@@ -531,10 +604,71 @@ LiquidFun and PhysBox 3 as the behavioral reference for:
 - dam-break impact and containers with moving boundaries;
 - the natural, smooth subjective behavior that motivated the new engine.
 
-As with Box2D, the oracle exists in validation and comparison tooling. The
-product path remains the one GPU solver, and the fluid solver may differ from
-LiquidFun internally as long as the resulting interactions meet the recorded
-behavioral contract.
+As with Box2D, these oracles exist only in validation and comparison tooling.
+The product path remains the one GPU solver, and the fluid solver may differ
+from LiquidFun internally as long as the resulting interactions meet the
+recorded behavioral contract.
+
+The workspace-local source of record is the PhysBox 3 sibling at
+`../physbox3`: its LiquidFun checkout is `../physbox3/reference/liquidfun`, its
+actual Box2D v3 source is
+`../physbox3/vendor/box2d3-wasm/box2d`, and the binding/build layer is
+`../physbox3/vendor/box2d3-wasm`. Revisions and clickable local paths are kept
+in the [reference map](../../reference/README.md). The exact reduced particle
+solver used by PhysBox 3 lives under
+`../physbox3/vendor/box2d3-wasm/box2d3-wasm/csrc/particle_sidecar/`; its
+Emscripten bindings are separate in `csrc/glue.cpp`.
+
+Use three deliberately different lanes:
+
+1. Compile the PhysBox 3 particle sidecar natively with its pinned Box2D v3 and
+   box2cpp sources. This is the routine primary coupled-behavior authority
+   because it reproduces the algorithm and bridge used by the product without
+   requiring browser automation.
+2. Compile [original LiquidFun](https://github.com/google/liquidfun) and its
+   Box2D 2.3 world as a separate native executable. It is a secondary source
+   for particle algorithms, historical tests, baseline patterns, and scenes
+   such as body contacts, confinement, dam break, and wave machines. It is not
+   an exact oracle for the reduced PhysBox 3 sidecar.
+3. Drive the actual PhysBox 3 web product only for a small canonical
+   calibration corpus and subjective review. Refresh that corpus when the
+   native sidecar adapter, PhysBox 3 revision, build flags, defaults, or
+   scenario projection changes; do not make every PhysBox 5 correctness run
+   depend on browser automation.
+
+The pinned original LiquidFun repository is now read-only upstream, which is
+acceptable for a frozen source reference. Its native test infrastructure
+already records body properties across a simulation and compares them to
+checked baselines with tolerances. On 2026-07-14 its complete Box2D 2.3 plus
+particle solver built successfully as a native static library with
+`CMAKE_POLICY_VERSION_MINIMUM=3.5`. On the same machine PhysBox 3's
+`particle_bridge.cpp` and `particle_system.cpp` compiled as native C++20
+objects against its Box2D v3 and box2cpp headers without Emscripten includes.
+These checks establish feasibility, not behavioral equivalence; the native
+sidecar must still be calibrated against fresh web-product traces.
+
+Do not promote LiquidFun, the sidecar, or the web product's internal
+representation into the PhysBox 5 scene or GPU state contract.
+
+### Optional Rapier2D dissent lane
+
+Rapier2D is a genuine 2D specialization: it uses 2D vectors, scalar angular
+state, and the `parry2d` collision crate. It is not a 3D world constrained to a
+plane. However, the
+[Rapier repository deliberately shares source](https://github.com/dimforge/rapier/blob/master/ARCHITECTURE.md)
+between 2D and 3D builds with dimension-selected types and conditional paths.
+That makes it a useful independent engine but a less direct implementation
+reference for a small true-2D WGSL solver than Box2D's C source.
+
+Do not add Rapier to the initial solver laboratory. If the accepted Box2D lane
+later leaves a measured ambiguity, an isolated native Rapier2D adapter may run
+the same high-level scenario projection and report trajectory, penetration,
+settling, energy, and sleep metrics. It is not authoritative for Box2D feature
+identifiers, exact manifolds, solver pass values, or product feel. Agreement
+between Box2D and Rapier strengthens evidence; disagreement identifies a
+scenario for investigation and never triggers majority voting. PhysBox 4's
+existing Rapier2D adapter may reduce implementation cost, but any reuse must be
+selective, test-only, and carry exact PhysBox 4 provenance.
 
 ### PhysX 5 GPU
 
@@ -582,7 +716,7 @@ discard contacts, constraints, or pairs. PhysBox must turn the equivalent case
 into an explicit validation failure. PhysX reports its largest GPU advantage at
 several thousand active bodies, so PhysBox should not require GPU rigid bodies
 to beat Box2D on tiny scenes before the architecture is considered useful. See
-[PhysX GPU rigid bodies](https://nvidia-omniverse.github.io/PhysX/physx/5.2.1/docs/GPURigidBodies.html).
+[PhysX GPU rigid bodies](https://nvidia-omniverse.github.io/PhysX/physx/5.6.1/docs/GPURigidBodies.html).
 
 ### `wgmath`, `wgparry`, and `wgrapier`
 
@@ -693,6 +827,12 @@ commit `4169eba477201fe8220b49d95473555c4ac22995` with local modifications to
 relevant, then record or remove them deliberately; a commit hash alone is not
 complete provenance for a dirty oracle checkout.
 
+The local sibling and all nested reference revisions are enumerated in
+[`reference/pins.toml`](../../reference/pins.toml). The LiquidFun checkout was
+at `7f20402173fd143a3988c921bc384459c6a858f2`, and PhysBox 3's nested Box2D
+source was at the same `3a4f0da8374af61293a03021c9a0b3ebcfe67948`
+revision as the independent authority lane.
+
 PhysBox 4 remains useful as an A/B reference. The new engine should first
 reproduce its rigid-body product behaviors through the Box2D oracle, then
 reproduce selected fluid/body scenes through the PhysBox 3/LiquidFun oracle
@@ -714,9 +854,10 @@ product implementation indefinitely.
 ### P5.0a: Oracle foundation and solver laboratory
 
 - Define the versioned shared rigid scenario, precomputed-manifold, trace,
-  metric, and failure-result schemas in Rust.
-- Add the unmodified pinned Box2D authority lane, direct public narrowphase
-  comparison, and optional patch-digested microscope build.
+  metric, native-adapter request/result, and failure-result schemas in Rust.
+- Add the process-isolated native unmodified pinned Box2D authority lane,
+  direct public narrowphase comparison, and optional patch-digested microscope
+  build.
 - Implement the scalar executable specification and pass-level GPU comparison.
 - Compare portable contact-centric Jacobi/gather, graph-colored Soft-TGS, and
   optional rigid XPBD or split alternatives on the same precomputed contacts.
@@ -724,7 +865,9 @@ product implementation indefinitely.
   GPU cost, memory, and one side-by-side review.
 
 No product collision pipeline is built until this stage chooses a solver
-foundation and records its accepted parameters and baseline results.
+foundation and records its accepted parameters and baseline results. Original
+LiquidFun, the PhysBox 3 sidecar and web product, and Rapier2D remain outside
+this stage.
 
 ### P5.1: GPU body state and direct rendering
 
@@ -778,7 +921,12 @@ foundation and records its accepted parameters and baseline results.
 ### P5.6: LiquidFun-oracled fluid coupling
 
 - Restore a bounded water-like particle solver after rigid parity is accepted.
-- Define fluid/body oracle fixtures from LiquidFun and PhysBox 3 behavior.
+- Define fluid/body oracle fixtures in the shared projection rather than in
+  any foreign adapter.
+- Add separate native adapters for the PhysBox 3 sidecar plus Box2D v3 and for
+  original LiquidFun/Box2D 2.3.
+- Calibrate the native sidecar against a small fresh PhysBox 3 web corpus, then
+  use native processes for routine unattended comparisons.
 - Couple particle/body contact inside the GPU simulation step.
 - Apply equal-and-opposite translation and off-center rotational response.
 - Include fluid boundary-density and iterative pressure effects rather than
@@ -798,10 +946,12 @@ and transport it through the shared launch contract; Playwright, JavaScript,
 shell, ADB, or an app crate must not restate its physics sequence or expected
 numbers.
 
-The Box2D and PhysBox 3 oracle adapters consume a versioned neutral projection
-generated by that shared runner. They do not maintain a second hand-authored
-scenario format. The projection records the source scenario hash and rejects
-unsupported actions or shapes rather than approximating them silently.
+The native Box2D and later PhysBox 3-sidecar and original-LiquidFun adapters
+consume a versioned neutral projection generated by that shared runner. An
+optional Rapier2D comparator must use the same protocol. They do not maintain a
+second hand-authored scenario format. The projection records the source
+scenario hash and rejects unsupported actions or shapes rather than
+approximating them silently.
 
 Every validation run should produce:
 
@@ -818,47 +968,51 @@ Every validation run should produce:
 Normal interactive frames may asynchronously copy compact metrics and bounded
 trace summaries. They must not map body/contact state or wait for the GPU.
 Bounded headless and diagnostic runs may explicitly flush complete state after
-their final simulated frame. Replay consumes captured inputs and settings; a
-pre-existing screenshot or trace is never proof of the current run.
+their final simulated frame. Replay consumes captured inputs and settings. A
+reviewed checked trace may be a named calibration or numerical baseline, but
+it is never proof that the current oracle or web build produced the same
+result; claims about current behavior require a fresh run with provenance.
 
 The autonomous loop is: generate or select scenario, run the scalar/pass-level
-checks, run Box2D and GPU worlds, evaluate invariants and metric bands, run
-cross-host and performance lanes as required, minimize failures, and add the
-reproducer to the corpus. Automation may fix an implementation to restore an
-accepted baseline. It may not change solver family, physical defaults,
-tolerances, oracle revisions, or checked numerical baselines without an
-explicit reviewed decision and measured before/after report.
+checks, run the declared native authority and GPU worlds, evaluate invariants
+and metric bands, run cross-host and performance lanes as required, minimize
+failures, and add the reproducer to the corpus. Automation may fix an
+implementation to restore an accepted baseline. It may not change solver
+family, oracle precedence, physical defaults, tolerances, oracle revisions, or
+checked numerical baselines without an explicit reviewed decision and measured
+before/after report.
 
 ## Performance and capacity gates
 
-Correctness and scale are separate axes. Benchmark at least:
+The standalone [performance and scale contract](performance-and-scale.md) owns
+the workload vector, scene families, count sweep, Box2D authority and optimized
+CPU lanes, timing protocol, result validity, capacity accounting, provisional
+targets, and regression/claim gates. It is the authoritative source when a
+short milestone summary omits performance detail.
 
-- micro scenes with 1 to 32 bodies for latency and pass overhead;
-- product scenes near the intended default and maximum sandbox body counts;
-- scale scenes at approximately 1K, 4K, and 16K active bodies where supported;
-- dense stacks, pyramids, high-pair-count grids, sparse motion, high mass ratio,
-  and sleeping/waking churn;
-- solver-only runs with precomputed contacts, collision-only runs, and complete
-  end-to-end steps.
+The durable direction-level constraints are:
 
-After pipeline warmup, record P50/P95/P99 GPU step and per-pass time where
-timestamp queries are available, CPU encoding/submission time, dispatch count,
-active bodies, broadphase pairs, candidate amplification, manifolds and points,
-solver work, iterations/substeps, memory high-water, and every capacity counter.
-Where GPU timestamps are unavailable, retain end-to-end frame/step timing and
-mark the missing capability rather than fabricating pass timing.
+- performance evidence begins in the authored-manifold solver laboratory and
+  influences solver, layout, dispatch, persistence, sleeping, and broadphase
+  decisions;
+- body count is never reported without awake work, candidate pairs, contacts,
+  solver work, shape mix, memory high-water, and capacity state;
+- primary claims require correctness-qualified rectangles or mixed shapes in
+  addition to any large circle-only result;
+- the deterministic Box2D oracle lane is not substituted for an optimized
+  release/SIMD/worker CPU performance competitor;
+- solver-only, collision-only, end-to-end physics, and full-frame scopes remain
+  separable;
+- GPU timestamps, CPU encode/submit time, CPU step time, and full-frame wall
+  time are labeled rather than conflated; and
+- correctness failure, silent work loss, overflow, simulation-dependent
+  readback, unequal physical quality, or incomplete provenance invalidates a
+  performance result.
 
-Performance gates are first relative to a named revision on named adapters and
-then absolute once representative hardware has established a product budget.
-Do not invent one universal millisecond threshold before measurements exist.
-Track native, browser, and Android separately but never obtain a faster lane by
-changing solver quality, iteration count, material behavior, capacity, or scene.
-
-A performance result is invalid if correctness failed, a pair/contact was
-dropped, capacity overflowed, a required GPU-to-CPU synchronization occurred,
-the benchmark did not reach its declared steady-state window, or provenance is
-incomplete. Optimize the measured pass rather than refreshing a baseline after
-an unexplained regression.
+The initial shorthand is that 10K bodies demonstrate useful scale, 30K should
+begin to expose a material GPU advantage on realistic contact-rich workloads,
+and 100K is a scene-qualified frontier. These are planning hypotheses, not a
+universal promise or a substitute for measured curves on named adapters.
 
 ## Acceptance criteria for the direction
 
@@ -880,8 +1034,9 @@ Fluid work does not begin until all of the following are true:
 - Flat, corner, and edge landings have bounded penetration and settle without
   persistent artificial jitter or energy growth.
 - Small stacks and pyramids remain coherent for their complete fixture window.
-- Box2D oracle projection is generated from one shared scenario definition and
-  is never used as a product or platform fallback.
+- The process-isolated native Box2D oracle consumes the projection generated
+  from one shared scenario definition, emits a fresh canonical result, and is
+  never used as a product or platform fallback.
 - GPU trajectories and aggregate metrics remain inside justified
   scenario-specific bands relative to Box2D.
 - Physical/metamorphic invariants pass independently of Box2D.
@@ -903,6 +1058,12 @@ The complete direction succeeds only when these additional conditions become
 true:
 
 - No GPU-to-CPU result is required to advance rigid or fluid simulation.
+- The native PhysBox 3 sidecar oracle is calibrated against fresh web-product
+  traces for the accepted coupled corpus, with revision, build flags, defaults,
+  and projection recorded.
+- The GPU coupled metrics remain in justified scenario-specific bands relative
+  to the native sidecar; original LiquidFun results are retained as secondary
+  evidence rather than substituted silently.
 - A particle/body contact applies equal-and-opposite response in the same GPU
   fixed step.
 - Desktop, browser, Android, and headless run the same scene, commands, solver
@@ -951,11 +1112,14 @@ The first rigid work begins with these defaults:
 - Persistent contacts use canonical body handles with generations plus stable
   geometric feature identifiers, transferred by sorted merge.
 - Box2D commit `3a4f0da8374af61293a03021c9a0b3ebcfe67948`
-  is the initial rigid oracle source; exact build and world settings are frozen
-  by P5.0a.
-- Rapier or another CPU rigid backend is never a product fallback. Existing
-  PhysBox 4 code may remain temporarily as isolated fork history until the GPU
-  body path passes all hosts, then it is removed. Box2D remains test-only.
+  is the initial rigid oracle source; a process-isolated native adapter plus
+  exact build and world settings are frozen by P5.0a.
+- Rapier or another CPU rigid backend is never a product fallback. Rapier2D is
+  excluded from P5.0a and may become only a non-gating native comparator after
+  a measured ambiguity and explicit decision. Box2D remains test-only.
+- The later routine coupled oracle is the PhysBox 3 particle sidecar compiled
+  natively with its Box2D v3 source. Original LiquidFun is secondary evidence,
+  and the web-only PhysBox 3 product is a calibration lane.
 
 The solver laboratory and early pipeline must still answer:
 
