@@ -609,6 +609,14 @@ pub async fn run_gpu_soft_step_case(
 }
 
 #[cfg(not(target_arch = "wasm32"))]
+pub async fn run_gpu_soft_step_stress_case(
+    scenario: &ScenarioV1,
+    candidate: GpuSolverCandidate,
+) -> Result<GpuSolverOutput, String> {
+    run_gpu_solver_mode(scenario, candidate, GpuSolverMode::BenchmarkSoftStep).await
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 pub async fn benchmark_gpu_soft_step_case(
     scenario: &ScenarioV1,
     candidate: GpuSolverCandidate,
@@ -824,11 +832,15 @@ async fn run_gpu_solver_mode(
             })
         })
         .collect::<Result<Vec<_>, String>>()?;
-    let traces = trace_raw
-        .iter()
-        .filter(|trace| !topology_overflowed || trace.tail[0] != 0)
-        .map(trace_record)
-        .collect::<Result<Vec<_>, _>>()?;
+    let traces = if mode == GpuSolverMode::BenchmarkSoftStep {
+        Vec::new()
+    } else {
+        trace_raw
+            .iter()
+            .filter(|trace| !topology_overflowed || trace.tail[0] != 0)
+            .map(trace_record)
+            .collect::<Result<Vec<_>, _>>()?
+    };
     let contributions = if candidate == GpuSolverCandidate::JacobiGather {
         contribution_raw
             .iter()

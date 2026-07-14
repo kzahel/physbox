@@ -22,7 +22,7 @@ pub use gpu_solver::{GpuContributionEvidence, GpuSolverCandidate, GpuSolverOutpu
 #[cfg(not(target_arch = "wasm32"))]
 pub use gpu_solver::{
     GpuSolverBenchmarkOutput, benchmark_gpu_soft_step_case, run_gpu_soft_step_case,
-    run_gpu_solver_case,
+    run_gpu_soft_step_stress_case, run_gpu_solver_case,
 };
 #[cfg(not(target_arch = "wasm32"))]
 pub use renderer::OffscreenRenderer;

@@ -1,6 +1,7 @@
 use physbox_engine::{
     GpuSolverCandidate, authored_chain_scenario, authored_one_contact_scenario,
-    benchmark_gpu_soft_step_case, run_gpu_soft_step_case, run_gpu_solver_case,
+    benchmark_gpu_soft_step_case, run_gpu_soft_step_case, run_gpu_soft_step_stress_case,
+    run_gpu_solver_case,
 };
 use physbox_lab::{
     capacity_is_valid, equal_and_opposite,
@@ -180,6 +181,29 @@ fn benchmark_mode_warms_resets_and_delays_timestamp_readback() {
         mismatch => panic!("inconsistent timestamp evidence: {mismatch:?}"),
     }
     capacity_is_valid(&result.capacities).unwrap();
+}
+
+#[test]
+fn trace_free_stress_validation_reads_complete_thirty_thousand_contact_state() {
+    let scenario = authored_chain_scenario(30_001, 91).unwrap();
+    for candidate in [
+        GpuSolverCandidate::JacobiGather,
+        GpuSolverCandidate::ColoredSoftTgs,
+    ] {
+        let result =
+            pollster::block_on(run_gpu_soft_step_stress_case(&scenario, candidate)).unwrap();
+        assert_eq!(result.bodies.len(), 30_001);
+        assert_eq!(result.contact_cache.len(), 30_000);
+        assert!(result.traces.is_empty());
+        assert!(result.bodies.iter().all(|body| {
+            body.position.x.is_finite()
+                && body.position.y.is_finite()
+                && body.linear_velocity.x.is_finite()
+                && body.linear_velocity.y.is_finite()
+                && body.angular_velocity.get().is_finite()
+        }));
+        capacity_is_valid(&result.capacities).unwrap();
+    }
 }
 
 fn chain_velocity_residual(bodies: &[physbox_contracts::BodyStateV1]) -> f32 {

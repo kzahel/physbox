@@ -168,6 +168,15 @@ all four primitives. A 1K-contact/10K-primitive run completed on the
 before execution. The final package must retain both the AVD measurements and
 that physical-device availability state unless a later retry succeeds.
 
+Evidence automation, 2026-07-14: `physbox-solver-evidence` now owns one fresh,
+atomic matrix run across the two candidates, trace-free final-state stress
+checks, convergence sweeps, portable primitives, minimized randomized replay,
+the isolated optimized Box2D process, Android artifact provenance, and compact
+candidate playback. Its quick mode has exercised every lane with valid
+capacity and subprocess-sentinel results. The unchecked items below require
+the clean full-scale run and reviewed package; the automation alone does not
+make them true.
+
 - [x] Minimize randomized failures and promote reproducers into the corpus.
   The initial deterministic 16-seed run covered 32 scenarios and 64 candidate
   executions with zero failures, so it produced no permanent reproducer;
