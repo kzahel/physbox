@@ -157,6 +157,11 @@ and compaction WGSL primitives use the same protocol and validate complete
 outputs through 30K elements. Matrix generation and its acceptance gates
 remain open below.
 
+The CPU comparison process is also available as a separate optimized Box2D
+Release/SIMD build with fresh atomic artifacts and named one-/four-worker
+settings. Its full-world scope remains distinct from authored-contact GPU
+solver-only timing in the final matrix.
+
 - [x] Minimize randomized failures and promote reproducers into the corpus.
   The initial deterministic 16-seed run covered 32 scenarios and 64 candidate
   executions with zero failures, so it produced no permanent reproducer;

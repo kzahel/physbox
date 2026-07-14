@@ -1400,6 +1400,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "physbox-box2d-benchmark"
+version = "0.1.0"
+dependencies = [
+ "bindgen",
+ "cc",
+ "physbox-contracts",
+ "physbox-engine",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "physbox-box2d-oracle"
 version = "0.1.0"
 dependencies = [

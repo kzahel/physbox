@@ -228,6 +228,16 @@ single-worker oracle would overstate the GPU advantage. Box2D's own benchmark
 scenes may be retained as imported comparison cases, but PhysBox-owned scene
 families remain the primary cross-engine corpus.
 
+P5.0a implementation note, 2026-07-14: the optimized process uses the exact
+clean authority source pin in a distinct Release build with SIMD enabled and
+validation disabled. Named one- and four-worker lanes consume `ScenarioV1`
+directly and use a fixed worker pool with stable worker indices. Warmup is
+excluded, each sample starts from a fresh projected world outside the timed
+window, and the artifact retains every wall-clock sample, Box2D contact/task
+counters, memory bytes, final body hash, settings, and build provenance. The
+scope is explicitly `end-to-end-physics-world-step`; it is not mislabeled as
+solver-only time.
+
 Rapier2D may later provide a non-gating optimized dissent lane if a measured
 question justifies its cost. It is not required for the initial performance
 contract and never replaces Box2D as the rigid authority or principal CPU

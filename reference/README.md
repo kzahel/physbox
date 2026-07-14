@@ -92,6 +92,15 @@ PhysBox product engine. A checked calibration trace may be a reviewed baseline,
 but it is not proof of the current PhysBox 3 web build; claims about current
 web behavior require a fresh capture.
 
+The optimized rigid performance process under `tools/benchmarks/box2d` is
+deliberately separate from the authority executable. It rebuilds this same
+clean pin in Release mode with validation disabled and host SIMD enabled, then
+uses a PhysBox-owned fixed worker pool for named one- and multi-worker lanes.
+It consumes the shared `ScenarioV1` projection, publishes a fresh atomic result
+plus its own success sentinel, and labels its measurement as a complete Box2D
+world step. It does not change authority settings or turn Box2D into a product
+dependency.
+
 The pinned sources were tested for native build feasibility on 2026-07-14:
 
 - `reference/box2d` built successfully as a native static library;
