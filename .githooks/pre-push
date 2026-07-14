@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PROJECT_DIR="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+if [ -z "$PROJECT_DIR" ]; then exit 0; fi
+HOOK="$PROJECT_DIR/scripts/local-deploy/pre-push-hook.sh"
+if [ -x "$HOOK" ]; then exec "$HOOK" "$@"; fi

@@ -1,0 +1,12 @@
+/target/
+/dist-web/
+/node_modules/
+/.wrangler/
+/.DS_Store
+/android/.gradle/
+/android/.kotlin/
+/android/app/build/
+/android/jniLibs/
+/android/local.properties
+/captures/*
+!/captures/.gitkeep

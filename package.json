@@ -1,0 +1,24 @@
+{
+  "name": "physbox5",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "android:apk": "bash android/build-apk.sh",
+    "android:avd": "bash android/validate-avd.sh",
+    "android:env": "bash android/check-env.sh",
+    "build:web": "node scripts/build-web.mjs",
+    "bundle:web": "node scripts/build-web.mjs --release --output dist-web",
+    "check:boundaries": "node scripts/check-platform-boundaries.mjs",
+    "deploy": "bash scripts/deploy-web.sh",
+    "deploy:dry-run": "bash scripts/deploy-web.sh --dry-run",
+    "hooks:install": "bash scripts/install-git-hooks.sh",
+    "serve:web": "node scripts/serve-web.mjs",
+    "test:web": "node scripts/browser-smoke.mjs",
+    "prepare": "bash scripts/install-git-hooks.sh"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.59.1",
+    "pngjs": "^7.0.0",
+    "wrangler": "4.110.0"
+  }
+}

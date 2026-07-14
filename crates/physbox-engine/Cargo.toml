@@ -1,0 +1,13 @@
+[package]
+name = "physbox-engine"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+bytemuck.workspace = true
+physbox-launch = { path = "../physbox-launch" }
+serde.workspace = true
+serde_json.workspace = true
+wgpu.workspace = true

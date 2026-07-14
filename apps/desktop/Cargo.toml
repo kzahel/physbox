@@ -1,0 +1,12 @@
+[package]
+name = "physbox-desktop"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+physbox-engine = { path = "../../crates/physbox-engine" }
+physbox-launch = { path = "../../crates/physbox-launch" }
+physbox-shell = { path = "../../crates/physbox-shell" }
+winit.workspace = true

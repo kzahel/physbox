@@ -1,0 +1,11 @@
+name = "physbox5"
+main = "index.js"
+compatibility_date = "2026-07-14"
+
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "physbox5"
+
+[[routes]]
+pattern = "physbox5.kzahel.com"
+custom_domain = true

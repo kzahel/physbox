@@ -1,0 +1,34 @@
+[workspace]
+members = [
+  "apps/android",
+  "apps/desktop",
+  "apps/headless",
+  "apps/web",
+  "crates/physbox-engine",
+  "crates/physbox-launch",
+  "crates/physbox-shell",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.92"
+version = "0.1.0"
+publish = false
+
+[workspace.dependencies]
+bytemuck = { version = "1", features = ["derive"] }
+console_error_panic_hook = "0.1"
+form_urlencoded = "1"
+jni = "0.22"
+js-sys = "0.3.102"
+log = "0.4"
+png = "0.18"
+pollster = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+wasm-bindgen = "=0.2.125"
+wasm-bindgen-futures = "=0.4.75"
+web-sys = "0.3.102"
+wgpu = { version = "25", features = ["metal", "vulkan", "vulkan-portability"] }
+winit = { version = "0.30", features = ["android-native-activity"] }
