@@ -326,9 +326,7 @@ The same measurement path now covers engine-owned portable WGSL primitives:
 a hierarchical exclusive prefix scan, stable four-bit-pass radix sort, ordered
 unique, and predicate compaction. Each primitive validates its complete output
 with one final readback after timing, exposes dispatch and allocated/high-water
-capacity records, and has correctness coverage through 30K elements. Primitive
-curve generation and cross-adapter publication remain S1.5 evidence work, not
-an implied production primitive selection.
+capacity records, and has correctness coverage through 30K elements.
 
 Android measurement uses a shell-executed native benchmark binary built with
 the maintained NDK toolchain, rather than estimating compute cost from APK
@@ -338,6 +336,19 @@ CPU encode/submit, host-completion, dispatch, and capacity samples. The
 `jstorrent-tablet` AVD is the repeatable lane; a connected physical device uses
 the identical binary and protocol. A locked or absent device remains a named
 gap rather than being replaced silently by emulator data.
+
+The clean S1.5 raw matrix at `evidence/p5.0a-s1.5/matrix.json` records revision
+`db84d635bc87c1f9d3c06f8ef58a86f2409596c0`, five warmup steps, 30 retained
+samples, and 64 deterministic randomized seeds. It contains both candidates at
+every authored-contact count from 1 through 32 plus 1K, 10K, and 30K; all four
+portable primitives at 1K, 10K, and 30K; and optimized Box2D full-world rows at
+32, 1K, 10K, and 30K with one and four workers. Every accepted row has finite
+timing samples, complete capacity records, and zero overflow. The companion
+AVD artifact measures both candidates at 1K contacts and all primitives at 10K
+elements on Vulkan SwiftShader. The connected Pixel 7a was locked, so both its
+benchmark and app validation runners refused execution and the matrix records
+that physical-device gap explicitly. These are measurements for S1.6 review,
+not a production primitive or solver selection.
 
 ## Result validity
 

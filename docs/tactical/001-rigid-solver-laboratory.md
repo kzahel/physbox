@@ -172,29 +172,31 @@ Evidence automation, 2026-07-14: `physbox-solver-evidence` now owns one fresh,
 atomic matrix run across the two candidates, trace-free final-state stress
 checks, convergence sweeps, portable primitives, minimized randomized replay,
 the isolated optimized Box2D process, Android artifact provenance, and compact
-candidate playback. Its quick mode has exercised every lane with valid
-capacity and subprocess-sentinel results. The unchecked items below require
-the clean full-scale run and reviewed package; the automation alone does not
-make them true.
+candidate playback. The clean full-scale run at
+`../../evidence/p5.0a-s1.5/matrix.json` retains 30 samples after five warmups,
+covers 1–32 plus 1K/10K/30K authored contacts, replays 64 randomized seeds, and
+has valid finite-state, capacity, primitive, Box2D provenance, and subprocess
+sentinel results. The remaining unchecked items require the compact comparison
+report and authority playback; the raw matrix alone does not make them true.
 
 - [x] Minimize randomized failures and promote reproducers into the corpus.
   The initial deterministic 16-seed run covered 32 scenarios and 64 candidate
   executions with zero failures, so it produced no permanent reproducer;
   injected failure tests prove the reducer rather than fabricating one.
-- [ ] Generate the correctness, convergence, capacity, and timing matrix
+- [x] Generate the correctness, convergence, capacity, and timing matrix
   required by the performance and scale contract.
-- [ ] Benchmark solver-only fixtures after warmup at 1–32 and 1K, 10K, and at
+- [x] Benchmark solver-only fixtures after warmup at 1–32 and 1K, 10K, and at
   least one 30K authored-contact workload on named adapters and revisions.
-- [ ] Record bodies, contacts, solver work, dispatches, GPU and CPU timing,
+- [x] Record bodies, contacts, solver work, dispatches, GPU and CPU timing,
   scratch/allocation high-water, and every capacity counter for each solver
   candidate at equivalent accepted quality.
-- [ ] Run the separate optimized Box2D performance lane where the authored
+- [x] Run the separate optimized Box2D performance lane where the authored
   fixture has a valid shared projection; do not use the deterministic authority
   lane as the sole CPU comparison.
 - [ ] Benchmark the shared prefix-scan, radix-sort, unique, and compaction
   primitives at 1K, 10K, and 30K element scales on the same named adapters and
   include their curves in the comparison report.
-- [ ] Name the Android reference device and record at least one solver-only
+- [x] Name the Android reference device and record at least one solver-only
   and primitive measurement on it; if no device is available, record that gap
   explicitly rather than omitting the lane.
 - [ ] Generate one comparison report and synchronized playback set.
