@@ -6,6 +6,7 @@ use physbox_contracts::{CapacityRecordV1, FiniteF32, Vec2};
 
 pub mod fixture_contacts;
 pub mod oracle_transport;
+pub mod playback;
 pub mod scalar;
 
 #[derive(Clone, Debug, Eq, PartialEq)]

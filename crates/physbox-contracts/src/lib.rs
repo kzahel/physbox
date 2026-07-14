@@ -660,6 +660,160 @@ impl Validate for OracleResultV1 {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaybackArtifactV1 {
+    pub schema_version: u32,
+    pub run_id: String,
+    pub harness_provenance: ProvenanceV1,
+    pub tracks: Vec<PlaybackTrackV1>,
+}
+
+impl Validate for PlaybackArtifactV1 {
+    fn validate(&self) -> Result<(), ContractError> {
+        version(self.schema_version)?;
+        if self.run_id.is_empty() || self.harness_provenance.run_id != self.run_id {
+            return Err(ContractError(
+                "playback run id must be present and match its provenance".to_owned(),
+            ));
+        }
+        self.harness_provenance.validate()?;
+        if self.tracks.is_empty() {
+            return Err(ContractError(
+                "playback requires at least one track".to_owned(),
+            ));
+        }
+        validate_sorted_unique(
+            self.tracks.iter().map(|track| &track.id),
+            "playback track ids",
+        )?;
+        for track in &self.tracks {
+            track.validate()?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaybackTrackV1 {
+    pub id: String,
+    pub source_scenario_hash: String,
+    pub source_scenario: ScenarioV1,
+    pub samples: Vec<PlaybackSampleV1>,
+}
+
+impl Validate for PlaybackTrackV1 {
+    fn validate(&self) -> Result<(), ContractError> {
+        if self.id.is_empty() || !is_sha256(&self.source_scenario_hash) {
+            return Err(ContractError(
+                "playback track requires an id and source scenario hash".to_owned(),
+            ));
+        }
+        self.source_scenario.validate()?;
+        if canonical_hash(&self.source_scenario)? != self.source_scenario_hash {
+            return Err(ContractError(
+                "playback source scenario hash mismatch".to_owned(),
+            ));
+        }
+        if self.samples.is_empty() {
+            return Err(ContractError(
+                "playback track requires at least one sample".to_owned(),
+            ));
+        }
+        validate_sorted_unique(
+            self.samples.iter().map(|sample| sample.completed_steps),
+            "playback sample steps",
+        )?;
+        for sample in &self.samples {
+            sample.validate()?;
+            if sample.completed_steps == 0
+                || sample.completed_steps > self.source_scenario.requested_steps
+            {
+                return Err(ContractError(
+                    "playback sample step lies outside the source scenario".to_owned(),
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaybackSampleV1 {
+    pub completed_steps: u32,
+    pub scalar_bodies: Vec<BodyStateV1>,
+    pub authority_bodies: Vec<BodyStateV1>,
+    pub scalar_trace_records: u64,
+    pub scalar_trace_hash: String,
+    pub oracle_scenario_hash: String,
+    pub oracle_projection_hash: String,
+    pub oracle_provenance: ProvenanceV1,
+    pub oracle_artifact: String,
+    pub position_delta_max: FiniteF32,
+    pub angle_delta_max: FiniteF32,
+    pub linear_velocity_delta_max: FiniteF32,
+    pub angular_velocity_delta_max: FiniteF32,
+    pub dynamic_sleep_state_match: bool,
+}
+
+impl Validate for PlaybackSampleV1 {
+    fn validate(&self) -> Result<(), ContractError> {
+        if !is_sha256(&self.scalar_trace_hash)
+            || !is_sha256(&self.oracle_scenario_hash)
+            || !is_sha256(&self.oracle_projection_hash)
+            || self.oracle_artifact.is_empty()
+        {
+            return Err(ContractError(
+                "playback sample requires trace/oracle hashes and an artifact path".to_owned(),
+            ));
+        }
+        self.oracle_provenance.validate()?;
+        if self.oracle_artifact != format!("oracles/{}", self.oracle_provenance.run_id) {
+            return Err(ContractError(
+                "playback oracle artifact must name its provenance run directory".to_owned(),
+            ));
+        }
+        validate_sorted_unique(
+            self.scalar_bodies.iter().map(|body| body.id),
+            "scalar playback body ids",
+        )?;
+        validate_sorted_unique(
+            self.authority_bodies.iter().map(|body| body.id),
+            "authority playback body ids",
+        )?;
+        if self.scalar_bodies.len() != self.authority_bodies.len()
+            || self
+                .scalar_bodies
+                .iter()
+                .zip(&self.authority_bodies)
+                .any(|(scalar, authority)| scalar.id != authority.id)
+        {
+            return Err(ContractError(
+                "playback scalar and authority body identities differ".to_owned(),
+            ));
+        }
+        for body in self.scalar_bodies.iter().chain(&self.authority_bodies) {
+            body.validate()?;
+        }
+        for delta in [
+            self.position_delta_max,
+            self.angle_delta_max,
+            self.linear_velocity_delta_max,
+            self.angular_velocity_delta_max,
+        ] {
+            delta.validate()?;
+            if delta.get() < 0.0 {
+                return Err(ContractError(
+                    "playback deltas must be nonnegative".to_owned(),
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
 pub fn canonical_json<T: Serialize + Validate>(value: &T) -> Result<Vec<u8>, ContractError> {
     value.validate()?;
     serde_json::to_vec(value).map_err(|error| ContractError(error.to_string()))

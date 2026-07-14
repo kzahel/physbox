@@ -16,8 +16,9 @@ performance tooling. It contains serializable data and validation only: no
 
 Version 1 defines bodies, authored manifolds and contact points, contact-cache
 impulses, solver settings, neutral actions, scenarios, oracle requests and
-results (including public narrowphase manifolds), pass traces, work/timing
-metrics, capacity records, failures, and complete run/build/runtime provenance.
+results (including public narrowphase manifolds), synchronized playback
+tracks/samples, pass traces, work/timing metrics, capacity records, failures,
+and complete run/build/runtime provenance.
 
 ## Canonical bytes and hashes
 
@@ -117,3 +118,18 @@ The laboratory independently checks finite vectors, equal-and-opposite
 contributions, nonnegative normal impulse, Coulomb tangent projection,
 body-label swap symmetry, and capacity validity. Tests include deliberately
 broken responses for every invariant so a vacuous checker cannot pass.
+
+## Synchronized playback
+
+`PlaybackArtifactV1` is the shared presentation contract for scalar/oracle and
+later GPU/oracle evidence. A track embeds the complete engine-owned source
+scenario and its canonical hash. Its ordered samples pair body states at an
+identical completed fixed-step count and record scalar trace count/hash, oracle
+scenario/projection hashes, full oracle provenance, the preserved process
+artifact path, objective maximum position/angle/velocity deltas, and dynamic
+sleep-state agreement.
+
+Playback is evidence, not an implicit tolerance. S1.3 reports the scalar and
+Box2D differences without declaring either trajectory delta an acceptance
+band. Scalar mathematical/pass invariants retain their precedence; reviewed
+solver-quality bands are established from the S1.4/S1.5 candidate matrix.

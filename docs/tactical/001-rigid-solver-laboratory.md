@@ -95,7 +95,7 @@ Gate: analytic expectations and all invariant fixtures pass without Box2D.
   the fixture contact generator's manifolds on its supported geometries.
 - [x] Evaluate the microscope trigger; scalar traces and public Box2D output
   localize the current fixtures, so no patched lane is added.
-- [ ] Produce synchronized scalar/Box2D playback for behavioral fixtures.
+- [x] Produce synchronized scalar/Box2D playback for behavioral fixtures.
 
 Gate: the native authority result is reproducible from recorded provenance and
 one shared projection; it links no product runtime, and microscope output is

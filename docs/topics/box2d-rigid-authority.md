@@ -1,7 +1,7 @@
 # Box2D rigid authority
 
-Status: deterministic authority lane implemented, 2026-07-14; synchronized
-behavioral playback remains in progress.
+Status: deterministic authority and synchronized behavioral playback
+implemented, 2026-07-14.
 
 Governing direction:
 [layered rigid oracle model](physbox5-unified-gpu-physics.md#layered-rigid-oracle-model).
@@ -90,6 +90,29 @@ structured rejection, clean-pin preflight, actual subprocess isolation,
 sentinel/freshness promotion, and rejected-artifact preservation. The platform
 boundary gate also rejects any dependency on the native oracle from an app or
 shared product crate.
+
+The synchronized playback command runs the shared circle/floor,
+rectangle/floor, and sliding-friction scenarios through scalar and authority
+lanes at completed steps 1, 15, 30, 60, 90, 120, and 180. It creates one fresh
+directory containing a canonical versioned manifest, the 21 complete oracle
+process directories, and a self-contained side-by-side SVG. The manifest
+reports objective deltas but applies no unreviewed behavior tolerance. Dynamic
+sleep differences remain visible because the scalar executable specification
+does not implement a sleep policy.
+
+```sh
+cargo build -p physbox-box2d-oracle
+cargo run -p physbox-lab --bin physbox-synchronized-playback -- \
+  --oracle target/debug/physbox-box2d-oracle \
+  --box2d-source reference/box2d \
+  --output-root /tmp/physbox5-playback \
+  --run-id RUN_ID
+```
+
+The command refuses to reuse a run directory and emits
+`PHYSBOX5_VALIDATION_SUCCESS` only after syncing the manifest and SVG. A dirty
+PhysBox harness is allowed for diagnosis only when its patch digest is
+recorded; the S1.6 review package is regenerated from a clean committed tree.
 
 ## Reconsideration triggers
 
