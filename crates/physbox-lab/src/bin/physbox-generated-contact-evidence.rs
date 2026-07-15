@@ -262,7 +262,7 @@ fn run() -> Result<(), String> {
             .count();
     let manifest = Manifest {
         schema_version: SCHEMA_VERSION,
-        artifact_kind: "p5.2-s3.5-generated-contact-solve",
+        artifact_kind: "p5.2-s3.5a-generated-contact-authority",
         run_id: arguments.run_id,
         source_revision,
         source_dirty,
@@ -326,6 +326,7 @@ fn speculative_gap_scenario() -> Result<ScenarioV1, String> {
     scenario.id = "p5.2-generated-speculative-gap".to_owned();
     scenario.bodies[0].position.y = 0.205;
     scenario.bodies[0].linear_velocity.y = -0.5;
+    scenario.settings.contact_policy = None;
     Ok(scenario)
 }
 
