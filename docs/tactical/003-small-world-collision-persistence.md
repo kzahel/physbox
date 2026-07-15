@@ -1,6 +1,6 @@
 # S3: Small-world collision and contact persistence
 
-Status: S3.5 evidence published with review blockers; preparing S3.6 manual checkpoint.
+Status: manual checkpoint at S3.6; awaiting human decision.
 Direction: [one GPU-resident 2D physics world](../topics/physbox5-unified-gpu-physics.md).
 Bring-up stage: [P5.2](../bringup-plan.md#p52--small-world-collision-and-persistence-active).
 Predecessor: [accepted P5.1 body core](../../evidence/p5.1-s2.6/README.md).
@@ -316,19 +316,26 @@ bundled into the slice.
 
 ### S3.6 — contact representation and P5.3 readiness review
 
-- [ ] Publish a compact report covering analytic shape encoding, manifold and
+- [x] Publish a compact report covering analytic shape encoding, manifold and
   feature conventions, persistent key/cache layout, bytes and capacities,
   behavior/authority results, cross-host status, scoped performance, minimized
   failures, rejected alternatives, and reconsideration triggers.
-- [ ] State whether evidence supports freezing the S3 contact surface and
+- [x] State whether evidence supports freezing the S3 contact surface and
   advancing to the P5.3 broadphase bakeoff without selecting that outcome
   silently.
-- [ ] Stop for human review before freezing contact ABI, beginning SAP/grid/LBVH
+- [x] Stop for human review before freezing contact ABI, beginning SAP/grid/LBVH
   work, adding polygons/joints, or widening accepted numerical bands.
 
 Gate: a reviewer can assess collision correctness, persistence stability,
 memory/dispatch cost, downstream broadphase compatibility, and known failures
 without reading the full implementation or raw logs.
+
+Manual checkpoint, 2026-07-15: the
+[S3.6 review](../../evidence/p5.2-s3.6/README.md) recommends against freezing
+or advancing. It requests review of proposed `0.02` speculative distance and
+`3.0 m/s` depenetration speed, a compact/pair-grouped persistence bakeoff, and
+a stable adjacency bakeoff. No proposal is accepted until the human decision
+is recorded in a later commit.
 
 Commit boundary: the S3.6 review package and manual-checkpoint status land
 alone. A human decision is a later documentation commit.
