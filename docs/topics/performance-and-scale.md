@@ -562,6 +562,17 @@ the deterministic body-by-point incidence scan. S3.6 must review those two
 costs before the representation is frozen; these measurements are not a P5.4
 crossover claim.
 
+S3.6 pinned-source checkpoint, 2026-07-15: the PhysX GPU organization audit
+shows that PhysBox, PhysX, and the portable wgmath reference all use four-bit
+radix digits. The S3.4 pass count is dominated by the full 256-bit semantic
+key, so changing digit width is not the lead experiment. The proposed S3.5a
+matrix instead isolates stable pair-slot persistence and compact body-edge
+index sorting plus offsets/segmented gather, with the existing full-key sort
+and body-by-point scan retained as correctness baselines. It must report
+subphase dispatches, sorted key/index bytes, total allocation/high-water, and
+P50/P95/P99 at generated 32/256/1K plus isolated contact-rich 1K/10K rows.
+This study supplies no candidate timing and accepts no performance claim.
+
 ## Regression and claim gates
 
 Before representative hardware is selected, store named measurements and

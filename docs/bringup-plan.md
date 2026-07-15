@@ -106,7 +106,10 @@ Current checkpoint, 2026-07-15: S3.1 through S3.5 evidence and the compact
 S3.6 review are published. Work is stopped at the mandatory human checkpoint.
 The recommendation is to keep the contact surface provisional, run one focused
 speculative/depenetration and representation/adjacency bakeoff, and regenerate
-the review before P5.3 or the queued menu/camera slice begins.
+the review before P5.3 or the queued menu/camera slice begins. A pinned PhysX
+source study strengthens stable pair-slot persistence and compact body-edge
+index views with segmented gather as the lead representation lanes; it does
+not promote PhysX to oracle status or authorize implementation.
 
 - Add circles and oriented rectangles.
 - Use all-pairs AABB candidate generation.

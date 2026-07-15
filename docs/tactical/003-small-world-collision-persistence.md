@@ -337,6 +337,14 @@ or advancing. It requests review of proposed `0.02` speculative distance and
 a stable adjacency bakeoff. No proposal is accepted until the human decision
 is recorded in a later commit.
 
+Pinned-source addendum, 2026-07-15: the
+[PhysX GPU organization study](../../evidence/p5.2-s3.6/physx-gpu-organization-study.md)
+finds that key width, not radix digit width, drives the 64-pass baseline. It
+strengthens stable pair-slot persistence and compact body-edge index views with
+segmented gather as the lead bakeoff lanes. PhysX remains a source reference,
+not an oracle or dependency. This changes no accepted scope and remains at the
+same manual checkpoint pending human authorization.
+
 Commit boundary: the S3.6 review package and manual-checkpoint status land
 alone. A human decision is a later documentation commit.
 

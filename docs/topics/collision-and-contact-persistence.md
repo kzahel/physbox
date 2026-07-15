@@ -1,7 +1,7 @@
 # Collision and contact persistence
 
-Status: S3.3 complete GPU narrowphase accepted; sorted persistence active at
-S3.4, 2026-07-15.
+Status: S3.6 manual checkpoint; contact representation and physical policy
+remain provisional, 2026-07-15.
 
 Governing direction:
 [one GPU-resident 2D physics world](physbox5-unified-gpu-physics.md).
@@ -171,6 +171,30 @@ step but has no initial AABB overlap, so the current graph emits no contact and
 ends at `0.00507` penetration while Box2D responds. S3.6 must choose a
 depenetration/spawn policy and a portable speculative distance plus AABB
 expansion; neither physical default is selected by the implementation.
+
+## Pinned PhysX organization study
+
+The [S3.6 PhysX source study](../../evidence/p5.2-s3.6/physx-gpu-organization-study.md)
+confirms that the current persistence sorter already uses four-bit digits. Its
+64 passes arise from globally sorting the complete eight-word semantic point
+key. PhysX instead organizes active collision pairs around stable manager
+slots and bounded local persistent manifolds, and its particle path maintains
+rigid-oriented and particle-oriented contact orderings before a segmented
+rigid-reaction reduction.
+
+For the proposed S3.5a bakeoff, this makes stable pair-slot two-point
+persistence the lead cache lane and a stable body-edge index view plus
+offsets/segmented gather the lead adjacency lane. The complete semantic key
+remains canonical acceptance truth; local feature equality and pair
+generation must be verified before any impulse transfer. Alternate orderings
+are compact views over one canonical payload so later particle/rigid reactions
+can add a consumer without a second engine.
+
+These are source-informed recommendations, not accepted representation
+decisions. PhysX remains a 3D CUDA organizational reference. Its CPU-owned
+pair/partition management, host-known solve loops, count readback, and partial
+overflow behavior are incompatible with the product contract and will not be
+copied.
 
 ## Reconsideration triggers
 
