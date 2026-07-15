@@ -2,7 +2,7 @@ use serde::Serialize;
 
 use crate::clock::PacingReport;
 
-pub const SCENE_CONTRACT_VERSION: u32 = 2;
+pub const SCENE_CONTRACT_VERSION: u32 = 3;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -17,6 +17,19 @@ pub struct SceneContract {
     pub capacity_overflowed: bool,
     pub fixed_step_hz: u32,
     pub scenario: &'static str,
+    pub scenario_hash: String,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BodyCommandReport {
+    pub capacity_commands: u32,
+    pub queued_commands_total: u64,
+    pub executed_commands_total: u64,
+    pub reset_commands_total: u64,
+    pub coalesced_targets_total: u64,
+    pub overflowed: bool,
+    pub grab_active: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -37,6 +50,7 @@ pub struct FrameReport {
     pub pointer_events_total: u64,
     pub target_size: [u32; 2],
     pub pacing: PacingReport,
+    pub body_commands: BodyCommandReport,
     pub scene_contract: SceneContract,
     pub scenario: ScenarioResult,
 }
@@ -54,29 +68,41 @@ impl FrameReport {
             completed_outer_steps_total: u64,
             simulated_seconds_total: f64,
             overload_slipped_wall_seconds_total: f64,
-            lifecycle_discarded_wall_seconds_total: f64,
             effective_simulation_scale: f64,
         }
 
         #[derive(Serialize)]
         #[serde(rename_all = "camelCase")]
+        struct CompactBodyCommands {
+            executed_commands_total: u64,
+            reset_commands_total: u64,
+            coalesced_targets_total: u64,
+            overflowed: bool,
+            grab_active: bool,
+        }
+
+        #[derive(Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct CompactScenario {
+            name: &'static str,
+            complete: bool,
+            passed: bool,
+        }
+
+        #[derive(Serialize)]
+        #[serde(rename_all = "camelCase")]
         struct CompactFrameReport<'a> {
-            frame_index: u64,
             fixed_steps_total: u64,
-            fixed_steps_this_frame: u32,
             pointer_events_total: u64,
-            target_size: [u32; 2],
             pacing: CompactPacing<'a>,
+            body_commands: CompactBodyCommands,
             scene_contract: &'a SceneContract,
-            scenario: &'a ScenarioResult,
+            scenario: CompactScenario,
         }
 
         serde_json::to_string(&CompactFrameReport {
-            frame_index: self.frame_index,
             fixed_steps_total: self.fixed_steps_total,
-            fixed_steps_this_frame: self.fixed_steps_this_frame,
             pointer_events_total: self.pointer_events_total,
-            target_size: self.target_size,
             pacing: CompactPacing {
                 mode: &self.pacing.mode,
                 completed_outer_steps_total: self.pacing.completed_outer_steps_total,
@@ -84,13 +110,21 @@ impl FrameReport {
                 overload_slipped_wall_seconds_total: self
                     .pacing
                     .overload_slipped_wall_seconds_total,
-                lifecycle_discarded_wall_seconds_total: self
-                    .pacing
-                    .lifecycle_discarded_wall_seconds_total,
                 effective_simulation_scale: self.pacing.effective_simulation_scale,
             },
+            body_commands: CompactBodyCommands {
+                executed_commands_total: self.body_commands.executed_commands_total,
+                reset_commands_total: self.body_commands.reset_commands_total,
+                coalesced_targets_total: self.body_commands.coalesced_targets_total,
+                overflowed: self.body_commands.overflowed,
+                grab_active: self.body_commands.grab_active,
+            },
             scene_contract: &self.scene_contract,
-            scenario: &self.scenario,
+            scenario: CompactScenario {
+                name: self.scenario.name,
+                complete: self.scenario.complete,
+                passed: self.scenario.passed,
+            },
         })
         .expect("compact frame reports are serializable")
     }
@@ -130,6 +164,15 @@ mod tests {
                 one_step_frames_total: u64::MAX,
                 paused: false,
             },
+            body_commands: BodyCommandReport {
+                capacity_commands: 64,
+                queued_commands_total: u64::MAX,
+                executed_commands_total: u64::MAX,
+                reset_commands_total: u64::MAX,
+                coalesced_targets_total: u64::MAX,
+                overflowed: false,
+                grab_active: false,
+            },
             scene_contract: SceneContract {
                 version: SCENE_CONTRACT_VERSION,
                 engine: "physbox5",
@@ -141,6 +184,7 @@ mod tests {
                 capacity_overflowed: false,
                 fixed_step_hz: 60,
                 scenario: "bootstrap",
+                scenario_hash: "f".repeat(64),
             },
             scenario: ScenarioResult {
                 name: "bootstrap",
@@ -149,6 +193,11 @@ mod tests {
                 reason: "shared GPU host advanced and rendered",
             },
         };
-        assert!(report.compact_marker_json().len() < 900);
+        let marker = report.compact_marker_json();
+        assert!(
+            marker.len() < 900,
+            "compact marker is {} bytes",
+            marker.len()
+        );
     }
 }

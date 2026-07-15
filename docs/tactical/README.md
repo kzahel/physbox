@@ -1,7 +1,8 @@
 # Tactical workstreams
 
-Status: S1 and S2.1–S2.3 complete; S2 is actively executing P5.1 reset/grab
-and scale evidence before the body-layout and command-ABI human checkpoint.
+Status: S1 and S2.1–S2.3 complete; S2.4 reset/grab implementation is awaiting
+cross-host evidence, then scale evidence remains before the body-layout and
+command-ABI human checkpoint.
 
 Tactical filenames use a three-digit zero-padded prefix ordered by their first
 Git creation timestamp. This repository starts at `001`. Never renumber an

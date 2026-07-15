@@ -17,7 +17,8 @@ mod scenario;
 
 pub use body_floor_solver::{GpuFixedFloorContactEvidence, GpuFixedFloorPassEvidence};
 pub use body_state::{
-    BODY_BYTES_PER_SLOT, BODY_COMMAND_BYTES, BodySlotRegistry, BoundedBodyCommands, GpuBodyStorage,
+    BODY_BYTES_PER_SLOT, BODY_COMMAND_BYTES, BODY_COMMAND_CAPACITY, BodySlotRegistry,
+    BoundedBodyCommands, GpuBodyStorage,
 };
 pub use clock::{InteractiveClockAction, PacingMode, PacingReport};
 pub use config::EngineConfig;
@@ -34,8 +35,9 @@ pub use gpu_solver::{
 #[cfg(not(target_arch = "wasm32"))]
 pub use renderer::OffscreenRenderer;
 pub use renderer::SurfaceRenderer;
-pub use report::{FrameReport, ScenarioResult, SceneContract};
+pub use report::{BodyCommandReport, FrameReport, ScenarioResult, SceneContract};
 pub use scenario::{
     AnalyticFixtureKind, ScenarioBuildError, analytic_fixture_scenario, authored_chain_scenario,
     authored_one_contact_scenario, p5_1_free_flight_scenario, p5_1_rectangle_floor_scenario,
+    p5_1_reset_grab_scenario,
 };

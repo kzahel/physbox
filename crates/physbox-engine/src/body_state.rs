@@ -4,12 +4,13 @@ use bytemuck::{Pod, Zeroable};
 use physbox_contracts::{
     BODY_LAYOUT_VERSION, BodyCommandBatchV1, BodyCommandV1, BodyId, BodyLaneAccessV1,
     BodyLayoutLaneV1, BodyLayoutV1, BodyStateV1, CapacityRecordV1, SCHEMA_VERSION, ShapeV1,
-    Validate,
+    Validate, Vec2,
 };
 use wgpu::util::DeviceExt;
 
 pub const BODY_BYTES_PER_SLOT: u32 = 64;
 pub const BODY_COMMAND_BYTES: u32 = 48;
+pub const BODY_COMMAND_CAPACITY: u32 = 64;
 
 const FLAG_LIVE: u32 = 1 << 0;
 const FLAG_SLEEPING: u32 = 1 << 1;
@@ -202,6 +203,40 @@ impl BoundedBodyCommands {
         self.attempted = 0;
         self.overflowed = false;
         self.commands.clear();
+    }
+
+    pub fn len(&self) -> usize {
+        self.commands.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.commands.is_empty()
+    }
+
+    pub fn overflowed(&self) -> bool {
+        self.overflowed
+    }
+
+    pub fn coalesce_grab_target(&mut self, body: BodyId, world_target: Vec2) -> bool {
+        let Some(command) = self.commands.last_mut() else {
+            return false;
+        };
+        match command {
+            BodyCommandV1::GrabBegin {
+                body: target_body,
+                world_target: target,
+                ..
+            }
+            | BodyCommandV1::GrabTarget {
+                body: target_body,
+                world_target: target,
+                ..
+            } if *target_body == body => {
+                *target = world_target;
+                true
+            }
+            _ => false,
+        }
     }
 }
 
@@ -541,6 +576,31 @@ mod tests {
         assert!(artifact.overflowed);
         assert_eq!(artifact.attempted_commands, 3);
         artifact.validate().unwrap();
+    }
+
+    #[test]
+    fn pending_grab_targets_coalesce_without_reordering_the_command() {
+        let body = BodyId {
+            slot: 0,
+            generation: 1,
+        };
+        let mut queue = BoundedBodyCommands::new(4).unwrap();
+        queue
+            .push(BodyCommandV1::GrabBegin {
+                sequence: 7,
+                body,
+                world_target: Vec2::new(0.0, 0.0),
+            })
+            .unwrap();
+        assert!(queue.coalesce_grab_target(body, Vec2::new(0.5, 0.25)));
+        let artifact = queue.artifact();
+        assert_eq!(artifact.commands.len(), 1);
+        assert_eq!(artifact.commands[0].sequence(), 7);
+        assert!(matches!(
+            artifact.commands[0],
+            BodyCommandV1::GrabBegin { world_target, .. }
+                if world_target == Vec2::new(0.5, 0.25)
+        ));
     }
 
     #[test]

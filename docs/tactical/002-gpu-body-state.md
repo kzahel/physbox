@@ -206,6 +206,27 @@ general narrowphase or tolerance change is bundled into the slice.
 
 ### S2.4 — reset, neutral grab, and shared scenario
 
+Implementation checkpoint, 2026-07-15: the shared host now converts primary
+pointer facts into bounded begin/target/end commands and secondary-down into
+reset. Commands remain queued across zero-step frames, motion targets
+coalesce before the next admitted step, and an exact multi-step request
+interleaves the same engine-owned scheduled command stream at authored step
+boundaries. A one-thread ordered GPU command pass applies the batch before
+the selected solver; a parallel hold pass keeps grabbed bodies at their
+neutral target after each step without mapping live body state. Reset restores
+the original pose and motion exactly, released or stale pointers no longer
+move the body, and overflow rejects the complete pending batch rather than
+executing a prefix.
+
+The new `reset-grab` scenario owns six deterministic commands over 150 steps,
+its canonical source hash, completion criteria, and command counters in shared
+Rust. Exact GPU tests prove target following, release, overflow diagnosis, and
+bit-identical replay after the second reset. Platform scripts only accept and
+transport the shared scenario name; new boundary negatives reject body-command
+types and numerical scenario payloads in app crates, JavaScript, and shell.
+Cross-host clean-revision captures remain the evidence half of this slice and
+must pass before the checklist below is marked complete.
+
 - [ ] Convert primary pointer facts into engine-owned neutral grab begin,
   target, and release commands at fixed-step boundaries.
 - [ ] Add an engine-owned reset command and deterministic reset/grab/release

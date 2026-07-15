@@ -1,8 +1,9 @@
 use std::fmt::{Display, Formatter};
 
 use physbox_contracts::{
-    AuthoredContactPointV1, AuthoredManifoldV1, BodyId, BodyStateV1, FeatureIdV1, FiniteF32,
-    MaterialV1, SCHEMA_VERSION, ScenarioV1, ShapeV1, SolverSettingsV1, Vec2,
+    AuthoredContactPointV1, AuthoredManifoldV1, BodyCommandScenarioV1, BodyCommandV1, BodyId,
+    BodyStateV1, FeatureIdV1, FiniteF32, MaterialV1, SCHEMA_VERSION, ScenarioV1,
+    ScheduledBodyCommandV1, ShapeV1, SolverSettingsV1, Vec2,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -174,6 +175,69 @@ pub fn p5_1_free_flight_scenario(
         manifolds: Vec::new(),
         contact_cache: Vec::new(),
         actions: Vec::new(),
+    })
+}
+
+pub fn p5_1_reset_grab_scenario() -> Result<BodyCommandScenarioV1, ScenarioBuildError> {
+    let scenario = p5_1_rectangle_floor_scenario(150)?;
+    let body = scenario.bodies[0].id;
+    let initial = scenario.bodies[0].clone();
+    Ok(BodyCommandScenarioV1 {
+        schema_version: SCHEMA_VERSION,
+        id: "p5.1-reset-grab".to_owned(),
+        scenario,
+        scheduled_commands: vec![
+            ScheduledBodyCommandV1 {
+                step: 0,
+                command: BodyCommandV1::Reset {
+                    sequence: 1,
+                    body,
+                    position: initial.position,
+                    angle: initial.angle,
+                    linear_velocity: initial.linear_velocity,
+                    angular_velocity: initial.angular_velocity,
+                },
+            },
+            ScheduledBodyCommandV1 {
+                step: 10,
+                command: BodyCommandV1::GrabBegin {
+                    sequence: 2,
+                    body,
+                    world_target: Vec2::new(0.0, 0.65),
+                },
+            },
+            ScheduledBodyCommandV1 {
+                step: 20,
+                command: BodyCommandV1::GrabTarget {
+                    sequence: 3,
+                    body,
+                    world_target: Vec2::new(0.45, 0.75),
+                },
+            },
+            ScheduledBodyCommandV1 {
+                step: 30,
+                command: BodyCommandV1::GrabTarget {
+                    sequence: 4,
+                    body,
+                    world_target: Vec2::new(-0.4, 0.55),
+                },
+            },
+            ScheduledBodyCommandV1 {
+                step: 40,
+                command: BodyCommandV1::GrabEnd { sequence: 5, body },
+            },
+            ScheduledBodyCommandV1 {
+                step: 80,
+                command: BodyCommandV1::Reset {
+                    sequence: 6,
+                    body,
+                    position: initial.position,
+                    angle: initial.angle,
+                    linear_velocity: initial.linear_velocity,
+                    angular_velocity: initial.angular_velocity,
+                },
+            },
+        ],
     })
 }
 
@@ -552,6 +616,18 @@ mod tests {
         );
         assert!(p5_1_free_flight_scenario(0, 3, 17).is_err());
         assert!(p5_1_free_flight_scenario(1, 0, 17).is_err());
+    }
+
+    #[test]
+    fn p5_1_reset_grab_script_is_shared_valid_and_replayable() {
+        let script = p5_1_reset_grab_scenario().unwrap();
+        script.validate().unwrap();
+        assert_eq!(script.scenario.requested_steps, 150);
+        assert_eq!(script.scheduled_commands.len(), 6);
+        assert_eq!(
+            canonical_json(&script).unwrap(),
+            canonical_json(&p5_1_reset_grab_scenario().unwrap()).unwrap()
+        );
     }
 
     #[test]

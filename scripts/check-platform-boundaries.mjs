@@ -11,13 +11,14 @@ const rules = [
   },
   {
     name: "app-local physics/product type",
-    pattern: /\b(?:RigidBody|ContactManifold|Broadphase|Narrowphase|PhysicsSolver|ParticleSolver|ColliderRecord)\b/,
+    pattern: /\b(?:RigidBody|ContactManifold|Broadphase|Narrowphase|PhysicsSolver|ParticleSolver|ColliderRecord|BodyCommandV1|GrabBegin|GrabTarget|GrabEnd)\b/,
   },
   {
     name: "Rapier or inherited rigid backend",
     pattern: /\brapier\b|physbox-rigid/i,
   },
 ];
+const scenarioPayloadPattern = /\b(?:worldTarget|linearVelocity|angularVelocity|halfExtents|normalImpulse|biasRate|massCoefficient|impulseCoefficient)\b/;
 
 for (const path of await files(appRoot)) {
   if (![".rs", ".toml"].includes(extname(path))) continue;
@@ -27,6 +28,15 @@ for (const path of await files(appRoot)) {
   }
   for (const flag of ["--width", "--height", "--frames", "--fps", "--steps", "--output", "--report", "--scenario"]) {
     if (source.includes(`"${flag}"`)) failures.push(`${relative(root, path)}: launch option ${flag} belongs to physbox-launch`);
+  }
+}
+
+for (const directory of [join(root, "web"), join(root, "android")]) {
+  for (const path of await files(directory)) {
+    if (![".js", ".sh"].includes(extname(path))) continue;
+    if (scenarioPayloadPattern.test(await readFile(path, "utf8"))) {
+      failures.push(`${relative(root, path)}: engine-owned scenario payload`);
+    }
   }
 }
 
@@ -60,6 +70,9 @@ for (const rule of rules) {
       ? "struct PhysicsSolver;"
       : "rapier = \"*\"";
   if (!rule.pattern.test(negativeFixture)) failures.push(`boundary self-test failed: ${rule.name}`);
+}
+if (!scenarioPayloadPattern.test("const worldTarget = [0.4, 0.7];")) {
+  failures.push("boundary self-test failed: engine-owned scenario payload");
 }
 
 if (failures.length) {

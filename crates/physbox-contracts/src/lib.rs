@@ -349,6 +349,70 @@ pub struct BodyCommandBatchV1 {
     pub commands: Vec<BodyCommandV1>,
 }
 
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScheduledBodyCommandV1 {
+    pub step: u32,
+    pub command: BodyCommandV1,
+}
+
+impl Validate for ScheduledBodyCommandV1 {
+    fn validate(&self) -> Result<(), ContractError> {
+        self.command.validate()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BodyCommandScenarioV1 {
+    pub schema_version: u32,
+    pub id: String,
+    pub scenario: ScenarioV1,
+    pub scheduled_commands: Vec<ScheduledBodyCommandV1>,
+}
+
+impl Validate for BodyCommandScenarioV1 {
+    fn validate(&self) -> Result<(), ContractError> {
+        version(self.schema_version)?;
+        if self.id.is_empty() {
+            return Err(ContractError(
+                "body-command scenario requires an id".to_owned(),
+            ));
+        }
+        self.scenario.validate()?;
+        for scheduled in &self.scheduled_commands {
+            scheduled.validate()?;
+            if scheduled.step >= self.scenario.requested_steps {
+                return Err(ContractError(format!(
+                    "body command step {} lies outside requested step count {}",
+                    scheduled.step, self.scenario.requested_steps
+                )));
+            }
+            if self
+                .scenario
+                .bodies
+                .binary_search_by_key(&scheduled.command.body(), |body| body.id)
+                .is_err()
+            {
+                return Err(ContractError(format!(
+                    "body command references missing body {:?}",
+                    scheduled.command.body()
+                )));
+            }
+        }
+        for pair in self.scheduled_commands.windows(2) {
+            let left = (pair[0].step, pair[0].command.sequence());
+            let right = (pair[1].step, pair[1].command.sequence());
+            if left >= right {
+                return Err(ContractError(
+                    "scheduled body commands must be sorted by step and sequence".to_owned(),
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
 impl Validate for BodyCommandBatchV1 {
     fn validate(&self) -> Result<(), ContractError> {
         version(self.schema_version)?;

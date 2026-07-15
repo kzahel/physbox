@@ -458,4 +458,156 @@ mod tests {
         assert_eq!(first, replay);
         assert!(first.into_iter().all(f32::is_finite));
     }
+
+    #[test]
+    fn scripted_reset_grab_holds_releases_and_replays_after_reset() {
+        let mut scripted = pollster::block_on(OffscreenRenderer::new(
+            320,
+            200,
+            EngineConfig {
+                scenario: ValidationScenario::ResetGrab,
+            },
+        ))
+        .unwrap();
+        scripted.render(FrameInput::exact(11));
+        let begin = scripted.read_capture_state().unwrap();
+        assert_eq!([begin[0], begin[1]], [0.0, 0.65]);
+        scripted.render(FrameInput::exact(10));
+        let first_target = scripted.read_capture_state().unwrap();
+        assert_eq!([first_target[0], first_target[1]], [0.45, 0.75]);
+        scripted.render(FrameInput::exact(10));
+        let second_target = scripted.read_capture_state().unwrap();
+        assert_eq!([second_target[0], second_target[1]], [-0.4, 0.55]);
+        scripted.render(FrameInput::exact(10));
+        let released = scripted.read_capture_state().unwrap();
+        assert!(released[1] < 0.55);
+        let report = scripted.render(FrameInput::exact(109));
+        assert!(report.scenario.complete);
+        assert!(report.scenario.passed);
+        assert_eq!(report.body_commands.executed_commands_total, 6);
+        assert_eq!(report.body_commands.reset_commands_total, 2);
+        assert!(!report.body_commands.grab_active);
+        let replayed = scripted.read_capture_state().unwrap();
+
+        let mut fresh = pollster::block_on(OffscreenRenderer::new(
+            320,
+            200,
+            EngineConfig {
+                scenario: ValidationScenario::RigidFloor,
+            },
+        ))
+        .unwrap();
+        fresh.render(FrameInput::exact(70));
+        assert_eq!(replayed, fresh.read_capture_state().unwrap());
+    }
+
+    #[test]
+    fn live_pointer_targets_coalesce_until_an_admitted_step() {
+        let mut renderer = pollster::block_on(OffscreenRenderer::new(
+            320,
+            200,
+            EngineConfig {
+                scenario: ValidationScenario::RigidFloor,
+            },
+        ))
+        .unwrap();
+        let pointer = |phase, normalized_position| crate::PointerEvent {
+            id: 17,
+            phase,
+            button: crate::PointerButton::Primary,
+            normalized_position,
+        };
+        let initial = renderer.read_capture_state().unwrap();
+        let queued = renderer.render(FrameInput {
+            step_request: crate::StepRequest::Exact { steps: 0 },
+            pointer_events: vec![pointer(crate::PointerPhase::Down, [0.75, 0.25])],
+        });
+        assert_eq!(renderer.read_capture_state().unwrap(), initial);
+        assert_eq!(queued.body_commands.queued_commands_total, 1);
+        assert_eq!(queued.body_commands.executed_commands_total, 0);
+
+        renderer.render(FrameInput::exact(1));
+        let held = renderer.read_capture_state().unwrap();
+        assert_eq!([held[0], held[1]], [0.8, 0.5]);
+        let coalesced = renderer.render(FrameInput {
+            step_request: crate::StepRequest::Exact { steps: 0 },
+            pointer_events: vec![
+                pointer(crate::PointerPhase::Move, [0.25, 0.4]),
+                pointer(crate::PointerPhase::Move, [0.5, 0.3]),
+            ],
+        });
+        assert_eq!(renderer.read_capture_state().unwrap(), held);
+        assert_eq!(coalesced.body_commands.coalesced_targets_total, 1);
+        renderer.render(FrameInput::exact(1));
+        let moved = renderer.read_capture_state().unwrap();
+        assert_eq!([moved[0], moved[1]], [0.0, 0.39999998]);
+
+        let release_report = renderer.render(FrameInput {
+            step_request: crate::StepRequest::Exact { steps: 1 },
+            pointer_events: vec![pointer(crate::PointerPhase::Up, [0.5, 0.3])],
+        });
+        let released = renderer.read_capture_state().unwrap();
+        assert!(released[1] < moved[1]);
+        let stale_move = renderer.render(FrameInput {
+            step_request: crate::StepRequest::Exact { steps: 1 },
+            pointer_events: vec![pointer(crate::PointerPhase::Move, [1.0, 0.0])],
+        });
+        let after_stale = renderer.read_capture_state().unwrap();
+        assert_eq!(
+            stale_move.body_commands.queued_commands_total,
+            release_report.body_commands.queued_commands_total
+        );
+        assert_eq!(after_stale[0], released[0]);
+        assert!(after_stale[1] < released[1]);
+
+        renderer.render(FrameInput {
+            step_request: crate::StepRequest::Exact { steps: 1 },
+            pointer_events: vec![crate::PointerEvent {
+                id: 0,
+                phase: crate::PointerPhase::Down,
+                button: crate::PointerButton::Secondary,
+                normalized_position: [0.0, 0.0],
+            }],
+        });
+        let reset = renderer.read_capture_state().unwrap();
+        let mut fresh = pollster::block_on(OffscreenRenderer::new(
+            320,
+            200,
+            EngineConfig {
+                scenario: ValidationScenario::RigidFloor,
+            },
+        ))
+        .unwrap();
+        fresh.render(FrameInput::exact(1));
+        assert_eq!(reset, fresh.read_capture_state().unwrap());
+    }
+
+    #[test]
+    fn command_capacity_overflow_is_reported_without_partial_execution() {
+        let mut renderer = pollster::block_on(OffscreenRenderer::new(
+            320,
+            200,
+            EngineConfig {
+                scenario: ValidationScenario::RigidFloor,
+            },
+        ))
+        .unwrap();
+        let resets = (0..=crate::BODY_COMMAND_CAPACITY)
+            .map(|id| crate::PointerEvent {
+                id: u64::from(id),
+                phase: crate::PointerPhase::Down,
+                button: crate::PointerButton::Secondary,
+                normalized_position: [0.5, 0.5],
+            })
+            .collect();
+        let queued = renderer.render(FrameInput {
+            step_request: crate::StepRequest::Exact { steps: 0 },
+            pointer_events: resets,
+        });
+        assert!(queued.body_commands.overflowed);
+        assert_eq!(queued.body_commands.queued_commands_total, 65);
+        let stepped = renderer.render(FrameInput::exact(1));
+        assert!(stepped.scene_contract.capacity_overflowed);
+        assert_eq!(stepped.body_commands.executed_commands_total, 0);
+    }
 }

@@ -1,15 +1,16 @@
 use std::mem::size_of;
 
 use bytemuck::{Pod, Zeroable};
-use physbox_contracts::{CapacityRecordV1, ScenarioV1, Validate};
+use physbox_contracts::{BodyCommandBatchV1, CapacityRecordV1, ScenarioV1, Validate};
 use wgpu::util::DeviceExt;
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::body_floor_solver::FixedFloorEvidenceLayout;
+use crate::body_state::BODY_COMMAND_CAPACITY;
 use crate::{GpuBodyStorage, body_floor_solver::GpuFixedFloorSolver};
 
 const WORKGROUP_SIZE: u32 = 64;
-const COMMAND_CAPACITY: u32 = 64;
+const COMMAND_PARAMETER_STRIDE: usize = 256;
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -24,11 +25,27 @@ struct RenderParamsRaw {
     viewport: [f32; 4],
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct CommandParamsRaw {
+    counts: [u32; 4],
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct BodyCommandStepRange {
+    pub(crate) start: u32,
+    pub(crate) count: u32,
+}
+
 pub(crate) struct GpuBodyWorld {
     #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     storage: GpuBodyStorage,
     integration_bind_group: wgpu::BindGroup,
     integration_pipeline: wgpu::ComputePipeline,
+    command_params: wgpu::Buffer,
+    command_bind_group: wgpu::BindGroup,
+    command_pipeline: wgpu::ComputePipeline,
+    hold_pipeline: wgpu::ComputePipeline,
     render_params: wgpu::Buffer,
     render_bind_group: wgpu::BindGroup,
     background_pipeline: wgpu::RenderPipeline,
@@ -49,7 +66,8 @@ impl GpuBodyWorld {
         if body_count == 0 {
             return Err("GPU body world requires at least one body".to_owned());
         }
-        let storage = GpuBodyStorage::new(device, body_count, COMMAND_CAPACITY, &scenario.bodies)?;
+        let storage =
+            GpuBodyStorage::new(device, body_count, BODY_COMMAND_CAPACITY, &scenario.bodies)?;
         let floor_solver = if scenario.manifolds.is_empty() {
             None
         } else {
@@ -125,6 +143,90 @@ impl GpuBodyWorld {
                 compilation_options: Default::default(),
                 cache: None,
             });
+
+        let command_params = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("physbox5_body_command_params"),
+            size: u64::from(BODY_COMMAND_CAPACITY + 1) * COMMAND_PARAMETER_STRIDE as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let command_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("physbox5_body_command_layout"),
+            entries: &[
+                storage_entry(0, false, wgpu::ShaderStages::COMPUTE),
+                storage_entry(1, false, wgpu::ShaderStages::COMPUTE),
+                storage_entry(2, false, wgpu::ShaderStages::COMPUTE),
+                storage_entry(3, true, wgpu::ShaderStages::COMPUTE),
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: true,
+                        min_binding_size: wgpu::BufferSize::new(
+                            size_of::<CommandParamsRaw>() as u64
+                        ),
+                    },
+                    count: None,
+                },
+            ],
+        });
+        let command_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("physbox5_body_command_bind_group"),
+            layout: &command_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: storage.pose_buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: storage.motion_buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: storage.metadata_buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: storage.command_buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                        buffer: &command_params,
+                        offset: 0,
+                        size: wgpu::BufferSize::new(size_of::<CommandParamsRaw>() as u64),
+                    }),
+                },
+            ],
+        });
+        let command_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("physbox5_body_command_shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("body_commands.wgsl").into()),
+        });
+        let command_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("physbox5_body_command_pipeline_layout"),
+                bind_group_layouts: &[&command_layout],
+                push_constant_ranges: &[],
+            });
+        let command_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("physbox5_body_command_pipeline"),
+            layout: Some(&command_pipeline_layout),
+            module: &command_shader,
+            entry_point: Some("apply_commands"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
+        let hold_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("physbox5_body_hold_pipeline"),
+            layout: Some(&command_pipeline_layout),
+            module: &command_shader,
+            entry_point: Some("hold_grabbed"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
 
         let render_params = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("physbox5_body_render_params"),
@@ -217,6 +319,10 @@ impl GpuBodyWorld {
             storage,
             integration_bind_group,
             integration_pipeline,
+            command_params,
+            command_bind_group,
+            command_pipeline,
+            hold_pipeline,
             render_params,
             render_bind_group,
             background_pipeline,
@@ -226,20 +332,83 @@ impl GpuBodyWorld {
         })
     }
 
-    pub(crate) fn encode_steps(&self, encoder: &mut wgpu::CommandEncoder, steps: u32) {
-        for _ in 0..steps {
-            if let Some(solver) = &self.floor_solver {
-                solver.encode_step(encoder);
+    pub(crate) fn encode_steps(
+        &self,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        steps: u32,
+        batch: &BodyCommandBatchV1,
+        ranges: &[BodyCommandStepRange],
+    ) -> Result<CapacityRecordV1, String> {
+        if ranges.len() != steps as usize {
+            return Err("body command ranges must match the encoded step count".to_owned());
+        }
+        let capacity = self.storage.upload_commands(queue, batch)?;
+        let mut parameters = vec![CommandParamsRaw {
+            counts: [0, 0, self.body_count, 0],
+        }];
+        let mut parameter_indices = vec![None; ranges.len()];
+        for (step, range) in ranges.iter().enumerate() {
+            if range.count == 0 {
                 continue;
             }
+            if range
+                .start
+                .checked_add(range.count)
+                .is_none_or(|end| end > u32::try_from(batch.commands.len()).unwrap_or(u32::MAX))
+            {
+                return Err("body command range exceeds the uploaded batch".to_owned());
+            }
+            let index = parameters.len();
+            parameters.push(CommandParamsRaw {
+                counts: [range.start, range.count, self.body_count, 0],
+            });
+            parameter_indices[step] = Some(index as u32);
+        }
+        if parameters.len() > (BODY_COMMAND_CAPACITY + 1) as usize {
+            return Err("body command parameter capacity overflowed".to_owned());
+        }
+        let mut bytes = vec![0_u8; parameters.len() * COMMAND_PARAMETER_STRIDE];
+        for (index, parameter) in parameters.iter().enumerate() {
+            let start = index * COMMAND_PARAMETER_STRIDE;
+            bytes[start..start + size_of::<CommandParamsRaw>()]
+                .copy_from_slice(bytemuck::bytes_of(parameter));
+        }
+        queue.write_buffer(&self.command_params, 0, &bytes);
+        for parameter_index in parameter_indices {
+            if let Some(parameter_index) = parameter_index {
+                let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: Some("physbox5_body_command_pass"),
+                    timestamp_writes: None,
+                });
+                pass.set_pipeline(&self.command_pipeline);
+                pass.set_bind_group(
+                    0,
+                    &self.command_bind_group,
+                    &[parameter_index * COMMAND_PARAMETER_STRIDE as u32],
+                );
+                pass.dispatch_workgroups(1, 1, 1);
+            }
+            if let Some(solver) = &self.floor_solver {
+                solver.encode_step(encoder);
+            } else {
+                let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: Some("physbox5_body_integration_pass"),
+                    timestamp_writes: None,
+                });
+                pass.set_pipeline(&self.integration_pipeline);
+                pass.set_bind_group(0, &self.integration_bind_group, &[]);
+                pass.dispatch_workgroups(self.body_count.div_ceil(WORKGROUP_SIZE), 1, 1);
+            }
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("physbox5_body_integration_pass"),
+                label: Some("physbox5_body_hold_pass"),
                 timestamp_writes: None,
             });
-            pass.set_pipeline(&self.integration_pipeline);
-            pass.set_bind_group(0, &self.integration_bind_group, &[]);
+            pass.set_pipeline(&self.hold_pipeline);
+            pass.set_bind_group(0, &self.command_bind_group, &[0]);
             pass.dispatch_workgroups(self.body_count.div_ceil(WORKGROUP_SIZE), 1, 1);
         }
+        Ok(capacity)
     }
 
     pub(crate) fn encode_render(

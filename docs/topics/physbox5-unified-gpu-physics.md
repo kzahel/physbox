@@ -249,6 +249,25 @@ Mali-G710/Vulkan device all report the same structural scene contract and no
 overflow. These are objective observations rather than a new tolerance or
 baseline.
 
+P5.1 S2.4 implementation checkpoint, 2026-07-15: reset and neutral grab now
+enter the shared GPU world as bounded, ordered body commands at fixed-step
+boundaries. Zero-step interactive frames retain pending input without
+advancing mechanics, pointer targets coalesce before admission, and explicit
+multi-step validation interleaves the engine-owned scheduled command sequence
+at exact authored steps. The GPU applies commands before solving and holds a
+grabbed body after each step without body-state readback. Reset restores the
+authored initial pose and motion; release clears held state and prevents stale
+pointer motion from changing the body. Command overflow is persistent scene
+diagnostic data and rejects the complete pending batch. The provisional
+48-byte record and capacity of 64 remain review inputs, not a frozen ABI.
+
+The shared `reset-grab` source contains the scenario, six scheduled commands,
+and canonical hash. Platform adapters transport only its launch name and raw
+pointer facts. Engine GPU tests already prove exact targets, release,
+bit-identical replay after reset, coalescing, and no partial execution on
+overflow; clean native, browser, AVD, and physical-device evidence remains the
+S2.4 completion gate.
+
 ## Later fluid-coupling contract
 
 This contract is not part of the first rigid milestone. It records the
