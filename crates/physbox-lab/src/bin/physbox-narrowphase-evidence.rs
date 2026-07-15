@@ -162,7 +162,8 @@ fn run() -> Result<(), String> {
             let body_count = 2 + ((seed * 13 + pattern as u64 * 11) % 63) as u32;
             let scenario = p5_2_candidate_scenario(pattern, body_count, seed)
                 .map_err(|error| error.to_string())?;
-            gpu_cases.push(evaluate_gpu(&runner, pattern.name(), &scenario)?.0);
+            let label = format!("{}-seed-{seed}", pattern.name());
+            gpu_cases.push(evaluate_gpu(&runner, &label, &scenario)?.0);
         }
     }
 
@@ -275,8 +276,9 @@ fn evaluate_gpu(
     let candidates = enumerate_scalar_candidates(scenario)?;
     let scalar = generate_scalar_narrowphase(scenario, &candidates.candidates)?;
     let gpu = runner.run(scenario, None, None)?;
-    compare_narrowphase(&scalar, &gpu.manifolds)
-        .map_err(|difference| format!("{}: {}", difference.signature, difference.reason))?;
+    compare_narrowphase(&scalar, &gpu.manifolds).map_err(|difference| {
+        format!("{label}: {}: {}", difference.signature, difference.reason)
+    })?;
     let maximum_absolute_error = maximum_manifold_error(&scalar, &gpu.manifolds);
     Ok((
         GpuCase {

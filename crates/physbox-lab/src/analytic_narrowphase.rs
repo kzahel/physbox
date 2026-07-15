@@ -6,6 +6,7 @@ use physbox_contracts::{
 use serde::Serialize;
 
 const NORMAL_EPSILON_SQUARED: f32 = 1.0e-12;
+const REFERENCE_AXIS_TIE_EPSILON: f32 = 1.0e-5;
 pub const NARROWPHASE_ABSOLUTE_TOLERANCE: f32 = 2.0e-5;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -521,7 +522,10 @@ fn collide_rectangles(
     if separation_a.separation > 0.0 || separation_b.separation > 0.0 {
         return Ok(None);
     }
-    let reference_a = separation_a.separation >= separation_b.separation;
+    // Prefer canonical body A inside a narrow numerical tie. This keeps stable
+    // features across portable shader arithmetic without changing SAT rejection.
+    let reference_a =
+        separation_a.separation + REFERENCE_AXIS_TIE_EPSILON >= separation_b.separation;
     let (reference, incident, reference_normal, reference_face, normal_a_to_b) = if reference_a {
         let normal = rectangle_a.face_normal(separation_a.face);
         (

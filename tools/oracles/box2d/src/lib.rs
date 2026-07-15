@@ -769,10 +769,14 @@ mod tests {
     }
 
     #[test]
-    fn randomized_overlap_manifolds_match_public_box2d_functions() {
+    fn randomized_non_degenerate_manifolds_match_public_box2d_functions() {
         let mut differences = Vec::new();
         for seed in 0..16_u64 {
-            for pattern in P5_2CandidatePattern::ALL {
+            for pattern in [
+                P5_2CandidatePattern::Random,
+                P5_2CandidatePattern::Touching,
+                P5_2CandidatePattern::RotatedThin,
+            ] {
                 let scenario =
                     p5_2_candidate_scenario(pattern, 2 + (seed % 15) as u32, seed).unwrap();
                 let candidates = enumerate_scalar_candidates(&scenario).unwrap();

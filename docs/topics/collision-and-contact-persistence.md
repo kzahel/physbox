@@ -119,6 +119,24 @@ small worlds, not a scalable broadphase choice. S3.3 consumes the same
 canonical candidate records for narrowphase; P5.3 later compares SAP, grid,
 and any justified LBVH against this baseline.
 
+## Provisional reference-axis tie convention
+
+Rectangle SAT reference selection gives canonical body A precedence when the
+two maximum face separations differ by at most `1e-5`. The same explicit bias
+is present in scalar Rust and portable WGSL. It does not change SAT rejection;
+it prevents CPU/GPU floating-point contraction from alternating between two
+nearly equivalent reference axes and therefore changing persistent features.
+
+The expanded 64-seed GPU corpus exposed the need for this rule in deeply
+coincident, nearly parallel equal rectangles. A diagnostic comparison of the
+same degenerate lane found four cases in 16 seeds where unmodified Box2D chose
+the other valid reference axis. Those cases are not treated as geometry rows
+under a wider tolerance: direct authority geometry keeps the unchanged
+`2e-5` bound on non-degenerate randomized pairs and exact governed ties, while
+deep coincidence remains a product stability/invariant lane. This provisional
+departure and its effect on persisted features must be reviewed explicitly at
+S3.6 before the contact surface is frozen.
+
 ## Validation
 
 S3.1 validation covers schema round trips, exact byte claims, nonzero

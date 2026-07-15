@@ -56,7 +56,7 @@ fn gpu_circle_contact_creation_and_removal_boundary_is_exact() {
 #[test]
 fn gpu_narrowphase_matches_randomized_and_adversarial_scalar_cases() {
     let runner = pollster::block_on(GpuNarrowphaseRunner::new()).unwrap();
-    for seed in 0..16_u64 {
+    for seed in 0..64_u64 {
         for pattern in P5_2CandidatePattern::ALL {
             let body_count = 2 + ((seed * 11 + pattern as u64 * 5) % 31) as u32;
             let scenario = p5_2_candidate_scenario(pattern, body_count, seed).unwrap();

@@ -56,6 +56,7 @@ const FLAG_CIRCLE: u32 = 1u << 9u;
 const FEATURE_CIRCLE: u32 = 0u;
 const FEATURE_FACE: u32 = 1u;
 const FEATURE_VERTEX: u32 = 2u;
+const REFERENCE_AXIS_TIE_EPSILON: f32 = 1.0e-5;
 const NORMAL_EPSILON_SQUARED: f32 = 1.0e-12;
 
 var<workgroup> scan_values: array<u32, 256>;
@@ -346,7 +347,8 @@ fn collide_rectangles(pair: CandidatePair) -> NarrowScratch {
         }
     }
     if (separation_a > 0.0 || separation_b > 0.0) { return empty_scratch(pair); }
-    let reference_is_a = separation_a >= separation_b;
+    // Canonical A wins a narrow arithmetic tie so feature identity is portable.
+    let reference_is_a = separation_a + REFERENCE_AXIS_TIE_EPSILON >= separation_b;
     let reference = select(body_b, body_a, reference_is_a);
     let incident = select(body_a, body_b, reference_is_a);
     let reference_face = select(face_b, face_a, reference_is_a);
