@@ -302,6 +302,9 @@ impl GpuBodyBenchmarkSession {
                 size: self.viewport,
             },
             self.frame_index,
+            crate::Camera2d::fixed()
+                .resolve(self.viewport)
+                .expect("benchmark target resolves the fixed camera"),
             ending,
         );
         self.queue.submit([encoder.finish()]);

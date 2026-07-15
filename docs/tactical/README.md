@@ -1,9 +1,9 @@
 # Tactical workstreams
 
 Status: S1 and S2 complete; S3.6 direction is accepted and S3 awaits its
-combined representation and structural-quality closure gate. S4 interactive
-evaluation workbench is authorized; its camera, UI, and grab slices may run
-before that gate while construction waits for combined pair integration.
+combined representation and structural-quality closure gate. S4.1 camera and
+gesture work is complete; its UI and grab slices may run before that gate while
+construction waits for combined pair integration.
 
 Tactical filenames use a three-digit zero-padded prefix ordered by their first
 Git creation timestamp. This repository starts at `001`. Never renumber an
@@ -17,7 +17,7 @@ This README remains the unnumbered index.
 | S1 | Oracle foundation and rigid solver laboratory | [001-rigid-solver-laboratory.md](001-rigid-solver-laboratory.md) | complete 2026-07-15 |
 | S2 | GPU body state and fixed-floor contact | [002-gpu-body-state.md](002-gpu-body-state.md) | complete 2026-07-15; limited body core accepted |
 | S3 | Small-world collision and contact persistence | [003-small-world-collision-persistence.md](003-small-world-collision-persistence.md) | accepted S3.6 direction; combined closure gate active, 2026-07-15 |
-| S4 | Interactive evaluation workbench | [004-basic-scene-navigation-camera.md](004-basic-scene-navigation-camera.md) | authorized; S4.1–S4.3 ready, 2026-07-15 |
+| S4 | Interactive evaluation workbench | [004-basic-scene-navigation-camera.md](004-basic-scene-navigation-camera.md) | S4.1 complete; S4.2 next, 2026-07-15 |
 
 ## Conventions
 

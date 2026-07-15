@@ -4,10 +4,10 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use physbox_engine::{
-    AdapterDiagnostics, EngineConfig, FrameInput, FrameReport, PointerButton, PointerEvent,
-    PointerPhase, StepRequest, SurfaceRenderer, create_instance,
+    AdapterDiagnostics, EngineConfig, FrameInput, FrameReport, InputEvent, PointerButton,
+    PointerEvent, PointerPhase, StepRequest, SurfaceRenderer, WheelEvent, create_instance,
 };
-use winit::event::{ElementState, MouseButton, TouchPhase, WindowEvent};
+use winit::event::{ElementState, MouseButton, MouseScrollDelta, TouchPhase, WindowEvent};
 use winit::event_loop::ActiveEventLoop;
 use winit::window::{Window, WindowAttributes, WindowId};
 
@@ -26,7 +26,7 @@ pub struct WinitFrameDriver {
     renderer: Option<SurfaceRenderer>,
     last_frame: Option<Instant>,
     last_cursor: [f32; 2],
-    pending_pointer_events: Vec<PointerEvent>,
+    pending_input_events: Vec<InputEvent>,
 }
 
 impl WinitFrameDriver {
@@ -37,7 +37,7 @@ impl WinitFrameDriver {
             renderer: None,
             last_frame: None,
             last_cursor: [0.5, 0.5],
-            pending_pointer_events: Vec::new(),
+            pending_input_events: Vec::new(),
         }
     }
 
@@ -80,7 +80,7 @@ impl WinitFrameDriver {
         self.renderer = None;
         self.window = None;
         self.last_frame = None;
-        self.pending_pointer_events.clear();
+        self.pending_input_events.clear();
     }
 
     pub fn set_window_title(&self, title: &str) {
@@ -144,6 +144,18 @@ impl WinitFrameDriver {
                 }
                 Ok(WinitFrameOutcome::default())
             }
+            WindowEvent::MouseWheel { delta, .. } => {
+                let zoom_steps = match delta {
+                    MouseScrollDelta::LineDelta(_, vertical) => vertical.signum(),
+                    MouseScrollDelta::PixelDelta(position) => position.y.signum() as f32,
+                };
+                self.pending_input_events
+                    .push(InputEvent::Wheel(WheelEvent {
+                        normalized_position: self.last_cursor,
+                        zoom_steps,
+                    }));
+                Ok(WinitFrameOutcome::default())
+            }
             WindowEvent::Touch(touch) => {
                 let size = window.inner_size();
                 let position = normalized_position(
@@ -172,7 +184,7 @@ impl WinitFrameDriver {
                         requested_time_scale: 1.0,
                         action: Default::default(),
                     },
-                    pointer_events: std::mem::take(&mut self.pending_pointer_events),
+                    input_events: std::mem::take(&mut self.pending_input_events),
                 };
                 let report = self
                     .renderer
@@ -196,12 +208,13 @@ impl WinitFrameDriver {
         button: PointerButton,
         normalized_position: [f32; 2],
     ) {
-        self.pending_pointer_events.push(PointerEvent {
-            id,
-            phase,
-            button,
-            normalized_position,
-        });
+        self.pending_input_events
+            .push(InputEvent::Pointer(PointerEvent {
+                id,
+                phase,
+                button,
+                normalized_position,
+            }));
     }
 }
 

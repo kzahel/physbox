@@ -32,6 +32,19 @@ pub struct BodyCommandReport {
     pub grab_active: bool,
 }
 
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CameraReport {
+    pub version: u32,
+    pub center: [f32; 2],
+    pub orthographic_half_height: f32,
+    pub pan_changes_total: u64,
+    pub zoom_changes_total: u64,
+    pub recenter_changes_total: u64,
+    pub touch_navigation_active: bool,
+    pub secondary_pan_active: bool,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ScenarioResult {
@@ -50,6 +63,7 @@ pub struct FrameReport {
     pub pointer_events_total: u64,
     pub target_size: [u32; 2],
     pub pacing: PacingReport,
+    pub camera: CameraReport,
     pub body_commands: BodyCommandReport,
     pub scene_contract: SceneContract,
     pub scenario: ScenarioResult,
@@ -92,16 +106,15 @@ impl FrameReport {
         #[derive(Serialize)]
         #[serde(rename_all = "camelCase")]
         struct CompactFrameReport<'a> {
-            fixed_steps_total: u64,
             pointer_events_total: u64,
             pacing: CompactPacing<'a>,
+            camera: [f32; 3],
             body_commands: CompactBodyCommands,
             scene_contract: &'a SceneContract,
             scenario: CompactScenario,
         }
 
         serde_json::to_string(&CompactFrameReport {
-            fixed_steps_total: self.fixed_steps_total,
             pointer_events_total: self.pointer_events_total,
             pacing: CompactPacing {
                 mode: &self.pacing.mode,
@@ -112,6 +125,11 @@ impl FrameReport {
                     .overload_slipped_wall_seconds_total,
                 effective_simulation_scale: self.pacing.effective_simulation_scale,
             },
+            camera: [
+                self.camera.center[0],
+                self.camera.center[1],
+                self.camera.orthographic_half_height,
+            ],
             body_commands: CompactBodyCommands {
                 executed_commands_total: self.body_commands.executed_commands_total,
                 reset_commands_total: self.body_commands.reset_commands_total,
@@ -163,6 +181,16 @@ mod tests {
                 zero_step_frames_total: u64::MAX,
                 one_step_frames_total: u64::MAX,
                 paused: false,
+            },
+            camera: CameraReport {
+                version: crate::CAMERA_STATE_VERSION,
+                center: [f32::MAX, f32::MAX],
+                orthographic_half_height: f32::MAX,
+                pan_changes_total: u64::MAX,
+                zoom_changes_total: u64::MAX,
+                recenter_changes_total: u64::MAX,
+                touch_navigation_active: true,
+                secondary_pan_active: true,
             },
             body_commands: BodyCommandReport {
                 capacity_commands: 64,

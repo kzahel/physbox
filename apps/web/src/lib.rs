@@ -4,8 +4,8 @@
 use physbox_engine::PointerButton;
 #[cfg(target_arch = "wasm32")]
 use physbox_engine::{
-    EngineConfig, FrameInput, GpuBodyBenchmarkSession, PointerEvent, PointerPhase, StepRequest,
-    SurfaceRenderer, create_instance,
+    EngineConfig, FrameInput, GpuBodyBenchmarkSession, InputEvent, PointerEvent, PointerPhase,
+    StepRequest, SurfaceRenderer, WheelEvent, create_instance,
 };
 #[cfg(target_arch = "wasm32")]
 use physbox_launch::parse_web_query;
@@ -42,7 +42,7 @@ fn decode_pointer_button(code: u8) -> Result<PointerButton, String> {
 pub struct WebApp {
     renderer: SurfaceRenderer,
     last_timestamp_ms: Option<f64>,
-    pending_pointer_events: Vec<PointerEvent>,
+    pending_input_events: Vec<InputEvent>,
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -66,7 +66,7 @@ impl WebApp {
                     requested_time_scale: 1.0,
                     action: Default::default(),
                 },
-                pointer_events: std::mem::take(&mut self.pending_pointer_events),
+                input_events: std::mem::take(&mut self.pending_input_events),
             })
             .map_err(js_error)?;
         Ok(report.marker_json())
@@ -92,13 +92,23 @@ impl WebApp {
             3 => PointerPhase::Cancel,
             _ => return Err(js_error(format!("unknown pointer phase code {phase}"))),
         };
-        self.pending_pointer_events.push(PointerEvent {
-            id: u64::from(id),
-            phase,
-            button: decode_pointer_button(button).map_err(js_error)?,
-            normalized_position: [x.clamp(0.0, 1.0), y.clamp(0.0, 1.0)],
-        });
+        self.pending_input_events
+            .push(InputEvent::Pointer(PointerEvent {
+                id: u64::from(id),
+                phase,
+                button: decode_pointer_button(button).map_err(js_error)?,
+                normalized_position: [x.clamp(0.0, 1.0), y.clamp(0.0, 1.0)],
+            }));
         Ok(())
+    }
+
+    #[wasm_bindgen(js_name = wheelEvent)]
+    pub fn wheel_event(&mut self, x: f32, y: f32, zoom_steps: f32) {
+        self.pending_input_events
+            .push(InputEvent::Wheel(WheelEvent {
+                normalized_position: [x.clamp(0.0, 1.0), y.clamp(0.0, 1.0)],
+                zoom_steps: zoom_steps.signum(),
+            }));
     }
 }
 
@@ -126,7 +136,7 @@ pub async fn start(canvas: HtmlCanvasElement, search: String) -> Result<WebApp, 
     Ok(WebApp {
         renderer,
         last_timestamp_ms: None,
-        pending_pointer_events: Vec::new(),
+        pending_input_events: Vec::new(),
     })
 }
 

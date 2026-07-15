@@ -26,6 +26,7 @@ struct IntegrationParamsRaw {
 #[derive(Clone, Copy, Pod, Zeroable)]
 struct RenderParamsRaw {
     viewport: [f32; 4],
+    camera: [f32; 4],
 }
 
 #[repr(C)]
@@ -193,6 +194,7 @@ impl GpuBodyWorld {
                     },
                     count: None,
                 },
+                storage_entry(5, true, wgpu::ShaderStages::COMPUTE),
             ],
         });
         let command_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -222,6 +224,10 @@ impl GpuBodyWorld {
                         offset: 0,
                         size: wgpu::BufferSize::new(size_of::<CommandParamsRaw>() as u64),
                     }),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: storage.properties_buffer().as_entire_binding(),
                 },
             ],
         });
@@ -483,8 +489,9 @@ impl GpuBodyWorld {
         encoder: &mut wgpu::CommandEncoder,
         target: crate::renderer::RenderFrameTarget<'_>,
         frame_index: u64,
+        camera: crate::CameraFrame2d,
     ) {
-        self.encode_render_with_timestamp(queue, encoder, target, frame_index, None);
+        self.encode_render_with_timestamp(queue, encoder, target, frame_index, camera, None);
     }
 
     pub(crate) fn encode_render_with_timestamp(
@@ -493,6 +500,7 @@ impl GpuBodyWorld {
         encoder: &mut wgpu::CommandEncoder,
         target: crate::renderer::RenderFrameTarget<'_>,
         frame_index: u64,
+        camera: crate::CameraFrame2d,
         ending_timestamp: Option<(&wgpu::QuerySet, u32)>,
     ) {
         let params = RenderParamsRaw {
@@ -501,6 +509,12 @@ impl GpuBodyWorld {
                 target.size[1] as f32,
                 target.size[0] as f32 / target.size[1].max(1) as f32,
                 frame_index as f32,
+            ],
+            camera: [
+                camera.center()[0],
+                camera.center()[1],
+                camera.half_extents()[0],
+                camera.half_extents()[1],
             ],
         };
         queue.write_buffer(&self.render_params, 0, bytemuck::bytes_of(&params));

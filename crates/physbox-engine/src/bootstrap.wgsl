@@ -8,10 +8,8 @@ struct BootstrapState {
 };
 
 struct FrameParams {
-    dt: f32,
-    width: f32,
-    height: f32,
-    frame_index: f32,
+    dt_frame: vec4f,
+    camera: vec4f,
 };
 
 @group(0) @binding(0) var<storage, read_write> state: BootstrapState;
@@ -19,8 +17,8 @@ struct FrameParams {
 
 @compute @workgroup_size(1)
 fn step_main() {
-    state.position += state.linear_velocity * params.dt;
-    state.angle += state.angular_velocity * params.dt;
+    state.position += state.linear_velocity * params.dt_frame.x;
+    state.angle += state.angular_velocity * params.dt_frame.x;
 
     if (state.position.x > 0.72) {
         state.position.x = 0.72;
@@ -60,10 +58,10 @@ fn box_distance(point: vec2f, half_size: vec2f) -> f32 {
 
 @fragment
 fn fragment_main(@builtin(position) pixel: vec4f) -> @location(0) vec4f {
-    let size = vec2f(max(params.width, 1.0), max(params.height, 1.0));
-    let aspect = size.x / size.y;
-    let world = vec2f((pixel.x / size.x * 2.0 - 1.0) * aspect,
-                      1.0 - pixel.y / size.y * 2.0);
+    let size = max(params.dt_frame.zw, vec2f(1.0));
+    let clip = vec2f(pixel.x / size.x * 2.0 - 1.0,
+                     1.0 - pixel.y / size.y * 2.0);
+    let world = params.camera.xy + clip * params.camera.zw;
 
     let horizon = clamp(0.48 + world.y * 0.18, 0.0, 1.0);
     var color = mix(vec3f(0.018, 0.035, 0.085), vec3f(0.075, 0.16, 0.25), horizon);

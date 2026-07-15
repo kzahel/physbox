@@ -1,5 +1,6 @@
 struct RenderParams {
     viewport: vec4f,
+    camera: vec4f,
 };
 
 struct BodyVertexOutput {
@@ -28,9 +29,9 @@ fn background_vertex(@builtin(vertex_index) vertex_index: u32) -> @builtin(posit
 @fragment
 fn background_fragment(@builtin(position) pixel: vec4f) -> @location(0) vec4f {
     let size = max(params.viewport.xy, vec2f(1.0));
-    let aspect = params.viewport.z;
-    let world = vec2f((pixel.x / size.x * 2.0 - 1.0) * aspect,
-                      1.0 - pixel.y / size.y * 2.0);
+    let clip = vec2f(pixel.x / size.x * 2.0 - 1.0,
+                     1.0 - pixel.y / size.y * 2.0);
+    let world = params.camera.xy + clip * params.camera.zw;
     let horizon = clamp(0.48 + world.y * 0.18, 0.0, 1.0);
     var color = mix(vec3f(0.018, 0.035, 0.085), vec3f(0.075, 0.16, 0.25), horizon);
     let grid_x = abs(fract(world.x * 5.0 + 0.5) - 0.5);
@@ -62,8 +63,9 @@ fn body_vertex(
     let s = sin(pose.z);
     let world = pose.xy + vec2f(c * scaled.x - s * scaled.y,
                                 s * scaled.x + c * scaled.y);
-    let aspect = max(params.viewport.z, 0.0001);
-    return BodyVertexOutput(vec4f(world.x / aspect, world.y, 0.0, 1.0), local, flags);
+    let camera_half_extents = max(params.camera.zw, vec2f(0.0001));
+    let clip = (world - params.camera.xy) / camera_half_extents;
+    return BodyVertexOutput(vec4f(clip, 0.0, 1.0), local, flags);
 }
 
 @fragment

@@ -1,6 +1,6 @@
 # S4: Interactive evaluation workbench
 
-Status: authorized, 2026-07-15; S4.1 through S4.3 may begin immediately.
+Status: S4.1 complete, 2026-07-15; S4.2 is next.
 Direction: [one shared host and renderer](../platform-architecture.md).
 Bring-up checkpoint: [P5.2a](../bringup-plan.md#p52a--interactive-evaluation-workbench-authorized).
 Physics predecessor: [accepted S3.6 direction](003-small-world-collision-persistence.md).
@@ -137,16 +137,16 @@ grab constants remain provisional until the deployed feel checkpoint.
 
 ### S4.1 — shared camera and gesture contract
 
-- [ ] Add versioned engine-owned camera state and raw wheel/view facts without
+- [x] Add versioned engine-owned camera state and raw wheel/view facts without
   changing platform ownership.
-- [ ] Implement deterministic screen/world transforms, aspect/resize handling,
+- [x] Implement deterministic screen/world transforms, aspect/resize handling,
   anchored zoom, recenter, finite zoom bounds, right-drag pan, and the accepted
   two-contact gesture state machine.
-- [ ] Make a lone empty-world touch inert and make the second touch cancel tool
+- [x] Make a lone empty-world touch inert and make the second touch cancel tool
   capture before navigation begins.
-- [ ] Prove camera motion changes only presentation and input projection: it
+- [x] Prove camera motion changes only presentation and input projection: it
   must not change fixed-step admission, scenario hashes, or simulation state.
-- [ ] Add replayable mouse, wheel, and multi-touch traces covering cancellation,
+- [x] Add replayable mouse, wheel, and multi-touch traces covering cancellation,
   pointer loss, resize, second-touch promotion, and all-contacts-up rearming.
 
 Gate: equivalent raw traces produce the same camera endpoint and projected
@@ -159,6 +159,14 @@ projections, pacing reports, and negative adapter-ownership fixtures.
 Commit boundary: frame/input contracts, camera transforms, shared gesture
 state, raw adapter transport, deterministic tests, governing documentation, and
 S4.1 status land together.
+
+Completion evidence: [S4.1 camera and gesture package](../../evidence/p5.2a-s4.1/README.md).
+Camera and input-trace schemas are version 1. The shared input state owns all
+gesture meaning; native, web, and Android remain raw-fact transports. The
+temporary designated-body grab now rejects an empty analytic shape hit on the
+GPU, while general nearest-body selection and a body-local anchor remain
+explicit S4.3 work. No physics default, scenario hash, fixed-step rule, solver
+graph, tolerance, or oracle rule changed.
 
 ### S4.2 — efficient glyph UI, diagnostics, and scene discovery
 

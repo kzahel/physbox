@@ -512,16 +512,22 @@ mod tests {
             },
         ))
         .unwrap();
-        let pointer = |phase, normalized_position| crate::PointerEvent {
-            id: 17,
-            phase,
-            button: crate::PointerButton::Primary,
-            normalized_position,
+        let pointer = |phase, normalized_position| {
+            crate::InputEvent::Pointer(crate::PointerEvent {
+                id: 17,
+                phase,
+                button: crate::PointerButton::Primary,
+                normalized_position,
+            })
         };
         let initial = renderer.read_capture_state().unwrap();
+        let initial_screen = crate::Camera2d::fixed()
+            .resolve([320, 200])
+            .unwrap()
+            .world_to_screen([initial[0], initial[1]]);
         let queued = renderer.render(FrameInput {
             step_request: crate::StepRequest::Exact { steps: 0 },
-            pointer_events: vec![pointer(crate::PointerPhase::Down, [0.75, 0.25])],
+            input_events: vec![pointer(crate::PointerPhase::Down, initial_screen)],
         });
         assert_eq!(renderer.read_capture_state().unwrap(), initial);
         assert_eq!(queued.body_commands.queued_commands_total, 1);
@@ -529,15 +535,21 @@ mod tests {
 
         renderer.render(FrameInput::exact(1));
         let held = renderer.read_capture_state().unwrap();
-        assert_eq!([held[0], held[1]], [0.8, 0.5]);
+        assert_eq!([held[0], held[1]], [initial[0], initial[1]]);
+        renderer.render(FrameInput {
+            step_request: crate::StepRequest::Exact { steps: 1 },
+            input_events: vec![pointer(crate::PointerPhase::Move, [0.75, 0.25])],
+        });
+        let first_target = renderer.read_capture_state().unwrap();
+        assert_eq!([first_target[0], first_target[1]], [0.8, 0.5]);
         let coalesced = renderer.render(FrameInput {
             step_request: crate::StepRequest::Exact { steps: 0 },
-            pointer_events: vec![
+            input_events: vec![
                 pointer(crate::PointerPhase::Move, [0.25, 0.4]),
                 pointer(crate::PointerPhase::Move, [0.5, 0.3]),
             ],
         });
-        assert_eq!(renderer.read_capture_state().unwrap(), held);
+        assert_eq!(renderer.read_capture_state().unwrap(), first_target);
         assert_eq!(coalesced.body_commands.coalesced_targets_total, 1);
         renderer.render(FrameInput::exact(1));
         let moved = renderer.read_capture_state().unwrap();
@@ -545,13 +557,13 @@ mod tests {
 
         let release_report = renderer.render(FrameInput {
             step_request: crate::StepRequest::Exact { steps: 1 },
-            pointer_events: vec![pointer(crate::PointerPhase::Up, [0.5, 0.3])],
+            input_events: vec![pointer(crate::PointerPhase::Up, [0.5, 0.3])],
         });
         let released = renderer.read_capture_state().unwrap();
         assert!(released[1] < moved[1]);
         let stale_move = renderer.render(FrameInput {
             step_request: crate::StepRequest::Exact { steps: 1 },
-            pointer_events: vec![pointer(crate::PointerPhase::Move, [1.0, 0.0])],
+            input_events: vec![pointer(crate::PointerPhase::Move, [1.0, 0.0])],
         });
         let after_stale = renderer.read_capture_state().unwrap();
         assert_eq!(
@@ -560,18 +572,11 @@ mod tests {
         );
         assert_eq!(after_stale[0], released[0]);
         assert!(after_stale[1] < released[1]);
+    }
 
-        renderer.render(FrameInput {
-            step_request: crate::StepRequest::Exact { steps: 1 },
-            pointer_events: vec![crate::PointerEvent {
-                id: 0,
-                phase: crate::PointerPhase::Down,
-                button: crate::PointerButton::Secondary,
-                normalized_position: [0.0, 0.0],
-            }],
-        });
-        let reset = renderer.read_capture_state().unwrap();
-        let mut fresh = pollster::block_on(OffscreenRenderer::new(
+    #[test]
+    fn empty_touch_is_inert_and_secondary_drag_changes_only_camera() {
+        let mut renderer = pollster::block_on(OffscreenRenderer::new(
             320,
             200,
             EngineConfig {
@@ -579,8 +584,73 @@ mod tests {
             },
         ))
         .unwrap();
-        fresh.render(FrameInput::exact(1));
-        assert_eq!(reset, fresh.read_capture_state().unwrap());
+        let touch = |phase, at| {
+            crate::InputEvent::Pointer(crate::PointerEvent {
+                id: 9,
+                phase,
+                button: crate::PointerButton::Contact,
+                normalized_position: at,
+            })
+        };
+        let empty_report = renderer.render(FrameInput {
+            step_request: crate::StepRequest::Exact { steps: 1 },
+            input_events: vec![
+                touch(crate::PointerPhase::Down, [0.02, 0.02]),
+                touch(crate::PointerPhase::Move, [0.2, 0.2]),
+                touch(crate::PointerPhase::Up, [0.2, 0.2]),
+            ],
+        });
+        assert_eq!(empty_report.camera.center, [0.0, 0.0]);
+        assert_eq!(empty_report.camera.pan_changes_total, 0);
+        assert_eq!(empty_report.camera.zoom_changes_total, 0);
+        let after_empty = renderer.read_capture_state().unwrap();
+        let mut control = pollster::block_on(OffscreenRenderer::new(
+            320,
+            200,
+            EngineConfig {
+                scenario: ValidationScenario::RigidFloor,
+            },
+        ))
+        .unwrap();
+        control.render(FrameInput::exact(1));
+        assert_eq!(after_empty, control.read_capture_state().unwrap());
+
+        let before_pan = after_empty;
+        let report = renderer.render(FrameInput {
+            step_request: crate::StepRequest::Exact { steps: 0 },
+            input_events: vec![
+                crate::InputEvent::Pointer(crate::PointerEvent {
+                    id: 1,
+                    phase: crate::PointerPhase::Down,
+                    button: crate::PointerButton::Secondary,
+                    normalized_position: [0.5, 0.5],
+                }),
+                crate::InputEvent::Pointer(crate::PointerEvent {
+                    id: 1,
+                    phase: crate::PointerPhase::Move,
+                    button: crate::PointerButton::Primary,
+                    normalized_position: [0.6, 0.4],
+                }),
+                crate::InputEvent::Pointer(crate::PointerEvent {
+                    id: 1,
+                    phase: crate::PointerPhase::Up,
+                    button: crate::PointerButton::Secondary,
+                    normalized_position: [0.6, 0.4],
+                }),
+            ],
+        });
+        assert_eq!(renderer.read_capture_state().unwrap(), before_pan);
+        assert_eq!(report.fixed_steps_this_frame, 0);
+        assert_eq!(report.camera.pan_changes_total, 1);
+        assert!((report.camera.center[0] + 0.32).abs() <= 1.0e-5);
+        assert!((report.camera.center[1] + 0.2).abs() <= 1.0e-5);
+        assert_eq!(
+            report.scene_contract.scenario_hash,
+            renderer
+                .render(FrameInput::exact(0))
+                .scene_contract
+                .scenario_hash
+        );
     }
 
     #[test]
@@ -593,17 +663,30 @@ mod tests {
             },
         ))
         .unwrap();
-        let resets = (0..=crate::BODY_COMMAND_CAPACITY)
-            .map(|id| crate::PointerEvent {
-                id: u64::from(id),
-                phase: crate::PointerPhase::Down,
-                button: crate::PointerButton::Secondary,
-                normalized_position: [0.5, 0.5],
-            })
-            .collect();
+        let target = crate::Camera2d::fixed()
+            .resolve([320, 200])
+            .unwrap()
+            .world_to_screen([0.0, 0.65]);
+        let mut events = Vec::new();
+        for index in 0..crate::BODY_COMMAND_CAPACITY / 2 {
+            for phase in [crate::PointerPhase::Down, crate::PointerPhase::Up] {
+                events.push(crate::InputEvent::Pointer(crate::PointerEvent {
+                    id: u64::from(index),
+                    phase,
+                    button: crate::PointerButton::Primary,
+                    normalized_position: target,
+                }));
+            }
+        }
+        events.push(crate::InputEvent::Pointer(crate::PointerEvent {
+            id: u64::from(crate::BODY_COMMAND_CAPACITY),
+            phase: crate::PointerPhase::Down,
+            button: crate::PointerButton::Primary,
+            normalized_position: target,
+        }));
         let queued = renderer.render(FrameInput {
             step_request: crate::StepRequest::Exact { steps: 0 },
-            pointer_events: resets,
+            input_events: events,
         });
         assert!(queued.body_commands.overflowed);
         assert_eq!(queued.body_commands.queued_commands_total, 65);

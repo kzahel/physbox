@@ -1,4 +1,5 @@
 use crate::clock::InteractiveClockAction;
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum StepRequest {
@@ -12,7 +13,8 @@ pub enum StepRequest {
     },
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum PointerButton {
     Primary,
     Secondary,
@@ -20,7 +22,8 @@ pub enum PointerButton {
     Auxiliary,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum PointerPhase {
     Down,
     Move,
@@ -28,7 +31,8 @@ pub enum PointerPhase {
     Cancel,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct PointerEvent {
     pub id: u64,
     pub phase: PointerPhase,
@@ -36,10 +40,28 @@ pub struct PointerEvent {
     pub normalized_position: [f32; 2],
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct WheelEvent {
+    pub normalized_position: [f32; 2],
+    /// Positive values zoom in and negative values zoom out. Platform adapters
+    /// normalize only the host scroll direction; shared engine policy owns the
+    /// zoom factor.
+    pub zoom_steps: f32,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InputEvent {
+    Pointer(PointerEvent),
+    Wheel(WheelEvent),
+    Recenter,
+}
+
 #[derive(Clone, Debug)]
 pub struct FrameInput {
     pub step_request: StepRequest,
-    pub pointer_events: Vec<PointerEvent>,
+    pub input_events: Vec<InputEvent>,
 }
 
 impl FrameInput {
@@ -50,14 +72,14 @@ impl FrameInput {
                 requested_time_scale: 1.0,
                 action: InteractiveClockAction::Run,
             },
-            pointer_events: Vec::new(),
+            input_events: Vec::new(),
         }
     }
 
     pub fn exact(steps: u32) -> Self {
         Self {
             step_request: StepRequest::Exact { steps },
-            pointer_events: Vec::new(),
+            input_events: Vec::new(),
         }
     }
 
@@ -65,6 +87,11 @@ impl FrameInput {
         if let StepRequest::Interactive { action, .. } = &mut self.step_request {
             *action = clock_action;
         }
+        self
+    }
+
+    pub fn with_input_events(mut self, input_events: Vec<InputEvent>) -> Self {
+        self.input_events = input_events;
         self
     }
 }

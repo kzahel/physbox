@@ -47,7 +47,31 @@ try {
     before.frame.pointerEventsTotal,
     { timeout: 10_000 },
   );
+  await page.mouse.down({ button: "right" });
+  await page.mouse.move(576, 240);
+  await page.mouse.up({ button: "right" });
+  await page.mouse.wheel(0, -100);
+  await page.waitForFunction(
+    ({ pan, zoom }) => {
+      const camera = globalThis.__physbox5?.frame?.camera;
+      return camera?.panChangesTotal > pan && camera?.zoomChangesTotal > zoom;
+    },
+    {
+      pan: before.frame.camera.panChangesTotal,
+      zoom: before.frame.camera.zoomChangesTotal,
+    },
+    { timeout: 10_000 },
+  );
   const after = await page.evaluate(() => globalThis.__physbox5);
+  if (after.frame.fixedStepsThisFrame > 1) {
+    throw new Error(`interactive input admitted catch-up steps: ${JSON.stringify(after.frame.pacing)}`);
+  }
+  if (after.frame.camera.center[0] === 0 && after.frame.camera.center[1] === 0) {
+    throw new Error(`right-button drag did not pan shared camera: ${JSON.stringify(after.frame.camera)}`);
+  }
+  if (!(after.frame.camera.orthographicHalfHeight < 1)) {
+    throw new Error(`wheel did not zoom shared camera: ${JSON.stringify(after.frame.camera)}`);
+  }
   if (errors.length) throw new Error(`browser errors: ${errors.join("; ")}`);
   await page.waitForTimeout(200);
   await page.screenshot({ path: screenshot });

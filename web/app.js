@@ -68,6 +68,13 @@ function installPointerInput(app) {
       app.pointerEvent(event.pointerId, phase[name], x, y, button);
     });
   }
+  canvas.addEventListener("wheel", (event) => {
+    event.preventDefault();
+    const bounds = canvas.getBoundingClientRect();
+    const x = (event.clientX - bounds.left) / Math.max(bounds.width, 1);
+    const y = (event.clientY - bounds.top) / Math.max(bounds.height, 1);
+    app.wheelEvent(x, y, event.deltaY < 0 ? 1 : event.deltaY > 0 ? -1 : 0);
+  }, { passive: false });
   canvas.addEventListener("contextmenu", (event) => event.preventDefault());
 }
 

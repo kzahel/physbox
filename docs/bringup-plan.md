@@ -170,6 +170,14 @@ gesture arbitration, tools, GPU hit requests, construction commands, and
 pointer-to-world conversion. Platform adapters transport raw mouse, touch,
 wheel, lifecycle, and resize facts only.
 
+S4.1 is complete. Camera and input-trace contracts are versioned in shared
+Rust; right-drag pan, cursor-anchored wheel zoom, two-touch pan/pinch, pointer
+loss, resize, and all-contacts-up rearming replay deterministically. Empty
+one-touch motion is camera- and mechanics-inert, with analytic containment
+enforced on the GPU for the temporary designated-body grab. Headless, browser,
+and hardware-accelerated AVD captures pass; no physical Android device was
+connected. S4.2 engine-rendered glyph UI and scene discovery is next.
+
 - Make the maintained shared scenarios discoverable from the default deployed
   canvas without requiring query-string editing.
 - Make one empty-world touch inert; use two touches for pan/pinch, right mouse

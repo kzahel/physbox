@@ -6,14 +6,16 @@ use physbox_contracts::{
 use physbox_launch::ValidationScenario;
 
 use crate::{
-    BODY_COMMAND_CAPACITY, BoundedBodyCommands, EngineConfig, FrameInput, PointerButton,
-    PointerEvent, PointerPhase, StepRequest,
+    BODY_COMMAND_CAPACITY, BoundedBodyCommands, Camera2d, EngineConfig, FrameInput, InputEvent,
+    PointerButton, PointerPhase, StepRequest,
     body_world::{BodyCommandStepRange, GpuBodyWorld},
     clock::{FIXED_STEP_HZ, FIXED_STEP_SECONDS, InteractiveClockInput, SimulationClock},
     gpu_solver::{GpuSolverCandidate, GpuSolverLab, GpuSolverMode},
+    input::{SharedInputState, WorldPointerEvent},
     renderer::RenderFrameContext,
     report::{
-        BodyCommandReport, FrameReport, SCENE_CONTRACT_VERSION, ScenarioResult, SceneContract,
+        BodyCommandReport, CameraReport, FrameReport, SCENE_CONTRACT_VERSION, ScenarioResult,
+        SceneContract,
     },
     scenario::{
         P5_2GeneratedScenarioKind, authored_chain_scenario, p5_1_direct_render_scenario,
@@ -24,10 +26,8 @@ use crate::{
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
 struct FrameParams {
-    dt: f32,
-    width: f32,
-    height: f32,
-    frame_index: f32,
+    dt_frame: [f32; 4],
+    camera: [f32; 4],
 }
 
 struct PreparedBodyCommands {
@@ -72,24 +72,13 @@ impl BodyInteractionState {
         }
     }
 
-    fn capture_pointer_events(&mut self, events: &[PointerEvent], target_size: [u32; 2]) {
+    fn capture_pointer_events(&mut self, events: &[WorldPointerEvent]) {
         if !self.accept_live_input {
             return;
         }
         for event in events {
-            let target = pointer_world_target(event.normalized_position, target_size);
+            let target = event.world_target;
             match (event.button, event.phase) {
-                (PointerButton::Secondary, PointerPhase::Down) => {
-                    let command = BodyCommandV1::Reset {
-                        sequence: self.take_sequence(),
-                        body: self.initial.id,
-                        position: self.initial.position,
-                        angle: self.initial.angle,
-                        linear_velocity: self.initial.linear_velocity,
-                        angular_velocity: self.initial.angular_velocity,
-                    };
-                    self.push(command);
-                }
                 (PointerButton::Primary | PointerButton::Contact, PointerPhase::Down)
                     if self.active_pointer.is_none() =>
                 {
@@ -101,9 +90,7 @@ impl BodyInteractionState {
                     };
                     self.push(command);
                 }
-                (PointerButton::Primary | PointerButton::Contact, PointerPhase::Move)
-                    if self.active_pointer == Some(event.id) =>
-                {
+                (_, PointerPhase::Move) if self.active_pointer == Some(event.id) => {
                     if self.pending.coalesce_grab_target(self.initial.id, target) {
                         self.report.coalesced_targets_total += 1;
                     } else {
@@ -115,10 +102,9 @@ impl BodyInteractionState {
                         self.push(command);
                     }
                 }
-                (
-                    PointerButton::Primary | PointerButton::Contact,
-                    PointerPhase::Up | PointerPhase::Cancel,
-                ) if self.active_pointer == Some(event.id) => {
+                (_, PointerPhase::Up | PointerPhase::Cancel)
+                    if self.active_pointer == Some(event.id) =>
+                {
                     let command = BodyCommandV1::GrabEnd {
                         sequence: self.take_sequence(),
                         body: self.initial.id,
@@ -226,14 +212,6 @@ fn empty_command_batch() -> BodyCommandBatchV1 {
     }
 }
 
-fn pointer_world_target(normalized: [f32; 2], target_size: [u32; 2]) -> Vec2 {
-    let aspect = target_size[0] as f32 / target_size[1].max(1) as f32;
-    Vec2::new(
-        (normalized[0].clamp(0.0, 1.0) * 2.0 - 1.0) * aspect,
-        1.0 - normalized[1].clamp(0.0, 1.0) * 2.0,
-    )
-}
-
 pub struct EngineHost {
     config: EngineConfig,
     params_buffer: wgpu::Buffer,
@@ -243,6 +221,8 @@ pub struct EngineHost {
     solver_executed: bool,
     body_world: Option<GpuBodyWorld>,
     clock: SimulationClock,
+    camera: Camera2d,
+    input: SharedInputState,
     frame_index: u64,
     fixed_steps_total: u64,
     pointer_events_total: u64,
@@ -471,6 +451,8 @@ impl EngineHost {
             solver_executed: false,
             body_world,
             clock: SimulationClock::default(),
+            camera: Camera2d::fixed(),
+            input: SharedInputState::default(),
             frame_index: 0,
             fixed_steps_total: 0,
             pointer_events_total: 0,
@@ -484,9 +466,16 @@ impl EngineHost {
         input: FrameInput,
         context: RenderFrameContext<'_>,
     ) -> FrameReport {
-        self.pointer_events_total += input.pointer_events.len() as u64;
+        self.pointer_events_total += input
+            .input_events
+            .iter()
+            .filter(|event| matches!(event, InputEvent::Pointer(_)))
+            .count() as u64;
+        let (world_events, _) =
+            self.input
+                .apply_events(&mut self.camera, &input.input_events, context.target.size);
         if let Some(interaction) = &mut self.body_interaction {
-            interaction.capture_pointer_events(&input.pointer_events, context.target.size);
+            interaction.capture_pointer_events(&world_events);
         }
         let (steps, pacing) = match input.step_request {
             StepRequest::Interactive {
@@ -501,11 +490,23 @@ impl EngineHost {
             StepRequest::Exact { steps } => (steps, self.clock.admit_exact(steps)),
         };
 
+        let camera_frame = self
+            .camera
+            .resolve(context.target.size)
+            .expect("nonzero frame target resolves the shared camera");
         let params = FrameParams {
-            dt: FIXED_STEP_SECONDS as f32,
-            width: context.target.size[0] as f32,
-            height: context.target.size[1] as f32,
-            frame_index: self.frame_index as f32,
+            dt_frame: [
+                FIXED_STEP_SECONDS as f32,
+                self.frame_index as f32,
+                context.target.size[0] as f32,
+                context.target.size[1] as f32,
+            ],
+            camera: [
+                camera_frame.center()[0],
+                camera_frame.center()[1],
+                camera_frame.half_extents()[0],
+                camera_frame.half_extents()[1],
+            ],
         };
         context
             .queue
@@ -541,6 +542,7 @@ impl EngineHost {
                 context.encoder,
                 context.target,
                 self.frame_index,
+                camera_frame,
             );
         } else {
             let mut pass = context
@@ -707,6 +709,16 @@ impl EngineHost {
             pointer_events_total: self.pointer_events_total,
             target_size: context.target.size,
             pacing,
+            camera: CameraReport {
+                version: crate::CAMERA_STATE_VERSION,
+                center: self.camera.center(),
+                orthographic_half_height: self.camera.orthographic_half_height(),
+                pan_changes_total: self.input.pan_changes_total(),
+                zoom_changes_total: self.input.zoom_changes_total(),
+                recenter_changes_total: self.input.recenter_changes_total(),
+                touch_navigation_active: self.input.touch_camera_active(),
+                secondary_pan_active: self.input.secondary_pan_active(),
+            },
             body_commands: self
                 .body_interaction
                 .as_ref()
