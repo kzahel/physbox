@@ -1,6 +1,6 @@
 # S4: Interactive evaluation workbench
 
-Status: S4.1 complete, 2026-07-15; S4.2 is next.
+Status: S4.2 complete, 2026-07-15; S4.3 is next.
 Direction: [one shared host and renderer](../platform-architecture.md).
 Bring-up checkpoint: [P5.2a](../bringup-plan.md#p52a--interactive-evaluation-workbench-authorized).
 Physics predecessor: [accepted S3.6 direction](003-small-world-collision-persistence.md).
@@ -170,17 +170,17 @@ graph, tolerance, or oracle rule changed.
 
 ### S4.2 — efficient glyph UI, diagnostics, and scene discovery
 
-- [ ] Add one reusable shared UI quad/glyph renderer with a tiny immutable
+- [x] Add one reusable shared UI quad/glyph renderer with a tiny immutable
   bitmap atlas, bounded instance buffers, explicit bytes/draws, and no per-glyph
   draw calls.
-- [ ] Render a compact toolbar plus menu affordance; the first menu panel lists
+- [x] Render a compact toolbar plus menu affordance; the first menu panel lists
   the shared scenario catalog and exposes restart and recenter.
-- [ ] Add a compact debug overlay with frame cadence, effective simulation
+- [x] Add a compact debug overlay with frame cadence, effective simulation
   scale/slip, body/contact counts, capacity/overflow, adapter, and asynchronous
   diagnostic age where applicable.
-- [ ] Activate/restart a selected scenario at a declared frame boundary with no
+- [x] Activate/restart a selected scenario at a declared frame boundary with no
   stale body, command, contact, grab, camera, or validation state.
-- [ ] Preserve direct URL/argument launch for validation and deep links, and
+- [x] Preserve direct URL/argument launch for validation and deep links, and
   prevent UI captures from leaking into camera or tool commands.
 
 Gate: the default deployment makes maintained scenes discoverable; static UI
@@ -195,6 +195,15 @@ captures inspected at phone and desktop aspect ratios.
 Commit boundary: shared UI primitives, toolbar/menu/debug rendering, scenario
 catalog/reset contract, interaction tests, captures/evidence, provenance, and
 S4.2 status land together.
+
+Completion evidence: [S4.2 glyph workbench package](../../evidence/p5.2a-s4.2/README.md).
+UI contract version 1 uses a 3,072-byte immutable R8 atlas, bounded static and
+dynamic instance buffers, one UI pass, and two instanced draw calls. Static and
+target-parameter uploads are cached. Shared scenario activation and restart
+replace the complete engine world atomically; URL/argument launch remains
+available. Desktop, phone, headless, and hardware-accelerated AVD captures pass
+with declared-only diagnostics labeled `ASYNC AGE N/A`; no physical Android
+device was connected.
 
 ### S4.3 — GPU selection and anchored collidable grab
 

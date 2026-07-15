@@ -41,6 +41,16 @@ pub enum ValidationScenario {
 }
 
 impl ValidationScenario {
+    pub const ALL: [Self; 7] = [
+        Self::Bootstrap,
+        Self::RigidFloor,
+        Self::RigidStack,
+        Self::BodyFreeFlight,
+        Self::ResetGrab,
+        Self::SolverJacobi,
+        Self::SolverColored,
+    ];
+
     pub const fn name(self) -> &'static str {
         match self {
             Self::Bootstrap => "bootstrap",

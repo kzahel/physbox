@@ -13,6 +13,7 @@ pub(crate) struct RenderFrameTarget<'a> {
 }
 
 pub(crate) struct RenderFrameContext<'a> {
+    pub device: &'a wgpu::Device,
     pub queue: &'a wgpu::Queue,
     pub encoder: &'a mut wgpu::CommandEncoder,
     pub target: RenderFrameTarget<'a>,
@@ -65,7 +66,13 @@ impl SurfaceRenderer {
             desired_maximum_frame_latency: 2,
         };
         surface.configure(&device, &surface_config);
-        let host = EngineHost::new(&device, view_format, engine_config);
+        let host = EngineHost::new(
+            &device,
+            &queue,
+            view_format,
+            engine_config,
+            diagnostics.clone(),
+        );
         Ok(Self {
             surface,
             device,
@@ -114,6 +121,7 @@ impl SurfaceRenderer {
         let report = self.host.render_frame(
             input,
             RenderFrameContext {
+                device: &self.device,
                 queue: &self.queue,
                 encoder: &mut encoder,
                 target: RenderFrameTarget {
@@ -166,7 +174,7 @@ impl OffscreenRenderer {
             view_formats: &[],
         });
         let view = texture.create_view(&Default::default());
-        let host = EngineHost::new(&device, format, engine_config);
+        let host = EngineHost::new(&device, &queue, format, engine_config, diagnostics.clone());
         Ok(Self {
             device,
             queue,
@@ -192,6 +200,7 @@ impl OffscreenRenderer {
         let report = self.host.render_frame(
             input,
             RenderFrameContext {
+                device: &self.device,
                 queue: &self.queue,
                 encoder: &mut encoder,
                 target: RenderFrameTarget {
@@ -505,8 +514,8 @@ mod tests {
     #[test]
     fn live_pointer_targets_coalesce_until_an_admitted_step() {
         let mut renderer = pollster::block_on(OffscreenRenderer::new(
-            320,
-            200,
+            640,
+            400,
             EngineConfig {
                 scenario: ValidationScenario::RigidFloor,
             },
@@ -522,7 +531,7 @@ mod tests {
         };
         let initial = renderer.read_capture_state().unwrap();
         let initial_screen = crate::Camera2d::fixed()
-            .resolve([320, 200])
+            .resolve([640, 400])
             .unwrap()
             .world_to_screen([initial[0], initial[1]]);
         let queued = renderer.render(FrameInput {
@@ -654,17 +663,132 @@ mod tests {
     }
 
     #[test]
+    fn shared_ui_switches_and_restarts_scenes_without_stale_state() {
+        let target = [960, 600];
+        let mut renderer = pollster::block_on(OffscreenRenderer::new(
+            target[0],
+            target[1],
+            EngineConfig {
+                scenario: ValidationScenario::Bootstrap,
+            },
+        ))
+        .unwrap();
+        let click = |id, at| {
+            [crate::PointerPhase::Down, crate::PointerPhase::Up]
+                .into_iter()
+                .map(|phase| {
+                    crate::InputEvent::Pointer(crate::PointerEvent {
+                        id,
+                        phase,
+                        button: crate::PointerButton::Primary,
+                        normalized_position: at,
+                    })
+                })
+                .collect::<Vec<_>>()
+        };
+        let layout = crate::ui::UiLayout::for_target(target);
+        let initial = renderer.render(FrameInput::exact(1));
+        let unchanged = renderer.render(FrameInput::exact(0));
+        assert_eq!(
+            initial.ui.static_writes_total,
+            unchanged.ui.static_writes_total
+        );
+        assert_eq!(
+            unchanged.ui.dynamic_writes_total,
+            initial.ui.dynamic_writes_total + 1
+        );
+        assert_eq!(
+            unchanged.ui.parameter_writes_total,
+            initial.ui.parameter_writes_total
+        );
+        assert_eq!(initial.ui.allocated_bytes, 31_760);
+
+        renderer.render(FrameInput::exact(0).with_input_events(vec![
+            crate::InputEvent::Pointer(crate::PointerEvent {
+                id: 20,
+                phase: crate::PointerPhase::Down,
+                button: crate::PointerButton::Secondary,
+                normalized_position: [0.5, 0.5],
+            }),
+            crate::InputEvent::Pointer(crate::PointerEvent {
+                id: 20,
+                phase: crate::PointerPhase::Move,
+                button: crate::PointerButton::Primary,
+                normalized_position: [0.6, 0.4],
+            }),
+            crate::InputEvent::Pointer(crate::PointerEvent {
+                id: 20,
+                phase: crate::PointerPhase::Up,
+                button: crate::PointerButton::Secondary,
+                normalized_position: [0.6, 0.4],
+            }),
+        ]));
+
+        let opened = renderer.render(
+            FrameInput::exact(0).with_input_events(click(1, layout.center_normalized("menu", 0))),
+        );
+        assert!(opened.ui.menu_open);
+        assert_eq!(opened.body_commands.queued_commands_total, 0);
+        assert_eq!(
+            opened.ui.static_writes_total,
+            initial.ui.static_writes_total + 1
+        );
+
+        let recentered = renderer.render(
+            FrameInput::exact(0)
+                .with_input_events(click(21, layout.center_normalized("recenter", 0))),
+        );
+        assert_eq!(recentered.camera.center, [0.0, 0.0]);
+        assert_eq!(recentered.camera.recenter_changes_total, 1);
+        assert_eq!(recentered.fixed_steps_this_frame, 0);
+        renderer.render(
+            FrameInput::exact(0).with_input_events(click(22, layout.center_normalized("menu", 0))),
+        );
+
+        let switched = renderer.render(
+            FrameInput::exact(0)
+                .with_input_events(click(2, layout.center_normalized("scenario", 2))),
+        );
+        assert_eq!(switched.scene_contract.scenario, "rigid-stack");
+        assert_eq!(switched.fixed_steps_total, 0);
+        assert_eq!(switched.camera.center, [0.0, 0.0]);
+        assert_eq!(switched.ui.current_scene, "rigid-stack");
+        assert_eq!(switched.ui.scenario_activations_total, 1);
+        assert_eq!(
+            switched.body_commands,
+            crate::BodyCommandReport {
+                capacity_commands: crate::BODY_COMMAND_CAPACITY,
+                ..Default::default()
+            }
+        );
+
+        renderer.render(FrameInput::exact(3));
+        renderer.render(
+            FrameInput::exact(0).with_input_events(click(3, layout.center_normalized("menu", 0))),
+        );
+        let restarted = renderer.render(
+            FrameInput::exact(0)
+                .with_input_events(click(4, layout.center_normalized("restart", 0))),
+        );
+        assert_eq!(restarted.scene_contract.scenario, "rigid-stack");
+        assert_eq!(restarted.fixed_steps_total, 0);
+        assert_eq!(restarted.ui.scenario_activations_total, 1);
+        assert_eq!(restarted.ui.scenario_restarts_total, 1);
+        assert!(!restarted.ui.overflowed);
+    }
+
+    #[test]
     fn command_capacity_overflow_is_reported_without_partial_execution() {
         let mut renderer = pollster::block_on(OffscreenRenderer::new(
-            320,
-            200,
+            640,
+            400,
             EngineConfig {
                 scenario: ValidationScenario::RigidFloor,
             },
         ))
         .unwrap();
         let target = crate::Camera2d::fixed()
-            .resolve([320, 200])
+            .resolve([640, 400])
             .unwrap()
             .world_to_screen([0.0, 0.65]);
         let mut events = Vec::new();

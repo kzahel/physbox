@@ -6,8 +6,8 @@ use physbox_contracts::{
 use physbox_launch::ValidationScenario;
 
 use crate::{
-    BODY_COMMAND_CAPACITY, BoundedBodyCommands, Camera2d, EngineConfig, FrameInput, InputEvent,
-    PointerButton, PointerPhase, StepRequest,
+    AdapterDiagnostics, BODY_COMMAND_CAPACITY, BoundedBodyCommands, Camera2d, EngineConfig,
+    FrameInput, InputEvent, PointerButton, PointerPhase, StepRequest,
     body_world::{BodyCommandStepRange, GpuBodyWorld},
     clock::{FIXED_STEP_HZ, FIXED_STEP_SECONDS, InteractiveClockInput, SimulationClock},
     gpu_solver::{GpuSolverCandidate, GpuSolverLab, GpuSolverMode},
@@ -21,6 +21,7 @@ use crate::{
         P5_2GeneratedScenarioKind, authored_chain_scenario, p5_1_direct_render_scenario,
         p5_2_generated_floor_scenario, p5_2_generated_reset_grab_scenario, p5_2_generated_scenario,
     },
+    ui::{UiAction, UiFrameModel, WorkbenchUi},
 };
 
 #[repr(C)]
@@ -214,6 +215,8 @@ fn empty_command_batch() -> BodyCommandBatchV1 {
 
 pub struct EngineHost {
     config: EngineConfig,
+    color_format: wgpu::TextureFormat,
+    adapter: AdapterDiagnostics,
     params_buffer: wgpu::Buffer,
     render_pipeline: wgpu::RenderPipeline,
     solver_lab: Option<GpuSolverLab>,
@@ -228,13 +231,18 @@ pub struct EngineHost {
     pointer_events_total: u64,
     scenario_hash: String,
     body_interaction: Option<BodyInteractionState>,
+    ui: WorkbenchUi,
+    scenario_activations_total: u64,
+    scenario_restarts_total: u64,
 }
 
 impl EngineHost {
     pub(crate) fn new(
         device: &wgpu::Device,
+        queue: &wgpu::Queue,
         color_format: wgpu::TextureFormat,
         config: EngineConfig,
+        adapter: AdapterDiagnostics,
     ) -> Self {
         let params_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("physbox5_frame_params"),
@@ -442,8 +450,11 @@ impl EngineHost {
             ValidationScenario::SolverJacobi | ValidationScenario::SolverColored => None,
         };
 
+        let ui = WorkbenchUi::new(device, queue, color_format);
         Self {
             config,
+            color_format,
+            adapter,
             params_buffer,
             render_pipeline,
             solver_lab,
@@ -458,6 +469,9 @@ impl EngineHost {
             pointer_events_total: 0,
             scenario_hash,
             body_interaction,
+            ui,
+            scenario_activations_total: 0,
+            scenario_restarts_total: 0,
         }
     }
 
@@ -466,14 +480,52 @@ impl EngineHost {
         input: FrameInput,
         context: RenderFrameContext<'_>,
     ) -> FrameReport {
-        self.pointer_events_total += input
+        let raw_pointer_count = input
             .input_events
             .iter()
             .filter(|event| matches!(event, InputEvent::Pointer(_)))
             .count() as u64;
+        let mut routing = self
+            .ui
+            .route_events(&input.input_events, context.target.size);
+        if let Some(action) = routing.action {
+            match action {
+                UiAction::Recenter => {
+                    routing.events.push(InputEvent::Recenter);
+                }
+                UiAction::ActivateScenario(_) | UiAction::RestartScenario => {
+                    let activations = self.scenario_activations_total.saturating_add(matches!(
+                        action,
+                        UiAction::ActivateScenario(_)
+                    )
+                        as u64);
+                    let restarts = self.scenario_restarts_total.saturating_add(matches!(
+                        action,
+                        UiAction::RestartScenario
+                    )
+                        as u64);
+                    let scenario = match action {
+                        UiAction::ActivateScenario(scenario) => scenario,
+                        UiAction::RestartScenario => self.config.scenario,
+                        UiAction::Recenter => unreachable!(),
+                    };
+                    let mut replacement = Self::new(
+                        context.device,
+                        context.queue,
+                        self.color_format,
+                        EngineConfig { scenario },
+                        self.adapter.clone(),
+                    );
+                    replacement.scenario_activations_total = activations;
+                    replacement.scenario_restarts_total = restarts;
+                    *self = replacement;
+                }
+            }
+        }
+        self.pointer_events_total = self.pointer_events_total.saturating_add(raw_pointer_count);
         let (world_events, _) =
             self.input
-                .apply_events(&mut self.camera, &input.input_events, context.target.size);
+                .apply_events(&mut self.camera, &routing.events, context.target.size);
         if let Some(interaction) = &mut self.body_interaction {
             interaction.capture_pointer_events(&world_events);
         }
@@ -702,6 +754,22 @@ impl EngineHost {
                 }
             }
         };
+        let ui = self.ui.encode(
+            context.queue,
+            context.encoder,
+            context.target,
+            UiFrameModel {
+                scenario: self.config.scenario,
+                pacing: &pacing,
+                body_count: contract.body_count,
+                contact_count: contract.contact_point_count,
+                capacity_bytes: contract.solver_capacity_bytes,
+                overflowed: contract.capacity_overflowed,
+                adapter_backend: &self.adapter.backend,
+                scenario_activations_total: self.scenario_activations_total,
+                scenario_restarts_total: self.scenario_restarts_total,
+            },
+        );
         FrameReport {
             frame_index: self.frame_index,
             fixed_steps_total: self.fixed_steps_total,
@@ -719,6 +787,7 @@ impl EngineHost {
                 touch_navigation_active: self.input.touch_camera_active(),
                 secondary_pan_active: self.input.secondary_pan_active(),
             },
+            ui,
             body_commands: self
                 .body_interaction
                 .as_ref()

@@ -23,6 +23,8 @@ mod pair_slot_persistence;
 mod renderer;
 mod report;
 mod scenario;
+mod ui;
+mod ui_font;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub use body_benchmark::benchmark_gpu_body_free_flight;
@@ -85,7 +87,9 @@ pub use pair_slot_persistence::{
 #[cfg(not(target_arch = "wasm32"))]
 pub use renderer::OffscreenRenderer;
 pub use renderer::SurfaceRenderer;
-pub use report::{BodyCommandReport, CameraReport, FrameReport, ScenarioResult, SceneContract};
+pub use report::{
+    BodyCommandReport, CameraReport, FrameReport, ScenarioResult, SceneContract, UiReport,
+};
 pub use scenario::{
     AnalyticFixtureKind, P5_2CandidatePattern, P5_2CollisionScenarioKind,
     P5_2GeneratedScenarioKind, ScenarioBuildError, analytic_fixture_scenario,
