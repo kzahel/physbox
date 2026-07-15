@@ -61,7 +61,7 @@ START_COMMAND="am start -n com.kzahel.physbox5/android.app.NativeActivity --es p
 
 PASSED=0
 for _ in $(seq 1 90); do
-    "$ADB" -s "$SERIAL" logcat -d -t 1000 > "$LOG"
+    "$ADB" -s "$SERIAL" logcat -d -t 10000 > "$LOG"
     if rg -q 'PHYSBOX5_MARK_FRAME_RENDERED .*"complete":true,"passed":true' "$LOG"; then PASSED=1; break; fi
     if rg -q 'PHYSBOX5_ANDROID_(STARTUP|RENDER)_ERROR' "$LOG"; then break; fi
     sleep 1
