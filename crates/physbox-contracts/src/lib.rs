@@ -10,6 +10,7 @@ use sha2::{Digest, Sha256};
 pub const SCHEMA_VERSION: u32 = 1;
 pub const BODY_LAYOUT_VERSION: u32 = 1;
 pub const GRAB_INTENT_CONTRACT_VERSION: u32 = 1;
+pub const CONSTRUCTION_INTENT_CONTRACT_VERSION: u32 = 1;
 pub const SETTLING_OBSERVATION_VERSION: u32 = 1;
 pub const ORACLE_SUCCESS_SENTINEL: &str = "PHYSBOX5_ORACLE_SUCCESS";
 
@@ -401,6 +402,180 @@ pub struct GrabIntentBatchV1 {
     pub attempted_intents: u64,
     pub overflowed: bool,
     pub intents: Vec<GrabIntentV1>,
+}
+
+/// Body-free construction intent. The GPU resolves placement capacity and
+/// erase selection against current device-owned occupancy; hosts never choose
+/// or observe a body slot to advance construction.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum ConstructionIntentV1 {
+    PlaceCircle { sequence: u32, world_target: Vec2 },
+    PlaceRectangle { sequence: u32, world_target: Vec2 },
+    EraseAt { sequence: u32, world_target: Vec2 },
+}
+
+impl ConstructionIntentV1 {
+    pub const fn sequence(self) -> u32 {
+        match self {
+            Self::PlaceCircle { sequence, .. }
+            | Self::PlaceRectangle { sequence, .. }
+            | Self::EraseAt { sequence, .. } => sequence,
+        }
+    }
+
+    pub const fn world_target(self) -> Vec2 {
+        match self {
+            Self::PlaceCircle { world_target, .. }
+            | Self::PlaceRectangle { world_target, .. }
+            | Self::EraseAt { world_target, .. } => world_target,
+        }
+    }
+}
+
+impl Validate for ConstructionIntentV1 {
+    fn validate(&self) -> Result<(), ContractError> {
+        self.world_target().validate()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConstructionIntentBatchV1 {
+    pub schema_version: u32,
+    pub contract_version: u32,
+    pub capacity_intents: u32,
+    pub attempted_intents: u64,
+    pub overflowed: bool,
+    pub intents: Vec<ConstructionIntentV1>,
+}
+
+impl Validate for ConstructionIntentBatchV1 {
+    fn validate(&self) -> Result<(), ContractError> {
+        version(self.schema_version)?;
+        if self.contract_version != CONSTRUCTION_INTENT_CONTRACT_VERSION {
+            return Err(ContractError(format!(
+                "unsupported construction intent contract version {}",
+                self.contract_version
+            )));
+        }
+        if self.capacity_intents == 0
+            || self.intents.len() > self.capacity_intents as usize
+            || self.attempted_intents < self.intents.len() as u64
+        {
+            return Err(ContractError(
+                "invalid construction intent batch counts".to_owned(),
+            ));
+        }
+        validate_sorted_unique(
+            self.intents
+                .iter()
+                .copied()
+                .map(ConstructionIntentV1::sequence),
+            "construction intent sequences",
+        )?;
+        for intent in &self.intents {
+            intent.validate()?;
+        }
+        if self.overflowed != (self.attempted_intents > u64::from(self.capacity_intents)) {
+            return Err(ContractError(
+                "construction intent overflow flag does not match attempted capacity".to_owned(),
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ConstructionResultV1 {
+    #[default]
+    None,
+    Placed,
+    Erased,
+    CapacityFull,
+    DeepOverlap,
+    EraseMiss,
+    GenerationExhausted,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConstructionStateV1 {
+    pub schema_version: u32,
+    pub contract_version: u32,
+    pub capacity_bodies: u32,
+    pub live_bodies: u32,
+    pub attempted_intents: u64,
+    pub succeeded_intents: u64,
+    pub placed_circles: u64,
+    pub placed_rectangles: u64,
+    pub erased_bodies: u64,
+    pub capacity_failures: u64,
+    pub deep_overlap_failures: u64,
+    pub erase_miss_failures: u64,
+    pub generation_failures: u64,
+    pub grab_invalidations: u64,
+    pub last_sequence: u32,
+    pub last_result: ConstructionResultV1,
+    pub last_body: Option<BodyId>,
+}
+
+impl Validate for ConstructionStateV1 {
+    fn validate(&self) -> Result<(), ContractError> {
+        version(self.schema_version)?;
+        if self.contract_version != CONSTRUCTION_INTENT_CONTRACT_VERSION {
+            return Err(ContractError(format!(
+                "unsupported construction state contract version {}",
+                self.contract_version
+            )));
+        }
+        if self.capacity_bodies == 0 || self.live_bodies > self.capacity_bodies {
+            return Err(ContractError(
+                "construction state has invalid body capacity".to_owned(),
+            ));
+        }
+        let succeeded = self
+            .placed_circles
+            .checked_add(self.placed_rectangles)
+            .and_then(|value| value.checked_add(self.erased_bodies))
+            .ok_or_else(|| ContractError("construction success counts overflowed".to_owned()))?;
+        if succeeded != self.succeeded_intents {
+            return Err(ContractError(
+                "construction success total does not match its operations".to_owned(),
+            ));
+        }
+        let failures = self
+            .capacity_failures
+            .checked_add(self.deep_overlap_failures)
+            .and_then(|value| value.checked_add(self.erase_miss_failures))
+            .and_then(|value| value.checked_add(self.generation_failures))
+            .ok_or_else(|| ContractError("construction failure counts overflowed".to_owned()))?;
+        let accounted = succeeded
+            .checked_add(failures)
+            .ok_or_else(|| ContractError("construction result counts overflowed".to_owned()))?;
+        if self.attempted_intents != accounted {
+            return Err(ContractError(
+                "construction attempt total does not match successes and failures".to_owned(),
+            ));
+        }
+        if let Some(body) = self.last_body {
+            if body.generation == 0 {
+                return Err(ContractError(
+                    "construction state has an invalid last body generation".to_owned(),
+                ));
+            }
+            if !matches!(
+                self.last_result,
+                ConstructionResultV1::Placed | ConstructionResultV1::Erased
+            ) {
+                return Err(ContractError(
+                    "only successful construction results may name a body".to_owned(),
+                ));
+            }
+        }
+        Ok(())
+    }
 }
 
 impl Validate for GrabIntentBatchV1 {
@@ -1782,6 +1957,50 @@ mod tests {
         assert!(wrong_version.validate().is_err());
         let mut duplicate = batch.clone();
         duplicate.intents[1] = GrabIntentV1::End { sequence: 1 };
+        assert!(duplicate.validate().is_err());
+        let mut overflow = batch;
+        overflow.attempted_intents = 4;
+        overflow.overflowed = true;
+        overflow.validate().unwrap();
+    }
+
+    #[test]
+    fn construction_intents_are_body_free_versioned_ordered_and_bounded() {
+        let batch = ConstructionIntentBatchV1 {
+            schema_version: SCHEMA_VERSION,
+            contract_version: CONSTRUCTION_INTENT_CONTRACT_VERSION,
+            capacity_intents: 3,
+            attempted_intents: 3,
+            overflowed: false,
+            intents: vec![
+                ConstructionIntentV1::PlaceCircle {
+                    sequence: 1,
+                    world_target: Vec2::new(-0.5, 0.75),
+                },
+                ConstructionIntentV1::PlaceRectangle {
+                    sequence: 2,
+                    world_target: Vec2::new(0.0, 0.75),
+                },
+                ConstructionIntentV1::EraseAt {
+                    sequence: 3,
+                    world_target: Vec2::new(-0.5, 0.75),
+                },
+            ],
+        };
+        batch.validate().unwrap();
+        let encoded = canonical_json(&batch).unwrap();
+        let decoded: ConstructionIntentBatchV1 = serde_json::from_slice(&encoded).unwrap();
+        assert_eq!(decoded, batch);
+        assert!(!encoded.windows(4).any(|window| window == b"body"));
+
+        let mut wrong_version = batch.clone();
+        wrong_version.contract_version += 1;
+        assert!(wrong_version.validate().is_err());
+        let mut duplicate = batch.clone();
+        duplicate.intents[1] = ConstructionIntentV1::EraseAt {
+            sequence: 1,
+            world_target: Vec2::ZERO,
+        };
         assert!(duplicate.validate().is_err());
         let mut overflow = batch;
         overflow.attempted_intents = 4;

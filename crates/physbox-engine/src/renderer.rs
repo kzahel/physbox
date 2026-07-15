@@ -252,6 +252,29 @@ impl OffscreenRenderer {
         Ok(state)
     }
 
+    pub fn read_construction_state(
+        &self,
+    ) -> Result<physbox_contracts::ConstructionStateV1, String> {
+        let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("physbox5_construction_state_readback"),
+            size: u64::from(crate::CONSTRUCTION_STATE_BYTES),
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("physbox5_construction_state_copy"),
+            });
+        self.host.copy_construction_state(&mut encoder, &buffer)?;
+        self.queue.submit([encoder.finish()]);
+        let mapped = map_buffer(&self.device, &buffer)?;
+        let state = crate::construction_state_from_bytes(&mapped)?;
+        drop(mapped);
+        buffer.unmap();
+        Ok(state)
+    }
+
     pub fn read_fixed_floor_pass_evidence(
         &self,
     ) -> Result<crate::GpuFixedFloorPassEvidence, String> {
@@ -477,9 +500,9 @@ mod tests {
                 .expect("generated-contact renderer initializes");
             let report = renderer.render(FrameInput::exact(120));
             assert!(report.scenario.complete);
-            assert_eq!(report.scene_contract.contact_point_count, 2);
-            assert_eq!(report.scene_contract.solver_dispatches_per_step, 97);
-            assert_eq!(report.scene_contract.solver_capacity_bytes, 19_640);
+            assert_eq!(report.scene_contract.contact_point_count, 2_048);
+            assert_eq!(report.scene_contract.solver_dispatches_per_step, 100);
+            assert_eq!(report.scene_contract.solver_capacity_bytes, 1_190_404);
             assert!(!report.scene_contract.capacity_overflowed);
             renderer.read_capture_state().unwrap()
         };
@@ -747,7 +770,7 @@ mod tests {
                 })
             );
             assert_eq!(selection.successful_selections, 1);
-            assert_eq!(selection.scanned_bodies_high_water, 5);
+            assert_eq!(selection.scanned_bodies_high_water, 64);
         }
 
         let mut fixed = pollster::block_on(OffscreenRenderer::new(

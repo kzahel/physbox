@@ -2,13 +2,20 @@ use std::mem::size_of;
 
 use bytemuck::{Pod, Zeroable};
 use physbox_contracts::{
-    BodyCommandBatchV1, BodyLayoutV1, CapacityRecordV1, GrabIntentBatchV1, ScenarioV1, Validate,
+    BodyCommandBatchV1, BodyLayoutV1, CapacityRecordV1, ConstructionIntentBatchV1,
+    GrabIntentBatchV1, ScenarioV1, Validate,
 };
 use wgpu::util::DeviceExt;
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::body_floor_solver::FixedFloorEvidenceLayout;
 use crate::body_state::{BODY_COMMAND_BYTES, BODY_COMMAND_CAPACITY, GpuBodyResetData};
+use crate::construction::{
+    CONSTRUCTION_CIRCLE_RADIUS, CONSTRUCTION_FRICTION, CONSTRUCTION_INTENT_BYTES,
+    CONSTRUCTION_INTENT_CAPACITY, CONSTRUCTION_RECTANGLE_HALF_EXTENTS, CONSTRUCTION_RESTITUTION,
+    CONSTRUCTION_STATE_BYTES, ConstructionIntentRaw, construction_intent_raw,
+    empty_construction_intent_batch, initial_construction_state,
+};
 use crate::grab::{
     GRAB_DAMPING_RATE, GRAB_INTENT_BYTES, GRAB_INTENT_CAPACITY, GRAB_MAX_ACCELERATION,
     GRAB_MAX_ANGULAR_SPEED, GRAB_MAX_LINEAR_SPEED, GRAB_SPRING_ACCELERATION, GRAB_STATE_BYTES,
@@ -21,6 +28,7 @@ use crate::{
 
 const WORKGROUP_SIZE: u32 = 64;
 const COMMAND_PARAMETER_STRIDE: usize = 256;
+const CONSTRUCTION_PARAMETER_STRIDE: usize = 256;
 const GRAB_RENDER_VERTEX_COUNT: u32 = 12;
 const GRAB_RENDER_VERTEX_BYTES: u32 = GRAB_RENDER_VERTEX_COUNT * 16;
 
@@ -44,6 +52,15 @@ struct CommandParamsRaw {
     counts: [u32; 4],
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct ConstructionParamsRaw {
+    counts: [u32; 4],
+    circle_material: [f32; 4],
+    rectangle_mass: [f32; 4],
+    material_padding: [f32; 4],
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct BodyCommandStepRange {
     pub(crate) start: u32,
@@ -55,6 +72,8 @@ pub(crate) struct BodyStepPlan<'a> {
     pub(crate) ranges: &'a [BodyCommandStepRange],
     pub(crate) grab_batch: &'a GrabIntentBatchV1,
     pub(crate) grab_ranges: &'a [BodyCommandStepRange],
+    pub(crate) construction_batch: &'a ConstructionIntentBatchV1,
+    pub(crate) construction_ranges: &'a [BodyCommandStepRange],
 }
 
 pub(crate) struct BodyRenderPlan<'a> {
@@ -76,6 +95,11 @@ pub(crate) struct GpuBodyWorld {
     grab_intents: wgpu::Buffer,
     #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     grab_state: wgpu::Buffer,
+    construction_params: wgpu::Buffer,
+    construction_intents: wgpu::Buffer,
+    construction_state: wgpu::Buffer,
+    construction_bind_group: wgpu::BindGroup,
+    construction_pipeline: wgpu::ComputePipeline,
     grab_render_vertices: wgpu::Buffer,
     grab_render_bind_group: wgpu::BindGroup,
     grab_render_prepare_pipeline: wgpu::ComputePipeline,
@@ -87,6 +111,7 @@ pub(crate) struct GpuBodyWorld {
     floor_solver: Option<GpuFixedFloorSolver>,
     generated_contacts: Option<GpuGeneratedContactGraph>,
     body_count: u32,
+    initial_live_count: u32,
 }
 
 impl GpuBodyWorld {
@@ -113,11 +138,16 @@ impl GpuBodyWorld {
         generated: bool,
     ) -> Result<Self, String> {
         scenario.validate().map_err(|error| error.to_string())?;
-        let body_count = u32::try_from(scenario.bodies.len())
+        let initial_live_count = u32::try_from(scenario.bodies.len())
             .map_err(|_| "GPU body count exceeds u32".to_owned())?;
-        if body_count == 0 {
+        if initial_live_count == 0 {
             return Err("GPU body world requires at least one body".to_owned());
         }
+        let body_count = if generated {
+            interactive_body_capacity(initial_live_count)?
+        } else {
+            initial_live_count
+        };
         let storage =
             GpuBodyStorage::new(device, body_count, BODY_COMMAND_CAPACITY, &scenario.bodies)?;
         let floor_solver = if generated || scenario.manifolds.is_empty() {
@@ -339,6 +369,116 @@ impl GpuBodyWorld {
                 cache: None,
             });
 
+        let construction_params = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("physbox5_construction_params"),
+            size: u64::from(CONSTRUCTION_INTENT_CAPACITY + 1)
+                * CONSTRUCTION_PARAMETER_STRIDE as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let construction_intents = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("physbox5_construction_intents"),
+            size: u64::from(CONSTRUCTION_INTENT_CAPACITY) * u64::from(CONSTRUCTION_INTENT_BYTES),
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let construction_state = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("physbox5_construction_state"),
+            contents: bytemuck::bytes_of(&initial_construction_state(
+                body_count,
+                initial_live_count,
+            )),
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
+        });
+        let construction_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("physbox5_construction_layout"),
+                entries: &[
+                    storage_entry(0, false, wgpu::ShaderStages::COMPUTE),
+                    storage_entry(1, false, wgpu::ShaderStages::COMPUTE),
+                    storage_entry(2, false, wgpu::ShaderStages::COMPUTE),
+                    storage_entry(3, false, wgpu::ShaderStages::COMPUTE),
+                    storage_entry(4, true, wgpu::ShaderStages::COMPUTE),
+                    storage_entry(5, false, wgpu::ShaderStages::COMPUTE),
+                    storage_entry(6, false, wgpu::ShaderStages::COMPUTE),
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 7,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: true,
+                            min_binding_size: wgpu::BufferSize::new(
+                                size_of::<ConstructionParamsRaw>() as u64,
+                            ),
+                        },
+                        count: None,
+                    },
+                ],
+            });
+        let construction_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("physbox5_construction_bind_group"),
+            layout: &construction_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: storage.pose_buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: storage.motion_buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: storage.properties_buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: storage.metadata_buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: construction_intents.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: construction_state.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: grab_state.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 7,
+                    resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                        buffer: &construction_params,
+                        offset: 0,
+                        size: wgpu::BufferSize::new(size_of::<ConstructionParamsRaw>() as u64),
+                    }),
+                },
+            ],
+        });
+        let construction_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("physbox5_construction_shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("body_construction.wgsl").into()),
+        });
+        let construction_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("physbox5_construction_pipeline_layout"),
+                bind_group_layouts: &[&construction_layout],
+                push_constant_ranges: &[],
+            });
+        let construction_pipeline =
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("physbox5_construction_pipeline"),
+                layout: Some(&construction_pipeline_layout),
+                module: &construction_shader,
+                entry_point: Some("apply_construction_intents"),
+                compilation_options: Default::default(),
+                cache: None,
+            });
+
         let render_params = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("physbox5_body_render_params"),
             size: size_of::<RenderParamsRaw>() as u64,
@@ -517,6 +657,11 @@ impl GpuBodyWorld {
             grab_constraint_pipeline,
             grab_intents,
             grab_state,
+            construction_params,
+            construction_intents,
+            construction_state,
+            construction_bind_group,
+            construction_pipeline,
             grab_render_vertices,
             grab_render_bind_group,
             grab_render_prepare_pipeline,
@@ -528,6 +673,7 @@ impl GpuBodyWorld {
             floor_solver,
             generated_contacts,
             body_count,
+            initial_live_count,
         })
     }
 
@@ -546,6 +692,8 @@ impl GpuBodyWorld {
             plan.ranges,
             plan.grab_batch,
             plan.grab_ranges,
+            plan.construction_batch,
+            plan.construction_ranges,
             None,
         )
     }
@@ -561,6 +709,8 @@ impl GpuBodyWorld {
     ) -> Result<CapacityRecordV1, String> {
         let grab_batch = crate::grab::empty_grab_intent_batch();
         let grab_ranges = vec![BodyCommandStepRange { start: 0, count: 0 }; steps as usize];
+        let construction_batch = empty_construction_intent_batch();
+        let construction_ranges = vec![BodyCommandStepRange { start: 0, count: 0 }; steps as usize];
         self.encode_steps_internal(
             queue,
             encoder,
@@ -569,6 +719,8 @@ impl GpuBodyWorld {
             ranges,
             &grab_batch,
             &grab_ranges,
+            &construction_batch,
+            &construction_ranges,
             beginning_timestamp,
         )
     }
@@ -583,13 +735,20 @@ impl GpuBodyWorld {
         ranges: &[BodyCommandStepRange],
         grab_batch: &GrabIntentBatchV1,
         grab_ranges: &[BodyCommandStepRange],
+        construction_batch: &ConstructionIntentBatchV1,
+        construction_ranges: &[BodyCommandStepRange],
         beginning_timestamp: Option<(&wgpu::QuerySet, u32)>,
     ) -> Result<CapacityRecordV1, String> {
         if beginning_timestamp.is_some() && steps != 1 {
             return Err("timed body encoding requires exactly one step".to_owned());
         }
-        if ranges.len() != steps as usize || grab_ranges.len() != steps as usize {
-            return Err("body and grab ranges must match the encoded step count".to_owned());
+        if ranges.len() != steps as usize
+            || grab_ranges.len() != steps as usize
+            || construction_ranges.len() != steps as usize
+        {
+            return Err(
+                "body, grab, and construction ranges must match the encoded step count".to_owned(),
+            );
         }
         let capacity = self.storage.upload_commands(queue, batch)?;
         grab_batch.validate().map_err(|error| error.to_string())?;
@@ -607,6 +766,28 @@ impl GpuBodyWorld {
             .collect::<Vec<_>>();
         if !raw_intents.is_empty() {
             queue.write_buffer(&self.grab_intents, 0, bytemuck::cast_slice(&raw_intents));
+        }
+        construction_batch
+            .validate()
+            .map_err(|error| error.to_string())?;
+        if construction_batch.capacity_intents != CONSTRUCTION_INTENT_CAPACITY {
+            return Err(format!(
+                "construction intent batch capacity {} does not match GPU capacity {CONSTRUCTION_INTENT_CAPACITY}",
+                construction_batch.capacity_intents
+            ));
+        }
+        let raw_construction = construction_batch
+            .intents
+            .iter()
+            .copied()
+            .map(construction_intent_raw)
+            .collect::<Vec<ConstructionIntentRaw>>();
+        if !raw_construction.is_empty() {
+            queue.write_buffer(
+                &self.construction_intents,
+                0,
+                bytemuck::cast_slice(&raw_construction),
+            );
         }
         let mut parameters = vec![CommandParamsRaw { counts: [0; 4] }];
         let mut step_parameter_indices = vec![None; ranges.len()];
@@ -649,8 +830,68 @@ impl GpuBodyWorld {
                 .copy_from_slice(bytemuck::bytes_of(parameter));
         }
         queue.write_buffer(&self.command_params, 0, &bytes);
+        let rectangle_inverse_inertia = 3.0
+            / (CONSTRUCTION_RECTANGLE_HALF_EXTENTS[0] * CONSTRUCTION_RECTANGLE_HALF_EXTENTS[0]
+                + CONSTRUCTION_RECTANGLE_HALF_EXTENTS[1] * CONSTRUCTION_RECTANGLE_HALF_EXTENTS[1]);
+        let mut construction_parameters = vec![ConstructionParamsRaw {
+            counts: [0, 0, self.body_count, 0],
+            circle_material: [
+                CONSTRUCTION_CIRCLE_RADIUS,
+                1.0,
+                2.0 / (CONSTRUCTION_CIRCLE_RADIUS * CONSTRUCTION_CIRCLE_RADIUS),
+                CONSTRUCTION_FRICTION,
+            ],
+            rectangle_mass: [
+                CONSTRUCTION_RECTANGLE_HALF_EXTENTS[0],
+                CONSTRUCTION_RECTANGLE_HALF_EXTENTS[1],
+                1.0,
+                rectangle_inverse_inertia,
+            ],
+            material_padding: [CONSTRUCTION_RESTITUTION, 0.0, 0.0, 0.0],
+        }];
+        let mut construction_parameter_indices = vec![None; construction_ranges.len()];
+        for (step, range) in construction_ranges.iter().enumerate() {
+            if range.start.checked_add(range.count).is_none_or(|end| {
+                end > u32::try_from(construction_batch.intents.len()).unwrap_or(u32::MAX)
+            }) {
+                return Err("construction intent range exceeds the uploaded batch".to_owned());
+            }
+            if range.count == 0 {
+                continue;
+            }
+            let index = construction_parameters.len();
+            let mut parameter = construction_parameters[0];
+            parameter.counts[0] = range.start;
+            parameter.counts[1] = range.count;
+            construction_parameters.push(parameter);
+            construction_parameter_indices[step] = Some(index as u32);
+        }
+        if construction_parameters.len() > (CONSTRUCTION_INTENT_CAPACITY + 1) as usize {
+            return Err("construction parameter capacity overflowed".to_owned());
+        }
+        let mut construction_bytes =
+            vec![0_u8; construction_parameters.len() * CONSTRUCTION_PARAMETER_STRIDE];
+        for (index, parameter) in construction_parameters.iter().enumerate() {
+            let start = index * CONSTRUCTION_PARAMETER_STRIDE;
+            construction_bytes[start..start + size_of::<ConstructionParamsRaw>()]
+                .copy_from_slice(bytemuck::bytes_of(parameter));
+        }
+        queue.write_buffer(&self.construction_params, 0, &construction_bytes);
         let mut beginning_timestamp = beginning_timestamp;
         for step_index in 0..steps as usize {
+            if let Some(parameter_index) = construction_parameter_indices[step_index] {
+                let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: Some("physbox5_construction_pass"),
+                    timestamp_writes: None,
+                });
+                pass.set_pipeline(&self.construction_pipeline);
+                pass.set_bind_group(
+                    0,
+                    &self.construction_bind_group,
+                    &[parameter_index * CONSTRUCTION_PARAMETER_STRIDE as u32],
+                );
+                pass.dispatch_workgroups(1, 1, 1);
+            }
             if let Some(parameter_index) = step_parameter_indices[step_index] {
                 let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                     label: Some("physbox5_body_command_grab_pass"),
@@ -803,8 +1044,8 @@ impl GpuBodyWorld {
         drop(pass);
     }
 
-    pub(crate) const fn body_count(&self) -> u32 {
-        self.body_count
+    pub(crate) const fn initial_body_count(&self) -> u32 {
+        self.initial_live_count
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -819,6 +1060,21 @@ impl GpuBodyWorld {
             destination,
             0,
             u64::from(GRAB_STATE_BYTES),
+        );
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn copy_construction_state(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        destination: &wgpu::Buffer,
+    ) {
+        encoder.copy_buffer_to_buffer(
+            &self.construction_state,
+            0,
+            destination,
+            0,
+            u64::from(CONSTRUCTION_STATE_BYTES),
         );
     }
 
@@ -901,6 +1157,32 @@ impl GpuBodyWorld {
                 used_elements: 1,
                 allocated_bytes: u64::from(GRAB_STATE_BYTES),
                 high_water_bytes: u64::from(GRAB_STATE_BYTES),
+                overflowed: false,
+            },
+            CapacityRecordV1 {
+                class: "construction-intents".to_owned(),
+                capacity_elements: u64::from(CONSTRUCTION_INTENT_CAPACITY),
+                used_elements: 0,
+                allocated_bytes: u64::from(CONSTRUCTION_INTENT_CAPACITY)
+                    * u64::from(CONSTRUCTION_INTENT_BYTES),
+                high_water_bytes: 0,
+                overflowed: false,
+            },
+            CapacityRecordV1 {
+                class: "construction-state".to_owned(),
+                capacity_elements: 1,
+                used_elements: 1,
+                allocated_bytes: u64::from(CONSTRUCTION_STATE_BYTES),
+                high_water_bytes: u64::from(CONSTRUCTION_STATE_BYTES),
+                overflowed: false,
+            },
+            CapacityRecordV1 {
+                class: "construction-parameters".to_owned(),
+                capacity_elements: u64::from(CONSTRUCTION_INTENT_CAPACITY + 1),
+                used_elements: 1,
+                allocated_bytes: u64::from(CONSTRUCTION_INTENT_CAPACITY + 1)
+                    * CONSTRUCTION_PARAMETER_STRIDE as u64,
+                high_water_bytes: CONSTRUCTION_PARAMETER_STRIDE as u64,
                 overflowed: false,
             },
             CapacityRecordV1 {
@@ -1090,6 +1372,14 @@ impl GpuBodyWorld {
     }
 }
 
+fn interactive_body_capacity(initial_live_count: u32) -> Result<u32, String> {
+    initial_live_count
+        .checked_add(1)
+        .and_then(u32::checked_next_power_of_two)
+        .map(|capacity| capacity.max(64))
+        .ok_or_else(|| "interactive body capacity overflowed".to_owned())
+}
+
 fn storage_entry(
     binding: u32,
     read_only: bool,
@@ -1117,5 +1407,287 @@ fn uniform_entry(binding: u32, visibility: wgpu::ShaderStages) -> wgpu::BindGrou
             min_binding_size: None,
         },
         count: None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::mpsc;
+
+    use physbox_contracts::{
+        BodyCommandBatchV1, ConstructionIntentV1, GRAB_INTENT_CONTRACT_VERSION, GrabIntentBatchV1,
+        GrabIntentV1, SCHEMA_VERSION, Vec2,
+    };
+
+    use super::*;
+    use crate::{
+        BoundedConstructionIntents, construction_state_from_bytes,
+        grab::{GRAB_INTENT_CAPACITY, GRAB_STATE_BYTES, decode_grab_state},
+    };
+
+    fn empty_commands() -> BodyCommandBatchV1 {
+        BodyCommandBatchV1 {
+            schema_version: SCHEMA_VERSION,
+            capacity_commands: BODY_COMMAND_CAPACITY,
+            attempted_commands: 0,
+            overflowed: false,
+            commands: Vec::new(),
+        }
+    }
+
+    fn grab_batch(intents: Vec<GrabIntentV1>) -> GrabIntentBatchV1 {
+        GrabIntentBatchV1 {
+            schema_version: SCHEMA_VERSION,
+            contract_version: GRAB_INTENT_CONTRACT_VERSION,
+            capacity_intents: GRAB_INTENT_CAPACITY,
+            attempted_intents: intents.len() as u64,
+            overflowed: false,
+            intents,
+        }
+    }
+
+    fn encode(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        world: &GpuBodyWorld,
+        grab: &GrabIntentBatchV1,
+        construction: &ConstructionIntentBatchV1,
+    ) {
+        let commands = empty_commands();
+        let command_ranges = [BodyCommandStepRange { start: 0, count: 0 }];
+        let grab_ranges = [BodyCommandStepRange {
+            start: 0,
+            count: grab.intents.len() as u32,
+        }];
+        let construction_ranges = [BodyCommandStepRange {
+            start: 0,
+            count: construction.intents.len() as u32,
+        }];
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("construction_test_step"),
+        });
+        world
+            .encode_steps_with_grab_intents(
+                queue,
+                &mut encoder,
+                1,
+                BodyStepPlan {
+                    batch: &commands,
+                    ranges: &command_ranges,
+                    grab_batch: grab,
+                    grab_ranges: &grab_ranges,
+                    construction_batch: construction,
+                    construction_ranges: &construction_ranges,
+                },
+            )
+            .unwrap();
+        queue.submit([encoder.finish()]);
+        device.poll(wgpu::PollType::Wait).unwrap();
+    }
+
+    fn read_buffer(device: &wgpu::Device, buffer: &wgpu::Buffer) -> Vec<u8> {
+        let slice = buffer.slice(..);
+        let (sender, receiver) = mpsc::channel();
+        slice.map_async(wgpu::MapMode::Read, move |result| {
+            sender.send(result).unwrap();
+        });
+        device.poll(wgpu::PollType::Wait).unwrap();
+        receiver.recv().unwrap().unwrap();
+        let bytes = slice.get_mapped_range().to_vec();
+        buffer.unmap();
+        bytes
+    }
+
+    fn read_construction(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        world: &GpuBodyWorld,
+    ) -> physbox_contracts::ConstructionStateV1 {
+        let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("construction_test_state_readback"),
+            size: u64::from(CONSTRUCTION_STATE_BYTES),
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("construction_test_state_copy"),
+        });
+        world.copy_construction_state(&mut encoder, &buffer);
+        queue.submit([encoder.finish()]);
+        construction_state_from_bytes(&read_buffer(device, &buffer)).unwrap()
+    }
+
+    #[test]
+    fn gpu_construction_reuses_generations_clears_grab_and_rejects_failures() {
+        let instance = crate::create_instance();
+        let adapter = pollster::block_on(crate::gpu_context::request_adapter(&instance, None))
+            .expect("test GPU adapter");
+        let (device, queue) =
+            pollster::block_on(crate::gpu_context::request_device(&adapter)).unwrap();
+        let scenario = crate::p5_2_generated_floor_scenario(8).unwrap();
+        let world =
+            GpuBodyWorld::new_generated(&device, wgpu::TextureFormat::Rgba8Unorm, &scenario)
+                .unwrap();
+        assert_eq!(world.body_count, 64);
+
+        encode(
+            &device,
+            &queue,
+            &world,
+            &grab_batch(vec![GrabIntentV1::Begin {
+                sequence: 1,
+                world_target: Vec2::new(0.0, 0.65),
+            }]),
+            &empty_construction_intent_batch(),
+        );
+
+        let grab_readback = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("construction_test_grab_readback"),
+            size: u64::from(GRAB_STATE_BYTES),
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut grab_encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("construction_test_grab_copy"),
+        });
+        world.copy_grab_state(&mut grab_encoder, &grab_readback);
+        queue.submit([grab_encoder.finish()]);
+        assert!(
+            decode_grab_state(&read_buffer(&device, &grab_readback))
+                .unwrap()
+                .active
+        );
+
+        let mut intents = BoundedConstructionIntents::new(CONSTRUCTION_INTENT_CAPACITY).unwrap();
+        for intent in [
+            ConstructionIntentV1::EraseAt {
+                sequence: 2,
+                world_target: Vec2::new(0.0, 0.65),
+            },
+            ConstructionIntentV1::PlaceCircle {
+                sequence: 3,
+                world_target: Vec2::new(0.0, 0.65),
+            },
+            ConstructionIntentV1::PlaceRectangle {
+                sequence: 4,
+                world_target: Vec2::new(-0.6, 1.0),
+            },
+            ConstructionIntentV1::PlaceCircle {
+                sequence: 5,
+                world_target: Vec2::new(-0.6, 1.0),
+            },
+            ConstructionIntentV1::EraseAt {
+                sequence: 6,
+                world_target: Vec2::new(20.0, 20.0),
+            },
+        ] {
+            intents.push(intent).unwrap();
+        }
+        encode(
+            &device,
+            &queue,
+            &world,
+            &grab_batch(Vec::new()),
+            &intents.artifact(),
+        );
+        let state = read_construction(&device, &queue, &world);
+        assert_eq!(state.capacity_bodies, 64);
+        assert_eq!(state.live_bodies, 3);
+        assert_eq!(state.attempted_intents, 5);
+        assert_eq!(state.succeeded_intents, 3);
+        assert_eq!(state.placed_circles, 1);
+        assert_eq!(state.placed_rectangles, 1);
+        assert_eq!(state.erased_bodies, 1);
+        assert_eq!(state.deep_overlap_failures, 1);
+        assert_eq!(state.erase_miss_failures, 1);
+        assert_eq!(state.grab_invalidations, 1);
+
+        let lane_bytes = u64::from(world.body_count) * size_of::<[u32; 4]>() as u64;
+        let validation = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("construction_test_body_readback"),
+            size: lane_bytes * 3,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("construction_test_body_copy"),
+        });
+        world.copy_full_validation_state(&mut encoder, &validation);
+        queue.submit([encoder.finish()]);
+        let bytes = read_buffer(&device, &validation);
+        let metadata_offset = (lane_bytes * 2) as usize;
+        let metadata = bytemuck::pod_read_unaligned::<[u32; 4]>(
+            &bytes[metadata_offset..metadata_offset + size_of::<[u32; 4]>()],
+        );
+        assert_eq!(metadata[0], 2);
+        assert_ne!(metadata[1] & 1, 0);
+        assert_ne!(
+            metadata[1] & physbox_contracts::ANALYTIC_SHAPE_FLAG_CIRCLE,
+            0
+        );
+    }
+
+    #[test]
+    fn gpu_construction_capacity_and_generation_failures_are_atomic() {
+        let instance = crate::create_instance();
+        let adapter = pollster::block_on(crate::gpu_context::request_adapter(&instance, None))
+            .expect("test GPU adapter");
+        let (device, queue) =
+            pollster::block_on(crate::gpu_context::request_device(&adapter)).unwrap();
+        let scenario = crate::p5_2_generated_floor_scenario(2).unwrap();
+        let world =
+            GpuBodyWorld::new_generated(&device, wgpu::TextureFormat::Rgba8Unorm, &scenario)
+                .unwrap();
+        let mut fill = BoundedConstructionIntents::new(CONSTRUCTION_INTENT_CAPACITY).unwrap();
+        for index in 0..63_u32 {
+            fill.push(ConstructionIntentV1::PlaceCircle {
+                sequence: index + 1,
+                world_target: Vec2::new(-20.0 + index as f32 * 0.3, 10.0),
+            })
+            .unwrap();
+        }
+        encode(
+            &device,
+            &queue,
+            &world,
+            &grab_batch(Vec::new()),
+            &fill.artifact(),
+        );
+        let full = read_construction(&device, &queue, &world);
+        assert_eq!(full.live_bodies, 64);
+        assert_eq!(full.succeeded_intents, 62);
+        assert_eq!(full.capacity_failures, 1);
+
+        let exhausted =
+            GpuBodyWorld::new_generated(&device, wgpu::TextureFormat::Rgba8Unorm, &scenario)
+                .unwrap();
+        exhausted.overwrite_body_generation_for_test(&queue, 0, u32::MAX);
+        let mut erase = BoundedConstructionIntents::new(CONSTRUCTION_INTENT_CAPACITY).unwrap();
+        erase
+            .push(ConstructionIntentV1::EraseAt {
+                sequence: 1,
+                world_target: Vec2::new(0.0, 0.65),
+            })
+            .unwrap();
+        encode(
+            &device,
+            &queue,
+            &exhausted,
+            &grab_batch(Vec::new()),
+            &erase.artifact(),
+        );
+        let generation = read_construction(&device, &queue, &exhausted);
+        assert_eq!(generation.live_bodies, 2);
+        assert_eq!(generation.succeeded_intents, 0);
+        assert_eq!(generation.generation_failures, 1);
+    }
+
+    #[test]
+    fn interactive_capacity_tiers_are_bounded_and_leave_current_scene_headroom() {
+        assert_eq!(interactive_body_capacity(2).unwrap(), 64);
+        assert_eq!(interactive_body_capacity(5).unwrap(), 64);
+        assert_eq!(interactive_body_capacity(64).unwrap(), 128);
+        assert_eq!(interactive_body_capacity(103).unwrap(), 128);
+        assert!(interactive_body_capacity(u32::MAX).is_err());
     }
 }

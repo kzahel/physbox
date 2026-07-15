@@ -240,7 +240,7 @@ crossover remain unaccepted S5.4 decisions.
 
 Dependency: S5.2 generational pair invalidation passes.
 
-- [ ] Implement versioned bounded place-circle, place-rectangle, and erase-at
+- [x] Implement versioned bounded place-circle, place-rectangle, and erase-at
   intents using existing material defaults and one declared size per shape.
 - [ ] Allocate and retire body slots on the GPU, increment generations, and
   invalidate stale pair, manifold, cache, grab, command, and render identity.
@@ -264,6 +264,26 @@ and a deployed human interaction checklist.
 Commit boundaries: command and GPU lifecycle contract; toolbar/tool wiring;
 cross-host evidence and S4.4/S4.5 status. Construction feel remains provisional
 until the first mandatory human checkpoint after S5.4 evidence is ready.
+
+Construction-contract checkpoint, 2026-07-15: contract version 1 carries only
+an ordered sequence, operation kind, and finite world target; it never carries
+a CPU-selected body identity. The GPU ABI uses one 32-byte intent record
+(`kind/sequence/padding`, `target/padding`), a 64-byte parameter record, and one
+80-byte cumulative state record. Intent batches are bounded at 64 and reject
+partial overflow. Results distinguish placed, erased, full capacity, deep
+overlap, erase miss, and exhausted generation.
+
+The first lifecycle pass reserves interactive body slots at the next power of
+two above the authored population with a current minimum of 64. It runs before
+grab/command processing and contact generation, chooses the lowest free slot,
+increments generations on retirement, clears the matching active grab, and
+never maps occupancy to the CPU while advancing. Empty slots retain a valid
+nonzero generation and no live/shape flags. The two-body floor consequently
+reserves 64 body slots and 2,048 contact-point slots: its declared graph changes
+from 97 dispatches/19,640 bytes to 100 dispatches/1,190,404 bytes. This is an
+explicit small-scene headroom cost, not a scale or performance improvement;
+S5.3 evidence must still prove stale pair/cache invalidation and qualify this
+capacity policy before the second lifecycle checkbox is complete.
 
 ### S5.4 — awake settling and tuning bakeoff
 

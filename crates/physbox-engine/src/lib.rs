@@ -10,6 +10,7 @@ mod collision_candidates;
 mod collision_narrowphase;
 mod collision_persistence;
 mod config;
+mod construction;
 mod frame;
 mod generated_contacts;
 mod gpu_context;
@@ -60,6 +61,11 @@ pub use collision_persistence::{
     GpuPersistenceOutput, GpuPersistenceRunner, GpuPersistenceStepOutput,
 };
 pub use config::EngineConfig;
+pub use construction::{
+    BoundedConstructionIntents, CONSTRUCTION_CIRCLE_RADIUS, CONSTRUCTION_FRICTION,
+    CONSTRUCTION_INTENT_BYTES, CONSTRUCTION_INTENT_CAPACITY, CONSTRUCTION_RECTANGLE_HALF_EXTENTS,
+    CONSTRUCTION_RESTITUTION, CONSTRUCTION_STATE_BYTES, construction_state_from_bytes,
+};
 pub use frame::{
     FrameInput, InputEvent, PointerButton, PointerEvent, PointerPhase, StepRequest, WheelEvent,
 };

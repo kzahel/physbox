@@ -1,4 +1,4 @@
-use physbox_contracts::{FiniteF32, TraceStageV1};
+use physbox_contracts::{FiniteF32, TraceStageV1, Vec2};
 use physbox_engine::{
     EngineConfig, FrameInput, GpuSolverCandidate, OffscreenRenderer, authored_chain_scenario,
     authored_one_contact_scenario, benchmark_gpu_soft_step_case, p5_2_contact_policy_candidate,
@@ -252,8 +252,8 @@ fn product_generated_floor_landing_stays_bounded_and_preserves_invariants() {
     let report = renderer.render(FrameInput::exact(120));
     assert!(report.scenario.complete);
     assert!(report.scenario.passed);
-    assert_eq!(report.scene_contract.contact_point_count, 2);
-    assert_eq!(report.scene_contract.solver_dispatches_per_step, 97);
+    assert_eq!(report.scene_contract.contact_point_count, 2_048);
+    assert_eq!(report.scene_contract.solver_dispatches_per_step, 100);
     assert!(!report.scene_contract.capacity_overflowed);
     let actual = renderer.read_capture_state().unwrap();
     assert!(actual.into_iter().all(f32::is_finite));
@@ -279,9 +279,9 @@ fn product_generated_floor_landing_stays_bounded_and_preserves_invariants() {
         actual[6]
     );
     let pass = renderer.read_fixed_floor_pass_evidence().unwrap();
-    assert_eq!(pass.contacts.len(), 2);
-    assert_eq!(pass.contributions.len(), 4);
-    for contact in &pass.contacts {
+    assert_eq!(pass.contacts.len(), 2_048);
+    assert_eq!(pass.contributions.len(), 4_096);
+    for contact in pass.contacts.iter().take(2) {
         projected_impulses(
             FiniteF32::new(contact.normal_impulse).unwrap(),
             FiniteF32::new(contact.tangent_impulse).unwrap(),
@@ -290,12 +290,22 @@ fn product_generated_floor_landing_stays_bounded_and_preserves_invariants() {
         .unwrap();
         assert!(contact.total_normal_impulse >= 0.0);
     }
-    for pair in pass.contributions.chunks_exact(2) {
+    for pair in pass.contributions[..4].chunks_exact(2) {
         assert_eq!(pair[0].point_index, pair[1].point_index);
         assert_eq!(pair[0].side, 0);
         assert_eq!(pair[1].side, 1);
         equal_and_opposite(pair[0].impulse, pair[1].impulse, 1.0e-7).unwrap();
     }
+    assert!(pass.contacts[2..].iter().all(|contact| {
+        contact.normal_impulse == 0.0
+            && contact.tangent_impulse == 0.0
+            && contact.total_normal_impulse == 0.0
+    }));
+    assert!(
+        pass.contributions[4..]
+            .iter()
+            .all(|contribution| contribution.impulse == Vec2::ZERO)
+    );
 }
 
 fn chain_velocity_residual(bodies: &[physbox_contracts::BodyStateV1]) -> f32 {

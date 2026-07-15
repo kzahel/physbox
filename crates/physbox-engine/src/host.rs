@@ -10,6 +10,7 @@ use crate::{
     FrameInput, InputEvent, PointerButton, PointerPhase, StepRequest,
     body_world::{BodyCommandStepRange, BodyStepPlan, GpuBodyWorld},
     clock::{FIXED_STEP_HZ, FIXED_STEP_SECONDS, InteractiveClockInput, SimulationClock},
+    construction::empty_construction_intent_batch,
     gpu_solver::{GpuSolverCandidate, GpuSolverLab, GpuSolverMode},
     grab::{BoundedGrabIntents, GRAB_INTENT_CAPACITY, empty_grab_intent_batch},
     input::{SharedInputState, WorldPointerEvent},
@@ -39,6 +40,8 @@ struct PreparedBodyCommands {
     ranges: Vec<BodyCommandStepRange>,
     grab_batch: GrabIntentBatchV1,
     grab_ranges: Vec<BodyCommandStepRange>,
+    construction_batch: physbox_contracts::ConstructionIntentBatchV1,
+    construction_ranges: Vec<BodyCommandStepRange>,
 }
 
 struct BodyInteractionState {
@@ -131,6 +134,11 @@ impl BodyInteractionState {
                 ranges,
                 grab_batch: empty_grab_intent_batch(),
                 grab_ranges: vec![BodyCommandStepRange { start: 0, count: 0 }; steps as usize],
+                construction_batch: empty_construction_intent_batch(),
+                construction_ranges: vec![
+                    BodyCommandStepRange { start: 0, count: 0 };
+                    steps as usize
+                ],
             };
         }
         if self.pending_body.overflowed() || self.pending_grab.overflowed() {
@@ -143,6 +151,11 @@ impl BodyInteractionState {
                 ranges,
                 grab_batch: empty_grab_intent_batch(),
                 grab_ranges: vec![BodyCommandStepRange { start: 0, count: 0 }; steps as usize],
+                construction_batch: empty_construction_intent_batch(),
+                construction_ranges: vec![
+                    BodyCommandStepRange { start: 0, count: 0 };
+                    steps as usize
+                ],
             };
         }
         let pending_body = self.pending_body.artifact().commands;
@@ -195,6 +208,11 @@ impl BodyInteractionState {
                 ranges: vec![BodyCommandStepRange { start: 0, count: 0 }; steps as usize],
                 grab_batch: empty_grab_intent_batch(),
                 grab_ranges: vec![BodyCommandStepRange { start: 0, count: 0 }; steps as usize],
+                construction_batch: empty_construction_intent_batch(),
+                construction_ranges: vec![
+                    BodyCommandStepRange { start: 0, count: 0 };
+                    steps as usize
+                ],
             };
         }
         let batch = body_builder.artifact();
@@ -224,6 +242,8 @@ impl BodyInteractionState {
             ranges,
             grab_batch,
             grab_ranges,
+            construction_batch: empty_construction_intent_batch(),
+            construction_ranges: vec![BodyCommandStepRange { start: 0, count: 0 }; steps as usize],
         }
     }
 
@@ -651,6 +671,8 @@ impl EngineHost {
                         ranges: &commands.ranges,
                         grab_batch: &commands.grab_batch,
                         grab_ranges: &commands.grab_ranges,
+                        construction_batch: &commands.construction_batch,
+                        construction_ranges: &commands.construction_ranges,
                     },
                 )
                 .expect("engine-owned body command plan is valid");
@@ -712,7 +734,7 @@ impl EngineHost {
             state_owner: "gpu",
             body_count: self.body_world.as_ref().map_or_else(
                 || if self.solver_lab.is_some() { 64 } else { 1 },
-                GpuBodyWorld::body_count,
+                GpuBodyWorld::initial_body_count,
             ),
             contact_point_count: self
                 .body_world
@@ -948,6 +970,19 @@ impl EngineHost {
             .as_ref()
             .ok_or_else(|| "grab state is available only for the GPU body world".to_owned())?;
         world.copy_grab_state(encoder, destination);
+        Ok(())
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn copy_construction_state(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        destination: &wgpu::Buffer,
+    ) -> Result<(), String> {
+        let world = self.body_world.as_ref().ok_or_else(|| {
+            "construction state is available only for the GPU body world".to_owned()
+        })?;
+        world.copy_construction_state(encoder, destination);
         Ok(())
     }
 

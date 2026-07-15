@@ -675,6 +675,19 @@ failures or the 4/8-body awake stack failures. Generational place/erase work is
 therefore unblocked, while final solver/contact quality remains a mandatory
 S5.4 human decision and P5.3 remains downstream.
 
+Construction lifecycle checkpoint, 2026-07-15: the shared contract now sends
+bounded body-free place-circle, place-rectangle, and erase-at intents to a
+separate GPU lifecycle pass. Device-owned occupancy selects the lowest free
+slot; retirement increments its generation and clears pose, motion, material,
+shape flags, and a matching active grab. Placement publishes explicit full and
+deep-overlap failures, while erase publishes miss and generation-exhaustion
+failures. No body identity or occupancy result is required on the CPU to
+advance the next frame. Interactive worlds reserve the next power-of-two slot
+tier above their authored population, currently at least 64, and all downstream
+render, selection, collision, persistence, and solver work sees that declared
+capacity. The small-world memory and scan cost is intentionally visible and
+remains subject to the S5.3 capacity/evidence gate.
+
 Circle/circle and circle/rectangle contact are analytic. Rectangle/rectangle
 uses SAT to select a reference and incident edge, clips the incident segment,
 and produces stable vertex/edge feature pairs. Test feature stability around

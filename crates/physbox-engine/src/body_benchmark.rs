@@ -354,7 +354,7 @@ impl GpuBodyBenchmarkSession {
     }
 
     pub fn begin_final_validation(&mut self) -> PendingBodyValidation {
-        let byte_count = u64::from(self.world.body_count()) * 48;
+        let byte_count = u64::from(self.world.initial_body_count()) * 48;
         let readback = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("physbox5_body_benchmark_validation"),
             size: byte_count,

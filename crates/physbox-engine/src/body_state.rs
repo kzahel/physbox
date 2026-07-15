@@ -458,7 +458,12 @@ fn pack_bodies(capacity: u32, bodies: &[BodyStateV1]) -> Result<PackedBodies, St
     let mut poses = vec![BodyPoseRaw::zeroed(); capacity as usize];
     let mut motions = vec![BodyMotionRaw::zeroed(); capacity as usize];
     let mut properties = vec![BodyPropertiesRaw::zeroed(); capacity as usize];
-    let mut metadata = vec![BodyMetadataRaw::zeroed(); capacity as usize];
+    let mut metadata = vec![
+        BodyMetadataRaw {
+            generation_flags_material: [1, 0, 0, 0],
+        };
+        capacity as usize
+    ];
     for body in bodies {
         body.validate().map_err(|error| error.to_string())?;
         slots.reserve(body.id)?;
@@ -520,7 +525,7 @@ fn layout_artifact(capacity: u32, attempted: u64, live: u32) -> Result<BodyLayou
         lane("metadata", BodyLaneAccessV1::ReadWrite),
         lane("motion", BodyLaneAccessV1::ReadWrite),
         lane("pose", BodyLaneAccessV1::ReadWrite),
-        lane("properties", BodyLaneAccessV1::ReadOnly),
+        lane("properties", BodyLaneAccessV1::ReadWrite),
     ];
     let layout = BodyLayoutV1 {
         schema_version: SCHEMA_VERSION,

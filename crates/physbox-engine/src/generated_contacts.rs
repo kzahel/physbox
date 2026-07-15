@@ -179,8 +179,7 @@ impl GpuGeneratedContactGraph {
         {
             return Err("generated product contacts currently require dense body slots".to_owned());
         }
-        let body_count = u32::try_from(scenario.bodies.len())
-            .map_err(|_| "generated contact body count exceeds u32".to_owned())?;
+        let body_count = storage.layout().capacity_elements;
         let pair_count = body_count
             .checked_mul(body_count.saturating_sub(1))
             .map(|value| value / 2)

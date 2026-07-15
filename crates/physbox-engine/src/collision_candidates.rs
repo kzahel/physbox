@@ -306,11 +306,7 @@ impl CandidateCase {
         if scenario.bodies.len() < 2 {
             return Err("GPU candidate stage requires at least two bodies".to_owned());
         }
-        let slot_capacity = scenario
-            .bodies
-            .last()
-            .and_then(|body| body.id.slot.checked_add(1))
-            .ok_or_else(|| "GPU candidate body slot capacity overflowed".to_owned())?;
+        let slot_capacity = storage.layout().capacity_elements;
         let pair_count_u64 = u64::from(slot_capacity)
             .checked_mul(u64::from(slot_capacity.saturating_sub(1)))
             .map(|value| value / 2)

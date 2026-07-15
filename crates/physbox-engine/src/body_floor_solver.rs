@@ -576,8 +576,7 @@ impl GpuFixedFloorSolver {
         topology: GpuGatherTopology,
         permute_edge_build: bool,
     ) -> Result<Self, String> {
-        let body_count = u32::try_from(scenario.bodies.len())
-            .map_err(|_| "contact solver body count exceeds u32".to_owned())?;
+        let body_count = storage.layout().capacity_elements;
         let topology_layout = TopologyLayout::new(topology, body_count, point_count)?;
         let (parameters, operations) = operations(
             scenario,
@@ -586,18 +585,15 @@ impl GpuFixedFloorSolver {
             topology_layout,
             permute_edge_build,
         );
-        let initial_motion = scenario
-            .bodies
-            .iter()
-            .map(|body| {
-                [
-                    body.linear_velocity.x,
-                    body.linear_velocity.y,
-                    body.angular_velocity.get(),
-                    0.0,
-                ]
-            })
-            .collect::<Vec<_>>();
+        let mut initial_motion = vec![[0.0; 4]; body_count as usize];
+        for body in &scenario.bodies {
+            initial_motion[body.id.slot as usize] = [
+                body.linear_velocity.x,
+                body.linear_velocity.y,
+                body.angular_velocity.get(),
+                0.0,
+            ];
+        }
         let usage = wgpu::BufferUsages::STORAGE
             | wgpu::BufferUsages::COPY_SRC
             | wgpu::BufferUsages::COPY_DST;

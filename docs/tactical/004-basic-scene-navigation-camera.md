@@ -299,7 +299,7 @@ cross-host topology gates. S4.4 implementation may proceed; its actual
 erase/reuse lifecycle remains part of this slice rather than inferred from the
 preparation evidence.
 
-- [ ] Add bounded versioned place-circle, place-rectangle, and erase-at commands
+- [x] Add bounded versioned place-circle, place-rectangle, and erase-at commands
   with finite values, authored material defaults, deterministic ordering, and
   atomic capacity failure.
 - [ ] Allocate and retire body slots on the GPU, increment generations, clear
