@@ -290,15 +290,22 @@ lane.
 No material hot/cold comparator is exposed by these curves. An 8-byte
 identity/8-byte material split preserves the same total bytes while adding a
 binding before general contacts establish their access pattern. The grouped
-SoA, the 48-byte bounded command record, and the full-capacity hold scan remain
-proposals for the S2.6 human review, not frozen production ABI.
+SoA and 48-byte bounded command record therefore entered S2.6 as freeze
+proposals, while the full-capacity hold scan remained an explicit
+reconsideration target. The decision below resolves that checkpoint without
+freezing the hold architecture.
 
-The [S2.6 review package](../../evidence/p5.1-s2.6/README.md) now recommends a
-limited freeze of the stable 64-byte lane surface, generational handle,
-existing 48-byte command record, and explicit capacity-failure semantics. It
-keeps scratch meaning, numeric capacities, hold-dispatch architecture, future
-shape flags, and all P5.2+ buffers outside the proposal. P5.1 remains active
-and P5.2 remains unauthorized until the required human decision is recorded.
+Human review accepted the limited freeze proposed by the
+[S2.6 decision package](../../evidence/p5.1-s2.6/README.md): the stable 64-byte
+four-lane `BodyCoreV1`, generational handle, existing 48-byte command record,
+and explicit capacity-failure semantics are the P5.2 baseline. Scratch meaning,
+numeric capacities, hold-dispatch architecture, future shape flags, and all
+P5.2+ buffers remain outside the freeze. `BodyCoreV1` is the dynamic core, not
+a universal body-plus-shape-plus-joint allocation: analytic circles and
+rectangles use the existing shape payload, while future polygons, compound
+shapes, and joints require separate versioned geometry/constraint buffers
+rather than silent field reinterpretation. P5.1 is complete and P5.2 is active
+under the [S3 tactical](../tactical/003-small-world-collision-persistence.md).
 
 ## Later fluid-coupling contract
 

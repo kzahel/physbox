@@ -1,7 +1,7 @@
 # Tactical workstreams
 
-Status: S1 and S2.1–S2.5 complete; S2.6 body-layout and command-ABI review is
-the active human checkpoint.
+Status: S1 and S2 complete; S3 small-world collision and contact persistence is
+active at S3.1.
 
 Tactical filenames use a three-digit zero-padded prefix ordered by their first
 Git creation timestamp. This repository starts at `001`. Never renumber an
@@ -13,7 +13,8 @@ This README remains the unnumbered index.
 | ID | Workstream | Document | Status |
 | --- | --- | --- | --- |
 | S1 | Oracle foundation and rigid solver laboratory | [001-rigid-solver-laboratory.md](001-rigid-solver-laboratory.md) | complete 2026-07-15 |
-| S2 | GPU body state and fixed-floor contact | [002-gpu-body-state.md](002-gpu-body-state.md) | active; S2.5 complete, S2.6 review 2026-07-15 |
+| S2 | GPU body state and fixed-floor contact | [002-gpu-body-state.md](002-gpu-body-state.md) | complete 2026-07-15; limited body core accepted |
+| S3 | Small-world collision and contact persistence | [003-small-world-collision-persistence.md](003-small-world-collision-persistence.md) | active at S3.1, 2026-07-15 |
 
 ## Conventions
 

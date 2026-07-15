@@ -1,0 +1,306 @@
+# S3: Small-world collision and contact persistence
+
+Status: active at S3.1, 2026-07-15.
+Direction: [one GPU-resident 2D physics world](../topics/physbox5-unified-gpu-physics.md).
+Bring-up stage: [P5.2](../bringup-plan.md#p52--small-world-collision-and-persistence-active).
+Predecessor: [accepted P5.1 body core](../../evidence/p5.1-s2.6/README.md).
+
+## Goal
+
+Replace the temporary precomputed floor manifold with the first product GPU
+collision and outer-step contact-persistence path. Add circles beside oriented
+rectangles, generate complete all-pairs candidates for deliberately small
+worlds, produce stable manifolds checked directly against public Box2D
+collision functions, transfer cached impulses by sorted persistent keys, and
+feed the accepted Jacobi/gather solver without simulation-dependent readback.
+
+Finish with correctness, behavior, capacity, cross-host, and scoped performance
+evidence for human review before the contact representation is frozen or P5.3
+begins.
+
+## Accepted foundations
+
+S3 executes these decisions and may not silently revise them:
+
+- `BodyCoreV1` is four independent 16-byte lanes, 64 bytes per body slot, with
+  a generational `BodyId { slot, generation }`. It is the stable dynamic core,
+  not a universal body-plus-shape-plus-joint allocation.
+- The existing 48-byte command record and atomic diagnosed capacity-failure
+  semantics are accepted. Numeric capacities, scratch meanings, and the
+  full-capacity grab-hold scan remain unfrozen.
+- Contact-centric Jacobi with equal-and-opposite records and GPU per-body
+  gather remains the selected solver family and accumulation architecture,
+  with the accepted S1.6 fixed-step and solver parameters.
+- Interactive frames use the no-catch-up slow clock; validation and throughput
+  measurements use explicit exact stepping.
+- Invariants and the scalar specification own pass correctness. Clean pinned,
+  process-isolated Box2D v3 owns rigid manifold and behavior acceptance.
+- Every product stage remains portable WebGPU and GPU resident. No CPU product
+  collision path, fallback, required native feature, or simulation-dependent
+  readback is allowed.
+
+## Scope and exclusions
+
+S3 includes one centered analytic shape per body: circles and oriented
+rectangles. It includes body AABBs, complete all-pairs candidate generation,
+circle/circle, circle/rectangle, and rectangle/rectangle narrowphase, stable
+feature identifiers, sorted outer-step contact persistence, warm-start
+transfer, friction, restitution, speculative separation, and the accepted
+solver operating on generated contacts.
+
+All-pairs is intentionally a small-world correctness baseline. It remains the
+pair-completeness oracle after S3 but is not presented as the scalable product
+broadphase.
+
+S3 excludes scalable SAP/grid/LBVH selection, capsules, triangles, general
+polygon or compound-shape storage, per-shape materials, joints, sleeping,
+construction tools, save/load, liquid, CCD, terrain, and a CPU product backend.
+Future general shapes use separate versioned shape/geometry buffers rather
+than silently reinterpreting `BodyCoreV1`. Future joints use separate
+constraint records referencing generational body handles.
+
+## Ownership and shared execution
+
+The engine owns analytic shape interpretation, AABB generation, pair and
+manifold pipelines, persistence, solver integration, capacities, rendering,
+and scenario outcomes. `physbox-contracts` owns versioned neutral evidence
+records. `physbox-lab` owns scalar/invariant comparison, oracle orchestration,
+minimization, and synchronized playback. `physbox-launch` owns scenario names
+and arguments.
+
+Native, browser, headless, and Android adapters transport lifecycle, raw input,
+arguments, and artifacts only. Box2D remains an isolated test process consuming
+the engine-owned neutral projection. No platform or oracle authors a second
+fixture or numerical expectation.
+
+The product dataflow is one GPU graph:
+
+```text
+BodyCoreV1
+  -> body AABBs
+  -> complete canonical all-pairs candidates
+  -> analytic/SAT/clipped manifolds with stable features
+  -> sorted current keys + previous cache merge
+  -> prepared constraints and warm impulses
+  -> accepted Jacobi contributions and body gather
+  -> updated BodyCoreV1 pose/motion
+  -> direct render
+```
+
+Counts, overflow flags, indirect work, contact caches, and solver state stay on
+the GPU. Bounded validation may map complete results only after its final step.
+
+## Stop conditions
+
+Stop early for human direction if progress requires changing `BodyCoreV1`, the
+solver family or accumulation architecture, accepted physical defaults,
+numerical tolerances, oracle authority or pin, the no-catch-up clock, platform
+portability, or equal-and-opposite current-state response. Also stop for a
+required CPU fallback, native-only path, simulation-dependent readback, silent
+pair/manifold/contact loss, or a genuine Box2D-versus-invariant conflict.
+
+Stop if evidence shows that choosing the feature-ID convention, contact-key
+shape, cache organization, manifold point grouping, or capacity architecture
+requires a material difficult-to-reverse fork not resolved by the recorded
+comparisons. Do not add general polygons, joints, a scalable broadphase, or
+liquid to answer an S3 failure.
+
+Ordinary shader organization, reversible buffers, exact capacity sizing,
+fixture additions inside scope, test failures, minimization work, and an
+unavailable physical device do not require interruption. Preserve unavailable
+hardware as a named gap.
+
+## Delivery slices
+
+### S3.1 — analytic shape and persistence contracts
+
+- [ ] Define the versioned circle encoding within the accepted analytic shape
+  payload and reserve a reviewed shape flag without changing body lane strides.
+- [ ] Define canonical body AABB, candidate pair, manifold, contact point,
+  geometric feature, persistent key, cache value, work, capacity, trace, and
+  failure records with complete byte accounting.
+- [ ] Add shared circle/rectangle scenario sources and neutral Box2D projection;
+  reject unsupported shapes or actions instead of approximating them.
+- [ ] Add structural and negative tests for canonical body ordering, generation
+  participation, finite values, feature ordering, schema/hash stability, stale
+  identity, and inconsistent capacity claims.
+
+Likely boundaries: `physbox-contracts` owns serializable records;
+`physbox-engine` owns analytic body encoding and GPU layouts; `physbox-lab`
+owns comparison inputs. No general shape table is introduced in this slice.
+
+Artifacts: schema round trips, byte tables, canonical hashes, neutral circle
+and mixed-shape projections, and permanent invalid/stale fixtures.
+
+Gate: `BodyCoreV1` and existing command bytes are unchanged; every new record
+has a version, deterministic ordering, source/projection hash, explicit
+capacity, and negative validation; every scenario has one shared Rust source.
+
+Commit boundary: contracts, scenario sources, negative tests, byte evidence,
+and the S3.1 tactical status land together without GPU collision behavior.
+
+### S3.2 — complete GPU all-pairs candidates
+
+- [ ] Generate circle and oriented-rectangle world AABBs from current GPU pose
+  and analytic shape data.
+- [ ] Enumerate every unordered body pair, reject fixed/fixed and non-overlap
+  cases, and emit sorted canonical candidates without CPU count readback.
+- [ ] Compare complete GPU candidate sets against brute-force scalar AABB
+  enumeration across deterministic randomized and adversarial small worlds.
+- [ ] Diagnose attempted, emitted, rejected, high-water, and overflow counts;
+  overflow invalidates the complete step and never truncates a pair prefix.
+
+Likely boundary: a focused engine collision module and portable WGSL passes
+consume `BodyCoreV1`; the lab reuses their versioned outputs after bounded
+completion rather than implementing an alternate product broadphase.
+
+Artifacts: exact candidate-set diffs, randomized seeds, minimized missing-pair
+reproducers, dispatch/work records, and capacity-negative artifacts.
+
+Gate: zero false negatives and canonical duplicates across the accepted
+corpus, exact brute-force agreement where declared, finite AABBs, explicit
+quadratic work accounting, zero accepted overflow, and no simulation-dependent
+readback.
+
+Commit boundary: AABB/candidate pipelines, brute-force comparison, failure
+minimization, capacity evidence, and tactical checkboxes land together.
+
+### S3.3 — Box2D-checked GPU narrowphase
+
+- [ ] Implement circle/circle and circle/rectangle analytic manifolds and
+  oriented rectangle/rectangle SAT reference selection plus incident-edge
+  clipping, with no more than two canonical points.
+- [ ] Assign stable geometric feature identifiers and test nearly tied axes,
+  swapped body order, translation/rotation equivariance, and contact creation
+  and removal boundaries.
+- [ ] Compare direct results with public `b2CollideCircles`,
+  `b2CollidePolygonAndCircle`, and `b2CollidePolygons` from the clean pinned
+  Box2D authority.
+- [ ] Randomize and deterministically minimize topology, normal, point,
+  separation, and feature disagreements into permanent reproducers.
+
+Likely boundary: engine WGSL produces the product manifold contract; the
+existing process-isolated Box2D adapter exposes only public collision results;
+the shared lab owns correspondence, tolerances, and diffs.
+
+Artifacts: direct authority request/results, invariant matrix, randomized
+corpus, first-divergence traces, minimized reproducers, and compact manifold
+playback.
+
+Gate: identical accepted topology and feature convention plus bounded geometry
+against Box2D, all independent metamorphic invariants pass, every disagreement
+is explained or preserved, and no tolerance or source pin changes silently.
+
+Commit boundary: all three narrowphase paths, direct authority comparison,
+minimized failures, evidence, and governing status land together.
+
+### S3.4 — sorted persistence and warm-start transfer
+
+- [ ] Form persistent keys from canonical generational body handles and stable
+  features, radix-sort current contacts, and merge them with the previous GPU
+  cache entirely on device.
+- [ ] Transfer accumulated normal and tangent impulses to exact matches; start
+  new points cold and expire missing or generation-stale points deterministically.
+- [ ] Preserve manifold point grouping and contact ordering through pair churn,
+  body reset/reuse, feature transitions, and deliberately permuted input order.
+- [ ] Emit cache high-water, matched/cold/expired counts, bytes per point, sort
+  and merge work, overflow, and first-divergence traces.
+
+Likely boundary: persistence uses shared scan/radix infrastructure and feeds
+the existing prepared-contact contract. The CPU neither owns the cache nor
+reads its count to schedule the next interactive step.
+
+Artifacts: multi-step cache traces, deterministic replay hashes, churn and
+stale-generation fixtures, memory/work tables, and minimized persistence
+failures.
+
+Gate: exact key stability and deterministic replay, correct warm/cold/expired
+classification, no impulse inheritance across reused generations, zero
+accepted overflow, no per-step mapping, and complete scalar/pass comparison.
+
+Commit boundary: GPU sort/merge/cache mechanics, replay and negative tests,
+capacity/performance evidence, and tactical status land together.
+
+### S3.5 — generated-contact solve and cross-host evidence
+
+- [ ] Replace the temporary precomputed floor manifold in the product path
+  with generated and persisted contacts feeding the accepted Jacobi/gather
+  solver.
+- [ ] Exercise circle/rectangle falls, bilateral impacts, off-center rotation,
+  flat/corner/edge landings, small stacks, friction slides, restitution, pair
+  churn, reset, and grab/release through exact shared scenarios.
+- [ ] Compare isolated passes with the scalar specification and bounded worlds
+  with deterministic and optimized Box2D lanes at equivalent quality.
+- [ ] Capture native, browser, headless, host-GPU `jstorrent-tablet`, and
+  available physical Android outcomes with complete provenance and synchronized
+  failure playback.
+- [ ] Measure collision-only and end-to-end scopes at 32, 256, and applicable
+  1K small-world bodies, reporting candidate amplification, manifolds/points,
+  cache churn, solver work, dispatches, memory, timing, and every capacity.
+
+Artifacts: fresh atomic `evidence/p5.2-s3.5` package, authority/GPU traces,
+synchronized playback, cross-host matrix, scoped CPU/GPU timing, capacity
+matrix, randomized corpus, and minimized permanent failures.
+
+Gate: finite state, stable contacts, projected friction/normal impulses,
+bounded penetration and energy, accepted scalar and Box2D bands, complete
+replay, zero overflow, identical structural host outcomes, and no readback
+dependency. Performance rows are invalid when any correctness or capacity gate
+fails and are not presented as the P5.4 crossover claim.
+
+Commit boundary: product collision/persistence integration and its complete
+correctness-qualified evidence land together; no P5.3 broadphase candidate is
+bundled into the slice.
+
+### S3.6 — contact representation and P5.3 readiness review
+
+- [ ] Publish a compact report covering analytic shape encoding, manifold and
+  feature conventions, persistent key/cache layout, bytes and capacities,
+  behavior/authority results, cross-host status, scoped performance, minimized
+  failures, rejected alternatives, and reconsideration triggers.
+- [ ] State whether evidence supports freezing the S3 contact surface and
+  advancing to the P5.3 broadphase bakeoff without selecting that outcome
+  silently.
+- [ ] Stop for human review before freezing contact ABI, beginning SAP/grid/LBVH
+  work, adding polygons/joints, or widening accepted numerical bands.
+
+Gate: a reviewer can assess collision correctness, persistence stability,
+memory/dispatch cost, downstream broadphase compatibility, and known failures
+without reading the full implementation or raw logs.
+
+Commit boundary: the S3.6 review package and manual-checkpoint status land
+alone. A human decision is a later documentation commit.
+
+## Validation baseline
+
+Every shared slice runs the repository gates from `AGENTS.md`:
+
+```sh
+cargo fmt --all -- --check
+cargo test --workspace
+cargo clippy --workspace --all-targets -- -D warnings
+cargo check --target wasm32-unknown-unknown -p physbox-web
+cargo check --target aarch64-linux-android -p physbox-android
+cargo run -p physbox-headless -- --output /tmp/physbox5-smoke.png --report /tmp/physbox5-smoke.json --scenario bootstrap
+npm run check:boundaries
+npm run test:web
+```
+
+Runtime, shader, rendering, scenario, launch, or pixel changes also build the
+Android APK, run the maintained host-GPU AVD lane, attempt the physical-device
+lane when available, and visually inspect fresh artifacts. Narrowphase slices
+add direct clean-pinned Box2D public-collision checks. Persistence and product
+integration slices add exact scalar/pass traces, randomized replay and
+minimization, clean oracle provenance, and the scoped performance/capacity
+matrix declared above.
+
+## Completion definition
+
+S3 reaches `manual checkpoint` when S3.1 through S3.5 pass, the S3.6 review
+package is committed, all known failures are minimized and linked, and no
+contact-layout or quality decision is hidden in implementation history.
+Completion requires later human acceptance of a portable contact and
+persistence representation with complete pair/manifold correctness, explicit
+capacity, no simulation-dependent readback, accepted Box2D behavior, and
+complete cross-host evidence. Only that acceptance may close P5.2 and authorize
+P5.3 broadphase selection work.

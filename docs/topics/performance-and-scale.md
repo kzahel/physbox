@@ -372,8 +372,11 @@ absolute error no larger than `1.1920929e-7` against the unchanged `1e-5`
 scalar gate. The result exposes no current body-memory or native/browser
 bandwidth limit that makes a fifth identity/material buffer credible before
 P5.2. It does expose the unconditional full-body grab-hold scan as a future
-sparsification candidate. These observations propose, but do not freeze, the
-layout and command architecture; S2.6 remains a human checkpoint.
+sparsification candidate. Human review subsequently accepted the limited
+64-byte `BodyCoreV1`, generational handle, existing command record, and explicit
+capacity-failure semantics. Numeric capacities, the hold scan, scratch fields,
+and every future shape/contact/joint/liquid allocation remain unfrozen and must
+produce their own scale evidence.
 
 Android measurement uses a shell-executed native benchmark binary built with
 the maintained NDK toolchain, rather than estimating compute cost from APK

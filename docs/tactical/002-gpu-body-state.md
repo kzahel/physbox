@@ -1,8 +1,8 @@
 # S2: GPU body state and fixed-floor contact
 
-Status: active at S2.6 human review, 2026-07-15.
+Status: complete; S2.6 accepted 2026-07-15.
 Direction: [one GPU-resident 2D physics world](../topics/physbox5-unified-gpu-physics.md).
-Bring-up stage: [P5.1](../bringup-plan.md#p51--minimal-rigid-state-and-fixed-floor-contact-active).
+Bring-up stage: [P5.1](../bringup-plan.md#p51--minimal-rigid-state-and-fixed-floor-contact-complete-2026-07-15).
 
 ## Goal
 
@@ -48,9 +48,11 @@ required native-only acceleration. It may reuse the S1 scalar/oracle contracts
 for validation but may not link an oracle into an app or add a second scene
 format.
 
-The provisional body and command layouts are deliberately reviewable. Normal
-implementation may reorganize them while S2 is active, but the final layout,
-capacity policy, and command ABI are not frozen until S2.6 human review.
+The body and command layouts were deliberately provisional during S2. Human
+review at S2.6 accepted only the stable `BodyCoreV1` lane surface,
+generational handle, existing command envelope, and explicit capacity-failure
+semantics. Numeric capacities, scratch meanings, the hold scan, and all future
+shape/contact/joint/liquid buffers remain unfrozen.
 
 ## Stop conditions
 
@@ -306,7 +308,7 @@ fabricated second layout. Splitting metadata into separate 8-byte identity and
 material buffers would not reduce the 64-byte total and would add a fifth
 binding before P5.2 exposes the contact access pattern. That option and a
 sparse replacement for the current full-capacity grab-hold scan remain
-explicit reconsideration triggers for S2.6 rather than silent ABI changes.
+accepted reconsideration triggers rather than silent ABI changes.
 
 Post-checkpoint AVD tooling now forces emulator host graphics and rejects
 engine-reported CPU/software adapters before a maintained validation or
@@ -347,18 +349,21 @@ status, and tactical completion facts land together.
 
 ### S2.6 — body layout and command ABI review
 
-Review checkpoint, 2026-07-15: the
-[compact S2.6 package](../../evidence/p5.1-s2.6/README.md) recommends accepting
+Accepted decision, 2026-07-15: human review of the
+[compact S2.6 package](../../evidence/p5.1-s2.6/README.md) accepted
 the four-lane 64-byte body layout, generational handle, 48-byte existing
 command record, and explicit capacity-failure semantics as the P5.2 baseline.
 It deliberately excludes scratch-channel meanings, numeric capacities, the
 full-capacity hold scan, future shape flags, and every P5.2+ buffer from the
-proposed freeze. The package links the synchronized Box2D/scalar/product floor
+accepted freeze. The package links the synchronized Box2D/scalar/product floor
 playback, five-host reset/grab result, and 12-row scale matrix, and retains the
 Mali all-zero timestamp fault as a diagnostic-only known issue.
 
-No acceptance is implied: P5.1 remains active, the ABI is not frozen, and P5.2
-is unauthorized. Implementation stops here for the required human decision.
+The decision treats the accepted lanes as `BodyCoreV1`, not as a universal
+body-plus-shape-plus-joint record. General geometry, compound shapes, joints,
+and contact storage remain separate future versioned extensions. P5.1 is
+complete and the [S3 tactical](003-small-world-collision-persistence.md) is
+authorized.
 
 - [x] Publish a compact review report with the proposed frozen body lanes,
   command records, capacity policy, measured bytes and curves, cross-host
@@ -369,13 +374,16 @@ is unauthorized. Implementation stops here for the required human decision.
   review.
 - [x] Stop for human acceptance before starting circles, general narrowphase,
   contact persistence, or any other P5.2 implementation.
+- [x] Record human acceptance in a separate decision commit, close P5.1, and
+  authorize the bounded P5.2 tactical without freezing excluded structures.
 
 Gate: the reviewer can assess layout quality, downstream compatibility,
 capacity behavior, and platform evidence without reading the complete
 implementation or raw logs.
 
-Commit boundary: the review package and manual-checkpoint status land alone.
-The later human decision is a separate documentation commit.
+Commit boundary: the review package and manual-checkpoint status landed alone;
+the later human decision, P5.1 closure, and P5.2 tactical land in a separate
+documentation commit.
 
 ## Validation baseline
 
@@ -400,9 +408,9 @@ in the corresponding commit body.
 
 ## Completion definition
 
-S2 reaches `manual checkpoint` when S2.1 through S2.5 pass, the S2.6 review
-package is committed, and no body-layout or command-ABI decision is hidden in
-implementation history. Completion requires subsequent human acceptance of a
-portable representation with explicit capacity, no simulation-dependent
+S2 completed when human review accepted the limited portable body core and
+command envelope after S2.1 through S2.5 and the standalone S2.6 package
+passed. The decision preserves explicit capacity, no simulation-dependent
 readback, direct rendering, accepted fixed-floor behavior, and complete scale
-evidence. Only that acceptance may mark S2 complete and authorize P5.2.
+evidence while leaving every excluded structure reversible. P5.2 is now
+authorized under the S3 tactical.

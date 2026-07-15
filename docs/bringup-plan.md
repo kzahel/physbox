@@ -65,20 +65,23 @@ Colored Soft-TGS remains a convergence comparator. The full evidence and
 reconsideration triggers are in the
 [S1.6 review package](../evidence/p5.0a-s1.5/README.md).
 
-## P5.1 — minimal rigid state and fixed-floor contact (active)
+## P5.1 — minimal rigid state and fixed-floor contact (complete 2026-07-15)
 
 Execution tracker: [S2 GPU body state and fixed-floor contact](tactical/002-gpu-body-state.md).
 
-Current checkpoint, 2026-07-15: S2.1 through S2.5 are complete. The
+Completion, 2026-07-15: S2.1 through S2.5 are complete. The
 generational body allocation, direct rendering, and selected fixed-floor
 Jacobi/gather solve have fresh native, browser, AVD, physical Android, scalar,
 and Box2D evidence. Bounded reset/grab behavior also has exact replay and
 clean cross-host evidence. Clean 1K/10K/100K scale curves retain complete
-state, work, memory, and capacity validation on all four target lanes. S2.6 is
-the active human layout/command-ABI checkpoint; neither ABI is frozen.
-The [compact review package](../evidence/p5.1-s2.6/README.md) contains the
-proposal and direct evidence links; implementation is stopped pending that
-decision.
+state, work, memory, and capacity validation on all four target lanes. Human
+review accepted the S2.6 recommendation: the limited 64-byte `BodyCoreV1`,
+generational handle, existing 48-byte command record, and explicit
+capacity-failure semantics are frozen as the P5.2 baseline. Scratch meanings,
+numeric capacities, the hold scan, and all future shape/contact/joint/liquid
+buffers remain unfrozen. The
+[decision package](../evidence/p5.1-s2.6/README.md) contains the exact scope and
+direct evidence links.
 
 - Replace bootstrap state with generational SoA body storage and bounded GPU
   commands.
@@ -90,11 +93,21 @@ decision.
   10K, and 100K on the named reference adapters, including Android, before
   freezing the body layout.
 
-Exit review: stop after the complete evidence package and before freezing the
-body layout or command ABI. Human acceptance is required to mark P5.1 complete
-and begin P5.2.
+Exit decision: human acceptance closed P5.1 and authorized the P5.2 tactical.
+The accepted layout is the dynamic body core, not a frozen universal
+body-plus-shape-plus-joint allocation.
 
-## P5.2 — small-world collision and persistence
+## P5.2 — small-world collision and persistence (active)
+
+Execution tracker:
+[S3 small-world collision and contact persistence](tactical/003-small-world-collision-persistence.md).
+
+Current checkpoint, 2026-07-15: S3.1 contracts and shared analytic-shape
+scenarios are active. Implementation proceeds through complete all-pairs
+candidates, direct Box2D-checked narrowphase, sorted GPU persistence, generated
+contact solving, and correctness-qualified cross-host evidence. S3.6 is the
+mandatory human review before freezing the contact representation or beginning
+P5.3.
 
 - Add circles and oriented rectangles.
 - Use all-pairs AABB candidate generation.

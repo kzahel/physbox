@@ -7,10 +7,11 @@ Android adapters.
 
 The shared-host bootstrap and oracle-driven rigid solver laboratory are
 complete. Human review selected contact-centric Jacobi with GPU per-body gather
-as the initial rigid foundation; P5.1 minimal rigid state and fixed-floor
-contact has completed its selected-solver landing and reset/grab gates. It is
-proceeding to scale evidence and the body-layout/command-ABI review checkpoint.
-The repository still contains no Rapier or CPU product physics
+as the initial rigid foundation. P5.1 minimal rigid state and fixed-floor
+contact is complete; human review accepted the limited 64-byte `BodyCoreV1`,
+generational handle, existing command envelope, and explicit capacity-failure
+semantics. P5.2 small-world collision and persistence is active under the S3
+tactical. The repository still contains no Rapier or CPU product physics
 backend, fluid solver, legacy tools, settings UI, or PhysBox 4 scene
 compatibility.
 
