@@ -233,15 +233,27 @@ fresh report with source and adapter provenance plus the standard success
 sentinel. It does not add a desktop-owned scenario or alternate mechanics
 path.
 
-- [ ] Convert primary pointer facts into engine-owned neutral grab begin,
+Completion evidence, 2026-07-15: the
+[S2.4 package](../../evidence/p5.1-s2.4/README.md) retains clean reports from
+exact native headless, interactive desktop, browser, `jstorrent-tablet` AVD,
+and physical Pixel 7a lanes. All five report the same scenario hash, scene
+contract, six executed commands, two resets, released final state, and no
+overflow. Native GPU tests prove target following, stale-release rejection,
+zero-step coalescing, atomic overflow, and bit-identical replay after reset.
+The browser records one raw pointer event without changing the scripted
+mechanics result. All four retained pixel captures were visually inspected.
+AVD and physical pacing retain 0.15 s and 0.05 s of diagnosed permanent slip
+rather than catch-up.
+
+- [x] Convert primary pointer facts into engine-owned neutral grab begin,
   target, and release commands at fixed-step boundaries.
-- [ ] Add an engine-owned reset command and deterministic reset/grab/release
+- [x] Add an engine-owned reset command and deterministic reset/grab/release
   validation action sequence.
-- [ ] Coalesce host pointer motion without inventing catch-up steps or
+- [x] Coalesce host pointer motion without inventing catch-up steps or
   platform-specific physics behavior.
-- [ ] Run the identical scenario and scene contract through headless, browser,
+- [x] Run the identical scenario and scene contract through headless, browser,
   desktop smoke, Android AVD, and an available physical Android device.
-- [ ] Add boundary negatives preventing scenario payloads or outcomes from
+- [x] Add boundary negatives preventing scenario payloads or outcomes from
   moving into JavaScript, shell scripts, or app crates.
 
 Artifacts: fresh per-host reports and images, one raw-event transport proof,

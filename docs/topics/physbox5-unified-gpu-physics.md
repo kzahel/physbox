@@ -263,10 +263,17 @@ diagnostic data and rejects the complete pending batch. The provisional
 
 The shared `reset-grab` source contains the scenario, six scheduled commands,
 and canonical hash. Platform adapters transport only its launch name and raw
-pointer facts. Engine GPU tests already prove exact targets, release,
-bit-identical replay after reset, coalescing, and no partial execution on
-overflow; clean native, browser, AVD, and physical-device evidence remains the
-S2.4 completion gate.
+pointer facts. Engine GPU tests prove exact targets, release, bit-identical
+replay after reset, coalescing, and no partial execution on overflow.
+
+S2.4 cross-host evidence is complete in the
+[reset/grab evidence package](../../evidence/p5.1-s2.4/README.md). Clean exact
+headless, desktop, browser, `jstorrent-tablet` AVD, and physical Pixel 7a runs
+report the same scenario hash, six commands, two resets, released state, and
+no overflow. The browser retains one raw-event transport proof. AVD and
+physical pacing diagnose 0.15 s and 0.05 s of permanent slip respectively,
+without catch-up. This evidence completes action transport and replay only;
+it does not freeze the provisional body or command representation.
 
 ## Later fluid-coupling contract
 
