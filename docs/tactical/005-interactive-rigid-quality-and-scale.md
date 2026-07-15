@@ -242,14 +242,14 @@ Dependency: S5.2 generational pair invalidation passes.
 
 - [x] Implement versioned bounded place-circle, place-rectangle, and erase-at
   intents using existing material defaults and one declared size per shape.
-- [ ] Allocate and retire body slots on the GPU, increment generations, and
+- [x] Allocate and retire body slots on the GPU, increment generations, and
   invalidate stale pair, manifold, cache, grab, command, and render identity.
 - [x] Expose `Grab`, `Circle`, `Rectangle`, and `Erase` in the existing shared
   glyph toolbar with deterministic UI/tool/gesture priority.
 - [x] Make an empty placement request finite and deterministic; reject deep
   coincident placement or full capacity explicitly rather than ghosting,
   disabling collision, silently moving the body, or losing work.
-- [ ] Exercise place, fall, collide, stack, grab, erase, reuse, restart, scene
+- [x] Exercise place, fall, collide, stack, grab, erase, reuse, restart, scene
   switch, two-touch cancellation, and high-cadence input on every host.
 
 Gate: a user can author circles and rectangles without a CPU occupancy mirror;
@@ -325,6 +325,19 @@ captures replay multi-step exact requests at interactive one-step submission
 cadence and require byte-exact body slots against the batched exact trace.
 Fresh clean-revision native/web/AVD/available-device artifacts remain the next
 commit.
+
+S5.3 completion, 2026-07-16: the clean
+[construction evidence package](../../evidence/p5.2b-s5.3/README.md) records
+27 shared exact interaction frames and byte-exact replay, all four GPU body
+lanes, warm erase/reuse/recontact graph state, an atomic 64-slot capacity
+failure, and explicit deep-overlap rejection. The complete sequence runs once
+in the shared native/headless host; browser and Android each inject one raw
+placement and consume the engine result so adapters do not duplicate the
+fixture. Chrome and the hardware-backed `jstorrent-tablet` AVD pass clean
+revision `4d44af0`; no physical Android device was connected. No product CPU
+occupancy mirror, blocking advancement readback, physics-default change, or
+tolerance change was introduced. Construction feel remains provisional for
+the mandatory S5.4 review.
 
 ### S5.4 — awake settling and tuning bakeoff
 

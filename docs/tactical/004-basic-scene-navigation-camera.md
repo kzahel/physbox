@@ -1,7 +1,8 @@
 # S4: Interactive evaluation workbench
 
 Status: S4.3 deployed grab-feel checkpoint accepted, 2026-07-15; the S3
-combined representation gate passes and S4.4 is active through
+combined representation gate and S4.4 construction gate pass, while the S4.5
+combined human checkpoint remains open through
 [S5](005-interactive-rigid-quality-and-scale.md).
 Direction: [one shared host and renderer](../platform-architecture.md).
 Bring-up checkpoint: [P5.2a](../bringup-plan.md#p52a--interactive-evaluation-workbench-authorized).
@@ -302,14 +303,14 @@ preparation evidence.
 - [x] Add bounded versioned place-circle, place-rectangle, and erase-at commands
   with finite values, authored material defaults, deterministic ordering, and
   atomic capacity failure.
-- [ ] Allocate and retire body slots on the GPU, increment generations, clear
+- [x] Allocate and retire body slots on the GPU, increment generations, clear
   stale grab/contact/pair state, and keep all current-state decisions on device.
 - [x] Add `Grab`, `Circle`, `Rectangle`, and `Erase` toolbar tools with touch-
   sized targets and deterministic UI/tool capture priority.
 - [x] Reject or diagnose unsupported deep-overlap placement rather than
   disabling collision, silently moving the body, or widening the accepted
   contact policy.
-- [ ] Exercise place, fall, collide, grab, erase, slot reuse, reset, and scene
+- [x] Exercise place, fall, collide, grab, erase, slot reuse, reset, and scene
   switch through exact shared action sequences.
 
 Gate: construction creates no CPU body mirror; erase plus slot reuse cannot
@@ -330,6 +331,14 @@ browser and Android select the shared Circle glyph, submit one empty placement,
 and wait for the engine-owned asynchronous result rather than inventing a
 platform fixture. The authoritative lifecycle, failure, restart, switch, and
 two-touch sequence remains the versioned shared Rust evidence script.
+
+S4.4 completion, 2026-07-16: the clean
+[S5.3 package](../../evidence/p5.2b-s5.3/README.md) proves the complete GPU
+lifecycle, generation-safe graph invalidation, bounded failure behavior,
+shared exact interaction sequence, and fresh browser/AVD adapter projection.
+The construction loop is mechanically qualified without a CPU occupancy
+mirror. Its feel and discoverability are intentionally deferred to the S4.5
+portion of the combined S5.4 human review rather than accepted by automation.
 
 Artifacts: command/schema byte table, lifecycle traces, slot-generation and
 pair-cache invalidation evidence, toolbar captures, capacity/deep-overlap

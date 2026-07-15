@@ -685,8 +685,8 @@ failures. No body identity or occupancy result is required on the CPU to
 advance the next frame. Interactive worlds reserve the next power-of-two slot
 tier above their authored population, currently at least 64, and all downstream
 render, selection, collision, persistence, and solver work sees that declared
-capacity. The small-world memory and scan cost is intentionally visible and
-remains subject to the S5.3 capacity/evidence gate.
+capacity. The small-world memory and scan cost is intentionally visible and is
+qualified only for the bounded S5.3 construction scope described below.
 
 Shared authoring-toolbar checkpoint, 2026-07-16: UI contract version 2 exposes
 Grab, Circle, Rectangle, and Erase through the same engine-rendered glyph pass
@@ -697,6 +697,18 @@ wheel remain camera facts. Tool changes explicitly end an active grab, and all
 construction intents join the existing bounded, monotonic, first-admitted-step
 interaction stream. The UI reports selection and dispatch counts but never
 owns occupancy, body handles, or construction outcomes.
+
+Construction qualification, 2026-07-16: clean revision `4d44af0` replays the
+complete shared authoring sequence byte-for-byte, proves warm contact graph
+state clears across erase and generation-2 reuse, admits 62 additional bodies
+into the 64-slot bootstrap world before one explicit atomic capacity failure,
+and rejects deep coincidence without changing collision policy. Browser and
+the hardware-backed `jstorrent-tablet` AVD each project one raw placement into
+the same engine contract and observe the later asynchronous GPU result. The
+[evidence package](../../evidence/p5.2b-s5.3/README.md) records the absent
+physical-device lane. This closes bounded construction mechanics, not
+large-world allocation, arbitrary geometry, physical defaults, or subjective
+construction feel.
 
 Circle/circle and circle/rectangle contact are analytic. Rectangle/rectangle
 uses SAT to select a reference and incident edge, clips the incident segment,

@@ -194,8 +194,9 @@ vertex buffer only while held. Twenty-one exact GPU replays and 21 clean pinned
 Box2D public motor-joint processes pass. Deployed human review accepts the
 camera, scene discovery, and current anchored-grab feel as the continuing
 workbench baseline. The values remain reconsiderable rather than universal
-final defaults. S4.4 construction still waits for the selected combined S3
-graph and is sequenced by S5.
+final defaults. S4.4 bounded GPU construction now passes clean exact
+lifecycle, capacity, browser, and hardware-backed AVD evidence through S5.3.
+Construction feel remains part of the combined S5.4 human checkpoint.
 
 - Make the maintained shared scenarios discoverable from the default deployed
   canvas without requiring query-string editing.
