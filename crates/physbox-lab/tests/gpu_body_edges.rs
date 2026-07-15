@@ -43,10 +43,10 @@ fn stable_body_edges_preserve_high_contention_contribution_order() {
 fn stable_body_edges_preserve_upstream_atomic_overflow() {
     let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
     let scenario = p5_2_candidate_scenario(P5_2CandidatePattern::Coincident, 34, 7).unwrap();
-    let baseline = runner.run(&scenario, 1).unwrap();
-    let candidate = runner
-        .run_with_gather_topology(&scenario, 1, GpuGatherTopology::StableBodyEdge, false)
+    let baseline = runner
+        .run_with_gather_topology(&scenario, 1, GpuGatherTopology::CanonicalBodyScan, false)
         .unwrap();
+    let candidate = runner.run(&scenario, 1).unwrap();
     assert_equivalent(&baseline, &candidate, "atomic overflow");
     assert!(candidate.failure.is_some());
     assert!(candidate.cache.is_empty());
@@ -97,10 +97,10 @@ fn compare_topologies(
     steps: u32,
     label: &str,
 ) {
-    let baseline = runner.run(scenario, steps).unwrap();
-    let candidate = runner
-        .run_with_gather_topology(scenario, steps, GpuGatherTopology::StableBodyEdge, false)
+    let baseline = runner
+        .run_with_gather_topology(scenario, steps, GpuGatherTopology::CanonicalBodyScan, false)
         .unwrap();
+    let candidate = runner.run(scenario, steps).unwrap();
     let permuted = runner
         .run_with_gather_topology(scenario, steps, GpuGatherTopology::StableBodyEdge, true)
         .unwrap();

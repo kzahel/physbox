@@ -651,6 +651,18 @@ reduces collision/persistence from 212 to 25 dispatches without readback or a
 second contact payload. Stable body-edge integration and the combined
 performance/structural gate remain pending, so S3 is not closed here.
 
+Stable body-edge product integration checkpoint, 2026-07-15: the real graph
+now combines the selected pair-slot cache with deterministic sorted body-edge
+ranges. The canonical scan remains available only as an explicit validation
+topology. Combined output is exact against both full-key/canonical and
+pair-slot/canonical lanes across governed intermediate behavior steps,
+permuted construction, pair churn, high contention, reset/grab coverage, and
+atomic overflow. The maintained two-body floor path is 97 dispatches and
+19,640 bytes, while the 32-body performance fixture is 100 dispatches. These
+are accounting results; S3 still requires fresh combined timings, structural
+curves, cross-host artifacts, minimized failures, and the optimized Box2D
+comparison before closure.
+
 Circle/circle and circle/rectangle contact are analytic. Rectangle/rectangle
 uses SAT to select a reference and incident edge, clips the incident segment,
 and produces stable vertex/edge feature pairs. Test feature stability around

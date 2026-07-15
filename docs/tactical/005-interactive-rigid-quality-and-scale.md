@@ -152,10 +152,10 @@ is integrated. Physical Android was unavailable; the hardware-backed
 - [x] Replace product full-key persistence with the accepted stable
   generational pair-slot path while retaining full semantic pair/feature
   verification and the full-key lane as a correctness oracle.
-- [ ] Replace the product body-by-capacity scan with accepted stable body-edge
+- [x] Replace the product body-by-capacity scan with accepted stable body-edge
   index views and deterministic segmented gather while retaining the canonical
   scan as a correctness oracle.
-- [ ] Integrate both selected views in one product graph; do not infer the
+- [x] Integrate both selected views in one product graph; do not infer the
   combined result by adding isolated candidate timings.
 - [ ] Prove churn, recontact, reversed scheduling, body-generation reuse,
   forced fingerprint collision, reset, grab, erase preparation, and whole-stage
@@ -193,6 +193,20 @@ With the canonical body scan still intentionally unchanged, the generated
 graph drops from 282 to 95 dispatches and the maintained floor allocation from
 23,700 to 19,024 bytes. These are implementation accounting results, not the
 required combined timing or S3 closure claim.
+
+Stable-edge integration, 2026-07-15: the same product graph now also builds
+stable body-edge records and gathers deterministic sorted body ranges. The
+canonical body-by-point scan remains explicitly selectable as a validation
+oracle. The combined pair-slot-plus-edge path matches the full-key/canonical
+lane at every checked intermediate behavior step, and matches pair-slot plus
+canonical gathering under permuted edge construction, pair churn, high
+contention, and atomic overflow. Shared reset and grab tests also exercise the
+new product default. The maintained two-body floor graph is 97 dispatches and
+19,640 bytes; the 32-body performance fixture is 100 dispatches. The increase
+from the pair-only checkpoint is the bounded edge topology and two additional
+dispatch parameter records, while body-by-capacity contribution scans are
+removed. Timing, structural curves, erase/reuse preparation, cross-host
+evidence, and S3 closure remain separate pending gates.
 
 ### S5.3 — GPU construction loop and interactive authoring
 

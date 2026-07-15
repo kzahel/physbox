@@ -49,7 +49,7 @@ struct PreparedPoint {
 @group(0) @binding(1) var<storage, read> points: array<ContactPoint>;
 @group(0) @binding(2) var<storage, read_write> pair_records: array<PairRecord>;
 @group(0) @binding(3) var<storage, read_write> pair_capacity: array<atomic<u32>>;
-@group(0) @binding(4) var<storage, read> point_capacity: array<atomic<u32>>;
+@group(0) @binding(4) var<storage, read_write> point_capacity: array<atomic<u32>>;
 @group(0) @binding(5) var<storage, read_write> solver_points: array<PointInput>;
 @group(0) @binding(6) var<storage, read> prepared_points: array<PreparedPoint>;
 @group(0) @binding(7) var<uniform> params: BridgeParams;

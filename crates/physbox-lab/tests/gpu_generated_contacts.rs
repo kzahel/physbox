@@ -16,7 +16,7 @@ fn generated_contact_benchmark_uses_qualified_split_scopes() {
     let scenario = p5_2_generated_performance_scenario(32).unwrap();
     let benchmark = pollster::block_on(benchmark_gpu_generated_contacts(&scenario, 1, 2)).unwrap();
     assert!(benchmark.correctness.failure.is_none());
-    assert_eq!(benchmark.dispatches_per_step, 95);
+    assert_eq!(benchmark.dispatches_per_step, 100);
     assert_eq!(benchmark.host_completion_seconds.len(), 2);
     assert_eq!(benchmark.cpu_encode_submit_seconds.len(), 2);
     match (
@@ -41,7 +41,7 @@ fn generated_contact_benchmark_uses_qualified_split_scopes() {
 }
 
 #[test]
-fn product_pair_slots_match_the_full_key_oracle_and_reversed_scheduling() {
+fn product_pair_slots_and_body_edges_match_full_key_canonical_oracles() {
     let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
     for kind in P5_2GeneratedScenarioKind::ALL {
         let steps = if kind == P5_2GeneratedScenarioKind::PairChurn {
@@ -100,7 +100,15 @@ fn product_pair_slots_match_the_full_key_oracle_and_reversed_scheduling() {
             assert_eq!(product.work.cache_expired, full_key.work.cache_expired);
             assert_eq!(product.work.sort_passes, 0);
             assert_eq!(full_key.work.sort_passes, 64);
-            assert_eq!(product.dispatches_per_step, 95);
+            assert_eq!(
+                product.gather_topology.topology,
+                GpuGatherTopology::StableBodyEdge
+            );
+            assert_eq!(
+                reversed_and_colliding.gather_topology.topology,
+                GpuGatherTopology::CanonicalBodyScan
+            );
+            assert_eq!(product.dispatches_per_step, 97);
             assert_eq!(full_key.dispatches_per_step, 282);
         }
     }
@@ -176,7 +184,7 @@ fn generated_floor_contacts_settle_and_replay_exactly() {
         assert_eq!(first.cache, replay.cache);
         assert_eq!(first.work, replay.work);
         assert!(first.failure.is_none());
-        assert_eq!(first.dispatches_per_step, 95);
+        assert_eq!(first.dispatches_per_step, 97);
         assert!(
             (first.bodies[0].position.y - expected_height).abs() <= 2.0e-2,
             "{kind:?}: {:?}",

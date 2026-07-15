@@ -128,7 +128,7 @@ impl GpuGeneratedContactGraph {
             storage,
             scenario,
             GpuContactPersistenceTopology::StablePairSlot,
-            GpuGatherTopology::CanonicalBodyScan,
+            GpuGatherTopology::StableBodyEdge,
             false,
             false,
             u32::MAX,
@@ -997,7 +997,7 @@ fn pair_bridge_layout(
             (1, true),
             (2, false),
             (3, false),
-            (4, true),
+            (4, false),
             (5, false),
         ]
     };
@@ -1180,7 +1180,7 @@ impl GpuGeneratedContactRunner {
         self.run_with_gather_topology(
             scenario,
             completed_steps,
-            GpuGatherTopology::CanonicalBodyScan,
+            GpuGatherTopology::StableBodyEdge,
             false,
         )
     }
@@ -1579,7 +1579,7 @@ pub async fn benchmark_gpu_generated_contacts(
         scenario,
         warmup_steps,
         samples,
-        GpuGatherTopology::CanonicalBodyScan,
+        GpuGatherTopology::StableBodyEdge,
     )
     .await
 }

@@ -509,6 +509,17 @@ candidate/narrowphase/persistence dispatches instead of 212. The canonical
 body scan remains selected until the next separately committed stable-edge
 integration, so this checkpoint does not satisfy the combined closure gate.
 
+Post-selection stable-edge checkpoint, 2026-07-15: the real product graph now
+combines stable pair slots with stable sorted body-edge ranges. The canonical
+body scan remains an explicit validation lane, and the combined product output
+is exact against full-key/canonical and pair-slot/canonical oracles across all
+behavior families, intermediate steps, permuted construction, churn, high
+contention, and atomic overflow. The maintained two-body floor graph uses 97
+dispatches and 19,640 bytes; a 32-body generated fixture uses 100 dispatches.
+This is the selected combined representation, but it is not yet an S3 closure:
+fresh combined timing, structural, platform, failure, and CPU-comparison
+evidence remains mandatory.
+
 ## Validation baseline
 
 Every shared slice runs the repository gates from `AGENTS.md`:
