@@ -156,10 +156,21 @@ rejection, and deterministic minimization. Maximum GPU numerical error was
 `1.2516975e-6`; maximum authority geometry error was `3.2782555e-7` under the
 unchanged `2e-5` bound.
 
-The current product bootstrap still uses its temporary authored fixed-floor
-manifold. Candidate and narrowphase behavior are exercised by bounded native
-validation, not yet by the product frame. Persistence, generated contact solve,
-and cross-host product execution remain S3.4 through S3.5 work.
+The S3.5 product frame now consumes generated contacts and sorted warm starts
+directly. Nine behavior tracks replay exactly, cached impulses remain
+projected, and 128 randomized cases have zero replay differences or accepted
+overflow. Floor, friction, and restitution endpoints are close to Box2D, while
+the mixed stack differs materially (`0.560` maximum position and `0.974`
+maximum velocity) and remains a quality-review item rather than a widened
+band.
+
+Two minimized failures remain explicit. A six-body coincident spawn injects
+`26891.44` mechanical energy in one step even though canonical incidence makes
+the outcome deterministic. A two-body closing gap crosses during an outer
+step but has no initial AABB overlap, so the current graph emits no contact and
+ends at `0.00507` penetration while Box2D responds. S3.6 must choose a
+depenetration/spawn policy and a portable speculative distance plus AABB
+expansion; neither physical default is selected by the implementation.
 
 ## Reconsideration triggers
 

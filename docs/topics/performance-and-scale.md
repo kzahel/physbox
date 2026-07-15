@@ -551,6 +551,17 @@ CPU/GPU crossover claim. S3.5 must time the complete generated-contact frame;
 S3.6 must decide whether the full key should be frozen, packed, or paired with
 a different lookup organization before P5.3.
 
+S3.5 generated-contact checkpoint, 2026-07-15: the complete Metal graph uses
+282 dispatches per outer step. At 32/256/1024 bodies with 16/128/512 isolated
+contacts, all-pairs amplification is 31x/255x/1023x, end-to-end P50 is
+2.656/7.007/23.675 ms, and allocation is 0.786/7.018/37.451 MB. The fastest
+separately scoped optimized Box2D rows are 0.00717/0.0527/0.1526 ms. This GPU
+baseline has no CPU crossover and is about 155x slower at 1K. P5.3 can reduce
+quadratic candidate work, but not the 64-pass full-key persistence schedule or
+the deterministic body-by-point incidence scan. S3.6 must review those two
+costs before the representation is frozen; these measurements are not a P5.4
+crossover claim.
+
 ## Regression and claim gates
 
 Before representative hardware is selected, store named measurements and

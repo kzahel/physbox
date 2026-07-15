@@ -102,11 +102,11 @@ body-plus-shape-plus-joint allocation.
 Execution tracker:
 [S3 small-world collision and contact persistence](tactical/003-small-world-collision-persistence.md).
 
-Current checkpoint, 2026-07-15: S3.1 contracts, S3.2 complete GPU all-pairs
-candidates, S3.3 Box2D-checked GPU narrowphase, and S3.4 sorted GPU persistence
-are complete. Generated contact solving and correctness-qualified cross-host
-evidence are active at S3.5. S3.6 is the mandatory human review before freezing
-the contact representation or beginning P5.3.
+Current checkpoint, 2026-07-15: S3.1 through S3.4 and the S3.5 generated-contact
+implementation/evidence are published. S3.5 is not silently accepted: the
+speculative-contact default, deep-overlap energy policy, stack-quality gap,
+and measured contact-key/dispatch cost are escalated into the mandatory S3.6
+human review before freezing the contact representation or beginning P5.3.
 
 - Add circles and oriented rectangles.
 - Use all-pairs AABB candidate generation.

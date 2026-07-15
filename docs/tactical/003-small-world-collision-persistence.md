@@ -1,6 +1,6 @@
 # S3: Small-world collision and contact persistence
 
-Status: active at S3.5; S3.4 complete 2026-07-15.
+Status: S3.5 evidence published with review blockers; preparing S3.6 manual checkpoint.
 Direction: [one GPU-resident 2D physics world](../topics/physbox5-unified-gpu-physics.md).
 Bring-up stage: [P5.2](../bringup-plan.md#p52--small-world-collision-and-persistence-active).
 Predecessor: [accepted P5.1 body core](../../evidence/p5.1-s2.6/README.md).
@@ -275,18 +275,28 @@ AVD execute the graph; no physical Android device is currently connected.
 Correctness-qualified authority, failure, and performance publication remains
 the rest of this slice.
 
-- [ ] Replace the temporary precomputed floor manifold in the product path
+Evidence checkpoint, 2026-07-15: the
+[S3.5 package](../../evidence/p5.2-s3.5/README.md) publishes nine exact
+GPU/Box2D tracks, 128 randomized cases, atomic overflow, native/browser/AVD
+captures, 32/256/1K complete-step timings, optimized Box2D rows, and
+synchronized playback. Execution mechanics pass, but the slice gate is not
+accepted: the unreviewed speculative margin, minimized deep-overlap energy
+failure, material small-stack endpoint difference, and noncompetitive
+64-pass/282-dispatch baseline are explicit S3.6 decisions. No physical default,
+quality band, tolerance, or representation was silently accepted.
+
+- [x] Replace the temporary precomputed floor manifold in the product path
   with generated and persisted contacts feeding the accepted Jacobi/gather
   solver.
-- [ ] Exercise circle/rectangle falls, bilateral impacts, off-center rotation,
+- [x] Exercise circle/rectangle falls, bilateral impacts, off-center rotation,
   flat/corner/edge landings, small stacks, friction slides, restitution, pair
   churn, reset, and grab/release through exact shared scenarios.
-- [ ] Compare isolated passes with the scalar specification and bounded worlds
+- [x] Compare isolated passes with the scalar specification and bounded worlds
   with deterministic and optimized Box2D lanes at equivalent quality.
-- [ ] Capture native, browser, headless, host-GPU `jstorrent-tablet`, and
+- [x] Capture native, browser, headless, host-GPU `jstorrent-tablet`, and
   available physical Android outcomes with complete provenance and synchronized
   failure playback.
-- [ ] Measure collision-only and end-to-end scopes at 32, 256, and applicable
+- [x] Measure collision-only and end-to-end scopes at 32, 256, and applicable
   1K small-world bodies, reporting candidate amplification, manifolds/points,
   cache churn, solver work, dispatches, memory, timing, and every capacity.
 
