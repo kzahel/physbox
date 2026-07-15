@@ -521,6 +521,15 @@ Capacity artifacts distinguish attempts, atomic committed count, high-water,
 overflow, and acceptance. S3.2 and later must report those quantities rather
 than body count alone.
 
+S3.2 candidate checkpoint, 2026-07-15: the complete baseline uses eight GPU
+dispatches and reports 32-byte AABBs, 16-byte candidates, four-byte flags and
+offsets, 16-byte pair scratch, four-byte scan blocks, and the 128-byte work
+record separately. The 324-case correctness matrix had exact scalar/GPU pair
+agreement and zero accepted overflow. This stage deliberately allocates
+quadratic pair capacity and publishes no throughput or crossover claim; its
+work and memory rows are the small-world reference against which P5.3
+broadphase amplification and savings will be measured.
+
 ## Regression and claim gates
 
 Before representative hardware is selected, store named measurements and

@@ -1,6 +1,6 @@
 # S3: Small-world collision and contact persistence
 
-Status: active at S3.2; S3.1 complete 2026-07-15.
+Status: active at S3.3; S3.2 complete 2026-07-15.
 Direction: [one GPU-resident 2D physics world](../topics/physbox5-unified-gpu-physics.md).
 Bring-up stage: [P5.2](../bringup-plan.md#p52--small-world-collision-and-persistence-active).
 Predecessor: [accepted P5.1 body core](../../evidence/p5.1-s2.6/README.md).
@@ -149,14 +149,25 @@ and the S3.1 tactical status land together without GPU collision behavior.
 
 ### S3.2 — complete GPU all-pairs candidates
 
-- [ ] Generate circle and oriented-rectangle world AABBs from current GPU pose
+- [x] Generate circle and oriented-rectangle world AABBs from current GPU pose
   and analytic shape data.
-- [ ] Enumerate every unordered body pair, reject fixed/fixed and non-overlap
+- [x] Enumerate every unordered body pair, reject fixed/fixed and non-overlap
   cases, and emit sorted canonical candidates without CPU count readback.
-- [ ] Compare complete GPU candidate sets against brute-force scalar AABB
+- [x] Compare complete GPU candidate sets against brute-force scalar AABB
   enumeration across deterministic randomized and adversarial small worlds.
-- [ ] Diagnose attempted, emitted, rejected, high-water, and overflow counts;
+- [x] Diagnose attempted, emitted, rejected, high-water, and overflow counts;
   overflow invalidates the complete step and never truncates a pair prefix.
+
+Completion, 2026-07-15: the [S3.2 evidence package](../../evidence/p5.2-s3.2/README.md)
+records exact scalar/GPU agreement across four governed sources and 64 seeds
+times five randomized/adversarial patterns (324 cases), with zero missing,
+unexpected, or duplicate pairs. Maximum AABB absolute error was
+`2.3841858e-7` under the unchanged `2e-5` comparison bound. An attempted
+119-pair output at capacity one committed zero and produced a structured
+failure; the injected missing-pair harness minimized deterministically to two
+bodies. The eight-dispatch scan/scatter graph never maps a count to schedule
+work. Its explicit all-pairs scratch remains a quadratic small-world baseline,
+not the P5.3 broadphase selection.
 
 Likely boundary: a focused engine collision module and portable WGSL passes
 consume `BodyCoreV1`; the lab reuses their versioned outputs after bounded

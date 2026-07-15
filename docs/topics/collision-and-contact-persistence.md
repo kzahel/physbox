@@ -1,7 +1,7 @@
 # Collision and contact persistence
 
-Status: S3.1 contracts implemented; GPU collision behavior begins at S3.2,
-2026-07-15.
+Status: S3.2 complete GPU candidates accepted; direct narrowphase active at
+S3.3, 2026-07-15.
 
 Governing direction:
 [one GPU-resident 2D physics world](physbox5-unified-gpu-physics.md).
@@ -91,6 +91,34 @@ The canonical hashes and byte table are checked in the
 [S3.1 evidence package](../../evidence/p5.2-s3.1/README.md). The generator is
 deterministic and the scenario tests pin all source and projection hashes.
 
+## Complete candidate baseline
+
+S3.2 establishes an eight-dispatch GPU baseline: clear stage state, compute
+world AABBs, classify every unordered slot pair, prefix-scan flags in blocks,
+scan block totals, add block offsets, finalize counts/capacity, and scatter
+canonical pairs. Fixed/fixed and AABB-separated live pairs are diagnosed
+separately. Slot holes are excluded by live generation metadata. Candidate
+order follows the triangular `(body_a, body_b)` enumeration and therefore the
+full generational body order.
+
+No mapped count schedules the scan or scatter. All dispatches use declared
+slot/pair capacities, while bounded native validation maps results only after
+the graph completes. Candidate overflow atomically commits zero records and
+invalidates the result; it never exposes a prefix as a successful set.
+
+The [S3.2 evidence](../../evidence/p5.2-s3.2/README.md) has exact set agreement
+against independent scalar brute-force enumeration across 324 governed,
+randomized, touching, rotated-thin, coincident, and fixed-only cases. Maximum
+AABB absolute error is `2.3841858e-7` under the unchanged `2e-5` comparison
+bound. The candidate, flag, offset, scratch, scan, and work allocations report
+attempts, committed records, bytes, high-water, and acceptance independently.
+
+This stage intentionally allocates flags, offsets, and scratch for
+`N * (N - 1) / 2` slot pairs. It is the persistent completeness oracle for
+small worlds, not a scalable broadphase choice. S3.3 consumes the same
+canonical candidate records for narrowphase; P5.3 later compares SAP, grid,
+and any justified LBVH against this baseline.
+
 ## Validation
 
 S3.1 validation covers schema round trips, exact byte claims, nonzero
@@ -100,8 +128,9 @@ identity, shape-flag mismatch, unsupported projection data, inconsistent work
 accounting, and silent or partial capacity overflow.
 
 The current product bootstrap still uses its temporary authored fixed-floor
-manifold. S3.1 adds no GPU candidate, narrowphase, persistence, or generated
-contact solve. S3.2 begins that behavior from the versioned surface above.
+manifold. S3.2 candidate behavior is exercised by bounded native validation,
+not yet by the product frame. Narrowphase, persistence, generated contact
+solve, and cross-host product execution remain S3.3 through S3.5 work.
 
 ## Reconsideration triggers
 
