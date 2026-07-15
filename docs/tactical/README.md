@@ -1,18 +1,18 @@
 # Tactical workstreams
 
-Status: S1 active; the lean P5.0 shared-host bootstrap is complete and the
-oracle-driven rigid solver laboratory is the current product workstream.
+Status: S1 complete; P5.0a selected the initial rigid solver foundation and
+P5.1 minimal rigid state is the next product workstream.
 
 Tactical filenames use a three-digit zero-padded prefix ordered by their first
 Git creation timestamp. This repository starts at `001`. Never renumber an
 existing tactical, recycle a number, or copy PhysBox 4's historical numbering.
 This README remains the unnumbered index.
 
-## Active workstreams
+## Workstreams
 
 | ID | Workstream | Document | Status |
 | --- | --- | --- | --- |
-| S1 | Oracle foundation and rigid solver laboratory | [001-rigid-solver-laboratory.md](001-rigid-solver-laboratory.md) | active |
+| S1 | Oracle foundation and rigid solver laboratory | [001-rigid-solver-laboratory.md](001-rigid-solver-laboratory.md) | complete 2026-07-15 |
 
 ## Conventions
 

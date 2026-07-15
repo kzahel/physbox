@@ -1,6 +1,6 @@
 # S1: Oracle foundation and rigid solver laboratory
 
-Status: active, 2026-07-14.
+Status: complete, 2026-07-15.
 Direction: [one GPU-resident 2D physics world](../topics/physbox5-unified-gpu-physics.md).
 Bring-up stage: [P5.0a](../bringup-plan.md#p50a--oracle-foundation-and-solver-laboratory).
 
@@ -139,8 +139,9 @@ reduce the adjacent-velocity residual for both accumulation architectures.
   records and per-body gather.
 - [x] Implement graph-colored or disjoint-batch Soft-TGS without CPU-driven
   convergence or silently dropped conflicts.
-- [ ] Optionally implement one rigid XPBD or split position/velocity comparator
-  only if the first two leave a material unanswered question.
+- [x] Evaluate whether a rigid XPBD or split position/velocity comparator is
+  needed. The two required candidates left no material unanswered family
+  question, so the optional comparator was not implemented.
 - [x] Compare every declared pass with the scalar trace and run the same
   authored-manifold corpus on native, browser, Android, and headless.
 
@@ -154,8 +155,8 @@ benchmark mode with out-of-window state reset, explicit warmup, separate CPU
 encode/submit and host-completion samples, and delayed timestamp-query
 resolution when supported. Engine-owned prefix-scan, stable radix-sort, unique,
 and compaction WGSL primitives use the same protocol and validate complete
-outputs through 30K elements. Matrix generation and its acceptance gates
-remain open below.
+outputs through 30K elements. The published matrix and its acceptance gates are
+summarized below.
 
 The CPU comparison process is also available as a separate optimized Box2D
 Release/SIMD build with fresh atomic artifacts and named one-/four-worker
@@ -165,8 +166,9 @@ solver-only timing in the final matrix.
 Android has a true headless Vulkan measurement lane for both candidates and
 all four primitives. A 1K-contact/10K-primitive run completed on the
 `jstorrent-tablet` AVD; the connected Pixel 7a remained locked and was rejected
-before execution. The final package must retain both the AVD measurements and
-that physical-device availability state unless a later retry succeeds.
+before execution. The final package retains both the AVD measurements and that
+physical-device availability state; a later physical run may close the gap but
+must not overwrite the emulator evidence.
 
 Evidence automation, 2026-07-14: `physbox-solver-evidence` now owns one fresh,
 atomic matrix run across the two candidates, trace-free final-state stress
@@ -183,8 +185,8 @@ the objective matrix, convergence-versus-cost sweep, native and AVD primitive
 curves, separately scoped optimized Box2D rows, cross-host captures, known
 limits, reconsideration triggers, and two synchronized playback sets. The
 connected Pixel 7a remains an explicit locked-device gap. S1.5 is complete;
-the report contains a Jacobi-gather recommendation but does not select or
-promote it. Work stops at the unchecked S1.6 human decision below.
+the report's Jacobi-gather recommendation was accepted at S1.6 without
+substituting AVD evidence for the unavailable physical-device lane.
 
 - [x] Minimize randomized failures and promote reproducers into the corpus.
   The initial deterministic 16-seed run covered 32 scenarios and 64 candidate
@@ -216,15 +218,19 @@ expose any dispatch, bandwidth, scratch, or capacity limit at useful scale.
 
 ### S1.6 — solver decision
 
-- [ ] Review the objective matrix and synchronized playback.
-- [ ] Select the initial solver family, portable accumulation strategy,
+- [x] Review the objective matrix and synchronized playback.
+- [x] Select the initial solver family, portable accumulation strategy,
   substep/iteration policy, and checked baseline parameters.
-- [ ] Record rejected alternatives and explicit reconsideration triggers in
+- [x] Record rejected alternatives and explicit reconsideration triggers in
   the authoritative topic.
-- [ ] Update the bring-up plan and mark this tactical complete.
+- [x] Update the bring-up plan and mark this tactical complete.
 
-This is a manual checkpoint. Automation may prepare evidence and repair an
-implementation; it may not silently choose or switch the solver family.
+Human review accepted contact-centric Jacobi with GPU body gather on
+2026-07-15. The starting policy is four substeps, one iteration, fixed `dt`
+1/60, bias rate 0.2, mass coefficient 1.0, impulse coefficient 0.0, and
+restitution threshold 1.0. Colored Soft-TGS remains a comparator. The physical
+Pixel gap remains recorded as a reconsideration trigger, not a portability
+waiver.
 
 ## Completion definition
 
@@ -233,3 +239,6 @@ selects one portable solver foundation with recorded parameters, rejected
 alternatives, and reconsideration triggers. Completion authorizes P5.1 body
 state and fixed-floor work; it does not claim full rigid-foundation acceptance
 or authorize liquid work.
+
+Completed 2026-07-15. P5.1 is authorized; P5.4 rigid acceptance remains the
+gate before liquid work.

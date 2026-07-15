@@ -5,10 +5,12 @@ GPU-resident 2D physics world. It begins deliberately small: a shared Rust,
 `wgpu`, and WGSL host running unchanged behind desktop, browser, headless, and
 Android adapters.
 
-The bootstrap currently proves the host contract with one tiny GPU-resident
-animated body and direct rendering. It contains no Rapier, CPU physics backend,
-fluid solver, legacy tools, settings UI, or PhysBox 4 scene compatibility. The
-next milestone is an oracle-driven rigid-contact solver laboratory.
+The shared-host bootstrap and oracle-driven rigid solver laboratory are
+complete. Human review selected contact-centric Jacobi with GPU per-body gather
+as the initial rigid foundation; P5.1 minimal rigid state and fixed-floor
+contact is next. The repository still contains no Rapier or CPU product physics
+backend, fluid solver, legacy tools, settings UI, or PhysBox 4 scene
+compatibility.
 
 Read:
 

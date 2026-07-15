@@ -1,7 +1,7 @@
 # PhysBox 5: One GPU-Resident 2D Physics World
 
-Status: active direction, 2026-07-14. The lean PhysBox 5 bootstrap is live at
-`~/code/physbox5`, fresh-history commit
+Status: active direction, 2026-07-15. The lean bootstrap and P5.0a solver
+laboratory are complete at `~/code/physbox5`; the fresh-history root is commit
 `3de0b12001b2246e3966f7d1264225dd4da903f4`, and
 <https://physbox5.kzahel.com>. PhysBox 4 remains the preserved snapshot of the
 split CPU-rigid/GPU-fluid investigation.
@@ -351,18 +351,44 @@ fixture produces an explicit failed capacity record. Both lanes retain authored
 anchors across Soft-Step substeps, refresh separation from current poses, and
 place unbiased relaxation after pose integration. The scalar-compatible
 contact-pass mode remains available for first-divergence traces. These are
-candidate facts, not a production solver decision; S1.6 still owns that choice.
+candidate facts from S1.4; the later S1.6 decision is recorded below.
 
 The completed S1.5 review package is
-[`evidence/p5.0a-s1.5`](../../evidence/p5.0a-s1.5/README.md). Its provisional
-recommendation is contact-centric Jacobi with GPU body gather because the
-current portable implementation has a much smaller fixed dispatch schedule,
-passes the zero-overflow 30K lane, and can buy additional convergence with
-substeps at lower measured cost than the colored comparator. The colored lane
-retains better per-substep convergence but currently pays a 32-color bound and
-786 dispatches at the four-substep setting. This is evidence for the S1.6 human
-checkpoint, not a selected family, accepted physical default, or authorization
-to begin P5.1. The tactical and bring-up status remain open until review.
+[`evidence/p5.0a-s1.5`](../../evidence/p5.0a-s1.5/README.md).
+
+#### S1.6 solver selection — accepted 2026-07-15
+
+Human review selected contact-centric Jacobi with equal-and-opposite contact
+records and GPU per-body gather as the initial rigid solver foundation. The
+portable accumulation path is GPU-built body incidence through count, prefix
+scan, and scatter, followed by deterministic body-owned `f32` gather and
+ping-pong velocity buffers. This decision authorizes P5.1; it does not claim
+full rigid acceptance or authorize liquid work.
+
+The first checked laboratory baseline is fixed `dt` 1/60 second, four solver
+substeps, one iteration, bias rate 0.2, mass coefficient 1.0, impulse
+coefficient 0.0, and restitution threshold 1.0. These values are a starting
+policy, not permission to weaken later scenario-specific quality bands.
+Changing the family, accumulation architecture, or these baseline parameters
+requires new measured evidence and review.
+
+Graph-colored Soft-Step/TGS is rejected as the initial production foundation
+but retained as a convergence comparator and regression lane. It converges
+faster per substep, yet the measured four-substep implementation requires 786
+dispatches, is materially slower on both named adapters, and has a diagnosed
+32-color topology bound. The optional XPBD/split comparator was not triggered:
+the two required candidates answered the current accumulation and convergence
+question without a material third-family ambiguity. Native float atomics and
+CPU physics remain ineligible as required product paths.
+
+Reconsider the selection if physical Android hardware reverses the measured
+dispatch/cost relationship; accepted tall-stack, mass-ratio, friction,
+restitution, or sleep fixtures fail Jacobi quality bands; gather contention or
+adjacency memory scales materially worse on a representative portable adapter;
+a GPU-driven colored or segmented path removes the current dispatch and
+topology limits; later contact persistence changes the work topology enough to
+invalidate the authored-manifold evidence; or a genuine scalar-invariant
+versus Box2D behavior conflict is demonstrated.
 
 Other portable fallbacks that may be measured include segmented `f32`
 reduction and bounded fixed-point integer atomic accumulation with documented
@@ -618,9 +644,11 @@ Keep two distinct native Box2D lanes:
   Its patch digest is provenance, and its output never becomes the authority.
 
 On 2026-07-14 the pinned Box2D source built successfully as a native static
-library on arm64 macOS with CMake 4.2.3 and AppleClang 21. P5.0a still needs to
-build the adapter protocol and freeze single-threaded world/build options; the
-library build alone is feasibility evidence, not an oracle result.
+library on arm64 macOS with CMake 4.2.3 and AppleClang 21. P5.0a subsequently
+froze the process protocol, single-threaded authority settings, validation-on
+and SIMD-off build, fresh atomic artifacts, and success sentinel. The separate
+optimized performance lane retains SIMD and named one-/four-worker settings.
+No patched microscope was needed for the accepted fixtures.
 
 The microscope may trace broadphase pair creation, manifolds before and after
 feature matching, prepared effective masses and bias values, constraint graph
@@ -913,8 +941,8 @@ product implementation indefinitely.
   per step, so their measured cost is a solver-selection input that caps
   broadphase, persistence, and solver scale.
 - Name the desktop and Android reference adapters and record at least one
-  solver-laboratory measurement on the Android device before the solver
-  decision.
+  solver-laboratory Android measurement; record a physical-device availability
+  gap explicitly rather than substituting emulator evidence silently.
 - Select the solver foundation from numerical behavior, cross-adapter behavior,
   GPU cost, memory, and one side-by-side review.
 
@@ -1159,12 +1187,13 @@ includes feel that aggregate metrics did not adequately capture.
 
 ## Initial decisions and remaining experiments
 
-The first rigid work begins with these defaults:
+The first rigid work proceeds with these decisions:
 
-- Soft-Step/TGS-like velocity impulses are the leading rigid behavior
-  hypothesis; rigid XPBD and split alternatives are laboratory comparisons.
-- Contact-centric Jacobi plus per-body gather is the leading portable write
-  strategy; GPU-colored TGS is the principal convergence competitor.
+- Soft-Step-like velocity impulses with the accepted S1.6 parameters are the
+  selected initial rigid behavior foundation; rigid XPBD and split alternatives
+  require a new measured ambiguity before implementation.
+- Contact-centric Jacobi plus per-body gather is the selected portable write
+  strategy; GPU-colored TGS remains the principal convergence comparator.
 - All-pairs is the initial trusted broadphase and pair oracle; sorted SAP and a
   multi-cell grid are the first scalable bakeoff.
 - Persistent contacts use canonical body handles with generations plus stable

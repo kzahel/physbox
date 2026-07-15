@@ -1,6 +1,6 @@
 # Vision: one GPU-resident 2D physics world
 
-Status: active direction, 2026-07-14.
+Status: active direction, 2026-07-15.
 
 This is the compact entry point. The authoritative, research-backed direction
 is [PhysBox 5: one GPU-resident 2D physics world](topics/physbox5-unified-gpu-physics.md),
@@ -80,27 +80,36 @@ dimensions, position and angle, linear and angular velocity, inverse mass and
 scalar inverse inertia, material/collision flags, and sleep state. True 2D
 means no quaternions, 3D inertia tensors, gyroscopic terms, or tangent planes.
 
-## Solver decision before collision complexity
+## Selected solver before collision complexity
 
 The first real physics milestone is an engine-owned solver laboratory fed by
 authored manifolds plus a scoped analytic fixture contact generator for
 multi-step fixtures. A scalar Rust executable specification and GPU variants
 consume the same contact records:
 
-1. contact-centric Jacobi with per-body gather (portable leading candidate);
-2. graph-colored/disjoint-batch Soft-TGS (convergence competitor);
-3. optionally rigid XPBD or a split position/velocity formulation.
+1. contact-centric Jacobi with per-body gather (selected portable foundation);
+2. graph-colored/disjoint-batch Soft-TGS (retained convergence comparator);
+3. optionally rigid XPBD or a split position/velocity formulation only after a
+   new measured ambiguity.
 
 Fixtures cover one contact, symmetric and off-center impact, chains, stacks,
 pyramids, thin-edge landings, friction, restitution, mass ratios, and
 step/substep sweeps. Selection measures penetration, stack error, jitter,
 energy creation, friction/restitution behavior, convergence, repeatability,
 GPU time, dispatches, scratch memory, and future particle/body gather fit. The
-solver family is a human decision gate; automation may not silently switch it.
+solver family was a human decision gate; automation may not silently switch it.
 
-The leading behavioral hypothesis is Box2D Soft-Step/TGS-like velocity
-impulses: several substeps, locally anchored contacts retained across substeps,
-accumulated projected impulses, a biased solve, and unbiased relaxation.
+S1.6 review selected contact-centric Jacobi with equal-and-opposite records and
+GPU body gather. The starting checked policy is fixed `dt` 1/60, four substeps,
+one iteration, bias rate 0.2, mass coefficient 1.0, impulse coefficient 0.0,
+and restitution threshold 1.0. Colored Soft-TGS remains a convergence
+comparator; the optional XPBD/split comparator was not triggered. The
+[review package](../evidence/p5.0a-s1.5/README.md) records the measurements,
+rejected alternative, and reconsideration triggers.
+
+The selected initial behavior uses Box2D Soft-Step-like velocity impulses:
+locally anchored contacts retained across substeps, accumulated projected
+impulses, a biased solve, and unbiased relaxation.
 
 ## Collision contracts
 

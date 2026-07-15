@@ -347,8 +347,9 @@ timing samples, complete capacity records, and zero overflow. The companion
 AVD artifact measures both candidates at 1K contacts and all primitives at 10K
 elements on Vulkan SwiftShader. The connected Pixel 7a was locked, so both its
 benchmark and app validation runners refused execution and the matrix records
-that physical-device gap explicitly. These are measurements for S1.6 review,
-not a production primitive or solver selection.
+that physical-device gap explicitly. These measurements supported the accepted
+S1.6 Jacobi-gather selection; they do not select a production primitive or
+constitute a public end-to-end performance claim.
 
 ## Result validity
 

@@ -10,7 +10,7 @@ the first time scale is measured. Interactive scheduling follows the
 fixed `dt`, at most one outer step per engine frame, and permanent wall-time
 slip instead of catch-up.
 
-## P5.0 — lean shared-host bootstrap (current)
+## P5.0 — lean shared-host bootstrap (complete)
 
 - Fresh Git history and PhysBox 4 provenance.
 - One GPU-resident bootstrap body, one compute step, and direct rendering.
@@ -22,9 +22,9 @@ slip instead of catch-up.
 Exit: all locally available gates pass, Wrangler dry-run passes, hook is
 installed, and the tree contains only the retained platform rim.
 
-## P5.0a — oracle foundation and solver laboratory
+## P5.0a — oracle foundation and solver laboratory (complete 2026-07-15)
 
-Execution tracker:
+Completed execution tracker:
 [S1 rigid solver laboratory](tactical/001-rigid-solver-laboratory.md).
 
 1. Replace the bootstrap eight-step catch-up accumulator with the shared
@@ -46,7 +46,8 @@ Execution tracker:
    input.
 9. Record the numerical, cross-adapter, capacity, and 1K/10K/30K authored-contact
    performance matrix required by the scale contract, including at least one
-   measurement on the named Android reference device.
+   measurement on the named Android reference target and any explicit physical
+   device availability gap.
 10. Select the solver family and freeze its first checked baselines through
     one explicit human review.
 
@@ -56,7 +57,15 @@ documented solver decision. Do not build a production broadphase before this
 exit. PhysBox 3 browser automation, LiquidFun, and a Rapier2D comparator are
 not part of this stage.
 
-## P5.1 — minimal rigid state and fixed-floor contact
+Exit decision: human review selected contact-centric Jacobi with
+equal-and-opposite records and GPU per-body gather. The starting checked policy
+is fixed `dt` 1/60, four substeps, one iteration, bias rate 0.2, mass
+coefficient 1.0, impulse coefficient 0.0, and restitution threshold 1.0.
+Colored Soft-TGS remains a convergence comparator. The full evidence and
+reconsideration triggers are in the
+[S1.6 review package](../evidence/p5.0a-s1.5/README.md).
+
+## P5.1 — minimal rigid state and fixed-floor contact (next)
 
 - Replace bootstrap state with generational SoA body storage and bounded GPU
   commands.
