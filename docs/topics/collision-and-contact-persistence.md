@@ -252,6 +252,19 @@ reuse, recontact, and atomic rejection remain permanent tests or fresh matrix
 fields. The runner publishes a fresh atomic directory with source provenance
 and an explicit no-selection marker.
 
+The clean S3.5a package reports zero randomized replay, permutation, topology,
+or accepted-overflow differences and equivalent atomic failure across all
+three lanes. Pair-slot persistence is 68x/198x/416x faster at P50 across the
+generated 32/256/1K rows with 47%/40%/27% less comparable allocation. Stable
+body edges are exact and improve complete generated P50 by
+1.04x/1.28x/1.38x; at isolated 1K/10K authored contacts they improve P50 by
+1.54x/2.28x while approximately doubling topology bytes. The policy candidate
+creates the previously missing speculative contacts and materially clamps
+deep-overlap response, but it leaves `0.000508` penetration and `27.41 m/s`
+maximum multi-contact speed for human quality review. The pair and adjacency
+timings remain separate experiments, so the evidence does not claim that a
+combined product graph already achieves their joint result.
+
 ## Reconsideration triggers
 
 Reconsider the provisional feature or record layout before S3.6 if direct

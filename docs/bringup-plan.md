@@ -135,6 +135,17 @@ lanes, and requires exact replay/capacity qualification. It records no
 representation selection and leaves the product baseline unchanged until the
 clean native and cross-host artifacts are published for renewed S3.6 review.
 
+The clean S3.5a package is now published from revision `27a0e8c`. Stable
+pair-slot persistence is exact and reduces its isolated stage P50 by 68x to
+416x across the governed generated counts. Stable body-edge views are exact,
+improve the complete generated graph by 1.04x to 1.38x, and improve isolated
+1K/10K contact-rich rows by 1.54x/2.28x at about 6% total-allocation overhead.
+The approved physical-policy candidate materially mitigates both minimized
+failures but retains visible residual response. Native, browser, and the
+hardware-accelerated AVD pass; no physical device was connected. Because the
+pair and edge timings are not yet one combined product graph, the package
+makes no CPU crossover claim and returns to S3.6 for human selection.
+
 - Add circles and oriented rectangles.
 - Use all-pairs AABB candidate generation.
 - Implement analytic/SAT/clipped manifolds and direct Box2D comparison.

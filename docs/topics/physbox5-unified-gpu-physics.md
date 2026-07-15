@@ -591,6 +591,19 @@ both are correctness-qualified by exact result digests, replay, permutation,
 capacity, and atomic-failure records. Fresh artifacts always state that no
 representation or physical default has been selected.
 
+The clean S3.5a matrix now qualifies both views without promoting either.
+Stable pair-slot persistence preserves full equality verification and exact
+replay while reducing isolated persistence P50 by 68x to 416x and comparable
+allocation by 27% to 47% across 32/256/1K bodies. Stable body edges preserve
+exact solver output and reduce complete generated-graph P50 by 1.04x to 1.38x;
+on 1K/10K authored contacts they reduce P50 by 1.54x/2.28x while adding about
+6% total allocation and approximately doubling topology bytes. The candidate
+policy reduces the preserved crossing penetration from `0.005069` to
+`0.000508` and six-body coincident maximum speed from `126.27` to `27.41 m/s`.
+These residuals, the absence of a combined pair-slot-plus-edge full-step
+timing, and the physical-device availability gap remain explicit S3.6 review
+inputs. No default, contact ABI, or product representation changed.
+
 Circle/circle and circle/rectangle contact are analytic. Rectangle/rectangle
 uses SAT to select a reference and incident edge, clips the incident segment,
 and produces stable vertex/edge feature pairs. Test feature stability around

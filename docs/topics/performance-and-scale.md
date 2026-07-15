@@ -615,6 +615,21 @@ solve time. Exact result digests, replay, randomized permutation, allocation,
 capacity, dispatch, and atomic rejection qualify each row. No timing result is
 accepted until the clean same-revision evidence commit.
 
+S3.5a clean measurement, 2026-07-15: on Apple M4 Pro Metal, stable pair-slot
+persistence is exact and reduces persistence P50 from 3.859/4.801/14.319 ms to
+0.0565/0.0242/0.0344 ms at 32/256/1K bodies. Comparable collision plus
+persistence allocation falls from 0.522/4.962/29.279 MB to
+0.275/2.955/21.263 MB. Stable body-edge views are also exact; their complete
+generated-graph P50 is 4.417/5.591/16.939 ms versus
+4.578/7.172/23.427 ms for the canonical scan. The more decision-relevant
+authored-contact rows, which exclude all-pairs, improve from 0.489 to 0.319 ms
+at 1K and 3.569 to 1.565 ms at 10K, while total allocation rises about 6% and
+topology bytes approximately double. The isolated pair-slot and complete
+stable-edge results are not one integrated timing and may not be added into a
+CPU crossover claim. The current full-key product baseline remains
+23.422 ms at 1K versus the fastest 0.1547 ms optimized Box2D row; representation
+selection and any integrated-performance requirement remain at S3.6.
+
 ## Regression and claim gates
 
 Before representative hardware is selected, store named measurements and

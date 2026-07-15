@@ -367,11 +367,11 @@ representation nor final physical defaults.
 - [x] Express pair, body-endpoint, and later particle orderings as compact
   index/remap views over canonical payloads. Do not change `BodyCoreV1`, create
   a liquid ABI, begin liquid, or create a second engine.
-- [ ] Measure persistence, index sorting, offset construction, gather, and
+- [x] Measure persistence, index sorting, offset construction, gather, and
   solve separately, including dispatches, key/index bytes, allocation and
   high-water, P50/P95/P99, exact replay, permutation, churn, recontact,
   generation reuse, collision/full-verify negatives, and atomic overflow.
-- [ ] Retain generated 32/256/1K rows and add isolated contact-rich authored
+- [x] Retain generated 32/256/1K rows and add isolated contact-rich authored
   1K and 10K representation rows that do not pay the quadratic all-pairs
   baseline. Regenerate native, browser, maintained host-GPU AVD, available
   physical Android, optimized Box2D, failure, and synchronized playback
@@ -436,6 +436,21 @@ state, publishes only by fresh directory rename, and always records
 `selectionMade=false`. This completes the compact index-view organization and
 evidence mechanics; the timing and cross-host checkboxes remain open until a
 clean same-revision package is committed.
+
+Clean evidence completion, 2026-07-15: the
+[S3.5a package](../../evidence/p5.2-s3.5a/README.md) records 30-sample Metal
+rows at clean revision `27a0e8c`. Stable pair slots preserve complete
+pair/feature verification while reducing isolated persistence P50 by
+68x/198x/416x and comparable allocation by 47%/40%/27% at 32/256/1K bodies.
+Stable body edges preserve exact output while improving complete generated
+P50 by 1.04x/1.28x/1.38x and isolated contact-rich P50 by 1.54x/2.28x at
+1K/10K contacts. Their fixed-capacity topology memory is about four times the
+generated scan baseline and about twice the contact-rich topology bytes. All
+64 bakeoff randomized cases and 128 generated authority cases replay exactly,
+overflow is atomic, native/browser/hardware-accelerated AVD pass the same
+scene contract, and the attempted physical lane had no connected device. The
+pair and edge gains remain separately scoped; no combined candidate or CPU
+crossover claim is inferred. S3.6 remains the human selection checkpoint.
 
 Gate: the speculative and deep-overlap reproducers pass without widening the
 existing numerical tolerance; every candidate exactly preserves accepted
