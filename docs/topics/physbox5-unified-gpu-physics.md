@@ -238,6 +238,17 @@ remain deferred. The inherited bootstrap mechanics buffer and compute path
 have been removed; the old visualization shader is retained only for the S1
 candidate laboratory.
 
+S2.3 cross-host evidence is complete in the
+[fixed-floor evidence package](../../evidence/p5.1-s2.3/README.md). The exact
+product playback settles by step 60 and remains bounded through step 180.
+At step 120 its vertical position differs from clean pinned Box2D by
+`0.00042979`, with approximately `6.05e-7` residual vertical speed and
+`0.000547588` maximum penetration. Native Metal, browser WebGPU, the
+`jstorrent-tablet` SwiftShader/Vulkan AVD, and a physical Pixel 7a
+Mali-G710/Vulkan device all report the same structural scene contract and no
+overflow. These are objective observations rather than a new tolerance or
+baseline.
+
 ## Later fluid-coupling contract
 
 This contract is not part of the first rigid milestone. It records the

@@ -159,16 +159,36 @@ documentation, and passing shared-host gates land together.
 
 ### S2.3 — selected fixed-floor Jacobi solve
 
-- [ ] Feed a precomputed two-point rectangle/floor manifold into the accepted
+Implementation evidence, 2026-07-15: the default bootstrap and explicit
+`rigid-floor` scenario now run the accepted contact-centric Jacobi/gather
+schedule against a precomputed two-point floor manifold. GPU count, prefix,
+and scatter build the incidence topology; every impulse stage emits paired
+records and gathers by body through ping-pong motion buffers. The exact
+schedule remains four substeps, one iteration, and the accepted coefficients,
+for 68 dispatches per outer step. Live separation and effective mass are
+recomputed from GPU pose, while general narrowphase and outer-step contact
+persistence remain deferred.
+
+The [fresh evidence package](../../evidence/p5.1-s2.3/README.md) records clean
+native, browser, `jstorrent-tablet` AVD, and physical Pixel 7a runs. At 120
+steps the product settles at `y=0.19945242` with `vy=6.05e-7`; the clean pinned
+Box2D authority settles at `y=0.19988221`, for an objective vertical delta of
+`0.00042979`. Maximum product penetration is `0.000547588`, both contact
+impulses are projected, solver scratch is 552 bytes, and no capacity
+overflow occurs. Seven-checkpoint product and scalar/Box2D playbacks preserve
+the trajectory and complete oracle provenance. No tolerance, default, source
+pin, or solver decision changed.
+
+- [x] Feed a precomputed two-point rectangle/floor manifold into the accepted
   contact-centric Jacobi path.
-- [ ] Build fixed topology on the GPU, emit equal-and-opposite contribution
+- [x] Build fixed topology on the GPU, emit equal-and-opposite contribution
   records, gather by body, and run four substeps with one iteration and the
   accepted parameters.
-- [ ] Keep the fixed floor in the same solver/body contract without adding
+- [x] Keep the fixed floor in the same solver/body contract without adding
   general collision generation or persistent outer-step contacts.
-- [ ] Compare isolated passes with the scalar specification and compare the
+- [x] Compare isolated passes with the scalar specification and compare the
   bounded landing trajectory with the unmodified Box2D authority projection.
-- [ ] Preserve first-divergence and capacity artifacts for any failure.
+- [x] Preserve first-divergence and capacity artifacts for any failure.
 
 Likely boundary: the product body path may share solver equations and portable
 topology primitives with the S1 laboratory, but the laboratory remains

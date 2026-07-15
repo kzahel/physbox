@@ -1,7 +1,7 @@
 # Tactical workstreams
 
-Status: S1 complete; S2 is actively executing P5.1 minimal rigid state through
-the body-layout and command-ABI human checkpoint.
+Status: S1 and S2.1–S2.3 complete; S2 is actively executing P5.1 reset/grab
+and scale evidence before the body-layout and command-ABI human checkpoint.
 
 Tactical filenames use a three-digit zero-padded prefix ordered by their first
 Git creation timestamp. This repository starts at `001`. Never renumber an
@@ -13,7 +13,7 @@ This README remains the unnumbered index.
 | ID | Workstream | Document | Status |
 | --- | --- | --- | --- |
 | S1 | Oracle foundation and rigid solver laboratory | [001-rigid-solver-laboratory.md](001-rigid-solver-laboratory.md) | complete 2026-07-15 |
-| S2 | GPU body state and fixed-floor contact | [002-gpu-body-state.md](002-gpu-body-state.md) | active 2026-07-15 |
+| S2 | GPU body state and fixed-floor contact | [002-gpu-body-state.md](002-gpu-body-state.md) | active; S2.3 complete 2026-07-15 |
 
 ## Conventions
 

@@ -69,6 +69,11 @@ reconsideration triggers are in the
 
 Execution tracker: [S2 GPU body state and fixed-floor contact](tactical/002-gpu-body-state.md).
 
+Current checkpoint, 2026-07-15: S2.1 through S2.3 are complete. The
+generational body allocation, direct rendering, and selected fixed-floor
+Jacobi/gather solve have fresh native, browser, AVD, physical Android, scalar,
+and Box2D evidence. Reset/grab behavior and scale measurement remain.
+
 - Replace bootstrap state with generational SoA body storage and bounded GPU
   commands.
 - Keep one analytic rectangle plus fixed floor and direct rendering.
