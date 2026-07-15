@@ -356,6 +356,25 @@ Chromium results retain a suspected 100 microsecond security quantization.
 This prevents an advertised but broken clock from becoming a zero-cost GPU
 claim.
 
+P5.1 S2.5 clean evidence, 2026-07-15: the
+[body scale package](../../evidence/p5.1-s2.5/README.md) retains 20 raw release
+samples at 1K, 10K, and 100K bodies on native Metal, Chrome WebGPU,
+`jstorrent-tablet` SwiftShader/Vulkan, and physical Pixel 7a Mali-G710/Vulkan.
+The provisional 64-byte grouped SoA uses 6.4 MB for 100K bodies and every row
+reports exact high-water with zero overflow. Native Metal GPU P50/P95 is
+0.926/1.556 ms at 100K, while Chrome GPU P50/P95 is 1.503/1.615 ms. The Pixel's
+unusable all-zero timestamp clock is excluded; bounded host completion at 100K
+is 11.239/13.297 ms P50/P95. SwiftShader's 1452.551 ms 100K P50 is named
+software portability evidence, not Android hardware performance.
+
+Every accepted row validates complete final state after timing, with maximum
+absolute error no larger than `1.1920929e-7` against the unchanged `1e-5`
+scalar gate. The result exposes no current body-memory or native/browser
+bandwidth limit that makes a fifth identity/material buffer credible before
+P5.2. It does expose the unconditional full-body grab-hold scan as a future
+sparsification candidate. These observations propose, but do not freeze, the
+layout and command architecture; S2.6 remains a human checkpoint.
+
 Android measurement uses a shell-executed native benchmark binary built with
 the maintained NDK toolchain, rather than estimating compute cost from APK
 startup or frame cadence. It calls the same solver and primitive benchmark

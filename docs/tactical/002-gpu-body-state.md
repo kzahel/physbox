@@ -290,19 +290,37 @@ named host-completion clock for that device; it never presents zero as GPU
 execution time. Clean 1K/10K/100K capture and layout interpretation remain to
 complete this slice, so the provisional ABI is still unfrozen.
 
-- [ ] Add an explicit-step benchmark mode that initializes 1K, 10K, and 100K
+Completion evidence, 2026-07-15: the
+[S2.5 package](../../evidence/p5.1-s2.5/README.md) retains 12 clean release rows
+from the Apple M4 Pro Metal adapter, Chrome WebGPU, `jstorrent-tablet` Vulkan
+SwiftShader, and the Pixel 7a Mali-G710. Native Metal measures 0.121/0.246/0.926
+ms GPU P50 at 1K/10K/100K; Chrome measures 0.097/0.232/1.503 ms. The physical
+device's unusable all-zero query clock is rejected; its separately named host
+completion is 1.833/2.203/11.239 ms P50 and 2.931/5.767/13.297 ms P95. The AVD
+is retained as software portability evidence, not a hardware proxy. All rows
+validate complete state within the unchanged `1e-5` gate, retain 64 bytes per
+body and exact capacity/work records, and report no overflow.
+
+No measured bandwidth, dispatch, memory, or portability limit justifies a
+fabricated second layout. Splitting metadata into separate 8-byte identity and
+material buffers would not reduce the 64-byte total and would add a fifth
+binding before P5.2 exposes the contact access pattern. That option and a
+sparse replacement for the current full-capacity grab-hold scan remain
+explicit reconsideration triggers for S2.6 rather than silent ABI changes.
+
+- [x] Add an explicit-step benchmark mode that initializes 1K, 10K, and 100K
   rectangles from the shared deterministic generator and measures integration
   plus direct rendering after warmup.
-- [ ] Record GPU timestamps when supported, CPU encode/submit and host
+- [x] Record GPU timestamps when supported, CPU encode/submit and host
   completion separately, P50/P95/P99, dispatches, full work vector, allocated
   and high-water bytes, bytes per body, and every capacity counter.
-- [ ] Measure the named native adapter, browser adapter, `jstorrent-tablet`
+- [x] Measure the named native adapter, browser adapter, `jstorrent-tablet`
   AVD, and physical Android hardware when available; never substitute AVD data
   for a missing device result.
-- [ ] Compare at least the provisional grouped SoA layout with any materially
+- [x] Compare at least the provisional grouped SoA layout with any materially
   credible hot/cold split exposed by the measurements; do not fabricate a
   second candidate when no meaningful alternative exists.
-- [ ] Validate complete final state only after the bounded benchmark run; no
+- [x] Validate complete final state only after the bounded benchmark run; no
   timing sample may include per-step mapping, pipeline creation, or allocation.
 
 Artifacts: one fresh atomic `evidence/p5.1-s2.5` matrix, adapter-specific raw

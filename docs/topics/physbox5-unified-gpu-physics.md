@@ -275,6 +275,24 @@ physical pacing diagnose 0.15 s and 0.05 s of permanent slip respectively,
 without catch-up. This evidence completes action transport and replay only;
 it does not freeze the provisional body or command representation.
 
+P5.1 S2.5 evidence is complete in the
+[body scale package](../../evidence/p5.1-s2.5/README.md). The same exact-step
+body world integrates, scans held state, and directly renders 1K, 10K, and
+100K deterministic rectangles on native Metal, Chrome WebGPU, the
+`jstorrent-tablet` SwiftShader/Vulkan AVD, and a physical Pixel 7a. All 12
+clean release rows validate complete final pose/motion/metadata state, retain
+64 bytes per body and all capacity/work counters, and report zero overflow.
+At 100K, native Metal GPU time is 0.926 ms P50 and Chrome is 1.503 ms P50;
+Pixel host completion is 11.239 ms P50 because its advertised timestamp-query
+path returns unusable all-zero samples. The AVD remains a software portability
+lane.
+
+No material hot/cold comparator is exposed by these curves. An 8-byte
+identity/8-byte material split preserves the same total bytes while adding a
+binding before general contacts establish their access pattern. The grouped
+SoA, the 48-byte bounded command record, and the full-capacity hold scan remain
+proposals for the S2.6 human review, not frozen production ABI.
+
 ## Later fluid-coupling contract
 
 This contract is not part of the first rigid milestone. It records the

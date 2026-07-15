@@ -69,11 +69,13 @@ reconsideration triggers are in the
 
 Execution tracker: [S2 GPU body state and fixed-floor contact](tactical/002-gpu-body-state.md).
 
-Current checkpoint, 2026-07-15: S2.1 through S2.4 are complete. The
+Current checkpoint, 2026-07-15: S2.1 through S2.5 are complete. The
 generational body allocation, direct rendering, and selected fixed-floor
 Jacobi/gather solve have fresh native, browser, AVD, physical Android, scalar,
 and Box2D evidence. Bounded reset/grab behavior also has exact replay and
-clean cross-host evidence. Scale measurement remains before S2.6 review.
+clean cross-host evidence. Clean 1K/10K/100K scale curves retain complete
+state, work, memory, and capacity validation on all four target lanes. S2.6 is
+the active human layout/command-ABI checkpoint; neither ABI is frozen.
 
 - Replace bootstrap state with generational SoA body storage and bounded GPU
   commands.
