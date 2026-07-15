@@ -47,6 +47,7 @@ struct CacheMatch {
 @group(0) @binding(16) var<storage, read_write> output_capacity: array<atomic<u32>>;
 @group(0) @binding(17) var<storage, read_write> work: array<atomic<u32>>;
 @group(0) @binding(18) var<uniform> params: Params;
+@group(0) @binding(19) var<storage, read_write> step_counter: array<atomic<u32>>;
 
 var<workgroup> scan_new: array<u32, 256>;
 var<workgroup> scan_free: array<u32, 256>;
@@ -63,6 +64,15 @@ fn invalid_pair() -> PairRecord {
 }
 
 fn pair_less(left: vec4u, right: vec4u) -> bool {
+    for (var index = 0u; index < 4u; index++) {
+        if (left[index] != right[index]) {
+            return left[index] < right[index];
+        }
+    }
+    return false;
+}
+
+fn feature_less(left: vec4u, right: vec4u) -> bool {
     for (var index = 0u; index < 4u; index++) {
         if (left[index] != right[index]) {
             return left[index] < right[index];
@@ -122,6 +132,7 @@ fn clear_pair_slots(@builtin(global_invocation_id) invocation: vec3u) {
 @compute @workgroup_size(1)
 fn prepare_pair_slots(@builtin(global_invocation_id) invocation: vec3u) {
     if (invocation.x != 0u) { return; }
+    atomicAdd(&step_counter[params.counts.x], 1u);
     let attempted_pairs = atomicLoad(&manifold_capacity[1]);
     let attempted_points = atomicLoad(&point_capacity[1]);
     let intrinsic_overflow = attempted_pairs > params.counts.x ||
@@ -161,7 +172,11 @@ fn match_current_pairs(@builtin(global_invocation_id) invocation: vec3u) {
 
     var record = invalid_pair();
     record.key = manifold.identities;
-    record.state = vec4u(0xffffffffu, 0u, manifold.point_range.y, params.counts.z);
+    record.state = vec4u(
+        0xffffffffu,
+        0u,
+        manifold.point_range.y,
+        slot_generations[params.counts.x]);
     var retained = false;
     var previous = invalid_pair();
     if (lower < previous_count && all(previous_pairs[lower].key == manifold.identities)) {
@@ -175,8 +190,16 @@ fn match_current_pairs(@builtin(global_invocation_id) invocation: vec3u) {
             record.state.y = generation;
         }
     }
+    var point0_index = manifold.point_range.x;
+    var point1_index = manifold.point_range.x + 1u;
+    if (manifold.point_range.y >= 2u &&
+        feature_less(points[point1_index].features, points[point0_index].features)) {
+        let swap = point0_index;
+        point0_index = point1_index;
+        point1_index = swap;
+    }
     if (manifold.point_range.y >= 1u) {
-        let point = points[manifold.point_range.x];
+        let point = points[point0_index];
         record.features0 = point.features;
         var cache: CacheMatch;
         if (retained) {
@@ -190,7 +213,7 @@ fn match_current_pairs(@builtin(global_invocation_id) invocation: vec3u) {
         atomicAdd(&work[13], 1u - cache.matched);
     }
     if (manifold.point_range.y >= 2u) {
-        let point = points[manifold.point_range.x + 1u];
+        let point = points[point1_index];
         record.features1 = point.features;
         var cache: CacheMatch;
         if (retained) {

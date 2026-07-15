@@ -21,6 +21,10 @@ use crate::{
     collision_candidates::{CandidateCase, CandidatePipelines},
     collision_narrowphase::{NarrowphaseCase, NarrowphasePipelines},
     collision_persistence::{PersistenceCase, PersistencePipelines},
+    pair_slot_persistence::{
+        PAIR_RECORD_BYTES, PAIR_SLOT_DISPATCHES, PairRecordRaw, PairSlotCase, PairSlotPipelines,
+        invalid_pair, pair_output,
+    },
 };
 
 const WORKGROUP_SIZE: u32 = 64;
@@ -28,7 +32,24 @@ const VALIDATION_STEPS_PER_SUBMISSION: u32 = 64;
 const CACHE_VALUE_BYTES: u32 = 16;
 const PERSISTENT_RECORD_BYTES: u32 = PERSISTENT_CONTACT_KEY_BYTES + CACHE_VALUE_BYTES;
 const COLLISION_DISPATCHES: u32 = 212;
+const PAIR_SLOT_COLLISION_DISPATCHES: u32 = 15 + PAIR_SLOT_DISPATCHES;
 const BRIDGE_DISPATCHES: u32 = 2;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum GpuContactPersistenceTopology {
+    FullKeyOracle,
+    StablePairSlot,
+}
+
+impl GpuContactPersistenceTopology {
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::FullKeyOracle => "full-key-oracle",
+            Self::StablePairSlot => "stable-pair-slot",
+        }
+    }
+}
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -42,9 +63,46 @@ struct CapacityRaw {
     values: [u32; 4],
 }
 
-struct BridgeCase {
+struct FullKeyBridgeCase {
     build: wgpu::BindGroup,
     store: wgpu::BindGroup,
+}
+
+struct FullKeyPersistenceGraph {
+    pipelines: PersistencePipelines,
+    cases: [PersistenceCase; 2],
+    caches: [wgpu::Buffer; 2],
+    capacities: [wgpu::Buffer; 2],
+    empty_capacity: wgpu::Buffer,
+    step_counter: wgpu::Buffer,
+    _bridge_params: wgpu::Buffer,
+    bridge_pipeline_build: wgpu::ComputePipeline,
+    bridge_pipeline_store: wgpu::ComputePipeline,
+    bridge: [FullKeyBridgeCase; 2],
+}
+
+struct PairBridgeCase {
+    build: wgpu::BindGroup,
+    store: wgpu::BindGroup,
+}
+
+struct PairSlotPersistenceGraph {
+    pipelines: PairSlotPipelines,
+    cases: [PairSlotCase; 2],
+    pairs: [wgpu::Buffer; 2],
+    capacities: [wgpu::Buffer; 2],
+    empty_capacity: wgpu::Buffer,
+    slot_generations_and_step: wgpu::Buffer,
+    _bridge_params: wgpu::Buffer,
+    bridge_pipeline_build: wgpu::ComputePipeline,
+    bridge_pipeline_store: wgpu::ComputePipeline,
+    bridge: [PairBridgeCase; 2],
+    pair_capacity: u32,
+}
+
+enum GeneratedPersistenceGraph {
+    FullKey(Box<FullKeyPersistenceGraph>),
+    PairSlot(Box<PairSlotPersistenceGraph>),
 }
 
 pub(crate) struct GpuGeneratedContactGraph {
@@ -52,17 +110,8 @@ pub(crate) struct GpuGeneratedContactGraph {
     candidate: CandidateCase,
     narrowphase_pipelines: NarrowphasePipelines,
     narrowphase: NarrowphaseCase,
-    persistence_pipelines: PersistencePipelines,
-    persistence: [PersistenceCase; 2],
-    caches: [wgpu::Buffer; 2],
-    cache_capacities: [wgpu::Buffer; 2],
-    empty_capacity: wgpu::Buffer,
-    _step_counter: wgpu::Buffer,
+    persistence: GeneratedPersistenceGraph,
     _solver_points: wgpu::Buffer,
-    _bridge_params: wgpu::Buffer,
-    bridge_pipeline_build: wgpu::ComputePipeline,
-    bridge_pipeline_store: wgpu::ComputePipeline,
-    bridge: [BridgeCase; 2],
     solver: GpuFixedFloorSolver,
     parity: Cell<usize>,
     point_capacity: u32,
@@ -74,12 +123,15 @@ impl GpuGeneratedContactGraph {
         storage: &GpuBodyStorage,
         scenario: &ScenarioV1,
     ) -> Result<Self, String> {
-        Self::new_with_gather_topology(
+        Self::new_with_topologies(
             device,
             storage,
             scenario,
+            GpuContactPersistenceTopology::StablePairSlot,
             GpuGatherTopology::CanonicalBodyScan,
             false,
+            false,
+            u32::MAX,
         )
     }
 
@@ -89,6 +141,29 @@ impl GpuGeneratedContactGraph {
         scenario: &ScenarioV1,
         gather_topology: GpuGatherTopology,
         permute_edge_build: bool,
+    ) -> Result<Self, String> {
+        Self::new_with_topologies(
+            device,
+            storage,
+            scenario,
+            GpuContactPersistenceTopology::StablePairSlot,
+            gather_topology,
+            permute_edge_build,
+            false,
+            u32::MAX,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn new_with_topologies(
+        device: &wgpu::Device,
+        storage: &GpuBodyStorage,
+        scenario: &ScenarioV1,
+        persistence_topology: GpuContactPersistenceTopology,
+        gather_topology: GpuGatherTopology,
+        permute_edge_build: bool,
+        permute_pair_build: bool,
+        fingerprint_mask: u32,
     ) -> Result<Self, String> {
         if !scenario.manifolds.is_empty()
             || !scenario.contact_cache.is_empty()
@@ -128,72 +203,6 @@ impl GpuGeneratedContactGraph {
             storage,
         )?;
         let point_capacity = narrowphase.point_capacity();
-        let persistence_pipelines = PersistencePipelines::new(device);
-        let caches = [
-            storage_buffer(
-                device,
-                "physbox5_generated_cache_a",
-                point_capacity,
-                PERSISTENT_RECORD_BYTES,
-            )?,
-            storage_buffer(
-                device,
-                "physbox5_generated_cache_b",
-                point_capacity,
-                PERSISTENT_RECORD_BYTES,
-            )?,
-        ];
-        let empty_capacity_value = CapacityRaw {
-            values: [point_capacity, 0, 0, 0],
-        };
-        let cache_capacities = [
-            storage_init(
-                device,
-                "physbox5_generated_cache_capacity_a",
-                &empty_capacity_value,
-            ),
-            storage_init(
-                device,
-                "physbox5_generated_cache_capacity_b",
-                &empty_capacity_value,
-            ),
-        ];
-        let empty_capacity = storage_init(
-            device,
-            "physbox5_generated_empty_cache_capacity",
-            &empty_capacity_value,
-        );
-        let step_counter = storage_init(device, "physbox5_generated_step_counter", &0_u32);
-        let persistence = [
-            PersistenceCase::new(
-                device,
-                &persistence_pipelines,
-                &narrowphase,
-                &caches[0],
-                &cache_capacities[0],
-                &caches[1],
-                &cache_capacities[1],
-                candidate.work_buffer(),
-                &step_counter,
-                point_capacity,
-                1,
-                false,
-            )?,
-            PersistenceCase::new(
-                device,
-                &persistence_pipelines,
-                &narrowphase,
-                &caches[1],
-                &cache_capacities[1],
-                &caches[0],
-                &cache_capacities[0],
-                candidate.work_buffer(),
-                &step_counter,
-                point_capacity,
-                2,
-                false,
-            )?,
-        ];
         let solver_points = storage_buffer(
             device,
             "physbox5_generated_solver_points",
@@ -209,78 +218,24 @@ impl GpuGeneratedContactGraph {
             gather_topology,
             permute_edge_build,
         )?;
-        let bridge_params = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("physbox5_generated_bridge_params"),
-            contents: bytemuck::bytes_of(&BridgeParamsRaw {
-                counts: [point_capacity, 0, 0, 0],
-            }),
-            usage: wgpu::BufferUsages::UNIFORM,
-        });
-        let build_layout = bridge_layout(device, "physbox5_generated_bridge_build_layout", false);
-        let store_layout = bridge_layout(device, "physbox5_generated_bridge_store_layout", true);
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("physbox5_generated_contact_bridge_shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("generated_contacts.wgsl").into()),
-        });
-        let bridge_pipeline_build = bridge_pipeline(
+        let persistence = GeneratedPersistenceGraph::new(
             device,
-            &shader,
-            &build_layout,
-            "physbox5_generated_bridge_build_pipeline",
-            "build_solver_points",
-        );
-        let bridge_pipeline_store = bridge_pipeline(
-            device,
-            &shader,
-            &store_layout,
-            "physbox5_generated_bridge_store_pipeline",
-            "store_solver_cache",
-        );
-        let bridge = [0_usize, 1_usize].map(|parity| {
-            let output = 1 - parity;
-            BridgeCase {
-                build: bridge_group(
-                    device,
-                    &build_layout,
-                    &[
-                        (0, narrowphase.manifolds()),
-                        (1, narrowphase.points()),
-                        (2, persistence[parity].sorted_current()),
-                        (3, &caches[output]),
-                        (4, &cache_capacities[output]),
-                        (5, &solver_points),
-                    ],
-                    &bridge_params,
-                ),
-                store: bridge_group(
-                    device,
-                    &store_layout,
-                    &[
-                        (3, &caches[output]),
-                        (4, &cache_capacities[output]),
-                        (5, &solver_points),
-                        (6, solver.prepared_buffer()),
-                    ],
-                    &bridge_params,
-                ),
-            }
-        });
+            persistence_topology,
+            &candidate,
+            &narrowphase,
+            &solver_points,
+            &solver,
+            point_capacity,
+            permute_pair_build,
+            fingerprint_mask,
+        )?;
         Ok(Self {
             candidate_pipelines,
             candidate,
             narrowphase_pipelines,
             narrowphase,
-            persistence_pipelines,
             persistence,
-            caches,
-            cache_capacities,
-            empty_capacity,
-            _step_counter: step_counter,
             _solver_points: solver_points,
-            _bridge_params: bridge_params,
-            bridge_pipeline_build,
-            bridge_pipeline_store,
-            bridge,
             solver,
             parity: Cell::new(0),
             point_capacity,
@@ -302,55 +257,25 @@ impl GpuGeneratedContactGraph {
         timestamps: Option<(&wgpu::QuerySet, u32)>,
     ) {
         let parity = self.parity.get();
-        if invalidate_previous_cache {
-            encoder.copy_buffer_to_buffer(
-                &self.empty_capacity,
-                0,
-                &self.cache_capacities[parity],
-                0,
-                u64::from(COLLISION_CAPACITY_COUNTER_BYTES),
-            );
-        }
         self.candidate
             .encode_with_timestamp(encoder, &self.candidate_pipelines, timestamps);
         self.narrowphase
             .encode(encoder, &self.narrowphase_pipelines);
-        self.persistence[parity].encode_with_timestamps(
+        self.persistence.encode_before_solver(
             encoder,
-            &self.persistence_pipelines,
-            timestamps.map(|(query_set, base)| (query_set, base + 1)),
-            timestamps.map(|(query_set, base)| (query_set, base + 2)),
+            parity,
+            invalidate_previous_cache,
+            self.point_capacity,
+            timestamps,
         );
-        {
-            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("physbox5_generated_contact_bridge_build"),
-                timestamp_writes: None,
-            });
-            pass.set_pipeline(&self.bridge_pipeline_build);
-            pass.set_bind_group(0, &self.bridge[parity].build, &[]);
-            pass.dispatch_workgroups(self.point_capacity.div_ceil(WORKGROUP_SIZE), 1, 1);
-        }
         self.solver.encode_step(encoder);
-        {
-            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("physbox5_generated_contact_bridge_store"),
-                timestamp_writes: timestamps.map(|(query_set, base)| {
-                    wgpu::ComputePassTimestampWrites {
-                        query_set,
-                        beginning_of_pass_write_index: None,
-                        end_of_pass_write_index: Some(base + 3),
-                    }
-                }),
-            });
-            pass.set_pipeline(&self.bridge_pipeline_store);
-            pass.set_bind_group(0, &self.bridge[parity].store, &[]);
-            pass.dispatch_workgroups(self.point_capacity.div_ceil(WORKGROUP_SIZE), 1, 1);
-        }
+        self.persistence
+            .encode_after_solver(encoder, parity, self.point_capacity, timestamps);
         self.parity.set(1 - parity);
     }
 
     pub(crate) fn dispatches_per_step(&self) -> u32 {
-        COLLISION_DISPATCHES + BRIDGE_DISPATCHES + self.solver.dispatches_per_step()
+        self.persistence.dispatches() + BRIDGE_DISPATCHES + self.solver.dispatches_per_step()
     }
 
     pub(crate) const fn point_capacity(&self) -> u32 {
@@ -360,21 +285,8 @@ impl GpuGeneratedContactGraph {
     pub(crate) fn allocated_bytes(&self) -> u64 {
         self.candidate.allocated_bytes()
             + self.narrowphase.allocated_bytes()
-            + self
-                .persistence
-                .iter()
-                .map(PersistenceCase::allocated_bytes)
-                .sum::<u64>()
-            + self.caches.iter().map(wgpu::Buffer::size).sum::<u64>()
-            + self
-                .cache_capacities
-                .iter()
-                .map(wgpu::Buffer::size)
-                .sum::<u64>()
-            + self.empty_capacity.size()
-            + self._step_counter.size()
+            + self.persistence.allocated_bytes()
             + self._solver_points.size()
-            + self._bridge_params.size()
             + self.solver.allocated_bytes()
     }
 
@@ -382,19 +294,7 @@ impl GpuGeneratedContactGraph {
     pub(crate) fn collision_persistence_allocated_bytes(&self) -> u64 {
         self.candidate.allocated_bytes()
             + self.narrowphase.allocated_bytes()
-            + self
-                .persistence
-                .iter()
-                .map(PersistenceCase::allocated_bytes)
-                .sum::<u64>()
-            + self.caches.iter().map(wgpu::Buffer::size).sum::<u64>()
-            + self
-                .cache_capacities
-                .iter()
-                .map(wgpu::Buffer::size)
-                .sum::<u64>()
-            + self.empty_capacity.size()
-            + self._step_counter.size()
+            + self.persistence.persistence_allocated_bytes()
     }
 
     pub(crate) fn capacity_overflowed(&self) -> bool {
@@ -420,6 +320,557 @@ impl GpuGeneratedContactGraph {
     ) -> crate::body_floor_solver::FixedFloorEvidenceLayout {
         self.solver.copy_pass_evidence(encoder, destination)
     }
+}
+
+impl GeneratedPersistenceGraph {
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        device: &wgpu::Device,
+        topology: GpuContactPersistenceTopology,
+        candidate: &CandidateCase,
+        narrowphase: &NarrowphaseCase,
+        solver_points: &wgpu::Buffer,
+        solver: &GpuFixedFloorSolver,
+        point_capacity: u32,
+        permute_pair_build: bool,
+        fingerprint_mask: u32,
+    ) -> Result<Self, String> {
+        match topology {
+            GpuContactPersistenceTopology::FullKeyOracle => {
+                Ok(Self::FullKey(Box::new(FullKeyPersistenceGraph::new(
+                    device,
+                    candidate,
+                    narrowphase,
+                    solver_points,
+                    solver,
+                    point_capacity,
+                )?)))
+            }
+            GpuContactPersistenceTopology::StablePairSlot => {
+                Ok(Self::PairSlot(Box::new(PairSlotPersistenceGraph::new(
+                    device,
+                    candidate,
+                    narrowphase,
+                    solver_points,
+                    solver,
+                    point_capacity,
+                    permute_pair_build,
+                    fingerprint_mask,
+                )?)))
+            }
+        }
+    }
+
+    fn encode_before_solver(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        parity: usize,
+        invalidate_previous_cache: bool,
+        point_capacity: u32,
+        timestamps: Option<(&wgpu::QuerySet, u32)>,
+    ) {
+        match self {
+            Self::FullKey(graph) => {
+                graph.invalidate_previous(encoder, parity, invalidate_previous_cache);
+                graph.cases[parity].encode_with_timestamps(
+                    encoder,
+                    &graph.pipelines,
+                    timestamps.map(|(query_set, base)| (query_set, base + 1)),
+                    timestamps.map(|(query_set, base)| (query_set, base + 2)),
+                );
+                encode_bridge(
+                    encoder,
+                    "physbox5_generated_contact_bridge_build",
+                    &graph.bridge_pipeline_build,
+                    &graph.bridge[parity].build,
+                    point_capacity,
+                    None,
+                );
+            }
+            Self::PairSlot(graph) => {
+                graph.invalidate_previous(encoder, parity, invalidate_previous_cache);
+                graph.cases[parity].encode_with_timestamps(
+                    encoder,
+                    &graph.pipelines,
+                    timestamps.map(|(query_set, base)| (query_set, base + 1, base + 2)),
+                );
+                encode_bridge(
+                    encoder,
+                    "physbox5_generated_pair_bridge_build",
+                    &graph.bridge_pipeline_build,
+                    &graph.bridge[parity].build,
+                    point_capacity,
+                    None,
+                );
+            }
+        }
+    }
+
+    fn encode_after_solver(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        parity: usize,
+        point_capacity: u32,
+        timestamps: Option<(&wgpu::QuerySet, u32)>,
+    ) {
+        let timestamp = timestamps.map(|(query_set, base)| (query_set, base + 3));
+        match self {
+            Self::FullKey(graph) => encode_bridge(
+                encoder,
+                "physbox5_generated_contact_bridge_store",
+                &graph.bridge_pipeline_store,
+                &graph.bridge[parity].store,
+                point_capacity,
+                timestamp,
+            ),
+            Self::PairSlot(graph) => encode_bridge(
+                encoder,
+                "physbox5_generated_pair_bridge_store",
+                &graph.bridge_pipeline_store,
+                &graph.bridge[parity].store,
+                graph.pair_capacity,
+                timestamp,
+            ),
+        }
+    }
+
+    const fn topology(&self) -> GpuContactPersistenceTopology {
+        match self {
+            Self::FullKey(_) => GpuContactPersistenceTopology::FullKeyOracle,
+            Self::PairSlot(_) => GpuContactPersistenceTopology::StablePairSlot,
+        }
+    }
+
+    const fn dispatches(&self) -> u32 {
+        match self {
+            Self::FullKey(_) => COLLISION_DISPATCHES,
+            Self::PairSlot(_) => PAIR_SLOT_COLLISION_DISPATCHES,
+        }
+    }
+
+    fn allocated_bytes(&self) -> u64 {
+        match self {
+            Self::FullKey(graph) => graph.allocated_bytes(),
+            Self::PairSlot(graph) => graph.allocated_bytes(),
+        }
+    }
+
+    fn persistence_allocated_bytes(&self) -> u64 {
+        match self {
+            Self::FullKey(graph) => graph.persistence_allocated_bytes(),
+            Self::PairSlot(graph) => graph.persistence_allocated_bytes(),
+        }
+    }
+
+    fn current_records(&self, parity: usize) -> &wgpu::Buffer {
+        match self {
+            Self::FullKey(graph) => &graph.caches[parity],
+            Self::PairSlot(graph) => &graph.pairs[parity],
+        }
+    }
+
+    fn current_capacity(&self, parity: usize) -> &wgpu::Buffer {
+        match self {
+            Self::FullKey(graph) => &graph.capacities[parity],
+            Self::PairSlot(graph) => &graph.capacities[parity],
+        }
+    }
+
+    const fn record_capacity(&self, point_capacity: u32) -> u32 {
+        match self {
+            Self::FullKey(_) => point_capacity,
+            Self::PairSlot(graph) => graph.pair_capacity,
+        }
+    }
+
+    const fn record_stride(&self) -> u32 {
+        match self {
+            Self::FullKey(_) => PERSISTENT_RECORD_BYTES,
+            Self::PairSlot(_) => PAIR_RECORD_BYTES,
+        }
+    }
+
+    fn step_counter_source(&self) -> (&wgpu::Buffer, u64) {
+        match self {
+            Self::FullKey(graph) => (&graph.step_counter, 0),
+            Self::PairSlot(graph) => (
+                &graph.slot_generations_and_step,
+                u64::from(graph.pair_capacity) * size_of::<u32>() as u64,
+            ),
+        }
+    }
+}
+
+impl FullKeyPersistenceGraph {
+    fn new(
+        device: &wgpu::Device,
+        candidate: &CandidateCase,
+        narrowphase: &NarrowphaseCase,
+        solver_points: &wgpu::Buffer,
+        solver: &GpuFixedFloorSolver,
+        point_capacity: u32,
+    ) -> Result<Self, String> {
+        let pipelines = PersistencePipelines::new(device);
+        let caches = [
+            storage_buffer(
+                device,
+                "physbox5_generated_cache_a",
+                point_capacity,
+                PERSISTENT_RECORD_BYTES,
+            )?,
+            storage_buffer(
+                device,
+                "physbox5_generated_cache_b",
+                point_capacity,
+                PERSISTENT_RECORD_BYTES,
+            )?,
+        ];
+        let empty_capacity_value = CapacityRaw {
+            values: [point_capacity, 0, 0, 0],
+        };
+        let capacities = [
+            storage_init(
+                device,
+                "physbox5_generated_cache_capacity_a",
+                &empty_capacity_value,
+            ),
+            storage_init(
+                device,
+                "physbox5_generated_cache_capacity_b",
+                &empty_capacity_value,
+            ),
+        ];
+        let empty_capacity = storage_init(
+            device,
+            "physbox5_generated_empty_cache_capacity",
+            &empty_capacity_value,
+        );
+        let step_counter = storage_init(device, "physbox5_generated_step_counter", &0_u32);
+        let cases = [
+            PersistenceCase::new(
+                device,
+                &pipelines,
+                narrowphase,
+                &caches[0],
+                &capacities[0],
+                &caches[1],
+                &capacities[1],
+                candidate.work_buffer(),
+                &step_counter,
+                point_capacity,
+                1,
+                false,
+            )?,
+            PersistenceCase::new(
+                device,
+                &pipelines,
+                narrowphase,
+                &caches[1],
+                &capacities[1],
+                &caches[0],
+                &capacities[0],
+                candidate.work_buffer(),
+                &step_counter,
+                point_capacity,
+                2,
+                false,
+            )?,
+        ];
+        let bridge_params =
+            bridge_params(device, "physbox5_generated_bridge_params", point_capacity);
+        let build_layout = bridge_layout(device, "physbox5_generated_bridge_build_layout", false);
+        let store_layout = bridge_layout(device, "physbox5_generated_bridge_store_layout", true);
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("physbox5_generated_contact_bridge_shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("generated_contacts.wgsl").into()),
+        });
+        let bridge_pipeline_build = bridge_pipeline(
+            device,
+            &shader,
+            &build_layout,
+            "physbox5_generated_bridge_build_pipeline",
+            "build_solver_points",
+        );
+        let bridge_pipeline_store = bridge_pipeline(
+            device,
+            &shader,
+            &store_layout,
+            "physbox5_generated_bridge_store_pipeline",
+            "store_solver_cache",
+        );
+        let bridge = [0_usize, 1_usize].map(|parity| {
+            let output = 1 - parity;
+            FullKeyBridgeCase {
+                build: bridge_group(
+                    device,
+                    &build_layout,
+                    &[
+                        (0, narrowphase.manifolds()),
+                        (1, narrowphase.points()),
+                        (2, cases[parity].sorted_current()),
+                        (3, &caches[output]),
+                        (4, &capacities[output]),
+                        (5, solver_points),
+                    ],
+                    &bridge_params,
+                ),
+                store: bridge_group(
+                    device,
+                    &store_layout,
+                    &[
+                        (3, &caches[output]),
+                        (4, &capacities[output]),
+                        (5, solver_points),
+                        (6, solver.prepared_buffer()),
+                    ],
+                    &bridge_params,
+                ),
+            }
+        });
+        Ok(Self {
+            pipelines,
+            cases,
+            caches,
+            capacities,
+            empty_capacity,
+            step_counter,
+            _bridge_params: bridge_params,
+            bridge_pipeline_build,
+            bridge_pipeline_store,
+            bridge,
+        })
+    }
+
+    fn invalidate_previous(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        parity: usize,
+        invalidate: bool,
+    ) {
+        if invalidate {
+            encoder.copy_buffer_to_buffer(
+                &self.empty_capacity,
+                0,
+                &self.capacities[parity],
+                0,
+                u64::from(COLLISION_CAPACITY_COUNTER_BYTES),
+            );
+        }
+    }
+
+    fn allocated_bytes(&self) -> u64 {
+        self.persistence_allocated_bytes() + self._bridge_params.size()
+    }
+
+    fn persistence_allocated_bytes(&self) -> u64 {
+        self.cases
+            .iter()
+            .map(PersistenceCase::allocated_bytes)
+            .sum::<u64>()
+            + self.caches.iter().map(wgpu::Buffer::size).sum::<u64>()
+            + self.capacities.iter().map(wgpu::Buffer::size).sum::<u64>()
+            + self.empty_capacity.size()
+            + self.step_counter.size()
+    }
+}
+
+impl PairSlotPersistenceGraph {
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        device: &wgpu::Device,
+        candidate: &CandidateCase,
+        narrowphase: &NarrowphaseCase,
+        solver_points: &wgpu::Buffer,
+        solver: &GpuFixedFloorSolver,
+        point_capacity: u32,
+        permute_pair_build: bool,
+        fingerprint_mask: u32,
+    ) -> Result<Self, String> {
+        let pipelines = PairSlotPipelines::new(device);
+        let pair_capacity = narrowphase.manifold_capacity();
+        let empty_pairs = vec![invalid_pair(); pair_capacity as usize];
+        let pairs = [
+            storage_slice_init(device, "physbox5_generated_pair_cache_a", &empty_pairs),
+            storage_slice_init(device, "physbox5_generated_pair_cache_b", &empty_pairs),
+        ];
+        let empty_capacity_value = CapacityRaw {
+            values: [pair_capacity, 0, 0, 0],
+        };
+        let capacities = [
+            storage_init(
+                device,
+                "physbox5_generated_pair_capacity_a",
+                &empty_capacity_value,
+            ),
+            storage_init(
+                device,
+                "physbox5_generated_pair_capacity_b",
+                &empty_capacity_value,
+            ),
+        ];
+        let empty_capacity = storage_init(
+            device,
+            "physbox5_generated_empty_pair_capacity",
+            &empty_capacity_value,
+        );
+        let slot_generations_and_step = storage_slice_init(
+            device,
+            "physbox5_generated_pair_generations_and_step",
+            &vec![0_u32; pair_capacity as usize + 1],
+        );
+        let cases = [
+            PairSlotCase::new(
+                device,
+                &pipelines,
+                narrowphase,
+                &pairs[0],
+                &capacities[0],
+                &pairs[1],
+                &capacities[1],
+                &slot_generations_and_step,
+                candidate.work_buffer(),
+                pair_capacity,
+                permute_pair_build,
+                fingerprint_mask,
+            )?,
+            PairSlotCase::new(
+                device,
+                &pipelines,
+                narrowphase,
+                &pairs[1],
+                &capacities[1],
+                &pairs[0],
+                &capacities[0],
+                &slot_generations_and_step,
+                candidate.work_buffer(),
+                pair_capacity,
+                permute_pair_build,
+                fingerprint_mask,
+            )?,
+        ];
+        let bridge_params = bridge_params(
+            device,
+            "physbox5_generated_pair_bridge_params",
+            point_capacity,
+        );
+        let build_layout =
+            pair_bridge_layout(device, "physbox5_generated_pair_bridge_build_layout", false);
+        let store_layout =
+            pair_bridge_layout(device, "physbox5_generated_pair_bridge_store_layout", true);
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("physbox5_generated_pair_bridge_shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("generated_pair_contacts.wgsl").into()),
+        });
+        let bridge_pipeline_build = bridge_pipeline(
+            device,
+            &shader,
+            &build_layout,
+            "physbox5_generated_pair_bridge_build_pipeline",
+            "build_pair_solver_points",
+        );
+        let bridge_pipeline_store = bridge_pipeline(
+            device,
+            &shader,
+            &store_layout,
+            "physbox5_generated_pair_bridge_store_pipeline",
+            "store_pair_solver_cache",
+        );
+        let bridge = [0_usize, 1_usize].map(|parity| {
+            let output = 1 - parity;
+            PairBridgeCase {
+                build: bridge_group(
+                    device,
+                    &build_layout,
+                    &[
+                        (0, narrowphase.manifolds()),
+                        (1, narrowphase.points()),
+                        (2, &pairs[output]),
+                        (3, &capacities[output]),
+                        (4, narrowphase.point_capacity_buffer()),
+                        (5, solver_points),
+                    ],
+                    &bridge_params,
+                ),
+                store: bridge_group(
+                    device,
+                    &store_layout,
+                    &[
+                        (0, narrowphase.manifolds()),
+                        (2, &pairs[output]),
+                        (3, &capacities[output]),
+                        (6, solver.prepared_buffer()),
+                    ],
+                    &bridge_params,
+                ),
+            }
+        });
+        Ok(Self {
+            pipelines,
+            cases,
+            pairs,
+            capacities,
+            empty_capacity,
+            slot_generations_and_step,
+            _bridge_params: bridge_params,
+            bridge_pipeline_build,
+            bridge_pipeline_store,
+            bridge,
+            pair_capacity,
+        })
+    }
+
+    fn invalidate_previous(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        parity: usize,
+        invalidate: bool,
+    ) {
+        if invalidate {
+            encoder.copy_buffer_to_buffer(
+                &self.empty_capacity,
+                0,
+                &self.capacities[parity],
+                0,
+                u64::from(COLLISION_CAPACITY_COUNTER_BYTES),
+            );
+        }
+    }
+
+    fn allocated_bytes(&self) -> u64 {
+        self.persistence_allocated_bytes() + self._bridge_params.size()
+    }
+
+    fn persistence_allocated_bytes(&self) -> u64 {
+        self.cases
+            .iter()
+            .map(PairSlotCase::allocated_bytes)
+            .sum::<u64>()
+            + self.pairs.iter().map(wgpu::Buffer::size).sum::<u64>()
+            + self.capacities.iter().map(wgpu::Buffer::size).sum::<u64>()
+            + self.empty_capacity.size()
+            + self.slot_generations_and_step.size()
+    }
+}
+
+fn encode_bridge(
+    encoder: &mut wgpu::CommandEncoder,
+    label: &'static str,
+    pipeline: &wgpu::ComputePipeline,
+    group: &wgpu::BindGroup,
+    capacity: u32,
+    timestamp: Option<(&wgpu::QuerySet, u32)>,
+) {
+    let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+        label: Some(label),
+        timestamp_writes: timestamp.map(|(query_set, end)| wgpu::ComputePassTimestampWrites {
+            query_set,
+            beginning_of_pass_write_index: None,
+            end_of_pass_write_index: Some(end),
+        }),
+    });
+    pass.set_pipeline(pipeline);
+    pass.set_bind_group(0, group, &[]);
+    pass.dispatch_workgroups(capacity.div_ceil(WORKGROUP_SIZE), 1, 1);
 }
 
 fn storage_buffer(
@@ -460,6 +911,30 @@ fn storage_init<T: Pod>(device: &wgpu::Device, label: &'static str, value: &T) -
     })
 }
 
+fn storage_slice_init<T: Pod>(
+    device: &wgpu::Device,
+    label: &'static str,
+    values: &[T],
+) -> wgpu::Buffer {
+    device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some(label),
+        contents: bytemuck::cast_slice(values),
+        usage: wgpu::BufferUsages::STORAGE
+            | wgpu::BufferUsages::COPY_SRC
+            | wgpu::BufferUsages::COPY_DST,
+    })
+}
+
+fn bridge_params(device: &wgpu::Device, label: &'static str, point_capacity: u32) -> wgpu::Buffer {
+    device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some(label),
+        contents: bytemuck::bytes_of(&BridgeParamsRaw {
+            counts: [point_capacity, 0, 0, 0],
+        }),
+        usage: wgpu::BufferUsages::UNIFORM,
+    })
+}
+
 fn bridge_layout(
     device: &wgpu::Device,
     label: &'static str,
@@ -474,6 +949,55 @@ fn bridge_layout(
             (2, true),
             (3, false),
             (4, false),
+            (5, false),
+        ]
+    };
+    let mut entries = bindings
+        .iter()
+        .map(|(binding, read_only)| wgpu::BindGroupLayoutEntry {
+            binding: *binding,
+            visibility: wgpu::ShaderStages::COMPUTE,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Storage {
+                    read_only: *read_only,
+                },
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        })
+        .collect::<Vec<_>>();
+    entries.push(wgpu::BindGroupLayoutEntry {
+        binding: 7,
+        visibility: wgpu::ShaderStages::COMPUTE,
+        ty: wgpu::BindingType::Buffer {
+            ty: wgpu::BufferBindingType::Uniform,
+            has_dynamic_offset: false,
+            min_binding_size: wgpu::BufferSize::new(size_of::<BridgeParamsRaw>() as u64),
+        },
+        count: None,
+    });
+    entries.sort_by_key(|entry| entry.binding);
+    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some(label),
+        entries: &entries,
+    })
+}
+
+fn pair_bridge_layout(
+    device: &wgpu::Device,
+    label: &'static str,
+    store_only: bool,
+) -> wgpu::BindGroupLayout {
+    let bindings: &[(u32, bool)] = if store_only {
+        &[(0, true), (2, false), (3, false), (6, true)]
+    } else {
+        &[
+            (0, true),
+            (1, true),
+            (2, false),
+            (3, false),
+            (4, true),
             (5, false),
         ]
     };
@@ -574,6 +1098,7 @@ pub struct GpuGeneratedContactOutput {
     pub failure: Option<FailureV1>,
     pub dispatches_per_step: u32,
     pub allocated_bytes: u64,
+    pub persistence_topology: GpuContactPersistenceTopology,
     pub gather_topology: GpuGatherTopologyEvidence,
 }
 
@@ -667,6 +1192,44 @@ impl GpuGeneratedContactRunner {
         gather_topology: GpuGatherTopology,
         permute_edge_build: bool,
     ) -> Result<GpuGeneratedContactOutput, String> {
+        self.run_with_topologies(
+            scenario,
+            completed_steps,
+            GpuContactPersistenceTopology::StablePairSlot,
+            gather_topology,
+            permute_edge_build,
+            false,
+            u32::MAX,
+        )
+    }
+
+    pub fn run_full_key_oracle(
+        &self,
+        scenario: &ScenarioV1,
+        completed_steps: u32,
+    ) -> Result<GpuGeneratedContactOutput, String> {
+        self.run_with_topologies(
+            scenario,
+            completed_steps,
+            GpuContactPersistenceTopology::FullKeyOracle,
+            GpuGatherTopology::CanonicalBodyScan,
+            false,
+            false,
+            u32::MAX,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn run_with_topologies(
+        &self,
+        scenario: &ScenarioV1,
+        completed_steps: u32,
+        persistence_topology: GpuContactPersistenceTopology,
+        gather_topology: GpuGatherTopology,
+        permute_edge_build: bool,
+        permute_pair_build: bool,
+        fingerprint_mask: u32,
+    ) -> Result<GpuGeneratedContactOutput, String> {
         if completed_steps == 0 {
             return Err("generated contact validation requires at least one step".to_owned());
         }
@@ -679,19 +1242,23 @@ impl GpuGeneratedContactRunner {
             crate::BODY_COMMAND_CAPACITY,
             &scenario.bodies,
         )?;
-        let graph = GpuGeneratedContactGraph::new_with_gather_topology(
+        let graph = GpuGeneratedContactGraph::new_with_topologies(
             &self.device,
             &storage,
             scenario,
+            persistence_topology,
             gather_topology,
             permute_edge_build,
+            permute_pair_build,
+            fingerprint_mask,
         )?;
         let lane_bytes = u64::from(body_count) * size_of::<[u32; 4]>() as u64;
         let state_readback = readback(&self.device, "generated_state_readback", lane_bytes * 3);
         let cache_readback = readback(
             &self.device,
             "generated_cache_readback",
-            u64::from(graph.point_capacity) * u64::from(PERSISTENT_RECORD_BYTES),
+            u64::from(graph.persistence.record_capacity(graph.point_capacity))
+                * u64::from(graph.persistence.record_stride()),
         );
         let candidate_capacity_readback = readback(
             &self.device,
@@ -754,7 +1321,11 @@ impl GpuGeneratedContactRunner {
             lane_bytes * 2,
             lane_bytes,
         );
-        copy_full(&mut encoder, &graph.caches[current], &cache_readback);
+        copy_full(
+            &mut encoder,
+            graph.persistence.current_records(current),
+            &cache_readback,
+        );
         copy_full(
             &mut encoder,
             graph.candidate.candidate_capacity_buffer(),
@@ -772,11 +1343,12 @@ impl GpuGeneratedContactRunner {
         );
         copy_full(
             &mut encoder,
-            &graph.cache_capacities[current],
+            graph.persistence.current_capacity(current),
             &persistence_capacity_readback,
         );
         copy_full(&mut encoder, graph.candidate.work_buffer(), &work_readback);
-        copy_full(&mut encoder, &graph._step_counter, &step_readback);
+        let (step_source, step_offset) = graph.persistence.step_counter_source();
+        encoder.copy_buffer_to_buffer(step_source, step_offset, &step_readback, 0, 4);
         self.queue.submit([encoder.finish()]);
         self.device
             .poll(wgpu::PollType::Wait)
@@ -835,18 +1407,36 @@ impl GpuGeneratedContactRunner {
             || manifold_raw[2] != manifold_raw[1]
             || point_raw[2] != point_raw[1]
             || persistence_raw.values[2] != persistence_raw.values[1];
-        let cache_count = if any_rejected {
-            0
+        let cache = if any_rejected {
+            Vec::new()
         } else {
-            persistence_raw.values[2] as usize
+            match &graph.persistence {
+                GeneratedPersistenceGraph::FullKey(_) => {
+                    crate::collision_candidates::map_values::<
+                        crate::collision_persistence::PersistentRecordRaw,
+                    >(
+                        &self.device, &cache_readback, graph.point_capacity as usize
+                    )?
+                    .into_iter()
+                    .take(persistence_raw.values[2] as usize)
+                    .map(crate::collision_persistence::persistent_contact)
+                    .collect::<Result<Vec<_>, _>>()?
+                }
+                GeneratedPersistenceGraph::PairSlot(pair_graph) => {
+                    let records = crate::collision_candidates::map_values::<PairRecordRaw>(
+                        &self.device,
+                        &cache_readback,
+                        pair_graph.pair_capacity as usize,
+                    )?;
+                    let mut cache = Vec::with_capacity(point_raw[2] as usize);
+                    for record in records.into_iter().take(persistence_raw.values[2] as usize) {
+                        let (_, mut points) = pair_output(record)?;
+                        cache.append(&mut points);
+                    }
+                    cache
+                }
+            }
         };
-        let cache = crate::collision_candidates::map_values::<
-            crate::collision_persistence::PersistentRecordRaw,
-        >(&self.device, &cache_readback, graph.point_capacity as usize)?
-        .into_iter()
-        .take(cache_count)
-        .map(crate::collision_persistence::persistent_contact)
-        .collect::<Result<Vec<_>, _>>()?;
         let mut bodies = scenario.bodies.clone();
         for (index, body) in bodies.iter_mut().enumerate() {
             if metadata[index][0] != body.id.generation {
@@ -867,23 +1457,54 @@ impl GpuGeneratedContactRunner {
             raw_capacity("contact-manifolds", COLLISION_MANIFOLD_BYTES, manifold_raw);
         let point_capacity =
             raw_capacity("contact-points", COLLISION_CONTACT_POINT_BYTES, point_raw);
-        let persistence_capacity = crate::collision_persistence::capacity_record(
-            "persistent-cache",
-            PERSISTENT_RECORD_BYTES,
-            persistence_raw,
-        );
         let mut capacities = graph.candidate.capacities(candidate_capacity);
         capacities.extend(graph.narrowphase.capacities(
             manifold_capacity,
             point_capacity,
             work.narrowphase_tests,
         ));
-        capacities.extend(crate::collision_persistence::persistence_capacities(
-            graph.point_capacity,
-            work.cache_previous,
-            work.cache_current,
-            persistence_capacity,
-        ));
+        match &graph.persistence {
+            GeneratedPersistenceGraph::FullKey(_) => {
+                let persistence_capacity = crate::collision_persistence::capacity_record(
+                    "persistent-cache",
+                    PERSISTENT_RECORD_BYTES,
+                    persistence_raw,
+                );
+                capacities.extend(crate::collision_persistence::persistence_capacities(
+                    graph.point_capacity,
+                    work.cache_previous,
+                    work.cache_current,
+                    persistence_capacity,
+                ));
+            }
+            GeneratedPersistenceGraph::PairSlot(pair_graph) => {
+                capacities.push(crate::collision_persistence::capacity_record(
+                    "pair-slot-cache",
+                    PAIR_RECORD_BYTES,
+                    persistence_raw,
+                ));
+                capacities.extend(pair_graph.cases[0].capacities().into_iter().map(
+                    |mut capacity| {
+                        capacity.capacity_elements *= 2;
+                        capacity.attempted_elements *= 2;
+                        capacity.committed_elements *= 2;
+                        capacity.allocated_bytes *= 2;
+                        capacity.high_water_bytes *= 2;
+                        capacity
+                    },
+                ));
+                capacities.push(fixed_capacity(
+                    "pair-slot-cache-buffers",
+                    PAIR_RECORD_BYTES,
+                    u64::from(pair_graph.pair_capacity) * 2,
+                ));
+                capacities.push(fixed_capacity(
+                    "pair-slot-generations-and-step",
+                    4,
+                    u64::from(pair_graph.pair_capacity) + 1,
+                ));
+            }
+        }
         capacities.sort_by(|left, right| left.class.cmp(&right.class));
         let source_scenario_hash = canonical_hash(scenario).map_err(|error| error.to_string())?;
         let failure = capacities
@@ -898,7 +1519,9 @@ impl GpuGeneratedContactRunner {
                 first_step: Some(completed_steps),
                 first_stage: Some(if capacity.class == "candidate-pairs" {
                     "candidate".to_owned()
-                } else if capacity.class == "persistent-cache" {
+                } else if capacity.class == "persistent-cache"
+                    || capacity.class == "pair-slot-cache"
+                {
                     "persistence".to_owned()
                 } else {
                     "narrowphase".to_owned()
@@ -917,6 +1540,7 @@ impl GpuGeneratedContactRunner {
             failure,
             dispatches_per_step: graph.dispatches_per_step(),
             allocated_bytes: graph.allocated_bytes(),
+            persistence_topology: graph.persistence.topology(),
             gather_topology: graph.gather_topology_evidence(),
         };
         output.validate()?;
@@ -1151,6 +1775,21 @@ fn raw_capacity(class: &str, stride: u32, values: [u32; 4]) -> CollisionCapacity
         high_water_bytes: u64::from(values[1].min(values[0])) * u64::from(stride),
         overflowed: values[3] != 0,
         accepted: values[3] == 0 && values[2] == values[1],
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn fixed_capacity(class: &str, stride: u32, elements: u64) -> CollisionCapacityV1 {
+    CollisionCapacityV1 {
+        class: class.to_owned(),
+        stride_bytes: stride,
+        capacity_elements: elements,
+        attempted_elements: elements,
+        committed_elements: elements,
+        allocated_bytes: elements * u64::from(stride),
+        high_water_bytes: elements * u64::from(stride),
+        overflowed: false,
+        accepted: true,
     }
 }
 

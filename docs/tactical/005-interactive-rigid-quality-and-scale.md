@@ -149,7 +149,7 @@ is integrated. Physical Android was unavailable; the hardware-backed
 
 ### S5.2 — selected combined product graph and S3 evidence
 
-- [ ] Replace product full-key persistence with the accepted stable
+- [x] Replace product full-key persistence with the accepted stable
   generational pair-slot path while retaining full semantic pair/feature
   verification and the full-key lane as a correctness oracle.
 - [ ] Replace the product body-by-capacity scan with accepted stable body-edge
@@ -179,6 +179,20 @@ product integration and exactness; combined performance/structural evidence;
 then S3 status documentation. Stop early only if combination requires a new
 representation or accumulation architecture, or if its failed quality gate
 cannot be resolved inside the accepted direction.
+
+Pair-slot integration, 2026-07-15: the shared generated-contact product graph
+now uses stable generational pair slots and pair-local two-point caches. The
+256-bit full-key graph remains selectable only as an explicit validation
+oracle. Complete pair and local-feature equality still gate every impulse
+transfer; reversed scheduling and a zero-bit forced fingerprint retain exact
+body/cache output across every behavior family and every intermediate step.
+The pair bridge preserves the existing sparse two-point manifold slots so
+Jacobi contribution order stays byte-exact. Existing churn, recontact,
+body-generation reuse, and whole-stage overflow negatives continue to pass.
+With the canonical body scan still intentionally unchanged, the generated
+graph drops from 282 to 95 dispatches and the maintained floor allocation from
+23,700 to 19,024 bytes. These are implementation accounting results, not the
+required combined timing or S3 closure claim.
 
 ### S5.3 — GPU construction loop and interactive authoring
 

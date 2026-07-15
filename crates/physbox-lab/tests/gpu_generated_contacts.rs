@@ -1,10 +1,10 @@
 use physbox_engine::{
-    GpuGeneratedContactRunner, GpuNarrowphaseRunner, GpuSolverCandidate,
-    P5_2_BUCKET_EVIDENCE_STEPS, P5_2_CENTERED_STACK_EVIDENCE_STEPS, P5_2BucketShape,
-    P5_2CandidatePattern, P5_2GeneratedScenarioKind, benchmark_gpu_generated_contacts,
-    p5_2_bucket_scenario, p5_2_candidate_scenario, p5_2_centered_rectangle_stack_scenario,
-    p5_2_contact_policy_candidate, p5_2_generated_performance_scenario, p5_2_generated_scenario,
-    run_gpu_soft_step_case,
+    GpuContactPersistenceTopology, GpuGatherTopology, GpuGeneratedContactRunner,
+    GpuNarrowphaseRunner, GpuSolverCandidate, P5_2_BUCKET_EVIDENCE_STEPS,
+    P5_2_CENTERED_STACK_EVIDENCE_STEPS, P5_2BucketShape, P5_2CandidatePattern,
+    P5_2GeneratedScenarioKind, benchmark_gpu_generated_contacts, p5_2_bucket_scenario,
+    p5_2_candidate_scenario, p5_2_centered_rectangle_stack_scenario, p5_2_contact_policy_candidate,
+    p5_2_generated_performance_scenario, p5_2_generated_scenario, run_gpu_soft_step_case,
 };
 use physbox_lab::analytic_narrowphase::authored_solver_projection;
 use physbox_lab::settling::centered_stack_structure;
@@ -16,7 +16,7 @@ fn generated_contact_benchmark_uses_qualified_split_scopes() {
     let scenario = p5_2_generated_performance_scenario(32).unwrap();
     let benchmark = pollster::block_on(benchmark_gpu_generated_contacts(&scenario, 1, 2)).unwrap();
     assert!(benchmark.correctness.failure.is_none());
-    assert_eq!(benchmark.dispatches_per_step, 282);
+    assert_eq!(benchmark.dispatches_per_step, 95);
     assert_eq!(benchmark.host_completion_seconds.len(), 2);
     assert_eq!(benchmark.cpu_encode_submit_seconds.len(), 2);
     match (
@@ -37,6 +37,72 @@ fn generated_contact_benchmark_uses_qualified_split_scopes() {
         }
         (None, None, None) => {}
         mismatch => panic!("inconsistent generated timestamp evidence: {mismatch:?}"),
+    }
+}
+
+#[test]
+fn product_pair_slots_match_the_full_key_oracle_and_reversed_scheduling() {
+    let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
+    for kind in P5_2GeneratedScenarioKind::ALL {
+        let steps = if kind == P5_2GeneratedScenarioKind::PairChurn {
+            30
+        } else {
+            4
+        };
+        let scenario = p5_2_generated_scenario(kind, steps).unwrap();
+        for completed_steps in 1..=steps {
+            let product = runner.run(&scenario, completed_steps).unwrap();
+            let full_key = runner
+                .run_full_key_oracle(&scenario, completed_steps)
+                .unwrap();
+            let reversed_and_colliding = runner
+                .run_with_topologies(
+                    &scenario,
+                    completed_steps,
+                    GpuContactPersistenceTopology::StablePairSlot,
+                    GpuGatherTopology::CanonicalBodyScan,
+                    false,
+                    true,
+                    0,
+                )
+                .unwrap();
+
+            assert_eq!(
+                product.persistence_topology,
+                GpuContactPersistenceTopology::StablePairSlot
+            );
+            assert_eq!(
+                full_key.persistence_topology,
+                GpuContactPersistenceTopology::FullKeyOracle
+            );
+            assert_eq!(
+                product.cache, full_key.cache,
+                "{kind:?} step {completed_steps}"
+            );
+            assert_eq!(
+                product.bodies, full_key.bodies,
+                "{kind:?} step {completed_steps}"
+            );
+            assert_eq!(
+                product.bodies, reversed_and_colliding.bodies,
+                "{kind:?} step {completed_steps}"
+            );
+            assert_eq!(
+                product.cache, reversed_and_colliding.cache,
+                "{kind:?} step {completed_steps}"
+            );
+            assert_eq!(
+                product.failure, reversed_and_colliding.failure,
+                "{kind:?} step {completed_steps}"
+            );
+            assert_eq!(product.work.cache_matched, full_key.work.cache_matched);
+            assert_eq!(product.work.cache_cold, full_key.work.cache_cold);
+            assert_eq!(product.work.cache_expired, full_key.work.cache_expired);
+            assert_eq!(product.work.sort_passes, 0);
+            assert_eq!(full_key.work.sort_passes, 64);
+            assert_eq!(product.dispatches_per_step, 95);
+            assert_eq!(full_key.dispatches_per_step, 282);
+        }
     }
 }
 
@@ -110,7 +176,7 @@ fn generated_floor_contacts_settle_and_replay_exactly() {
         assert_eq!(first.cache, replay.cache);
         assert_eq!(first.work, replay.work);
         assert!(first.failure.is_none());
-        assert_eq!(first.dispatches_per_step, 282);
+        assert_eq!(first.dispatches_per_step, 95);
         assert!(
             (first.bodies[0].position.y - expected_height).abs() <= 2.0e-2,
             "{kind:?}: {:?}",

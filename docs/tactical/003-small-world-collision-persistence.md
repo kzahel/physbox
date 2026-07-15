@@ -497,6 +497,18 @@ performance/cross-host evidence, and S3 closure in separately reviewable
 commits. Stop for human review before widening a quality band or advancing to
 P5.3 with a failed combined gate.
 
+Post-selection pair-slot checkpoint, 2026-07-15: stable generational pair
+slots now replace the 64-pass full-key sort in the real generated-contact
+product graph. A dedicated pair-local bridge preserves complete feature
+verification, the narrowphase's sparse two-point slot convention, and the
+full-key oracle's exact contribution order. All behavior families match the
+explicit full-key lane at every checked step under reversed scheduling and a
+forced fingerprint collision; isolated generation reuse, churn/recontact, and
+atomic overflow remain permanent negatives. The graph now performs 25
+candidate/narrowphase/persistence dispatches instead of 212. The canonical
+body scan remains selected until the next separately committed stable-edge
+integration, so this checkpoint does not satisfy the combined closure gate.
+
 ## Validation baseline
 
 Every shared slice runs the repository gates from `AGENTS.md`:

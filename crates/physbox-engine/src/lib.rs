@@ -19,7 +19,6 @@ mod gpu_solver;
 mod grab;
 mod host;
 mod input;
-#[cfg(not(target_arch = "wasm32"))]
 mod pair_slot_persistence;
 mod renderer;
 mod report;
@@ -64,6 +63,7 @@ pub use config::EngineConfig;
 pub use frame::{
     FrameInput, InputEvent, PointerButton, PointerEvent, PointerPhase, StepRequest, WheelEvent,
 };
+pub use generated_contacts::GpuContactPersistenceTopology;
 #[cfg(not(target_arch = "wasm32"))]
 pub use generated_contacts::{
     GpuGeneratedContactBenchmarkOutput, GpuGeneratedContactOutput, GpuGeneratedContactRunner,

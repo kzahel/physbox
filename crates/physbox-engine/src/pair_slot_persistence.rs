@@ -17,23 +17,24 @@ use crate::{
     AdapterDiagnostics,
     collision_candidates::{CandidateCase, CandidatePipelines},
     collision_narrowphase::{NarrowphaseCase, NarrowphasePipelines},
-    collision_persistence::{CapacityRaw, WorkRaw, capacity_record, work_record},
+    collision_persistence::CapacityRaw,
 };
 #[cfg(not(target_arch = "wasm32"))]
 use crate::{
     collision_candidates::map_values,
+    collision_persistence::{WorkRaw, capacity_record, work_record},
     gpu_context::{create_instance, request_adapter, request_device},
 };
 
 const WORKGROUP_SIZE: u32 = 64;
 const SCAN_WORKGROUP_SIZE: u32 = 256;
-const PAIR_SLOT_DISPATCHES: u32 = 10;
+pub(crate) const PAIR_SLOT_DISPATCHES: u32 = 10;
 const TOTAL_DISPATCHES: u32 = 15 + PAIR_SLOT_DISPATCHES;
-const PAIR_RECORD_BYTES: u32 = 96;
+pub(crate) const PAIR_RECORD_BYTES: u32 = 96;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod, Zeroable)]
-struct PairRecordRaw {
+pub(crate) struct PairRecordRaw {
     key: [u32; 4],
     meta: [u32; 4],
     features0: [u32; 4],
@@ -285,7 +286,7 @@ impl GpuPairSlotPersistenceRunner {
             ),
             storage::<CapacityRaw>(&self.device, "pair_slot_capacity_b", 1)?,
         ];
-        let mut generations = vec![0_u32; pair_capacity as usize];
+        let mut generations = vec![0_u32; pair_capacity as usize + 1];
         for record in &initial_records {
             generations[record.meta[0] as usize] = record.meta[1];
         }
@@ -317,7 +318,6 @@ impl GpuPairSlotPersistenceRunner {
                 &slot_generations,
                 candidate.work_buffer(),
                 pair_capacity,
-                completed_step,
                 permute_current_input,
                 fingerprint_mask,
             )?;
@@ -453,7 +453,7 @@ pub async fn benchmark_gpu_pair_slot_persistence(
     let slot_generations = storage_init(
         &device,
         "pair_slot_benchmark_generations",
-        &vec![0_u32; pair_capacity as usize],
+        &vec![0_u32; pair_capacity as usize + 1],
     );
     let pair_slot = PairSlotCase::new(
         &device,
@@ -466,7 +466,6 @@ pub async fn benchmark_gpu_pair_slot_persistence(
         &slot_generations,
         candidate.work_buffer(),
         pair_capacity,
-        1,
         false,
         u32::MAX,
     )?;
@@ -628,7 +627,7 @@ impl PairSlotPipelines {
         let prepare_layout = layout(
             device,
             "pair_slot_prepare_layout",
-            &[(2, false), (3, false), (5, false), (16, false)],
+            &[(2, false), (3, false), (5, false), (16, false), (19, false)],
         );
         let match_layout = layout(
             device,
@@ -768,7 +767,7 @@ impl PairSlotPipelines {
     }
 }
 
-struct PairSlotCase {
+pub(crate) struct PairSlotCase {
     _new_flags: wgpu::Buffer,
     _new_offsets: wgpu::Buffer,
     _slot_flags: wgpu::Buffer,
@@ -792,7 +791,7 @@ struct PairSlotCase {
 
 impl PairSlotCase {
     #[allow(clippy::too_many_arguments)]
-    fn new(
+    pub(crate) fn new(
         device: &wgpu::Device,
         pipelines: &PairSlotPipelines,
         narrowphase: &NarrowphaseCase,
@@ -803,7 +802,6 @@ impl PairSlotCase {
         slot_generations: &wgpu::Buffer,
         work: &wgpu::Buffer,
         pair_capacity: u32,
-        completed_step: u32,
         permute_current_input: bool,
         fingerprint_mask: u32,
     ) -> Result<Self, String> {
@@ -822,7 +820,7 @@ impl PairSlotCase {
                 counts: [
                     pair_capacity,
                     block_count,
-                    completed_step,
+                    0,
                     narrowphase.manifold_capacity(),
                 ],
                 control: [
@@ -856,6 +854,7 @@ impl PairSlotCase {
                 (3, narrowphase.point_capacity_buffer()),
                 (5, previous_capacity),
                 (16, output_capacity),
+                (19, slot_generations),
             ],
             &params,
         );
@@ -952,11 +951,11 @@ impl PairSlotCase {
         })
     }
 
-    fn encode(&self, encoder: &mut wgpu::CommandEncoder, pipelines: &PairSlotPipelines) {
+    pub(crate) fn encode(&self, encoder: &mut wgpu::CommandEncoder, pipelines: &PairSlotPipelines) {
         self.encode_with_timestamps(encoder, pipelines, None);
     }
 
-    fn encode_with_timestamps(
+    pub(crate) fn encode_with_timestamps(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         pipelines: &PairSlotPipelines,
@@ -1022,7 +1021,7 @@ impl PairSlotCase {
         dispatch(&mut pass, &pipelines.finalize, &self.finalize_group, 1);
     }
 
-    fn allocated_bytes(&self) -> u64 {
+    pub(crate) fn allocated_bytes(&self) -> u64 {
         self._new_flags.size()
             + self._new_offsets.size()
             + self._slot_flags.size()
@@ -1033,7 +1032,7 @@ impl PairSlotCase {
             + self._params.size()
     }
 
-    fn capacities(&self) -> Vec<CollisionCapacityV1> {
+    pub(crate) fn capacities(&self) -> Vec<CollisionCapacityV1> {
         let capacity = u64::from(self.pair_capacity);
         let blocks = u64::from(self.block_count);
         let mut capacities = vec![
@@ -1277,7 +1276,7 @@ fn pair_records(
     Ok(output)
 }
 
-fn pair_output(
+pub(crate) fn pair_output(
     record: PairRecordRaw,
 ) -> Result<(PairSlotAssignmentV1, Vec<PersistentContactV1>), String> {
     let pair = CandidatePairV1 {
@@ -1326,7 +1325,7 @@ fn pair_output(
     Ok((assignment, points))
 }
 
-fn invalid_pair() -> PairRecordRaw {
+pub(crate) fn invalid_pair() -> PairRecordRaw {
     PairRecordRaw {
         key: [u32::MAX; 4],
         meta: [u32::MAX, 0, 0, 0],

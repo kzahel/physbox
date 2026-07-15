@@ -640,6 +640,17 @@ post-selection slice must combine both views in the real graph, preserve exact
 output and atomic failure, and publish structural stack curves and combined
 timing before S3 closes or any crossover is claimed.
 
+Pair-slot product integration checkpoint, 2026-07-15: the real
+generated-contact graph now selects stable generational pair slots while the
+full semantic point-key sort remains an explicit correctness oracle. Pair
+records retain full pair generations and both complete local features; the
+fingerprint cannot authorize transfer. The bridge keeps the existing sparse
+two-point manifold indices so solver contribution order is byte-exact under
+reversed scheduling, feature churn, and forced fingerprint collision. This
+reduces collision/persistence from 212 to 25 dispatches without readback or a
+second contact payload. Stable body-edge integration and the combined
+performance/structural gate remain pending, so S3 is not closed here.
+
 Circle/circle and circle/rectangle contact are analytic. Rectangle/rectangle
 uses SAT to select a reference and incident edge, clips the incident segment,
 and produces stable vertex/edge feature pairs. Test feature stability around

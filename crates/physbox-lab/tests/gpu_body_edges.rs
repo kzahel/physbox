@@ -86,7 +86,7 @@ fn stable_body_edge_benchmark_retains_qualified_completion() {
             .collect::<Vec<_>>(),
         vec![31_744, 512, 256]
     );
-    assert_eq!(benchmark.dispatches_per_step, 287);
+    assert_eq!(benchmark.dispatches_per_step, 100);
     assert_eq!(benchmark.host_completion_seconds.len(), 2);
     assert!(benchmark.correctness.failure.is_none());
 }
