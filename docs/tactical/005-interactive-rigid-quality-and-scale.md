@@ -208,6 +208,17 @@ dispatch parameter records, while body-by-capacity contribution scans are
 removed. Timing, structural curves, erase/reuse preparation, cross-host
 evidence, and S3 closure remain separate pending gates.
 
+Combined-evidence automation checkpoint, 2026-07-15: the generated-contact
+authority runner now names the selected pair-slot and stable-edge topology in
+every behavior and performance row, compares generated 32/256/1K output to the
+full-key/canonical oracle, retains raw timing samples, and re-runs exact
+canonical-versus-selected authored-contact rows at 1K/10K. The scene runner
+records the selected topology, dispatches, and allocation at every stack and
+bucket checkpoint and can require a clean source tree. Representation
+acceptance is reported separately from the still-open solver-quality gate so
+known minimized failures cannot be hidden by exact layout equivalence. Fresh
+clean packages and their measured interpretation remain the next commit.
+
 ### S5.3 — GPU construction loop and interactive authoring
 
 Dependency: S5.2 generational pair invalidation passes.

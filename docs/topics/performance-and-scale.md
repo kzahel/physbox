@@ -651,6 +651,16 @@ baselines and preserve the candidate gains. This selects a representation
 direction, not an accepted regression band, final stack-quality band, or CPU
 crossover claim.
 
+Combined-evidence automation checkpoint, 2026-07-15: the authority runner now
+measures the actual selected pair-slot-plus-stable-edge graph at 32/256/1K,
+compares each result to the full-key/canonical oracle, and re-runs exact
+canonical-versus-selected authored-contact rows at 1K/10K. Raw timing samples,
+dispatches, allocation, topology identity, capacity, replay, and result digests
+are emitted together. Representation acceptance is distinct from solver
+quality acceptance so known minimized policy or settling failures remain
+blocking inputs to their own gate rather than contaminating or disappearing
+inside a performance claim.
+
 ## Regression and claim gates
 
 Before representative hardware is selected, store named measurements and

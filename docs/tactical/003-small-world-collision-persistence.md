@@ -520,6 +520,13 @@ This is the selected combined representation, but it is not yet an S3 closure:
 fresh combined timing, structural, platform, failure, and CPU-comparison
 evidence remains mandatory.
 
+The combined evidence runner now records selected topology provenance in each
+behavior row, checks 32/256/1K generated rows against the full-key/canonical
+oracle, retains raw samples, and includes exact 1K/10K authored-contact
+canonical-versus-stable-edge rows. It reports representation acceptance and
+solver-quality acceptance independently; generated packages therefore cannot
+turn a preserved physical failure into an accepted representation claim.
+
 ## Validation baseline
 
 Every shared slice runs the repository gates from `AGENTS.md`:

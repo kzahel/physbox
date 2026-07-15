@@ -12,9 +12,11 @@ use physbox_contracts::{
     canonical_hash, canonical_json, sha256_bytes,
 };
 use physbox_engine::{
-    GpuGeneratedContactOutput, GpuGeneratedContactRunner, P5_2CandidatePattern,
-    P5_2GeneratedScenarioKind, benchmark_gpu_generated_contacts, p5_2_candidate_scenario,
-    p5_2_generated_performance_scenario, p5_2_generated_scenario,
+    GpuAuthoredGatherBenchmarkOutput, GpuContactPersistenceTopology, GpuGatherTopology,
+    GpuGatherTopologyEvidence, GpuGeneratedContactOutput, GpuGeneratedContactRunner,
+    P5_2CandidatePattern, P5_2GeneratedScenarioKind, authored_chain_scenario,
+    benchmark_gpu_authored_gather_topology, benchmark_gpu_generated_contacts,
+    p5_2_candidate_scenario, p5_2_generated_performance_scenario, p5_2_generated_scenario,
 };
 use physbox_lab::{
     analytic_narrowphase::generate_scalar_narrowphase,
@@ -46,6 +48,7 @@ struct Manifest {
     capacity_negative: GpuGeneratedContactOutput,
     known_failures: Vec<KnownFailure>,
     performance: Vec<PerformanceRow>,
+    authored_contacts: Vec<AuthoredContactRow>,
     optimized_box2d: Vec<OptimizedBox2dRow>,
     platform_artifacts: Vec<PlatformArtifact>,
     physical_device_gap: Option<String>,
@@ -55,6 +58,8 @@ struct Manifest {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Outcome {
+    combined_representation_accepted: bool,
+    solver_quality_accepted: bool,
     implementation_accepted: bool,
     behavior_cases: usize,
     exact_replays: usize,
@@ -90,6 +95,10 @@ struct BehaviorRow {
     gpu_cache_points: usize,
     gpu_work: physbox_contracts::CollisionWorkV1,
     gpu_capacities: Vec<physbox_contracts::CollisionCapacityV1>,
+    persistence_topology: GpuContactPersistenceTopology,
+    gather_topology: GpuGatherTopologyEvidence,
+    dispatches_per_step: u32,
+    allocated_bytes: u64,
 }
 
 #[derive(Serialize)]
@@ -123,7 +132,12 @@ struct PerformanceRow {
     all_pairs_tests: u64,
     candidate_amplification: f64,
     dispatches_per_step: u32,
+    oracle_dispatches_per_step: u32,
     allocated_bytes: u64,
+    collision_persistence_allocated_bytes: u64,
+    oracle_exact: bool,
+    persistence_topology: GpuContactPersistenceTopology,
+    gather_topology: GpuGatherTopologyEvidence,
     gpu_collision: Option<Timing>,
     gpu_end_to_end: Option<Timing>,
     host_completion: Timing,
@@ -133,10 +147,23 @@ struct PerformanceRow {
     failure: Option<FailureV1>,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AuthoredContactRow {
+    contacts: u32,
+    source_scenario_hash: String,
+    result_exact: bool,
+    canonical: GpuAuthoredGatherBenchmarkOutput,
+    selected: GpuAuthoredGatherBenchmarkOutput,
+    canonical_total: Option<Timing>,
+    selected_total: Option<Timing>,
+}
+
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Timing {
     samples: usize,
+    raw_seconds: Vec<f64>,
     minimum_seconds: f64,
     p50_seconds: f64,
     p95_seconds: f64,
@@ -236,9 +263,25 @@ fn run() -> Result<(), String> {
     let performance = performance_evidence(arguments.warmup, arguments.samples)?;
     if performance
         .iter()
-        .any(|row| !row.capacity_accepted || row.failure.is_some())
+        .any(|row| !row.capacity_accepted || row.failure.is_some() || !row.oracle_exact)
     {
-        return Err("a generated-contact performance row failed correctness/capacity".to_owned());
+        return Err(
+            "a generated-contact performance row failed oracle/correctness/capacity".to_owned(),
+        );
+    }
+    let authored_contacts = authored_contact_evidence(arguments.warmup, arguments.samples)?;
+    if authored_contacts.iter().any(|row| {
+        !row.result_exact
+            || !row.canonical.replay_exact
+            || !row.selected.replay_exact
+            || row
+                .canonical
+                .capacities
+                .iter()
+                .chain(&row.selected.capacities)
+                .any(|capacity| capacity.overflowed)
+    }) {
+        return Err("an authored-contact row failed exact replay or capacity".to_owned());
     }
     let optimized_box2d = optimized_box2d_evidence(&arguments, &staging)?;
     if optimized_box2d.iter().any(|row| {
@@ -260,9 +303,16 @@ fn run() -> Result<(), String> {
             .iter()
             .filter(|row| !row.box2d_bodies.is_empty())
             .count();
+    let combined_representation_accepted = exact_replays == behavior.len()
+        && randomized.replay_differences == 0
+        && randomized.accepted_overflows == 0
+        && authority_failures == 0
+        && performance.iter().all(|row| row.oracle_exact)
+        && authored_contacts.iter().all(|row| row.result_exact);
+    let solver_quality_accepted = known_failures.is_empty();
     let manifest = Manifest {
         schema_version: SCHEMA_VERSION,
-        artifact_kind: "p5.2-s3.5a-generated-contact-authority",
+        artifact_kind: "p5.2-s3.6-combined-contact-authority",
         run_id: arguments.run_id,
         source_revision,
         source_dirty,
@@ -270,11 +320,9 @@ fn run() -> Result<(), String> {
         box2d_revision: BOX2D_REVISION,
         adapter: runner.adapter().clone(),
         outcome: Outcome {
-            implementation_accepted: exact_replays == behavior.len()
-                && randomized.replay_differences == 0
-                && randomized.accepted_overflows == 0
-                && authority_failures == 0
-                && known_failures.is_empty(),
+            combined_representation_accepted,
+            solver_quality_accepted,
+            implementation_accepted: combined_representation_accepted && solver_quality_accepted,
             behavior_cases: behavior.len(),
             exact_replays,
             randomized_cases: randomized.cases,
@@ -290,6 +338,7 @@ fn run() -> Result<(), String> {
         capacity_negative,
         known_failures,
         performance,
+        authored_contacts,
         optimized_box2d,
         platform_artifacts,
         physical_device_gap: arguments.physical_device_gap,
@@ -415,6 +464,10 @@ fn evaluate_behavior(
         gpu_cache_points: gpu.cache.len(),
         gpu_work: gpu.work,
         gpu_capacities: gpu.capacities,
+        persistence_topology: gpu.persistence_topology,
+        gather_topology: gpu.gather_topology,
+        dispatches_per_step: gpu.dispatches_per_step,
+        allocated_bytes: gpu.allocated_bytes,
     })
 }
 
@@ -523,11 +576,17 @@ fn known_failures(
 
 fn performance_evidence(warmup: u32, samples: u32) -> Result<Vec<PerformanceRow>, String> {
     let mut rows = Vec::new();
+    let oracle_runner = pollster::block_on(GpuGeneratedContactRunner::new())?;
     for bodies in [32_u32, 256, 1024] {
         let scenario =
             p5_2_generated_performance_scenario(bodies).map_err(|error| error.to_string())?;
         let benchmark =
             pollster::block_on(benchmark_gpu_generated_contacts(&scenario, warmup, samples))?;
+        let oracle = oracle_runner.run_full_key_oracle(&scenario, 1)?;
+        let oracle_exact = benchmark.correctness.bodies == oracle.bodies
+            && benchmark.correctness.cache == oracle.cache
+            && benchmark.correctness.failure == oracle.failure
+            && semantic_work_exact(&benchmark.correctness.work, &oracle.work);
         let expected_contacts = bodies / 2;
         let all_pairs_tests = u64::from(bodies) * u64::from(bodies - 1) / 2;
         rows.push(PerformanceRow {
@@ -536,7 +595,12 @@ fn performance_evidence(warmup: u32, samples: u32) -> Result<Vec<PerformanceRow>
             all_pairs_tests,
             candidate_amplification: all_pairs_tests as f64 / f64::from(expected_contacts),
             dispatches_per_step: benchmark.dispatches_per_step,
+            oracle_dispatches_per_step: oracle.dispatches_per_step,
             allocated_bytes: benchmark.allocated_bytes,
+            collision_persistence_allocated_bytes: benchmark.collision_persistence_allocated_bytes,
+            oracle_exact,
+            persistence_topology: benchmark.correctness.persistence_topology,
+            gather_topology: benchmark.correctness.gather_topology.clone(),
             gpu_collision: benchmark
                 .gpu_collision_seconds
                 .as_deref()
@@ -559,6 +623,68 @@ fn performance_evidence(warmup: u32, samples: u32) -> Result<Vec<PerformanceRow>
         });
     }
     Ok(rows)
+}
+
+fn authored_contact_evidence(warmup: u32, samples: u32) -> Result<Vec<AuthoredContactRow>, String> {
+    let mut rows = Vec::new();
+    for contacts in [1_000_u32, 10_000] {
+        let scenario =
+            authored_chain_scenario(contacts + 1, 0x5a17).map_err(|error| error.to_string())?;
+        let canonical = pollster::block_on(benchmark_gpu_authored_gather_topology(
+            &scenario,
+            warmup,
+            samples,
+            GpuGatherTopology::CanonicalBodyScan,
+        ))?;
+        let selected = pollster::block_on(benchmark_gpu_authored_gather_topology(
+            &scenario,
+            warmup,
+            samples,
+            GpuGatherTopology::StableBodyEdge,
+        ))?;
+        if canonical.source_scenario_hash != selected.source_scenario_hash {
+            return Err(format!("authored {contacts}-contact source hashes differ"));
+        }
+        let canonical_total = canonical
+            .gpu_total_seconds
+            .as_deref()
+            .map(timing)
+            .transpose()?;
+        let selected_total = selected
+            .gpu_total_seconds
+            .as_deref()
+            .map(timing)
+            .transpose()?;
+        rows.push(AuthoredContactRow {
+            contacts,
+            source_scenario_hash: canonical.source_scenario_hash.clone(),
+            result_exact: canonical.result_digest == selected.result_digest,
+            canonical,
+            selected,
+            canonical_total,
+            selected_total,
+        });
+    }
+    Ok(rows)
+}
+
+fn semantic_work_exact(
+    left: &physbox_contracts::CollisionWorkV1,
+    right: &physbox_contracts::CollisionWorkV1,
+) -> bool {
+    left.bodies == right.bodies
+        && left.pair_attempts == right.pair_attempts
+        && left.fixed_fixed_rejected == right.fixed_fixed_rejected
+        && left.aabb_rejected == right.aabb_rejected
+        && left.candidate_pairs == right.candidate_pairs
+        && left.narrowphase_tests == right.narrowphase_tests
+        && left.manifolds == right.manifolds
+        && left.contact_points == right.contact_points
+        && left.cache_previous == right.cache_previous
+        && left.cache_current == right.cache_current
+        && left.cache_matched == right.cache_matched
+        && left.cache_cold == right.cache_cold
+        && left.cache_expired == right.cache_expired
 }
 
 fn optimized_box2d_evidence(
@@ -749,6 +875,7 @@ fn timing(samples: &[f64]) -> Result<Timing, String> {
     sorted.sort_by(f64::total_cmp);
     Ok(Timing {
         samples: sorted.len(),
+        raw_seconds: samples.to_vec(),
         minimum_seconds: sorted[0],
         p50_seconds: percentile(&sorted, 0.50),
         p95_seconds: percentile(&sorted, 0.95),

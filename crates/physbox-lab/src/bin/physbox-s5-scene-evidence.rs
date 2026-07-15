@@ -12,9 +12,10 @@ use physbox_contracts::{
     SCHEMA_VERSION, ScenarioV1, SettlingSeriesV1, ShapeV1, Validate, canonical_hash, sha256_bytes,
 };
 use physbox_engine::{
-    GpuGeneratedContactBenchmarkOutput, GpuGeneratedContactRunner, P5_2_BUCKET_EVIDENCE_STEPS,
-    P5_2_CENTERED_STACK_EVIDENCE_STEPS, P5_2BucketShape, benchmark_gpu_generated_contacts,
-    p5_2_box2d_world_projection, p5_2_bucket_scenario, p5_2_centered_rectangle_stack_scenario,
+    GpuContactPersistenceTopology, GpuGatherTopologyEvidence, GpuGeneratedContactBenchmarkOutput,
+    GpuGeneratedContactRunner, P5_2_BUCKET_EVIDENCE_STEPS, P5_2_CENTERED_STACK_EVIDENCE_STEPS,
+    P5_2BucketShape, benchmark_gpu_generated_contacts, p5_2_box2d_world_projection,
+    p5_2_bucket_scenario, p5_2_centered_rectangle_stack_scenario,
 };
 use physbox_lab::{
     analytic_narrowphase::generate_scalar_narrowphase,
@@ -75,6 +76,10 @@ struct GpuTraceSample {
     work: physbox_contracts::CollisionWorkV1,
     capacities: Vec<physbox_contracts::CollisionCapacityV1>,
     failure: Option<physbox_contracts::FailureV1>,
+    persistence_topology: GpuContactPersistenceTopology,
+    gather_topology: GpuGatherTopologyEvidence,
+    dispatches_per_step: u32,
+    allocated_bytes: u64,
 }
 
 #[derive(Serialize)]
@@ -116,6 +121,9 @@ fn run() -> Result<(), String> {
     let arguments = Arguments::parse()?;
     let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let (source_revision, source_dirty, source_patch_digest) = repository_state(&repository)?;
+    if arguments.require_clean && source_dirty {
+        return Err("S5 combined scene evidence requires a clean source tree".to_owned());
+    }
     let box2d = verify_clean_git_pin(&arguments.box2d_source, BOX2D_REVISION)
         .map_err(|error| error.to_string())?;
     let staging = arguments.output.with_extension("partial");
@@ -193,7 +201,7 @@ fn run() -> Result<(), String> {
     atomic_write(&staging.join("playback.svg"), playback.as_bytes())?;
     let manifest = Manifest {
         schema_version: SCHEMA_VERSION,
-        artifact_kind: "p5.2b-s5.1-scenes-and-settling",
+        artifact_kind: "p5.2b-s5.2-combined-scenes-and-settling",
         run_id: arguments.run_id.clone(),
         source_revision,
         source_dirty,
@@ -216,7 +224,7 @@ fn run() -> Result<(), String> {
     let manifest_bytes =
         fs::read(arguments.output.join("manifest.json")).map_err(|error| error.to_string())?;
     println!(
-        "PHYSBOX5_VALIDATION_SUCCESS host=native scenario=s5.1-scenes run_id={} manifest_sha256={} output={}",
+        "PHYSBOX5_VALIDATION_SUCCESS host=native scenario=s5.2-combined-scenes run_id={} manifest_sha256={} output={}",
         arguments.run_id,
         sha256_bytes(&manifest_bytes),
         arguments.output.display()
@@ -272,6 +280,10 @@ fn evaluate_source(
             work: output.work,
             capacities: output.capacities,
             failure: output.failure,
+            persistence_topology: output.persistence_topology,
+            gather_topology: output.gather_topology,
+            dispatches_per_step: output.dispatches_per_step,
+            allocated_bytes: output.allocated_bytes,
         });
     }
     let final_gpu = gpu_trace.last().expect("checkpoints are nonempty");
@@ -295,7 +307,7 @@ fn evaluate_source(
         observation_version: physbox_contracts::SETTLING_OBSERVATION_VERSION,
         source_scenario_hash: source_scenario_hash.clone(),
         projection_hash: Some(neutral_projection_hash.clone()),
-        lane: "gpu-generated-all-pairs-jacobi-gather".to_owned(),
+        lane: "gpu-generated-all-pairs-pair-slot-stable-body-edge-jacobi".to_owned(),
         sleeping_enabled: false,
         transient_end_step: 180,
         settled_start_step: if final_step >= 1_200 { 600 } else { 360 },
@@ -553,6 +565,7 @@ struct Arguments {
     box2d_source: PathBuf,
     warmup: u32,
     samples: u32,
+    require_clean: bool,
     platforms: Vec<(String, PathBuf)>,
     physical_device_gap: Option<String>,
 }
@@ -565,10 +578,15 @@ impl Arguments {
         let mut box2d_source = None;
         let mut warmup = 2;
         let mut samples = 10;
+        let mut require_clean = false;
         let mut platforms = Vec::new();
         let mut physical_device_gap = None;
         let mut arguments = std::env::args().skip(1);
         while let Some(argument) = arguments.next() {
+            if argument == "--require-clean" {
+                require_clean = true;
+                continue;
+            }
             let value = arguments
                 .next()
                 .ok_or_else(|| format!("missing value for {argument}"))?;
@@ -599,6 +617,7 @@ impl Arguments {
             box2d_source: box2d_source.ok_or_else(|| "missing --box2d-source".to_owned())?,
             warmup,
             samples,
+            require_clean,
             platforms,
             physical_device_gap,
         })
