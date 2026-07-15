@@ -5,6 +5,7 @@ mod body_floor_solver;
 mod body_state;
 mod body_world;
 mod clock;
+mod collision_candidates;
 mod config;
 mod frame;
 mod gpu_context;
@@ -29,6 +30,9 @@ pub use body_state::{
     BoundedBodyCommands, GpuBodyStorage, analytic_shape_encoding,
 };
 pub use clock::{InteractiveClockAction, PacingMode, PacingReport};
+pub use collision_candidates::GpuCandidateOutput;
+#[cfg(not(target_arch = "wasm32"))]
+pub use collision_candidates::{GpuCandidateRunner, run_gpu_collision_candidates};
 pub use config::EngineConfig;
 pub use frame::{FrameInput, PointerButton, PointerEvent, PointerPhase, StepRequest};
 pub use gpu_context::{AdapterDiagnostics, create_instance};
@@ -45,8 +49,8 @@ pub use renderer::OffscreenRenderer;
 pub use renderer::SurfaceRenderer;
 pub use report::{BodyCommandReport, FrameReport, ScenarioResult, SceneContract};
 pub use scenario::{
-    AnalyticFixtureKind, P5_2CollisionScenarioKind, ScenarioBuildError, analytic_fixture_scenario,
-    authored_chain_scenario, authored_one_contact_scenario, p5_1_free_flight_scenario,
-    p5_1_rectangle_floor_scenario, p5_1_reset_grab_scenario, p5_2_box2d_narrowphase_projection,
-    p5_2_collision_scenario,
+    AnalyticFixtureKind, P5_2CandidatePattern, P5_2CollisionScenarioKind, ScenarioBuildError,
+    analytic_fixture_scenario, authored_chain_scenario, authored_one_contact_scenario,
+    p5_1_free_flight_scenario, p5_1_rectangle_floor_scenario, p5_1_reset_grab_scenario,
+    p5_2_box2d_narrowphase_projection, p5_2_candidate_scenario, p5_2_collision_scenario,
 };

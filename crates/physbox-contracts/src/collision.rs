@@ -451,7 +451,7 @@ impl Validate for CollisionWorkV1 {
             .and_then(|value| value.checked_add(self.candidate_pairs))
             .ok_or_else(|| ContractError("collision pair accounting overflowed".to_owned()))?;
         if accounted_pairs != self.pair_attempts
-            || self.narrowphase_tests != self.candidate_pairs
+            || self.narrowphase_tests > self.candidate_pairs
             || self.manifolds > self.narrowphase_tests
             || self.contact_points < self.manifolds
             || self.contact_points > self.manifolds.saturating_mul(2)
@@ -841,6 +841,21 @@ mod tests {
         assert_eq!(decoded, artifact);
         assert_eq!(decoded.layout, collision_layout_v1());
         assert_eq!(decoded.layout.records.len(), 8);
+    }
+
+    #[test]
+    fn candidate_only_work_is_valid_but_over_testing_is_not() {
+        let mut work = CollisionWorkV1 {
+            bodies: 3,
+            pair_attempts: 3,
+            fixed_fixed_rejected: 1,
+            aabb_rejected: 1,
+            candidate_pairs: 1,
+            ..CollisionWorkV1::default()
+        };
+        work.validate().unwrap();
+        work.narrowphase_tests = 2;
+        assert!(work.validate().is_err());
     }
 
     #[test]

@@ -32,6 +32,35 @@ pub enum P5_2CollisionScenarioKind {
     MixedSmallWorld,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum P5_2CandidatePattern {
+    Random,
+    Touching,
+    RotatedThin,
+    Coincident,
+    FixedOnly,
+}
+
+impl P5_2CandidatePattern {
+    pub const ALL: [Self; 5] = [
+        Self::Random,
+        Self::Touching,
+        Self::RotatedThin,
+        Self::Coincident,
+        Self::FixedOnly,
+    ];
+
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Random => "random",
+            Self::Touching => "touching",
+            Self::RotatedThin => "rotated-thin",
+            Self::Coincident => "coincident",
+            Self::FixedOnly => "fixed-only",
+        }
+    }
+}
+
 impl P5_2CollisionScenarioKind {
     pub const ALL: [Self; 4] = [
         Self::CircleCircle,
@@ -482,6 +511,121 @@ pub fn p5_2_collision_scenario(
     })
 }
 
+pub fn p5_2_candidate_scenario(
+    pattern: P5_2CandidatePattern,
+    body_count: u32,
+    seed: u64,
+) -> Result<ScenarioV1, ScenarioBuildError> {
+    if !(2..=128).contains(&body_count) {
+        return Err(ScenarioBuildError(
+            "P5.2 candidate scenario requires between 2 and 128 bodies".to_owned(),
+        ));
+    }
+    let material = MaterialV1 {
+        friction: finite(0.5),
+        restitution: finite(0.1),
+    };
+    let mut random = StableRandom::new(seed);
+    let mut bodies = Vec::with_capacity(body_count as usize);
+    for slot in 0..body_count {
+        let random_circle = slot % 3 == 0;
+        let (shape, position, angle, fixed) = match pattern {
+            P5_2CandidatePattern::Random => {
+                let shape = if random_circle {
+                    ShapeV1::Circle {
+                        radius: finite(0.08 + random.unit() * 0.5),
+                    }
+                } else {
+                    ShapeV1::Rectangle {
+                        half_extents: Vec2::new(
+                            0.06 + random.unit() * 0.55,
+                            0.06 + random.unit() * 0.55,
+                        ),
+                    }
+                };
+                (
+                    shape,
+                    Vec2::new(random.signed(3.0), random.signed(3.0)),
+                    random.signed(std::f32::consts::PI),
+                    slot % 11 == 0,
+                )
+            }
+            P5_2CandidatePattern::Touching => (
+                ShapeV1::Rectangle {
+                    half_extents: Vec2::new(0.5, 0.25),
+                },
+                Vec2::new(slot as f32, (slot % 2) as f32 * 0.5),
+                0.0,
+                slot % 7 == 0,
+            ),
+            P5_2CandidatePattern::RotatedThin => (
+                ShapeV1::Rectangle {
+                    half_extents: Vec2::new(0.8, 0.03),
+                },
+                Vec2::new(
+                    (slot % 8) as f32 * 0.38 - 1.33,
+                    (slot / 8) as f32 * 0.38 - 1.33,
+                ),
+                std::f32::consts::FRAC_PI_4 + random.signed(0.025),
+                slot % 13 == 0,
+            ),
+            P5_2CandidatePattern::Coincident => {
+                let shape = if random_circle {
+                    ShapeV1::Circle {
+                        radius: finite(0.2 + random.unit() * 0.15),
+                    }
+                } else {
+                    ShapeV1::Rectangle {
+                        half_extents: Vec2::new(0.25, 0.18),
+                    }
+                };
+                (
+                    shape,
+                    Vec2::new(random.signed(0.02), random.signed(0.02)),
+                    random.signed(0.05),
+                    slot % 9 == 0,
+                )
+            }
+            P5_2CandidatePattern::FixedOnly => (
+                ShapeV1::Rectangle {
+                    half_extents: Vec2::new(0.4, 0.4),
+                },
+                Vec2::new(random.signed(0.1), random.signed(0.1)),
+                random.signed(0.1),
+                true,
+            ),
+        };
+        bodies.push(BodyStateV1 {
+            id: BodyId {
+                slot,
+                generation: 1,
+            },
+            shape,
+            position,
+            angle: finite(angle),
+            linear_velocity: Vec2::ZERO,
+            angular_velocity: finite(0.0),
+            inverse_mass: finite(if fixed { 0.0 } else { 1.0 }),
+            inverse_inertia: finite(if fixed { 0.0 } else { 3.0 }),
+            material,
+            sleeping: false,
+        });
+    }
+    let mut settings = default_settings();
+    settings.gravity = Vec2::ZERO;
+    Ok(ScenarioV1 {
+        schema_version: SCHEMA_VERSION,
+        id: format!("p5.2-candidates-{}-{body_count}", pattern.name()),
+        seed,
+        requested_steps: 1,
+        settings,
+        bodies,
+        manifolds: Vec::new(),
+        contact_cache: Vec::new(),
+        actions: Vec::new(),
+    })
+}
+
 pub fn p5_2_box2d_narrowphase_projection(
     source: &ScenarioV1,
 ) -> Result<ScenarioV1, ScenarioBuildError> {
@@ -859,5 +1003,20 @@ mod tests {
                 .0
                 .contains("rejects authored manifolds, cache, and actions")
         );
+    }
+
+    #[test]
+    fn p5_2_candidate_corpus_is_shared_valid_and_replayable() {
+        for pattern in P5_2CandidatePattern::ALL {
+            let scenario = p5_2_candidate_scenario(pattern, 32, 91).unwrap();
+            scenario.validate().unwrap();
+            assert_eq!(scenario.bodies.len(), 32);
+            assert_eq!(
+                canonical_json(&scenario).unwrap(),
+                canonical_json(&p5_2_candidate_scenario(pattern, 32, 91).unwrap()).unwrap()
+            );
+        }
+        assert!(p5_2_candidate_scenario(P5_2CandidatePattern::Random, 1, 0).is_err());
+        assert!(p5_2_candidate_scenario(P5_2CandidatePattern::Random, 129, 0).is_err());
     }
 }
