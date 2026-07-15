@@ -1,6 +1,6 @@
 # S3: Small-world collision and contact persistence
 
-Status: manual checkpoint at renewed S3.6 review, 2026-07-15.
+Status: S3.6 direction accepted; combined closure gate active, 2026-07-15.
 Direction: [one GPU-resident 2D physics world](../topics/physbox5-unified-gpu-physics.md).
 Bring-up stage: [P5.2](../bringup-plan.md#p52--small-world-collision-and-persistence-active).
 Predecessor: [accepted P5.1 body core](../../evidence/p5.1-s2.6/README.md).
@@ -461,6 +461,15 @@ integration and structural-quality gate before closing S3 or making a CPU
 performance claim. The current full-key/body-scan baseline and physical
 defaults remain selected until human acceptance is recorded.
 
+Human decision, 2026-07-15: accept stable generational pair slots and stable
+body-edge index views as the P5.2 production direction, subject to one combined
+product-graph integration gate. Accept `0.02` speculative distance and
+`3.0 m/s` per-contact maximum depenetration velocity as provisional P5.2
+defaults. Keep the full semantic key and canonical body scan as correctness
+oracles, keep deep coincident placement diagnosed rather than ordinary, and
+accept no final stack-quality band or CPU crossover claim. This authorizes the
+post-selection integration slice; it does not close S3 or authorize P5.3.
+
 Gate: the speculative and deep-overlap reproducers pass without widening the
 existing numerical tolerance; every candidate exactly preserves accepted
 semantic identity and deterministic replay; every overflow rejects the whole
@@ -468,10 +477,11 @@ stage; no step depends on readback; subphase and complete-step matrices remain
 correctness-qualified; and the final S3.6 package exposes measured winners,
 failures, rejected alternatives, and reconsideration triggers.
 
-Commit boundaries: land the acceptance record alone; then land contact policy,
-pair persistence, body-edge gather, evidence automation, cross-host evidence,
-and the regenerated S3.6 checkpoint in separate reviewable commits. Stop for
-human review before freezing a representation/default or advancing to S4/P5.3.
+Commit boundaries: land this acceptance record alone. Then land the combined
+product graph and its exactness/capacity tests, structural-quality evidence,
+performance/cross-host evidence, and S3 closure in separately reviewable
+commits. Stop for human review before widening a quality band or advancing to
+P5.3 with a failed combined gate.
 
 ## Validation baseline
 

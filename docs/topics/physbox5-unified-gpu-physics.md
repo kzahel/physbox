@@ -604,15 +604,15 @@ These residuals, the absence of a combined pair-slot-plus-edge full-step
 timing, and the physical-device availability gap remain explicit S3.6 review
 inputs. No default, contact ABI, or product representation changed.
 
-The renewed S3.6 review recommends stable generational pair slots plus stable
-body-edge index views as the production direction, with the complete semantic
-key and canonical scan retained as validation oracles. It recommends the
-candidate `0.02` speculative distance and `3.0 m/s` per-contact depenetration
-limit as provisional defaults while treating deep coincident placement as a
-diagnosed exceptional state. Human acceptance must precede promotion. The
-first post-selection slice must combine both views in the real graph, preserve
-exact output and atomic failure, and publish structural stack curves and
-combined timing before S3 closes or any crossover is claimed.
+Human review accepted the renewed S3.6 recommendation on 2026-07-15: stable
+generational pair slots plus stable body-edge index views are the P5.2
+production direction, with the complete semantic key and canonical scan
+retained as validation oracles. The `0.02` speculative distance and `3.0 m/s`
+per-contact depenetration limit are accepted as provisional defaults while
+deep coincident placement remains a diagnosed exceptional state. The first
+post-selection slice must combine both views in the real graph, preserve exact
+output and atomic failure, and publish structural stack curves and combined
+timing before S3 closes or any crossover is claimed.
 
 Circle/circle and circle/rectangle contact are analytic. Rectangle/rectangle
 uses SAT to select a reference and incident edge, clips the incident segment,
@@ -1391,14 +1391,14 @@ The first rigid work proceeds with these decisions:
 - All-pairs is the initial trusted broadphase and pair oracle; sorted SAP and a
   multi-cell grid are the first scalable bakeoff.
 - Persistent contacts use canonical body handles with generations plus stable
-  geometric feature identifiers. The exact full-key sorted merge remains the
-  correctness baseline while the approved S3.5a bakeoff measures stable
-  pair-slot transfer with full local equality verification.
-- Generated-contact scenarios carry the S3.5a `0.02` speculative-distance and
-  `3.0 m/s` maximum-depenetration candidate explicitly. Scalar and GPU stages
-  share that optional contract; policy-free authority fixtures retain exact
-  overlap admission. The candidate remains unaccepted pending regenerated S3.6
-  evidence and human review.
+  geometric feature identifiers. Stable generational pair slots with full
+  local equality verification are the selected P5.2 product direction; the
+  exact full-key sorted merge remains the correctness baseline.
+- Generated-contact scenarios use the accepted provisional P5.2 defaults of
+  `0.02` speculative distance and `3.0 m/s` per-contact maximum depenetration.
+  Scalar and GPU stages share that contract; policy-free authority fixtures
+  retain exact overlap admission. Deep coincident placement remains a
+  diagnosed exceptional state, not an accepted ordinary spawn condition.
 - Interactive frames execute at most one outer fixed step and permanently slip
   excess wall time; solver substeps and explicit validation steps are separate
   concepts.

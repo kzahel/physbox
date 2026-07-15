@@ -630,14 +630,15 @@ CPU crossover claim. The current full-key product baseline remains
 23.422 ms at 1K versus the fastest 0.1547 ms optimized Box2D row; representation
 selection and any integrated-performance requirement remain at S3.6.
 
-Renewed S3.6 recommendation, 2026-07-15: select stable pair slots and stable
-body-edge views for post-review integration because they are exact and win the
-scoped work they replace. Treat the approximately 6% authored-contact total
-allocation overhead as justified by eliminating the quadratic incidence scan,
-but keep every byte/capacity explicit. Before closing S3, time the combined
-product graph against both exact baselines and require the result to preserve
-the candidate gains. This is a recommendation pending human review, not a
-selected layout, accepted regression band, or CPU crossover claim.
+S3.6 decision, 2026-07-15: human review selected stable pair slots and stable
+body-edge views for product integration because they are exact and win the
+scoped work they replace. The approximately 6% authored-contact total
+allocation overhead is accepted for this direction because it eliminates the
+quadratic incidence scan, while every byte and capacity remains explicit.
+Before closing S3, the combined product graph must be timed against both exact
+baselines and preserve the candidate gains. This selects a representation
+direction, not an accepted regression band, final stack-quality band, or CPU
+crossover claim.
 
 ## Regression and claim gates
 

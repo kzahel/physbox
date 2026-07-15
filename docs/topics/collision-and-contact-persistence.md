@@ -1,7 +1,7 @@
 # Collision and contact persistence
 
-Status: renewed S3.6 human checkpoint; contact representation and physical
-policy remain provisional, 2026-07-15.
+Status: S3.6 direction accepted; combined product integration and structural
+quality remain gated, 2026-07-15.
 
 Governing direction:
 [one GPU-resident 2D physics world](physbox5-unified-gpu-physics.md).
@@ -206,13 +206,16 @@ pair/partition management, host-known solve loops, count readback, and partial
 overflow behavior are incompatible with the product contract and will not be
 copied.
 
-Human review authorized the S3.5a bakeoff on 2026-07-15. Stable pair slots and
-compact body-edge index views with deterministic segmented gather are the lead
-candidates, while the full semantic point-key sort and canonical incidence
-scan remain correctness baselines. The `0.02` speculative distance and
-`3.0 m/s` depenetration limit are authorized candidate values only. Final
-representation, capacity, physical-default, tolerance, and quality-band
-acceptance remains a later S3.6 human decision after regenerated evidence.
+Human review authorized the S3.5a bakeoff on 2026-07-15. The regenerated
+evidence then supported and human review accepted stable generational pair
+slots plus compact body-edge index views with deterministic segmented gather
+as the P5.2 production direction. The full semantic point-key sort and
+canonical incidence scan remain correctness baselines. The measured `0.02`
+speculative distance and `3.0 m/s` per-contact depenetration limit are accepted
+as provisional P5.2 defaults. Promotion into the real product graph remains
+subject to the combined exactness, capacity, timing, and structural-quality
+gate; no numerical tolerance, final stack-quality band, or CPU crossover was
+accepted.
 
 The first independently implemented pair-slot comparator is executable. It
 stores a 96-byte pair-local record containing the full generational pair,
@@ -265,15 +268,13 @@ maximum multi-contact speed for human quality review. The pair and adjacency
 timings remain separate experiments, so the evidence does not claim that a
 combined product graph already achieves their joint result.
 
-The renewed S3.6 recommendation is to select stable generational pair slots
-and stable body-edge index views, then integrate them into one product graph
-under the existing exact baselines. It also recommends accepting `0.02`
-speculative distance and `3.0 m/s` per-contact depenetration velocity as
-provisional P5.2 defaults while keeping deep coincident spawn diagnosed and
-unsupported as ordinary placement. Human acceptance is required before any
-promotion. A combined exact/performance run plus reviewed structural stack
-curves gates S3 closure; the isolated candidate ratios are not a crossover
-claim.
+S3.6 human review accepted stable generational pair slots and stable body-edge
+index views for integration into one product graph under the existing exact
+baselines. It also accepted `0.02` speculative distance and `3.0 m/s`
+per-contact depenetration velocity as provisional P5.2 defaults while keeping
+deep coincident spawn diagnosed and unsupported as ordinary placement. A
+combined exact/performance run plus reviewed structural stack curves still
+gates S3 closure; the isolated candidate ratios are not a crossover claim.
 
 ## Reconsideration triggers
 

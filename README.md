@@ -12,8 +12,11 @@ contact is complete; human review accepted the limited 64-byte `BodyCoreV1`,
 generational handle, existing command envelope, and explicit capacity-failure
 semantics. P5.2 small-world collision and persistence is active under the S3
 tactical. After the first S3.6 review, human approval authorized a focused
-S3.5a contact policy and representation bakeoff; no physical default or
-production contact layout has been selected by that authorization. The
+S3.5a contact policy and representation bakeoff. Human review has now selected
+stable generational pair slots and stable body-edge views as the P5.2
+production direction, with `0.02` speculative distance and `3.0 m/s`
+per-contact maximum depenetration velocity as provisional defaults. A combined
+product-graph and structural-quality gate remains before S3 closes. The
 repository still contains no Rapier or CPU product physics backend, fluid
 solver, legacy tools, settings UI, or PhysBox 4 scene compatibility.
 
