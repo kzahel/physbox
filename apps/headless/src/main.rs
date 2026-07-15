@@ -21,6 +21,7 @@ struct Provenance<'a> {
     adapter: &'a physbox_engine::AdapterDiagnostics,
     report: &'a FrameReport,
     gpu_state: [f32; 8],
+    fixed_floor_pass: Option<&'a physbox_engine::GpuFixedFloorPassEvidence>,
 }
 
 fn main() {
@@ -82,6 +83,9 @@ fn run() -> Result<(), String> {
         return Err("GPU capture state contains a non-finite value".to_owned());
     }
     write_png(output, options.width, options.height, &pixels)?;
+    let fixed_floor_pass = (report.scene_contract.contact_point_count > 0)
+        .then(|| renderer.read_fixed_floor_pass_evidence())
+        .transpose()?;
 
     let provenance = Provenance {
         run_id: run_id(),
@@ -93,6 +97,7 @@ fn run() -> Result<(), String> {
         adapter: renderer.diagnostics(),
         report: &report,
         gpu_state,
+        fixed_floor_pass: fixed_floor_pass.as_ref(),
     };
     let json = serde_json::to_vec_pretty(&provenance)
         .map_err(|error| format!("failed to serialize provenance: {error}"))?;

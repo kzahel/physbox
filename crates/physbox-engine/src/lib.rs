@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+mod body_floor_solver;
 mod body_state;
 mod body_world;
 mod clock;
@@ -14,6 +15,7 @@ mod renderer;
 mod report;
 mod scenario;
 
+pub use body_floor_solver::{GpuFixedFloorContactEvidence, GpuFixedFloorPassEvidence};
 pub use body_state::{
     BODY_BYTES_PER_SLOT, BODY_COMMAND_BYTES, BodySlotRegistry, BoundedBodyCommands, GpuBodyStorage,
 };

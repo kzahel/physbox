@@ -1483,6 +1483,7 @@ version = "0.1.0"
 dependencies = [
  "physbox-contracts",
  "physbox-engine",
+ "physbox-launch",
  "pollster",
  "serde",
  "serde_json",

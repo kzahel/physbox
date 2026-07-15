@@ -11,7 +11,9 @@ use physbox_contracts::{
     NamedValueV1, OracleRequestV1, PlaybackArtifactV1, PlaybackTrackV1, ProvenanceV1,
     SCHEMA_VERSION, Validate, canonical_hash, canonical_json, sha256_bytes,
 };
-use physbox_engine::{AnalyticFixtureKind, analytic_fixture_scenario};
+use physbox_engine::{
+    AnalyticFixtureKind, analytic_fixture_scenario, p5_1_rectangle_floor_scenario,
+};
 use physbox_lab::{
     oracle_transport::{
         OracleProcess, OracleRunConfig, OracleSourceIdentity, run_oracle, verify_clean_git_pin,
@@ -119,8 +121,13 @@ fn playback_scenarios() -> Result<Vec<(&'static str, physbox_contracts::Scenario
     sliding.id = "analytic-rectangle-floor-sliding".to_owned();
     sliding.bodies[0].position.y = 0.5;
     sliding.bodies[0].linear_velocity.x = 2.0;
+    let mut product_floor =
+        p5_1_rectangle_floor_scenario(180).map_err(|error| error.to_string())?;
+    product_floor.id = "p5.1-rectangle-floor-authority-projection".to_owned();
+    product_floor.manifolds.clear();
     Ok(vec![
         ("circle-floor", circle),
+        ("p5.1-rectangle-floor", product_floor),
         ("rectangle-floor", rectangle),
         ("sliding-friction", sliding),
     ])
@@ -191,7 +198,10 @@ fn harness_provenance(repository: &Path, run_id: &str) -> Result<ProvenanceV1, S
         )],
         runtime_settings: vec![
             named("checkpoints", "1,15,30,60,90,120,180"),
-            named("fixtures", "circle-floor,rectangle-floor,sliding-friction"),
+            named(
+                "fixtures",
+                "circle-floor,rectangle-floor,sliding-friction,p5.1-rectangle-floor",
+            ),
             named("oracle_lane", "world"),
         ],
     })

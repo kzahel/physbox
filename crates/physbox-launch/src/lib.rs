@@ -33,6 +33,7 @@ pub enum ValidationScenario {
     #[default]
     Bootstrap,
     BodyFreeFlight,
+    RigidFloor,
     SolverJacobi,
     SolverColored,
 }
@@ -42,6 +43,7 @@ impl ValidationScenario {
         match self {
             Self::Bootstrap => "bootstrap",
             Self::BodyFreeFlight => "body-free-flight",
+            Self::RigidFloor => "rigid-floor",
             Self::SolverJacobi => "solver-jacobi",
             Self::SolverColored => "solver-colored",
         }
@@ -159,7 +161,7 @@ pub fn usage(program: &str, host: LaunchHost) -> String {
         ""
     };
     format!(
-        "Usage: {program} [options]\n\n  --width PX       viewport width (default 960)\n  --height PX      viewport height (default 600)\n  --scenario NAME  bootstrap, body-free-flight, solver-jacobi, or solver-colored{capture}\n  -h, --help       print this help"
+        "Usage: {program} [options]\n\n  --width PX       viewport width (default 960)\n  --height PX      viewport height (default 600)\n  --scenario NAME  bootstrap, body-free-flight, rigid-floor, solver-jacobi, or solver-colored{capture}\n  -h, --help       print this help"
     )
 }
 
@@ -176,6 +178,7 @@ fn apply_option(
             options.scenario = match value.as_str() {
                 "bootstrap" => ValidationScenario::Bootstrap,
                 "body-free-flight" => ValidationScenario::BodyFreeFlight,
+                "rigid-floor" => ValidationScenario::RigidFloor,
                 "solver-jacobi" => ValidationScenario::SolverJacobi,
                 "solver-colored" => ValidationScenario::SolverColored,
                 _ => return Err(LaunchError(format!("unknown scenario: {value}"))),
@@ -280,5 +283,7 @@ mod tests {
         assert_eq!(web.options.scenario, ValidationScenario::SolverJacobi);
         let android = parse_android_json(r#"["--scenario","body-free-flight"]"#).unwrap();
         assert_eq!(android.options.scenario, ValidationScenario::BodyFreeFlight);
+        let floor = parse_web_query("?scenario=rigid-floor").unwrap();
+        assert_eq!(floor.options.scenario, ValidationScenario::RigidFloor);
     }
 }

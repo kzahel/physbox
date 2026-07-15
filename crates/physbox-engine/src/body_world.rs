@@ -1,10 +1,12 @@
 use std::mem::size_of;
 
 use bytemuck::{Pod, Zeroable};
-use physbox_contracts::{ScenarioV1, Validate};
+use physbox_contracts::{CapacityRecordV1, ScenarioV1, Validate};
 use wgpu::util::DeviceExt;
 
-use crate::GpuBodyStorage;
+#[cfg(not(target_arch = "wasm32"))]
+use crate::body_floor_solver::FixedFloorEvidenceLayout;
+use crate::{GpuBodyStorage, body_floor_solver::GpuFixedFloorSolver};
 
 const WORKGROUP_SIZE: u32 = 64;
 const COMMAND_CAPACITY: u32 = 64;
@@ -31,6 +33,7 @@ pub(crate) struct GpuBodyWorld {
     render_bind_group: wgpu::BindGroup,
     background_pipeline: wgpu::RenderPipeline,
     body_pipeline: wgpu::RenderPipeline,
+    floor_solver: Option<GpuFixedFloorSolver>,
     body_count: u32,
 }
 
@@ -41,15 +44,17 @@ impl GpuBodyWorld {
         scenario: &ScenarioV1,
     ) -> Result<Self, String> {
         scenario.validate().map_err(|error| error.to_string())?;
-        if !scenario.manifolds.is_empty() {
-            return Err("free-flight GPU body world does not consume manifolds".to_owned());
-        }
         let body_count = u32::try_from(scenario.bodies.len())
             .map_err(|_| "GPU body count exceeds u32".to_owned())?;
         if body_count == 0 {
             return Err("GPU body world requires at least one body".to_owned());
         }
         let storage = GpuBodyStorage::new(device, body_count, COMMAND_CAPACITY, &scenario.bodies)?;
+        let floor_solver = if scenario.manifolds.is_empty() {
+            None
+        } else {
+            Some(GpuFixedFloorSolver::new(device, &storage, scenario)?)
+        };
         let integration_params = IntegrationParamsRaw {
             dt_gravity: [
                 scenario.settings.fixed_dt.get(),
@@ -216,12 +221,17 @@ impl GpuBodyWorld {
             render_bind_group,
             background_pipeline,
             body_pipeline,
+            floor_solver,
             body_count,
         })
     }
 
     pub(crate) fn encode_steps(&self, encoder: &mut wgpu::CommandEncoder, steps: u32) {
         for _ in 0..steps {
+            if let Some(solver) = &self.floor_solver {
+                solver.encode_step(encoder);
+                continue;
+            }
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("physbox5_body_integration_pass"),
                 timestamp_writes: None,
@@ -276,6 +286,57 @@ impl GpuBodyWorld {
 
     pub(crate) const fn body_count(&self) -> u32 {
         self.body_count
+    }
+
+    pub(crate) fn solver_dispatches_per_step(&self) -> u32 {
+        self.floor_solver
+            .as_ref()
+            .map_or(1, GpuFixedFloorSolver::dispatches_per_step)
+    }
+
+    pub(crate) fn contact_point_count(&self) -> u32 {
+        self.floor_solver
+            .as_ref()
+            .map_or(0, GpuFixedFloorSolver::point_count)
+    }
+
+    pub(crate) fn solver_capacities(&self) -> &[CapacityRecordV1] {
+        self.floor_solver
+            .as_ref()
+            .map_or(&[], GpuFixedFloorSolver::capacities)
+    }
+
+    pub(crate) fn solver_capacity_bytes(&self) -> u64 {
+        self.solver_capacities()
+            .iter()
+            .map(|record| record.allocated_bytes)
+            .sum()
+    }
+
+    pub(crate) fn solver_capacity_overflowed(&self) -> bool {
+        self.solver_capacities()
+            .iter()
+            .any(|record| record.overflowed)
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn floor_pass_evidence_layout(&self) -> Result<FixedFloorEvidenceLayout, String> {
+        self.floor_solver
+            .as_ref()
+            .map(GpuFixedFloorSolver::pass_evidence_layout)
+            .ok_or_else(|| "pass evidence requires the fixed-floor solver".to_owned())
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn copy_floor_pass_evidence(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        destination: &wgpu::Buffer,
+    ) -> Result<FixedFloorEvidenceLayout, String> {
+        self.floor_solver
+            .as_ref()
+            .map(|solver| solver.copy_pass_evidence(encoder, destination))
+            .ok_or_else(|| "pass evidence requires the fixed-floor solver".to_owned())
     }
 
     #[cfg(not(target_arch = "wasm32"))]

@@ -2,7 +2,7 @@ use serde::Serialize;
 
 use crate::clock::PacingReport;
 
-pub const SCENE_CONTRACT_VERSION: u32 = 1;
+pub const SCENE_CONTRACT_VERSION: u32 = 2;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -11,6 +11,10 @@ pub struct SceneContract {
     pub engine: &'static str,
     pub state_owner: &'static str,
     pub body_count: u32,
+    pub contact_point_count: u32,
+    pub solver_dispatches_per_step: u32,
+    pub solver_capacity_bytes: u64,
+    pub capacity_overflowed: bool,
     pub fixed_step_hz: u32,
     pub scenario: &'static str,
 }
@@ -127,10 +131,14 @@ mod tests {
                 paused: false,
             },
             scene_contract: SceneContract {
-                version: 1,
+                version: SCENE_CONTRACT_VERSION,
                 engine: "physbox5",
                 state_owner: "gpu",
                 body_count: u32::MAX,
+                contact_point_count: 2,
+                solver_dispatches_per_step: 68,
+                solver_capacity_bytes: 512,
+                capacity_overflowed: false,
                 fixed_step_hz: 60,
                 scenario: "bootstrap",
             },

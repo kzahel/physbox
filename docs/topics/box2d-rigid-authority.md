@@ -91,10 +91,11 @@ sentinel/freshness promotion, and rejected-artifact preservation. The platform
 boundary gate also rejects any dependency on the native oracle from an app or
 shared product crate.
 
-The synchronized playback command runs the shared circle/floor,
-rectangle/floor, and sliding-friction scenarios through scalar and authority
+The synchronized playback command runs the shared circle/floor, P5.1
+rectangle/floor projection, general rectangle/floor, and sliding-friction
+scenarios through scalar and authority
 lanes at completed steps 1, 15, 30, 60, 90, 120, and 180. It creates one fresh
-directory containing a canonical versioned manifest, the 21 complete oracle
+directory containing a canonical versioned manifest, the 28 complete oracle
 process directories, and a self-contained side-by-side SVG. The manifest
 reports objective deltas but applies no unreviewed behavior tolerance. Dynamic
 sleep differences remain visible because the scalar executable specification

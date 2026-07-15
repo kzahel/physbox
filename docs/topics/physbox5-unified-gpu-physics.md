@@ -219,9 +219,24 @@ fixed body in the same allocation and draw. A bounded exact-step capture
 matches the independent scalar semi-implicit `f32` update within `1e-5`, while
 zero-step rendering leaves mechanics unchanged. The lane passed on native
 Metal, browser WebGPU, the `jstorrent-tablet` AVD's Vulkan SwiftShader, and a
-physical Pixel 9 Mali-G715/Vulkan adapter. It intentionally has no collision
-response yet; S2.3 supplies the precomputed fixed-floor manifold and accepted
-Jacobi solve before this path replaces the default bootstrap.
+physical Pixel 9 Mali-G715/Vulkan adapter. That dedicated free-flight lane
+intentionally retains no collision response; S2.3 supplies the precomputed
+fixed-floor manifold and accepted Jacobi solve for the default bootstrap.
+
+P5.1 S2.3 implementation status, 2026-07-15: the default bootstrap and the
+explicit `rigid-floor` lane now use the generational body allocation and the
+accepted contact-centric Jacobi schedule. Each outer step builds the
+two-point incidence topology on the GPU with count, prefix, and scatter,
+then runs four substeps with equal-and-opposite records, deterministic body
+gather, ping-pong motion, bias, relaxation, friction, and restitution. The
+checked schedule is 68 dispatches per outer step and 552 bytes of bounded
+solver scratch for the two-body/two-point scene; the scene contract reports
+both values and overflow state. The authored floor manifold supplies only
+fixed local anchors. Live separation and effective mass are recomputed from
+GPU pose, while general contact generation and outer-step warm-start transfer
+remain deferred. The inherited bootstrap mechanics buffer and compute path
+have been removed; the old visualization shader is retained only for the S1
+candidate laboratory.
 
 ## Later fluid-coupling contract
 

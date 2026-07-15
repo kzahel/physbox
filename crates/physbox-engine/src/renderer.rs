@@ -221,6 +221,30 @@ impl OffscreenRenderer {
     pub fn read_capture_identity(&self) -> Result<[u32; 4], String> {
         read_identity(&self.device, &self.queue, &self.host)
     }
+
+    pub fn read_fixed_floor_pass_evidence(
+        &self,
+    ) -> Result<crate::GpuFixedFloorPassEvidence, String> {
+        let layout = self.host.floor_pass_evidence_layout()?;
+        let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("physbox5_floor_pass_evidence_readback"),
+            size: layout.total_bytes,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("physbox5_floor_pass_evidence_copy"),
+            });
+        self.host.copy_floor_pass_evidence(&mut encoder, &buffer)?;
+        self.queue.submit([encoder.finish()]);
+        let mapped = map_buffer(&self.device, &buffer)?;
+        let result = crate::body_floor_solver::decode_pass_evidence(&mapped, layout);
+        drop(mapped);
+        buffer.unmap();
+        result
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -411,5 +435,27 @@ mod tests {
                 "capture value {index} differed: actual={actual}, expected={expected}"
             );
         }
+    }
+
+    #[test]
+    fn exact_fixed_floor_landing_is_finite_and_deterministic() {
+        let config = EngineConfig {
+            scenario: ValidationScenario::RigidFloor,
+        };
+        let run = || {
+            let mut renderer = pollster::block_on(OffscreenRenderer::new(320, 200, config.clone()))
+                .expect("fixed-floor renderer initializes");
+            let report = renderer.render(FrameInput::exact(120));
+            assert!(report.scenario.complete);
+            assert_eq!(report.scene_contract.contact_point_count, 2);
+            assert_eq!(report.scene_contract.solver_dispatches_per_step, 68);
+            assert_eq!(report.scene_contract.solver_capacity_bytes, 552);
+            assert!(!report.scene_contract.capacity_overflowed);
+            renderer.read_capture_state().unwrap()
+        };
+        let first = run();
+        let replay = run();
+        assert_eq!(first, replay);
+        assert!(first.into_iter().all(f32::is_finite));
     }
 }

@@ -8,6 +8,7 @@ publish.workspace = true
 [dependencies]
 physbox-contracts = { path = "../physbox-contracts" }
 physbox-engine = { path = "../physbox-engine" }
+physbox-launch = { path = "../physbox-launch" }
 pollster.workspace = true
 serde.workspace = true
 serde_json.workspace = true

@@ -12,6 +12,7 @@ use physbox_contracts::{
     BodyStateV1, CapacityRecordV1, ContactCachePointV1, FeatureIdV1, FiniteF32, ScenarioV1,
     TraceRecordV1, TraceStageV1, TraceValueV1, Validate, Vec2,
 };
+use serde::Serialize;
 use wgpu::util::DeviceExt;
 
 use crate::gpu_context::AdapterDiagnostics;
@@ -46,7 +47,8 @@ impl GpuSolverCandidate {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GpuContributionEvidence {
     pub point_index: u32,
     pub body_index: u32,

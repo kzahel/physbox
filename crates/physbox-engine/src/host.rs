@@ -1,6 +1,5 @@
 use bytemuck::{Pod, Zeroable};
 use physbox_launch::ValidationScenario;
-use wgpu::util::DeviceExt;
 
 use crate::{
     EngineConfig, FrameInput, StepRequest,
@@ -9,19 +8,10 @@ use crate::{
     gpu_solver::{GpuSolverCandidate, GpuSolverLab, GpuSolverMode},
     renderer::RenderFrameContext,
     report::{FrameReport, SCENE_CONTRACT_VERSION, ScenarioResult, SceneContract},
-    scenario::{authored_chain_scenario, p5_1_direct_render_scenario},
+    scenario::{
+        authored_chain_scenario, p5_1_direct_render_scenario, p5_1_rectangle_floor_scenario,
+    },
 };
-
-#[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
-struct BootstrapState {
-    position: [f32; 2],
-    angle: f32,
-    inverse_mass: f32,
-    linear_velocity: [f32; 2],
-    angular_velocity: f32,
-    inverse_inertia: f32,
-}
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -34,11 +24,7 @@ struct FrameParams {
 
 pub struct EngineHost {
     config: EngineConfig,
-    #[cfg(not(target_arch = "wasm32"))]
-    state_buffer: wgpu::Buffer,
     params_buffer: wgpu::Buffer,
-    bind_group: wgpu::BindGroup,
-    compute_pipeline: wgpu::ComputePipeline,
     render_pipeline: wgpu::RenderPipeline,
     solver_lab: Option<GpuSolverLab>,
     solver_bind_group: Option<wgpu::BindGroup>,
@@ -56,19 +42,6 @@ impl EngineHost {
         color_format: wgpu::TextureFormat,
         config: EngineConfig,
     ) -> Self {
-        let initial_state = BootstrapState {
-            position: [-0.56, 0.25],
-            angle: 0.18,
-            inverse_mass: 1.0,
-            linear_velocity: [0.42, -0.18],
-            angular_velocity: 0.72,
-            inverse_inertia: 1.0,
-        };
-        let state_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("physbox5_bootstrap_state"),
-            contents: bytemuck::bytes_of(&initial_state),
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-        });
         let params_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("physbox5_frame_params"),
             size: std::mem::size_of::<FrameParams>() as u64,
@@ -100,20 +73,6 @@ impl EngineHost {
                 },
             ],
         });
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("physbox5_bootstrap_bind_group"),
-            layout: &bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: state_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: params_buffer.as_entire_binding(),
-                },
-            ],
-        });
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("physbox5_bootstrap_shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("bootstrap.wgsl").into()),
@@ -122,14 +81,6 @@ impl EngineHost {
             label: Some("physbox5_bootstrap_pipeline_layout"),
             bind_group_layouts: &[&bind_group_layout],
             push_constant_ranges: &[],
-        });
-        let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("physbox5_bootstrap_compute_pipeline"),
-            layout: Some(&pipeline_layout),
-            module: &shader,
-            entry_point: Some("step_main"),
-            compilation_options: Default::default(),
-            cache: None,
         });
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("physbox5_bootstrap_render_pipeline"),
@@ -157,7 +108,9 @@ impl EngineHost {
             cache: None,
         });
         let solver_candidate = match config.scenario {
-            ValidationScenario::Bootstrap | ValidationScenario::BodyFreeFlight => None,
+            ValidationScenario::Bootstrap
+            | ValidationScenario::BodyFreeFlight
+            | ValidationScenario::RigidFloor => None,
             ValidationScenario::SolverJacobi => Some(GpuSolverCandidate::JacobiGather),
             ValidationScenario::SolverColored => Some(GpuSolverCandidate::ColoredSoftTgs),
         };
@@ -193,16 +146,25 @@ impl EngineHost {
                         .expect("engine-owned body free-flight GPU world is valid"),
                 )
             }
+            ValidationScenario::Bootstrap | ValidationScenario::RigidFloor => {
+                let expected_steps = if config.scenario == ValidationScenario::Bootstrap {
+                    3
+                } else {
+                    120
+                };
+                let scenario = p5_1_rectangle_floor_scenario(expected_steps)
+                    .expect("engine-owned fixed-floor scenario is valid");
+                Some(
+                    GpuBodyWorld::new(device, color_format, &scenario)
+                        .expect("engine-owned fixed-floor GPU world is valid"),
+                )
+            }
             _ => None,
         };
 
         Self {
             config,
-            #[cfg(not(target_arch = "wasm32"))]
-            state_buffer,
             params_buffer,
-            bind_group,
-            compute_pipeline,
             render_pipeline,
             solver_lab,
             solver_bind_group,
@@ -252,17 +214,7 @@ impl EngineHost {
         } else if let Some(world) = &self.body_world {
             world.encode_steps(context.encoder, steps);
         } else {
-            for _ in 0..steps {
-                let mut pass = context
-                    .encoder
-                    .begin_compute_pass(&wgpu::ComputePassDescriptor {
-                        label: Some("physbox5_bootstrap_step"),
-                        timestamp_writes: None,
-                    });
-                pass.set_pipeline(&self.compute_pipeline);
-                pass.set_bind_group(0, &self.bind_group, &[]);
-                pass.dispatch_workgroups(1, 1, 1);
-            }
+            unreachable!("every shared scenario owns a GPU mechanics path");
         }
 
         if let Some(world) = &self.body_world {
@@ -297,7 +249,9 @@ impl EngineHost {
             pass.set_pipeline(&self.render_pipeline);
             pass.set_bind_group(
                 0,
-                self.solver_bind_group.as_ref().unwrap_or(&self.bind_group),
+                self.solver_bind_group
+                    .as_ref()
+                    .expect("solver laboratory owns its render binding"),
                 &[],
             );
             pass.draw(0..3, 0..1);
@@ -313,6 +267,22 @@ impl EngineHost {
                 || if self.solver_lab.is_some() { 64 } else { 1 },
                 GpuBodyWorld::body_count,
             ),
+            contact_point_count: self
+                .body_world
+                .as_ref()
+                .map_or(0, GpuBodyWorld::contact_point_count),
+            solver_dispatches_per_step: self
+                .body_world
+                .as_ref()
+                .map_or(0, GpuBodyWorld::solver_dispatches_per_step),
+            solver_capacity_bytes: self
+                .body_world
+                .as_ref()
+                .map_or(0, GpuBodyWorld::solver_capacity_bytes),
+            capacity_overflowed: self
+                .body_world
+                .as_ref()
+                .is_some_and(GpuBodyWorld::solver_capacity_overflowed),
             fixed_step_hz: FIXED_STEP_HZ,
             scenario: self.config.scenario.name(),
         };
@@ -340,6 +310,19 @@ impl EngineHost {
                         "GPU SoA body integrated and rendered directly"
                     } else {
                         "waiting for three shared GPU body steps"
+                    },
+                }
+            }
+            ValidationScenario::RigidFloor => {
+                let complete = self.fixed_steps_total >= 120;
+                ScenarioResult {
+                    name: self.config.scenario.name(),
+                    complete,
+                    passed: complete,
+                    reason: if complete {
+                        "selected GPU Jacobi-gather floor solve completed"
+                    } else {
+                        "waiting for 120 shared GPU fixed-floor steps"
                     },
                 }
             }
@@ -380,7 +363,8 @@ impl EngineHost {
             let source = self
                 .solver_lab
                 .as_ref()
-                .map_or(&self.state_buffer, GpuSolverLab::body_buffer);
+                .expect("non-product captures belong to the solver laboratory")
+                .body_buffer();
             encoder.copy_buffer_to_buffer(
                 source,
                 0,
@@ -402,5 +386,27 @@ impl EngineHost {
         })?;
         world.copy_capture_identity(encoder, destination);
         Ok(())
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn floor_pass_evidence_layout(
+        &self,
+    ) -> Result<crate::body_floor_solver::FixedFloorEvidenceLayout, String> {
+        self.body_world
+            .as_ref()
+            .ok_or_else(|| "pass evidence requires the GPU body world".to_owned())?
+            .floor_pass_evidence_layout()
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn copy_floor_pass_evidence(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        destination: &wgpu::Buffer,
+    ) -> Result<crate::body_floor_solver::FixedFloorEvidenceLayout, String> {
+        self.body_world
+            .as_ref()
+            .ok_or_else(|| "pass evidence requires the GPU body world".to_owned())?
+            .copy_floor_pass_evidence(encoder, destination)
     }
 }
