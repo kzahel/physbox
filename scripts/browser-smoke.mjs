@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { rm, writeFile } from "node:fs/promises";
+import { readFile, rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { chromium } from "@playwright/test";
+import { PNG } from "pngjs";
 import { startServer } from "./server.mjs";
 
 const root = resolve(import.meta.dirname, "..");
@@ -48,9 +49,19 @@ try {
   );
   const after = await page.evaluate(() => globalThis.__physbox5);
   if (errors.length) throw new Error(`browser errors: ${errors.join("; ")}`);
-  await page.evaluate(() => globalThis.__physbox5FrameControl.pause());
   await page.waitForTimeout(200);
   await page.screenshot({ path: screenshot });
+  await page.evaluate(() => globalThis.__physbox5FrameControl.pause());
+  const pixels = PNG.sync.read(await readFile(screenshot));
+  let blackPixels = 0;
+  for (let offset = 0; offset < pixels.data.length; offset += 4) {
+    if (pixels.data[offset] <= 3 && pixels.data[offset + 1] <= 3 && pixels.data[offset + 2] <= 3) {
+      blackPixels += 1;
+    }
+  }
+  if (blackPixels > pixels.width * pixels.height * 0.01) {
+    throw new Error(`browser screenshot contains ${blackPixels} unexpected black pixels`);
+  }
   const provenance = {
     runId: randomUUID(),
     sourceRevision: git(["rev-parse", "HEAD"]) ?? "unknown",
