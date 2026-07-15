@@ -354,7 +354,7 @@ Human authorization, 2026-07-15: execute this measured bakeoff and regenerate
 S3.5/S3.6 evidence. This authorization selects neither a production contact
 representation nor final physical defaults.
 
-- [ ] Add explicit `0.02` speculative distance and `3.0 m/s` maximum
+- [x] Add explicit `0.02` speculative distance and `3.0 m/s` maximum
   depenetration speed as candidate policy, with the two minimized S3.5
   failures and clean Box2D/structural curves as mandatory comparisons.
 - [ ] Keep the exact 256-bit point-key sort as a correctness baseline and
@@ -376,6 +376,20 @@ representation nor final physical defaults.
   baseline. Regenerate native, browser, maintained host-GPU AVD, available
   physical Android, optimized Box2D, failure, and synchronized playback
   evidence.
+
+Contact-policy completion, 2026-07-15: the optional versioned scenario policy
+now drives conservative GPU/scalar AABB expansion, actual-separation
+narrowphase admission, and a per-contact depenetration-bias clamp in the scalar
+specification and both GPU accumulation lanes. Policy-free authority and
+authored scenarios retain their prior canonical encoding and exact-overlap
+behavior. Permanent scalar/GPU/end-to-end cases keep both minimized S3.5
+reproducers: the `0.02`/`3.0 m/s` candidate creates two speculative contacts and
+reduces the crossing case from `0.00507` to `0.000508` final penetration, while
+reducing the six-body coincident maximum speed from `126.27` to `27.41 m/s`.
+The two explicit policy uniform lanes add 32 bytes to the maintained floor
+scene (`23668` to `23700` capacity bytes) without changing its 282-dispatch
+schedule. Those residuals remain evidence for review; this completion does not
+accept the candidate as the product default.
 
 Gate: the speculative and deep-overlap reproducers pass without widening the
 existing numerical tolerance; every candidate exactly preserves accepted

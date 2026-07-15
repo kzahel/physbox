@@ -80,6 +80,7 @@ pub(crate) struct FixedFloorEvidenceLayout {
 struct PassParamsRaw {
     floats0: [f32; 4],
     floats1: [f32; 4],
+    floats2: [f32; 4],
     uints0: [u32; 4],
     uints1: [u32; 4],
 }
@@ -607,6 +608,7 @@ fn operations(
     let topology_params = PassParamsRaw {
         floats0: [0.0; 4],
         floats1: [0.0; 4],
+        floats2: [0.0; 4],
         uints0: [
             body_count,
             point_count,
@@ -756,6 +758,15 @@ fn pass_params(
             scenario.settings.restitution_threshold.get(),
             scenario.settings.gravity.x,
             scenario.settings.gravity.y,
+            0.0,
+        ],
+        floats2: [
+            scenario
+                .settings
+                .contact_policy
+                .map_or(0.0, |policy| policy.max_depenetration_velocity.get()),
+            0.0,
+            0.0,
             0.0,
         ],
         uints0: [body_count, point_count, 0, 0],

@@ -148,6 +148,7 @@ struct TraceRaw {
 struct PassParamsRaw {
     floats0: [f32; 4],
     floats1: [f32; 4],
+    floats2: [f32; 4],
     uints0: [u32; 4],
     uints1: [u32; 4],
 }
@@ -960,6 +961,7 @@ fn operations(
     let topology_parameter = PassParamsRaw {
         floats0: [0.0; 4],
         floats1: [0.0; 4],
+        floats2: [0.0; 4],
         uints0: [
             body_count as u32,
             point_count as u32,
@@ -1255,6 +1257,15 @@ fn pass_params(
             scenario.settings.gravity.x,
             scenario.settings.gravity.y,
             trace_substep,
+        ],
+        floats2: [
+            scenario
+                .settings
+                .contact_policy
+                .map_or(0.0, |policy| policy.max_depenetration_velocity.get()),
+            0.0,
+            0.0,
+            0.0,
         ],
         uints0: [body_count as u32, point_count as u32, 0, 0],
         uints1: [iteration, stage, trace_base, use_bias],

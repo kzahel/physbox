@@ -449,7 +449,7 @@ mod tests {
             assert!(report.scenario.complete);
             assert_eq!(report.scene_contract.contact_point_count, 2);
             assert_eq!(report.scene_contract.solver_dispatches_per_step, 282);
-            assert_eq!(report.scene_contract.solver_capacity_bytes, 23_668);
+            assert_eq!(report.scene_contract.solver_capacity_bytes, 23_700);
             assert!(!report.scene_contract.capacity_overflowed);
             renderer.read_capture_state().unwrap()
         };

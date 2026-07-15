@@ -1,7 +1,8 @@
 use physbox_engine::{
     GpuGeneratedContactRunner, GpuNarrowphaseRunner, GpuSolverCandidate, P5_2CandidatePattern,
     P5_2GeneratedScenarioKind, benchmark_gpu_generated_contacts, p5_2_candidate_scenario,
-    p5_2_generated_performance_scenario, p5_2_generated_scenario, run_gpu_soft_step_case,
+    p5_2_contact_policy_candidate, p5_2_generated_performance_scenario, p5_2_generated_scenario,
+    run_gpu_soft_step_case,
 };
 use physbox_lab::analytic_narrowphase::authored_solver_projection;
 
@@ -256,4 +257,46 @@ fn generated_dense_coincident_reproducer_replays_exactly() {
         let replay = runner.run(&scenario, 1).unwrap();
         assert_eq!(first.bodies, replay.bodies, "body_count {body_count}");
     }
+}
+
+#[test]
+fn candidate_policy_closes_the_preserved_speculative_gap_reproducer() {
+    let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
+    let mut scenario =
+        p5_2_generated_scenario(P5_2GeneratedScenarioKind::RectangleFloor, 1).unwrap();
+    scenario.id = "p5.2-generated-speculative-gap".to_owned();
+    scenario.bodies[0].position.y = 0.205;
+    scenario.bodies[0].linear_velocity.y = -0.5;
+    let output = runner.run(&scenario, 1).unwrap();
+    assert!(output.failure.is_none());
+    assert!(!output.cache.is_empty());
+    assert!(
+        output.bodies[0].position.y >= 0.199,
+        "speculative body: {:?}; cache: {:?}",
+        output.bodies[0],
+        output.cache
+    );
+}
+
+#[test]
+fn candidate_policy_bounds_the_preserved_deep_coincidence_reproducer() {
+    let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
+    let mut scenario = p5_2_candidate_scenario(P5_2CandidatePattern::Coincident, 6, 19).unwrap();
+    scenario.settings.contact_policy = Some(p5_2_contact_policy_candidate());
+    let output = runner.run(&scenario, 1).unwrap();
+    let maximum_speed = output
+        .bodies
+        .iter()
+        .map(|body| {
+            (body.linear_velocity.x * body.linear_velocity.x
+                + body.linear_velocity.y * body.linear_velocity.y)
+                .sqrt()
+        })
+        .fold(0.0, f32::max);
+    assert!(output.failure.is_none());
+    assert!(
+        maximum_speed <= 100.0,
+        "maximum bounded-depenetration speed was {maximum_speed}: {:?}",
+        output.bodies
+    );
 }

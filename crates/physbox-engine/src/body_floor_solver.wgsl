@@ -32,6 +32,7 @@ struct Contribution {
 struct PassParams {
     floats0: vec4f,
     floats1: vec4f,
+    floats2: vec4f,
     uints0: vec4u,
     uints1: vec4u,
 };
@@ -239,6 +240,9 @@ fn emit_normal(@builtin(global_invocation_id) id: vec3u) {
         velocity_bias = point.data0.w / params.floats0.x;
     } else if (params.uints1.w != 0u) {
         velocity_bias = params.floats0.y * point.data0.w / params.floats0.x;
+        if (params.floats2.x > 0.0) {
+            velocity_bias = max(velocity_bias, -params.floats2.x);
+        }
         mass_scale = params.floats0.z;
         impulse_scale = params.floats0.w;
     }

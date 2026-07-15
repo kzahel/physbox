@@ -1,7 +1,7 @@
 use physbox_contracts::Vec2;
 use physbox_engine::{
     GpuNarrowphaseRunner, P5_2CandidatePattern, P5_2CollisionScenarioKind, p5_2_candidate_scenario,
-    p5_2_collision_scenario, p5_2_narrowphase_pair_scenario,
+    p5_2_collision_scenario, p5_2_contact_policy_candidate, p5_2_narrowphase_pair_scenario,
 };
 use physbox_lab::{
     analytic_narrowphase::{compare_narrowphase, generate_scalar_narrowphase},
@@ -51,6 +51,25 @@ fn gpu_circle_contact_creation_and_removal_boundary_is_exact() {
     scenario.bodies[1].position.x = 0.6999;
     let penetrating = runner.run(&scenario, None, None).unwrap();
     assert!(penetrating.manifolds[0].points[0].separation.get() < 0.0);
+}
+
+#[test]
+fn gpu_speculative_admission_matches_scalar_and_stops_at_the_policy_boundary() {
+    let mut scenario =
+        p5_2_collision_scenario(P5_2CollisionScenarioKind::CircleCircle, 1, 17).unwrap();
+    scenario.settings.contact_policy = Some(p5_2_contact_policy_candidate());
+    scenario.bodies[0].position = Vec2::ZERO;
+    scenario.bodies[1].position = Vec2::new(0.71, 0.0);
+    let runner = pollster::block_on(GpuNarrowphaseRunner::new()).unwrap();
+    let candidates = enumerate_scalar_candidates(&scenario).unwrap();
+    let expected = generate_scalar_narrowphase(&scenario, &candidates.candidates).unwrap();
+    let actual = runner.run(&scenario, None, None).unwrap();
+    compare_narrowphase(&expected, &actual.manifolds).unwrap();
+    assert!((actual.manifolds[0].points[0].separation.get() - 0.01).abs() <= 1.0e-6);
+
+    scenario.bodies[1].position.x = 0.721;
+    let outside = runner.run(&scenario, None, None).unwrap();
+    assert!(outside.manifolds.is_empty());
 }
 
 #[test]

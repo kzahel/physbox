@@ -1,6 +1,7 @@
 struct CandidateParams {
     counts: vec4u,
     execution: vec4u,
+    policy: vec4f,
 }
 
 struct BodyAabb {
@@ -71,8 +72,9 @@ fn compute_body_aabbs(@builtin(global_invocation_id) invocation: vec3u) {
     } else if ((flags & FLAG_CIRCLE) != 0u) {
         extent = vec2f(shape.x);
     }
-    let lower = pose.xy - extent;
-    let upper = pose.xy + extent;
+    let expanded_extent = extent + vec2f(params.policy.x);
+    let lower = pose.xy - expanded_extent;
+    let upper = pose.xy + expanded_extent;
     aabbs[index].identity_flags = vec4u(index, identity.x, flags, 0u);
     aabbs[index].lower_upper = vec4f(lower, upper);
 }

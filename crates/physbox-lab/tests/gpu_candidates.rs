@@ -1,8 +1,8 @@
-use physbox_contracts::FiniteF32;
+use physbox_contracts::{FiniteF32, TraceStageV1};
 use physbox_engine::{
     EngineConfig, FrameInput, GpuSolverCandidate, OffscreenRenderer, authored_chain_scenario,
-    authored_one_contact_scenario, benchmark_gpu_soft_step_case, run_gpu_soft_step_case,
-    run_gpu_soft_step_stress_case, run_gpu_solver_case,
+    authored_one_contact_scenario, benchmark_gpu_soft_step_case, p5_2_contact_policy_candidate,
+    run_gpu_soft_step_case, run_gpu_soft_step_stress_case, run_gpu_solver_case,
 };
 use physbox_lab::{
     capacity_is_valid, equal_and_opposite, projected_impulses,
@@ -42,6 +42,37 @@ fn isolated_contact_passes_match_scalar_and_emit_paired_contributions() {
             assert!(gpu.contributions.is_empty());
         }
         capacity_is_valid(&gpu.capacities).unwrap();
+    }
+}
+
+#[test]
+fn both_gpu_accumulation_paths_match_the_bounded_depenetration_specification() {
+    let mut scenario = authored_one_contact_scenario(7);
+    scenario.settings.contact_policy = Some(p5_2_contact_policy_candidate());
+    scenario.manifolds[0].points[0].separation = FiniteF32::new(-1.0).unwrap();
+    let scalar = solve_authored_contact_pass(&scenario).unwrap();
+    for candidate in [
+        GpuSolverCandidate::JacobiGather,
+        GpuSolverCandidate::ColoredSoftTgs,
+    ] {
+        let gpu = pollster::block_on(run_gpu_solver_case(&scenario, candidate)).unwrap();
+        let divergence = first_trace_divergence(&scalar.traces, &gpu.traces, 2.0e-5, 2.0e-5);
+        assert!(divergence.is_none(), "{candidate:?}: {divergence:?}");
+        let normal = gpu
+            .traces
+            .iter()
+            .find(|trace| trace.stage == TraceStageV1::NormalSolve)
+            .unwrap();
+        assert_eq!(
+            normal
+                .values
+                .iter()
+                .find(|value| value.name == "velocityBias")
+                .unwrap()
+                .value
+                .get(),
+            -3.0
+        );
     }
 }
 

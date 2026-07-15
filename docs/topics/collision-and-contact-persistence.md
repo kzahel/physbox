@@ -164,13 +164,23 @@ the mixed stack differs materially (`0.560` maximum position and `0.974`
 maximum velocity) and remains a quality-review item rather than a widened
 band.
 
-Two minimized failures remain explicit. A six-body coincident spawn injects
-`26891.44` mechanical energy in one step even though canonical incidence makes
-the outcome deterministic. A two-body closing gap crosses during an outer
-step but has no initial AABB overlap, so the current graph emits no contact and
-ends at `0.00507` penetration while Box2D responds. S3.6 must choose a
-depenetration/spawn policy and a portable speculative distance plus AABB
-expansion; neither physical default is selected by the implementation.
+The first S3.5 package preserved two minimized failures. A six-body coincident
+spawn reached `126.27 m/s` and injected `26891.44` mechanical energy in one
+step. A two-body closing gap crossed during an outer step with no initial AABB
+overlap, emitted no contact, and ended at `0.00507` penetration while Box2D
+responded.
+
+The approved S3.5a candidate is now explicit in the versioned scenario
+settings: `0.02` speculative distance and `3.0 m/s` maximum per-contact
+depenetration bias. It conservatively expands scalar and GPU AABBs, admits
+circle and rectangle manifolds through the same actual-separation boundary,
+and clamps the scalar, Jacobi/gather, and colored comparator bias paths. The
+preserved crossing case now emits two contacts and ends at `0.000508`
+penetration; the coincident case reaches `27.41 m/s`. Policy-free authored and
+direct Box2D narrowphase scenarios omit the optional field, preserving their
+canonical encoding and authority behavior. These are measured improvements,
+not accepted quality bands or defaults; the residual penetration and aggregate
+multi-contact speed remain visible in the regenerated S3.6 matrix.
 
 ## Pinned PhysX organization study
 

@@ -132,6 +132,21 @@ pub fn benchmark_scenario(
             named("task_scheduler", "physbox-fixed-worker-pool"),
         ],
         runtime_settings: vec![
+            named(
+                "candidate_max_depenetration_velocity",
+                &scenario.settings.contact_policy.map_or_else(
+                    || "disabled".to_owned(),
+                    |policy| policy.max_depenetration_velocity.get().to_string(),
+                ),
+            ),
+            named(
+                "candidate_speculative_distance",
+                &scenario.settings.contact_policy.map_or_else(
+                    || "disabled".to_owned(),
+                    |policy| policy.speculative_distance.get().to_string(),
+                ),
+            ),
+            named("contact_speed", "3 (Box2D default)"),
             named("fixed_dt", &scenario.settings.fixed_dt.get().to_string()),
             named("substeps", &scenario.settings.substeps.to_string()),
             named("worker_count", &worker_count.to_string()),

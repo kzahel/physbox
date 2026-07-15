@@ -1,6 +1,7 @@
 struct NarrowParams {
     counts: vec4u,
     execution: vec4u,
+    policy: vec4f,
 }
 
 struct CandidatePair {
@@ -130,7 +131,8 @@ fn collide_circles(pair: CandidatePair) -> NarrowScratch {
     let delta = poses[body_b].xy - poses[body_a].xy;
     let distance_squared = dot(delta, delta);
     let combined_radius = properties[body_a].x + properties[body_b].x;
-    if (distance_squared > combined_radius * combined_radius) {
+    let speculative_radius = combined_radius + params.policy.x;
+    if (distance_squared > speculative_radius * speculative_radius) {
         return empty_scratch(pair);
     }
     let distance = sqrt(distance_squared);
@@ -177,7 +179,8 @@ fn collide_rectangle_circle(pair: CandidatePair, rectangle_is_a: bool) -> Narrow
     var rectangle_contact_feature: vec2u;
     var separation: f32;
     if (distance_squared > NORMAL_EPSILON_SQUARED) {
-        if (distance_squared > radius * radius) {
+        let speculative_radius = radius + params.policy.x;
+        if (distance_squared > speculative_radius * speculative_radius) {
             return empty_scratch(pair);
         }
         let distance = sqrt(distance_squared);
@@ -347,7 +350,9 @@ fn collide_rectangles(pair: CandidatePair) -> NarrowScratch {
             face_b = face;
         }
     }
-    if (separation_a > 0.0 || separation_b > 0.0) { return empty_scratch(pair); }
+    if (separation_a > params.policy.x || separation_b > params.policy.x) {
+        return empty_scratch(pair);
+    }
     let same_half = all(properties[body_a].xy == properties[body_b].xy);
     let center_delta = poses[body_b].xy - poses[body_a].xy;
     let deeply_coincident_identical = same_half && dot(center_delta, center_delta) <= 0.01 &&

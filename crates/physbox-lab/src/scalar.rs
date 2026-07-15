@@ -91,6 +91,7 @@ pub fn solve_authored_contact_pass(
                 &mut bodies,
                 scenario.settings.fixed_dt.get() / scenario.settings.substeps as f32,
                 scenario.settings.bias_rate.get(),
+                maximum_depenetration_velocity(scenario),
                 scenario.settings.mass_coefficient.get(),
                 scenario.settings.impulse_coefficient.get(),
                 true,
@@ -113,6 +114,7 @@ pub fn solve_authored_contact_pass(
             &mut bodies,
             scenario.settings.fixed_dt.get() / scenario.settings.substeps as f32,
             scenario.settings.bias_rate.get(),
+            maximum_depenetration_velocity(scenario),
             scenario.settings.mass_coefficient.get(),
             scenario.settings.impulse_coefficient.get(),
             false,
@@ -192,6 +194,7 @@ pub fn solve_analytic_fixture_steps(
                         &mut bodies,
                         substep_dt,
                         scenario.settings.bias_rate.get(),
+                        maximum_depenetration_velocity(scenario),
                         scenario.settings.mass_coefficient.get(),
                         scenario.settings.impulse_coefficient.get(),
                         true,
@@ -217,6 +220,7 @@ pub fn solve_analytic_fixture_steps(
                     &mut bodies,
                     substep_dt,
                     scenario.settings.bias_rate.get(),
+                    maximum_depenetration_velocity(scenario),
                     scenario.settings.mass_coefficient.get(),
                     scenario.settings.impulse_coefficient.get(),
                     false,
@@ -437,6 +441,7 @@ fn solve_normal(
     bodies: &mut [BodyStateV1],
     substep_dt: f32,
     bias_rate: f32,
+    max_depenetration_velocity: f32,
     configured_mass_scale: f32,
     configured_impulse_scale: f32,
     use_bias: bool,
@@ -457,7 +462,10 @@ fn solve_normal(
             (point.separation / substep_dt, 1.0, 0.0)
         } else if use_bias {
             (
-                bias_rate * point.separation / substep_dt,
+                clamp_depenetration_bias(
+                    bias_rate * point.separation / substep_dt,
+                    max_depenetration_velocity,
+                ),
                 configured_mass_scale,
                 configured_impulse_scale,
             )
@@ -494,6 +502,21 @@ fn solve_normal(
         )?);
     }
     Ok(())
+}
+
+fn maximum_depenetration_velocity(scenario: &ScenarioV1) -> f32 {
+    scenario
+        .settings
+        .contact_policy
+        .map_or(0.0, |policy| policy.max_depenetration_velocity.get())
+}
+
+fn clamp_depenetration_bias(velocity_bias: f32, maximum: f32) -> f32 {
+    if maximum > 0.0 {
+        velocity_bias.max(-maximum)
+    } else {
+        velocity_bias
+    }
 }
 
 fn solve_tangent(
@@ -871,6 +894,7 @@ mod tests {
     use physbox_contracts::{AuthoredContactPointV1, FeatureIdV1, MaterialV1, ShapeV1};
     use physbox_engine::{
         AnalyticFixtureKind, analytic_fixture_scenario, authored_one_contact_scenario,
+        p5_2_contact_policy_candidate,
     };
 
     use super::*;
@@ -931,6 +955,18 @@ mod tests {
         let result = solve_authored_contact_pass(&scenario).unwrap();
         assert_eq!(result.contact_cache[0].normal_impulse.get(), 0.0);
         assert_eq!(result.bodies[0].linear_velocity.y, 1.0);
+    }
+
+    #[test]
+    fn candidate_policy_clamps_deep_overlap_velocity_bias() {
+        let mut scenario = authored_one_contact_scenario(7);
+        scenario.settings.contact_policy = Some(p5_2_contact_policy_candidate());
+        scenario.manifolds[0].material.restitution = finite(0.0);
+        scenario.manifolds[0].points[0].separation = finite(-1.0);
+        scenario.bodies[0].linear_velocity = Vec2::ZERO;
+        let result = solve_authored_contact_pass(&scenario).unwrap();
+        assert_eq!(trace_value(&result.traces[2], "velocityBias"), -3.0);
+        assert_eq!(trace_value(&result.traces[2], "appliedNormalImpulse"), 3.0);
     }
 
     #[test]

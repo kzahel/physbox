@@ -36,6 +36,7 @@ struct CandidatePairRaw {
 struct CandidateParamsRaw {
     counts: [u32; 4],
     execution: [u32; 4],
+    policy: [f32; 4],
 }
 
 #[repr(C)]
@@ -253,6 +254,7 @@ pub(crate) struct CandidateCase {
     pair_count: u32,
     candidate_capacity: u32,
     block_count: u32,
+    speculative_distance: f32,
 }
 
 impl CandidateCase {
@@ -322,6 +324,10 @@ impl CandidateCase {
             ));
         }
         let block_count = pair_count.div_ceil(SCAN_WORKGROUP_SIZE);
+        let speculative_distance = scenario
+            .settings
+            .contact_policy
+            .map_or(0.0, |policy| policy.speculative_distance.get());
         let aabbs = storage_buffer::<BodyAabbRaw>(device, "collision_aabbs", slot_capacity)?;
         let pair_flags = storage_buffer::<u32>(device, "collision_pair_flags", pair_count)?;
         let pair_offsets = storage_buffer::<u32>(device, "collision_pair_offsets", pair_count)?;
@@ -343,6 +349,7 @@ impl CandidateCase {
             mapped.copy_from_slice(bytemuck::bytes_of(&CandidateParamsRaw {
                 counts: [slot_capacity, pair_count, candidate_capacity, block_count],
                 execution: [scenario.bodies.len() as u32, DISPATCHES, 0, 0],
+                policy: [speculative_distance, 0.0, 0.0, 0.0],
             }));
         }
         params.unmap();
@@ -431,6 +438,7 @@ impl CandidateCase {
             pair_count,
             candidate_capacity,
             block_count,
+            speculative_distance,
         })
     }
 
@@ -574,6 +582,10 @@ impl CandidateCase {
 
     pub(crate) fn candidate_capacity(&self) -> u32 {
         self.candidate_capacity
+    }
+
+    pub(crate) fn speculative_distance(&self) -> f32 {
+        self.speculative_distance
     }
 
     pub(crate) fn allocated_bytes(&self) -> u64 {

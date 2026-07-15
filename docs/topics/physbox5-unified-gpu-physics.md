@@ -1339,6 +1339,11 @@ The first rigid work proceeds with these decisions:
   geometric feature identifiers. The exact full-key sorted merge remains the
   correctness baseline while the approved S3.5a bakeoff measures stable
   pair-slot transfer with full local equality verification.
+- Generated-contact scenarios carry the S3.5a `0.02` speculative-distance and
+  `3.0 m/s` maximum-depenetration candidate explicitly. Scalar and GPU stages
+  share that optional contract; policy-free authority fixtures retain exact
+  overlap admission. The candidate remains unaccepted pending regenerated S3.6
+  evidence and human review.
 - Interactive frames execute at most one outer fixed step and permanently slip
   excess wall time; solver substeps and explicit validation steps are separate
   concepts.

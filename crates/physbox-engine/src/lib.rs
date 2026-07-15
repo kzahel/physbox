@@ -67,7 +67,7 @@ pub use scenario::{
     P5_2GeneratedScenarioKind, ScenarioBuildError, analytic_fixture_scenario,
     authored_chain_scenario, authored_one_contact_scenario, p5_1_free_flight_scenario,
     p5_1_rectangle_floor_scenario, p5_1_reset_grab_scenario, p5_2_box2d_narrowphase_projection,
-    p5_2_candidate_scenario, p5_2_collision_scenario, p5_2_generated_floor_scenario,
-    p5_2_generated_performance_scenario, p5_2_generated_reset_grab_scenario,
-    p5_2_generated_scenario, p5_2_narrowphase_pair_scenario,
+    p5_2_candidate_scenario, p5_2_collision_scenario, p5_2_contact_policy_candidate,
+    p5_2_generated_floor_scenario, p5_2_generated_performance_scenario,
+    p5_2_generated_reset_grab_scenario, p5_2_generated_scenario, p5_2_narrowphase_pair_scenario,
 };

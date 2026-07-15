@@ -290,6 +290,10 @@ pub fn generate_scalar_narrowphase(
     candidates: &[CandidatePairV1],
 ) -> Result<Vec<CollisionManifoldV1>, String> {
     scenario.validate().map_err(|error| error.to_string())?;
+    let speculative_distance = scenario
+        .settings
+        .contact_policy
+        .map_or(0.0, |policy| policy.speculative_distance.get());
     let mut manifolds = Vec::new();
     for pair in candidates {
         pair.validate().map_err(|error| error.to_string())?;
@@ -297,13 +301,34 @@ pub fn generate_scalar_narrowphase(
         let body_b = body(scenario, pair.body_b)?;
         let manifold = match (body_a.shape, body_b.shape) {
             (ShapeV1::Circle { radius: radius_a }, ShapeV1::Circle { radius: radius_b }) => {
-                collide_circles(*pair, body_a, radius_a.get(), body_b, radius_b.get())?
+                collide_circles(
+                    *pair,
+                    body_a,
+                    radius_a.get(),
+                    body_b,
+                    radius_b.get(),
+                    speculative_distance,
+                )?
             }
             (ShapeV1::Circle { radius }, ShapeV1::Rectangle { half_extents }) => {
-                collide_circle_rectangle(*pair, body_a, radius.get(), body_b, half_extents)?
+                collide_circle_rectangle(
+                    *pair,
+                    body_a,
+                    radius.get(),
+                    body_b,
+                    half_extents,
+                    speculative_distance,
+                )?
             }
             (ShapeV1::Rectangle { half_extents }, ShapeV1::Circle { radius }) => {
-                collide_rectangle_circle(*pair, body_a, half_extents, body_b, radius.get())?
+                collide_rectangle_circle(
+                    *pair,
+                    body_a,
+                    half_extents,
+                    body_b,
+                    radius.get(),
+                    speculative_distance,
+                )?
             }
             (
                 ShapeV1::Rectangle {
@@ -312,7 +337,7 @@ pub fn generate_scalar_narrowphase(
                 ShapeV1::Rectangle {
                     half_extents: half_b,
                 },
-            ) => collide_rectangles(*pair, body_a, half_a, body_b, half_b)?,
+            ) => collide_rectangles(*pair, body_a, half_a, body_b, half_b, speculative_distance)?,
         };
         if let Some(mut manifold) = manifold {
             manifold
@@ -386,11 +411,13 @@ fn collide_circles(
     radius_a: f32,
     body_b: &BodyStateV1,
     radius_b: f32,
+    speculative_distance: f32,
 ) -> Result<Option<CollisionManifoldV1>, String> {
     let delta = sub(body_b.position, body_a.position);
     let distance_squared = dot(delta, delta);
     let combined_radius = radius_a + radius_b;
-    if distance_squared > combined_radius * combined_radius {
+    let speculative_radius = combined_radius + speculative_distance;
+    if distance_squared > speculative_radius * speculative_radius {
         return Ok(None);
     }
     let distance = distance_squared.sqrt();
@@ -424,8 +451,16 @@ fn collide_circle_rectangle(
     radius: f32,
     rectangle: &BodyStateV1,
     half_extents: Vec2,
+    speculative_distance: f32,
 ) -> Result<Option<CollisionManifoldV1>, String> {
-    let Some(contact) = rectangle_circle_contact(rectangle, half_extents, circle, radius)? else {
+    let Some(contact) = rectangle_circle_contact(
+        rectangle,
+        half_extents,
+        circle,
+        radius,
+        speculative_distance,
+    )?
+    else {
         return Ok(None);
     };
     Ok(Some(manifold(
@@ -451,8 +486,16 @@ fn collide_rectangle_circle(
     half_extents: Vec2,
     circle: &BodyStateV1,
     radius: f32,
+    speculative_distance: f32,
 ) -> Result<Option<CollisionManifoldV1>, String> {
-    let Some(contact) = rectangle_circle_contact(rectangle, half_extents, circle, radius)? else {
+    let Some(contact) = rectangle_circle_contact(
+        rectangle,
+        half_extents,
+        circle,
+        radius,
+        speculative_distance,
+    )?
+    else {
         return Ok(None);
     };
     Ok(Some(manifold(
@@ -485,6 +528,7 @@ fn rectangle_circle_contact(
     half: Vec2,
     circle: &BodyStateV1,
     radius: f32,
+    speculative_distance: f32,
 ) -> Result<Option<RectangleCircleContact>, String> {
     let circle_local = inverse_rotate(
         sub(circle.position, rectangle.position),
@@ -498,7 +542,8 @@ fn rectangle_circle_contact(
     let distance_squared = dot(local_delta, local_delta);
     let (local_normal, rectangle_local, rectangle_feature, separation) =
         if distance_squared > NORMAL_EPSILON_SQUARED {
-            if distance_squared > radius * radius {
+            let speculative_radius = radius + speculative_distance;
+            if distance_squared > speculative_radius * speculative_radius {
                 return Ok(None);
             }
             let distance = distance_squared.sqrt();
@@ -571,12 +616,15 @@ fn collide_rectangles(
     half_a: Vec2,
     body_b: &BodyStateV1,
     half_b: Vec2,
+    speculative_distance: f32,
 ) -> Result<Option<CollisionManifoldV1>, String> {
     let rectangle_a = Rectangle::new(body_a, half_a);
     let rectangle_b = Rectangle::new(body_b, half_b);
     let (separation_a, separation_b) =
         face_separations_in_a_frame(&rectangle_a, &rectangle_b, half_a, body_a.angle.get());
-    if separation_a.separation > 0.0 || separation_b.separation > 0.0 {
+    if separation_a.separation > speculative_distance
+        || separation_b.separation > speculative_distance
+    {
         return Ok(None);
     }
     let center_delta = sub(body_b.position, body_a.position);
@@ -945,7 +993,7 @@ fn inverse_rotate(vector: Vec2, angle: f32) -> Vec2 {
 mod tests {
     use physbox_engine::{
         P5_2CandidatePattern, P5_2CollisionScenarioKind, p5_2_candidate_scenario,
-        p5_2_collision_scenario,
+        p5_2_collision_scenario, p5_2_contact_policy_candidate,
     };
 
     use crate::collision_candidates::enumerate_scalar_candidates;
@@ -1068,6 +1116,29 @@ mod tests {
         let candidates = enumerate_scalar_candidates(&scenario).unwrap();
         let penetrating = generate_scalar_narrowphase(&scenario, &candidates.candidates).unwrap();
         assert!(penetrating[0].points[0].separation.get() < 0.0);
+    }
+
+    #[test]
+    fn speculative_circle_admission_preserves_actual_separation() {
+        let mut scenario =
+            p5_2_collision_scenario(P5_2CollisionScenarioKind::CircleCircle, 1, 17).unwrap();
+        scenario.settings.contact_policy = Some(p5_2_contact_policy_candidate());
+        scenario.bodies[0].position = Vec2::ZERO;
+        scenario.bodies[1].position = Vec2::new(0.71, 0.0);
+        let candidates = enumerate_scalar_candidates(&scenario).unwrap();
+        assert_eq!(candidates.candidates.len(), 1);
+        let admitted = generate_scalar_narrowphase(&scenario, &candidates.candidates).unwrap();
+        assert_eq!(admitted.len(), 1);
+        assert!((admitted[0].points[0].separation.get() - 0.01).abs() <= 1.0e-6);
+
+        scenario.bodies[1].position.x = 0.721;
+        let candidates = enumerate_scalar_candidates(&scenario).unwrap();
+        assert_eq!(candidates.candidates.len(), 1);
+        assert!(
+            generate_scalar_narrowphase(&scenario, &candidates.candidates)
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]

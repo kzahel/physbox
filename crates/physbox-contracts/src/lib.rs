@@ -535,6 +535,27 @@ impl Validate for ContactCachePointV1 {
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ContactPolicyV1 {
+    pub speculative_distance: FiniteF32,
+    pub max_depenetration_velocity: FiniteF32,
+}
+
+impl Validate for ContactPolicyV1 {
+    fn validate(&self) -> Result<(), ContractError> {
+        self.speculative_distance.validate()?;
+        self.max_depenetration_velocity.validate()?;
+        if self.speculative_distance.get() < 0.0 || self.max_depenetration_velocity.get() <= 0.0 {
+            return Err(ContractError(
+                "speculative distance must be nonnegative and maximum depenetration velocity must be positive"
+                    .to_owned(),
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SolverSettingsV1 {
     pub fixed_dt: FiniteF32,
     pub gravity: Vec2,
@@ -544,6 +565,8 @@ pub struct SolverSettingsV1 {
     pub mass_coefficient: FiniteF32,
     pub impulse_coefficient: FiniteF32,
     pub restitution_threshold: FiniteF32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contact_policy: Option<ContactPolicyV1>,
 }
 
 impl Validate for SolverSettingsV1 {
@@ -554,6 +577,9 @@ impl Validate for SolverSettingsV1 {
         self.mass_coefficient.validate()?;
         self.impulse_coefficient.validate()?;
         self.restitution_threshold.validate()?;
+        if let Some(policy) = self.contact_policy {
+            policy.validate()?;
+        }
         if self.fixed_dt.get() <= 0.0 || self.substeps == 0 || self.iterations == 0 {
             return Err(ContractError(
                 "fixed dt, substeps, and iterations must be positive".to_owned(),
@@ -1190,6 +1216,7 @@ mod tests {
                 mass_coefficient: finite(1.0),
                 impulse_coefficient: finite(0.0),
                 restitution_threshold: finite(1.0),
+                contact_policy: None,
             },
             bodies: vec![BodyStateV1 {
                 id: BodyId {
@@ -1221,10 +1248,50 @@ mod tests {
     fn canonical_round_trip_and_hash_are_stable() {
         let scenario = scenario();
         let bytes = canonical_json(&scenario).unwrap();
+        assert!(!String::from_utf8_lossy(&bytes).contains("contactPolicy"));
         let decoded: ScenarioV1 = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(decoded, scenario);
         assert_eq!(canonical_json(&decoded).unwrap(), bytes);
         assert_eq!(canonical_hash(&decoded).unwrap(), sha256_bytes(&bytes));
+    }
+
+    #[test]
+    fn contact_policy_is_explicit_optional_and_validated() {
+        let mut scenario = scenario();
+        scenario.settings.contact_policy = Some(ContactPolicyV1 {
+            speculative_distance: finite(0.02),
+            max_depenetration_velocity: finite(3.0),
+        });
+        scenario.validate().unwrap();
+        let bytes = canonical_json(&scenario).unwrap();
+        assert!(String::from_utf8_lossy(&bytes).contains(
+            "\"contactPolicy\":{\"speculativeDistance\":0.02,\"maxDepenetrationVelocity\":3.0}"
+        ));
+        assert_eq!(
+            serde_json::from_slice::<ScenarioV1>(&bytes).unwrap(),
+            scenario
+        );
+
+        scenario
+            .settings
+            .contact_policy
+            .as_mut()
+            .unwrap()
+            .speculative_distance = finite(-0.01);
+        assert!(scenario.validate().is_err());
+        scenario
+            .settings
+            .contact_policy
+            .as_mut()
+            .unwrap()
+            .speculative_distance = finite(0.02);
+        scenario
+            .settings
+            .contact_policy
+            .as_mut()
+            .unwrap()
+            .max_depenetration_velocity = finite(0.0);
+        assert!(scenario.validate().is_err());
     }
 
     #[test]

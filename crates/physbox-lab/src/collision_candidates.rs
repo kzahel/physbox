@@ -38,6 +38,10 @@ pub fn enumerate_scalar_candidates(scenario: &ScenarioV1) -> Result<ScalarCandid
                 .to_owned(),
         );
     }
+    let speculative_distance = scenario
+        .settings
+        .contact_policy
+        .map_or(0.0, |policy| policy.speculative_distance.get());
     let aabbs = scenario
         .bodies
         .iter()
@@ -52,6 +56,10 @@ pub fn enumerate_scalar_candidates(scenario: &ScenarioV1) -> Result<ScalarCandid
                     )
                 }
             };
+            let extent = Vec2::new(
+                extent.x + speculative_distance,
+                extent.y + speculative_distance,
+            );
             BodyAabbV1 {
                 body: body.id,
                 lower: Vec2::new(body.position.x - extent.x, body.position.y - extent.y),

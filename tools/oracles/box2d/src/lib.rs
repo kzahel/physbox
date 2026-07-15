@@ -524,6 +524,30 @@ fn provenance(request: &OracleRequestV1, lane: OracleLane) -> ProvenanceV1 {
                     request.scenario.settings.mass_coefficient.get()
                 ),
             ),
+            named(
+                "candidate_max_depenetration_velocity",
+                &request.scenario.settings.contact_policy.map_or_else(
+                    || "disabled".to_owned(),
+                    |policy| {
+                        format!(
+                            "{} (source policy; Box2D contact_speed is configured independently)",
+                            policy.max_depenetration_velocity.get()
+                        )
+                    },
+                ),
+            ),
+            named(
+                "candidate_speculative_distance",
+                &request.scenario.settings.contact_policy.map_or_else(
+                    || "disabled".to_owned(),
+                    |policy| {
+                        format!(
+                            "{} (source-only; Box2D owns its internal speculative policy)",
+                            policy.speculative_distance.get()
+                        )
+                    },
+                ),
+            ),
             named("contact_damping_ratio", "10"),
             named("contact_hertz", "30"),
             named("contact_softening", "false"),

@@ -66,6 +66,7 @@ struct WorkRaw {
 struct NarrowParamsRaw {
     counts: [u32; 4],
     execution: [u32; 4],
+    policy: [f32; 4],
 }
 
 const _: () = assert!(size_of::<ContactPointRaw>() == COLLISION_CONTACT_POINT_BYTES as usize);
@@ -584,6 +585,7 @@ impl NarrowphaseCase {
                     block_count,
                 ],
                 execution: [TOTAL_DISPATCHES, 0, 0, 0],
+                policy: [candidate.speculative_distance(), 0.0, 0.0, 0.0],
             }));
         }
         params.unmap();

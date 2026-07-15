@@ -2,7 +2,7 @@ use std::fmt::{Display, Formatter};
 
 use physbox_contracts::{
     AuthoredContactPointV1, AuthoredManifoldV1, BodyCommandScenarioV1, BodyCommandV1, BodyId,
-    BodyStateV1, FeatureIdV1, FiniteF32, MaterialV1, SCHEMA_VERSION, ScenarioV1,
+    BodyStateV1, ContactPolicyV1, FeatureIdV1, FiniteF32, MaterialV1, SCHEMA_VERSION, ScenarioV1,
     ScheduledBodyCommandV1, ShapeV1, SolverSettingsV1, Validate, Vec2,
 };
 
@@ -341,6 +341,7 @@ pub fn p5_2_generated_floor_scenario(
     scenario.id = "p5.2-generated-rectangle-floor".to_owned();
     scenario.manifolds.clear();
     scenario.contact_cache.clear();
+    scenario.settings.contact_policy = Some(p5_2_contact_policy_candidate());
     Ok(scenario)
 }
 
@@ -426,6 +427,7 @@ pub fn p5_2_generated_scenario(
     scenario.manifolds.clear();
     scenario.contact_cache.clear();
     scenario.actions.clear();
+    scenario.settings.contact_policy = Some(p5_2_contact_policy_candidate());
     match kind {
         P5_2GeneratedScenarioKind::BilateralCircles => {
             scenario.bodies[0].position.x = -0.34;
@@ -462,6 +464,7 @@ pub fn p5_2_generated_reset_grab_scenario() -> Result<BodyCommandScenarioV1, Sce
     script.scenario.id = "p5.2-generated-reset-grab-world".to_owned();
     script.scenario.manifolds.clear();
     script.scenario.contact_cache.clear();
+    script.scenario.settings.contact_policy = Some(p5_2_contact_policy_candidate());
     Ok(script)
 }
 
@@ -518,6 +521,7 @@ pub fn p5_2_generated_performance_scenario(
     }
     let mut settings = default_settings();
     settings.gravity = Vec2::ZERO;
+    settings.contact_policy = Some(p5_2_contact_policy_candidate());
     Ok(ScenarioV1 {
         schema_version: SCHEMA_VERSION,
         id: format!("p5.2-generated-performance-{body_count}"),
@@ -1121,6 +1125,14 @@ fn default_settings() -> SolverSettingsV1 {
         mass_coefficient: finite(1.0),
         impulse_coefficient: finite(0.0),
         restitution_threshold: finite(1.0),
+        contact_policy: None,
+    }
+}
+
+pub fn p5_2_contact_policy_candidate() -> ContactPolicyV1 {
+    ContactPolicyV1 {
+        speculative_distance: finite(0.02),
+        max_depenetration_velocity: finite(3.0),
     }
 }
 
