@@ -22,6 +22,7 @@ pub const BOX2D_REVISION: &str = env!("PHYSBOX5_BOX2D_REVISION");
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum OracleLane {
     World,
+    WorldAwake,
     Narrowphase,
 }
 
@@ -29,6 +30,7 @@ impl OracleLane {
     pub fn parse(value: &str) -> Result<Self, AdapterError> {
         match value {
             "world" => Ok(Self::World),
+            "world-awake" => Ok(Self::WorldAwake),
             "narrowphase" => Ok(Self::Narrowphase),
             _ => Err(AdapterError::Invalid(format!(
                 "unsupported Box2D oracle lane {value}"
@@ -39,8 +41,13 @@ impl OracleLane {
     fn name(self) -> &'static str {
         match self {
             Self::World => "world",
+            Self::WorldAwake => "world-awake",
             Self::Narrowphase => "narrowphase",
         }
+    }
+
+    const fn sleeping_enabled(self) -> bool {
+        !matches!(self, Self::WorldAwake)
     }
 }
 
@@ -73,7 +80,7 @@ pub fn execute_request(
         .map_err(|error| AdapterError::Invalid(error.to_string()))?;
     validate_projection(request, lane)?;
     match lane {
-        OracleLane::World => execute_world(request, request_bytes),
+        OracleLane::World | OracleLane::WorldAwake => execute_world(request, request_bytes, lane),
         OracleLane::Narrowphase => execute_narrowphase(request, request_bytes),
     }
 }
@@ -112,7 +119,7 @@ fn validate_projection(request: &OracleRequestV1, lane: OracleLane) -> Result<()
                 body.id
             )));
         }
-        if matches!(lane, OracleLane::World)
+        if matches!(lane, OracleLane::World | OracleLane::WorldAwake)
             && body.inverse_mass.get() > 0.0
             && body.inverse_inertia.get() == 0.0
         {
@@ -182,6 +189,7 @@ fn validate_projection(request: &OracleRequestV1, lane: OracleLane) -> Result<()
 fn execute_world(
     request: &OracleRequestV1,
     request_bytes: &[u8],
+    lane: OracleLane,
 ) -> Result<OracleResultV1, AdapterError> {
     // SAFETY: all definitions come from Box2D's public constructors, remain alive for each call,
     // and the world is exclusively owned by this process and destroyed by WorldGuard.
@@ -192,7 +200,7 @@ fn execute_world(
         world_def.workerCount = 1;
         world_def.enqueueTask = None;
         world_def.finishTask = None;
-        world_def.enableSleep = true;
+        world_def.enableSleep = lane.sleeping_enabled();
         world_def.enableContinuous = true;
         world_def.enableContactSoftening = false;
         let world = WorldGuard(ffi::b2CreateWorld(&raw const world_def));
@@ -209,7 +217,7 @@ fn execute_world(
             body_def.linearVelocity = raw_vec(body.linear_velocity);
             body_def.angularVelocity = body.angular_velocity.get();
             body_def.isAwake = !body.sleeping;
-            body_def.enableSleep = true;
+            body_def.enableSleep = lane.sleeping_enabled();
             let raw_body = ffi::b2CreateBody(world.0, &raw const body_def);
 
             let mut shape_def = ffi::b2DefaultShapeDef();
@@ -387,7 +395,7 @@ fn execute_world(
         Ok(result(
             request,
             request_bytes,
-            OracleLane::World,
+            lane,
             bodies,
             manifolds,
             work,
@@ -684,7 +692,14 @@ fn provenance(request: &OracleRequestV1, lane: OracleLane) -> ProvenanceV1 {
                     .get()
                     .to_string(),
             ),
-            named("sleep", "true"),
+            named(
+                "sleep",
+                if lane.sleeping_enabled() {
+                    "true"
+                } else {
+                    "false"
+                },
+            ),
             named("substeps", &request.scenario.settings.substeps.to_string()),
             named("worker_count", "1"),
         ],
@@ -824,7 +839,7 @@ mod tests {
     use physbox_engine::{
         AnalyticFixtureKind, P5_2CandidatePattern, P5_2CollisionScenarioKind,
         analytic_fixture_scenario, p5_1_rectangle_floor_scenario, p5_2_candidate_scenario,
-        p5_2_collision_scenario, provisional_grab_tuning,
+        p5_2_centered_rectangle_stack_scenario, p5_2_collision_scenario, provisional_grab_tuning,
     };
     use physbox_lab::{
         analytic_narrowphase::{compare_box2d_narrowphase, generate_scalar_narrowphase},
@@ -967,6 +982,31 @@ mod tests {
         let replay = execute_request(&request, &bytes, OracleLane::World).unwrap();
         assert_eq!(result.bodies, replay.bodies);
         assert_eq!(result.manifolds, replay.manifolds);
+    }
+
+    #[test]
+    fn awake_world_lane_disables_sleep_and_records_the_worker_policy() {
+        let scenario = p5_2_centered_rectangle_stack_scenario(2, 1_200).unwrap();
+        let request = request("box2d-world-awake", scenario);
+        let bytes = canonical_json(&request).unwrap();
+        let result = execute_request(&request, &bytes, OracleLane::WorldAwake).unwrap();
+        assert!(
+            result
+                .bodies
+                .iter()
+                .filter(|body| body.inverse_mass.get() > 0.0)
+                .all(|body| !body.sleeping)
+        );
+        assert_eq!(
+            result
+                .provenance
+                .runtime_settings
+                .iter()
+                .find(|setting| setting.name == "sleep")
+                .map(|setting| setting.value.as_str()),
+            Some("false")
+        );
+        result.validate().unwrap();
     }
 
     #[test]

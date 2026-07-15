@@ -366,6 +366,19 @@ Commit boundaries: measurement instrumentation; candidate experiments;
 evidence/recommendation. Stop for the first mandatory human checkpoint before
 accepting stack-quality bands, solver/contact defaults, or construction feel.
 
+Measurement-instrumentation checkpoint, 2026-07-16: shared Rust now authors
+deterministic 2/3/4-row rectangle pyramids in addition to the 2/4/8 stacks.
+The generated GPU lane exposes only valid final-pass contact identities,
+anchors, normals, effective masses, accumulated impulses, and equal/opposite
+contributions; invalid capacity slots are explicitly scrubbed. Versioned lab
+metrics aggregate awake residual windows, contact churn and impulse variation,
+two-point impulse/torque balance, exact GPU/authority body deltas, and the
+first measured divergence. The Box2D executable has a separate
+`world-awake` process lane that disables sleep and records that worker policy
+in provenance; the prior frozen `world` lane remains unchanged. These are
+measurement facilities only: the selected GPU operation schedule, physical
+defaults, accepted tolerances, and Box2D authority are unchanged.
+
 ### S5.5 — P5.3 scalable broadphase bakeoff
 
 Dependency: the human accepts an S5.4 path, S3 closes, and the S4 construction

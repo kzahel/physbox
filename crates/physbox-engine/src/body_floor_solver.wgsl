@@ -108,6 +108,19 @@ fn valid_point(point: PointInput) -> bool {
     return point.ids.x != 0xffffffffu && point.ids.y != 0xffffffffu;
 }
 
+fn invalid_prepared_point() -> PreparedPoint {
+    var output: PreparedPoint;
+    output.ids = vec4u(0xffffffffu);
+    output.normal = vec2f(0.0);
+    output.tangent = vec2f(0.0);
+    output.anchor_a = vec2f(0.0);
+    output.anchor_b = vec2f(0.0);
+    output.data0 = vec4f(0.0);
+    output.data1 = vec4f(0.0);
+    output.data2 = vec4f(0.0);
+    return output;
+}
+
 @compute @workgroup_size(64)
 fn clear_topology(@builtin(global_invocation_id) id: vec3u) {
     if (id.x < params.uints1.w) {
@@ -307,7 +320,10 @@ fn refreshed_point(input: PointInput, previous: PreparedPoint, reset: bool) -> P
 @compute @workgroup_size(64)
 fn prepare(@builtin(global_invocation_id) id: vec3u) {
     if (id.x >= params.uints0.y) { return; }
-    if (!valid_point(point_inputs[id.x])) { return; }
+    if (!valid_point(point_inputs[id.x])) {
+        prepared_points[id.x] = invalid_prepared_point();
+        return;
+    }
     var empty: PreparedPoint;
     prepared_points[id.x] = refreshed_point(point_inputs[id.x], empty, true);
 }
@@ -315,7 +331,10 @@ fn prepare(@builtin(global_invocation_id) id: vec3u) {
 @compute @workgroup_size(64)
 fn refresh_contacts(@builtin(global_invocation_id) id: vec3u) {
     if (id.x >= params.uints0.y) { return; }
-    if (!valid_point(point_inputs[id.x])) { return; }
+    if (!valid_point(point_inputs[id.x])) {
+        prepared_points[id.x] = invalid_prepared_point();
+        return;
+    }
     prepared_points[id.x] = refreshed_point(
         point_inputs[id.x], prepared_points[id.x], params.uints0.w != 0u);
 }

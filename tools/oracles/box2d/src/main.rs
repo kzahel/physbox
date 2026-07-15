@@ -66,7 +66,7 @@ impl Arguments {
             }
         }
         Ok(Self {
-            lane: lane.ok_or_else(|| "missing --lane world|narrowphase".to_owned())?,
+            lane: lane.ok_or_else(|| "missing --lane world|world-awake|narrowphase".to_owned())?,
             request: request.ok_or_else(|| "missing --request".to_owned())?,
             result: result.ok_or_else(|| "missing --result".to_owned())?,
         })

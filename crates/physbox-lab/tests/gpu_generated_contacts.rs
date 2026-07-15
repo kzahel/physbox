@@ -135,6 +135,21 @@ fn generated_bridge_matches_the_scalar_qualified_authored_solver() {
         ))
         .unwrap();
         let actual = generated.run(&source, 1).unwrap();
+        assert_eq!(
+            actual.pass_evidence.contacts.len(),
+            actual.cache.len(),
+            "{kind:?} pass/cache point count"
+        );
+        assert_eq!(
+            actual.pass_evidence.contributions.len(),
+            actual.pass_evidence.contacts.len() * 2
+        );
+        assert!(actual.pass_evidence.contacts.iter().all(|contact| {
+            contact.valid
+                && contact.body_a != contact.body_b
+                && contact.normal_effective_mass > 0.0
+                && contact.tangent_effective_mass > 0.0
+        }));
         for (actual, expected) in actual.bodies.iter().zip(&expected.bodies) {
             for (actual, expected) in [
                 (actual.position.x, expected.position.x),

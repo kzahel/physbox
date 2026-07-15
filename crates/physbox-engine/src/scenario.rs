@@ -411,6 +411,54 @@ pub fn p5_2_centered_rectangle_stack_scenario(
     Ok(scenario)
 }
 
+pub fn p5_2_rectangle_pyramid_scenario(
+    rows: u32,
+    requested_steps: u32,
+) -> Result<ScenarioV1, ScenarioBuildError> {
+    if !(2..=4).contains(&rows) {
+        return Err(ScenarioBuildError(
+            "small rectangle pyramid requires 2, 3, or 4 rows".to_owned(),
+        ));
+    }
+    let mut scenario = p5_2_generated_floor_scenario(requested_steps)?;
+    let dynamic_template = scenario.bodies[0].clone();
+    let mut floor = scenario.bodies[1].clone();
+    floor.id.slot = 0;
+    let half_extents = Vec2::new(0.25, 0.1);
+    let width = half_extents.x * 2.0;
+    let height = half_extents.y * 2.0;
+    let inverse_inertia = 12.0 / (width * width + height * height);
+    let mut bodies = vec![floor];
+    let mut slot = 1;
+    for level in 0..rows {
+        let count = rows - level;
+        let start_x = -(count.saturating_sub(1) as f32) * half_extents.x;
+        for column in 0..count {
+            let mut body = dynamic_template.clone();
+            body.id.slot = slot;
+            body.shape = ShapeV1::Rectangle { half_extents };
+            body.position = Vec2::new(
+                start_x + column as f32 * width,
+                half_extents.y + level as f32 * height,
+            );
+            body.angle = finite(0.0);
+            body.linear_velocity = Vec2::ZERO;
+            body.angular_velocity = finite(0.0);
+            body.inverse_inertia = finite(inverse_inertia);
+            body.sleeping = false;
+            bodies.push(body);
+            slot += 1;
+        }
+    }
+    scenario.id = format!("p5.2-rectangle-pyramid-{rows}-rows");
+    scenario.seed = 0;
+    scenario.bodies = bodies;
+    scenario
+        .validate()
+        .map_err(|error| ScenarioBuildError(error.to_string()))?;
+    Ok(scenario)
+}
+
 pub fn p5_2_bucket_scenario(
     shape: P5_2BucketShape,
     body_count: u32,
@@ -1614,6 +1662,28 @@ mod tests {
             p5_2_centered_rectangle_stack_scenario(3, P5_2_CENTERED_STACK_EVIDENCE_STEPS).is_err()
         );
         assert!(p5_2_centered_rectangle_stack_scenario(4, 0).is_err());
+    }
+
+    #[test]
+    fn p5_2_small_rectangle_pyramids_are_shared_and_replayable() {
+        for rows in 2..=4 {
+            let scenario = p5_2_rectangle_pyramid_scenario(rows, 1_200).unwrap();
+            scenario.validate().unwrap();
+            assert_eq!(scenario.bodies.len(), 1 + (rows * (rows + 1) / 2) as usize);
+            assert_eq!(scenario.bodies[0].inverse_mass.get(), 0.0);
+            assert!(scenario.bodies[1..].iter().all(|body| {
+                !body.sleeping
+                    && body.inverse_mass.get() == 1.0
+                    && matches!(body.shape, ShapeV1::Rectangle { .. })
+            }));
+            assert_eq!(
+                canonical_json(&scenario).unwrap(),
+                canonical_json(&p5_2_rectangle_pyramid_scenario(rows, 1_200).unwrap()).unwrap()
+            );
+        }
+        assert!(p5_2_rectangle_pyramid_scenario(1, 1_200).is_err());
+        assert!(p5_2_rectangle_pyramid_scenario(5, 1_200).is_err());
+        assert!(p5_2_rectangle_pyramid_scenario(3, 0).is_err());
     }
 
     #[test]

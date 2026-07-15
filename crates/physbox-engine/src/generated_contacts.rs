@@ -1145,6 +1145,7 @@ pub struct GpuGeneratedContactOutput {
     pub mapped_after_final_step_only: bool,
     pub bodies: Vec<physbox_contracts::BodyStateV1>,
     pub cache: Vec<PersistentContactV1>,
+    pub pass_evidence: crate::GpuFixedFloorPassEvidence,
     pub work: CollisionWorkV1,
     pub capacities: Vec<CollisionCapacityV1>,
     pub failure: Option<FailureV1>,
@@ -1173,6 +1174,44 @@ impl GpuGeneratedContactOutput {
             if contact.value.last_seen_step > self.completed_steps {
                 return Err("generated contact cache was seen after completion".to_owned());
             }
+        }
+        let body_count = self.bodies.len() as u32;
+        if self.pass_evidence.contacts.iter().any(|contact| {
+            !contact.valid
+                || contact.body_a >= body_count
+                || contact.body_b >= body_count
+                || [
+                    contact.normal.x,
+                    contact.normal.y,
+                    contact.tangent.x,
+                    contact.tangent.y,
+                    contact.anchor_a.x,
+                    contact.anchor_a.y,
+                    contact.anchor_b.x,
+                    contact.anchor_b.y,
+                    contact.initial_normal_velocity,
+                    contact.normal_effective_mass,
+                    contact.tangent_effective_mass,
+                    contact.separation,
+                    contact.friction,
+                    contact.restitution,
+                    contact.normal_impulse,
+                    contact.tangent_impulse,
+                    contact.total_normal_impulse,
+                ]
+                .into_iter()
+                .any(|value| !value.is_finite())
+        }) {
+            return Err("generated contact pass evidence is invalid".to_owned());
+        }
+        if self.pass_evidence.contributions.iter().any(|contribution| {
+            contribution.body_index >= body_count
+                || !contribution.impulse.x.is_finite()
+                || !contribution.impulse.y.is_finite()
+                || !contribution.anchor.x.is_finite()
+                || !contribution.anchor.y.is_finite()
+        }) {
+            return Err("generated contribution evidence is invalid".to_owned());
         }
         self.work.validate().map_err(|error| error.to_string())?;
         for pair in self.capacities.windows(2) {
@@ -1338,6 +1377,12 @@ impl GpuGeneratedContactRunner {
             u64::from(COLLISION_WORK_COUNTER_BYTES),
         );
         let step_readback = readback(&self.device, "generated_step_readback", 4);
+        let pass_layout = graph.pass_evidence_layout();
+        let pass_readback = readback(
+            &self.device,
+            "generated_pass_evidence_readback",
+            pass_layout.total_bytes,
+        );
         let mut remaining = completed_steps;
         while remaining > 0 {
             let chunk = remaining.min(VALIDATION_STEPS_PER_SUBMISSION);
@@ -1401,6 +1446,7 @@ impl GpuGeneratedContactRunner {
         copy_full(&mut encoder, graph.candidate.work_buffer(), &work_readback);
         let (step_source, step_offset) = graph.persistence.step_counter_source();
         encoder.copy_buffer_to_buffer(step_source, step_offset, &step_readback, 0, 4);
+        graph.copy_pass_evidence(&mut encoder, &pass_readback);
         self.queue.submit([encoder.finish()]);
         self.device
             .poll(wgpu::PollType::Wait)
@@ -1459,6 +1505,31 @@ impl GpuGeneratedContactRunner {
             || manifold_raw[2] != manifold_raw[1]
             || point_raw[2] != point_raw[1]
             || persistence_raw.values[2] != persistence_raw.values[1];
+        let mut pass_evidence = crate::body_floor_solver::decode_pass_evidence(
+            &crate::collision_candidates::map_values::<u8>(
+                &self.device,
+                &pass_readback,
+                pass_layout.total_bytes as usize,
+            )?,
+            pass_layout,
+        )?;
+        let valid_point_indices = pass_evidence
+            .contacts
+            .iter()
+            .filter(|contact| contact.valid)
+            .map(|contact| contact.point_index)
+            .collect::<Vec<_>>();
+        pass_evidence.contacts.retain(|contact| contact.valid);
+        pass_evidence.contributions = pass_evidence
+            .contributions
+            .into_iter()
+            .enumerate()
+            .filter(|(index, contribution)| {
+                contribution.body_index < body_count
+                    && valid_point_indices.contains(&((*index / 2) as u32))
+            })
+            .map(|(_, contribution)| contribution)
+            .collect();
         let cache = if any_rejected {
             Vec::new()
         } else {
@@ -1587,6 +1658,7 @@ impl GpuGeneratedContactRunner {
             mapped_after_final_step_only: true,
             bodies,
             cache,
+            pass_evidence,
             work,
             capacities,
             failure,

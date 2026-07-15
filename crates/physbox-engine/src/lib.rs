@@ -116,5 +116,5 @@ pub use scenario::{
     p5_2_bucket_scenario, p5_2_candidate_scenario, p5_2_centered_rectangle_stack_scenario,
     p5_2_collision_scenario, p5_2_contact_policy_candidate, p5_2_generated_floor_scenario,
     p5_2_generated_performance_scenario, p5_2_generated_reset_grab_scenario,
-    p5_2_generated_scenario, p5_2_narrowphase_pair_scenario,
+    p5_2_generated_scenario, p5_2_narrowphase_pair_scenario, p5_2_rectangle_pyramid_scenario,
 };
