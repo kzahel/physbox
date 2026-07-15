@@ -56,7 +56,8 @@ const FLAG_CIRCLE: u32 = 1u << 9u;
 const FEATURE_CIRCLE: u32 = 0u;
 const FEATURE_FACE: u32 = 1u;
 const FEATURE_VERTEX: u32 = 2u;
-const REFERENCE_AXIS_TIE_EPSILON: f32 = 1.0e-5;
+const REFERENCE_AXIS_RELATIVE_BIAS: f32 = 0.98;
+const REFERENCE_AXIS_ABSOLUTE_BIAS: f32 = 1.0e-3;
 const NORMAL_EPSILON_SQUARED: f32 = 1.0e-12;
 
 var<workgroup> scan_values: array<u32, 256>;
@@ -347,8 +348,16 @@ fn collide_rectangles(pair: CandidatePair) -> NarrowScratch {
         }
     }
     if (separation_a > 0.0 || separation_b > 0.0) { return empty_scratch(pair); }
-    // Canonical A wins a narrow arithmetic tie so feature identity is portable.
-    let reference_is_a = separation_a + REFERENCE_AXIS_TIE_EPSILON >= separation_b;
+    let same_half = all(properties[body_a].xy == properties[body_b].xy);
+    let center_delta = poses[body_b].xy - poses[body_a].xy;
+    let deeply_coincident_identical = same_half && dot(center_delta, center_delta) <= 0.01 &&
+        separation_a <= -0.05 && separation_b <= -0.05;
+    // Deep identical overlap has no unique axis; use coherence there and direct selection elsewhere.
+    let reference_is_a = select(
+        separation_a >= separation_b,
+        separation_b <= REFERENCE_AXIS_RELATIVE_BIAS * separation_a +
+            REFERENCE_AXIS_ABSOLUTE_BIAS,
+        deeply_coincident_identical);
     let reference = select(body_b, body_a, reference_is_a);
     let incident = select(body_a, body_b, reference_is_a);
     let reference_face = select(face_b, face_a, reference_is_a);

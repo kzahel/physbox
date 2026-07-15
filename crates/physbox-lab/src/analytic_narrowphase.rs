@@ -6,7 +6,8 @@ use physbox_contracts::{
 use serde::Serialize;
 
 const NORMAL_EPSILON_SQUARED: f32 = 1.0e-12;
-const REFERENCE_AXIS_TIE_EPSILON: f32 = 1.0e-5;
+const REFERENCE_AXIS_RELATIVE_BIAS: f32 = 0.98;
+const REFERENCE_AXIS_ABSOLUTE_BIAS: f32 = 1.0e-3;
 pub const NARROWPHASE_ABSOLUTE_TOLERANCE: f32 = 2.0e-5;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -209,7 +210,11 @@ pub fn compare_narrowphase(
             &format!("manifold:{manifold_index}:normal"),
             expected.normal,
             actual.normal,
-        )?;
+        )
+        .map_err(|mut difference| {
+            difference.reason = format!("pair {:?}: {}", expected.pair, difference.reason);
+            difference
+        })?;
         compare_value(
             &format!("manifold:{manifold_index}:friction"),
             expected.material.friction.get(),
@@ -522,10 +527,19 @@ fn collide_rectangles(
     if separation_a.separation > 0.0 || separation_b.separation > 0.0 {
         return Ok(None);
     }
-    // Prefer canonical body A inside a narrow numerical tie. This keeps stable
-    // features across portable shader arithmetic without changing SAT rejection.
-    let reference_a =
-        separation_a.separation + REFERENCE_AXIS_TIE_EPSILON >= separation_b.separation;
+    let center_delta = sub(body_b.position, body_a.position);
+    let deeply_coincident_identical = half_a == half_b
+        && dot(center_delta, center_delta) <= 0.01
+        && separation_a.separation <= -0.05
+        && separation_b.separation <= -0.05;
+    // Deeply coincident identical rectangles have no unique physical reference axis.
+    // Keep those adversarial initial states coherent; use direct selection elsewhere.
+    let reference_a = if deeply_coincident_identical {
+        separation_b.separation
+            <= REFERENCE_AXIS_RELATIVE_BIAS * separation_a.separation + REFERENCE_AXIS_ABSOLUTE_BIAS
+    } else {
+        separation_a.separation >= separation_b.separation
+    };
     let (reference, incident, reference_normal, reference_face, normal_a_to_b) = if reference_a {
         let normal = rectangle_a.face_normal(separation_a.face);
         (

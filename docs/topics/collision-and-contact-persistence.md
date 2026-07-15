@@ -121,11 +121,15 @@ and any justified LBVH against this baseline.
 
 ## Provisional reference-axis tie convention
 
-Rectangle SAT reference selection gives canonical body A precedence when the
-two maximum face separations differ by at most `1e-5`. The same explicit bias
-is present in scalar Rust and portable WGSL. It does not change SAT rejection;
-it prevents CPU/GPU floating-point contraction from alternating between two
-nearly equivalent reference axes and therefore changing persistent features.
+Rectangle SAT normally uses Box2D's direct maximum-separation reference
+selection. One deliberately narrow adversarial class uses the same explicit
+coherence bias in scalar Rust and portable WGSL: identical rectangles whose
+centers are within `0.1` and whose two best axes are both deeper than `0.05`.
+There canonical body A remains the reference unless B's separation is
+materially better under relative factor `0.98` and absolute bias `0.001`. The
+rule does not change SAT rejection; it prevents CPU/GPU floating-point
+contraction from alternating between nearly equivalent axes in a deeply
+coincident initial state and therefore changing persistent features.
 
 The expanded 64-seed GPU corpus exposed the need for this rule in deeply
 coincident, nearly parallel equal rectangles. A diagnostic comparison of the

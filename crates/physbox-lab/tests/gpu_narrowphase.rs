@@ -58,7 +58,7 @@ fn gpu_narrowphase_matches_randomized_and_adversarial_scalar_cases() {
     let runner = pollster::block_on(GpuNarrowphaseRunner::new()).unwrap();
     for seed in 0..64_u64 {
         for pattern in P5_2CandidatePattern::ALL {
-            let body_count = 2 + ((seed * 11 + pattern as u64 * 5) % 31) as u32;
+            let body_count = 2 + ((seed * 13 + pattern as u64 * 11) % 63) as u32;
             let scenario = p5_2_candidate_scenario(pattern, body_count, seed).unwrap();
             let candidates = enumerate_scalar_candidates(&scenario).unwrap();
             let expected = generate_scalar_narrowphase(&scenario, &candidates.candidates).unwrap();
