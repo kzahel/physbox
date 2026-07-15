@@ -219,10 +219,11 @@ impl UiLayout {
     }
 
     fn menu_panel(self) -> [f32; 4] {
+        let restart_y = self.restart_y_logical();
         let logical = if self.compact_landscape() {
-            [12.0, 84.0, 500.0, 260.0]
+            [12.0, 84.0, 500.0, restart_y + 50.0 - 84.0]
         } else {
-            [12.0, 84.0, 360.0, 406.0]
+            [12.0, 84.0, 360.0, restart_y + 50.0 - 84.0]
         };
         logical.map(|value| value * self.scale)
     }
@@ -250,14 +251,14 @@ impl UiLayout {
         if self.compact_landscape() {
             return [
                 24.0 * self.scale,
-                294.0 * self.scale,
+                self.restart_y_logical() * self.scale,
                 226.0 * self.scale,
                 38.0 * self.scale,
             ];
         }
         [
             24.0 * self.scale,
-            440.0 * self.scale,
+            self.restart_y_logical() * self.scale,
             162.0 * self.scale,
             38.0 * self.scale,
         ]
@@ -267,14 +268,14 @@ impl UiLayout {
         if self.compact_landscape() {
             return [
                 262.0 * self.scale,
-                294.0 * self.scale,
+                self.restart_y_logical() * self.scale,
                 226.0 * self.scale,
                 38.0 * self.scale,
             ];
         }
         [
             198.0 * self.scale,
-            440.0 * self.scale,
+            self.restart_y_logical() * self.scale,
             162.0 * self.scale,
             38.0 * self.scale,
         ]
@@ -282,6 +283,16 @@ impl UiLayout {
 
     fn compact_landscape(self) -> bool {
         self.target_size[1] < 520 && self.target_size[0] > self.target_size[1]
+    }
+
+    fn restart_y_logical(self) -> f32 {
+        let rows = if self.compact_landscape() {
+            ValidationScenario::ALL.len().div_ceil(2)
+        } else {
+            ValidationScenario::ALL.len()
+        };
+        let gap = if self.compact_landscape() { 20.0 } else { 14.0 };
+        126.0 + (rows.saturating_sub(1)) as f32 * 38.0 + 34.0 + gap
     }
 
     #[cfg(test)]

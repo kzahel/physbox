@@ -48,17 +48,21 @@ pub enum ValidationScenario {
     RigidFloor,
     RigidStack,
     RectangleStack,
+    CircleBucket100,
+    RectangleBucket100,
     ResetGrab,
     SolverJacobi,
     SolverColored,
 }
 
 impl ValidationScenario {
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 10] = [
         Self::Bootstrap,
         Self::RigidFloor,
         Self::RigidStack,
         Self::RectangleStack,
+        Self::CircleBucket100,
+        Self::RectangleBucket100,
         Self::BodyFreeFlight,
         Self::ResetGrab,
         Self::SolverJacobi,
@@ -72,6 +76,8 @@ impl ValidationScenario {
             Self::RigidFloor => "rigid-floor",
             Self::RigidStack => "rigid-stack",
             Self::RectangleStack => "rectangle-stack",
+            Self::CircleBucket100 => "circle-bucket-100",
+            Self::RectangleBucket100 => "rectangle-bucket-100",
             Self::ResetGrab => "reset-grab",
             Self::SolverJacobi => "solver-jacobi",
             Self::SolverColored => "solver-colored",
@@ -197,7 +203,7 @@ pub fn usage(program: &str, host: LaunchHost) -> String {
         ""
     };
     format!(
-        "Usage: {program} [options]\n\n  --width PX       viewport width (default 960)\n  --height PX      viewport height (default 600)\n  --scenario NAME  bootstrap, body-free-flight, rigid-floor, rigid-stack, rectangle-stack, reset-grab, solver-jacobi, or solver-colored{frame_markers}{capture}\n  -h, --help       print this help"
+        "Usage: {program} [options]\n\n  --width PX       viewport width (default 960)\n  --height PX      viewport height (default 600)\n  --scenario NAME  bootstrap, body-free-flight, rigid-floor, rigid-stack, rectangle-stack, circle-bucket-100, rectangle-bucket-100, reset-grab, solver-jacobi, or solver-colored{frame_markers}{capture}\n  -h, --help       print this help"
     )
 }
 
@@ -217,6 +223,8 @@ fn apply_option(
                 "rigid-floor" => ValidationScenario::RigidFloor,
                 "rigid-stack" => ValidationScenario::RigidStack,
                 "rectangle-stack" => ValidationScenario::RectangleStack,
+                "circle-bucket-100" => ValidationScenario::CircleBucket100,
+                "rectangle-bucket-100" => ValidationScenario::RectangleBucket100,
                 "reset-grab" => ValidationScenario::ResetGrab,
                 "solver-jacobi" => ValidationScenario::SolverJacobi,
                 "solver-colored" => ValidationScenario::SolverColored,
@@ -364,6 +372,17 @@ mod tests {
         assert_eq!(
             rectangle_stack.options.scenario,
             ValidationScenario::RectangleStack
+        );
+        let circle_bucket = parse_web_query("?scenario=circle-bucket-100").unwrap();
+        assert_eq!(
+            circle_bucket.options.scenario,
+            ValidationScenario::CircleBucket100
+        );
+        let rectangle_bucket =
+            parse_android_json(r#"["--scenario","rectangle-bucket-100"]"#).unwrap();
+        assert_eq!(
+            rectangle_bucket.options.scenario,
+            ValidationScenario::RectangleBucket100
         );
         let reset_grab = parse_android_json(r#"["--scenario","reset-grab"]"#).unwrap();
         assert_eq!(reset_grab.options.scenario, ValidationScenario::ResetGrab);

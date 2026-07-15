@@ -1,9 +1,10 @@
 use physbox_engine::{
     GpuGeneratedContactRunner, GpuNarrowphaseRunner, GpuSolverCandidate,
-    P5_2_CENTERED_STACK_EVIDENCE_STEPS, P5_2CandidatePattern, P5_2GeneratedScenarioKind,
-    benchmark_gpu_generated_contacts, p5_2_candidate_scenario,
-    p5_2_centered_rectangle_stack_scenario, p5_2_contact_policy_candidate,
-    p5_2_generated_performance_scenario, p5_2_generated_scenario, run_gpu_soft_step_case,
+    P5_2_BUCKET_EVIDENCE_STEPS, P5_2_CENTERED_STACK_EVIDENCE_STEPS, P5_2BucketShape,
+    P5_2CandidatePattern, P5_2GeneratedScenarioKind, benchmark_gpu_generated_contacts,
+    p5_2_bucket_scenario, p5_2_candidate_scenario, p5_2_centered_rectangle_stack_scenario,
+    p5_2_contact_policy_candidate, p5_2_generated_performance_scenario, p5_2_generated_scenario,
+    run_gpu_soft_step_case,
 };
 use physbox_lab::analytic_narrowphase::authored_solver_projection;
 use physbox_lab::settling::centered_stack_structure;
@@ -247,6 +248,38 @@ fn centered_rectangle_stacks_complete_exact_steps_and_replay() {
         assert_eq!(output.bodies, replay.bodies);
         assert_eq!(output.cache, replay.cache);
         assert_eq!(output.work, replay.work);
+    }
+}
+
+#[test]
+fn all_pairs_bucket_baselines_complete_at_capacity_and_replay() {
+    let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
+    for shape in P5_2BucketShape::ALL {
+        let scenario = p5_2_bucket_scenario(shape, 100, P5_2_BUCKET_EVIDENCE_STEPS).unwrap();
+        let output = runner.run(&scenario, P5_2_BUCKET_EVIDENCE_STEPS).unwrap();
+        assert!(output.failure.is_none(), "{shape:?}: {:?}", output.failure);
+        assert_eq!(output.completed_steps, P5_2_BUCKET_EVIDENCE_STEPS);
+        assert_eq!(output.bodies.len(), 103);
+        assert_eq!(output.work.pair_attempts, 5_253);
+        assert_eq!(output.work.fixed_fixed_rejected, 3);
+        assert!(
+            output
+                .capacities
+                .iter()
+                .all(|capacity| capacity.accepted && !capacity.overflowed)
+        );
+        assert!(output.bodies.iter().all(|body| {
+            body.position.x.is_finite()
+                && body.position.y.is_finite()
+                && body.angle.get().is_finite()
+                && body.linear_velocity.x.is_finite()
+                && body.linear_velocity.y.is_finite()
+                && body.angular_velocity.get().is_finite()
+        }));
+        let replay = runner.run(&scenario, P5_2_BUCKET_EVIDENCE_STEPS).unwrap();
+        assert_eq!(output.bodies, replay.bodies, "{shape:?}");
+        assert_eq!(output.cache, replay.cache, "{shape:?}");
+        assert_eq!(output.work, replay.work, "{shape:?}");
     }
 }
 

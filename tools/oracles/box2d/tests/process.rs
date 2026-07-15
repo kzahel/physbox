@@ -9,9 +9,9 @@ use physbox_box2d_oracle::BOX2D_REVISION;
 use physbox_contracts::{OracleRequestV1, SCHEMA_VERSION, canonical_hash};
 use physbox_engine::{AnalyticFixtureKind, analytic_fixture_scenario};
 use physbox_engine::{
-    P5_2_CENTERED_STACK_EVIDENCE_STEPS, P5_2CollisionScenarioKind,
-    p5_2_box2d_narrowphase_projection, p5_2_box2d_world_projection,
-    p5_2_centered_rectangle_stack_scenario, p5_2_collision_scenario,
+    P5_2_BUCKET_EVIDENCE_STEPS, P5_2_CENTERED_STACK_EVIDENCE_STEPS, P5_2BucketShape,
+    P5_2CollisionScenarioKind, p5_2_box2d_narrowphase_projection, p5_2_box2d_world_projection,
+    p5_2_bucket_scenario, p5_2_centered_rectangle_stack_scenario, p5_2_collision_scenario,
     p5_2_narrowphase_pair_scenario,
 };
 use physbox_lab::oracle_transport::{
@@ -171,6 +171,35 @@ fn clean_pinned_process_replays_centered_rectangle_stack_projections() {
                 .windows(2)
                 .all(|pair| { pair[0].position.y < pair[1].position.y })
         );
+    }
+    fs::remove_dir_all(&artifact_root).expect("remove process-test artifacts");
+}
+
+#[test]
+fn clean_pinned_process_replays_all_pairs_bucket_projections() {
+    let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    let source_identity = verify_clean_git_pin(&repository.join("reference/box2d"), BOX2D_REVISION)
+        .expect("clean pinned Box2D checkout");
+    let artifact_root = temporary_root("box2d-buckets");
+    for shape in P5_2BucketShape::ALL {
+        let source = p5_2_bucket_scenario(shape, 100, P5_2_BUCKET_EVIDENCE_STEPS).unwrap();
+        let projection = p5_2_box2d_world_projection(&source).unwrap();
+        let execute = |suffix: &str| {
+            let request = OracleRequestV1 {
+                schema_version: SCHEMA_VERSION,
+                run_id: format!("{}-bucket-{suffix}", shape.name()),
+                source_scenario_hash: canonical_hash(&projection).unwrap(),
+                scenario: projection.clone(),
+            };
+            run_oracle(&config(&artifact_root, &source_identity, "world"), &request)
+                .expect("accepted bucket world authority result")
+        };
+        let first = execute("first");
+        let replay = execute("replay");
+        assert!(first.result.failure.is_none());
+        assert_eq!(first.result.bodies.len(), 103);
+        assert_eq!(first.result.bodies, replay.result.bodies);
+        assert_eq!(first.result.manifolds, replay.result.manifolds);
     }
     fs::remove_dir_all(&artifact_root).expect("remove process-test artifacts");
 }

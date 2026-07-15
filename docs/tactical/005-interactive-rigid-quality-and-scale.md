@@ -97,15 +97,15 @@ the human checkpoints below.
 
 - [x] Add deterministic 2-, 4-, and 8-rectangle centered stack fixtures, with
   the four-rectangle form discoverable in the shared scene menu.
-- [ ] Add shared 100-circle and 100-rectangle bucket demonstrations using three
+- [x] Add shared 100-circle and 100-rectangle bucket demonstrations using three
   fixed rectangle walls and declared initial spacing/seed/capacities.
-- [ ] Add neutral Box2D projections and exact-step replay for the stack and
+- [x] Add neutral Box2D projections and exact-step replay for the stack and
   bucket sources; reject any unsupported projection explicitly.
 - [x] Define settling observations for residual linear/angular speed, center
   drift, stack height, penetration/separation, contact-feature churn, impulse
   variation, energy, and capacity/overflow over declared transient and settled
   windows.
-- [ ] Record the present all-pairs graph, solver settings, no-sleep state, work
+- [x] Record the present all-pairs graph, solver settings, no-sleep state, work
   vector, and timing as a baseline without changing tuning.
 
 Gate: every source hashes and replays deterministically; fixed walls use the
@@ -135,6 +135,17 @@ deterministically topple and are preserved as structural failures for S5.4
 rather than relabeled as settled. Clean pinned Box2D world projections accept
 all three sources; its default sleeping behavior remains explicitly distinct
 from the awake GPU lane.
+
+S5.1 completion, 2026-07-15: the
+[scene and settling package](../../evidence/p5.2b-s5.1/README.md) records five
+exactly replayable shared sources, 38 clean pinned Box2D processes, objective
+settling series, synchronized playback, 100-body Metal timing, and fresh
+headless/web/AVD captures. Both buckets complete without overflow at 5,253
+all-pairs tests, but remain visibly active; the 4/8 rectangle stacks topple
+while the sleep-enabled Box2D projections remain upright. These failures are
+the input to S5.4, not permission to tune before the selected S3 representation
+is integrated. Physical Android was unavailable; the hardware-backed
+`jstorrent-tablet` AVD passed.
 
 ### S5.2 — selected combined product graph and S3 evidence
 

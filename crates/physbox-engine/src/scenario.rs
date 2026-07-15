@@ -7,6 +7,7 @@ use physbox_contracts::{
 };
 
 pub const P5_2_CENTERED_STACK_EVIDENCE_STEPS: u32 = 1_200;
+pub const P5_2_BUCKET_EVIDENCE_STEPS: u32 = 600;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ScenarioBuildError(pub String);
@@ -44,6 +45,30 @@ pub enum P5_2GeneratedScenarioKind {
     FrictionSlide,
     Restitution,
     PairChurn,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum P5_2BucketShape {
+    Circle,
+    Rectangle,
+}
+
+impl P5_2BucketShape {
+    pub const ALL: [Self; 2] = [Self::Circle, Self::Rectangle];
+
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Circle => "circle",
+            Self::Rectangle => "rectangle",
+        }
+    }
+
+    const fn seed(self) -> u64 {
+        match self {
+            Self::Circle => 5_100,
+            Self::Rectangle => 5_200,
+        }
+    }
 }
 
 impl P5_2GeneratedScenarioKind {
@@ -380,6 +405,106 @@ pub fn p5_2_centered_rectangle_stack_scenario(
     scenario.id = format!("p5.2-centered-rectangle-stack-{rectangle_count}");
     scenario.seed = 0;
     scenario.bodies = bodies;
+    scenario
+        .validate()
+        .map_err(|error| ScenarioBuildError(error.to_string()))?;
+    Ok(scenario)
+}
+
+pub fn p5_2_bucket_scenario(
+    shape: P5_2BucketShape,
+    body_count: u32,
+    requested_steps: u32,
+) -> Result<ScenarioV1, ScenarioBuildError> {
+    if body_count != 100 {
+        return Err(ScenarioBuildError(
+            "P5.2 all-pairs bucket baseline requires exactly 100 dynamic bodies".to_owned(),
+        ));
+    }
+    if requested_steps == 0 {
+        return Err(ScenarioBuildError(
+            "P5.2 bucket scenario requires at least one requested step".to_owned(),
+        ));
+    }
+    let material = MaterialV1 {
+        friction: finite(0.5),
+        restitution: finite(0.0),
+    };
+    let fixed_rectangle = |slot, position, half_extents| BodyStateV1 {
+        id: BodyId {
+            slot,
+            generation: 1,
+        },
+        shape: ShapeV1::Rectangle { half_extents },
+        position,
+        angle: finite(0.0),
+        linear_velocity: Vec2::ZERO,
+        angular_velocity: finite(0.0),
+        inverse_mass: finite(0.0),
+        inverse_inertia: finite(0.0),
+        material,
+        sleeping: false,
+    };
+    let mut bodies = vec![
+        fixed_rectangle(0, Vec2::new(0.0, -0.82), Vec2::new(1.06, 0.07)),
+        fixed_rectangle(1, Vec2::new(-0.98, 0.075), Vec2::new(0.08, 0.825)),
+        fixed_rectangle(2, Vec2::new(0.98, 0.075), Vec2::new(0.08, 0.825)),
+    ];
+    let mut random = StableRandom::new(shape.seed());
+    for index in 0..body_count {
+        let column = index % 10;
+        let row = index / 10;
+        let (body_shape, inverse_inertia, row_spacing) = match shape {
+            P5_2BucketShape::Circle => (
+                ShapeV1::Circle {
+                    radius: finite(0.08),
+                },
+                312.5,
+                0.175,
+            ),
+            P5_2BucketShape::Rectangle => (
+                ShapeV1::Rectangle {
+                    half_extents: Vec2::new(0.075, 0.055),
+                },
+                391.836_73,
+                0.155,
+            ),
+        };
+        bodies.push(BodyStateV1 {
+            id: BodyId {
+                slot: index + 3,
+                generation: 1,
+            },
+            shape: body_shape,
+            position: Vec2::new(
+                -0.7875 + column as f32 * 0.175 + random.signed(0.003),
+                -0.65 + row as f32 * row_spacing + random.signed(0.002),
+            ),
+            angle: finite(match shape {
+                P5_2BucketShape::Circle => 0.0,
+                P5_2BucketShape::Rectangle => random.signed(0.08),
+            }),
+            linear_velocity: Vec2::ZERO,
+            angular_velocity: finite(0.0),
+            inverse_mass: finite(1.0),
+            inverse_inertia: finite(inverse_inertia),
+            material,
+            sleeping: false,
+        });
+    }
+    let mut settings = default_settings();
+    settings.contact_policy = Some(p5_2_contact_policy_candidate());
+    let scenario = ScenarioV1 {
+        schema_version: SCHEMA_VERSION,
+        id: format!("p5.2-all-pairs-{}-bucket-100", shape.name()),
+        seed: shape.seed(),
+        requested_steps,
+        settings,
+        bodies,
+        manifolds: Vec::new(),
+        contact_cache: Vec::new(),
+        actions: Vec::new(),
+    };
     scenario
         .validate()
         .map_err(|error| ScenarioBuildError(error.to_string()))?;
@@ -1489,6 +1614,36 @@ mod tests {
             p5_2_centered_rectangle_stack_scenario(3, P5_2_CENTERED_STACK_EVIDENCE_STEPS).is_err()
         );
         assert!(p5_2_centered_rectangle_stack_scenario(4, 0).is_err());
+    }
+
+    #[test]
+    fn p5_2_bucket_sources_use_ordinary_fixed_walls_and_replay_exactly() {
+        for shape in P5_2BucketShape::ALL {
+            let scenario = p5_2_bucket_scenario(shape, 100, P5_2_BUCKET_EVIDENCE_STEPS).unwrap();
+            scenario.validate().unwrap();
+            assert_eq!(scenario.bodies.len(), 103);
+            assert_eq!(scenario.seed, shape.seed());
+            assert!(scenario.bodies[..3].iter().all(|body| {
+                body.inverse_mass.get() == 0.0 && matches!(body.shape, ShapeV1::Rectangle { .. })
+            }));
+            assert!(
+                scenario.bodies[3..]
+                    .iter()
+                    .all(|body| body.inverse_mass.get() == 1.0 && !body.sleeping)
+            );
+            assert!(scenario.manifolds.is_empty());
+            assert!(scenario.contact_cache.is_empty());
+            assert!(scenario.actions.is_empty());
+            assert_eq!(
+                canonical_json(&scenario).unwrap(),
+                canonical_json(
+                    &p5_2_bucket_scenario(shape, 100, P5_2_BUCKET_EVIDENCE_STEPS).unwrap()
+                )
+                .unwrap()
+            );
+        }
+        assert!(p5_2_bucket_scenario(P5_2BucketShape::Circle, 99, 1).is_err());
+        assert!(p5_2_bucket_scenario(P5_2BucketShape::Circle, 100, 0).is_err());
     }
 
     #[test]

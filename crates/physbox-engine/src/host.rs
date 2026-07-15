@@ -19,8 +19,9 @@ use crate::{
         SceneContract,
     },
     scenario::{
-        P5_2_CENTERED_STACK_EVIDENCE_STEPS, P5_2GeneratedScenarioKind, authored_chain_scenario,
-        p5_1_direct_render_scenario, p5_2_centered_rectangle_stack_scenario,
+        P5_2_BUCKET_EVIDENCE_STEPS, P5_2_CENTERED_STACK_EVIDENCE_STEPS, P5_2BucketShape,
+        P5_2GeneratedScenarioKind, authored_chain_scenario, p5_1_direct_render_scenario,
+        p5_2_bucket_scenario, p5_2_centered_rectangle_stack_scenario,
         p5_2_generated_floor_scenario, p5_2_generated_reset_grab_scenario, p5_2_generated_scenario,
     },
     ui::{UiAction, UiFrameModel, WorkbenchUi},
@@ -362,6 +363,8 @@ impl EngineHost {
             | ValidationScenario::RigidFloor
             | ValidationScenario::RigidStack
             | ValidationScenario::RectangleStack
+            | ValidationScenario::CircleBucket100
+            | ValidationScenario::RectangleBucket100
             | ValidationScenario::ResetGrab => None,
             ValidationScenario::SolverJacobi => Some(GpuSolverCandidate::JacobiGather),
             ValidationScenario::SolverColored => Some(GpuSolverCandidate::ColoredSoftTgs),
@@ -436,6 +439,19 @@ impl EngineHost {
                         .expect("engine-owned centered rectangle stack GPU world is valid"),
                 )
             }
+            ValidationScenario::CircleBucket100 | ValidationScenario::RectangleBucket100 => {
+                let shape = if config.scenario == ValidationScenario::CircleBucket100 {
+                    P5_2BucketShape::Circle
+                } else {
+                    P5_2BucketShape::Rectangle
+                };
+                let scenario = p5_2_bucket_scenario(shape, 100, P5_2_BUCKET_EVIDENCE_STEPS)
+                    .expect("engine-owned all-pairs bucket scenario is valid");
+                Some(
+                    GpuBodyWorld::new_generated(device, color_format, &scenario)
+                        .expect("engine-owned all-pairs bucket GPU world is valid"),
+                )
+            }
             _ => None,
         };
         let scenario_hash = match config.scenario {
@@ -459,6 +475,17 @@ impl EngineHost {
                 &p5_2_centered_rectangle_stack_scenario(4, P5_2_CENTERED_STACK_EVIDENCE_STEPS)
                     .expect("engine-owned centered rectangle stack scenario is valid"),
             ),
+            ValidationScenario::CircleBucket100 | ValidationScenario::RectangleBucket100 => {
+                let shape = if config.scenario == ValidationScenario::CircleBucket100 {
+                    P5_2BucketShape::Circle
+                } else {
+                    P5_2BucketShape::Rectangle
+                };
+                canonical_hash(
+                    &p5_2_bucket_scenario(shape, 100, P5_2_BUCKET_EVIDENCE_STEPS)
+                        .expect("engine-owned all-pairs bucket scenario is valid"),
+                )
+            }
             ValidationScenario::ResetGrab => canonical_hash(
                 &p5_2_generated_reset_grab_scenario()
                     .expect("engine-owned generated reset/grab scenario is valid"),
@@ -476,7 +503,9 @@ impl EngineHost {
             | ValidationScenario::Bootstrap
             | ValidationScenario::RigidFloor
             | ValidationScenario::RigidStack
-            | ValidationScenario::RectangleStack => {
+            | ValidationScenario::RectangleStack
+            | ValidationScenario::CircleBucket100
+            | ValidationScenario::RectangleBucket100 => {
                 Some(BodyInteractionState::new(Vec::new(), true))
             }
             ValidationScenario::ResetGrab => {
@@ -772,6 +801,19 @@ impl EngineHost {
                         "centered four-rectangle GPU stack completed its exact step contract"
                     } else {
                         "waiting for 1200 centered rectangle stack steps"
+                    },
+                }
+            }
+            ValidationScenario::CircleBucket100 | ValidationScenario::RectangleBucket100 => {
+                let complete = self.fixed_steps_total >= u64::from(P5_2_BUCKET_EVIDENCE_STEPS);
+                ScenarioResult {
+                    name: self.config.scenario.name(),
+                    complete,
+                    passed: complete,
+                    reason: if complete {
+                        "100-body GPU bucket completed the declared all-pairs baseline"
+                    } else {
+                        "waiting for 600 all-pairs bucket steps"
                     },
                 }
             }

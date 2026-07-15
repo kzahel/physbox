@@ -639,6 +639,10 @@ impl GpuGeneratedContactRunner {
         })
     }
 
+    pub fn diagnostics(&self) -> &crate::AdapterDiagnostics {
+        &self.diagnostics
+    }
+
     pub fn adapter(&self) -> &crate::AdapterDiagnostics {
         &self.diagnostics
     }
