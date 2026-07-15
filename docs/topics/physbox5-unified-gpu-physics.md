@@ -275,6 +275,32 @@ physical pacing diagnose 0.15 s and 0.05 s of permanent slip respectively,
 without catch-up. This evidence completes action transport and replay only;
 it does not freeze the provisional body or command representation.
 
+P5.2a S4.3 implementation checkpoint, 2026-07-15: live pointer interaction now
+uploads versioned body-free begin/target/end intents rather than a CPU-selected
+body. A begin deterministically scans current analytic circle/rectangle state
+on the GPU, rejects fixed/no-hit candidates, and retains the generational body
+identity plus touched body-local anchor in a 64-byte device record. Each held
+outer step applies one bounded compliant point constraint before contact
+solving; collision stays enabled, target samples coalesce, release velocity is
+bounded, and stale generations clear atomically. No selection or body state is
+read back to advance an interactive frame.
+
+The tether is also GPU-derived. During an active pointer, a 12-thread compute
+pass reads the retained grab state and current pose and writes a 192-byte vertex
+buffer for the existing shared render pass. This portable bridge was required
+because the AVD MoltenVK path presented stale data when the compute-written
+grab record was consumed directly as vertex-stage storage or vertex input. It
+does not cross the CPU, delay mechanics, or create a second state owner. The
+serial begin scan and provisional `45/10/80` spring/damping/acceleration values
+are explicitly temporary: scalable picking follows broadphase evidence, and
+human deployed feel review precedes any final grab-quality decision.
+
+The [S4.3 evidence package](../../evidence/p5.2a-s4.3/README.md) preserves 21
+exact GPU replays, 21 process-isolated clean Box2D public motor-joint results,
+objective deltas, invariant/selection/generation tests, synchronized playback,
+tether captures, and native/web/AVD provenance. It changes neither solver
+defaults nor numerical tolerances.
+
 P5.1 S2.5 evidence is complete in the
 [body scale package](../../evidence/p5.1-s2.5/README.md). The same exact-step
 body world integrates, scans held state, and directly renders 1K, 10K, and

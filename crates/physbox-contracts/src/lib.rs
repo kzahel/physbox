@@ -9,6 +9,7 @@ use sha2::{Digest, Sha256};
 
 pub const SCHEMA_VERSION: u32 = 1;
 pub const BODY_LAYOUT_VERSION: u32 = 1;
+pub const GRAB_INTENT_CONTRACT_VERSION: u32 = 1;
 pub const ORACLE_SUCCESS_SENTINEL: &str = "PHYSBOX5_ORACLE_SUCCESS";
 
 pub use collision::*;
@@ -358,6 +359,80 @@ pub struct BodyCommandBatchV1 {
     pub commands: Vec<BodyCommandV1>,
 }
 
+/// Body-free interactive grab intent. The GPU resolves `Begin` against the
+/// current body state and retains the selected generational identity; hosts do
+/// not provide or observe that identity to advance interaction.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum GrabIntentV1 {
+    Begin { sequence: u32, world_target: Vec2 },
+    Target { sequence: u32, world_target: Vec2 },
+    End { sequence: u32 },
+}
+
+impl GrabIntentV1 {
+    pub const fn sequence(self) -> u32 {
+        match self {
+            Self::Begin { sequence, .. }
+            | Self::Target { sequence, .. }
+            | Self::End { sequence } => sequence,
+        }
+    }
+}
+
+impl Validate for GrabIntentV1 {
+    fn validate(&self) -> Result<(), ContractError> {
+        match self {
+            Self::Begin { world_target, .. } | Self::Target { world_target, .. } => {
+                world_target.validate()
+            }
+            Self::End { .. } => Ok(()),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GrabIntentBatchV1 {
+    pub schema_version: u32,
+    pub contract_version: u32,
+    pub capacity_intents: u32,
+    pub attempted_intents: u64,
+    pub overflowed: bool,
+    pub intents: Vec<GrabIntentV1>,
+}
+
+impl Validate for GrabIntentBatchV1 {
+    fn validate(&self) -> Result<(), ContractError> {
+        version(self.schema_version)?;
+        if self.contract_version != GRAB_INTENT_CONTRACT_VERSION {
+            return Err(ContractError(format!(
+                "unsupported grab intent contract version {}",
+                self.contract_version
+            )));
+        }
+        if self.capacity_intents == 0
+            || self.intents.len() > self.capacity_intents as usize
+            || self.attempted_intents < self.intents.len() as u64
+        {
+            return Err(ContractError("invalid grab intent batch counts".to_owned()));
+        }
+        validate_sorted_unique(
+            self.intents.iter().copied().map(GrabIntentV1::sequence),
+            "grab intent sequences",
+        )?;
+        for intent in &self.intents {
+            intent.validate()?;
+        }
+        if self.overflowed != (self.attempted_intents > u64::from(self.capacity_intents)) {
+            return Err(ContractError(
+                "grab intent overflow flag does not match attempted capacity".to_owned(),
+            ));
+        }
+        Ok(())
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ScheduledBodyCommandV1 {
@@ -569,6 +644,38 @@ pub struct SolverSettingsV1 {
     pub contact_policy: Option<ContactPolicyV1>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GrabTuningV1 {
+    pub spring_acceleration: FiniteF32,
+    pub damping_rate: FiniteF32,
+    pub max_acceleration: FiniteF32,
+    pub max_linear_speed: FiniteF32,
+    pub max_angular_speed: FiniteF32,
+}
+
+impl Validate for GrabTuningV1 {
+    fn validate(&self) -> Result<(), ContractError> {
+        self.spring_acceleration.validate()?;
+        self.damping_rate.validate()?;
+        self.max_acceleration.validate()?;
+        self.max_linear_speed.validate()?;
+        self.max_angular_speed.validate()?;
+        if self.spring_acceleration.get() <= 0.0
+            || self.damping_rate.get() < 0.0
+            || self.max_acceleration.get() <= 0.0
+            || self.max_linear_speed.get() <= 0.0
+            || self.max_angular_speed.get() <= 0.0
+        {
+            return Err(ContractError(
+                "grab spring and limits must be positive and damping must be nonnegative"
+                    .to_owned(),
+            ));
+        }
+        Ok(())
+    }
+}
+
 impl Validate for SolverSettingsV1 {
     fn validate(&self) -> Result<(), ContractError> {
         self.fixed_dt.validate()?;
@@ -602,6 +709,20 @@ pub enum NeutralActionV1 {
         step: u32,
         gravity: Vec2,
     },
+    GrabBegin {
+        step: u32,
+        body: BodyId,
+        world_anchor: Vec2,
+        world_target: Vec2,
+        tuning: GrabTuningV1,
+    },
+    GrabTarget {
+        step: u32,
+        world_target: Vec2,
+    },
+    GrabEnd {
+        step: u32,
+    },
 }
 
 impl Validate for NeutralActionV1 {
@@ -616,6 +737,30 @@ impl Validate for NeutralActionV1 {
                 world_point.validate()
             }
             Self::SetGravity { gravity, .. } => gravity.validate(),
+            Self::GrabBegin {
+                world_anchor,
+                world_target,
+                tuning,
+                ..
+            } => {
+                world_anchor.validate()?;
+                world_target.validate()?;
+                tuning.validate()
+            }
+            Self::GrabTarget { world_target, .. } => world_target.validate(),
+            Self::GrabEnd { .. } => Ok(()),
+        }
+    }
+}
+
+impl NeutralActionV1 {
+    pub const fn step(&self) -> u32 {
+        match self {
+            Self::ApplyImpulse { step, .. }
+            | Self::SetGravity { step, .. }
+            | Self::GrabBegin { step, .. }
+            | Self::GrabTarget { step, .. }
+            | Self::GrabEnd { step } => *step,
         }
     }
 }
@@ -1295,6 +1440,45 @@ mod tests {
     }
 
     #[test]
+    fn neutral_grab_actions_are_explicit_finite_and_versioned_with_the_scenario() {
+        let tuning = GrabTuningV1 {
+            spring_acceleration: finite(45.0),
+            damping_rate: finite(10.0),
+            max_acceleration: finite(80.0),
+            max_linear_speed: finite(20.0),
+            max_angular_speed: finite(30.0),
+        };
+        let mut scenario = scenario();
+        scenario.actions = vec![
+            NeutralActionV1::GrabBegin {
+                step: 0,
+                body: scenario.bodies[0].id,
+                world_anchor: Vec2::new(0.2, 0.0),
+                world_target: Vec2::new(0.2, 0.0),
+                tuning,
+            },
+            NeutralActionV1::GrabTarget {
+                step: 0,
+                world_target: Vec2::new(0.3, 0.4),
+            },
+            NeutralActionV1::GrabEnd { step: 0 },
+        ];
+        scenario.validate().unwrap();
+        let bytes = canonical_json(&scenario).unwrap();
+        assert_eq!(
+            serde_json::from_slice::<ScenarioV1>(&bytes).unwrap(),
+            scenario
+        );
+        assert_eq!(scenario.actions[0].step(), 0);
+
+        let NeutralActionV1::GrabBegin { tuning, .. } = &mut scenario.actions[0] else {
+            unreachable!()
+        };
+        tuning.max_acceleration = finite(0.0);
+        assert!(scenario.validate().is_err());
+    }
+
+    #[test]
     fn non_finite_values_are_rejected_before_serialization() {
         assert!(FiniteF32::new(f32::NAN).is_err());
         let mut scenario = scenario();
@@ -1430,6 +1614,44 @@ mod tests {
         let mut overflow = batch;
         overflow.attempted_commands = 3;
         assert!(overflow.validate().is_err());
+        overflow.overflowed = true;
+        overflow.validate().unwrap();
+    }
+
+    #[test]
+    fn grab_intents_are_body_free_versioned_ordered_and_bounded() {
+        let batch = GrabIntentBatchV1 {
+            schema_version: SCHEMA_VERSION,
+            contract_version: GRAB_INTENT_CONTRACT_VERSION,
+            capacity_intents: 3,
+            attempted_intents: 3,
+            overflowed: false,
+            intents: vec![
+                GrabIntentV1::Begin {
+                    sequence: 1,
+                    world_target: Vec2::new(0.25, 0.5),
+                },
+                GrabIntentV1::Target {
+                    sequence: 2,
+                    world_target: Vec2::new(0.5, 0.75),
+                },
+                GrabIntentV1::End { sequence: 3 },
+            ],
+        };
+        batch.validate().unwrap();
+        let encoded = canonical_json(&batch).unwrap();
+        let decoded: GrabIntentBatchV1 = serde_json::from_slice(&encoded).unwrap();
+        assert_eq!(decoded, batch);
+        assert!(!encoded.windows(4).any(|window| window == b"body"));
+
+        let mut wrong_version = batch.clone();
+        wrong_version.contract_version += 1;
+        assert!(wrong_version.validate().is_err());
+        let mut duplicate = batch.clone();
+        duplicate.intents[1] = GrabIntentV1::End { sequence: 1 };
+        assert!(duplicate.validate().is_err());
+        let mut overflow = batch;
+        overflow.attempted_intents = 4;
         overflow.overflowed = true;
         overflow.validate().unwrap();
     }

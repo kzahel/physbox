@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { readFile, rm, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { chromium } from "@playwright/test";
 import { PNG } from "pngjs";
@@ -10,15 +10,19 @@ const root = resolve(import.meta.dirname, "..");
 const captureSuffix = process.env.PHYSBOX5_CAPTURE_SUFFIX
   ? `-${process.env.PHYSBOX5_CAPTURE_SUFFIX.replaceAll(/[^a-zA-Z0-9_-]/g, "")}`
   : "";
-const screenshot = `/tmp/physbox5-web${captureSuffix}.png`;
-const menuScreenshot = `/tmp/physbox5-web-menu${captureSuffix}.png`;
-const provenancePath = `/tmp/physbox5-web${captureSuffix}.json`;
+const captureDirectory = resolve(process.env.PHYSBOX5_CAPTURE_DIRECTORY ?? "/tmp");
+const screenshot = join(captureDirectory, `physbox5-web${captureSuffix}.png`);
+const menuScreenshot = join(captureDirectory, `physbox5-web-menu${captureSuffix}.png`);
+const grabScreenshot = join(captureDirectory, `physbox5-web-grab${captureSuffix}.png`);
+const provenancePath = join(captureDirectory, `physbox5-web${captureSuffix}.json`);
 const scenario = process.env.PHYSBOX5_SCENARIO ?? "bootstrap";
 const viewportWidth = Number.parseInt(process.env.PHYSBOX5_VIEWPORT_WIDTH ?? "960", 10);
 const viewportHeight = Number.parseInt(process.env.PHYSBOX5_VIEWPORT_HEIGHT ?? "600", 10);
 if (!(viewportWidth > 0 && viewportHeight > 0)) throw new Error("browser viewport must be positive");
+await mkdir(captureDirectory, { recursive: true });
 await rm(screenshot, { force: true });
 await rm(menuScreenshot, { force: true });
+await rm(grabScreenshot, { force: true });
 await rm(provenancePath, { force: true });
 run(process.execPath, [resolve(root, "scripts/build-web.mjs")]);
 
@@ -84,6 +88,51 @@ try {
     { name: scenario, activations: before.frame.ui.scenarioActivationsTotal },
     { timeout: 10_000 },
   );
+  let capturedGrab = null;
+  if (process.env.PHYSBOX5_GRAB_CAPTURE === "1") {
+    if (scenario !== "rigid-floor") {
+      throw new Error("PHYSBOX5_GRAB_CAPTURE currently requires rigid-floor");
+    }
+    const beforeGrab = await page.evaluate(() => globalThis.__physbox5.frame);
+    await page.mouse.move(viewportWidth * 0.5, viewportHeight * 0.175);
+    await page.mouse.down();
+    await page.mouse.move(viewportWidth * 0.75, viewportHeight * 0.35, { steps: 4 });
+    await page.waitForFunction(
+      ({ queued, executed }) => {
+        const commands = globalThis.__physbox5?.frame?.bodyCommands;
+        return commands?.grabPointerActive
+          && commands?.queuedCommandsTotal > queued
+          && commands?.executedCommandsTotal > executed;
+      },
+      {
+        queued: beforeGrab.bodyCommands.queuedCommandsTotal,
+        executed: beforeGrab.bodyCommands.executedCommandsTotal,
+      },
+      { timeout: 10_000 },
+    );
+    await page.screenshot({ path: grabScreenshot });
+    capturedGrab = await page.evaluate(() => globalThis.__physbox5.frame);
+    if (capturedGrab.bodyCommands.gpuSelectionReadback) {
+      throw new Error("interactive grab reported a forbidden GPU selection readback");
+    }
+    if (
+      capturedGrab.bodyCommands.grabTetherPrepareDispatchesThisFrame !== 1
+      || capturedGrab.bodyCommands.grabTetherDrawCallsThisFrame !== 1
+    ) {
+      throw new Error(`interactive grab omitted bounded tether work: ${JSON.stringify(capturedGrab.bodyCommands)}`);
+    }
+    requireGrabEndpoint(
+      PNG.sync.read(await readFile(grabScreenshot)),
+      Math.round(viewportWidth * 0.75),
+      Math.round(viewportHeight * 0.35),
+    );
+    await page.mouse.up();
+    await page.waitForFunction(
+      () => !globalThis.__physbox5?.frame?.bodyCommands?.grabPointerActive,
+      null,
+      { timeout: 10_000 },
+    );
+  }
   await page.mouse.move(viewportWidth * 0.5, viewportHeight * 0.5);
   await page.mouse.down();
   await page.mouse.up();
@@ -149,10 +198,12 @@ try {
     adapter: final.diagnostics,
     viewport: final.viewport,
     menuScreenshot,
+    grabScreenshot: capturedGrab ? grabScreenshot : null,
+    grabFrame: capturedGrab,
     report: final.frame,
   };
   await writeFile(provenancePath, `${JSON.stringify(provenance, null, 2)}\n`);
-  console.log(JSON.stringify({ screenshot, menuScreenshot, provenancePath, frame: final.frame }, null, 2));
+  console.log(JSON.stringify({ screenshot, menuScreenshot, grabScreenshot: capturedGrab ? grabScreenshot : null, provenancePath, frame: final.frame }, null, 2));
   console.log(`PHYSBOX5_VALIDATION_SUCCESS host=web run_id=${provenance.runId}`);
 } finally {
   await browser?.close();
@@ -167,4 +218,16 @@ function run(command, args) {
 function git(args) {
   const result = spawnSync("git", args, { cwd: root, encoding: "utf8" });
   return result.status === 0 ? result.stdout.trim() : undefined;
+}
+
+function requireGrabEndpoint(image, targetX, targetY) {
+  let pixels = 0;
+  for (let y = targetY - 16; y <= targetY + 16; y += 1) {
+    for (let x = targetX - 16; x <= targetX + 16; x += 1) {
+      const offset = (y * image.width + x) * 4;
+      const [red, green, blue] = image.data.subarray(offset, offset + 3);
+      pixels += Number(red > 120 && green > 180 && green > blue + 5 && green > red + 20);
+    }
+  }
+  if (pixels < 20) throw new Error(`grab endpoint pixel gate failed: endpoint_pixels=${pixels}`);
 }

@@ -9,6 +9,7 @@ publish.workspace = true
 physbox-contracts = { path = "../physbox-contracts" }
 physbox-engine = { path = "../physbox-engine" }
 physbox-launch = { path = "../physbox-launch" }
+png.workspace = true
 pollster.workspace = true
 serde.workspace = true
 serde_json.workspace = true

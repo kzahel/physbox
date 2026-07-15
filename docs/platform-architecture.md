@@ -41,6 +41,14 @@ tool behavior, debug content, or per-host control defaults. Camera and UI
 changes are presentation and input-projection state only; they may not affect
 physics, fixed-step admission, or scenario outcomes.
 
+S4.3 live grab input is a body-free begin/target/end stream. The GPU selects
+and retains the generational body-local anchor; the CPU knows only pointer
+lifecycle and target positions. While that pointer is active, one shared
+compute presentation pass converts current GPU grab/pose state into a bounded
+12-vertex tether buffer for the same renderer. This GPU-to-GPU bridge is not a
+diagnostic readback, does not gate the next frame, and is owned identically by
+surface and offscreen hosts.
+
 Interactive hosts forward elapsed wall time but never catch up locally. The
 shared clock executes zero or one fixed outer step per interactive engine
 frame and permanently slips excess whole-step wall time, so the simulated world

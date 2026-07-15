@@ -10,7 +10,7 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 use crate::body_state::{BODY_COMMAND_CAPACITY, GpuBodyResetData};
-use crate::body_world::{BodyCommandStepRange, GpuBodyWorld};
+use crate::body_world::{BodyCommandStepRange, BodyRenderPlan, GpuBodyWorld};
 use crate::gpu_context::{
     AdapterDiagnostics, create_instance, request_adapter, request_device_with_features,
 };
@@ -18,15 +18,19 @@ use crate::renderer::RenderFrameTarget;
 use crate::scenario::p5_1_free_flight_scenario;
 
 const VALIDATION_TOLERANCE: f32 = 1.0e-5;
+pub const BODY_BENCHMARK_WORK_VERSION: u32 = 2;
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BodyBenchmarkWork {
+    pub version: u32,
     pub bodies_total: u32,
     pub bodies_awake: u32,
     pub rectangles: u32,
     pub integration_workgroups: u32,
+    /// Retained for machine-readable compatibility with work version 1.
     pub hold_workgroups: u32,
+    pub grab_constraint_workgroups: u32,
     pub dispatches: u32,
     pub draw_calls: u32,
     pub rendered_body_instances: u32,
@@ -166,6 +170,7 @@ pub struct GpuBodyBenchmarkSession {
     expected: Vec<ExpectedBody>,
     empty_batch: BodyCommandBatchV1,
     ranges: [BodyCommandStepRange; 1],
+    frame_index: u64,
     timestamps: Option<TimestampResources>,
     adapter: AdapterDiagnostics,
     source_scenario_hash: String,
@@ -175,7 +180,6 @@ pub struct GpuBodyBenchmarkSession {
     samples: u32,
     body_layout: BodyLayoutV1,
     capacities: Vec<CapacityRecordV1>,
-    frame_index: u64,
 }
 
 impl GpuBodyBenchmarkSession {
@@ -248,6 +252,7 @@ impl GpuBodyBenchmarkSession {
                 commands: Vec::new(),
             },
             ranges: [BodyCommandStepRange { start: 0, count: 0 }],
+            frame_index: 0,
             timestamps,
             adapter: diagnostics,
             source_scenario_hash,
@@ -257,7 +262,6 @@ impl GpuBodyBenchmarkSession {
             samples,
             body_layout,
             capacities,
-            frame_index: 0,
         })
     }
 
@@ -301,11 +305,14 @@ impl GpuBodyBenchmarkSession {
                 color_view: &self.view,
                 size: self.viewport,
             },
-            self.frame_index,
-            crate::Camera2d::fixed()
-                .resolve(self.viewport)
-                .expect("benchmark target resolves the fixed camera"),
-            ending,
+            BodyRenderPlan {
+                frame_index: self.frame_index,
+                camera: crate::Camera2d::fixed()
+                    .resolve(self.viewport)
+                    .expect("benchmark target resolves the fixed camera"),
+                grab_pointer_active: false,
+                ending_timestamp: ending,
+            },
         );
         self.queue.submit([encoder.finish()]);
         self.frame_index += 1;
@@ -447,11 +454,13 @@ impl GpuBodyBenchmarkSession {
             warmup_steps: self.warmup_steps,
             samples: self.samples,
             work: BodyBenchmarkWork {
+                version: BODY_BENCHMARK_WORK_VERSION,
                 bodies_total: self.body_layout.live_elements,
                 bodies_awake: self.body_layout.live_elements,
                 rectangles: self.body_layout.live_elements,
                 integration_workgroups: workgroups,
-                hold_workgroups: workgroups,
+                hold_workgroups: 0,
+                grab_constraint_workgroups: 1,
                 dispatches: 2,
                 draw_calls: 2,
                 rendered_body_instances: self.body_layout.live_elements,
@@ -815,7 +824,12 @@ mod tests {
             pollster::block_on(benchmark_gpu_body_free_flight(32, 0x5eed, [320, 200], 1, 3))
                 .unwrap();
         assert_eq!(result.work.bodies_total, 32);
+        assert_eq!(result.work.version, BODY_BENCHMARK_WORK_VERSION);
+        assert_eq!(result.work.hold_workgroups, 0);
+        assert_eq!(result.work.grab_constraint_workgroups, 1);
         assert_eq!(result.work.dispatches, 2);
+        assert_eq!(result.work.draw_calls, 2);
+        assert_eq!(result.work.rendered_vertices, 3 + 32 * 6);
         assert_eq!(result.final_validation.validated_bodies, 32);
         assert!(result.final_validation.finite);
         assert!(result.final_validation.max_abs_error <= VALIDATION_TOLERANCE);

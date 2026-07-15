@@ -56,24 +56,54 @@ for _ in $(seq 1 90); do
     sleep 1
 done
 [[ "$PASSED" -eq 1 ]] || { echo "error: Android device scenario did not pass; see $LOG" >&2; exit 1; }
-"$ADB" -s "$SERIAL" exec-out screencap -p > "$SCREENSHOT"
 REPORT="$(rg 'PHYSBOX5_MARK_FRAME_RENDERED ' "$LOG" | tail -1 | sed 's/^.*PHYSBOX5_MARK_FRAME_RENDERED //')"
 [[ "$(node -e 'console.log(JSON.parse(process.argv[1]).scenario.name)' "$REPORT")" = "$SCENARIO" ]] || {
     echo "error: Android device reported the wrong shared scenario; see $LOG" >&2; exit 1;
 }
 ADAPTER="$(rg 'PHYSBOX5_MARK_ADAPTER ' "$LOG" | tail -1 | sed 's/^.*PHYSBOX5_MARK_ADAPTER //' || true)"
+CAPTURE_PHASE="${SCENARIO}-final"
+if [[ "${PHYSBOX5_ANDROID_GRAB_CAPTURE:-0}" = "1" ]]; then
+    [[ "$SCENARIO" = "rigid-floor" ]] || { echo "error: Android grab capture requires rigid-floor" >&2; exit 2; }
+    SIZE="$($ADB -s "$SERIAL" shell wm size | sed -n 's/.*Physical size: //p' | tail -1 | tr -d '\r')"
+    WIDTH="${SIZE%x*}"; HEIGHT="${SIZE#*x}"
+    [[ "$WIDTH" =~ ^[0-9]+$ && "$HEIGHT" =~ ^[0-9]+$ ]] || { echo "error: could not determine Android display size" >&2; exit 1; }
+    X1=$((WIDTH * 50 / 100)); Y1=$((HEIGHT * 40 / 100))
+    X2=$((WIDTH * 80 / 100)); Y2=$((HEIGHT * 70 / 100))
+    "$ADB" -s "$SERIAL" shell input motionevent DOWN "$X1" "$Y1"
+    "$ADB" -s "$SERIAL" shell input motionevent MOVE "$X2" "$Y2"
+    GRAB_ACTIVE=0
+    for _ in $(seq 1 20); do
+        "$ADB" -s "$SERIAL" logcat -d -t 10000 > "$LOG"
+        if rg -q 'PHYSBOX5_MARK_FRAME_RENDERED .*"g":true' "$LOG"; then GRAB_ACTIVE=1; break; fi
+        sleep 0.25
+    done
+    [[ "$GRAB_ACTIVE" -eq 1 ]] || { "$ADB" -s "$SERIAL" shell input motionevent UP "$X2" "$Y2" || true; echo "error: Android grab did not become active; see $LOG" >&2; exit 1; }
+    REPORT="$(rg 'PHYSBOX5_MARK_FRAME_RENDERED ' "$LOG" | tail -1 | sed 's/^.*PHYSBOX5_MARK_FRAME_RENDERED //')"
+    CAPTURE_PHASE="${SCENARIO}-grab-active"
+fi
+CAPTURED=0
+for _ in $(seq 1 5); do
+    "$ADB" -s "$SERIAL" exec-out screencap -p > "$SCREENSHOT"
+    if node "$ANDROID_DIR/require-complete-screenshot.mjs" "$SCREENSHOT"; then CAPTURED=1; break; fi
+    sleep 0.2
+done
+[[ "$CAPTURED" -eq 1 ]] || { echo "error: Android screenshot remained incomplete" >&2; exit 1; }
+if [[ "${PHYSBOX5_ANDROID_GRAB_CAPTURE:-0}" = "1" ]]; then
+    node "$ANDROID_DIR/require-grab-tether.mjs" "$SCREENSHOT" "$X2" "$Y2"
+    "$ADB" -s "$SERIAL" shell input motionevent UP "$X2" "$Y2"
+fi
 REVISION="$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
 DIRTY=false; [[ -n "$(git -C "$REPO_ROOT" status --porcelain)" ]] && DIRTY=true
 MODEL="$($ADB -s "$SERIAL" shell getprop ro.product.model | tr -d '\r')"
 PRODUCT="$($ADB -s "$SERIAL" shell getprop ro.product.device | tr -d '\r')"
 node -e '
   const fs = require("fs");
-  const [path, runId, revision, dirty, report, adapter, scenario, serial, model, product] = process.argv.slice(1);
+  const [path, runId, revision, dirty, report, adapter, scenario, capturePhase, serial, model, product] = process.argv.slice(1);
   fs.writeFileSync(path, JSON.stringify({
     runId, sourceRevision: revision, sourceDirty: dirty === "true", host: "android",
-    capturePhase: `${scenario}-final`, device: { serial, model, product },
+    capturePhase, device: { serial, model, product },
     report: JSON.parse(report), adapter: adapter ? JSON.parse(adapter) : null,
   }, null, 2) + "\n");
 ' "$PROVENANCE" "$(date +%s)-$$" "$REVISION" "$DIRTY" "$REPORT" "$ADAPTER" \
-  "$SCENARIO" "$SERIAL" "$MODEL" "$PRODUCT"
+  "$SCENARIO" "$CAPTURE_PHASE" "$SERIAL" "$MODEL" "$PRODUCT"
 echo "PHYSBOX5_VALIDATION_SUCCESS host=android device=$MODEL scenario=$SCENARIO screenshot=$SCREENSHOT provenance=$PROVENANCE"

@@ -170,15 +170,20 @@ gesture arbitration, tools, GPU hit requests, construction commands, and
 pointer-to-world conversion. Platform adapters transport raw mouse, touch,
 wheel, lifecycle, and resize facts only.
 
-S4.2 is complete. Camera and input-trace contracts are versioned in shared
+S4.3 automated implementation and evidence are complete. Camera and input-trace contracts are versioned in shared
 Rust; right-drag pan, cursor-anchored wheel zoom, two-touch pan/pinch, pointer
 loss, resize, and all-contacts-up rearming replay deterministically. The shared
 engine now renders a bounded glyph toolbar, responsive scenario menu, restart,
 recenter, and an honestly labeled declared-fact overlay in one UI pass and two
 draws. Scenario activation atomically replaces the world without stale state.
 Headless, desktop/phone browser, and hardware-accelerated AVD captures pass; no
-physical Android device was connected. S4.3 GPU selection and anchored
-collidable grabbing is next.
+physical Android device was connected. GPU selection now consumes versioned
+body-free intents, retains the selected generation and body-local anchor on
+device, and applies a sparse compliant point constraint without teleporting or
+disabling collision. Tether geometry is compute-prepared into a 192-byte GPU
+vertex buffer only while held. Twenty-one exact GPU replays and 21 clean pinned
+Box2D public motor-joint processes pass. The grab constants remain provisional;
+the exact commit must be deployed for human feel review before S4.4.
 
 - Make the maintained shared scenarios discoverable from the default deployed
   canvas without requiring query-string editing.

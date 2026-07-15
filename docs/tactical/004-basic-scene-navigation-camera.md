@@ -1,6 +1,7 @@
 # S4: Interactive evaluation workbench
 
-Status: S4.2 complete, 2026-07-15; S4.3 is next.
+Status: S4.3 automated implementation/evidence complete, 2026-07-15; deployed
+human grab-feel checkpoint required before S4.4.
 Direction: [one shared host and renderer](../platform-architecture.md).
 Bring-up checkpoint: [P5.2a](../bringup-plan.md#p52a--interactive-evaluation-workbench-authorized).
 Physics predecessor: [accepted S3.6 direction](003-small-world-collision-persistence.md).
@@ -207,18 +208,18 @@ device was connected.
 
 ### S4.3 — GPU selection and anchored collidable grab
 
-- [ ] Replace designated-body capture with a bounded GPU hit query over current
+- [x] Replace designated-body capture with a bounded GPU hit query over current
   analytic circles/rectangles, deterministic nearest-hit/tie ordering, and
   explicit no-hit/capacity diagnostics.
-- [ ] Compute and retain the touched body-local anchor on device so an
+- [x] Compute and retain the touched body-local anchor on device so an
   off-center grab rotates the body instead of snapping its center to the
   pointer.
-- [ ] Replace the unconditional hold scan/teleport behavior with a bounded
+- [x] Replace the unconditional hold scan/teleport behavior with a bounded
   compliant grab constraint or equivalent measured GPU stage that keeps
   collision enabled and does not require a general joint system.
-- [ ] Coalesce pointer targets, cancel on second touch or pointer loss, render a
+- [x] Coalesce pointer targets, cancel on second touch or pointer loss, render a
   shared anchor/tether, and retain a bounded release velocity.
-- [ ] Compare center/off-center, fixed-body rejection, empty-touch, obstacle,
+- [x] Compare center/off-center, fixed-body rejection, empty-touch, obstacle,
   release, reset, generation-reuse, and high-cadence traces against invariants
   and the applicable Box2D grab behavior.
 
@@ -235,6 +236,42 @@ Commit boundary: GPU selection, anchored-grab command/constraint path,
 renderer feedback, exact/invariant tests, cross-host evidence, provenance, and
 S4.3 status land together. Deploy this slice and request the human feel
 checkpoint before finalizing grab constants.
+
+Completion evidence: [S4.3 GPU anchored-grab package](../../evidence/p5.2a-s4.3/README.md).
+The body-free grab-intent contract is version 1 with capacity 64. A begin runs
+one deterministic GPU-resident analytic circle/rectangle scan, ordered by
+nearest squared center distance then body slot and generation; fixed-only and
+empty hits are rejected without moving a body. The selected generation,
+body-local anchor, target, counters, and stale-generation state remain in one
+64-byte GPU record. Held steps apply one sparse compliant point constraint;
+the collidable body is never teleported or ghosted. While the pointer is down,
+one 12-thread presentation dispatch writes a 192-byte vertex buffer consumed
+directly by the shared tether draw. No simulation-dependent readback advances
+selection, steering, or presentation.
+
+The provisional spring acceleration/damping/max-acceleration values are
+`45/10/80`, with linear/angular release bounds `20/30`. They selectively adapt
+the named PhysBox 4 anchor/spring behavior and are deliberately not final
+physical defaults. Three GPU cases replay exactly at seven checkpoints and 21
+clean pinned Box2D public motor-joint processes complete with no invariant
+failure. The largest observed GPU/Box2D deltas are reported, not accepted as
+tolerances. Native, desktop/phone browser, headless, and the hardware-backed
+`jstorrent-tablet` AVD pass; no physical device was connected.
+
+The first AVD parallel selection shader exposed a MoltenVK code-generation
+failure around workgroup-array sizing. Its minimized signature is preserved in
+the evidence package. The accepted portable begin path is a serial GPU scan,
+appropriate for the deliberately small P5.2a worlds. Scalable selection is
+still deferred with broadphase; this slice makes no large-world picking claim.
+The AVD also required compute-prepared tether vertices because direct
+vertex-stage reads of the updated grab record remained stale. This is a
+GPU-only presentation bridge, costs one tiny dispatch only during an active
+pointer, and introduces neither CPU readback nor frame-latency dependency.
+
+Manual checkpoint: push/deploy the exact commit, then review center and
+off-center compliance, damping, retained release velocity, tether clarity,
+floor/stack collision, and accidental-touch behavior. Do not freeze these
+constants or proceed to construction on automated evidence alone.
 
 ### S4.4 — minimal circle/rectangle construction loop
 

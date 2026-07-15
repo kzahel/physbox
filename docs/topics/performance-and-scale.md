@@ -371,12 +371,23 @@ Every accepted row validates complete final state after timing, with maximum
 absolute error no larger than `1.1920929e-7` against the unchanged `1e-5`
 scalar gate. The result exposes no current body-memory or native/browser
 bandwidth limit that makes a fifth identity/material buffer credible before
-P5.2. It does expose the unconditional full-body grab-hold scan as a future
-sparsification candidate. Human review subsequently accepted the limited
-64-byte `BodyCoreV1`, generational handle, existing command record, and explicit
-capacity-failure semantics. Numeric capacities, the hold scan, scratch fields,
-and every future shape/contact/joint/liquid allocation remain unfrozen and must
-produce their own scale evidence.
+P5.2. Human review subsequently accepted the limited 64-byte `BodyCoreV1`,
+generational handle, existing command record, and explicit capacity-failure
+semantics. Numeric capacities, scratch fields, and every future
+shape/contact/joint/liquid allocation remain unfrozen and must produce their
+own scale evidence.
+
+S4.3 removes the measured unconditional full-body hold scan. Held interaction
+now costs one sparse one-thread point-constraint dispatch per admitted step;
+an active pointer adds one 12-thread GPU presentation dispatch and one
+12-vertex tether draw. A begin still performs one deterministic serial GPU
+scan of current analytic bodies. Begin is infrequent and P5.2a worlds are
+deliberately small, so this is accepted interaction functionality rather than
+a scale result. Scalable hit selection must reuse the later broadphase/spatial
+query organization and remains a P5.3-era measurement; the serial begin scan
+may not support a large-world picking claim. Body-benchmark work records are
+version 2: the compatibility `holdWorkgroups` field is retained at zero and
+`grabConstraintWorkgroups` reports the new sparse dispatch explicitly.
 
 Android measurement uses a shell-executed native benchmark binary built with
 the maintained NDK toolchain, rather than estimating compute cost from APK

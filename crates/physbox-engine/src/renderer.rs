@@ -231,6 +231,27 @@ impl OffscreenRenderer {
         read_identity(&self.device, &self.queue, &self.host)
     }
 
+    pub fn read_grab_state(&self) -> Result<crate::GrabValidationState, String> {
+        let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("physbox5_grab_state_readback"),
+            size: u64::from(crate::grab::GRAB_STATE_BYTES),
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("physbox5_grab_state_copy"),
+            });
+        self.host.copy_grab_state(&mut encoder, &buffer)?;
+        self.queue.submit([encoder.finish()]);
+        let mapped = map_buffer(&self.device, &buffer)?;
+        let state = crate::grab::decode_grab_state(&mapped)?;
+        drop(mapped);
+        buffer.unmap();
+        Ok(state)
+    }
+
     pub fn read_fixed_floor_pass_evidence(
         &self,
     ) -> Result<crate::GpuFixedFloorPassEvidence, String> {
@@ -470,7 +491,7 @@ mod tests {
     }
 
     #[test]
-    fn scripted_reset_grab_holds_releases_and_replays_after_reset() {
+    fn scripted_reset_grab_uses_compliant_anchor_and_replays_after_reset() {
         let mut scripted = pollster::block_on(OffscreenRenderer::new(
             320,
             200,
@@ -481,22 +502,45 @@ mod tests {
         .unwrap();
         scripted.render(FrameInput::exact(11));
         let begin = scripted.read_capture_state().unwrap();
-        assert_eq!([begin[0], begin[1]], [0.0, 0.65]);
-        scripted.render(FrameInput::exact(10));
+        assert_eq!(begin[0], 0.0);
+        assert!(begin[1] > 0.2 && begin[1] < 0.65);
+        let begin_grab = scripted.read_grab_state().unwrap();
+        assert!(begin_grab.active);
+        assert_eq!(
+            begin_grab.selected_body,
+            Some(physbox_contracts::BodyId {
+                slot: 0,
+                generation: 1
+            })
+        );
+        assert_eq!(begin_grab.local_anchor[0], 0.0);
+        assert!(begin_grab.local_anchor[1] > 0.0 && begin_grab.local_anchor[1] < 0.25);
+        scripted.render(FrameInput::exact(11));
         let first_target = scripted.read_capture_state().unwrap();
-        assert_eq!([first_target[0], first_target[1]], [0.45, 0.75]);
-        scripted.render(FrameInput::exact(10));
+        assert!(first_target[0] > 0.0 && first_target[4] > 0.0);
+        assert_ne!([first_target[0], first_target[1]], [0.45, 0.75]);
+        assert_eq!(
+            scripted.read_grab_state().unwrap().world_target,
+            [0.45, 0.75]
+        );
+        scripted.render(FrameInput::exact(11));
         let second_target = scripted.read_capture_state().unwrap();
-        assert_eq!([second_target[0], second_target[1]], [-0.4, 0.55]);
-        scripted.render(FrameInput::exact(10));
+        assert!(second_target[4] < first_target[4]);
+        assert_ne!([second_target[0], second_target[1]], [-0.4, 0.55]);
+        assert_eq!(
+            scripted.read_grab_state().unwrap().world_target,
+            [-0.4, 0.55]
+        );
+        scripted.render(FrameInput::exact(9));
         let released = scripted.read_capture_state().unwrap();
-        assert!(released[1] < 0.55);
-        let report = scripted.render(FrameInput::exact(109));
+        assert!(!scripted.read_grab_state().unwrap().active);
+        assert!(released[4].hypot(released[5]) <= crate::grab::GRAB_MAX_LINEAR_SPEED);
+        let report = scripted.render(FrameInput::exact(108));
         assert!(report.scenario.complete);
         assert!(report.scenario.passed);
         assert_eq!(report.body_commands.executed_commands_total, 6);
         assert_eq!(report.body_commands.reset_commands_total, 2);
-        assert!(!report.body_commands.grab_active);
+        assert!(!report.body_commands.grab_pointer_active);
         let replayed = scripted.read_capture_state().unwrap();
 
         let mut fresh = pollster::block_on(OffscreenRenderer::new(
@@ -541,16 +585,40 @@ mod tests {
         assert_eq!(renderer.read_capture_state().unwrap(), initial);
         assert_eq!(queued.body_commands.queued_commands_total, 1);
         assert_eq!(queued.body_commands.executed_commands_total, 0);
+        assert_eq!(queued.body_commands.grab_intent_dispatches_this_frame, 0);
+        assert_eq!(
+            queued.body_commands.grab_constraint_dispatches_this_frame,
+            0
+        );
+        assert_eq!(
+            queued
+                .body_commands
+                .grab_tether_prepare_dispatches_this_frame,
+            1
+        );
+        assert_eq!(queued.body_commands.grab_tether_draw_calls_this_frame, 1);
 
-        renderer.render(FrameInput::exact(1));
+        let admitted = renderer.render(FrameInput::exact(1));
+        assert_eq!(admitted.body_commands.grab_intent_dispatches_this_frame, 1);
+        assert_eq!(
+            admitted.body_commands.grab_constraint_dispatches_this_frame,
+            1
+        );
         let held = renderer.read_capture_state().unwrap();
-        assert_eq!([held[0], held[1]], [initial[0], initial[1]]);
+        assert_eq!(held[0], initial[0]);
+        assert!(held[1] < initial[1] && held[1] > initial[1] - 0.01);
+        let selected = renderer.read_grab_state().unwrap();
+        assert!(selected.active);
+        assert_eq!(selected.successful_selections, 1);
+        assert_eq!(selected.local_anchor, [0.0, 0.0]);
         renderer.render(FrameInput {
             step_request: crate::StepRequest::Exact { steps: 1 },
             input_events: vec![pointer(crate::PointerPhase::Move, [0.75, 0.25])],
         });
         let first_target = renderer.read_capture_state().unwrap();
-        assert_eq!([first_target[0], first_target[1]], [0.8, 0.5]);
+        assert!(first_target[0] > held[0]);
+        assert_ne!([first_target[0], first_target[1]], [0.8, 0.5]);
+        assert_eq!(renderer.read_grab_state().unwrap().world_target, [0.8, 0.5]);
         let coalesced = renderer.render(FrameInput {
             step_request: crate::StepRequest::Exact { steps: 0 },
             input_events: vec![
@@ -560,16 +628,34 @@ mod tests {
         });
         assert_eq!(renderer.read_capture_state().unwrap(), first_target);
         assert_eq!(coalesced.body_commands.coalesced_targets_total, 1);
+        assert_eq!(coalesced.body_commands.grab_intent_dispatches_this_frame, 0);
         renderer.render(FrameInput::exact(1));
         let moved = renderer.read_capture_state().unwrap();
-        assert_eq!([moved[0], moved[1]], [0.0, 0.39999998]);
+        assert_ne!([moved[0], moved[1]], [0.0, 0.39999998]);
+        assert_eq!(
+            renderer.read_grab_state().unwrap().world_target,
+            [0.0, 0.39999998]
+        );
 
         let release_report = renderer.render(FrameInput {
             step_request: crate::StepRequest::Exact { steps: 1 },
             input_events: vec![pointer(crate::PointerPhase::Up, [0.5, 0.3])],
         });
         let released = renderer.read_capture_state().unwrap();
-        assert!(released[1] < moved[1]);
+        assert!(!renderer.read_grab_state().unwrap().active);
+        assert_eq!(
+            release_report
+                .body_commands
+                .grab_tether_prepare_dispatches_this_frame,
+            0
+        );
+        assert_eq!(
+            release_report
+                .body_commands
+                .grab_tether_draw_calls_this_frame,
+            0
+        );
+        assert!(released[4].hypot(released[5]) <= crate::grab::GRAB_MAX_LINEAR_SPEED);
         let stale_move = renderer.render(FrameInput {
             step_request: crate::StepRequest::Exact { steps: 1 },
             input_events: vec![pointer(crate::PointerPhase::Move, [1.0, 0.0])],
@@ -579,8 +665,276 @@ mod tests {
             stale_move.body_commands.queued_commands_total,
             release_report.body_commands.queued_commands_total
         );
-        assert_eq!(after_stale[0], released[0]);
+        assert_ne!(after_stale[0], 1.6);
+        assert!((after_stale[0] - released[0]).abs() <= crate::grab::GRAB_MAX_LINEAR_SPEED / 60.0);
         assert!(after_stale[1] < released[1]);
+    }
+
+    #[test]
+    fn zero_step_motion_preserves_the_pending_begin_hit_point() {
+        let target_size = [640, 400];
+        let frame = crate::Camera2d::fixed().resolve(target_size).unwrap();
+        let pointer = |phase, world| {
+            crate::InputEvent::Pointer(crate::PointerEvent {
+                id: 18,
+                phase,
+                button: crate::PointerButton::Primary,
+                normalized_position: frame.world_to_screen(world),
+            })
+        };
+        let mut renderer = pollster::block_on(OffscreenRenderer::new(
+            target_size[0],
+            target_size[1],
+            EngineConfig {
+                scenario: ValidationScenario::RigidFloor,
+            },
+        ))
+        .unwrap();
+        renderer.render(FrameInput {
+            step_request: crate::StepRequest::Exact { steps: 0 },
+            input_events: vec![pointer(crate::PointerPhase::Down, [0.0, 0.65])],
+        });
+        let moved = renderer.render(FrameInput {
+            step_request: crate::StepRequest::Exact { steps: 0 },
+            input_events: vec![pointer(crate::PointerPhase::Move, [0.8, 0.65])],
+        });
+        assert_eq!(moved.body_commands.coalesced_targets_total, 0);
+        assert_eq!(moved.body_commands.queued_commands_total, 2);
+
+        renderer.render(FrameInput::exact(1));
+        let selected = renderer.read_grab_state().unwrap();
+        assert!(selected.active);
+        assert_eq!(selected.local_anchor, [0.0, 0.0]);
+        assert_eq!(selected.world_target, [0.8, 0.65]);
+    }
+
+    #[test]
+    fn gpu_selection_supports_circle_and_rectangle_and_rejects_fixed_only_hits() {
+        let target_size = [640, 400];
+        let click_world = |renderer: &mut OffscreenRenderer, id, world: [f32; 2]| {
+            let at = crate::Camera2d::fixed()
+                .resolve(target_size)
+                .unwrap()
+                .world_to_screen(world);
+            renderer.render(FrameInput {
+                step_request: crate::StepRequest::Exact { steps: 1 },
+                input_events: vec![crate::InputEvent::Pointer(crate::PointerEvent {
+                    id,
+                    phase: crate::PointerPhase::Down,
+                    button: crate::PointerButton::Primary,
+                    normalized_position: at,
+                })],
+            });
+        };
+
+        for (world, slot) in [([0.0, 0.98], 3), ([0.0, 0.59], 2), ([0.0, 0.395], 1)] {
+            let mut renderer = pollster::block_on(OffscreenRenderer::new(
+                target_size[0],
+                target_size[1],
+                EngineConfig {
+                    scenario: ValidationScenario::RigidStack,
+                },
+            ))
+            .unwrap();
+            click_world(&mut renderer, u64::from(slot), world);
+            let selection = renderer.read_grab_state().unwrap();
+            assert!(selection.active);
+            assert_eq!(
+                selection.selected_body,
+                Some(physbox_contracts::BodyId {
+                    slot,
+                    generation: 1
+                })
+            );
+            assert_eq!(selection.successful_selections, 1);
+            assert_eq!(selection.scanned_bodies_high_water, 5);
+        }
+
+        let mut fixed = pollster::block_on(OffscreenRenderer::new(
+            target_size[0],
+            target_size[1],
+            EngineConfig {
+                scenario: ValidationScenario::RigidFloor,
+            },
+        ))
+        .unwrap();
+        click_world(&mut fixed, 10, [1.0, -0.1]);
+        let rejected = fixed.read_grab_state().unwrap();
+        assert!(!rejected.active);
+        assert_eq!(rejected.selected_body, None);
+        assert_eq!(rejected.begin_attempts, 1);
+        assert_eq!(rejected.no_hit_selections, 1);
+        assert_eq!(rejected.fixed_only_rejections, 1);
+    }
+
+    #[test]
+    fn exactly_overlapping_hits_select_the_lower_body_slot() {
+        let target_size = [640, 400];
+        let mut renderer = pollster::block_on(OffscreenRenderer::new(
+            target_size[0],
+            target_size[1],
+            EngineConfig {
+                scenario: ValidationScenario::RigidStack,
+            },
+        ))
+        .unwrap();
+        let pose = [0.0, 0.7, 0.0, 0.0];
+        renderer
+            .host
+            .overwrite_body_pose_for_test(&renderer.queue, 1, pose);
+        renderer
+            .host
+            .overwrite_body_pose_for_test(&renderer.queue, 2, pose);
+        let at = crate::Camera2d::fixed()
+            .resolve(target_size)
+            .unwrap()
+            .world_to_screen([pose[0], pose[1]]);
+        renderer.render(FrameInput {
+            step_request: crate::StepRequest::Exact { steps: 1 },
+            input_events: vec![crate::InputEvent::Pointer(crate::PointerEvent {
+                id: 19,
+                phase: crate::PointerPhase::Down,
+                button: crate::PointerButton::Primary,
+                normalized_position: at,
+            })],
+        });
+        assert_eq!(
+            renderer.read_grab_state().unwrap().selected_body,
+            Some(physbox_contracts::BodyId {
+                slot: 1,
+                generation: 1,
+            })
+        );
+    }
+
+    #[test]
+    fn active_grab_clears_before_steering_a_reused_generation() {
+        let target_size = [640, 400];
+        let mut renderer = pollster::block_on(OffscreenRenderer::new(
+            target_size[0],
+            target_size[1],
+            EngineConfig {
+                scenario: ValidationScenario::RigidFloor,
+            },
+        ))
+        .unwrap();
+        let at = crate::Camera2d::fixed()
+            .resolve(target_size)
+            .unwrap()
+            .world_to_screen([0.0, 0.65]);
+        renderer.render(FrameInput {
+            step_request: crate::StepRequest::Exact { steps: 1 },
+            input_events: vec![crate::InputEvent::Pointer(crate::PointerEvent {
+                id: 32,
+                phase: crate::PointerPhase::Down,
+                button: crate::PointerButton::Primary,
+                normalized_position: at,
+            })],
+        });
+        assert_eq!(
+            renderer.read_grab_state().unwrap().selected_body,
+            Some(physbox_contracts::BodyId {
+                slot: 0,
+                generation: 1,
+            })
+        );
+
+        renderer
+            .host
+            .overwrite_body_generation_for_test(&renderer.queue, 0, 2);
+        renderer.render(FrameInput::exact(1));
+        let cleared = renderer.read_grab_state().unwrap();
+        assert!(!cleared.active);
+        assert_eq!(cleared.stale_generation_clears, 1);
+        assert_eq!(cleared.selected_body, None);
+    }
+
+    #[test]
+    fn off_center_gpu_grab_retains_anchor_rotates_and_releases_bounded_velocity() {
+        let target_size = [640, 400];
+        let frame = crate::Camera2d::fixed().resolve(target_size).unwrap();
+        let pointer = |phase, world| {
+            crate::InputEvent::Pointer(crate::PointerEvent {
+                id: 31,
+                phase,
+                button: crate::PointerButton::Primary,
+                normalized_position: frame.world_to_screen(world),
+            })
+        };
+        let mut renderer = pollster::block_on(OffscreenRenderer::new(
+            target_size[0],
+            target_size[1],
+            EngineConfig {
+                scenario: ValidationScenario::RigidFloor,
+            },
+        ))
+        .unwrap();
+        renderer.render(FrameInput {
+            step_request: crate::StepRequest::Exact { steps: 1 },
+            input_events: vec![pointer(crate::PointerPhase::Down, [0.3, 0.65])],
+        });
+        let selected = renderer.read_grab_state().unwrap();
+        assert!(selected.active);
+        assert!((selected.local_anchor[0] - 0.3).abs() <= 1.0e-6);
+        assert!(selected.local_anchor[1].abs() <= 1.0e-6);
+
+        renderer.render(FrameInput {
+            step_request: crate::StepRequest::Exact { steps: 8 },
+            input_events: vec![pointer(crate::PointerPhase::Move, [0.3, 1.2])],
+        });
+        let pulled = renderer.read_capture_state().unwrap();
+        assert!(
+            pulled[2] > 0.05,
+            "off-center upward pull must rotate counter-clockwise"
+        );
+        assert!(pulled[6] > 0.0 && pulled[6] <= crate::grab::GRAB_MAX_ANGULAR_SPEED);
+        assert_ne!([pulled[0], pulled[1]], [0.3, 1.2]);
+
+        renderer.render(FrameInput {
+            step_request: crate::StepRequest::Exact { steps: 1 },
+            input_events: vec![pointer(crate::PointerPhase::Up, [0.3, 1.2])],
+        });
+        let released = renderer.read_capture_state().unwrap();
+        assert!(!renderer.read_grab_state().unwrap().active);
+        assert!(released[4].hypot(released[5]) <= crate::grab::GRAB_MAX_LINEAR_SPEED);
+        assert!(released[6].abs() <= crate::grab::GRAB_MAX_ANGULAR_SPEED);
+    }
+
+    #[test]
+    fn active_grab_remains_collidable_against_the_fixed_floor() {
+        let target_size = [640, 400];
+        let frame = crate::Camera2d::fixed().resolve(target_size).unwrap();
+        let pointer = |phase, world| {
+            crate::InputEvent::Pointer(crate::PointerEvent {
+                id: 33,
+                phase,
+                button: crate::PointerButton::Primary,
+                normalized_position: frame.world_to_screen(world),
+            })
+        };
+        let mut renderer = pollster::block_on(OffscreenRenderer::new(
+            target_size[0],
+            target_size[1],
+            EngineConfig {
+                scenario: ValidationScenario::RigidFloor,
+            },
+        ))
+        .unwrap();
+        renderer.render(FrameInput {
+            step_request: crate::StepRequest::Exact { steps: 1 },
+            input_events: vec![pointer(crate::PointerPhase::Down, [0.0, 0.65])],
+        });
+        renderer.render(FrameInput {
+            step_request: crate::StepRequest::Exact { steps: 29 },
+            input_events: vec![pointer(crate::PointerPhase::Move, [0.0, -0.5])],
+        });
+        let held = renderer.read_capture_state().unwrap();
+        assert!(renderer.read_grab_state().unwrap().active);
+        assert!(
+            held[1] >= 0.17,
+            "grabbed body crossed the fixed floor: {held:?}"
+        );
+        assert!(held[1] > -0.4, "grab path must not teleport to its target");
     }
 
     #[test]
@@ -613,6 +967,11 @@ mod tests {
         assert_eq!(empty_report.camera.pan_changes_total, 0);
         assert_eq!(empty_report.camera.zoom_changes_total, 0);
         let after_empty = renderer.read_capture_state().unwrap();
+        let no_hit = renderer.read_grab_state().unwrap();
+        assert!(!no_hit.active);
+        assert_eq!(no_hit.begin_attempts, 1);
+        assert_eq!(no_hit.no_hit_selections, 1);
+        assert_eq!(no_hit.fixed_only_rejections, 0);
         let mut control = pollster::block_on(OffscreenRenderer::new(
             320,
             200,
@@ -757,7 +1116,10 @@ mod tests {
         assert_eq!(
             switched.body_commands,
             crate::BodyCommandReport {
+                grab_intent_contract_version: physbox_contracts::GRAB_INTENT_CONTRACT_VERSION,
                 capacity_commands: crate::BODY_COMMAND_CAPACITY,
+                capacity_grab_intents: crate::grab::GRAB_INTENT_CAPACITY,
+                grab_state_bytes: crate::grab::GRAB_STATE_BYTES,
                 ..Default::default()
             }
         );

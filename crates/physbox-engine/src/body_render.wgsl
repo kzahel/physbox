@@ -9,6 +9,13 @@ struct BodyVertexOutput {
     @location(1) @interpolate(flat) flags: u32,
 };
 
+struct GrabVertexOutput {
+    @builtin(position) position: vec4f,
+    @location(0) local: vec2f,
+    @location(1) @interpolate(flat) primitive: u32,
+    @location(2) @interpolate(flat) is_active: u32,
+};
+
 @group(0) @binding(0) var<storage, read> poses: array<vec4f>;
 @group(0) @binding(1) var<storage, read> properties: array<vec4f>;
 @group(0) @binding(2) var<storage, read> metadata: array<vec4u>;
@@ -84,4 +91,36 @@ fn body_fragment(input: BodyVertexOutput) -> @location(0) vec4f {
     var color = mix(low, high, clamp(input.local.y * 0.5 + 0.5, 0.0, 1.0));
     color += select(vec3f(0.55, 1.0, 0.92), vec3f(0.34, 0.46, 0.56), fixed) * rim * 0.48;
     return vec4f(color, 1.0);
+}
+
+fn world_to_clip(world: vec2f) -> vec4f {
+    let camera_half_extents = max(params.camera.zw, vec2f(0.0001));
+    return vec4f((world - params.camera.xy) / camera_half_extents, 0.0, 1.0);
+}
+
+@vertex
+fn grab_vertex(
+    @builtin(vertex_index) vertex_index: u32,
+    @location(0) world_active: vec4f,
+) -> GrabVertexOutput {
+    let corners = array<vec2f, 6>(
+        vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(-1.0, 1.0),
+        vec2f(-1.0, 1.0), vec2f(1.0, -1.0), vec2f(1.0, 1.0),
+    );
+    if (world_active.z < 0.5) {
+        return GrabVertexOutput(vec4f(2.0, 2.0, 0.0, 1.0), vec2f(0.0), 0u, 0u);
+    }
+    let primitive = u32(vertex_index >= 6u);
+    let local = corners[vertex_index % 6u];
+    return GrabVertexOutput(world_to_clip(world_active.xy), local, primitive, 1u);
+}
+
+@fragment
+fn grab_fragment(input: GrabVertexOutput) -> @location(0) vec4f {
+    if (input.is_active == 0u || (input.primitive == 1u && dot(input.local, input.local) > 1.0)) {
+        discard;
+    }
+    let color = select(vec3f(0.22, 0.92, 1.0), vec3f(0.72, 1.0, 0.88),
+                       input.primitive == 1u);
+    return vec4f(color, select(0.72, 0.94, input.primitive == 1u));
 }

@@ -1,16 +1,17 @@
 use bytemuck::{Pod, Zeroable};
 use physbox_contracts::{
-    BodyCommandBatchV1, BodyCommandV1, BodyStateV1, SCHEMA_VERSION, ScheduledBodyCommandV1, Vec2,
-    canonical_hash,
+    BodyCommandBatchV1, BodyCommandV1, GrabIntentBatchV1, GrabIntentV1, SCHEMA_VERSION,
+    ScheduledBodyCommandV1, Vec2, canonical_hash,
 };
 use physbox_launch::ValidationScenario;
 
 use crate::{
     AdapterDiagnostics, BODY_COMMAND_CAPACITY, BoundedBodyCommands, Camera2d, EngineConfig,
     FrameInput, InputEvent, PointerButton, PointerPhase, StepRequest,
-    body_world::{BodyCommandStepRange, GpuBodyWorld},
+    body_world::{BodyCommandStepRange, BodyStepPlan, GpuBodyWorld},
     clock::{FIXED_STEP_HZ, FIXED_STEP_SECONDS, InteractiveClockInput, SimulationClock},
     gpu_solver::{GpuSolverCandidate, GpuSolverLab, GpuSolverMode},
+    grab::{BoundedGrabIntents, GRAB_INTENT_CAPACITY, empty_grab_intent_batch},
     input::{SharedInputState, WorldPointerEvent},
     renderer::RenderFrameContext,
     report::{
@@ -34,24 +35,22 @@ struct FrameParams {
 struct PreparedBodyCommands {
     batch: BodyCommandBatchV1,
     ranges: Vec<BodyCommandStepRange>,
+    grab_batch: GrabIntentBatchV1,
+    grab_ranges: Vec<BodyCommandStepRange>,
 }
 
 struct BodyInteractionState {
-    initial: BodyStateV1,
     scheduled: Vec<ScheduledBodyCommandV1>,
     accept_live_input: bool,
     active_pointer: Option<u64>,
-    pending: BoundedBodyCommands,
+    pending_body: BoundedBodyCommands,
+    pending_grab: BoundedGrabIntents,
     next_sequence: u32,
     report: BodyCommandReport,
 }
 
 impl BodyInteractionState {
-    fn new(
-        initial: BodyStateV1,
-        scheduled: Vec<ScheduledBodyCommandV1>,
-        accept_live_input: bool,
-    ) -> Self {
+    fn new(scheduled: Vec<ScheduledBodyCommandV1>, accept_live_input: bool) -> Self {
         let next_sequence = scheduled
             .iter()
             .map(|scheduled| scheduled.command.sequence())
@@ -59,15 +58,19 @@ impl BodyInteractionState {
             .unwrap_or(0)
             + 1;
         Self {
-            initial,
             scheduled,
             accept_live_input,
             active_pointer: None,
-            pending: BoundedBodyCommands::new(BODY_COMMAND_CAPACITY)
+            pending_body: BoundedBodyCommands::new(BODY_COMMAND_CAPACITY)
                 .expect("body command capacity is valid"),
+            pending_grab: BoundedGrabIntents::new(GRAB_INTENT_CAPACITY)
+                .expect("grab intent capacity is valid"),
             next_sequence,
             report: BodyCommandReport {
+                grab_intent_contract_version: physbox_contracts::GRAB_INTENT_CONTRACT_VERSION,
                 capacity_commands: BODY_COMMAND_CAPACITY,
+                capacity_grab_intents: GRAB_INTENT_CAPACITY,
+                grab_state_bytes: crate::grab::GRAB_STATE_BYTES,
                 ..Default::default()
             },
         }
@@ -84,33 +87,30 @@ impl BodyInteractionState {
                     if self.active_pointer.is_none() =>
                 {
                     self.active_pointer = Some(event.id);
-                    let command = BodyCommandV1::GrabBegin {
+                    let intent = GrabIntentV1::Begin {
                         sequence: self.take_sequence(),
-                        body: self.initial.id,
                         world_target: target,
                     };
-                    self.push(command);
+                    self.push_grab(intent);
                 }
                 (_, PointerPhase::Move) if self.active_pointer == Some(event.id) => {
-                    if self.pending.coalesce_grab_target(self.initial.id, target) {
+                    if self.pending_grab.coalesce_target(target) {
                         self.report.coalesced_targets_total += 1;
                     } else {
-                        let command = BodyCommandV1::GrabTarget {
+                        let intent = GrabIntentV1::Target {
                             sequence: self.take_sequence(),
-                            body: self.initial.id,
                             world_target: target,
                         };
-                        self.push(command);
+                        self.push_grab(intent);
                     }
                 }
                 (_, PointerPhase::Up | PointerPhase::Cancel)
                     if self.active_pointer == Some(event.id) =>
                 {
-                    let command = BodyCommandV1::GrabEnd {
+                    let intent = GrabIntentV1::End {
                         sequence: self.take_sequence(),
-                        body: self.initial.id,
                     };
-                    self.push(command);
+                    self.push_grab(intent);
                     self.active_pointer = None;
                 }
                 _ => {}
@@ -119,32 +119,54 @@ impl BodyInteractionState {
     }
 
     fn prepare(&mut self, steps: u32, completed_steps: u64) -> PreparedBodyCommands {
+        self.report.grab_intent_dispatches_this_frame = 0;
+        self.report.grab_constraint_dispatches_this_frame = steps;
         let mut ranges = vec![BodyCommandStepRange { start: 0, count: 0 }; steps as usize];
         if steps == 0 {
+            self.update_grab_presentation_counts();
             return PreparedBodyCommands {
                 batch: empty_command_batch(),
                 ranges,
+                grab_batch: empty_grab_intent_batch(),
+                grab_ranges: vec![BodyCommandStepRange { start: 0, count: 0 }; steps as usize],
             };
         }
-        if self.pending.overflowed() {
+        if self.pending_body.overflowed() || self.pending_grab.overflowed() {
             self.report.overflowed = true;
-            self.pending.clear();
+            self.pending_body.clear();
+            self.pending_grab.clear();
+            self.update_grab_presentation_counts();
             return PreparedBodyCommands {
                 batch: empty_command_batch(),
                 ranges,
+                grab_batch: empty_grab_intent_batch(),
+                grab_ranges: vec![BodyCommandStepRange { start: 0, count: 0 }; steps as usize],
             };
         }
-        let pending = self.pending.artifact().commands;
-        let mut builder = BoundedBodyCommands::new(BODY_COMMAND_CAPACITY)
+        let pending_body = self.pending_body.artifact().commands;
+        let pending_grab = self.pending_grab.artifact().intents;
+        let mut body_builder = BoundedBodyCommands::new(BODY_COMMAND_CAPACITY)
             .expect("body command capacity is valid");
+        let mut grab_builder =
+            BoundedGrabIntents::new(GRAB_INTENT_CAPACITY).expect("grab intent capacity is valid");
+        let mut grab_ranges = vec![BodyCommandStepRange { start: 0, count: 0 }; steps as usize];
         for step_offset in 0..steps {
-            let start = builder.len() as u32;
+            let start = body_builder.len() as u32;
             if step_offset == 0 {
-                for command in &pending {
-                    if builder.push(command.clone()).is_err() {
+                for command in &pending_body {
+                    if body_builder.push(command.clone()).is_err() {
                         self.report.overflowed = true;
                     }
                 }
+                for intent in &pending_grab {
+                    if grab_builder.push(*intent).is_err() {
+                        self.report.overflowed = true;
+                    }
+                }
+                grab_ranges[0] = BodyCommandStepRange {
+                    start: 0,
+                    count: grab_builder.artifact().intents.len() as u32,
+                };
             }
             let absolute_step = completed_steps + u64::from(step_offset);
             for scheduled in self
@@ -153,37 +175,60 @@ impl BodyInteractionState {
                 .filter(|scheduled| u64::from(scheduled.step) == absolute_step)
             {
                 self.report.queued_commands_total += 1;
-                if builder.push(scheduled.command.clone()).is_err() {
+                if body_builder.push(scheduled.command.clone()).is_err() {
                     self.report.overflowed = true;
                 }
             }
             ranges[step_offset as usize] = BodyCommandStepRange {
                 start,
-                count: builder.len() as u32 - start,
+                count: body_builder.len() as u32 - start,
             };
         }
-        self.pending.clear();
-        if self.report.overflowed || builder.overflowed() {
+        self.pending_body.clear();
+        self.pending_grab.clear();
+        if self.report.overflowed || body_builder.overflowed() || grab_builder.overflowed() {
+            self.update_grab_presentation_counts();
             return PreparedBodyCommands {
                 batch: empty_command_batch(),
                 ranges: vec![BodyCommandStepRange { start: 0, count: 0 }; steps as usize],
+                grab_batch: empty_grab_intent_batch(),
+                grab_ranges: vec![BodyCommandStepRange { start: 0, count: 0 }; steps as usize],
             };
         }
-        let batch = builder.artifact();
+        let batch = body_builder.artifact();
+        let grab_batch = grab_builder.artifact();
         for command in &batch.commands {
             self.report.executed_commands_total += 1;
             match command {
                 BodyCommandV1::Reset { .. } => {
                     self.report.reset_commands_total += 1;
-                    self.report.grab_active = false;
+                    self.report.grab_pointer_active = false;
                 }
                 BodyCommandV1::GrabBegin { .. } | BodyCommandV1::GrabTarget { .. } => {
-                    self.report.grab_active = true;
+                    self.report.grab_pointer_active = true;
                 }
-                BodyCommandV1::GrabEnd { .. } => self.report.grab_active = false,
+                BodyCommandV1::GrabEnd { .. } => self.report.grab_pointer_active = false,
             }
         }
-        PreparedBodyCommands { batch, ranges }
+        self.report.executed_commands_total = self
+            .report
+            .executed_commands_total
+            .saturating_add(grab_batch.intents.len() as u64);
+        self.report.grab_intent_dispatches_this_frame =
+            grab_ranges.iter().filter(|range| range.count != 0).count() as u32;
+        self.update_grab_presentation_counts();
+        PreparedBodyCommands {
+            batch,
+            ranges,
+            grab_batch,
+            grab_ranges,
+        }
+    }
+
+    fn update_grab_presentation_counts(&mut self) {
+        let active = u32::from(self.report.grab_pointer_active);
+        self.report.grab_tether_prepare_dispatches_this_frame = active;
+        self.report.grab_tether_draw_calls_this_frame = active;
     }
 
     fn take_sequence(&mut self) -> u32 {
@@ -195,9 +240,10 @@ impl BodyInteractionState {
         sequence
     }
 
-    fn push(&mut self, command: BodyCommandV1) {
+    fn push_grab(&mut self, intent: GrabIntentV1) {
         self.report.queued_commands_total += 1;
-        if self.pending.push(command).is_err() {
+        self.report.grab_pointer_active = !matches!(intent, GrabIntentV1::End { .. });
+        if self.pending_grab.push(intent).is_err() {
             self.report.overflowed = true;
         }
     }
@@ -411,41 +457,14 @@ impl EngineHost {
         }
         .expect("engine-owned scenario hash is valid");
         let body_interaction = match config.scenario {
-            ValidationScenario::BodyFreeFlight => {
-                let scenario = p5_1_direct_render_scenario(3)
-                    .expect("engine-owned body free-flight scenario is valid");
-                Some(BodyInteractionState::new(
-                    scenario.bodies[0].clone(),
-                    Vec::new(),
-                    true,
-                ))
-            }
-            ValidationScenario::Bootstrap | ValidationScenario::RigidFloor => {
-                let scenario = p5_2_generated_floor_scenario(120)
-                    .expect("engine-owned generated-floor scenario is valid");
-                Some(BodyInteractionState::new(
-                    scenario.bodies[0].clone(),
-                    Vec::new(),
-                    true,
-                ))
-            }
+            ValidationScenario::BodyFreeFlight
+            | ValidationScenario::Bootstrap
+            | ValidationScenario::RigidFloor
+            | ValidationScenario::RigidStack => Some(BodyInteractionState::new(Vec::new(), true)),
             ValidationScenario::ResetGrab => {
                 let script = p5_2_generated_reset_grab_scenario()
                     .expect("engine-owned generated reset/grab scenario is valid");
-                Some(BodyInteractionState::new(
-                    script.scenario.bodies[0].clone(),
-                    script.scheduled_commands,
-                    false,
-                ))
-            }
-            ValidationScenario::RigidStack => {
-                let scenario = p5_2_generated_scenario(P5_2GeneratedScenarioKind::SmallStack, 180)
-                    .expect("engine-owned generated stack scenario is valid");
-                Some(BodyInteractionState::new(
-                    scenario.bodies[1].clone(),
-                    Vec::new(),
-                    true,
-                ))
+                Some(BodyInteractionState::new(script.scheduled_commands, false))
             }
             ValidationScenario::SolverJacobi | ValidationScenario::SolverColored => None,
         };
@@ -576,12 +595,16 @@ impl EngineHost {
                 .expect("GPU body worlds own body command state")
                 .prepare(steps, self.fixed_steps_total);
             world
-                .encode_steps(
+                .encode_steps_with_grab_intents(
                     context.queue,
                     context.encoder,
                     steps,
-                    &commands.batch,
-                    &commands.ranges,
+                    BodyStepPlan {
+                        batch: &commands.batch,
+                        ranges: &commands.ranges,
+                        grab_batch: &commands.grab_batch,
+                        grab_ranges: &commands.grab_ranges,
+                    },
                 )
                 .expect("engine-owned body command plan is valid");
         } else {
@@ -589,12 +612,17 @@ impl EngineHost {
         }
 
         if let Some(world) = &self.body_world {
+            let grab_pointer_active = self
+                .body_interaction
+                .as_ref()
+                .is_some_and(|interaction| interaction.report.grab_pointer_active);
             world.encode_render(
                 context.queue,
                 context.encoder,
                 context.target,
                 self.frame_index,
                 camera_frame,
+                grab_pointer_active,
             );
         } else {
             let mut pass = context
@@ -726,7 +754,7 @@ impl EngineHost {
                 let passed = complete
                     && commands.executed_commands_total == 6
                     && commands.reset_commands_total == 2
-                    && !commands.grab_active
+                    && !commands.grab_pointer_active
                     && !commands.overflowed;
                 ScenarioResult {
                     name: self.config.scenario.name(),
@@ -834,6 +862,46 @@ impl EngineHost {
         })?;
         world.copy_capture_identity(encoder, destination);
         Ok(())
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn copy_grab_state(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        destination: &wgpu::Buffer,
+    ) -> Result<(), String> {
+        let world = self
+            .body_world
+            .as_ref()
+            .ok_or_else(|| "grab state is available only for the GPU body world".to_owned())?;
+        world.copy_grab_state(encoder, destination);
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn overwrite_body_generation_for_test(
+        &self,
+        queue: &wgpu::Queue,
+        slot: u32,
+        generation: u32,
+    ) {
+        self.body_world
+            .as_ref()
+            .expect("test scenario owns a body world")
+            .overwrite_body_generation_for_test(queue, slot, generation);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn overwrite_body_pose_for_test(
+        &self,
+        queue: &wgpu::Queue,
+        slot: u32,
+        pose: [f32; 4],
+    ) {
+        self.body_world
+            .as_ref()
+            .expect("test scenario owns a body world")
+            .overwrite_body_pose_for_test(queue, slot, pose);
     }
 
     #[cfg(not(target_arch = "wasm32"))]

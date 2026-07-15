@@ -38,9 +38,9 @@ format.
 
 - The `world` lane projects neutral static and dynamic circles/rectangles,
   transforms, velocities, exact mass/inertia, material, initial awake state,
-  gravity changes, and point impulses. It executes exactly the requested
-  fixed-step count and returns canonical body state plus public final
-  manifolds.
+  gravity changes, point impulses, and a single ordered grab begin/target/end
+  sequence. It executes exactly the requested fixed-step count and returns
+  canonical body state plus public final manifolds.
 - The `narrowphase` lane calls `b2CollideCircles`,
   `b2CollidePolygonAndCircle`, or `b2CollidePolygons` directly for every body
   pair and returns canonical manifolds without stepping a world.
@@ -54,6 +54,21 @@ static inertia, dynamic locked rotation in the world lane, missing action
 bodies, actions outside the requested range, and any action in the direct
 narrowphase lane. Unknown shapes or actions cannot deserialize as schema
 version 1.
+
+S4.3 maps the neutral grab only through public Box2D APIs. A kinematic target
+body drives a motor joint whose body-B local frame is the authored world anchor
+projected with `b2Body_GetLocalPoint`; target actions use
+`b2Body_SetTargetTransform`, and end destroys the joint and target body. The
+mapping uses `linearHertz = sqrt(springAcceleration) / tau`, damping ratio
+`dampingRate / (2 * sqrt(springAcceleration))`, and maximum spring force
+`mass * maxAcceleration`. The product linear/angular safety bounds are
+explicitly source-only in Box2D provenance and remain GPU invariant gates; they
+are not silently presented as mapped authority behavior. This freezes no
+PhysBox product default or acceptance tolerance and does not change Box2D
+authority precedence, world settings, source pin, or process isolation.
+Missing/fixed bodies, nested grabs, target/end without an active grab,
+unordered/out-of-range actions, and narrowphase actions are rejected rather
+than approximated.
 
 ## Freshness and acceptance
 

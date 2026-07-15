@@ -23,13 +23,21 @@ pub struct SceneContract {
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BodyCommandReport {
+    pub grab_intent_contract_version: u32,
     pub capacity_commands: u32,
+    pub capacity_grab_intents: u32,
+    pub grab_state_bytes: u32,
     pub queued_commands_total: u64,
     pub executed_commands_total: u64,
     pub reset_commands_total: u64,
     pub coalesced_targets_total: u64,
     pub overflowed: bool,
-    pub grab_active: bool,
+    pub grab_pointer_active: bool,
+    pub gpu_selection_readback: bool,
+    pub grab_intent_dispatches_this_frame: u32,
+    pub grab_constraint_dispatches_this_frame: u32,
+    pub grab_tether_prepare_dispatches_this_frame: u32,
+    pub grab_tether_draw_calls_this_frame: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -123,7 +131,8 @@ impl FrameReport {
             reset_commands_total: u64,
             coalesced_targets_total: u64,
             overflowed: bool,
-            grab_active: bool,
+            #[serde(rename = "g")]
+            grab_pointer_active: bool,
         }
 
         #[derive(Serialize)]
@@ -169,7 +178,7 @@ impl FrameReport {
                 reset_commands_total: self.body_commands.reset_commands_total,
                 coalesced_targets_total: self.body_commands.coalesced_targets_total,
                 overflowed: self.body_commands.overflowed,
-                grab_active: self.body_commands.grab_active,
+                grab_pointer_active: self.body_commands.grab_pointer_active,
             },
             scene_contract: &self.scene_contract,
             scenario: CompactScenario {
@@ -254,13 +263,21 @@ mod tests {
                 overflowed: false,
             },
             body_commands: BodyCommandReport {
+                grab_intent_contract_version: 1,
                 capacity_commands: 64,
+                capacity_grab_intents: 64,
+                grab_state_bytes: 64,
                 queued_commands_total: u64::MAX,
                 executed_commands_total: u64::MAX,
                 reset_commands_total: u64::MAX,
                 coalesced_targets_total: u64::MAX,
                 overflowed: false,
-                grab_active: false,
+                grab_pointer_active: false,
+                gpu_selection_readback: false,
+                grab_intent_dispatches_this_frame: 1,
+                grab_constraint_dispatches_this_frame: 1,
+                grab_tether_prepare_dispatches_this_frame: 1,
+                grab_tether_draw_calls_this_frame: 1,
             },
             scene_contract: SceneContract {
                 version: SCENE_CONTRACT_VERSION,

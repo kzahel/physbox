@@ -1,12 +1,19 @@
 use std::mem::size_of;
 
 use bytemuck::{Pod, Zeroable};
-use physbox_contracts::{BodyCommandBatchV1, BodyLayoutV1, CapacityRecordV1, ScenarioV1, Validate};
+use physbox_contracts::{
+    BodyCommandBatchV1, BodyLayoutV1, CapacityRecordV1, GrabIntentBatchV1, ScenarioV1, Validate,
+};
 use wgpu::util::DeviceExt;
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::body_floor_solver::FixedFloorEvidenceLayout;
 use crate::body_state::{BODY_COMMAND_BYTES, BODY_COMMAND_CAPACITY, GpuBodyResetData};
+use crate::grab::{
+    GRAB_DAMPING_RATE, GRAB_INTENT_BYTES, GRAB_INTENT_CAPACITY, GRAB_MAX_ACCELERATION,
+    GRAB_MAX_ANGULAR_SPEED, GRAB_MAX_LINEAR_SPEED, GRAB_SPRING_ACCELERATION, GRAB_STATE_BYTES,
+    GrabParamsRaw, GrabStateRaw, NO_GRAB_SLOT, grab_intent_raw,
+};
 use crate::{
     GpuBodyStorage, body_floor_solver::GpuFixedFloorSolver,
     generated_contacts::GpuGeneratedContactGraph,
@@ -14,6 +21,8 @@ use crate::{
 
 const WORKGROUP_SIZE: u32 = 64;
 const COMMAND_PARAMETER_STRIDE: usize = 256;
+const GRAB_RENDER_VERTEX_COUNT: u32 = 12;
+const GRAB_RENDER_VERTEX_BYTES: u32 = GRAB_RENDER_VERTEX_COUNT * 16;
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -41,6 +50,20 @@ pub(crate) struct BodyCommandStepRange {
     pub(crate) count: u32,
 }
 
+pub(crate) struct BodyStepPlan<'a> {
+    pub(crate) batch: &'a BodyCommandBatchV1,
+    pub(crate) ranges: &'a [BodyCommandStepRange],
+    pub(crate) grab_batch: &'a GrabIntentBatchV1,
+    pub(crate) grab_ranges: &'a [BodyCommandStepRange],
+}
+
+pub(crate) struct BodyRenderPlan<'a> {
+    pub(crate) frame_index: u64,
+    pub(crate) camera: crate::CameraFrame2d,
+    pub(crate) grab_pointer_active: bool,
+    pub(crate) ending_timestamp: Option<(&'a wgpu::QuerySet, u32)>,
+}
+
 pub(crate) struct GpuBodyWorld {
     #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     storage: GpuBodyStorage,
@@ -48,12 +71,19 @@ pub(crate) struct GpuBodyWorld {
     integration_pipeline: wgpu::ComputePipeline,
     command_params: wgpu::Buffer,
     command_bind_group: wgpu::BindGroup,
-    command_pipeline: wgpu::ComputePipeline,
-    hold_pipeline: wgpu::ComputePipeline,
+    command_grab_pipeline: wgpu::ComputePipeline,
+    grab_constraint_pipeline: wgpu::ComputePipeline,
+    grab_intents: wgpu::Buffer,
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+    grab_state: wgpu::Buffer,
+    grab_render_vertices: wgpu::Buffer,
+    grab_render_bind_group: wgpu::BindGroup,
+    grab_render_prepare_pipeline: wgpu::ComputePipeline,
     render_params: wgpu::Buffer,
     render_bind_group: wgpu::BindGroup,
     background_pipeline: wgpu::RenderPipeline,
     body_pipeline: wgpu::RenderPipeline,
+    grab_pipeline: wgpu::RenderPipeline,
     floor_solver: Option<GpuFixedFloorSolver>,
     generated_contacts: Option<GpuGeneratedContactGraph>,
     body_count: u32,
@@ -171,9 +201,43 @@ impl GpuBodyWorld {
 
         let command_params = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("physbox5_body_command_params"),
-            size: u64::from(BODY_COMMAND_CAPACITY + 1) * COMMAND_PARAMETER_STRIDE as u64,
+            size: u64::from(BODY_COMMAND_CAPACITY + GRAB_INTENT_CAPACITY + 1)
+                * COMMAND_PARAMETER_STRIDE as u64,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
+        });
+        let grab_intents = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("physbox5_grab_intents"),
+            size: u64::from(GRAB_INTENT_CAPACITY) * u64::from(GRAB_INTENT_BYTES),
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let initial_grab_state = GrabStateRaw {
+            identity_status: [NO_GRAB_SLOT, 0, 0, 0],
+            local_anchor_target: [0.0; 4],
+            counters: [0; 4],
+            activity: [0; 4],
+        };
+        let grab_state = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("physbox5_grab_state"),
+            contents: bytemuck::bytes_of(&initial_grab_state),
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
+        });
+        let grab_params = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("physbox5_grab_params"),
+            contents: bytemuck::bytes_of(&GrabParamsRaw {
+                dt_tuning: [
+                    scenario.settings.fixed_dt.get(),
+                    GRAB_SPRING_ACCELERATION,
+                    GRAB_DAMPING_RATE,
+                    GRAB_MAX_ACCELERATION,
+                ],
+                limits_padding: [GRAB_MAX_LINEAR_SPEED, GRAB_MAX_ANGULAR_SPEED, 0.0, 0.0],
+                counts: [body_count, 0, 0, 0],
+            }),
+            usage: wgpu::BufferUsages::UNIFORM,
         });
         let command_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("physbox5_body_command_layout"),
@@ -195,6 +259,9 @@ impl GpuBodyWorld {
                     count: None,
                 },
                 storage_entry(5, true, wgpu::ShaderStages::COMPUTE),
+                storage_entry(6, false, wgpu::ShaderStages::COMPUTE),
+                storage_entry(7, true, wgpu::ShaderStages::COMPUTE),
+                uniform_entry(8, wgpu::ShaderStages::COMPUTE),
             ],
         });
         let command_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -229,6 +296,18 @@ impl GpuBodyWorld {
                     binding: 5,
                     resource: storage.properties_buffer().as_entire_binding(),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: grab_state.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 7,
+                    resource: grab_intents.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 8,
+                    resource: grab_params.as_entire_binding(),
+                },
             ],
         });
         let command_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -241,22 +320,24 @@ impl GpuBodyWorld {
                 bind_group_layouts: &[&command_layout],
                 push_constant_ranges: &[],
             });
-        let command_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("physbox5_body_command_pipeline"),
-            layout: Some(&command_pipeline_layout),
-            module: &command_shader,
-            entry_point: Some("apply_commands"),
-            compilation_options: Default::default(),
-            cache: None,
-        });
-        let hold_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("physbox5_body_hold_pipeline"),
-            layout: Some(&command_pipeline_layout),
-            module: &command_shader,
-            entry_point: Some("hold_grabbed"),
-            compilation_options: Default::default(),
-            cache: None,
-        });
+        let command_grab_pipeline =
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("physbox5_body_command_grab_pipeline"),
+                layout: Some(&command_pipeline_layout),
+                module: &command_shader,
+                entry_point: Some("apply_step_commands_and_grab"),
+                compilation_options: Default::default(),
+                cache: None,
+            });
+        let grab_constraint_pipeline =
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("physbox5_grab_constraint_pipeline"),
+                layout: Some(&command_pipeline_layout),
+                module: &command_shader,
+                entry_point: Some("steer_grab"),
+                compilation_options: Default::default(),
+                cache: None,
+            });
 
         let render_params = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("physbox5_body_render_params"),
@@ -264,6 +345,69 @@ impl GpuBodyWorld {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+        let grab_render_vertices = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("physbox5_grab_render_vertices"),
+            size: u64::from(GRAB_RENDER_VERTEX_BYTES),
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::VERTEX,
+            mapped_at_creation: false,
+        });
+        let grab_render_prepare_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("physbox5_grab_render_prepare_layout"),
+                entries: &[
+                    storage_entry(0, true, wgpu::ShaderStages::COMPUTE),
+                    storage_entry(1, true, wgpu::ShaderStages::COMPUTE),
+                    storage_entry(2, true, wgpu::ShaderStages::COMPUTE),
+                    uniform_entry(3, wgpu::ShaderStages::COMPUTE),
+                    storage_entry(4, false, wgpu::ShaderStages::COMPUTE),
+                ],
+            });
+        let grab_render_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("physbox5_grab_render_prepare_bind_group"),
+            layout: &grab_render_prepare_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: storage.pose_buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: storage.metadata_buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: grab_state.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: render_params.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: grab_render_vertices.as_entire_binding(),
+                },
+            ],
+        });
+        let grab_render_prepare_shader =
+            device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("physbox5_grab_render_prepare_shader"),
+                source: wgpu::ShaderSource::Wgsl(include_str!("grab_render_prepare.wgsl").into()),
+            });
+        let grab_render_prepare_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("physbox5_grab_render_prepare_pipeline_layout"),
+                bind_group_layouts: &[&grab_render_prepare_layout],
+                push_constant_ranges: &[],
+            });
+        let grab_render_prepare_pipeline =
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("physbox5_grab_render_prepare_pipeline"),
+                layout: Some(&grab_render_prepare_pipeline_layout),
+                module: &grab_render_prepare_shader,
+                entry_point: Some("prepare_grab_vertices"),
+                compilation_options: Default::default(),
+                cache: None,
+            });
         let render_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("physbox5_body_render_layout"),
             entries: &[
@@ -305,14 +449,14 @@ impl GpuBodyWorld {
                 bind_group_layouts: &[&render_layout],
                 push_constant_ranges: &[],
             });
-        let pipeline = |label, vertex, fragment, blend| {
+        let pipeline = |label, vertex, fragment, blend, buffers| {
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some(label),
                 layout: Some(&render_pipeline_layout),
                 vertex: wgpu::VertexState {
                     module: &render_shader,
                     entry_point: Some(vertex),
-                    buffers: &[],
+                    buffers,
                     compilation_options: Default::default(),
                 },
                 fragment: Some(wgpu::FragmentState {
@@ -337,12 +481,30 @@ impl GpuBodyWorld {
             "background_vertex",
             "background_fragment",
             None,
+            &[],
         );
         let body_pipeline = pipeline(
             "physbox5_body_render_pipeline",
             "body_vertex",
             "body_fragment",
             Some(wgpu::BlendState::ALPHA_BLENDING),
+            &[],
+        );
+        let grab_vertex_layout = wgpu::VertexBufferLayout {
+            array_stride: 16,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &[wgpu::VertexAttribute {
+                format: wgpu::VertexFormat::Float32x4,
+                offset: 0,
+                shader_location: 0,
+            }],
+        };
+        let grab_pipeline = pipeline(
+            "physbox5_grab_render_pipeline",
+            "grab_vertex",
+            "grab_fragment",
+            Some(wgpu::BlendState::ALPHA_BLENDING),
+            &[grab_vertex_layout],
         );
 
         Ok(Self {
@@ -351,27 +513,41 @@ impl GpuBodyWorld {
             integration_pipeline,
             command_params,
             command_bind_group,
-            command_pipeline,
-            hold_pipeline,
+            command_grab_pipeline,
+            grab_constraint_pipeline,
+            grab_intents,
+            grab_state,
+            grab_render_vertices,
+            grab_render_bind_group,
+            grab_render_prepare_pipeline,
             render_params,
             render_bind_group,
             background_pipeline,
             body_pipeline,
+            grab_pipeline,
             floor_solver,
             generated_contacts,
             body_count,
         })
     }
 
-    pub(crate) fn encode_steps(
+    pub(crate) fn encode_steps_with_grab_intents(
         &self,
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
         steps: u32,
-        batch: &BodyCommandBatchV1,
-        ranges: &[BodyCommandStepRange],
+        plan: BodyStepPlan<'_>,
     ) -> Result<CapacityRecordV1, String> {
-        self.encode_steps_with_timestamp(queue, encoder, steps, batch, ranges, None)
+        self.encode_steps_internal(
+            queue,
+            encoder,
+            steps,
+            plan.batch,
+            plan.ranges,
+            plan.grab_batch,
+            plan.grab_ranges,
+            None,
+        )
     }
 
     pub(crate) fn encode_steps_with_timestamp(
@@ -383,35 +559,87 @@ impl GpuBodyWorld {
         ranges: &[BodyCommandStepRange],
         beginning_timestamp: Option<(&wgpu::QuerySet, u32)>,
     ) -> Result<CapacityRecordV1, String> {
+        let grab_batch = crate::grab::empty_grab_intent_batch();
+        let grab_ranges = vec![BodyCommandStepRange { start: 0, count: 0 }; steps as usize];
+        self.encode_steps_internal(
+            queue,
+            encoder,
+            steps,
+            batch,
+            ranges,
+            &grab_batch,
+            &grab_ranges,
+            beginning_timestamp,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn encode_steps_internal(
+        &self,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        steps: u32,
+        batch: &BodyCommandBatchV1,
+        ranges: &[BodyCommandStepRange],
+        grab_batch: &GrabIntentBatchV1,
+        grab_ranges: &[BodyCommandStepRange],
+        beginning_timestamp: Option<(&wgpu::QuerySet, u32)>,
+    ) -> Result<CapacityRecordV1, String> {
         if beginning_timestamp.is_some() && steps != 1 {
             return Err("timed body encoding requires exactly one step".to_owned());
         }
-        if ranges.len() != steps as usize {
-            return Err("body command ranges must match the encoded step count".to_owned());
+        if ranges.len() != steps as usize || grab_ranges.len() != steps as usize {
+            return Err("body and grab ranges must match the encoded step count".to_owned());
         }
         let capacity = self.storage.upload_commands(queue, batch)?;
-        let mut parameters = vec![CommandParamsRaw {
-            counts: [0, 0, self.body_count, 0],
-        }];
-        let mut parameter_indices = vec![None; ranges.len()];
-        for (step, range) in ranges.iter().enumerate() {
-            if range.count == 0 {
-                continue;
-            }
-            if range
+        grab_batch.validate().map_err(|error| error.to_string())?;
+        if grab_batch.capacity_intents != GRAB_INTENT_CAPACITY {
+            return Err(format!(
+                "grab intent batch capacity {} does not match GPU capacity {GRAB_INTENT_CAPACITY}",
+                grab_batch.capacity_intents
+            ));
+        }
+        let raw_intents = grab_batch
+            .intents
+            .iter()
+            .copied()
+            .map(grab_intent_raw)
+            .collect::<Vec<_>>();
+        if !raw_intents.is_empty() {
+            queue.write_buffer(&self.grab_intents, 0, bytemuck::cast_slice(&raw_intents));
+        }
+        let mut parameters = vec![CommandParamsRaw { counts: [0; 4] }];
+        let mut step_parameter_indices = vec![None; ranges.len()];
+        for (step, (command_range, grab_range)) in ranges.iter().zip(grab_ranges).enumerate() {
+            if command_range
                 .start
-                .checked_add(range.count)
+                .checked_add(command_range.count)
                 .is_none_or(|end| end > u32::try_from(batch.commands.len()).unwrap_or(u32::MAX))
             {
                 return Err("body command range exceeds the uploaded batch".to_owned());
             }
+            if grab_range
+                .start
+                .checked_add(grab_range.count)
+                .is_none_or(|end| end > u32::try_from(grab_batch.intents.len()).unwrap_or(u32::MAX))
+            {
+                return Err("grab intent range exceeds the uploaded batch".to_owned());
+            }
+            if command_range.count == 0 && grab_range.count == 0 {
+                continue;
+            }
             let index = parameters.len();
             parameters.push(CommandParamsRaw {
-                counts: [range.start, range.count, self.body_count, 0],
+                counts: [
+                    command_range.start,
+                    command_range.count,
+                    grab_range.start,
+                    grab_range.count,
+                ],
             });
-            parameter_indices[step] = Some(index as u32);
+            step_parameter_indices[step] = Some(index as u32);
         }
-        if parameters.len() > (BODY_COMMAND_CAPACITY + 1) as usize {
+        if parameters.len() > (BODY_COMMAND_CAPACITY + GRAB_INTENT_CAPACITY + 1) as usize {
             return Err("body command parameter capacity overflowed".to_owned());
         }
         let mut bytes = vec![0_u8; parameters.len() * COMMAND_PARAMETER_STRIDE];
@@ -422,18 +650,26 @@ impl GpuBodyWorld {
         }
         queue.write_buffer(&self.command_params, 0, &bytes);
         let mut beginning_timestamp = beginning_timestamp;
-        for (step_index, parameter_index) in parameter_indices.into_iter().enumerate() {
-            if let Some(parameter_index) = parameter_index {
+        for step_index in 0..steps as usize {
+            if let Some(parameter_index) = step_parameter_indices[step_index] {
                 let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                    label: Some("physbox5_body_command_pass"),
+                    label: Some("physbox5_body_command_grab_pass"),
                     timestamp_writes: None,
                 });
-                pass.set_pipeline(&self.command_pipeline);
+                pass.set_pipeline(&self.command_grab_pipeline);
                 pass.set_bind_group(
                     0,
                     &self.command_bind_group,
                     &[parameter_index * COMMAND_PARAMETER_STRIDE as u32],
                 );
+                pass.dispatch_workgroups(1, 1, 1);
+            } else {
+                let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: Some("physbox5_grab_constraint_pass"),
+                    timestamp_writes: None,
+                });
+                pass.set_pipeline(&self.grab_constraint_pipeline);
+                pass.set_bind_group(0, &self.command_bind_group, &[0]);
                 pass.dispatch_workgroups(1, 1, 1);
             }
             if let Some(generated) = &self.generated_contacts {
@@ -472,13 +708,6 @@ impl GpuBodyWorld {
                 pass.set_bind_group(0, &self.integration_bind_group, &[]);
                 pass.dispatch_workgroups(self.body_count.div_ceil(WORKGROUP_SIZE), 1, 1);
             }
-            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("physbox5_body_hold_pass"),
-                timestamp_writes: None,
-            });
-            pass.set_pipeline(&self.hold_pipeline);
-            pass.set_bind_group(0, &self.command_bind_group, &[0]);
-            pass.dispatch_workgroups(self.body_count.div_ceil(WORKGROUP_SIZE), 1, 1);
         }
         Ok(capacity)
     }
@@ -490,8 +719,19 @@ impl GpuBodyWorld {
         target: crate::renderer::RenderFrameTarget<'_>,
         frame_index: u64,
         camera: crate::CameraFrame2d,
+        grab_pointer_active: bool,
     ) {
-        self.encode_render_with_timestamp(queue, encoder, target, frame_index, camera, None);
+        self.encode_render_with_timestamp(
+            queue,
+            encoder,
+            target,
+            BodyRenderPlan {
+                frame_index,
+                camera,
+                grab_pointer_active,
+                ending_timestamp: None,
+            },
+        );
     }
 
     pub(crate) fn encode_render_with_timestamp(
@@ -499,25 +739,32 @@ impl GpuBodyWorld {
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
         target: crate::renderer::RenderFrameTarget<'_>,
-        frame_index: u64,
-        camera: crate::CameraFrame2d,
-        ending_timestamp: Option<(&wgpu::QuerySet, u32)>,
+        plan: BodyRenderPlan<'_>,
     ) {
         let params = RenderParamsRaw {
             viewport: [
                 target.size[0] as f32,
                 target.size[1] as f32,
                 target.size[0] as f32 / target.size[1].max(1) as f32,
-                frame_index as f32,
+                plan.frame_index as f32,
             ],
             camera: [
-                camera.center()[0],
-                camera.center()[1],
-                camera.half_extents()[0],
-                camera.half_extents()[1],
+                plan.camera.center()[0],
+                plan.camera.center()[1],
+                plan.camera.half_extents()[0],
+                plan.camera.half_extents()[1],
             ],
         };
         queue.write_buffer(&self.render_params, 0, bytemuck::bytes_of(&params));
+        if plan.grab_pointer_active {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("physbox5_grab_render_prepare_pass"),
+                timestamp_writes: None,
+            });
+            pass.set_pipeline(&self.grab_render_prepare_pipeline);
+            pass.set_bind_group(0, &self.grab_render_bind_group, &[]);
+            pass.dispatch_workgroups(1, 1, 1);
+        }
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("physbox5_body_render_pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -534,7 +781,7 @@ impl GpuBodyWorld {
                 },
             })],
             depth_stencil_attachment: None,
-            timestamp_writes: ending_timestamp.map(|(query_set, end)| {
+            timestamp_writes: plan.ending_timestamp.map(|(query_set, end)| {
                 wgpu::RenderPassTimestampWrites {
                     query_set,
                     beginning_of_pass_write_index: None,
@@ -548,10 +795,62 @@ impl GpuBodyWorld {
         pass.draw(0..3, 0..1);
         pass.set_pipeline(&self.body_pipeline);
         pass.draw(0..6, 0..self.body_count);
+        if plan.grab_pointer_active {
+            pass.set_pipeline(&self.grab_pipeline);
+            pass.set_vertex_buffer(0, self.grab_render_vertices.slice(..));
+            pass.draw(0..GRAB_RENDER_VERTEX_COUNT, 0..1);
+        }
+        drop(pass);
     }
 
     pub(crate) const fn body_count(&self) -> u32 {
         self.body_count
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn copy_grab_state(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        destination: &wgpu::Buffer,
+    ) {
+        encoder.copy_buffer_to_buffer(
+            &self.grab_state,
+            0,
+            destination,
+            0,
+            u64::from(GRAB_STATE_BYTES),
+        );
+    }
+
+    #[cfg(test)]
+    pub(crate) fn overwrite_body_generation_for_test(
+        &self,
+        queue: &wgpu::Queue,
+        slot: u32,
+        generation: u32,
+    ) {
+        assert!(slot < self.body_count);
+        assert_ne!(generation, 0);
+        queue.write_buffer(
+            self.storage.metadata_buffer(),
+            u64::from(slot) * size_of::<[u32; 4]>() as u64,
+            bytemuck::bytes_of(&generation),
+        );
+    }
+
+    #[cfg(test)]
+    pub(crate) fn overwrite_body_pose_for_test(
+        &self,
+        queue: &wgpu::Queue,
+        slot: u32,
+        pose: [f32; 4],
+    ) {
+        assert!(slot < self.body_count);
+        queue.write_buffer(
+            self.storage.pose_buffer(),
+            u64::from(slot) * size_of::<[f32; 4]>() as u64,
+            bytemuck::bytes_of(&pose),
+        );
     }
 
     pub(crate) fn body_layout(&self) -> &BodyLayoutV1 {
@@ -573,9 +872,9 @@ impl GpuBodyWorld {
         let mut records = vec![
             CapacityRecordV1 {
                 class: "body-command-parameters".to_owned(),
-                capacity_elements: u64::from(BODY_COMMAND_CAPACITY + 1),
+                capacity_elements: u64::from(BODY_COMMAND_CAPACITY + GRAB_INTENT_CAPACITY + 1),
                 used_elements: 1,
-                allocated_bytes: u64::from(BODY_COMMAND_CAPACITY + 1)
+                allocated_bytes: u64::from(BODY_COMMAND_CAPACITY + GRAB_INTENT_CAPACITY + 1)
                     * COMMAND_PARAMETER_STRIDE as u64,
                 high_water_bytes: COMMAND_PARAMETER_STRIDE as u64,
                 overflowed: false,
@@ -586,6 +885,38 @@ impl GpuBodyWorld {
                 used_elements: 0,
                 allocated_bytes: u64::from(BODY_COMMAND_CAPACITY) * u64::from(BODY_COMMAND_BYTES),
                 high_water_bytes: 0,
+                overflowed: false,
+            },
+            CapacityRecordV1 {
+                class: "grab-intents".to_owned(),
+                capacity_elements: u64::from(GRAB_INTENT_CAPACITY),
+                used_elements: 0,
+                allocated_bytes: u64::from(GRAB_INTENT_CAPACITY) * u64::from(GRAB_INTENT_BYTES),
+                high_water_bytes: 0,
+                overflowed: false,
+            },
+            CapacityRecordV1 {
+                class: "grab-state".to_owned(),
+                capacity_elements: 1,
+                used_elements: 1,
+                allocated_bytes: u64::from(GRAB_STATE_BYTES),
+                high_water_bytes: u64::from(GRAB_STATE_BYTES),
+                overflowed: false,
+            },
+            CapacityRecordV1 {
+                class: "grab-render-vertices".to_owned(),
+                capacity_elements: u64::from(GRAB_RENDER_VERTEX_COUNT),
+                used_elements: u64::from(GRAB_RENDER_VERTEX_COUNT),
+                allocated_bytes: u64::from(GRAB_RENDER_VERTEX_BYTES),
+                high_water_bytes: u64::from(GRAB_RENDER_VERTEX_BYTES),
+                overflowed: false,
+            },
+            CapacityRecordV1 {
+                class: "grab-parameters".to_owned(),
+                capacity_elements: 1,
+                used_elements: 1,
+                allocated_bytes: u64::from(crate::grab::GRAB_PARAMETER_BYTES),
+                high_water_bytes: u64::from(crate::grab::GRAB_PARAMETER_BYTES),
                 overflowed: false,
             },
             CapacityRecordV1 {

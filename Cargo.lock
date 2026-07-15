@@ -1485,6 +1485,7 @@ dependencies = [
  "physbox-contracts",
  "physbox-engine",
  "physbox-launch",
+ "png",
  "pollster",
  "serde",
  "serde_json",

@@ -16,6 +16,7 @@ mod gpu_context;
 #[cfg(not(target_arch = "wasm32"))]
 mod gpu_primitives;
 mod gpu_solver;
+mod grab;
 mod host;
 mod input;
 #[cfg(not(target_arch = "wasm32"))]
@@ -29,9 +30,9 @@ mod ui_font;
 #[cfg(not(target_arch = "wasm32"))]
 pub use body_benchmark::benchmark_gpu_body_free_flight;
 pub use body_benchmark::{
-    BodyBenchmarkWork, BodyFinalValidation, BodyTimingSeries, GpuBodyBenchmarkOutput,
-    GpuBodyBenchmarkSession, GpuTimestampStatus, PendingBodyValidation, PendingCompletion,
-    PendingTimestampReadback,
+    BODY_BENCHMARK_WORK_VERSION, BodyBenchmarkWork, BodyFinalValidation, BodyTimingSeries,
+    GpuBodyBenchmarkOutput, GpuBodyBenchmarkSession, GpuTimestampStatus, PendingBodyValidation,
+    PendingCompletion, PendingTimestampReadback,
 };
 #[cfg(not(target_arch = "wasm32"))]
 pub use body_floor_solver::{
@@ -77,6 +78,7 @@ pub use gpu_solver::{
     GpuSolverBenchmarkOutput, benchmark_gpu_soft_step_case, run_gpu_soft_step_case,
     run_gpu_soft_step_stress_case, run_gpu_solver_case,
 };
+pub use grab::{GrabValidationState, provisional_grab_tuning};
 pub use input::{INPUT_TRACE_VERSION, InputTraceError, InputTraceFrameV1, InputTraceV1};
 #[cfg(not(target_arch = "wasm32"))]
 pub use pair_slot_persistence::{

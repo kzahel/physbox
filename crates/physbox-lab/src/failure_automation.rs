@@ -316,8 +316,11 @@ where
             .contact_cache
             .retain(|point| point.body_a != removed && point.body_b != removed);
         candidate.actions.retain(|action| match action {
-            physbox_contracts::NeutralActionV1::ApplyImpulse { body, .. } => *body != removed,
-            physbox_contracts::NeutralActionV1::SetGravity { .. } => true,
+            physbox_contracts::NeutralActionV1::ApplyImpulse { body, .. }
+            | physbox_contracts::NeutralActionV1::GrabBegin { body, .. } => *body != removed,
+            physbox_contracts::NeutralActionV1::SetGravity { .. }
+            | physbox_contracts::NeutralActionV1::GrabTarget { .. }
+            | physbox_contracts::NeutralActionV1::GrabEnd { .. } => true,
         });
         clean_references(&mut candidate);
         *attempts += 1;

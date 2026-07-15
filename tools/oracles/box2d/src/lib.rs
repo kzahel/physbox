@@ -123,16 +123,56 @@ fn validate_projection(request: &OracleRequestV1, lane: OracleLane) -> Result<()
         }
     }
     if matches!(lane, OracleLane::World) {
+        let mut active_grab = false;
+        let mut previous_step = 0;
         for action in &request.scenario.actions {
-            let step = match action {
-                physbox_contracts::NeutralActionV1::ApplyImpulse { step, .. }
-                | physbox_contracts::NeutralActionV1::SetGravity { step, .. } => *step,
-            };
+            let step = action.step();
             if step >= request.scenario.requested_steps {
                 return Err(AdapterError::Unsupported(format!(
                     "action step {step} is outside requested step count {}",
                     request.scenario.requested_steps
                 )));
+            }
+            if step < previous_step {
+                return Err(AdapterError::Unsupported(
+                    "world actions must be ordered by nondecreasing step".to_owned(),
+                ));
+            }
+            previous_step = step;
+            match action {
+                physbox_contracts::NeutralActionV1::GrabBegin { body, .. } => {
+                    if active_grab {
+                        return Err(AdapterError::Unsupported(
+                            "only one neutral grab may be active".to_owned(),
+                        ));
+                    }
+                    let Some(candidate) = request
+                        .scenario
+                        .bodies
+                        .iter()
+                        .find(|candidate| candidate.id == *body)
+                    else {
+                        return Err(AdapterError::Unsupported(format!(
+                            "grab action references missing body {body:?}"
+                        )));
+                    };
+                    if candidate.inverse_mass.get() == 0.0 {
+                        return Err(AdapterError::Unsupported(format!(
+                            "grab action references fixed body {body:?}"
+                        )));
+                    }
+                    active_grab = true;
+                }
+                physbox_contracts::NeutralActionV1::GrabTarget { .. }
+                | physbox_contracts::NeutralActionV1::GrabEnd { .. }
+                    if !active_grab =>
+                {
+                    return Err(AdapterError::Unsupported(
+                        "grab target/end requires an active neutral grab".to_owned(),
+                    ));
+                }
+                physbox_contracts::NeutralActionV1::GrabEnd { .. } => active_grab = false,
+                _ => {}
             }
         }
     }
@@ -204,6 +244,13 @@ fn execute_world(
             raw_bodies.push(raw_body);
         }
 
+        struct ActiveGrab {
+            mouse_body: ffi::b2BodyId,
+            joint: ffi::b2JointId,
+            target: Vec2,
+        }
+        let mut active_grab: Option<ActiveGrab> = None;
+
         for step in 0..request.scenario.requested_steps {
             for action in &request.scenario.actions {
                 match action {
@@ -235,8 +282,77 @@ fn execute_world(
                     } if *action_step == step => {
                         ffi::b2World_SetGravity(world.0, raw_vec(*gravity));
                     }
+                    physbox_contracts::NeutralActionV1::GrabBegin {
+                        step: action_step,
+                        body,
+                        world_anchor,
+                        world_target,
+                        tuning,
+                    } if *action_step == step => {
+                        let index = request
+                            .scenario
+                            .bodies
+                            .binary_search_by_key(body, |candidate| candidate.id)
+                            .map_err(|_| {
+                                AdapterError::Unsupported(format!(
+                                    "grab action references missing body {body:?}"
+                                ))
+                            })?;
+                        let raw_body = raw_bodies[index];
+                        let mut mouse_def = ffi::b2DefaultBodyDef();
+                        mouse_def.type_ = ffi::b2BodyType_b2_kinematicBody;
+                        mouse_def.position = raw_vec(*world_target);
+                        mouse_def.enableSleep = false;
+                        let mouse_body = ffi::b2CreateBody(world.0, &raw const mouse_def);
+
+                        let mut joint_def = ffi::b2DefaultMotorJointDef();
+                        joint_def.base.bodyIdA = mouse_body;
+                        joint_def.base.bodyIdB = raw_body;
+                        joint_def.base.localFrameB.p =
+                            ffi::b2Body_GetLocalPoint(raw_body, raw_vec(*world_anchor));
+                        let angular_frequency = tuning.spring_acceleration.get().sqrt();
+                        joint_def.linearHertz = angular_frequency / std::f32::consts::TAU;
+                        joint_def.linearDampingRatio =
+                            tuning.damping_rate.get() / (2.0 * angular_frequency);
+                        let mass = 1.0 / request.scenario.bodies[index].inverse_mass.get();
+                        joint_def.maxSpringForce = mass * tuning.max_acceleration.get();
+                        let joint = ffi::b2CreateMotorJoint(world.0, &raw const joint_def);
+                        active_grab = Some(ActiveGrab {
+                            mouse_body,
+                            joint,
+                            target: *world_target,
+                        });
+                    }
+                    physbox_contracts::NeutralActionV1::GrabTarget {
+                        step: action_step,
+                        world_target,
+                    } if *action_step == step => {
+                        active_grab
+                            .as_mut()
+                            .expect("validated neutral grab is active")
+                            .target = *world_target;
+                    }
+                    physbox_contracts::NeutralActionV1::GrabEnd { step: action_step }
+                        if *action_step == step =>
+                    {
+                        let grab = active_grab
+                            .take()
+                            .expect("validated neutral grab is active");
+                        ffi::b2DestroyJoint(grab.joint, true);
+                        ffi::b2DestroyBody(grab.mouse_body);
+                    }
                     _ => {}
                 }
+            }
+            if let Some(grab) = &active_grab {
+                ffi::b2Body_SetTargetTransform(
+                    grab.mouse_body,
+                    ffi::b2Transform {
+                        p: raw_vec(grab.target),
+                        q: ffi::b2Rot { c: 1.0, s: 0.0 },
+                    },
+                    request.scenario.settings.fixed_dt.get(),
+                );
             }
             ffi::b2World_Step(
                 world.0,
@@ -553,6 +669,10 @@ fn provenance(request: &OracleRequestV1, lane: OracleLane) -> ProvenanceV1 {
             named("contact_softening", "false"),
             named("contact_speed", "3"),
             named("continuous", "true"),
+            named(
+                "grab_action_mapping",
+                "public kinematic-body motor joint; hertz=sqrt(spring_acceleration)/tau; damping_ratio=damping_rate/(2*sqrt(spring_acceleration)); max_spring_force=mass*max_acceleration; product speed limits source-only",
+            ),
             named("lane", lane.name()),
             named("narrowphase_transform", "engine-authored-sin-cos"),
             named(
@@ -703,7 +823,8 @@ mod tests {
     use physbox_contracts::{OracleRequestV1, SCHEMA_VERSION, canonical_hash, canonical_json};
     use physbox_engine::{
         AnalyticFixtureKind, P5_2CandidatePattern, P5_2CollisionScenarioKind,
-        analytic_fixture_scenario, p5_2_candidate_scenario, p5_2_collision_scenario,
+        analytic_fixture_scenario, p5_1_rectangle_floor_scenario, p5_2_candidate_scenario,
+        p5_2_collision_scenario, provisional_grab_tuning,
     };
     use physbox_lab::{
         analytic_narrowphase::{compare_box2d_narrowphase, generate_scalar_narrowphase},
@@ -849,6 +970,37 @@ mod tests {
     }
 
     #[test]
+    fn public_motor_joint_maps_neutral_off_center_grab_deterministically() {
+        let mut scenario = p5_1_rectangle_floor_scenario(15).unwrap();
+        let body = scenario.bodies[0].id;
+        scenario.actions = vec![
+            physbox_contracts::NeutralActionV1::GrabBegin {
+                step: 0,
+                body,
+                world_anchor: Vec2::new(0.25, 0.65),
+                world_target: Vec2::new(0.25, 0.65),
+                tuning: provisional_grab_tuning(),
+            },
+            physbox_contracts::NeutralActionV1::GrabTarget {
+                step: 1,
+                world_target: Vec2::new(0.25, 1.2),
+            },
+            physbox_contracts::NeutralActionV1::GrabEnd { step: 14 },
+        ];
+        let request = request("box2d-neutral-grab", scenario.clone());
+        let bytes = canonical_json(&request).unwrap();
+        let result = execute_request(&request, &bytes, OracleLane::World).unwrap();
+        assert!(result.bodies[0].position.y > scenario.bodies[0].position.y);
+        assert!(result.bodies[0].angle.get() > 0.0);
+        assert!(result.bodies[0].linear_velocity.x.is_finite());
+        assert!(result.bodies[0].angular_velocity.get().is_finite());
+
+        let replay = execute_request(&request, &bytes, OracleLane::World).unwrap();
+        assert_eq!(result.bodies, replay.bodies);
+        assert_eq!(result.manifolds, replay.manifolds);
+    }
+
+    #[test]
     fn unsupported_projection_becomes_structured_failure_data() {
         let mut scenario = analytic_fixture_scenario(AnalyticFixtureKind::CircleFloor, 1).unwrap();
         scenario.bodies[0].inverse_inertia = finite_infallible(0.0);
@@ -864,6 +1016,36 @@ mod tests {
             Some(&FailureKindV1::UnsupportedFeature)
         );
         result.validate().unwrap();
+    }
+
+    #[test]
+    fn neutral_grab_rejects_fixed_and_unsequenced_actions() {
+        let mut fixed = p5_1_rectangle_floor_scenario(1).unwrap();
+        fixed.actions = vec![physbox_contracts::NeutralActionV1::GrabBegin {
+            step: 0,
+            body: fixed.bodies[1].id,
+            world_anchor: fixed.bodies[1].position,
+            world_target: fixed.bodies[1].position,
+            tuning: provisional_grab_tuning(),
+        }];
+        let fixed_request = request("fixed-grab", fixed);
+        let bytes = canonical_json(&fixed_request).unwrap();
+        assert!(matches!(
+            execute_request(&fixed_request, &bytes, OracleLane::World),
+            Err(AdapterError::Unsupported(reason)) if reason.contains("fixed body")
+        ));
+
+        let mut target_only = p5_1_rectangle_floor_scenario(1).unwrap();
+        target_only.actions = vec![physbox_contracts::NeutralActionV1::GrabTarget {
+            step: 0,
+            world_target: Vec2::ZERO,
+        }];
+        let request = request("target-only", target_only);
+        let bytes = canonical_json(&request).unwrap();
+        assert!(matches!(
+            execute_request(&request, &bytes, OracleLane::World),
+            Err(AdapterError::Unsupported(reason)) if reason.contains("requires an active")
+        ));
     }
 
     fn request(run_id: &str, scenario: physbox_contracts::ScenarioV1) -> OracleRequestV1 {
