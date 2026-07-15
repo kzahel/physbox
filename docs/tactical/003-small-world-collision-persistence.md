@@ -1,6 +1,6 @@
 # S3: Small-world collision and contact persistence
 
-Status: active at S3.4; S3.3 complete 2026-07-15.
+Status: active at S3.5; S3.4 complete 2026-07-15.
 Direction: [one GPU-resident 2D physics world](../topics/physbox5-unified-gpu-physics.md).
 Bring-up stage: [P5.2](../bringup-plan.md#p52--small-world-collision-and-persistence-active).
 Predecessor: [accepted P5.1 body core](../../evidence/p5.1-s2.6/README.md).
@@ -224,14 +224,14 @@ minimized failures, evidence, and governing status land together.
 
 ### S3.4 — sorted persistence and warm-start transfer
 
-- [ ] Form persistent keys from canonical generational body handles and stable
+- [x] Form persistent keys from canonical generational body handles and stable
   features, radix-sort current contacts, and merge them with the previous GPU
   cache entirely on device.
-- [ ] Transfer accumulated normal and tangent impulses to exact matches; start
+- [x] Transfer accumulated normal and tangent impulses to exact matches; start
   new points cold and expire missing or generation-stale points deterministically.
-- [ ] Preserve manifold point grouping and contact ordering through pair churn,
+- [x] Preserve manifold point grouping and contact ordering through pair churn,
   body reset/reuse, feature transitions, and deliberately permuted input order.
-- [ ] Emit cache high-water, matched/cold/expired counts, bytes per point, sort
+- [x] Emit cache high-water, matched/cold/expired counts, bytes per point, sort
   and merge work, overflow, and first-divergence traces.
 
 Likely boundary: persistence uses shared scan/radix infrastructure and feeds
@@ -248,6 +248,16 @@ accepted overflow, no per-step mapping, and complete scalar/pass comparison.
 
 Commit boundary: GPU sort/merge/cache mechanics, replay and negative tests,
 capacity/performance evidence, and tactical status land together.
+
+Completion, 2026-07-15: the [S3.4 evidence package](../../evidence/p5.2-s3.4/README.md)
+records exact scalar/GPU persistence across 100 cases and 212 multi-step
+states, including byte-exact replay, deliberate input reversal, feature churn,
+separation/recontact, and stale body generations. Atomic overflow committed no
+cache entries, and injected failure minimization reached two bodies. The
+48-byte persistent record and 64-byte current sort record are explicit. The
+direct eight-word radix baseline costs 64 passes and 212 total graph dispatches
+per outer step; that measured cost remains provisional for S3.6 rather than an
+accepted production-performance claim.
 
 ### S3.5 — generated-contact solve and cross-host evidence
 

@@ -540,6 +540,15 @@ inspect, is more repeatable, and shares scan/radix infrastructure with the
 broadphase. Slot generation is required so a newly created body cannot inherit
 the warm-start state of an erased body that previously occupied the same slot.
 
+S3.4 checkpoint, 2026-07-15: the first executable persistence graph implements
+this contract exactly with a 48-byte persistent entry and a 64-byte current
+record, stable four-bit radix passes over all eight key words, and sorted exact
+lookup. The bounded scalar/GPU matrix passes replay, churn, permutation,
+generation-reuse, and atomic-overflow gates. The resulting 64 radix passes and
+212 total candidate/narrowphase/persistence dispatches are deliberately
+provisional until the S3.5 end-to-end measurements and S3.6 representation
+review; they are not a frozen performance architecture.
+
 Circle/circle and circle/rectangle contact are analytic. Rectangle/rectangle
 uses SAT to select a reference and incident edge, clips the incident segment,
 and produces stable vertex/edge feature pairs. Test feature stability around

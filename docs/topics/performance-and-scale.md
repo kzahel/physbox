@@ -540,6 +540,17 @@ were accepted. This checkpoint records work and memory shape only; it is not
 an end-to-end throughput or CPU/GPU crossover claim because the product frame
 does not consume generated contacts until S3.5.
 
+S3.4 persistence checkpoint, 2026-07-15: the correctness baseline stores a
+48-byte persistent entry and a 64-byte current sort record. Its transparent
+eight-word, four-bit radix schedule uses 64 passes and brings the complete
+candidate/narrowphase/persistence graph to 212 dispatches per outer step. The
+100-case, 212-step scalar/GPU matrix had exact cache agreement, deterministic
+replay and input-permutation equivalence, and zero accepted overflow. This is
+a bounded work/memory measurement, not an accepted production-performance or
+CPU/GPU crossover claim. S3.5 must time the complete generated-contact frame;
+S3.6 must decide whether the full key should be frozen, packed, or paired with
+a different lookup organization before P5.3.
+
 ## Regression and claim gates
 
 Before representative hardware is selected, store named measurements and
