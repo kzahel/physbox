@@ -65,7 +65,9 @@ Colored Soft-TGS remains a convergence comparator. The full evidence and
 reconsideration triggers are in the
 [S1.6 review package](../evidence/p5.0a-s1.5/README.md).
 
-## P5.1 — minimal rigid state and fixed-floor contact (next)
+## P5.1 — minimal rigid state and fixed-floor contact (active)
+
+Execution tracker: [S2 GPU body state and fixed-floor contact](tactical/002-gpu-body-state.md).
 
 - Replace bootstrap state with generational SoA body storage and bounded GPU
   commands.
@@ -76,6 +78,10 @@ reconsideration triggers are in the
 - Record bytes per body and free-flight integration/rendering curves at 1K,
   10K, and 100K on the named reference adapters, including Android, before
   freezing the body layout.
+
+Exit review: stop after the complete evidence package and before freezing the
+body layout or command ABI. Human acceptance is required to mark P5.1 complete
+and begin P5.2.
 
 ## P5.2 — small-world collision and persistence
 
