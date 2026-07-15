@@ -549,6 +549,16 @@ generation-reuse, and atomic-overflow gates. The resulting 64 radix passes and
 provisional until the S3.5 end-to-end measurements and S3.6 representation
 review; they are not a frozen performance architecture.
 
+S3.5a authorization, 2026-07-15: after the first S3.6 evidence review and a
+pinned PhysX organization study, human review authorized a measured comparison
+against that exact baseline. Stable pair-slot, pair-local two-point
+persistence is the lead cache candidate, and compact stable body-edge index
+views plus deterministic segmented gather are the lead adjacency candidate.
+The complete semantic key remains acceptance truth and the current full-key
+sort/body scan remain correctness baselines. This authorization does not
+select the candidates, accept the proposed `0.02` speculative distance or
+`3.0 m/s` depenetration limit as defaults, or permit P5.3/liquid work.
+
 Circle/circle and circle/rectangle contact are analytic. Rectangle/rectangle
 uses SAT to select a reference and incident edge, clips the incident segment,
 and produces stable vertex/edge feature pairs. Test feature stability around
@@ -1326,7 +1336,9 @@ The first rigid work proceeds with these decisions:
 - All-pairs is the initial trusted broadphase and pair oracle; sorted SAP and a
   multi-cell grid are the first scalable bakeoff.
 - Persistent contacts use canonical body handles with generations plus stable
-  geometric feature identifiers, transferred by sorted merge.
+  geometric feature identifiers. The exact full-key sorted merge remains the
+  correctness baseline while the approved S3.5a bakeoff measures stable
+  pair-slot transfer with full local equality verification.
 - Interactive frames execute at most one outer fixed step and permanently slip
   excess wall time; solver substeps and explicit validation steps are separate
   concepts.

@@ -1,7 +1,7 @@
 # Collision and contact persistence
 
-Status: S3.6 manual checkpoint; contact representation and physical policy
-remain provisional, 2026-07-15.
+Status: approved S3.5a remediation active after the first S3.6 review; contact
+representation and physical policy remain provisional, 2026-07-15.
 
 Governing direction:
 [one GPU-resident 2D physics world](physbox5-unified-gpu-physics.md).
@@ -195,6 +195,14 @@ decisions. PhysX remains a 3D CUDA organizational reference. Its CPU-owned
 pair/partition management, host-known solve loops, count readback, and partial
 overflow behavior are incompatible with the product contract and will not be
 copied.
+
+Human review authorized the S3.5a bakeoff on 2026-07-15. Stable pair slots and
+compact body-edge index views with deterministic segmented gather are the lead
+candidates, while the full semantic point-key sort and canonical incidence
+scan remain correctness baselines. The `0.02` speculative distance and
+`3.0 m/s` depenetration limit are authorized candidate values only. Final
+representation, capacity, physical-default, tolerance, and quality-band
+acceptance remains a later S3.6 human decision after regenerated evidence.
 
 ## Reconsideration triggers
 

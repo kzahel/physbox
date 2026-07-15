@@ -1,6 +1,6 @@
 # S3: Small-world collision and contact persistence
 
-Status: manual checkpoint at S3.6; awaiting human decision.
+Status: active at approved S3.5a remediation, 2026-07-15.
 Direction: [one GPU-resident 2D physics world](../topics/physbox5-unified-gpu-physics.md).
 Bring-up stage: [P5.2](../bringup-plan.md#p52--small-world-collision-and-persistence-active).
 Predecessor: [accepted P5.1 body core](../../evidence/p5.1-s2.6/README.md).
@@ -342,11 +342,52 @@ Pinned-source addendum, 2026-07-15: the
 finds that key width, not radix digit width, drives the 64-pass baseline. It
 strengthens stable pair-slot persistence and compact body-edge index views with
 segmented gather as the lead bakeoff lanes. PhysX remains a source reference,
-not an oracle or dependency. This changes no accepted scope and remains at the
-same manual checkpoint pending human authorization.
+not an oracle or dependency. At publication this changed no accepted scope;
+the subsequent human authorization recorded below activates the bakeoff.
 
 Commit boundary: the S3.6 review package and manual-checkpoint status land
 alone. A human decision is a later documentation commit.
+
+### S3.5a — approved contact-policy and representation remediation
+
+Human authorization, 2026-07-15: execute this measured bakeoff and regenerate
+S3.5/S3.6 evidence. This authorization selects neither a production contact
+representation nor final physical defaults.
+
+- [ ] Add explicit `0.02` speculative distance and `3.0 m/s` maximum
+  depenetration speed as candidate policy, with the two minimized S3.5
+  failures and clean Box2D/structural curves as mandatory comparisons.
+- [ ] Keep the exact 256-bit point-key sort as a correctness baseline and
+  compare stable pair-slot, pair-grouped two-point persistence as the lead
+  lane. Keep compact fingerprint plus full equality verification as a
+  fallback/comparator; a fingerprint alone never transfers impulses.
+- [ ] Keep the canonical body-by-point incidence scan as a correctness
+  baseline and compare compact stable body-edge indices, offsets, and
+  deterministic segmented gather as the lead lane.
+- [ ] Express pair, body-endpoint, and later particle orderings as compact
+  index/remap views over canonical payloads. Do not change `BodyCoreV1`, create
+  a liquid ABI, begin liquid, or create a second engine.
+- [ ] Measure persistence, index sorting, offset construction, gather, and
+  solve separately, including dispatches, key/index bytes, allocation and
+  high-water, P50/P95/P99, exact replay, permutation, churn, recontact,
+  generation reuse, collision/full-verify negatives, and atomic overflow.
+- [ ] Retain generated 32/256/1K rows and add isolated contact-rich authored
+  1K and 10K representation rows that do not pay the quadratic all-pairs
+  baseline. Regenerate native, browser, maintained host-GPU AVD, available
+  physical Android, optimized Box2D, failure, and synchronized playback
+  evidence.
+
+Gate: the speculative and deep-overlap reproducers pass without widening the
+existing numerical tolerance; every candidate exactly preserves accepted
+semantic identity and deterministic replay; every overflow rejects the whole
+stage; no step depends on readback; subphase and complete-step matrices remain
+correctness-qualified; and the final S3.6 package exposes measured winners,
+failures, rejected alternatives, and reconsideration triggers.
+
+Commit boundaries: land the acceptance record alone; then land contact policy,
+pair persistence, body-edge gather, evidence automation, cross-host evidence,
+and the regenerated S3.6 checkpoint in separate reviewable commits. Stop for
+human review before freezing a representation/default or advancing to S4/P5.3.
 
 ## Validation baseline
 

@@ -573,6 +573,12 @@ subphase dispatches, sorted key/index bytes, total allocation/high-water, and
 P50/P95/P99 at generated 32/256/1K plus isolated contact-rich 1K/10K rows.
 This study supplies no candidate timing and accepts no performance claim.
 
+Human review authorized that S3.5a matrix on 2026-07-15 without selecting a
+winner or accepting a performance threshold. The generated 32/256/1K rows and
+isolated contact-rich 1K/10K rows must compare baseline and candidate on the
+same revision and adapter, retain all raw samples, and remain invalid when
+correctness, exact replay, capacity, or physical-policy gates fail.
+
 ## Regression and claim gates
 
 Before representative hardware is selected, store named measurements and

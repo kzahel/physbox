@@ -102,14 +102,16 @@ body-plus-shape-plus-joint allocation.
 Execution tracker:
 [S3 small-world collision and contact persistence](tactical/003-small-world-collision-persistence.md).
 
-Current checkpoint, 2026-07-15: S3.1 through S3.5 evidence and the compact
-S3.6 review are published. Work is stopped at the mandatory human checkpoint.
-The recommendation is to keep the contact surface provisional, run one focused
-speculative/depenetration and representation/adjacency bakeoff, and regenerate
-the review before P5.3 or the queued menu/camera slice begins. A pinned PhysX
-source study strengthens stable pair-slot persistence and compact body-edge
-index views with segmented gather as the lead representation lanes; it does
-not promote PhysX to oracle status or authorize implementation.
+Current checkpoint, 2026-07-15: S3.1 through S3.5 evidence and the first compact
+S3.6 review are published. Human review authorized the focused S3.5a
+speculative/depenetration and representation/adjacency bakeoff. Stable
+pair-slot persistence and compact body-edge index views with segmented gather
+are the lead candidates; the full-key sort and canonical incidence scan remain
+correctness baselines. The `0.02` speculative distance and `3.0 m/s`
+depenetration limit are measured candidate values, not accepted defaults.
+PhysX remains a source reference rather than an oracle. S3.5a must regenerate
+S3.5/S3.6 evidence and stop again before any contact surface or physical
+default is frozen, P5.3 begins, or the queued menu/camera slice begins.
 
 - Add circles and oriented rectangles.
 - Use all-pairs AABB candidate generation.
