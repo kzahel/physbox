@@ -361,7 +361,7 @@ representation nor final physical defaults.
   compare stable pair-slot, pair-grouped two-point persistence as the lead
   lane. Keep compact fingerprint plus full equality verification as a
   fallback/comparator; a fingerprint alone never transfers impulses.
-- [ ] Keep the canonical body-by-point incidence scan as a correctness
+- [x] Keep the canonical body-by-point incidence scan as a correctness
   baseline and compare compact stable body-edge indices, offsets, and
   deterministic segmented gather as the lead lane.
 - [ ] Express pair, body-endpoint, and later particle orderings as compact
@@ -404,6 +404,22 @@ The comparator reduces candidate/narrowphase/persistence work from the
 mapping until the final bounded step. This checkpoint implements a bakeoff
 lane; it does not select the representation, replace the product path, or make
 a timing claim before the shared scale matrix.
+
+Body-edge implementation checkpoint, 2026-07-15: the real generated-contact
+solver can now select an isolated stable body-edge topology while the product
+continues to default to the canonical body-by-point scan. The candidate emits
+two eight-byte `{ body, contribution }` index records per point, stably
+radix-groups only the body key, derives contiguous per-body ranges, and gathers
+the unchanged equal-and-opposite contribution payloads in canonical
+point/side order. It uses one to four radix passes through the governed scale
+range: topology construction is 6 dispatches for the small behavior corpus, 9
+at 32 bodies, 12 at 256/1K, and 15 at 10K, versus the baseline's fixed 4. The
+32-body fixed-capacity row records 1,984 edges and 32,512 topology bytes versus
+8,320 baseline topology bytes. All eight behavior families, 30-step pair
+churn, eight-body high contention, reversed build scheduling, qualified
+benchmark completion, and upstream atomic overflow are byte-exact against the
+baseline. This implements the second bakeoff lane but makes no latency or
+memory winner claim before contact-rich measurement.
 
 Gate: the speculative and deep-overlap reproducers pass without widening the
 existing numerical tolerance; every candidate exactly preserves accepted

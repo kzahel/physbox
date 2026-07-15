@@ -228,6 +228,19 @@ only after the last requested validation step. This is correctness and work
 shape evidence, not a production representation decision or performance
 result.
 
+The lead adjacency comparator is also executable inside the real
+generated-contact solver. It leaves prepared points and equal-and-opposite
+contribution records canonical, creates two compact eight-byte index records
+per point, stably radix-groups their 32-bit body keys, writes contiguous body
+ranges, and makes the body-owned gather traverse that remap view. Reversing
+edge-build scheduling cannot change the canonical point/side order. Every S3.5
+behavior family, 30-step churn, an eight-body shared-contact case, and atomic
+upstream rejection produce byte-identical bodies, cache, work, and failure
+state relative to the current body-by-point scan. The product keeps the scan
+baseline until the same-revision timing matrix resolves the candidate's extra
+radix dispatches and index-buffer bytes against its removal of
+`body_capacity * point_capacity` scatter work.
+
 ## Reconsideration triggers
 
 Reconsider the provisional feature or record layout before S3.6 if direct

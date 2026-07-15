@@ -590,6 +590,19 @@ forced-fingerprint-collision, and atomic-overflow gates. No latency or memory
 winner is claimed until the candidate and baseline run through the same
 generated and contact-rich timing matrix.
 
+S3.5a body-edge implementation checkpoint, 2026-07-15: the generated solver's
+candidate topology replaces the canonical per-body scan over every point slot
+with a compact index build, stable body-key radix grouping, range construction,
+and the same deterministic body-owned gather. Topology dispatches are 6 for
+the small corpus, 9 at 32 bodies, 12 at 256/1K, and 15 at 10K, versus 4 for the
+scan baseline. At the governed 32-body capacity the baseline topology is 8,320
+bytes; the candidate is 32,512 bytes for two edge-index buffers, radix blocks,
+and body ranges. The candidate therefore has an explicit dispatch and memory
+cost before it can win by avoiding `bodies * point_capacity` scatter tests.
+Permanent exact-output, scheduling-permutation, high-contention, multi-step,
+benchmark-completion, and atomic-overflow gates pass. Timing and contact-rich
+scale evidence, not this static work shape, will decide the lane.
+
 ## Regression and claim gates
 
 Before representative hardware is selected, store named measurements and

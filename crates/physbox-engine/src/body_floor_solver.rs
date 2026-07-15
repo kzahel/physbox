@@ -9,7 +9,83 @@ use crate::GpuBodyStorage;
 use crate::gpu_solver::GpuContributionEvidence;
 
 const WORKGROUP_SIZE: u32 = 64;
+const RADIX_WORKGROUP_SIZE: u32 = 256;
 const PARAMETER_STRIDE: usize = 256;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum GpuGatherTopology {
+    CanonicalBodyScan,
+    StableBodyEdge,
+}
+
+impl GpuGatherTopology {
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::CanonicalBodyScan => "canonical-body-scan",
+            Self::StableBodyEdge => "stable-body-edge",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GpuGatherTopologyEvidence {
+    pub topology: GpuGatherTopology,
+    pub edge_build_permuted: bool,
+    pub dispatches: u32,
+    pub allocated_bytes: u64,
+    pub point_capacity: u32,
+    pub edge_capacity: u32,
+    pub radix_passes: u32,
+    pub canonical_scan_attempts: u64,
+    pub capacities: Vec<CapacityRecordV1>,
+}
+
+impl GpuGatherTopologyEvidence {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.point_capacity == 0
+            || self.edge_capacity != self.point_capacity.saturating_mul(2)
+            || self.allocated_bytes == 0
+            || self
+                .capacities
+                .iter()
+                .map(|capacity| capacity.allocated_bytes)
+                .sum::<u64>()
+                != self.allocated_bytes
+        {
+            return Err("gather topology has invalid capacity accounting".to_owned());
+        }
+        for pair in self.capacities.windows(2) {
+            if pair[0].class >= pair[1].class {
+                return Err("gather topology capacities are not sorted and unique".to_owned());
+            }
+        }
+        for capacity in &self.capacities {
+            physbox_contracts::Validate::validate(capacity).map_err(|error| error.to_string())?;
+        }
+        match self.topology {
+            GpuGatherTopology::CanonicalBodyScan => {
+                if self.edge_build_permuted
+                    || self.dispatches != 4
+                    || self.radix_passes != 0
+                    || self.canonical_scan_attempts == 0
+                {
+                    return Err("canonical gather topology has invalid work accounting".to_owned());
+                }
+            }
+            GpuGatherTopology::StableBodyEdge => {
+                if self.dispatches != 3 + self.radix_passes * 3
+                    || self.radix_passes == 0
+                    || self.canonical_scan_attempts != 0
+                {
+                    return Err("stable body-edge topology has invalid work accounting".to_owned());
+                }
+            }
+        }
+        Ok(())
+    }
+}
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -91,6 +167,11 @@ enum PipelineKind {
     TopologyCount,
     TopologyPrefix,
     TopologyScatter,
+    EdgeBuild,
+    EdgeRadixHistograms,
+    EdgeRadixPrefix,
+    EdgeRadixScatter,
+    EdgeRanges,
     IntegrateVelocity,
     Prepare,
     Refresh,
@@ -117,13 +198,29 @@ struct Operation {
 
 #[derive(Clone, Copy)]
 struct TopologyLayout {
+    kind: GpuGatherTopology,
     incident_base: u32,
     cursor_base: u32,
+    edge_a_base: u32,
+    edge_b_base: u32,
+    blocks_base: u32,
+    ranges_base: u32,
+    edge_count: u32,
+    block_count: u32,
+    radix_passes: u32,
+    sorted_edge_base: u32,
     element_count: u32,
 }
 
 impl TopologyLayout {
-    fn new(body_count: u32, point_count: u32) -> Result<Self, String> {
+    fn new(kind: GpuGatherTopology, body_count: u32, point_count: u32) -> Result<Self, String> {
+        match kind {
+            GpuGatherTopology::CanonicalBodyScan => Self::canonical(body_count, point_count),
+            GpuGatherTopology::StableBodyEdge => Self::stable_body_edge(body_count, point_count),
+        }
+    }
+
+    fn canonical(body_count: u32, point_count: u32) -> Result<Self, String> {
         let incident_base = body_count
             .checked_mul(2)
             .ok_or_else(|| "fixed-floor topology body records overflowed".to_owned())?;
@@ -138,10 +235,75 @@ impl TopologyLayout {
             .checked_add(body_count)
             .ok_or_else(|| "fixed-floor topology cursor range overflowed".to_owned())?;
         Ok(Self {
+            kind: GpuGatherTopology::CanonicalBodyScan,
             incident_base,
             cursor_base,
+            edge_a_base: 0,
+            edge_b_base: 0,
+            blocks_base: 0,
+            ranges_base: 0,
+            edge_count: point_count.saturating_mul(2),
+            block_count: 0,
+            radix_passes: 0,
+            sorted_edge_base: 0,
             element_count,
         })
+    }
+
+    fn stable_body_edge(body_count: u32, point_count: u32) -> Result<Self, String> {
+        let edge_count = point_count
+            .checked_mul(2)
+            .ok_or_else(|| "stable body-edge count overflowed".to_owned())?;
+        let edge_words = edge_count
+            .checked_mul(2)
+            .ok_or_else(|| "stable body-edge record range overflowed".to_owned())?;
+        let edge_a_base = 0;
+        let edge_b_base = edge_words;
+        let blocks_base = edge_words
+            .checked_mul(2)
+            .ok_or_else(|| "stable body-edge ping-pong range overflowed".to_owned())?;
+        let block_count = edge_count.div_ceil(RADIX_WORKGROUP_SIZE);
+        let block_words = block_count
+            .checked_mul(16)
+            .ok_or_else(|| "stable body-edge radix blocks overflowed".to_owned())?;
+        let ranges_base = blocks_base
+            .checked_add(block_words)
+            .ok_or_else(|| "stable body-edge block range overflowed".to_owned())?;
+        let element_count = ranges_base
+            .checked_add(
+                body_count
+                    .checked_mul(2)
+                    .ok_or_else(|| "stable body ranges overflowed".to_owned())?,
+            )
+            .ok_or_else(|| "stable body-edge topology range overflowed".to_owned())?;
+        let body_bits = 32 - body_count.leading_zeros();
+        let radix_passes = body_bits.max(1).div_ceil(4);
+        let sorted_edge_base = if radix_passes.is_multiple_of(2) {
+            edge_a_base
+        } else {
+            edge_b_base
+        };
+        Ok(Self {
+            kind: GpuGatherTopology::StableBodyEdge,
+            incident_base: 0,
+            cursor_base: 0,
+            edge_a_base,
+            edge_b_base,
+            blocks_base,
+            ranges_base,
+            edge_count,
+            block_count,
+            radix_passes,
+            sorted_edge_base,
+            element_count,
+        })
+    }
+
+    const fn dispatches(self) -> u32 {
+        match self.kind {
+            GpuGatherTopology::CanonicalBodyScan => 4,
+            GpuGatherTopology::StableBodyEdge => 3 + self.radix_passes * 3,
+        }
     }
 }
 
@@ -158,6 +320,11 @@ pub(crate) struct GpuFixedFloorSolver {
     topology_count_pipeline: wgpu::ComputePipeline,
     topology_prefix_pipeline: wgpu::ComputePipeline,
     topology_scatter_pipeline: wgpu::ComputePipeline,
+    edge_build_pipeline: wgpu::ComputePipeline,
+    edge_radix_histograms_pipeline: wgpu::ComputePipeline,
+    edge_radix_prefix_pipeline: wgpu::ComputePipeline,
+    edge_radix_scatter_pipeline: wgpu::ComputePipeline,
+    edge_ranges_pipeline: wgpu::ComputePipeline,
     integrate_velocity_pipeline: wgpu::ComputePipeline,
     prepare_pipeline: wgpu::ComputePipeline,
     refresh_pipeline: wgpu::ComputePipeline,
@@ -170,6 +337,9 @@ pub(crate) struct GpuFixedFloorSolver {
     operations: Vec<Operation>,
     capacities: Vec<CapacityRecordV1>,
     point_count: u32,
+    body_count: u32,
+    topology_layout: TopologyLayout,
+    edge_build_permuted: bool,
 }
 
 impl GpuFixedFloorSolver {
@@ -194,18 +364,28 @@ impl GpuFixedFloorSolver {
             bytemuck::cast_slice(&points),
             usage,
         );
-        let mut solver =
-            Self::new_with_point_buffer(device, storage, scenario, &point_buffer, point_count)?;
+        let mut solver = Self::new_with_point_buffer(
+            device,
+            storage,
+            scenario,
+            &point_buffer,
+            point_count,
+            GpuGatherTopology::CanonicalBodyScan,
+            false,
+        )?;
         solver._owned_point_input = Some(point_buffer);
         Ok(solver)
     }
 
-    pub(crate) fn new_generated(
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn new_generated_with_topology(
         device: &wgpu::Device,
         storage: &GpuBodyStorage,
         scenario: &ScenarioV1,
         point_buffer: &wgpu::Buffer,
         point_capacity: u32,
+        topology: GpuGatherTopology,
+        permute_edge_build: bool,
     ) -> Result<Self, String> {
         validate_selected_settings(scenario)?;
         if !scenario.manifolds.is_empty() || point_capacity == 0 {
@@ -214,21 +394,37 @@ impl GpuFixedFloorSolver {
                     .to_owned(),
             );
         }
-        Self::new_with_point_buffer(device, storage, scenario, point_buffer, point_capacity)
+        Self::new_with_point_buffer(
+            device,
+            storage,
+            scenario,
+            point_buffer,
+            point_capacity,
+            topology,
+            permute_edge_build,
+        )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn new_with_point_buffer(
         device: &wgpu::Device,
         storage: &GpuBodyStorage,
         scenario: &ScenarioV1,
         point_buffer: &wgpu::Buffer,
         point_count: u32,
+        topology: GpuGatherTopology,
+        permute_edge_build: bool,
     ) -> Result<Self, String> {
         let body_count = u32::try_from(scenario.bodies.len())
             .map_err(|_| "contact solver body count exceeds u32".to_owned())?;
-        let topology_layout = TopologyLayout::new(body_count, point_count)?;
-        let (parameters, operations) =
-            operations(scenario, body_count, point_count, topology_layout);
+        let topology_layout = TopologyLayout::new(topology, body_count, point_count)?;
+        let (parameters, operations) = operations(
+            scenario,
+            body_count,
+            point_count,
+            topology_layout,
+            permute_edge_build,
+        );
         let initial_motion = scenario
             .bodies
             .iter()
@@ -343,11 +539,14 @@ impl GpuFixedFloorSolver {
                 layout: Some(&pipeline_layout),
                 module: &shader,
                 entry_point: Some(entry),
-                compilation_options: Default::default(),
+                compilation_options: wgpu::PipelineCompilationOptions {
+                    constants: &[],
+                    zero_initialize_workgroup_memory: false,
+                },
                 cache: None,
             })
         };
-        let capacities = vec![
+        let mut capacities = vec![
             capacity(
                 "body-motion-scratch",
                 body_count,
@@ -368,12 +567,12 @@ impl GpuFixedFloorSolver {
                 point_count * 2,
                 size_of::<ContributionRaw>() as u64,
             ),
-            capacity(
-                "solver-topology",
-                topology_layout.element_count,
-                size_of::<u32>() as u64,
-            ),
         ];
+        capacities.extend(topology_capacities(
+            body_count,
+            point_count,
+            topology_layout,
+        ));
         Ok(Self {
             _owned_point_input: None,
             _motion_scratch: motion_scratch,
@@ -387,6 +586,14 @@ impl GpuFixedFloorSolver {
             topology_count_pipeline: pipeline("floor_topology_count", "count_edges"),
             topology_prefix_pipeline: pipeline("floor_topology_prefix", "prefix_edges"),
             topology_scatter_pipeline: pipeline("floor_topology_scatter", "scatter_edges"),
+            edge_build_pipeline: pipeline("floor_edge_build", "build_stable_edges"),
+            edge_radix_histograms_pipeline: pipeline(
+                "floor_edge_radix_histograms",
+                "edge_radix_histograms",
+            ),
+            edge_radix_prefix_pipeline: pipeline("floor_edge_radix_prefix", "edge_radix_prefix"),
+            edge_radix_scatter_pipeline: pipeline("floor_edge_radix_scatter", "edge_radix_scatter"),
+            edge_ranges_pipeline: pipeline("floor_edge_ranges", "build_edge_ranges"),
             integrate_velocity_pipeline: pipeline("floor_integrate_velocity", "integrate_velocity"),
             prepare_pipeline: pipeline("floor_prepare", "prepare"),
             refresh_pipeline: pipeline("floor_refresh", "refresh_contacts"),
@@ -399,6 +606,9 @@ impl GpuFixedFloorSolver {
             operations,
             capacities,
             point_count,
+            body_count,
+            topology_layout,
+            edge_build_permuted: permute_edge_build,
         })
     }
 
@@ -413,6 +623,11 @@ impl GpuFixedFloorSolver {
                 PipelineKind::TopologyCount => &self.topology_count_pipeline,
                 PipelineKind::TopologyPrefix => &self.topology_prefix_pipeline,
                 PipelineKind::TopologyScatter => &self.topology_scatter_pipeline,
+                PipelineKind::EdgeBuild => &self.edge_build_pipeline,
+                PipelineKind::EdgeRadixHistograms => &self.edge_radix_histograms_pipeline,
+                PipelineKind::EdgeRadixPrefix => &self.edge_radix_prefix_pipeline,
+                PipelineKind::EdgeRadixScatter => &self.edge_radix_scatter_pipeline,
+                PipelineKind::EdgeRanges => &self.edge_ranges_pipeline,
                 PipelineKind::IntegrateVelocity => &self.integrate_velocity_pipeline,
                 PipelineKind::Prepare => &self.prepare_pipeline,
                 PipelineKind::Refresh => &self.refresh_pipeline,
@@ -456,6 +671,30 @@ impl GpuFixedFloorSolver {
             + self._contributions.size()
             + self._topology.size()
             + self._parameter_buffer.size()
+    }
+
+    pub(crate) fn gather_topology_evidence(&self) -> GpuGatherTopologyEvidence {
+        GpuGatherTopologyEvidence {
+            topology: self.topology_layout.kind,
+            edge_build_permuted: self.edge_build_permuted,
+            dispatches: self.topology_layout.dispatches(),
+            allocated_bytes: self._topology.size(),
+            point_capacity: self.point_count,
+            edge_capacity: self.topology_layout.edge_count,
+            radix_passes: self.topology_layout.radix_passes,
+            canonical_scan_attempts: if self.topology_layout.kind
+                == GpuGatherTopology::CanonicalBodyScan
+            {
+                u64::from(self.body_count) * u64::from(self.point_count)
+            } else {
+                0
+            },
+            capacities: topology_capacities(
+                self.body_count,
+                self.point_count,
+                self.topology_layout,
+            ),
+        }
     }
 
     pub(crate) fn prepared_buffer(&self) -> &wgpu::Buffer {
@@ -600,41 +839,20 @@ fn operations(
     body_count: u32,
     point_count: u32,
     topology: TopologyLayout,
+    permute_edge_build: bool,
 ) -> (Vec<PassParamsRaw>, Vec<Operation>) {
     let mut parameters = Vec::new();
     let mut operations = Vec::new();
     let body_workgroups = workgroups(body_count);
     let point_workgroups = workgroups(point_count);
-    let topology_params = PassParamsRaw {
-        floats0: [0.0; 4],
-        floats1: [0.0; 4],
-        floats2: [0.0; 4],
-        uints0: [
-            body_count,
-            point_count,
-            topology.incident_base,
-            topology.cursor_base,
-        ],
-        uints1: [0, 0, 0, topology.element_count],
-    };
-    for (kind, workgroups) in [
-        (
-            PipelineKind::TopologyClear,
-            workgroups(topology.element_count),
-        ),
-        (PipelineKind::TopologyCount, point_workgroups),
-        (PipelineKind::TopologyPrefix, 1),
-        (PipelineKind::TopologyScatter, body_workgroups),
-    ] {
-        push_operation(
-            &mut parameters,
-            &mut operations,
-            topology_params,
-            kind,
-            MotionDirection::AtoB,
-            workgroups,
-        );
-    }
+    topology_operations(
+        &mut parameters,
+        &mut operations,
+        body_count,
+        point_count,
+        topology,
+        permute_edge_build,
+    );
     for substep in 0..scenario.settings.substeps {
         push_operation(
             &mut parameters,
@@ -667,7 +885,7 @@ fn operations(
             MotionDirection::AtoB,
             point_workgroups,
             body_workgroups,
-            topology.incident_base,
+            topology,
         );
         jacobi_stage(
             &mut parameters,
@@ -677,7 +895,7 @@ fn operations(
             MotionDirection::BtoA,
             point_workgroups,
             body_workgroups,
-            topology.incident_base,
+            topology,
         );
         jacobi_stage(
             &mut parameters,
@@ -687,7 +905,7 @@ fn operations(
             MotionDirection::AtoB,
             point_workgroups,
             body_workgroups,
-            topology.incident_base,
+            topology,
         );
         push_operation(
             &mut parameters,
@@ -713,7 +931,7 @@ fn operations(
             MotionDirection::BtoA,
             point_workgroups,
             body_workgroups,
-            topology.incident_base,
+            topology,
         );
         jacobi_stage(
             &mut parameters,
@@ -723,7 +941,7 @@ fn operations(
             MotionDirection::AtoB,
             point_workgroups,
             body_workgroups,
-            topology.incident_base,
+            topology,
         );
         jacobi_stage(
             &mut parameters,
@@ -733,10 +951,123 @@ fn operations(
             MotionDirection::BtoA,
             point_workgroups,
             body_workgroups,
-            topology.incident_base,
+            topology,
         );
     }
     (parameters, operations)
+}
+
+fn topology_operations(
+    parameters: &mut Vec<PassParamsRaw>,
+    operations: &mut Vec<Operation>,
+    body_count: u32,
+    point_count: u32,
+    topology: TopologyLayout,
+    permute_edge_build: bool,
+) {
+    let clear = PassParamsRaw {
+        floats0: [0.0; 4],
+        floats1: [0.0; 4],
+        floats2: [0.0; 4],
+        uints0: [body_count, point_count, 0, 0],
+        uints1: [0, 0, 0, topology.element_count],
+    };
+    push_operation(
+        parameters,
+        operations,
+        clear,
+        PipelineKind::TopologyClear,
+        MotionDirection::AtoB,
+        workgroups(topology.element_count),
+    );
+    match topology.kind {
+        GpuGatherTopology::CanonicalBodyScan => {
+            let mut params = clear;
+            params.uints0[2] = topology.incident_base;
+            params.uints0[3] = topology.cursor_base;
+            for (kind, workgroups) in [
+                (PipelineKind::TopologyCount, workgroups(point_count)),
+                (PipelineKind::TopologyPrefix, 1),
+                (PipelineKind::TopologyScatter, workgroups(body_count)),
+            ] {
+                push_operation(
+                    parameters,
+                    operations,
+                    params,
+                    kind,
+                    MotionDirection::AtoB,
+                    workgroups,
+                );
+            }
+        }
+        GpuGatherTopology::StableBodyEdge => {
+            let mut build = clear;
+            build.uints0[2] = topology.edge_a_base;
+            build.uints1[0] = topology.edge_count;
+            build.uints1[1] = u32::from(permute_edge_build);
+            push_operation(
+                parameters,
+                operations,
+                build,
+                PipelineKind::EdgeBuild,
+                MotionDirection::AtoB,
+                workgroups(point_count),
+            );
+            for digit in 0..topology.radix_passes {
+                let (source, destination) = if digit % 2 == 0 {
+                    (topology.edge_a_base, topology.edge_b_base)
+                } else {
+                    (topology.edge_b_base, topology.edge_a_base)
+                };
+                let radix = PassParamsRaw {
+                    floats0: [0.0; 4],
+                    floats1: [0.0; 4],
+                    floats2: [0.0; 4],
+                    uints0: [
+                        topology.edge_count,
+                        topology.block_count,
+                        source,
+                        destination,
+                    ],
+                    uints1: [topology.blocks_base, digit * 4, 0, 0],
+                };
+                for (kind, workgroups) in [
+                    (PipelineKind::EdgeRadixHistograms, topology.block_count),
+                    (PipelineKind::EdgeRadixPrefix, 1),
+                    (PipelineKind::EdgeRadixScatter, topology.block_count),
+                ] {
+                    push_operation(
+                        parameters,
+                        operations,
+                        radix,
+                        kind,
+                        MotionDirection::AtoB,
+                        workgroups,
+                    );
+                }
+            }
+            let ranges = PassParamsRaw {
+                floats0: [0.0; 4],
+                floats1: [0.0; 4],
+                floats2: [0.0; 4],
+                uints0: [
+                    topology.edge_count,
+                    body_count,
+                    topology.sorted_edge_base,
+                    topology.ranges_base,
+                ],
+                uints1: [0; 4],
+            };
+            push_operation(
+                parameters,
+                operations,
+                ranges,
+                PipelineKind::EdgeRanges,
+                MotionDirection::AtoB,
+                workgroups(topology.edge_count),
+            );
+        }
+    }
 }
 
 fn pass_params(
@@ -783,7 +1114,7 @@ fn jacobi_stage(
     direction: MotionDirection,
     point_workgroups: u32,
     body_workgroups: u32,
-    incident_base: u32,
+    topology: TopologyLayout,
 ) {
     push_operation(
         parameters,
@@ -794,7 +1125,10 @@ fn jacobi_stage(
         point_workgroups,
     );
     let mut gather = parameter;
-    gather.uints1[3] = incident_base;
+    gather.uints0[2] = u32::from(topology.kind == GpuGatherTopology::StableBodyEdge);
+    gather.uints0[3] = topology.ranges_base;
+    gather.uints1[2] = topology.sorted_edge_base;
+    gather.uints1[3] = topology.incident_base;
     push_operation(
         parameters,
         operations,
@@ -825,6 +1159,37 @@ fn push_operation(
 
 fn workgroups(elements: u32) -> u32 {
     elements.div_ceil(WORKGROUP_SIZE)
+}
+
+fn topology_capacities(
+    body_count: u32,
+    _point_count: u32,
+    topology: TopologyLayout,
+) -> Vec<CapacityRecordV1> {
+    match topology.kind {
+        GpuGatherTopology::CanonicalBodyScan => vec![capacity(
+            "solver-topology",
+            topology.element_count,
+            size_of::<u32>() as u64,
+        )],
+        GpuGatherTopology::StableBodyEdge => vec![
+            capacity(
+                "solver-body-edge-index-buffers",
+                topology.edge_count * 2,
+                size_of::<[u32; 2]>() as u64,
+            ),
+            capacity(
+                "solver-body-edge-radix-blocks",
+                topology.block_count * 16,
+                size_of::<u32>() as u64,
+            ),
+            capacity(
+                "solver-body-edge-ranges",
+                body_count,
+                size_of::<[u32; 2]>() as u64,
+            ),
+        ],
+    }
 }
 
 fn capacity(class: &str, elements: u32, stride: u64) -> CapacityRecordV1 {
@@ -948,13 +1313,29 @@ mod tests {
     #[test]
     fn accepted_fixed_floor_schedule_is_exactly_sixty_eight_dispatches() {
         let scenario = crate::p5_1_rectangle_floor_scenario(120).unwrap();
-        let topology = TopologyLayout::new(2, 2).unwrap();
-        let (parameters, operations) = operations(&scenario, 2, 2, topology);
+        let topology = TopologyLayout::new(GpuGatherTopology::CanonicalBodyScan, 2, 2).unwrap();
+        let (parameters, operations) = operations(&scenario, 2, 2, topology, false);
         assert_eq!(operations.len(), 68);
         assert_eq!(parameters.len(), operations.len());
         assert_eq!(topology.incident_base, 4);
         assert_eq!(topology.cursor_base, 8);
         assert_eq!(topology.element_count, 10);
+    }
+
+    #[test]
+    fn stable_body_edge_schedule_scales_with_body_key_width() {
+        let scenario = crate::p5_1_rectangle_floor_scenario(120).unwrap();
+        let topology = TopologyLayout::new(GpuGatherTopology::StableBodyEdge, 2, 2).unwrap();
+        let (parameters, operations) = operations(&scenario, 2, 2, topology, true);
+        assert_eq!(topology.edge_count, 4);
+        assert_eq!(topology.radix_passes, 1);
+        assert_eq!(topology.dispatches(), 6);
+        assert_eq!(operations.len(), 70);
+        assert_eq!(parameters.len(), operations.len());
+
+        let scale = TopologyLayout::new(GpuGatherTopology::StableBodyEdge, 1_024, 512).unwrap();
+        assert_eq!(scale.radix_passes, 3);
+        assert_eq!(scale.dispatches(), 12);
     }
 
     #[test]

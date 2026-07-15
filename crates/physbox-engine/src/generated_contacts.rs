@@ -14,7 +14,10 @@ use wgpu::util::DeviceExt;
 
 use crate::{
     GpuBodyStorage,
-    body_floor_solver::{GpuFixedFloorSolver, PointInputRaw, PreparedPointRaw},
+    body_floor_solver::{
+        GpuFixedFloorSolver, GpuGatherTopology, GpuGatherTopologyEvidence, PointInputRaw,
+        PreparedPointRaw,
+    },
     collision_candidates::{CandidateCase, CandidatePipelines},
     collision_narrowphase::{NarrowphaseCase, NarrowphasePipelines},
     collision_persistence::{PersistenceCase, PersistencePipelines},
@@ -70,6 +73,22 @@ impl GpuGeneratedContactGraph {
         device: &wgpu::Device,
         storage: &GpuBodyStorage,
         scenario: &ScenarioV1,
+    ) -> Result<Self, String> {
+        Self::new_with_gather_topology(
+            device,
+            storage,
+            scenario,
+            GpuGatherTopology::CanonicalBodyScan,
+            false,
+        )
+    }
+
+    pub(crate) fn new_with_gather_topology(
+        device: &wgpu::Device,
+        storage: &GpuBodyStorage,
+        scenario: &ScenarioV1,
+        gather_topology: GpuGatherTopology,
+        permute_edge_build: bool,
     ) -> Result<Self, String> {
         if !scenario.manifolds.is_empty()
             || !scenario.contact_cache.is_empty()
@@ -181,12 +200,14 @@ impl GpuGeneratedContactGraph {
             point_capacity,
             size_of::<PointInputRaw>() as u32,
         )?;
-        let solver = GpuFixedFloorSolver::new_generated(
+        let solver = GpuFixedFloorSolver::new_generated_with_topology(
             device,
             storage,
             scenario,
             &solver_points,
             point_capacity,
+            gather_topology,
+            permute_edge_build,
         )?;
         let bridge_params = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("physbox5_generated_bridge_params"),
@@ -360,6 +381,10 @@ impl GpuGeneratedContactGraph {
         false
     }
 
+    pub(crate) fn gather_topology_evidence(&self) -> GpuGatherTopologyEvidence {
+        self.solver.gather_topology_evidence()
+    }
+
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn pass_evidence_layout(
         &self,
@@ -529,6 +554,7 @@ pub struct GpuGeneratedContactOutput {
     pub failure: Option<FailureV1>,
     pub dispatches_per_step: u32,
     pub allocated_bytes: u64,
+    pub gather_topology: GpuGatherTopologyEvidence,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -563,6 +589,7 @@ impl GpuGeneratedContactOutput {
         if let Some(failure) = &self.failure {
             failure.validate().map_err(|error| error.to_string())?;
         }
+        self.gather_topology.validate()?;
         let rejected = self.capacities.iter().any(|capacity| !capacity.accepted);
         if rejected != self.failure.is_some() || (rejected && !self.cache.is_empty()) {
             return Err("generated contact failure/capacity state is inconsistent".to_owned());
@@ -601,6 +628,21 @@ impl GpuGeneratedContactRunner {
         scenario: &ScenarioV1,
         completed_steps: u32,
     ) -> Result<GpuGeneratedContactOutput, String> {
+        self.run_with_gather_topology(
+            scenario,
+            completed_steps,
+            GpuGatherTopology::CanonicalBodyScan,
+            false,
+        )
+    }
+
+    pub fn run_with_gather_topology(
+        &self,
+        scenario: &ScenarioV1,
+        completed_steps: u32,
+        gather_topology: GpuGatherTopology,
+        permute_edge_build: bool,
+    ) -> Result<GpuGeneratedContactOutput, String> {
         if completed_steps == 0 {
             return Err("generated contact validation requires at least one step".to_owned());
         }
@@ -613,7 +655,13 @@ impl GpuGeneratedContactRunner {
             crate::BODY_COMMAND_CAPACITY,
             &scenario.bodies,
         )?;
-        let graph = GpuGeneratedContactGraph::new(&self.device, &storage, scenario)?;
+        let graph = GpuGeneratedContactGraph::new_with_gather_topology(
+            &self.device,
+            &storage,
+            scenario,
+            gather_topology,
+            permute_edge_build,
+        )?;
         let lane_bytes = u64::from(body_count) * size_of::<[u32; 4]>() as u64;
         let state_readback = readback(&self.device, "generated_state_readback", lane_bytes * 3);
         let cache_readback = readback(
@@ -845,6 +893,7 @@ impl GpuGeneratedContactRunner {
             failure,
             dispatches_per_step: graph.dispatches_per_step(),
             allocated_bytes: graph.allocated_bytes(),
+            gather_topology: graph.gather_topology_evidence(),
         };
         output.validate()?;
         Ok(output)
@@ -876,13 +925,29 @@ pub async fn benchmark_gpu_generated_contacts(
     warmup_steps: u32,
     samples: u32,
 ) -> Result<GpuGeneratedContactBenchmarkOutput, String> {
+    benchmark_gpu_generated_contacts_with_gather_topology(
+        scenario,
+        warmup_steps,
+        samples,
+        GpuGatherTopology::CanonicalBodyScan,
+    )
+    .await
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn benchmark_gpu_generated_contacts_with_gather_topology(
+    scenario: &ScenarioV1,
+    warmup_steps: u32,
+    samples: u32,
+    gather_topology: GpuGatherTopology,
+) -> Result<GpuGeneratedContactBenchmarkOutput, String> {
     if warmup_steps == 0 || samples == 0 {
         return Err("generated-contact benchmark requires non-zero warmup and samples".to_owned());
     }
     scenario.validate().map_err(|error| error.to_string())?;
     let correctness = {
         let runner = GpuGeneratedContactRunner::new().await?;
-        runner.run(scenario, 1)?
+        runner.run_with_gather_topology(scenario, 1, gather_topology, false)?
     };
     if correctness.failure.is_some()
         || correctness
@@ -916,7 +981,13 @@ pub async fn benchmark_gpu_generated_contacts(
         &scenario.bodies,
     )?;
     let reset = crate::body_state::GpuBodyResetData::new(body_count, &scenario.bodies)?;
-    let graph = GpuGeneratedContactGraph::new(&device, &storage, scenario)?;
+    let graph = GpuGeneratedContactGraph::new_with_gather_topology(
+        &device,
+        &storage,
+        scenario,
+        gather_topology,
+        false,
+    )?;
     let query_resources = timestamps_available.then(|| {
         let query_set = device.create_query_set(&wgpu::QuerySetDescriptor {
             label: Some("generated_contact_benchmark_timestamps"),

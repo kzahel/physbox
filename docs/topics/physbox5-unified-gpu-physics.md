@@ -571,6 +571,17 @@ reduce the combined collision/persistence work shape from 212 to 25, but the
 product still uses the full-key correctness baseline until the complete S3.5a
 matrix and renewed human review select a representation.
 
+Body-edge implementation checkpoint, 2026-07-15: the accepted Jacobi solver
+now has an isolated adjacency comparator that keeps one canonical contribution
+payload and builds an alternate compact `{ body, contribution }` index view.
+Stable body-key radix grouping and explicit body ranges feed the same
+body-owned segmented gather, preserving exact point/side accumulation order
+under deliberately reversed build scheduling. The current body-by-point scan
+remains the product and correctness baseline. Exact generated behavior,
+high-contention, churn, and overflow comparisons pass; the additional radix
+dispatches and ping-pong index bytes remain visible for the S3.5a timing and
+scale matrix rather than being accepted architecturally here.
+
 Circle/circle and circle/rectangle contact are analytic. Rectangle/rectangle
 uses SAT to select a reference and incident edge, clips the incident segment,
 and produces stable vertex/edge feature pairs. Test feature stability around

@@ -120,6 +120,14 @@ collision/persistence schedule is 25 rather than 212 dispatches. It remains an
 isolated bakeoff lane pending the body-edge comparator, scale evidence, and
 renewed S3.6 review; the product path and contact ABI are not yet changed.
 
+The second representation checkpoint adds the stable body-edge index/range
+comparator to the generated-contact solver. It preserves canonical
+equal-and-opposite contributions and byte-exact body/cache outcomes while
+removing the candidate's per-body scan across every point-capacity slot. The
+baseline remains selected because the comparator adds radix dispatches and
+index memory; contact-rich measurements and the combined matrix must resolve
+that tradeoff before S3.6 review.
+
 - Add circles and oriented rectangles.
 - Use all-pairs AABB candidate generation.
 - Implement analytic/SAT/clipped manifolds and direct Box2D comparison.

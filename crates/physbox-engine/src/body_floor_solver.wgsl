@@ -47,6 +47,9 @@ struct PassParams {
 @group(0) @binding(7) var<storage, read_write> topology: array<atomic<u32>>;
 @group(0) @binding(8) var<uniform> params: PassParams;
 
+var<workgroup> edge_radix_digits: array<u32, 256>;
+var<workgroup> edge_radix_histogram: array<atomic<u32>, 16>;
+
 fn rotate(vector: vec2f, angle: f32) -> vec2f {
     let c = cos(angle);
     let s = sin(angle);
@@ -151,6 +154,104 @@ fn scatter_edges(@builtin(global_invocation_id) id: vec3u) {
             atomicStore(&topology[params.uints0.z + start + written], point_index * 2u + 1u);
             written += 1u;
         }
+    }
+}
+
+@compute @workgroup_size(64)
+fn build_stable_edges(@builtin(global_invocation_id) id: vec3u) {
+    let scheduled_index = id.x;
+    if (scheduled_index >= params.uints0.y) { return; }
+    let point_index = select(
+        scheduled_index,
+        params.uints0.y - 1u - scheduled_index,
+        params.uints1.y != 0u);
+    let point = point_inputs[point_index];
+    let edge_a = point_index * 2u;
+    let edge_b = edge_a + 1u;
+    var body_a = 0xffffffffu;
+    var body_b = 0xffffffffu;
+    if (valid_point(point)) {
+        body_a = point.ids.x;
+        body_b = point.ids.y;
+    }
+    atomicStore(&topology[params.uints0.z + edge_a * 2u], body_a);
+    atomicStore(&topology[params.uints0.z + edge_a * 2u + 1u], edge_a);
+    atomicStore(&topology[params.uints0.z + edge_b * 2u], body_b);
+    atomicStore(&topology[params.uints0.z + edge_b * 2u + 1u], edge_b);
+}
+
+@compute @workgroup_size(256)
+fn edge_radix_histograms(@builtin(global_invocation_id) global: vec3u,
+                         @builtin(local_invocation_id) local: vec3u,
+                         @builtin(workgroup_id) group_id: vec3u) {
+    if (local.x < 16u) {
+        atomicStore(&edge_radix_histogram[local.x], 0u);
+    }
+    workgroupBarrier();
+    if (global.x < params.uints0.x) {
+        let key = atomicLoad(&topology[params.uints0.z + global.x * 2u]);
+        let digit = (key >> params.uints1.y) & 15u;
+        atomicAdd(&edge_radix_histogram[digit], 1u);
+    }
+    workgroupBarrier();
+    if (local.x < 16u) {
+        atomicStore(
+            &topology[params.uints1.x + group_id.x * 16u + local.x],
+            atomicLoad(&edge_radix_histogram[local.x]));
+    }
+}
+
+@compute @workgroup_size(1)
+fn edge_radix_prefix(@builtin(global_invocation_id) id: vec3u) {
+    if (id.x != 0u) { return; }
+    var running = 0u;
+    for (var digit = 0u; digit < 16u; digit++) {
+        for (var block = 0u; block < params.uints0.y; block++) {
+            let index = params.uints1.x + block * 16u + digit;
+            let count = atomicLoad(&topology[index]);
+            atomicStore(&topology[index], running);
+            running += count;
+        }
+    }
+}
+
+@compute @workgroup_size(256)
+fn edge_radix_scatter(@builtin(global_invocation_id) global: vec3u,
+                      @builtin(local_invocation_id) local: vec3u,
+                      @builtin(workgroup_id) group_id: vec3u) {
+    var digit = 16u;
+    if (global.x < params.uints0.x) {
+        let key = atomicLoad(&topology[params.uints0.z + global.x * 2u]);
+        digit = (key >> params.uints1.y) & 15u;
+    }
+    edge_radix_digits[local.x] = digit;
+    workgroupBarrier();
+    if (global.x >= params.uints0.x) { return; }
+    var local_rank = 0u;
+    for (var lane = 0u; lane < local.x; lane++) {
+        local_rank += select(0u, 1u, edge_radix_digits[lane] == digit);
+    }
+    let output = atomicLoad(
+        &topology[params.uints1.x + group_id.x * 16u + digit]) + local_rank;
+    let key = atomicLoad(&topology[params.uints0.z + global.x * 2u]);
+    let contribution = atomicLoad(&topology[params.uints0.z + global.x * 2u + 1u]);
+    atomicStore(&topology[params.uints0.w + output * 2u], key);
+    atomicStore(&topology[params.uints0.w + output * 2u + 1u], contribution);
+}
+
+@compute @workgroup_size(64)
+fn build_edge_ranges(@builtin(global_invocation_id) id: vec3u) {
+    let edge_index = id.x;
+    if (edge_index >= params.uints0.x) { return; }
+    let body = atomicLoad(&topology[params.uints0.z + edge_index * 2u]);
+    if (body >= params.uints0.y) { return; }
+    if (edge_index == 0u ||
+        atomicLoad(&topology[params.uints0.z + (edge_index - 1u) * 2u]) != body) {
+        atomicStore(&topology[params.uints0.w + body * 2u], edge_index);
+    }
+    if (edge_index + 1u == params.uints0.x ||
+        atomicLoad(&topology[params.uints0.z + (edge_index + 1u) * 2u]) != body) {
+        atomicStore(&topology[params.uints0.w + body * 2u + 1u], edge_index + 1u);
     }
 }
 
@@ -293,10 +394,17 @@ fn gather(@builtin(global_invocation_id) id: vec3u) {
     let body_index = id.x;
     if (body_index >= params.uints0.x) { return; }
     var motion = motions_source[body_index];
-    let start = atomicLoad(&topology[body_index * 2u]);
-    let count = atomicLoad(&topology[body_index * 2u + 1u]);
-    for (var index = 0u; index < count; index += 1u) {
-        let contribution_index = atomicLoad(&topology[params.uints1.w + start + index]);
+    var start = atomicLoad(&topology[body_index * 2u]);
+    var end = start + atomicLoad(&topology[body_index * 2u + 1u]);
+    if (params.uints0.z != 0u) {
+        start = atomicLoad(&topology[params.uints0.w + body_index * 2u]);
+        end = atomicLoad(&topology[params.uints0.w + body_index * 2u + 1u]);
+    }
+    for (var index = start; index < end; index += 1u) {
+        var contribution_index = atomicLoad(&topology[params.uints1.w + index]);
+        if (params.uints0.z != 0u) {
+            contribution_index = atomicLoad(&topology[params.uints1.z + index * 2u + 1u]);
+        }
         let contribution = contributions[contribution_index];
         motion = apply_impulse(body_index, motion, contribution.impulse, contribution.anchor);
     }

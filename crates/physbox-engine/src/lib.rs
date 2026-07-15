@@ -29,7 +29,10 @@ pub use body_benchmark::{
     GpuBodyBenchmarkSession, GpuTimestampStatus, PendingBodyValidation, PendingCompletion,
     PendingTimestampReadback,
 };
-pub use body_floor_solver::{GpuFixedFloorContactEvidence, GpuFixedFloorPassEvidence};
+pub use body_floor_solver::{
+    GpuFixedFloorContactEvidence, GpuFixedFloorPassEvidence, GpuGatherTopology,
+    GpuGatherTopologyEvidence,
+};
 pub use body_state::{
     BODY_BYTES_PER_SLOT, BODY_COMMAND_BYTES, BODY_COMMAND_CAPACITY, BodySlotRegistry,
     BoundedBodyCommands, GpuBodyStorage, analytic_shape_encoding,
@@ -49,7 +52,7 @@ pub use frame::{FrameInput, PointerButton, PointerEvent, PointerPhase, StepReque
 #[cfg(not(target_arch = "wasm32"))]
 pub use generated_contacts::{
     GpuGeneratedContactBenchmarkOutput, GpuGeneratedContactOutput, GpuGeneratedContactRunner,
-    benchmark_gpu_generated_contacts,
+    benchmark_gpu_generated_contacts, benchmark_gpu_generated_contacts_with_gather_topology,
 };
 pub use gpu_context::{AdapterDiagnostics, create_instance};
 #[cfg(not(target_arch = "wasm32"))]
