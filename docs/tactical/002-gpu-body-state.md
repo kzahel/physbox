@@ -227,6 +227,12 @@ types and numerical scenario payloads in app crates, JavaScript, and shell.
 Cross-host clean-revision captures remain the evidence half of this slice and
 must pass before the checklist below is marked complete.
 
+The desktop adapter also has a bounded smoke wrapper that waits for shared
+scenario completion, terminates the interactive event loop, and publishes a
+fresh report with source and adapter provenance plus the standard success
+sentinel. It does not add a desktop-owned scenario or alternate mechanics
+path.
+
 - [ ] Convert primary pointer facts into engine-owned neutral grab begin,
   target, and release commands at fixed-step boundaries.
 - [ ] Add an engine-owned reset command and deterministic reset/grab/release

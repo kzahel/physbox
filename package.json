@@ -18,6 +18,7 @@
     "references:status": "node scripts/references.mjs status",
     "references:sync": "node scripts/references.mjs sync",
     "serve:web": "node scripts/serve-web.mjs",
+    "test:desktop": "node scripts/desktop-smoke.mjs",
     "test:web": "node scripts/browser-smoke.mjs",
     "prepare": "bash scripts/install-git-hooks.sh"
   },
