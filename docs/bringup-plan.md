@@ -76,6 +76,9 @@ and Box2D evidence. Bounded reset/grab behavior also has exact replay and
 clean cross-host evidence. Clean 1K/10K/100K scale curves retain complete
 state, work, memory, and capacity validation on all four target lanes. S2.6 is
 the active human layout/command-ABI checkpoint; neither ABI is frozen.
+The [compact review package](../evidence/p5.1-s2.6/README.md) contains the
+proposal and direct evidence links; implementation is stopped pending that
+decision.
 
 - Replace bootstrap state with generational SoA body storage and bounded GPU
   commands.

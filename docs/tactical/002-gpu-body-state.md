@@ -1,6 +1,6 @@
 # S2: GPU body state and fixed-floor contact
 
-Status: active, 2026-07-15.
+Status: active at S2.6 human review, 2026-07-15.
 Direction: [one GPU-resident 2D physics world](../topics/physbox5-unified-gpu-physics.md).
 Bring-up stage: [P5.1](../bringup-plan.md#p51--minimal-rigid-state-and-fixed-floor-contact-active).
 
@@ -337,14 +337,27 @@ status, and tactical completion facts land together.
 
 ### S2.6 — body layout and command ABI review
 
-- [ ] Publish a compact review report with the proposed frozen body lanes,
+Review checkpoint, 2026-07-15: the
+[compact S2.6 package](../../evidence/p5.1-s2.6/README.md) recommends accepting
+the four-lane 64-byte body layout, generational handle, 48-byte existing
+command record, and explicit capacity-failure semantics as the P5.2 baseline.
+It deliberately excludes scratch-channel meanings, numeric capacities, the
+full-capacity hold scan, future shape flags, and every P5.2+ buffer from the
+proposed freeze. The package links the synchronized Box2D/scalar/product floor
+playback, five-host reset/grab result, and 12-row scale matrix, and retains the
+Mali all-zero timestamp fault as a diagnostic-only known issue.
+
+No acceptance is implied: P5.1 remains active, the ABI is not frozen, and P5.2
+is unauthorized. Implementation stops here for the required human decision.
+
+- [x] Publish a compact review report with the proposed frozen body lanes,
   command records, capacity policy, measured bytes and curves, cross-host
   status, known minimized failures, rejected alternatives, and explicit
   reconsideration triggers.
-- [ ] State whether the evidence supports freezing the provisional layout and
+- [x] State whether the evidence supports freezing the provisional layout and
   advancing to P5.2, but do not mark the layout/ABI frozen without human
   review.
-- [ ] Stop for human acceptance before starting circles, general narrowphase,
+- [x] Stop for human acceptance before starting circles, general narrowphase,
   contact persistence, or any other P5.2 implementation.
 
 Gate: the reviewer can assess layout quality, downstream compatibility,

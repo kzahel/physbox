@@ -293,6 +293,13 @@ binding before general contacts establish their access pattern. The grouped
 SoA, the 48-byte bounded command record, and the full-capacity hold scan remain
 proposals for the S2.6 human review, not frozen production ABI.
 
+The [S2.6 review package](../../evidence/p5.1-s2.6/README.md) now recommends a
+limited freeze of the stable 64-byte lane surface, generational handle,
+existing 48-byte command record, and explicit capacity-failure semantics. It
+keeps scratch meaning, numeric capacities, hold-dispatch architecture, future
+shape flags, and all P5.2+ buffers outside the proposal. P5.1 remains active
+and P5.2 remains unauthorized until the required human decision is recorded.
+
 ## Later fluid-coupling contract
 
 This contract is not part of the first rigid milestone. It records the
