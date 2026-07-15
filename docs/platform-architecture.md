@@ -30,6 +30,15 @@ message only. Cross-host validation scenarios are Rust-owned; Playwright and
 ADB may prove that one raw event crosses the adapter and then consume the
 shared result.
 
+After accepted P5.2 collision evidence, the queued S4 usability checkpoint
+adds an engine-rendered shared scene menu and shared camera pan, zoom, and
+recenter semantics. The engine owns gesture arbitration and screen/world
+projection. Adapters may forward raw pointer, touch, wheel, resize, and
+lifecycle facts, but may not own menu contents, scene-selection meaning,
+camera state, or per-host control defaults. Camera changes are presentation and
+input-projection state only; they may not affect physics, fixed-step admission,
+or scenario outcomes.
+
 Interactive hosts forward elapsed wall time but never catch up locally. The
 shared clock executes zero or one fixed outer step per interactive engine
 frame and permanently slips excess whole-step wall time, so the simulated world

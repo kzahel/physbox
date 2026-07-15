@@ -116,6 +116,25 @@ P5.3.
   speculative separation, and explicit capacity diagnostics.
 - Produce synchronized oracle/GPU failure playback.
 
+## P5.2a — basic scene navigation and camera (queued)
+
+Execution tracker:
+[S4 basic scene navigation and camera](tactical/004-basic-scene-navigation-camera.md).
+
+Begin only after the S3.6 contact-representation review is accepted, and
+complete this checkpoint before P5.3 broadphase work. Keep the browser a
+fullscreen canvas: the shared engine renders the menu and owns scene
+selection, camera state, pan/zoom/recenter semantics, gesture arbitration, and
+pointer-to-world conversion. Platform adapters transport raw mouse, touch, and
+wheel facts only.
+
+- Make the maintained shared scenarios discoverable from the default deployed
+  canvas without requiring query-string editing.
+- Add mouse/touch pan, wheel/pinch zoom, recenter, and camera-correct body grab.
+- Preserve direct URL/argument launches for validation and deep links.
+- Prove that camera and menu state do not affect physics, pacing, scenario
+  hashes, or cross-host outcomes.
+
 ## P5.3 — scalable broadphase bake-off
 
 - Preserve brute force as pair-completeness oracle.
