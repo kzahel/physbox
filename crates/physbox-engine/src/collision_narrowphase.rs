@@ -364,7 +364,7 @@ impl GpuNarrowphaseRunner {
     }
 }
 
-struct NarrowphasePipelines {
+pub(crate) struct NarrowphasePipelines {
     clear: wgpu::ComputePipeline,
     generate: wgpu::ComputePipeline,
     scan_blocks: wgpu::ComputePipeline,
@@ -380,7 +380,7 @@ struct NarrowphasePipelines {
 }
 
 impl NarrowphasePipelines {
-    fn new(device: &wgpu::Device) -> Self {
+    pub(crate) fn new(device: &wgpu::Device) -> Self {
         let clear_layout = layout(
             device,
             "narrowphase_clear_layout",
@@ -497,7 +497,7 @@ impl NarrowphasePipelines {
     }
 }
 
-struct NarrowphaseCase {
+pub(crate) struct NarrowphaseCase {
     _scratch: wgpu::Buffer,
     _flags: wgpu::Buffer,
     _offsets: wgpu::Buffer,
@@ -519,7 +519,7 @@ struct NarrowphaseCase {
 }
 
 impl NarrowphaseCase {
-    fn new(
+    pub(crate) fn new(
         device: &wgpu::Device,
         pipelines: &NarrowphasePipelines,
         candidate: &CandidateCase,
@@ -647,7 +647,11 @@ impl NarrowphaseCase {
         })
     }
 
-    fn encode(&self, encoder: &mut wgpu::CommandEncoder, pipelines: &NarrowphasePipelines) {
+    pub(crate) fn encode(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        pipelines: &NarrowphasePipelines,
+    ) {
         let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some("physbox5_collision_narrowphase_passes"),
             timestamp_writes: None,
@@ -686,7 +690,7 @@ impl NarrowphaseCase {
         );
     }
 
-    fn capacities(
+    pub(crate) fn capacities(
         &self,
         manifold: CollisionCapacityV1,
         points: CollisionCapacityV1,
@@ -731,6 +735,30 @@ impl NarrowphaseCase {
                 u64::from(self.block_count),
             ),
         ]
+    }
+
+    pub(crate) fn manifolds(&self) -> &wgpu::Buffer {
+        &self.manifolds
+    }
+
+    pub(crate) fn points(&self) -> &wgpu::Buffer {
+        &self.points
+    }
+
+    pub(crate) fn manifold_capacity_buffer(&self) -> &wgpu::Buffer {
+        &self.manifold_capacity_buffer
+    }
+
+    pub(crate) fn point_capacity_buffer(&self) -> &wgpu::Buffer {
+        &self.point_capacity_buffer
+    }
+
+    pub(crate) fn manifold_capacity(&self) -> u32 {
+        self.manifold_capacity
+    }
+
+    pub(crate) fn point_capacity(&self) -> u32 {
+        self.point_capacity
     }
 }
 

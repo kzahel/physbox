@@ -8,6 +8,8 @@ mod clock;
 mod collision_candidates;
 #[cfg(not(target_arch = "wasm32"))]
 mod collision_narrowphase;
+#[cfg(not(target_arch = "wasm32"))]
+mod collision_persistence;
 mod config;
 mod frame;
 mod gpu_context;
@@ -37,6 +39,10 @@ pub use collision_candidates::GpuCandidateOutput;
 pub use collision_candidates::{GpuCandidateRunner, run_gpu_collision_candidates};
 #[cfg(not(target_arch = "wasm32"))]
 pub use collision_narrowphase::{GpuNarrowphaseOutput, GpuNarrowphaseRunner};
+#[cfg(not(target_arch = "wasm32"))]
+pub use collision_persistence::{
+    GpuPersistenceOutput, GpuPersistenceRunner, GpuPersistenceStepOutput,
+};
 pub use config::EngineConfig;
 pub use frame::{FrameInput, PointerButton, PointerEvent, PointerPhase, StepRequest};
 pub use gpu_context::{AdapterDiagnostics, create_instance};
