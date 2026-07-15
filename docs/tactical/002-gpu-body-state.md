@@ -308,6 +308,16 @@ binding before P5.2 exposes the contact access pattern. That option and a
 sparse replacement for the current full-capacity grab-hold scan remain
 explicit reconsideration triggers for S2.6 rather than silent ABI changes.
 
+Post-checkpoint AVD tooling now forces emulator host graphics and rejects
+engine-reported CPU/software adapters before a maintained validation or
+benchmark lane can publish success. The preserved S2.5 SwiftShader artifact
+remains historical software-portability evidence and is not refreshed or
+reinterpreted; later AVD measurements use the host GPU while physical-device
+measurements remain the Android performance authority. The existing portable
+primitive shaders also skip redundant generated workgroup-memory zeroing after
+complete initialization; this avoids a diagnosed emulator MoltenVK translation
+failure without changing primitive outputs.
+
 - [x] Add an explicit-step benchmark mode that initializes 1K, 10K, and 100K
   rectangles from the shared deterministic generator and measures integration
   plus direct rendering after warmup.

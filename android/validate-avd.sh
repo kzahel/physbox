@@ -31,11 +31,15 @@ rm -f "$SCREENSHOT" "$PROVENANCE" "$LOG"
 
 SERIAL="$("$ADB" devices | awk '$1 ~ /^emulator-/ && $2 == "device" {print $1; exit}')"
 STARTED=0
+if [[ -n "$SERIAL" ]]; then
+    RUNNING_AVD="$("$ADB" -s "$SERIAL" emu avd name 2>/dev/null | head -1 | tr -d '\r')"
+    [[ "$RUNNING_AVD" = "$AVD_NAME" ]] || { echo "error: running emulator is $RUNNING_AVD, expected $AVD_NAME" >&2; exit 1; }
+fi
 if [[ -z "$SERIAL" ]]; then
     STARTED=1
     EMULATOR_LOG="/tmp/physbox5-android-emulator.log"
     rm -f "$EMULATOR_LOG"
-    nohup "$EMULATOR" -avd "$AVD_NAME" -no-snapshot-save -no-audio >"$EMULATOR_LOG" 2>&1 </dev/null &
+    nohup "$EMULATOR" -avd "$AVD_NAME" -gpu host -no-snapshot-save -no-audio >"$EMULATOR_LOG" 2>&1 </dev/null &
     for _ in $(seq 1 120); do
         SERIAL="$("$ADB" devices | awk '$1 ~ /^emulator-/ && $2 == "device" {print $1; exit}')"
         if [[ -n "$SERIAL" && "$("$ADB" -s "$SERIAL" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]]; then break; fi
@@ -67,12 +71,14 @@ for _ in $(seq 1 90); do
     sleep 1
 done
 [[ "$PASSED" -eq 1 ]] || { echo "error: Android shared scenario did not pass; see $LOG" >&2; exit 1; }
-"$ADB" -s "$SERIAL" exec-out screencap -p > "$SCREENSHOT"
 REPORT="$(rg 'PHYSBOX5_MARK_FRAME_RENDERED ' "$LOG" | tail -1 | sed 's/^.*PHYSBOX5_MARK_FRAME_RENDERED //')"
 [[ "$(node -e 'console.log(JSON.parse(process.argv[1]).scenario.name)' "$REPORT")" = "$SCENARIO" ]] || {
     echo "error: Android reported the wrong shared scenario; see $LOG" >&2; exit 1;
 }
 ADAPTER="$(rg 'PHYSBOX5_MARK_ADAPTER ' "$LOG" | tail -1 | sed 's/^.*PHYSBOX5_MARK_ADAPTER //' || true)"
+[[ -n "$ADAPTER" ]] || { echo "error: Android adapter diagnostics missing; see $LOG" >&2; exit 1; }
+printf '%s\n' "$ADAPTER" | node "$ANDROID_DIR/require-hardware-adapter.mjs"
+"$ADB" -s "$SERIAL" exec-out screencap -p > "$SCREENSHOT"
 REVISION="$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
 DIRTY=false; [[ -n "$(git -C "$REPO_ROOT" status --porcelain)" ]] && DIRTY=true
 MODEL="$("$ADB" -s "$SERIAL" shell getprop ro.product.model | tr -d '\r')"

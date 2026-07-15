@@ -143,7 +143,13 @@ impl PrimitiveLab {
                 layout: Some(&pipeline_layout),
                 module: &shader,
                 entry_point: Some(entry),
-                compilation_options: Default::default(),
+                // Every workgroup array element is initialized by the owning entry point
+                // before its first read. Avoid wgpu's redundant generated zeroing, whose
+                // SPIR-V currently fails to cross-compile through emulator MoltenVK.
+                compilation_options: wgpu::PipelineCompilationOptions {
+                    constants: &[],
+                    zero_initialize_workgroup_memory: false,
+                },
                 cache: None,
             })
         };

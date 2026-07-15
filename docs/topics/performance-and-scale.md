@@ -384,6 +384,20 @@ CPU encode/submit, host-completion, dispatch, and capacity samples. The
 the identical binary and protocol. A locked or absent device remains a named
 gap rather than being replaced silently by emulator data.
 
+AVD tooling hardening, 2026-07-15: every maintained `jstorrent-tablet` launcher
+now requests emulator `-gpu host` explicitly and requires the engine-reported
+adapter to be non-CPU and not a known software rasterizer before publishing a
+success sentinel or benchmark artifact. On the Apple Silicon development host
+this selects the Apple M4 Pro through MoltenVK. The retained S1.5 and S2.5
+SwiftShader rows predate this guard and remain immutable, correctly labeled
+software-portability evidence; future maintained AVD evidence is a host-GPU
+portability/regression lane and is not a proxy for physical Android speed.
+The portable primitive pipelines explicitly skip wgpu's redundant generated
+workgroup-memory zeroing because each shader initializes its complete
+workgroup arrays before use and emulator MoltenVK rejects the generated
+`gl_WorkGroupSize` translation. Complete primitive output validation remains
+the correctness gate for that portability workaround.
+
 The clean S1.5 raw matrix at `evidence/p5.0a-s1.5/matrix.json` records revision
 `db84d635bc87c1f9d3c06f8ef58a86f2409596c0`, five warmup steps, 30 retained
 samples, and 64 deterministic randomized seeds. It contains both candidates at

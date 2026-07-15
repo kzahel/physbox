@@ -22,6 +22,7 @@
     "references:sync": "node scripts/references.mjs sync",
     "serve:web": "node scripts/serve-web.mjs",
     "test:desktop": "node scripts/desktop-smoke.mjs",
+    "test:android-tools": "node --test android/*.test.mjs",
     "test:web": "node scripts/browser-smoke.mjs",
     "prepare": "bash scripts/install-git-hooks.sh"
   },

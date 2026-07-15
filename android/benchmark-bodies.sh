@@ -48,7 +48,7 @@ if [[ "$MODE" = "avd" ]]; then
     fi
     if [[ -z "$SERIAL" ]]; then
         STARTED=1
-        nohup "$EMULATOR" -avd "$AVD_NAME" -no-snapshot-save -no-audio >/tmp/physbox5-android-body-benchmark-emulator.log 2>&1 </dev/null &
+        nohup "$EMULATOR" -avd "$AVD_NAME" -gpu host -no-snapshot-save -no-audio >/tmp/physbox5-android-body-benchmark-emulator.log 2>&1 </dev/null &
         for _ in $(seq 1 120); do
             SERIAL="$($ADB devices | awk '$1 ~ /^emulator-/ && $2 == "device" {print $1; exit}')"
             if [[ -n "$SERIAL" && "$($ADB -s "$SERIAL" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]]; then break; fi
@@ -86,16 +86,24 @@ REVISION="$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
 DIRTY=false; [[ -n "$(git -C "$REPO_ROOT" status --porcelain)" ]] && DIRTY=true
 RUN_ID="android-bodies-$(date +%s)-$$"
 LOG="$(mktemp /tmp/physbox5-android-body-log.XXXXXX)"
-"$ADB" -s "$SERIAL" shell "$REMOTE --run-id $RUN_ID --source-revision $REVISION --source-dirty $DIRTY --host android-native-vulkan --counts $COUNTS --seed $SEED --width $WIDTH --height $HEIGHT --warmup $WARMUP --samples $SAMPLES" | tr -d '\r' | tee "$LOG"
-rg -qx 'PHYSBOX5_BODY_BENCHMARK_SUCCESS' "$LOG" || { echo "error: Android body benchmark sentinel missing" >&2; exit 1; }
+rm -f "$OUTPUT" "$OUTPUT.tmp"
+if ! "$ADB" -s "$SERIAL" shell "$REMOTE --run-id $RUN_ID --source-revision $REVISION --source-dirty $DIRTY --host android-native-vulkan --counts $COUNTS --seed $SEED --width $WIDTH --height $HEIGHT --warmup $WARMUP --samples $SAMPLES" | tr -d '\r' >"$LOG"; then
+    cat "$LOG" >&2
+    echo "error: Android body benchmark process failed; see $LOG" >&2
+    exit 1
+fi
+rg -qx 'PHYSBOX5_BODY_BENCHMARK_SUCCESS' "$LOG" || { cat "$LOG" >&2; echo "error: Android body benchmark sentinel missing; see $LOG" >&2; exit 1; }
 REPORT="$(rg '^PHYSBOX5_BODY_BENCHMARK_RESULT ' "$LOG" | tail -1 | sed 's/^PHYSBOX5_BODY_BENCHMARK_RESULT //')"
-[[ -n "$REPORT" ]] || { echo "error: Android body benchmark result missing" >&2; exit 1; }
+[[ -n "$REPORT" ]] || { cat "$LOG" >&2; echo "error: Android body benchmark result missing; see $LOG" >&2; exit 1; }
+if [[ "$MODE" = "avd" ]]; then
+    printf '%s\n' "$REPORT" | node "$ANDROID_DIR/require-hardware-adapter.mjs"
+fi
+cat "$LOG"
 MODEL="$($ADB -s "$SERIAL" shell getprop ro.product.model | tr -d '\r')"
 PRODUCT="$($ADB -s "$SERIAL" shell getprop ro.product.device | tr -d '\r')"
 MANUFACTURER="$($ADB -s "$SERIAL" shell getprop ro.product.manufacturer | tr -d '\r')"
 ANDROID_RELEASE="$($ADB -s "$SERIAL" shell getprop ro.build.version.release | tr -d '\r')"
 SDK_LEVEL="$($ADB -s "$SERIAL" shell getprop ro.build.version.sdk | tr -d '\r')"
-rm -f "$OUTPUT" "$OUTPUT.tmp"
 node -e '
   const fs = require("fs");
   const [path, mode, avd, serial, model, product, manufacturer, androidRelease, sdkLevel, report] = process.argv.slice(1);

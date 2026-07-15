@@ -44,7 +44,7 @@ if [[ "$MODE" = "avd" ]]; then
     fi
     if [[ -z "$SERIAL" ]]; then
         STARTED=1
-        nohup "$EMULATOR" -avd "$AVD_NAME" -no-snapshot-save -no-audio >/tmp/physbox5-android-benchmark-emulator.log 2>&1 </dev/null &
+        nohup "$EMULATOR" -avd "$AVD_NAME" -gpu host -no-snapshot-save -no-audio >/tmp/physbox5-android-benchmark-emulator.log 2>&1 </dev/null &
         for _ in $(seq 1 120); do
             SERIAL="$($ADB devices | awk '$1 ~ /^emulator-/ && $2 == "device" {print $1; exit}')"
             if [[ -n "$SERIAL" && "$($ADB -s "$SERIAL" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]]; then break; fi
@@ -82,19 +82,29 @@ REVISION="$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
 DIRTY=false; [[ -n "$(git -C "$REPO_ROOT" status --porcelain)" ]] && DIRTY=true
 RUN_ID="android-gpu-$(date +%s)-$$"
 LOG="$(mktemp /tmp/physbox5-android-gpu-log.XXXXXX)"
-"$ADB" -s "$SERIAL" shell "$REMOTE --run-id $RUN_ID --source-revision $REVISION --source-dirty $DIRTY --solver-contacts $SOLVER_CONTACTS --primitive-elements $PRIMITIVE_ELEMENTS --warmup $WARMUP --samples $SAMPLES" | tr -d '\r' | tee "$LOG"
-rg -qx 'PHYSBOX5_ANDROID_GPU_BENCHMARK_SUCCESS' "$LOG" || { echo "error: Android GPU benchmark sentinel missing" >&2; exit 1; }
+rm -f "$OUTPUT" "$OUTPUT.tmp"
+if ! "$ADB" -s "$SERIAL" shell "$REMOTE --run-id $RUN_ID --source-revision $REVISION --source-dirty $DIRTY --solver-contacts $SOLVER_CONTACTS --primitive-elements $PRIMITIVE_ELEMENTS --warmup $WARMUP --samples $SAMPLES" | tr -d '\r' >"$LOG"; then
+    cat "$LOG" >&2
+    echo "error: Android GPU benchmark process failed; see $LOG" >&2
+    exit 1
+fi
+rg -qx 'PHYSBOX5_ANDROID_GPU_BENCHMARK_SUCCESS' "$LOG" || { cat "$LOG" >&2; echo "error: Android GPU benchmark sentinel missing; see $LOG" >&2; exit 1; }
 REPORT="$(rg '^PHYSBOX5_ANDROID_BENCHMARK_RESULT ' "$LOG" | tail -1 | sed 's/^PHYSBOX5_ANDROID_BENCHMARK_RESULT //')"
-[[ -n "$REPORT" ]] || { echo "error: Android GPU benchmark result missing" >&2; exit 1; }
+[[ -n "$REPORT" ]] || { cat "$LOG" >&2; echo "error: Android GPU benchmark result missing; see $LOG" >&2; exit 1; }
+if [[ "$MODE" = "avd" ]]; then
+    printf '%s\n' "$REPORT" | node "$ANDROID_DIR/require-hardware-adapter.mjs"
+fi
+cat "$LOG"
 MODEL="$($ADB -s "$SERIAL" shell getprop ro.product.model | tr -d '\r')"
 PRODUCT="$($ADB -s "$SERIAL" shell getprop ro.product.device | tr -d '\r')"
 node -e '
   const fs = require("fs");
   const [path, mode, avd, serial, model, product, report] = process.argv.slice(1);
-  fs.writeFileSync(path, JSON.stringify({
+  fs.writeFileSync(path + ".tmp", JSON.stringify({
     target: { mode, avd: mode === "avd" ? avd : null, serial, model, product },
     report: JSON.parse(report),
   }, null, 2) + "\n");
+  fs.renameSync(path + ".tmp", path);
 ' "$OUTPUT" "$MODE" "$AVD_NAME" "$SERIAL" "$MODEL" "$PRODUCT" "$REPORT"
 rm -f "$LOG"
 echo "PHYSBOX5_ANDROID_GPU_BENCHMARK_SUCCESS target=$MODE model=$MODEL output=$OUTPUT"
