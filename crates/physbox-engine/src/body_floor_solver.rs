@@ -118,6 +118,64 @@ pub struct GpuAuthoredGatherBenchmarkOutput {
     pub capacities: Vec<CapacityRecordV1>,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+struct BenchmarkTimestampResources {
+    query_set: wgpu::QuerySet,
+    resolve: wgpu::Buffer,
+    readback: wgpu::Buffer,
+    count: u32,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl BenchmarkTimestampResources {
+    fn new(device: &wgpu::Device, label: &'static str, count: u32) -> Self {
+        let query_set = device.create_query_set(&wgpu::QuerySetDescriptor {
+            label: Some(label),
+            ty: wgpu::QueryType::Timestamp,
+            count,
+        });
+        let byte_count = u64::from(count) * size_of::<u64>() as u64;
+        let resolve = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some(label),
+            size: byte_count,
+            usage: wgpu::BufferUsages::QUERY_RESOLVE | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+        let readback = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some(label),
+            size: byte_count,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        Self {
+            query_set,
+            resolve,
+            readback,
+            count,
+        }
+    }
+
+    fn resolve_and_map(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) -> Result<Vec<u64>, String> {
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("physbox5_authored_gather_query_copy"),
+        });
+        encoder.resolve_query_set(&self.query_set, 0..self.count, &self.resolve, 0);
+        encoder.copy_buffer_to_buffer(
+            &self.resolve,
+            0,
+            &self.readback,
+            0,
+            u64::from(self.count) * size_of::<u64>() as u64,
+        );
+        queue.submit([encoder.finish()]);
+        crate::collision_candidates::map_values::<u64>(device, &self.readback, self.count as usize)
+    }
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
 pub(crate) struct PointInputRaw {
@@ -928,34 +986,26 @@ pub async fn benchmark_gpu_authored_gather_topology(
     let instrumented_queries_per_sample = operation_count
         .checked_mul(2)
         .ok_or_else(|| "authored gather subphase query count overflowed".to_owned())?;
-    let query_count = total_query_count
-        .checked_add(
-            samples
-                .checked_mul(instrumented_queries_per_sample)
-                .ok_or_else(|| "authored gather query count overflowed".to_owned())?,
+    let total_query_resources = timestamps_available.then(|| {
+        BenchmarkTimestampResources::new(
+            &device,
+            "physbox5_authored_gather_total_queries",
+            total_query_count,
         )
-        .ok_or_else(|| "authored gather query count overflowed".to_owned())?;
-    let query_resources = timestamps_available.then(|| {
-        let query_set = device.create_query_set(&wgpu::QuerySetDescriptor {
-            label: Some("physbox5_authored_gather_queries"),
-            ty: wgpu::QueryType::Timestamp,
-            count: query_count,
-        });
-        let byte_count = u64::from(query_count) * size_of::<u64>() as u64;
-        let resolve = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("physbox5_authored_gather_query_resolve"),
-            size: byte_count,
-            usage: wgpu::BufferUsages::QUERY_RESOLVE | wgpu::BufferUsages::COPY_SRC,
-            mapped_at_creation: false,
-        });
-        let readback = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("physbox5_authored_gather_query_readback"),
-            size: byte_count,
-            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-            mapped_at_creation: false,
-        });
-        (query_set, resolve, readback)
     });
+    let instrumented_query_resources = if timestamps_available {
+        (0..samples)
+            .map(|_| {
+                BenchmarkTimestampResources::new(
+                    &device,
+                    "physbox5_authored_gather_subphase_queries",
+                    instrumented_queries_per_sample,
+                )
+            })
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
 
     for _ in 0..warmup_steps {
         storage.upload_reset_data(&queue, &reset);
@@ -983,8 +1033,13 @@ pub async fn benchmark_gpu_authored_gather_topology(
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("physbox5_authored_gather_sample"),
         });
-        if let Some((query_set, _, _)) = &query_resources {
-            solver.encode_step_with_timestamps(&mut encoder, query_set, sample * 2, sample * 2 + 1);
+        if let Some(resources) = &total_query_resources {
+            solver.encode_step_with_timestamps(
+                &mut encoder,
+                &resources.query_set,
+                sample * 2,
+                sample * 2 + 1,
+            );
         } else {
             solver.encode_step(&mut encoder);
         }
@@ -996,8 +1051,8 @@ pub async fn benchmark_gpu_authored_gather_topology(
         host_completion_seconds.push(started.elapsed().as_secs_f64());
     }
 
-    if let Some((query_set, _, _)) = &query_resources {
-        for sample in 0..samples {
+    if timestamps_available {
+        for resources in &instrumented_query_resources {
             storage.upload_reset_data(&queue, &reset);
             device
                 .poll(wgpu::PollType::Wait)
@@ -1005,11 +1060,7 @@ pub async fn benchmark_gpu_authored_gather_topology(
             let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("physbox5_authored_gather_subphase_sample"),
             });
-            solver.encode_step_instrumented(
-                &mut encoder,
-                query_set,
-                total_query_count + sample * instrumented_queries_per_sample,
-            );
+            solver.encode_step_instrumented(&mut encoder, &resources.query_set, 0);
             queue.submit([encoder.finish()]);
             device
                 .poll(wgpu::PollType::Wait)
@@ -1023,28 +1074,12 @@ pub async fn benchmark_gpu_authored_gather_topology(
     let mut gather_seconds = None;
     let mut solve_seconds = None;
     let mut timestamp_period_nanoseconds = None;
-    if let Some((query_set, resolve, readback)) = &query_resources {
-        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("physbox5_authored_gather_query_copy"),
-        });
-        encoder.resolve_query_set(query_set, 0..query_count, resolve, 0);
-        encoder.copy_buffer_to_buffer(
-            resolve,
-            0,
-            readback,
-            0,
-            u64::from(query_count) * size_of::<u64>() as u64,
-        );
-        queue.submit([encoder.finish()]);
-        let values = crate::collision_candidates::map_values::<u64>(
-            &device,
-            readback,
-            query_count as usize,
-        )?;
+    if let Some(resources) = &total_query_resources {
+        let values = resources.resolve_and_map(&device, &queue)?;
         let period = queue.get_timestamp_period();
         let seconds =
             |start: u64, end: u64| end.saturating_sub(start) as f64 * f64::from(period) * 1.0e-9;
-        let total = values[..total_query_count as usize]
+        let total = values
             .chunks_exact(2)
             .map(|pair| seconds(pair[0], pair[1]))
             .collect::<Vec<_>>();
@@ -1052,10 +1087,8 @@ pub async fn benchmark_gpu_authored_gather_topology(
         let mut offsets = Vec::with_capacity(samples as usize);
         let mut gather = Vec::with_capacity(samples as usize);
         let mut solve = Vec::with_capacity(samples as usize);
-        for sample in 0..samples as usize {
-            let start =
-                total_query_count as usize + sample * instrumented_queries_per_sample as usize;
-            let sample_values = &values[start..start + instrumented_queries_per_sample as usize];
+        for resources in &instrumented_query_resources {
+            let sample_values = resources.resolve_and_map(&device, &queue)?;
             let mut totals = [0.0_f64; 4];
             for (operation, pair) in solver.operations.iter().zip(sample_values.chunks_exact(2)) {
                 let phase = match operation.pipeline.instrumented_phase() {
