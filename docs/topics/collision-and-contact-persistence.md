@@ -241,6 +241,17 @@ baseline until the same-revision timing matrix resolves the candidate's extra
 radix dispatches and index-buffer bytes against its removal of
 `body_capacity * point_capacity` scatter work.
 
+The bakeoff evidence runner consumes those same canonical payloads and views;
+it does not author another engine or benchmark-only contact format. Generated
+32/256/1K rows time the complete graph and persistence interval, while the
+shared authored-chain source supplies exact 1K/10K contact-rich inputs that
+bypass all-pairs generation. Stable-edge and canonical runs must produce the
+same pose/motion digest twice before a row is timing-qualified. Randomized
+pair replay, input permutation, full-verify collision negatives, generation
+reuse, recontact, and atomic rejection remain permanent tests or fresh matrix
+fields. The runner publishes a fresh atomic directory with source provenance
+and an explicit no-selection marker.
+
 ## Reconsideration triggers
 
 Reconsider the provisional feature or record layout before S3.6 if direct

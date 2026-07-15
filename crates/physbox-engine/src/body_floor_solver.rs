@@ -1,7 +1,12 @@
 use std::mem::size_of;
 
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::Instant;
+
 use bytemuck::{Pod, Zeroable};
 use physbox_contracts::{CapacityRecordV1, ScenarioV1};
+#[cfg(not(target_arch = "wasm32"))]
+use physbox_contracts::{Validate, canonical_hash, sha256_bytes};
 use serde::Serialize;
 use wgpu::util::DeviceExt;
 
@@ -85,6 +90,32 @@ impl GpuGatherTopologyEvidence {
         }
         Ok(())
     }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GpuAuthoredGatherBenchmarkOutput {
+    pub adapter: crate::AdapterDiagnostics,
+    pub source_scenario_hash: String,
+    pub body_count: u32,
+    pub contact_points: u32,
+    pub warmup_steps: u32,
+    pub samples: u32,
+    pub topology: GpuGatherTopologyEvidence,
+    pub dispatches_per_step: u32,
+    pub allocated_bytes: u64,
+    pub gpu_total_seconds: Option<Vec<f64>>,
+    pub host_completion_seconds: Vec<f64>,
+    pub cpu_encode_submit_seconds: Vec<f64>,
+    pub instrumented_index_build_seconds: Option<Vec<f64>>,
+    pub instrumented_offset_construction_seconds: Option<Vec<f64>>,
+    pub instrumented_gather_seconds: Option<Vec<f64>>,
+    pub instrumented_solve_seconds: Option<Vec<f64>>,
+    pub timestamp_period_nanoseconds: Option<f32>,
+    pub replay_exact: bool,
+    pub result_digest: String,
+    pub capacities: Vec<CapacityRecordV1>,
 }
 
 #[repr(C)]
@@ -181,6 +212,41 @@ enum PipelineKind {
     Restitution,
     IntegratePosition,
     Gather,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Clone, Copy)]
+enum InstrumentedPhase {
+    IndexBuild,
+    OffsetConstruction,
+    Gather,
+    Solve,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl PipelineKind {
+    const fn instrumented_phase(self) -> InstrumentedPhase {
+        match self {
+            Self::TopologyClear
+            | Self::TopologyCount
+            | Self::TopologyScatter
+            | Self::EdgeBuild
+            | Self::EdgeRadixHistograms
+            | Self::EdgeRadixScatter => InstrumentedPhase::IndexBuild,
+            Self::TopologyPrefix | Self::EdgeRadixPrefix | Self::EdgeRanges => {
+                InstrumentedPhase::OffsetConstruction
+            }
+            Self::Gather => InstrumentedPhase::Gather,
+            Self::IntegrateVelocity
+            | Self::Prepare
+            | Self::Refresh
+            | Self::Warm
+            | Self::Normal
+            | Self::Tangent
+            | Self::Restitution
+            | Self::IntegratePosition => InstrumentedPhase::Solve,
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -371,6 +437,43 @@ impl GpuFixedFloorSolver {
             &point_buffer,
             point_count,
             GpuGatherTopology::CanonicalBodyScan,
+            false,
+        )?;
+        solver._owned_point_input = Some(point_buffer);
+        Ok(solver)
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn new_authored_with_topology(
+        device: &wgpu::Device,
+        storage: &GpuBodyStorage,
+        scenario: &ScenarioV1,
+        topology: GpuGatherTopology,
+    ) -> Result<Self, String> {
+        validate_selected_settings(scenario)?;
+        if scenario.manifolds.is_empty() {
+            return Err("authored gather benchmark requires contact manifolds".to_owned());
+        }
+        let (points, point_count) = point_inputs(scenario)?;
+        if point_count == 0 {
+            return Err("authored gather benchmark requires contact points".to_owned());
+        }
+        let usage = wgpu::BufferUsages::STORAGE
+            | wgpu::BufferUsages::COPY_SRC
+            | wgpu::BufferUsages::COPY_DST;
+        let point_buffer = storage_init(
+            device,
+            "physbox5_authored_benchmark_points",
+            bytemuck::cast_slice(&points),
+            usage,
+        );
+        let mut solver = Self::new_with_point_buffer(
+            device,
+            storage,
+            scenario,
+            &point_buffer,
+            point_count,
+            topology,
             false,
         )?;
         solver._owned_point_input = Some(point_buffer);
@@ -618,35 +721,81 @@ impl GpuFixedFloorSolver {
             timestamp_writes: None,
         });
         for operation in &self.operations {
-            pass.set_pipeline(match operation.pipeline {
-                PipelineKind::TopologyClear => &self.topology_clear_pipeline,
-                PipelineKind::TopologyCount => &self.topology_count_pipeline,
-                PipelineKind::TopologyPrefix => &self.topology_prefix_pipeline,
-                PipelineKind::TopologyScatter => &self.topology_scatter_pipeline,
-                PipelineKind::EdgeBuild => &self.edge_build_pipeline,
-                PipelineKind::EdgeRadixHistograms => &self.edge_radix_histograms_pipeline,
-                PipelineKind::EdgeRadixPrefix => &self.edge_radix_prefix_pipeline,
-                PipelineKind::EdgeRadixScatter => &self.edge_radix_scatter_pipeline,
-                PipelineKind::EdgeRanges => &self.edge_ranges_pipeline,
-                PipelineKind::IntegrateVelocity => &self.integrate_velocity_pipeline,
-                PipelineKind::Prepare => &self.prepare_pipeline,
-                PipelineKind::Refresh => &self.refresh_pipeline,
-                PipelineKind::Warm => &self.warm_pipeline,
-                PipelineKind::Normal => &self.normal_pipeline,
-                PipelineKind::Tangent => &self.tangent_pipeline,
-                PipelineKind::Restitution => &self.restitution_pipeline,
-                PipelineKind::IntegratePosition => &self.integrate_position_pipeline,
-                PipelineKind::Gather => &self.gather_pipeline,
+            self.encode_operation(&mut pass, operation);
+        }
+    }
+
+    fn encode_operation<'a>(&'a self, pass: &mut wgpu::ComputePass<'a>, operation: &Operation) {
+        pass.set_pipeline(match operation.pipeline {
+            PipelineKind::TopologyClear => &self.topology_clear_pipeline,
+            PipelineKind::TopologyCount => &self.topology_count_pipeline,
+            PipelineKind::TopologyPrefix => &self.topology_prefix_pipeline,
+            PipelineKind::TopologyScatter => &self.topology_scatter_pipeline,
+            PipelineKind::EdgeBuild => &self.edge_build_pipeline,
+            PipelineKind::EdgeRadixHistograms => &self.edge_radix_histograms_pipeline,
+            PipelineKind::EdgeRadixPrefix => &self.edge_radix_prefix_pipeline,
+            PipelineKind::EdgeRadixScatter => &self.edge_radix_scatter_pipeline,
+            PipelineKind::EdgeRanges => &self.edge_ranges_pipeline,
+            PipelineKind::IntegrateVelocity => &self.integrate_velocity_pipeline,
+            PipelineKind::Prepare => &self.prepare_pipeline,
+            PipelineKind::Refresh => &self.refresh_pipeline,
+            PipelineKind::Warm => &self.warm_pipeline,
+            PipelineKind::Normal => &self.normal_pipeline,
+            PipelineKind::Tangent => &self.tangent_pipeline,
+            PipelineKind::Restitution => &self.restitution_pipeline,
+            PipelineKind::IntegratePosition => &self.integrate_position_pipeline,
+            PipelineKind::Gather => &self.gather_pipeline,
+        });
+        pass.set_bind_group(
+            0,
+            match operation.direction {
+                MotionDirection::AtoB => &self.bind_ab,
+                MotionDirection::BtoA => &self.bind_ba,
+            },
+            &[operation.parameter_index * PARAMETER_STRIDE as u32],
+        );
+        pass.dispatch_workgroups(operation.workgroups, 1, 1);
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn encode_step_with_timestamps(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        query_set: &wgpu::QuerySet,
+        beginning: u32,
+        end: u32,
+    ) {
+        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("physbox5_authored_gather_benchmark_total"),
+            timestamp_writes: Some(wgpu::ComputePassTimestampWrites {
+                query_set,
+                beginning_of_pass_write_index: Some(beginning),
+                end_of_pass_write_index: Some(end),
+            }),
+        });
+        for operation in &self.operations {
+            self.encode_operation(&mut pass, operation);
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn encode_step_instrumented(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        query_set: &wgpu::QuerySet,
+        base: u32,
+    ) {
+        for (index, operation) in self.operations.iter().enumerate() {
+            let beginning = base + index as u32 * 2;
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("physbox5_authored_gather_benchmark_subphase"),
+                timestamp_writes: Some(wgpu::ComputePassTimestampWrites {
+                    query_set,
+                    beginning_of_pass_write_index: Some(beginning),
+                    end_of_pass_write_index: Some(beginning + 1),
+                }),
             });
-            pass.set_bind_group(
-                0,
-                match operation.direction {
-                    MotionDirection::AtoB => &self.bind_ab,
-                    MotionDirection::BtoA => &self.bind_ba,
-                },
-                &[operation.parameter_index * PARAMETER_STRIDE as u32],
-            );
-            pass.dispatch_workgroups(operation.workgroups, 1, 1);
+            self.encode_operation(&mut pass, operation);
         }
     }
 
@@ -732,6 +881,284 @@ impl GpuFixedFloorSolver {
         );
         layout
     }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn benchmark_gpu_authored_gather_topology(
+    scenario: &ScenarioV1,
+    warmup_steps: u32,
+    samples: u32,
+    topology: GpuGatherTopology,
+) -> Result<GpuAuthoredGatherBenchmarkOutput, String> {
+    if warmup_steps == 0 || samples == 0 {
+        return Err("authored gather benchmark requires nonzero warmup and samples".to_owned());
+    }
+    scenario.validate().map_err(|error| error.to_string())?;
+    let (_, point_count) = point_inputs(scenario)?;
+    if point_count == 0 {
+        return Err("authored gather benchmark requires contact points".to_owned());
+    }
+    let body_count = u32::try_from(scenario.bodies.len())
+        .map_err(|_| "authored gather body count exceeds u32".to_owned())?;
+    let instance = crate::gpu_context::create_instance();
+    let adapter = crate::gpu_context::request_adapter(&instance, None).await?;
+    let diagnostics = crate::AdapterDiagnostics::from_adapter(&adapter);
+    let timestamps_available = adapter.features().contains(wgpu::Features::TIMESTAMP_QUERY);
+    let required_features = if timestamps_available {
+        wgpu::Features::TIMESTAMP_QUERY
+    } else {
+        wgpu::Features::empty()
+    };
+    let (device, queue) =
+        crate::gpu_context::request_device_with_features(&adapter, required_features).await?;
+    let storage = GpuBodyStorage::new(
+        &device,
+        body_count,
+        crate::BODY_COMMAND_CAPACITY,
+        &scenario.bodies,
+    )?;
+    let reset = crate::body_state::GpuBodyResetData::new(body_count, &scenario.bodies)?;
+    let solver =
+        GpuFixedFloorSolver::new_authored_with_topology(&device, &storage, scenario, topology)?;
+    let operation_count = u32::try_from(solver.operations.len())
+        .map_err(|_| "authored gather operation count exceeds u32".to_owned())?;
+    let total_query_count = samples
+        .checked_mul(2)
+        .ok_or_else(|| "authored gather total query count overflowed".to_owned())?;
+    let instrumented_queries_per_sample = operation_count
+        .checked_mul(2)
+        .ok_or_else(|| "authored gather subphase query count overflowed".to_owned())?;
+    let query_count = total_query_count
+        .checked_add(
+            samples
+                .checked_mul(instrumented_queries_per_sample)
+                .ok_or_else(|| "authored gather query count overflowed".to_owned())?,
+        )
+        .ok_or_else(|| "authored gather query count overflowed".to_owned())?;
+    let query_resources = timestamps_available.then(|| {
+        let query_set = device.create_query_set(&wgpu::QuerySetDescriptor {
+            label: Some("physbox5_authored_gather_queries"),
+            ty: wgpu::QueryType::Timestamp,
+            count: query_count,
+        });
+        let byte_count = u64::from(query_count) * size_of::<u64>() as u64;
+        let resolve = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("physbox5_authored_gather_query_resolve"),
+            size: byte_count,
+            usage: wgpu::BufferUsages::QUERY_RESOLVE | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+        let readback = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("physbox5_authored_gather_query_readback"),
+            size: byte_count,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        (query_set, resolve, readback)
+    });
+
+    for _ in 0..warmup_steps {
+        storage.upload_reset_data(&queue, &reset);
+        device
+            .poll(wgpu::PollType::Wait)
+            .map_err(|error| format!("poll authored gather warmup reset: {error}"))?;
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("physbox5_authored_gather_warmup"),
+        });
+        solver.encode_step(&mut encoder);
+        queue.submit([encoder.finish()]);
+        device
+            .poll(wgpu::PollType::Wait)
+            .map_err(|error| format!("poll authored gather warmup: {error}"))?;
+    }
+
+    let mut host_completion_seconds = Vec::with_capacity(samples as usize);
+    let mut cpu_encode_submit_seconds = Vec::with_capacity(samples as usize);
+    for sample in 0..samples {
+        storage.upload_reset_data(&queue, &reset);
+        device
+            .poll(wgpu::PollType::Wait)
+            .map_err(|error| format!("poll authored gather sample reset: {error}"))?;
+        let started = Instant::now();
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("physbox5_authored_gather_sample"),
+        });
+        if let Some((query_set, _, _)) = &query_resources {
+            solver.encode_step_with_timestamps(&mut encoder, query_set, sample * 2, sample * 2 + 1);
+        } else {
+            solver.encode_step(&mut encoder);
+        }
+        queue.submit([encoder.finish()]);
+        cpu_encode_submit_seconds.push(started.elapsed().as_secs_f64());
+        device
+            .poll(wgpu::PollType::Wait)
+            .map_err(|error| format!("poll authored gather sample: {error}"))?;
+        host_completion_seconds.push(started.elapsed().as_secs_f64());
+    }
+
+    if let Some((query_set, _, _)) = &query_resources {
+        for sample in 0..samples {
+            storage.upload_reset_data(&queue, &reset);
+            device
+                .poll(wgpu::PollType::Wait)
+                .map_err(|error| format!("poll authored gather subphase reset: {error}"))?;
+            let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("physbox5_authored_gather_subphase_sample"),
+            });
+            solver.encode_step_instrumented(
+                &mut encoder,
+                query_set,
+                total_query_count + sample * instrumented_queries_per_sample,
+            );
+            queue.submit([encoder.finish()]);
+            device
+                .poll(wgpu::PollType::Wait)
+                .map_err(|error| format!("poll authored gather subphase sample: {error}"))?;
+        }
+    }
+
+    let mut gpu_total_seconds = None;
+    let mut index_build_seconds = None;
+    let mut offset_construction_seconds = None;
+    let mut gather_seconds = None;
+    let mut solve_seconds = None;
+    let mut timestamp_period_nanoseconds = None;
+    if let Some((query_set, resolve, readback)) = &query_resources {
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("physbox5_authored_gather_query_copy"),
+        });
+        encoder.resolve_query_set(query_set, 0..query_count, resolve, 0);
+        encoder.copy_buffer_to_buffer(
+            resolve,
+            0,
+            readback,
+            0,
+            u64::from(query_count) * size_of::<u64>() as u64,
+        );
+        queue.submit([encoder.finish()]);
+        let values = crate::collision_candidates::map_values::<u64>(
+            &device,
+            readback,
+            query_count as usize,
+        )?;
+        let period = queue.get_timestamp_period();
+        let seconds =
+            |start: u64, end: u64| end.saturating_sub(start) as f64 * f64::from(period) * 1.0e-9;
+        let total = values[..total_query_count as usize]
+            .chunks_exact(2)
+            .map(|pair| seconds(pair[0], pair[1]))
+            .collect::<Vec<_>>();
+        let mut index = Vec::with_capacity(samples as usize);
+        let mut offsets = Vec::with_capacity(samples as usize);
+        let mut gather = Vec::with_capacity(samples as usize);
+        let mut solve = Vec::with_capacity(samples as usize);
+        for sample in 0..samples as usize {
+            let start =
+                total_query_count as usize + sample * instrumented_queries_per_sample as usize;
+            let sample_values = &values[start..start + instrumented_queries_per_sample as usize];
+            let mut totals = [0.0_f64; 4];
+            for (operation, pair) in solver.operations.iter().zip(sample_values.chunks_exact(2)) {
+                let phase = match operation.pipeline.instrumented_phase() {
+                    InstrumentedPhase::IndexBuild => 0,
+                    InstrumentedPhase::OffsetConstruction => 1,
+                    InstrumentedPhase::Gather => 2,
+                    InstrumentedPhase::Solve => 3,
+                };
+                totals[phase] += seconds(pair[0], pair[1]);
+            }
+            index.push(totals[0]);
+            offsets.push(totals[1]);
+            gather.push(totals[2]);
+            solve.push(totals[3]);
+        }
+        gpu_total_seconds = Some(total);
+        index_build_seconds = Some(index);
+        offset_construction_seconds = Some(offsets);
+        gather_seconds = Some(gather);
+        solve_seconds = Some(solve);
+        timestamp_period_nanoseconds = Some(period);
+    }
+
+    let first_digest = authored_gather_result_digest(&device, &queue, &storage, &reset, &solver)?;
+    let second_digest = authored_gather_result_digest(&device, &queue, &storage, &reset, &solver)?;
+    let replay_exact = first_digest == second_digest;
+    if !replay_exact {
+        return Err("authored gather benchmark replay differed".to_owned());
+    }
+    let mut capacities = vec![storage.body_capacity_record()];
+    capacities.extend_from_slice(solver.capacities());
+    capacities.sort_by(|left, right| left.class.cmp(&right.class));
+    for capacity in &capacities {
+        capacity.validate().map_err(|error| error.to_string())?;
+        if capacity.overflowed {
+            return Err(format!(
+                "authored gather benchmark overflowed {}",
+                capacity.class
+            ));
+        }
+    }
+    Ok(GpuAuthoredGatherBenchmarkOutput {
+        adapter: diagnostics,
+        source_scenario_hash: canonical_hash(scenario).map_err(|error| error.to_string())?,
+        body_count,
+        contact_points: point_count,
+        warmup_steps,
+        samples,
+        topology: solver.gather_topology_evidence(),
+        dispatches_per_step: solver.dispatches_per_step(),
+        allocated_bytes: storage.layout().allocated_bytes + solver.allocated_bytes(),
+        gpu_total_seconds,
+        host_completion_seconds,
+        cpu_encode_submit_seconds,
+        instrumented_index_build_seconds: index_build_seconds,
+        instrumented_offset_construction_seconds: offset_construction_seconds,
+        instrumented_gather_seconds: gather_seconds,
+        instrumented_solve_seconds: solve_seconds,
+        timestamp_period_nanoseconds,
+        replay_exact,
+        result_digest: first_digest,
+        capacities,
+    })
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn authored_gather_result_digest(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    storage: &GpuBodyStorage,
+    reset: &crate::body_state::GpuBodyResetData,
+    solver: &GpuFixedFloorSolver,
+) -> Result<String, String> {
+    storage.upload_reset_data(queue, reset);
+    device
+        .poll(wgpu::PollType::Wait)
+        .map_err(|error| format!("poll authored gather digest reset: {error}"))?;
+    let lane_bytes = storage.pose_buffer().size();
+    let readback = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("physbox5_authored_gather_result_readback"),
+        size: lane_bytes * 2,
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("physbox5_authored_gather_result_digest"),
+    });
+    solver.encode_step(&mut encoder);
+    encoder.copy_buffer_to_buffer(storage.pose_buffer(), 0, &readback, 0, lane_bytes);
+    encoder.copy_buffer_to_buffer(
+        storage.motion_buffer(),
+        0,
+        &readback,
+        lane_bytes,
+        lane_bytes,
+    );
+    queue.submit([encoder.finish()]);
+    let values = crate::collision_candidates::map_values::<u32>(
+        device,
+        &readback,
+        (lane_bytes * 2 / size_of::<u32>() as u64) as usize,
+    )?;
+    Ok(sha256_bytes(bytemuck::cast_slice(&values)))
 }
 
 #[cfg(not(target_arch = "wasm32"))]

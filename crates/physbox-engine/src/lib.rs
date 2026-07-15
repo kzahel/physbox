@@ -29,6 +29,10 @@ pub use body_benchmark::{
     GpuBodyBenchmarkSession, GpuTimestampStatus, PendingBodyValidation, PendingCompletion,
     PendingTimestampReadback,
 };
+#[cfg(not(target_arch = "wasm32"))]
+pub use body_floor_solver::{
+    GpuAuthoredGatherBenchmarkOutput, benchmark_gpu_authored_gather_topology,
+};
 pub use body_floor_solver::{
     GpuFixedFloorContactEvidence, GpuFixedFloorPassEvidence, GpuGatherTopology,
     GpuGatherTopologyEvidence,
@@ -65,7 +69,9 @@ pub use gpu_solver::{
 };
 #[cfg(not(target_arch = "wasm32"))]
 pub use pair_slot_persistence::{
-    GpuPairSlotPersistenceOutput, GpuPairSlotPersistenceRunner, GpuPairSlotPersistenceStepOutput,
+    GpuPairSlotPersistenceBenchmarkOutput, GpuPairSlotPersistenceOutput,
+    GpuPairSlotPersistenceRunner, GpuPairSlotPersistenceStepOutput,
+    benchmark_gpu_pair_slot_persistence,
 };
 #[cfg(not(target_arch = "wasm32"))]
 pub use renderer::OffscreenRenderer;

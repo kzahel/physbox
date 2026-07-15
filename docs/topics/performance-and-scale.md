@@ -603,6 +603,18 @@ Permanent exact-output, scheduling-permutation, high-contention, multi-step,
 benchmark-completion, and atomic-overflow gates pass. Timing and contact-rich
 scale evidence, not this static work shape, will decide the lane.
 
+S3.5a evidence-automation checkpoint, 2026-07-15: the native bakeoff runner
+now emits fresh atomic provenance and raw-sample-derived P50/P95/P99 for exact
+point-key versus stable pair-slot persistence, complete generated baseline
+versus stable-edge graphs, and 1K/10K authored-contact baseline versus
+stable-edge rows. The authored rows use the shared deterministic chain source
+and never execute the quadratic all-pairs stage. Representative whole-pass
+samples are kept separate from a diagnostic per-operation timestamp lane that
+attributes index construction, offset construction, gather, and remaining
+solve time. Exact result digests, replay, randomized permutation, allocation,
+capacity, dispatch, and atomic rejection qualify each row. No timing result is
+accepted until the clean same-revision evidence commit.
+
 ## Regression and claim gates
 
 Before representative hardware is selected, store named measurements and

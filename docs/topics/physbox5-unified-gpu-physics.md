@@ -582,6 +582,15 @@ high-contention, churn, and overflow comparisons pass; the additional radix
 dispatches and ping-pong index bytes remain visible for the S3.5a timing and
 scale matrix rather than being accepted architecturally here.
 
+The S3.5a evidence command measures these views without introducing a
+benchmark-only engine: generated rows use the real contact graph, while 1K
+and 10K authored-contact rows feed the accepted solver from the shared neutral
+scenario source and skip only the deliberately out-of-scope all-pairs stage.
+Representative timestamps and instrumented subphase timestamps are distinct;
+both are correctness-qualified by exact result digests, replay, permutation,
+capacity, and atomic-failure records. Fresh artifacts always state that no
+representation or physical default has been selected.
+
 Circle/circle and circle/rectangle contact are analytic. Rectangle/rectangle
 uses SAT to select a reference and incident edge, clips the incident segment,
 and produces stable vertex/edge feature pairs. Test feature stability around

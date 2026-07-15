@@ -128,6 +128,13 @@ baseline remains selected because the comparator adds radix dispatches and
 index memory; contact-rich measurements and the combined matrix must resolve
 that tradeoff before S3.6 review.
 
+The evidence-automation checkpoint adds a single fresh atomic command for the
+complete S3.5a matrix. It consumes the existing generated scenarios and shared
+authored-chain source, retains representative versus instrumented timing
+lanes, and requires exact replay/capacity qualification. It records no
+representation selection and leaves the product baseline unchanged until the
+clean native and cross-host artifacts are published for renewed S3.6 review.
+
 - Add circles and oriented rectangles.
 - Use all-pairs AABB candidate generation.
 - Implement analytic/SAT/clipped manifolds and direct Box2D comparison.

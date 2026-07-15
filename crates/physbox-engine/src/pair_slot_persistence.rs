@@ -1,5 +1,8 @@
 use std::mem::size_of;
 
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::Instant;
+
 use bytemuck::{Pod, Zeroable};
 use physbox_contracts::{
     CANDIDATE_PAIR_BYTES, COLLISION_CAPACITY_COUNTER_BYTES, COLLISION_CONTACT_POINT_BYTES,
@@ -150,6 +153,25 @@ pub struct GpuPairSlotPersistenceOutput {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GpuPairSlotPersistenceBenchmarkOutput {
+    pub adapter: AdapterDiagnostics,
+    pub source_scenario_hash: String,
+    pub body_count: u32,
+    pub warmup_steps: u32,
+    pub samples: u32,
+    pub gpu_pipeline_seconds: Option<Vec<f64>>,
+    pub gpu_persistence_seconds: Option<Vec<f64>>,
+    pub host_completion_seconds: Vec<f64>,
+    pub cpu_encode_submit_seconds: Vec<f64>,
+    pub timestamp_period_nanoseconds: Option<f32>,
+    pub dispatches_per_step: u32,
+    pub allocated_bytes: u64,
+    pub correctness: GpuPairSlotPersistenceOutput,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 pub struct GpuPairSlotPersistenceRunner {
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -188,6 +210,26 @@ impl GpuPairSlotPersistenceRunner {
         permute_current_input: bool,
         fingerprint_mask: u32,
     ) -> Result<GpuPairSlotPersistenceOutput, String> {
+        self.run_sequence_with_candidate_capacity(
+            scenarios,
+            initial_cache,
+            None,
+            requested_pair_capacity,
+            permute_current_input,
+            fingerprint_mask,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn run_sequence_with_candidate_capacity(
+        &self,
+        scenarios: &[ScenarioV1],
+        initial_cache: &[PersistentContactV1],
+        requested_candidate_capacity: Option<u32>,
+        requested_pair_capacity: Option<u32>,
+        permute_current_input: bool,
+        fingerprint_mask: u32,
+    ) -> Result<GpuPairSlotPersistenceOutput, String> {
         if scenarios.is_empty() {
             return Err("GPU pair-slot sequence requires at least one step".to_owned());
         }
@@ -200,8 +242,12 @@ impl GpuPairSlotPersistenceRunner {
         let mut narrowphase_cases = Vec::with_capacity(scenarios.len());
         let mut maximum_pair_capacity = 0_u32;
         for scenario in scenarios {
-            let candidate =
-                CandidateCase::new(&self.device, &self.candidate_pipelines, scenario, None)?;
+            let candidate = CandidateCase::new(
+                &self.device,
+                &self.candidate_pipelines,
+                scenario,
+                requested_candidate_capacity,
+            )?;
             let narrowphase =
                 NarrowphaseCase::new(&self.device, &self.narrowphase_pipelines, &candidate, None)?;
             maximum_pair_capacity = maximum_pair_capacity.max(narrowphase.manifold_capacity());
@@ -323,6 +369,223 @@ impl GpuPairSlotPersistenceRunner {
             steps,
         })
     }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn benchmark_gpu_pair_slot_persistence(
+    scenario: &ScenarioV1,
+    warmup_steps: u32,
+    samples: u32,
+) -> Result<GpuPairSlotPersistenceBenchmarkOutput, String> {
+    if warmup_steps == 0 || samples == 0 {
+        return Err("pair-slot benchmark requires nonzero warmup and samples".to_owned());
+    }
+    scenario.validate().map_err(|error| error.to_string())?;
+    if !scenario.manifolds.is_empty()
+        || !scenario.contact_cache.is_empty()
+        || !scenario.actions.is_empty()
+    {
+        return Err("pair-slot benchmark requires a neutral scenario".to_owned());
+    }
+    let body_count = u32::try_from(scenario.bodies.len())
+        .map_err(|_| "pair-slot benchmark body count exceeds u32".to_owned())?;
+    let pair_count = body_count
+        .checked_mul(body_count.saturating_sub(1))
+        .map(|value| value / 2)
+        .ok_or_else(|| "pair-slot benchmark pair count overflowed".to_owned())?;
+    let candidate_capacity = pair_count.min(body_count.saturating_mul(16)).max(1);
+    let correctness = {
+        let runner = GpuPairSlotPersistenceRunner::new().await?;
+        runner.run_sequence_with_candidate_capacity(
+            std::slice::from_ref(scenario),
+            &[],
+            Some(candidate_capacity),
+            None,
+            false,
+            u32::MAX,
+        )?
+    };
+    if correctness
+        .steps
+        .first()
+        .is_none_or(|step| step.failure.is_some())
+    {
+        return Err("pair-slot benchmark correctness gate failed".to_owned());
+    }
+
+    let instance = create_instance();
+    let adapter = request_adapter(&instance, None).await?;
+    let diagnostics = AdapterDiagnostics::from_adapter(&adapter);
+    let timestamps_available = adapter.features().contains(wgpu::Features::TIMESTAMP_QUERY);
+    let required_features = if timestamps_available {
+        wgpu::Features::TIMESTAMP_QUERY
+    } else {
+        wgpu::Features::empty()
+    };
+    let (device, queue) =
+        crate::gpu_context::request_device_with_features(&adapter, required_features).await?;
+    let candidate_pipelines = CandidatePipelines::new(&device);
+    let narrowphase_pipelines = NarrowphasePipelines::new(&device);
+    let pair_slot_pipelines = PairSlotPipelines::new(&device);
+    let candidate = CandidateCase::new(
+        &device,
+        &candidate_pipelines,
+        scenario,
+        Some(candidate_capacity),
+    )?;
+    let narrowphase = NarrowphaseCase::new(&device, &narrowphase_pipelines, &candidate, None)?;
+    let pair_capacity = narrowphase.manifold_capacity();
+    let empty_pairs = vec![invalid_pair(); pair_capacity as usize];
+    let pair_buffers = [
+        storage_init(&device, "pair_slot_benchmark_previous", &empty_pairs),
+        storage_init(&device, "pair_slot_benchmark_output", &empty_pairs),
+    ];
+    let capacity_buffers = [
+        storage_init(
+            &device,
+            "pair_slot_benchmark_previous_capacity",
+            &[CapacityRaw {
+                values: [pair_capacity, 0, 0, 0],
+            }],
+        ),
+        storage::<CapacityRaw>(&device, "pair_slot_benchmark_output_capacity", 1)?,
+    ];
+    let slot_generations = storage_init(
+        &device,
+        "pair_slot_benchmark_generations",
+        &vec![0_u32; pair_capacity as usize],
+    );
+    let pair_slot = PairSlotCase::new(
+        &device,
+        &pair_slot_pipelines,
+        &narrowphase,
+        &pair_buffers[0],
+        &capacity_buffers[0],
+        &pair_buffers[1],
+        &capacity_buffers[1],
+        &slot_generations,
+        candidate.work_buffer(),
+        pair_capacity,
+        1,
+        false,
+        u32::MAX,
+    )?;
+    let query_count = samples
+        .checked_mul(3)
+        .ok_or_else(|| "pair-slot benchmark query count overflowed".to_owned())?;
+    let query_resources = timestamps_available.then(|| {
+        let query_set = device.create_query_set(&wgpu::QuerySetDescriptor {
+            label: Some("pair_slot_benchmark_queries"),
+            ty: wgpu::QueryType::Timestamp,
+            count: query_count,
+        });
+        let byte_count = u64::from(query_count) * size_of::<u64>() as u64;
+        let resolve = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("pair_slot_benchmark_query_resolve"),
+            size: byte_count,
+            usage: wgpu::BufferUsages::QUERY_RESOLVE | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+        let readback = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("pair_slot_benchmark_query_readback"),
+            size: byte_count,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        (query_set, resolve, readback)
+    });
+
+    for _ in 0..warmup_steps {
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("pair_slot_benchmark_warmup"),
+        });
+        candidate.encode(&mut encoder, &candidate_pipelines);
+        narrowphase.encode(&mut encoder, &narrowphase_pipelines);
+        pair_slot.encode(&mut encoder, &pair_slot_pipelines);
+        queue.submit([encoder.finish()]);
+        device
+            .poll(wgpu::PollType::Wait)
+            .map_err(|error| format!("poll pair-slot benchmark warmup: {error}"))?;
+    }
+
+    let mut host_completion_seconds = Vec::with_capacity(samples as usize);
+    let mut cpu_encode_submit_seconds = Vec::with_capacity(samples as usize);
+    for sample in 0..samples {
+        let started = Instant::now();
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("pair_slot_benchmark_sample"),
+        });
+        let timestamps = query_resources
+            .as_ref()
+            .map(|(query_set, _, _)| (query_set, sample * 3));
+        candidate.encode_with_timestamp(&mut encoder, &candidate_pipelines, timestamps);
+        narrowphase.encode(&mut encoder, &narrowphase_pipelines);
+        pair_slot.encode_with_timestamps(
+            &mut encoder,
+            &pair_slot_pipelines,
+            timestamps.map(|(query_set, base)| (query_set, base + 1, base + 2)),
+        );
+        queue.submit([encoder.finish()]);
+        cpu_encode_submit_seconds.push(started.elapsed().as_secs_f64());
+        device
+            .poll(wgpu::PollType::Wait)
+            .map_err(|error| format!("poll pair-slot benchmark sample: {error}"))?;
+        host_completion_seconds.push(started.elapsed().as_secs_f64());
+    }
+
+    let (gpu_pipeline_seconds, gpu_persistence_seconds, timestamp_period_nanoseconds) =
+        if let Some((query_set, resolve, readback)) = &query_resources {
+            let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("pair_slot_benchmark_query_copy"),
+            });
+            encoder.resolve_query_set(query_set, 0..query_count, resolve, 0);
+            encoder.copy_buffer_to_buffer(
+                resolve,
+                0,
+                readback,
+                0,
+                u64::from(query_count) * size_of::<u64>() as u64,
+            );
+            queue.submit([encoder.finish()]);
+            let values = map_values::<u64>(&device, readback, query_count as usize)?;
+            let period = queue.get_timestamp_period();
+            let pipeline = values
+                .chunks_exact(3)
+                .map(|triple| {
+                    triple[2].saturating_sub(triple[0]) as f64 * f64::from(period) * 1.0e-9
+                })
+                .collect();
+            let persistence = values
+                .chunks_exact(3)
+                .map(|triple| {
+                    triple[2].saturating_sub(triple[1]) as f64 * f64::from(period) * 1.0e-9
+                })
+                .collect();
+            (Some(pipeline), Some(persistence), Some(period))
+        } else {
+            (None, None, None)
+        };
+    let allocated_bytes = candidate.allocated_bytes()
+        + narrowphase.allocated_bytes()
+        + pair_slot.allocated_bytes()
+        + pair_buffers.iter().map(wgpu::Buffer::size).sum::<u64>()
+        + capacity_buffers.iter().map(wgpu::Buffer::size).sum::<u64>()
+        + slot_generations.size();
+    Ok(GpuPairSlotPersistenceBenchmarkOutput {
+        adapter: diagnostics,
+        source_scenario_hash: canonical_hash(scenario).map_err(|error| error.to_string())?,
+        body_count,
+        warmup_steps,
+        samples,
+        gpu_pipeline_seconds,
+        gpu_persistence_seconds,
+        host_completion_seconds,
+        cpu_encode_submit_seconds,
+        timestamp_period_nanoseconds,
+        dispatches_per_step: TOTAL_DISPATCHES,
+        allocated_bytes,
+        correctness,
+    })
 }
 
 pub(crate) struct PairSlotPipelines {
@@ -690,9 +953,24 @@ impl PairSlotCase {
     }
 
     fn encode(&self, encoder: &mut wgpu::CommandEncoder, pipelines: &PairSlotPipelines) {
+        self.encode_with_timestamps(encoder, pipelines, None);
+    }
+
+    fn encode_with_timestamps(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        pipelines: &PairSlotPipelines,
+        timestamps: Option<(&wgpu::QuerySet, u32, u32)>,
+    ) {
         let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some("physbox5_pair_slot_persistence_passes"),
-            timestamp_writes: None,
+            timestamp_writes: timestamps.map(|(query_set, beginning, end)| {
+                wgpu::ComputePassTimestampWrites {
+                    query_set,
+                    beginning_of_pass_write_index: Some(beginning),
+                    end_of_pass_write_index: Some(end),
+                }
+            }),
         });
         dispatch(
             &mut pass,
@@ -742,6 +1020,17 @@ impl PairSlotCase {
             self.pair_capacity.div_ceil(WORKGROUP_SIZE),
         );
         dispatch(&mut pass, &pipelines.finalize, &self.finalize_group, 1);
+    }
+
+    fn allocated_bytes(&self) -> u64 {
+        self._new_flags.size()
+            + self._new_offsets.size()
+            + self._slot_flags.size()
+            + self._slot_offsets.size()
+            + self._new_blocks.size()
+            + self._free_blocks.size()
+            + self._free_slots.size()
+            + self._params.size()
     }
 
     fn capacities(&self) -> Vec<CollisionCapacityV1> {

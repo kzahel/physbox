@@ -364,7 +364,7 @@ representation nor final physical defaults.
 - [x] Keep the canonical body-by-point incidence scan as a correctness
   baseline and compare compact stable body-edge indices, offsets, and
   deterministic segmented gather as the lead lane.
-- [ ] Express pair, body-endpoint, and later particle orderings as compact
+- [x] Express pair, body-endpoint, and later particle orderings as compact
   index/remap views over canonical payloads. Do not change `BodyCoreV1`, create
   a liquid ABI, begin liquid, or create a second engine.
 - [ ] Measure persistence, index sorting, offset construction, gather, and
@@ -420,6 +420,22 @@ churn, eight-body high contention, reversed build scheduling, qualified
 benchmark completion, and upstream atomic overflow are byte-exact against the
 baseline. This implements the second bakeoff lane but makes no latency or
 memory winner claim before contact-rich measurement.
+
+Evidence-automation checkpoint, 2026-07-15: one fresh, atomic native command
+now measures the exact point-key and stable pair-slot persistence lanes on the
+retained 32/256/1K generated scenarios, compares both gather topologies in the
+complete generated graph, and runs canonical-scenario 1K/10K authored-contact
+rows without the all-pairs stage. Representative timestamp samples remain
+distinct from an explicitly instrumented diagnostic lane that attributes
+index construction, offset construction, gather, and the remaining solve
+operations. Every large authored row performs two exact result-digest
+replays, while permanent tests compare the candidate digest directly with the
+canonical topology. The command also preserves randomized
+replay/permutation and atomic-overflow evidence, records complete source dirty
+state, publishes only by fresh directory rename, and always records
+`selectionMade=false`. This completes the compact index-view organization and
+evidence mechanics; the timing and cross-host checkboxes remain open until a
+clean same-revision package is committed.
 
 Gate: the speculative and deep-overlap reproducers pass without widening the
 existing numerical tolerance; every candidate exactly preserves accepted

@@ -607,14 +607,25 @@ impl PersistenceCase {
         pipelines: &PersistencePipelines,
         ending_timestamp: Option<(&wgpu::QuerySet, u32)>,
     ) {
+        self.encode_with_timestamps(encoder, pipelines, None, ending_timestamp);
+    }
+
+    pub(crate) fn encode_with_timestamps(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        pipelines: &PersistencePipelines,
+        beginning_timestamp: Option<(&wgpu::QuerySet, u32)>,
+        ending_timestamp: Option<(&wgpu::QuerySet, u32)>,
+    ) {
+        let query_set = beginning_timestamp
+            .map(|(query_set, _)| query_set)
+            .or_else(|| ending_timestamp.map(|(query_set, _)| query_set));
         let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some("physbox5_collision_persistence_passes"),
-            timestamp_writes: ending_timestamp.map(|(query_set, end)| {
-                wgpu::ComputePassTimestampWrites {
-                    query_set,
-                    beginning_of_pass_write_index: None,
-                    end_of_pass_write_index: Some(end),
-                }
+            timestamp_writes: query_set.map(|query_set| wgpu::ComputePassTimestampWrites {
+                query_set,
+                beginning_of_pass_write_index: beginning_timestamp.map(|(_, index)| index),
+                end_of_pass_write_index: ending_timestamp.map(|(_, index)| index),
             }),
         });
         dispatch(

@@ -315,10 +315,11 @@ impl GpuGeneratedContactGraph {
             .encode_with_timestamp(encoder, &self.candidate_pipelines, timestamps);
         self.narrowphase
             .encode(encoder, &self.narrowphase_pipelines);
-        self.persistence[parity].encode_with_timestamp(
+        self.persistence[parity].encode_with_timestamps(
             encoder,
             &self.persistence_pipelines,
             timestamps.map(|(query_set, base)| (query_set, base + 1)),
+            timestamps.map(|(query_set, base)| (query_set, base + 2)),
         );
         {
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -337,7 +338,7 @@ impl GpuGeneratedContactGraph {
                     wgpu::ComputePassTimestampWrites {
                         query_set,
                         beginning_of_pass_write_index: None,
-                        end_of_pass_write_index: Some(base + 2),
+                        end_of_pass_write_index: Some(base + 3),
                     }
                 }),
             });
@@ -910,6 +911,7 @@ pub struct GpuGeneratedContactBenchmarkOutput {
     pub warmup_steps: u32,
     pub samples: u32,
     pub gpu_collision_seconds: Option<Vec<f64>>,
+    pub gpu_persistence_seconds: Option<Vec<f64>>,
     pub gpu_end_to_end_seconds: Option<Vec<f64>>,
     pub host_completion_seconds: Vec<f64>,
     pub cpu_encode_submit_seconds: Vec<f64>,
@@ -959,7 +961,7 @@ pub async fn benchmark_gpu_generated_contacts_with_gather_topology(
     }
 
     let query_count = samples
-        .checked_mul(3)
+        .checked_mul(4)
         .ok_or_else(|| "generated-contact benchmark query count overflowed".to_owned())?;
     let instance = crate::gpu_context::create_instance();
     let adapter = crate::gpu_context::request_adapter(&instance, None).await?;
@@ -1038,7 +1040,7 @@ pub async fn benchmark_gpu_generated_contacts_with_gather_topology(
         });
         let timestamps = query_resources
             .as_ref()
-            .map(|(query_set, _, _)| (query_set, sample * 3));
+            .map(|(query_set, _, _)| (query_set, sample * 4));
         graph.encode_step_with_timestamps(&mut encoder, true, timestamps);
         queue.submit([encoder.finish()]);
         cpu_encode_submit_seconds.push(started.elapsed().as_secs_f64());
@@ -1048,42 +1050,51 @@ pub async fn benchmark_gpu_generated_contacts_with_gather_topology(
         host_completion_seconds.push(started.elapsed().as_secs_f64());
     }
 
-    let (gpu_collision_seconds, gpu_end_to_end_seconds, timestamp_period_nanoseconds) =
-        if let Some((query_set, resolve, readback)) = &query_resources {
-            let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("generated_contact_timestamp_copy"),
-            });
-            encoder.resolve_query_set(query_set, 0..query_count, resolve, 0);
-            encoder.copy_buffer_to_buffer(
-                resolve,
-                0,
-                readback,
-                0,
-                u64::from(query_count) * size_of::<u64>() as u64,
-            );
-            queue.submit([encoder.finish()]);
-            let values = crate::collision_candidates::map_values::<u64>(
-                &device,
-                readback,
-                query_count as usize,
-            )?;
-            let period = queue.get_timestamp_period();
-            let collision = values
-                .chunks_exact(3)
-                .map(|triple| {
-                    triple[1].saturating_sub(triple[0]) as f64 * f64::from(period) * 1.0e-9
-                })
-                .collect();
-            let end_to_end = values
-                .chunks_exact(3)
-                .map(|triple| {
-                    triple[2].saturating_sub(triple[0]) as f64 * f64::from(period) * 1.0e-9
-                })
-                .collect();
-            (Some(collision), Some(end_to_end), Some(period))
-        } else {
-            (None, None, None)
-        };
+    let (
+        gpu_collision_seconds,
+        gpu_persistence_seconds,
+        gpu_end_to_end_seconds,
+        timestamp_period_nanoseconds,
+    ) = if let Some((query_set, resolve, readback)) = &query_resources {
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("generated_contact_timestamp_copy"),
+        });
+        encoder.resolve_query_set(query_set, 0..query_count, resolve, 0);
+        encoder.copy_buffer_to_buffer(
+            resolve,
+            0,
+            readback,
+            0,
+            u64::from(query_count) * size_of::<u64>() as u64,
+        );
+        queue.submit([encoder.finish()]);
+        let values = crate::collision_candidates::map_values::<u64>(
+            &device,
+            readback,
+            query_count as usize,
+        )?;
+        let period = queue.get_timestamp_period();
+        let collision = values
+            .chunks_exact(4)
+            .map(|triple| triple[2].saturating_sub(triple[0]) as f64 * f64::from(period) * 1.0e-9)
+            .collect();
+        let persistence = values
+            .chunks_exact(4)
+            .map(|quad| quad[2].saturating_sub(quad[1]) as f64 * f64::from(period) * 1.0e-9)
+            .collect();
+        let end_to_end = values
+            .chunks_exact(4)
+            .map(|quad| quad[3].saturating_sub(quad[0]) as f64 * f64::from(period) * 1.0e-9)
+            .collect();
+        (
+            Some(collision),
+            Some(persistence),
+            Some(end_to_end),
+            Some(period),
+        )
+    } else {
+        (None, None, None, None)
+    };
 
     Ok(GpuGeneratedContactBenchmarkOutput {
         adapter: diagnostics,
@@ -1092,6 +1103,7 @@ pub async fn benchmark_gpu_generated_contacts_with_gather_topology(
         warmup_steps,
         samples,
         gpu_collision_seconds,
+        gpu_persistence_seconds,
         gpu_end_to_end_seconds,
         host_completion_seconds,
         cpu_encode_submit_seconds,
