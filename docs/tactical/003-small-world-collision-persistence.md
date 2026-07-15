@@ -357,7 +357,7 @@ representation nor final physical defaults.
 - [x] Add explicit `0.02` speculative distance and `3.0 m/s` maximum
   depenetration speed as candidate policy, with the two minimized S3.5
   failures and clean Box2D/structural curves as mandatory comparisons.
-- [ ] Keep the exact 256-bit point-key sort as a correctness baseline and
+- [x] Keep the exact 256-bit point-key sort as a correctness baseline and
   compare stable pair-slot, pair-grouped two-point persistence as the lead
   lane. Keep compact fingerprint plus full equality verification as a
   fallback/comparator; a fingerprint alone never transfers impulses.
@@ -390,6 +390,20 @@ The two explicit policy uniform lanes add 32 bytes to the maintained floor
 scene (`23668` to `23700` capacity bytes) without changing its 282-dispatch
 schedule. Those residuals remain evidence for review; this completion does not
 accept the candidate as the product default.
+
+Pair-persistence implementation checkpoint, 2026-07-15: an isolated portable
+GPU comparator now groups at most two points under each canonical generational
+body pair, retains stable logical slots for active pairs, and recycles lost
+slots deterministically with an incremented slot generation. A compact feature
+fingerprint is only a shortlist: complete local feature equality and complete
+pair identity are required before either impulse transfers. Permanent cases
+cover scalar equivalence, exact replay, reversed scheduling, churn/recontact,
+body-generation reuse, forced fingerprint collision, and whole-stage overflow.
+The comparator reduces candidate/narrowphase/persistence work from the
+64-pass baseline's 212 dispatches to 25 (10 persistence dispatches) without
+mapping until the final bounded step. This checkpoint implements a bakeoff
+lane; it does not select the representation, replace the product path, or make
+a timing claim before the shared scale matrix.
 
 Gate: the speculative and deep-overlap reproducers pass without widening the
 existing numerical tolerance; every candidate exactly preserves accepted

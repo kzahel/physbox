@@ -221,6 +221,26 @@ impl Validate for CandidatePairV1 {
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PairSlotAssignmentV1 {
+    pub pair: CandidatePairV1,
+    pub slot: u32,
+    pub generation: u32,
+}
+
+impl Validate for PairSlotAssignmentV1 {
+    fn validate(&self) -> Result<(), ContractError> {
+        self.pair.validate()?;
+        if self.generation == 0 {
+            return Err(ContractError(
+                "pair-slot generation must be positive".to_owned(),
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum GeometricFeatureKindV1 {
     Circle,
@@ -709,6 +729,24 @@ mod tests {
 
     fn feature(kind: GeometricFeatureKindV1, index: u32) -> GeometricFeatureV1 {
         GeometricFeatureV1 { kind, index }
+    }
+
+    #[test]
+    fn pair_slot_assignment_requires_a_positive_generation() {
+        let valid = PairSlotAssignmentV1 {
+            pair: pair(),
+            slot: 4,
+            generation: 2,
+        };
+        valid.validate().unwrap();
+        assert!(
+            PairSlotAssignmentV1 {
+                generation: 0,
+                ..valid
+            }
+            .validate()
+            .is_err()
+        );
     }
 
     fn provenance() -> ProvenanceV1 {

@@ -214,6 +214,20 @@ scan remain correctness baselines. The `0.02` speculative distance and
 representation, capacity, physical-default, tolerance, and quality-band
 acceptance remains a later S3.6 human decision after regenerated evidence.
 
+The first independently implemented pair-slot comparator is executable. It
+stores a 96-byte pair-local record containing the full generational pair,
+stable slot and slot generation, at most two complete feature tuples, and both
+accumulated impulses. Active pairs keep their slot; deterministic prefix scans
+rank new pairs and free slots so recontact reuses capacity with a new
+generation. The complete feature tuple is verified even when the fingerprint
+mask is deliberately forced to zero, proving that fingerprint collision alone
+cannot transfer an impulse. The portable graph uses 10 persistence dispatches
+and 25 dispatches including the existing candidate and narrowphase stages,
+versus 197 and 212 respectively for the full point-key radix baseline. It maps
+only after the last requested validation step. This is correctness and work
+shape evidence, not a production representation decision or performance
+result.
+
 ## Reconsideration triggers
 
 Reconsider the provisional feature or record layout before S3.6 if direct

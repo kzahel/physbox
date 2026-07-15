@@ -579,6 +579,17 @@ isolated contact-rich 1K/10K rows must compare baseline and candidate on the
 same revision and adapter, retain all raw samples, and remain invalid when
 correctness, exact replay, capacity, or physical-policy gates fail.
 
+S3.5a pair-slot implementation checkpoint, 2026-07-15: the isolated candidate
+replaces the 197-dispatch full point-key persistence stage with 10 portable
+dispatches, bringing candidate/narrowphase/persistence from 212 to 25. Its
+96-byte pair record holds up to two complete features and caches; two cache
+buffers, per-slot generations, deterministic new/free scans, and their
+high-water records remain explicit rather than hidden. Native adversarial
+tests pass exact replay, scalar equivalence, permutation, churn, generation,
+forced-fingerprint-collision, and atomic-overflow gates. No latency or memory
+winner is claimed until the candidate and baseline run through the same
+generated and contact-rich timing matrix.
+
 ## Regression and claim gates
 
 Before representative hardware is selected, store named measurements and

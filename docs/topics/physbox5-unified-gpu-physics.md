@@ -559,6 +559,18 @@ sort/body scan remain correctness baselines. This authorization does not
 select the candidates, accept the proposed `0.02` speculative distance or
 `3.0 m/s` depenetration limit as defaults, or permit P5.3/liquid work.
 
+Pair-slot implementation checkpoint, 2026-07-15: the lead persistence lane is
+now an isolated portable GPU comparator over the same candidate and
+narrowphase contracts. Stable pair slots retain an independent generation;
+deterministic scans recycle free slots; pair identity and complete local
+features remain the authority for warm-start transfer, with a compact
+fingerprint used only as a shortlist. The comparator passes replay,
+permutation, churn, body-reuse, deliberate fingerprint-collision, and atomic
+overflow tests without intermediate mapping. Its 10 persistence dispatches
+reduce the combined collision/persistence work shape from 212 to 25, but the
+product still uses the full-key correctness baseline until the complete S3.5a
+matrix and renewed human review select a representation.
+
 Circle/circle and circle/rectangle contact are analytic. Rectangle/rectangle
 uses SAT to select a reference and incident edge, clips the incident segment,
 and produces stable vertex/edge feature pairs. Test feature stability around

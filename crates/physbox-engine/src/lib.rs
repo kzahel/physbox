@@ -16,6 +16,8 @@ mod gpu_context;
 mod gpu_primitives;
 mod gpu_solver;
 mod host;
+#[cfg(not(target_arch = "wasm32"))]
+mod pair_slot_persistence;
 mod renderer;
 mod report;
 mod scenario;
@@ -57,6 +59,10 @@ pub use gpu_solver::{GpuContributionEvidence, GpuSolverCandidate, GpuSolverOutpu
 pub use gpu_solver::{
     GpuSolverBenchmarkOutput, benchmark_gpu_soft_step_case, run_gpu_soft_step_case,
     run_gpu_soft_step_stress_case, run_gpu_solver_case,
+};
+#[cfg(not(target_arch = "wasm32"))]
+pub use pair_slot_persistence::{
+    GpuPairSlotPersistenceOutput, GpuPairSlotPersistenceRunner, GpuPairSlotPersistenceStepOutput,
 };
 #[cfg(not(target_arch = "wasm32"))]
 pub use renderer::OffscreenRenderer;

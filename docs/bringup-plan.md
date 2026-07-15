@@ -113,6 +113,13 @@ PhysX remains a source reference rather than an oracle. S3.5a must regenerate
 S3.5/S3.6 evidence and stop again before any contact surface or physical
 default is frozen, P5.3 begins, or the queued menu/camera slice begins.
 
+The first S3.5a representation checkpoint implements the stable pair-slot
+comparator with full feature verification and deterministic generational slot
+recycling. Its correctness/adversarial gates pass and its combined
+collision/persistence schedule is 25 rather than 212 dispatches. It remains an
+isolated bakeoff lane pending the body-edge comparator, scale evidence, and
+renewed S3.6 review; the product path and contact ABI are not yet changed.
+
 - Add circles and oriented rectangles.
 - Use all-pairs AABB candidate generation.
 - Implement analytic/SAT/clipped manifolds and direct Box2D comparison.
