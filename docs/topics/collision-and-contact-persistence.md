@@ -1,7 +1,7 @@
 # Collision and contact persistence
 
-Status: S3.2 complete GPU candidates accepted; direct narrowphase active at
-S3.3, 2026-07-15.
+Status: S3.3 complete GPU narrowphase accepted; sorted persistence active at
+S3.4, 2026-07-15.
 
 Governing direction:
 [one GPU-resident 2D physics world](physbox5-unified-gpu-physics.md).
@@ -149,10 +149,17 @@ values, normalized normals, feature ranges, stable hashes, missing/stale
 identity, shape-flag mismatch, unsupported projection data, inconsistent work
 accounting, and silent or partial capacity overflow.
 
+The [S3.3 package](../../evidence/p5.2-s3.3/README.md) records 324 exact
+scalar/GPU topology and feature comparisons, 100 fresh process-isolated
+Box2D public-collision runs, four compact governed playbacks, grouped capacity
+rejection, and deterministic minimization. Maximum GPU numerical error was
+`1.2516975e-6`; maximum authority geometry error was `3.2782555e-7` under the
+unchanged `2e-5` bound.
+
 The current product bootstrap still uses its temporary authored fixed-floor
-manifold. S3.2 candidate behavior is exercised by bounded native validation,
-not yet by the product frame. Narrowphase, persistence, generated contact
-solve, and cross-host product execution remain S3.3 through S3.5 work.
+manifold. Candidate and narrowphase behavior are exercised by bounded native
+validation, not yet by the product frame. Persistence, generated contact solve,
+and cross-host product execution remain S3.4 through S3.5 work.
 
 ## Reconsideration triggers
 

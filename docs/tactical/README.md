@@ -1,7 +1,7 @@
 # Tactical workstreams
 
 Status: S1 and S2 complete; S3 small-world collision and contact persistence is
-active at S3.3. S4 basic scene navigation and camera is queued after accepted
+active at S3.4. S4 basic scene navigation and camera is queued after accepted
 P5.2 evidence.
 
 Tactical filenames use a three-digit zero-padded prefix ordered by their first
@@ -15,7 +15,7 @@ This README remains the unnumbered index.
 | --- | --- | --- | --- |
 | S1 | Oracle foundation and rigid solver laboratory | [001-rigid-solver-laboratory.md](001-rigid-solver-laboratory.md) | complete 2026-07-15 |
 | S2 | GPU body state and fixed-floor contact | [002-gpu-body-state.md](002-gpu-body-state.md) | complete 2026-07-15; limited body core accepted |
-| S3 | Small-world collision and contact persistence | [003-small-world-collision-persistence.md](003-small-world-collision-persistence.md) | active at S3.3; S3.2 complete 2026-07-15 |
+| S3 | Small-world collision and contact persistence | [003-small-world-collision-persistence.md](003-small-world-collision-persistence.md) | active at S3.4; S3.3 complete 2026-07-15 |
 | S4 | Basic scene navigation and camera | [004-basic-scene-navigation-camera.md](004-basic-scene-navigation-camera.md) | proposed after S3 acceptance, 2026-07-15 |
 
 ## Conventions

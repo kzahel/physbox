@@ -1,6 +1,6 @@
 # S3: Small-world collision and contact persistence
 
-Status: active at S3.3; S3.2 complete 2026-07-15.
+Status: active at S3.4; S3.3 complete 2026-07-15.
 Direction: [one GPU-resident 2D physics world](../topics/physbox5-unified-gpu-physics.md).
 Bring-up stage: [P5.2](../bringup-plan.md#p52--small-world-collision-and-persistence-active).
 Predecessor: [accepted P5.1 body core](../../evidence/p5.1-s2.6/README.md).
@@ -186,17 +186,26 @@ minimization, capacity evidence, and tactical checkboxes land together.
 
 ### S3.3 — Box2D-checked GPU narrowphase
 
-- [ ] Implement circle/circle and circle/rectangle analytic manifolds and
+- [x] Implement circle/circle and circle/rectangle analytic manifolds and
   oriented rectangle/rectangle SAT reference selection plus incident-edge
   clipping, with no more than two canonical points.
-- [ ] Assign stable geometric feature identifiers and test nearly tied axes,
+- [x] Assign stable geometric feature identifiers and test nearly tied axes,
   swapped body order, translation/rotation equivariance, and contact creation
   and removal boundaries.
-- [ ] Compare direct results with public `b2CollideCircles`,
+- [x] Compare direct results with public `b2CollideCircles`,
   `b2CollidePolygonAndCircle`, and `b2CollidePolygons` from the clean pinned
   Box2D authority.
-- [ ] Randomize and deterministically minimize topology, normal, point,
+- [x] Randomize and deterministically minimize topology, normal, point,
   separation, and feature disagreements into permanent reproducers.
+
+Completion, 2026-07-15: the [S3.3 evidence package](../../evidence/p5.2-s3.3/README.md)
+records exact scalar/GPU topology and feature agreement across 324 cases and
+100 fresh clean-pinned process-isolated Box2D public-collision runs. Maximum
+GPU numerical error was `1.2516975e-6`; maximum authority geometry error was
+`3.2782555e-7`, both below the unchanged `2e-5` bound. Atomic grouped overflow
+committed no manifolds or points, and injected minimization reached two bodies.
+The provisional deep-coincidence coherence exception is measured, documented,
+and remains an explicit S3.6 review item rather than a hidden tolerance change.
 
 Likely boundary: engine WGSL produces the product manifold contract; the
 existing process-isolated Box2D adapter exposes only public collision results;

@@ -530,6 +530,16 @@ quadratic pair capacity and publishes no throughput or crossover claim; its
 work and memory rows are the small-world reference against which P5.3
 broadphase amplification and savings will be measured.
 
+S3.3 narrowphase checkpoint, 2026-07-15: the bounded graph adds seven GPU
+dispatches after the eight-dispatch candidate baseline and allocates 144 bytes
+of narrowphase scratch per candidate, 48 bytes per committed manifold, 48
+bytes per committed point, four-byte manifold flags and offsets, four-byte
+scan blocks, and grouped 16-byte capacity counters. The 324-case scalar/GPU
+matrix and 100-case clean Box2D authority matrix passed before measurements
+were accepted. This checkpoint records work and memory shape only; it is not
+an end-to-end throughput or CPU/GPU crossover claim because the product frame
+does not consume generated contacts until S3.5.
+
 ## Regression and claim gates
 
 Before representative hardware is selected, store named measurements and

@@ -102,9 +102,9 @@ body-plus-shape-plus-joint allocation.
 Execution tracker:
 [S3 small-world collision and contact persistence](tactical/003-small-world-collision-persistence.md).
 
-Current checkpoint, 2026-07-15: S3.1 contracts and S3.2 complete GPU all-pairs
-candidates are complete. Direct Box2D-checked narrowphase is active at S3.3,
-followed by sorted GPU persistence, generated contact solving, and
+Current checkpoint, 2026-07-15: S3.1 contracts, S3.2 complete GPU all-pairs
+candidates, and S3.3 Box2D-checked GPU narrowphase are complete. Sorted GPU
+persistence is active at S3.4, followed by generated contact solving and
 correctness-qualified cross-host evidence. S3.6 is the mandatory human review
 before freezing the contact representation or beginning P5.3.
 
