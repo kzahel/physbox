@@ -12,3 +12,6 @@ physbox-contracts = { path = "../physbox-contracts" }
 serde.workspace = true
 serde_json.workspace = true
 wgpu.workspace = true
+
+[dev-dependencies]
+pollster.workspace = true

@@ -23,6 +23,98 @@ pub enum AnalyticFixtureKind {
     BoxOnBox,
 }
 
+pub fn p5_1_rectangle_floor_scenario(
+    requested_steps: u32,
+) -> Result<ScenarioV1, ScenarioBuildError> {
+    if requested_steps == 0 {
+        return Err(ScenarioBuildError(
+            "P5.1 rectangle-floor scenario requires at least one requested step".to_owned(),
+        ));
+    }
+    let dynamic_id = BodyId {
+        slot: 0,
+        generation: 1,
+    };
+    let floor_id = BodyId {
+        slot: 1,
+        generation: 1,
+    };
+    let material = MaterialV1 {
+        friction: finite(0.5),
+        restitution: finite(0.0),
+    };
+    let dynamic_position = Vec2::new(0.0, 0.9);
+    let floor_position = Vec2::new(0.0, -0.1);
+    let dynamic_half_extents = Vec2::new(0.35, 0.2);
+    let floor_half_extents = Vec2::new(8.0, 0.1);
+    let contact_y = 0.0;
+    let separation = dynamic_position.y - dynamic_half_extents.y - contact_y;
+    Ok(ScenarioV1 {
+        schema_version: SCHEMA_VERSION,
+        id: "p5.1-rectangle-floor".to_owned(),
+        seed: 0,
+        requested_steps,
+        settings: default_settings(),
+        bodies: vec![
+            BodyStateV1 {
+                id: dynamic_id,
+                shape: ShapeV1::Rectangle {
+                    half_extents: dynamic_half_extents,
+                },
+                position: dynamic_position,
+                angle: finite(0.0),
+                linear_velocity: Vec2::ZERO,
+                angular_velocity: finite(0.0),
+                inverse_mass: finite(1.0),
+                inverse_inertia: finite(18.461_538),
+                material,
+                sleeping: false,
+            },
+            BodyStateV1 {
+                id: floor_id,
+                shape: ShapeV1::Rectangle {
+                    half_extents: floor_half_extents,
+                },
+                position: floor_position,
+                angle: finite(0.0),
+                linear_velocity: Vec2::ZERO,
+                angular_velocity: finite(0.0),
+                inverse_mass: finite(0.0),
+                inverse_inertia: finite(0.0),
+                material,
+                sleeping: false,
+            },
+        ],
+        manifolds: vec![AuthoredManifoldV1 {
+            id: 0,
+            body_a: dynamic_id,
+            body_b: floor_id,
+            normal: Vec2::new(0.0, -1.0),
+            material,
+            points: [-dynamic_half_extents.x, dynamic_half_extents.x]
+                .into_iter()
+                .enumerate()
+                .map(|(index, x)| AuthoredContactPointV1 {
+                    local_anchor_a: Vec2::new(x, -dynamic_half_extents.y),
+                    local_anchor_b: Vec2::new(x, floor_half_extents.y),
+                    world_point: Vec2::new(x, contact_y),
+                    separation: finite(separation),
+                    feature_a: FeatureIdV1 {
+                        feature_type: 1,
+                        feature_index: 2,
+                    },
+                    feature_b: FeatureIdV1 {
+                        feature_type: 1,
+                        feature_index: index as u32,
+                    },
+                })
+                .collect(),
+        }],
+        contact_cache: Vec::new(),
+        actions: Vec::new(),
+    })
+}
+
 pub fn analytic_fixture_scenario(
     kind: AnalyticFixtureKind,
     requested_steps: u32,
@@ -363,5 +455,18 @@ mod tests {
             );
         }
         assert!(analytic_fixture_scenario(AnalyticFixtureKind::CircleFloor, 0).is_err());
+    }
+
+    #[test]
+    fn p5_1_rectangle_floor_is_shared_valid_and_replayable() {
+        let scenario = p5_1_rectangle_floor_scenario(120).unwrap();
+        scenario.validate().unwrap();
+        assert_eq!(scenario.bodies.len(), 2);
+        assert_eq!(scenario.manifolds[0].points.len(), 2);
+        assert_eq!(
+            canonical_json(&scenario).unwrap(),
+            canonical_json(&p5_1_rectangle_floor_scenario(120).unwrap()).unwrap()
+        );
+        assert!(p5_1_rectangle_floor_scenario(0).is_err());
     }
 }

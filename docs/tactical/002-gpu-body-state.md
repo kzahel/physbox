@@ -71,15 +71,32 @@ named evidence gap.
 
 ### S2.1 — generational body and bounded-command contracts
 
-- [ ] Define a versioned product body-layout description with generational
+Implementation evidence, 2026-07-15: the provisional portable layout is four
+separate 16-byte storage lanes (`pose`, `motion`, `properties`, and
+`metadata`) for 64 allocated bytes per body slot. Metadata carries a nonzero
+generation, live/fixed/sleep/rectangle flags, and exact friction/restitution
+bits. A separately bounded 48-byte command record carries an operation, slot,
+generation, monotonic sequence, and reset or grab payload. The checked schema
+recomputes every lane and total byte count and rejects inconsistent overflow
+claims.
+
+The engine allocation validates rectangle-only P5.1 input and device storage
+limits before creating buffers. Its deterministic lowest-slot registry bumps
+the generation on release, and command upload rejects the old handle. Queue
+overflow remains a valid structured capacity artifact but is never an
+accepted batch. GPU allocation/upload tests run on the same portable `wgpu`
+device path; no live mechanical CPU mirror or product command execution has
+been introduced yet.
+
+- [x] Define a versioned product body-layout description with generational
   handles, declared buffer lanes, byte accounting, capacity, high-water, and
   overflow state.
-- [ ] Define bounded reset/grab command records with stable ordering, target
+- [x] Define bounded reset/grab command records with stable ordering, target
   generation, finite payload validation, and deterministic stale-handle and
   overflow behavior.
-- [ ] Add the provisional GPU SoA allocation and initialize it from one shared
+- [x] Add the provisional GPU SoA allocation and initialize it from one shared
   rectangle scenario; retain no authoritative CPU mirror of live mechanics.
-- [ ] Add unit/structural tests for byte strides, handle reuse, stale commands,
+- [x] Add unit/structural tests for byte strides, handle reuse, stale commands,
   deterministic command ordering, capacity overflow, and platform-boundary
   ownership.
 

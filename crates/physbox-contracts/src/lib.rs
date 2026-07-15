@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 pub const SCHEMA_VERSION: u32 = 1;
+pub const BODY_LAYOUT_VERSION: u32 = 1;
 pub const ORACLE_SUCCESS_SENTINEL: &str = "PHYSBOX5_ORACLE_SUCCESS";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -150,6 +151,225 @@ impl Validate for BodyStateV1 {
         if self.inverse_mass.get() < 0.0 || self.inverse_inertia.get() < 0.0 {
             return Err(ContractError(
                 "inverse mass and inertia must be nonnegative".to_owned(),
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum BodyLaneAccessV1 {
+    ReadOnly,
+    ReadWrite,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BodyLayoutLaneV1 {
+    pub name: String,
+    pub element_stride_bytes: u32,
+    pub capacity_elements: u32,
+    pub allocated_bytes: u64,
+    pub access: BodyLaneAccessV1,
+}
+
+impl Validate for BodyLayoutLaneV1 {
+    fn validate(&self) -> Result<(), ContractError> {
+        if self.name.is_empty() || self.element_stride_bytes == 0 || self.capacity_elements == 0 {
+            return Err(ContractError(
+                "body layout lanes require a name, stride, and capacity".to_owned(),
+            ));
+        }
+        let expected = u64::from(self.element_stride_bytes)
+            .checked_mul(u64::from(self.capacity_elements))
+            .ok_or_else(|| ContractError("body layout lane byte count overflowed".to_owned()))?;
+        if self.allocated_bytes != expected {
+            return Err(ContractError(format!(
+                "body layout lane {} allocated {} bytes, expected {expected}",
+                self.name, self.allocated_bytes
+            )));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BodyLayoutV1 {
+    pub schema_version: u32,
+    pub layout_version: u32,
+    pub capacity_elements: u32,
+    pub live_elements: u32,
+    pub attempted_elements: u64,
+    pub bytes_per_body: u32,
+    pub allocated_bytes: u64,
+    pub overflowed: bool,
+    pub lanes: Vec<BodyLayoutLaneV1>,
+}
+
+impl Validate for BodyLayoutV1 {
+    fn validate(&self) -> Result<(), ContractError> {
+        version(self.schema_version)?;
+        if self.layout_version != BODY_LAYOUT_VERSION {
+            return Err(ContractError(format!(
+                "unsupported body layout version {}, expected {BODY_LAYOUT_VERSION}",
+                self.layout_version
+            )));
+        }
+        if self.capacity_elements == 0
+            || self.live_elements > self.capacity_elements
+            || self.attempted_elements < u64::from(self.live_elements)
+            || self.lanes.is_empty()
+        {
+            return Err(ContractError(
+                "invalid body layout counts or empty lanes".to_owned(),
+            ));
+        }
+        validate_sorted_unique(
+            self.lanes.iter().map(|lane| &lane.name),
+            "body layout lanes",
+        )?;
+        for lane in &self.lanes {
+            lane.validate()?;
+            if lane.capacity_elements != self.capacity_elements {
+                return Err(ContractError(
+                    "every body layout lane must use the declared capacity".to_owned(),
+                ));
+            }
+        }
+        let expected_stride = self
+            .lanes
+            .iter()
+            .try_fold(0_u32, |total, lane| {
+                total.checked_add(lane.element_stride_bytes)
+            })
+            .ok_or_else(|| ContractError("body layout stride overflowed".to_owned()))?;
+        let expected_allocated = self
+            .lanes
+            .iter()
+            .try_fold(0_u64, |total, lane| total.checked_add(lane.allocated_bytes))
+            .ok_or_else(|| ContractError("body layout allocation overflowed".to_owned()))?;
+        if self.bytes_per_body != expected_stride || self.allocated_bytes != expected_allocated {
+            return Err(ContractError(
+                "body layout byte totals do not match its lanes".to_owned(),
+            ));
+        }
+        if self.overflowed != (self.attempted_elements > u64::from(self.capacity_elements)) {
+            return Err(ContractError(
+                "body layout overflow flag does not match attempted capacity".to_owned(),
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum BodyCommandV1 {
+    Reset {
+        sequence: u32,
+        body: BodyId,
+        position: Vec2,
+        angle: FiniteF32,
+        linear_velocity: Vec2,
+        angular_velocity: FiniteF32,
+    },
+    GrabBegin {
+        sequence: u32,
+        body: BodyId,
+        world_target: Vec2,
+    },
+    GrabTarget {
+        sequence: u32,
+        body: BodyId,
+        world_target: Vec2,
+    },
+    GrabEnd {
+        sequence: u32,
+        body: BodyId,
+    },
+}
+
+impl BodyCommandV1 {
+    pub const fn sequence(&self) -> u32 {
+        match self {
+            Self::Reset { sequence, .. }
+            | Self::GrabBegin { sequence, .. }
+            | Self::GrabTarget { sequence, .. }
+            | Self::GrabEnd { sequence, .. } => *sequence,
+        }
+    }
+
+    pub const fn body(&self) -> BodyId {
+        match self {
+            Self::Reset { body, .. }
+            | Self::GrabBegin { body, .. }
+            | Self::GrabTarget { body, .. }
+            | Self::GrabEnd { body, .. } => *body,
+        }
+    }
+}
+
+impl Validate for BodyCommandV1 {
+    fn validate(&self) -> Result<(), ContractError> {
+        if self.body().generation == 0 {
+            return Err(ContractError(
+                "body commands require a nonzero target generation".to_owned(),
+            ));
+        }
+        match self {
+            Self::Reset {
+                position,
+                angle,
+                linear_velocity,
+                angular_velocity,
+                ..
+            } => {
+                position.validate()?;
+                angle.validate()?;
+                linear_velocity.validate()?;
+                angular_velocity.validate()
+            }
+            Self::GrabBegin { world_target, .. } | Self::GrabTarget { world_target, .. } => {
+                world_target.validate()
+            }
+            Self::GrabEnd { .. } => Ok(()),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BodyCommandBatchV1 {
+    pub schema_version: u32,
+    pub capacity_commands: u32,
+    pub attempted_commands: u64,
+    pub overflowed: bool,
+    pub commands: Vec<BodyCommandV1>,
+}
+
+impl Validate for BodyCommandBatchV1 {
+    fn validate(&self) -> Result<(), ContractError> {
+        version(self.schema_version)?;
+        if self.capacity_commands == 0
+            || self.commands.len() > self.capacity_commands as usize
+            || self.attempted_commands < self.commands.len() as u64
+        {
+            return Err(ContractError(
+                "invalid body command batch counts".to_owned(),
+            ));
+        }
+        validate_sorted_unique(
+            self.commands.iter().map(BodyCommandV1::sequence),
+            "body command sequences",
+        )?;
+        for command in &self.commands {
+            command.validate()?;
+        }
+        if self.overflowed != (self.attempted_commands > u64::from(self.capacity_commands)) {
+            return Err(ContractError(
+                "body command overflow flag does not match attempted capacity".to_owned(),
             ));
         }
         Ok(())
@@ -975,5 +1195,97 @@ mod tests {
                 .0
                 .contains("body ids must be sorted and unique")
         );
+    }
+
+    #[test]
+    fn body_layout_bytes_and_overflow_are_self_consistent() {
+        let layout = BodyLayoutV1 {
+            schema_version: SCHEMA_VERSION,
+            layout_version: BODY_LAYOUT_VERSION,
+            capacity_elements: 4,
+            live_elements: 2,
+            attempted_elements: 2,
+            bytes_per_body: 32,
+            allocated_bytes: 128,
+            overflowed: false,
+            lanes: vec![
+                BodyLayoutLaneV1 {
+                    name: "motion".to_owned(),
+                    element_stride_bytes: 16,
+                    capacity_elements: 4,
+                    allocated_bytes: 64,
+                    access: BodyLaneAccessV1::ReadWrite,
+                },
+                BodyLayoutLaneV1 {
+                    name: "pose".to_owned(),
+                    element_stride_bytes: 16,
+                    capacity_elements: 4,
+                    allocated_bytes: 64,
+                    access: BodyLaneAccessV1::ReadWrite,
+                },
+            ],
+        };
+        layout.validate().unwrap();
+
+        let mut wrong_total = layout.clone();
+        wrong_total.bytes_per_body = 16;
+        assert!(
+            wrong_total
+                .validate()
+                .unwrap_err()
+                .0
+                .contains("byte totals")
+        );
+
+        let mut silent_overflow = layout;
+        silent_overflow.attempted_elements = 5;
+        assert!(
+            silent_overflow
+                .validate()
+                .unwrap_err()
+                .0
+                .contains("overflow flag")
+        );
+    }
+
+    #[test]
+    fn command_batches_require_finite_ordered_bounded_records() {
+        let body = BodyId {
+            slot: 3,
+            generation: 9,
+        };
+        let command = BodyCommandV1::GrabTarget {
+            sequence: 1,
+            body,
+            world_target: Vec2::new(0.25, 0.75),
+        };
+        let batch = BodyCommandBatchV1 {
+            schema_version: SCHEMA_VERSION,
+            capacity_commands: 2,
+            attempted_commands: 1,
+            overflowed: false,
+            commands: vec![command.clone()],
+        };
+        batch.validate().unwrap();
+        let bytes = canonical_json(&batch).unwrap();
+        let decoded: BodyCommandBatchV1 = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(decoded, batch);
+
+        let mut duplicate = batch.clone();
+        duplicate.commands.push(command);
+        duplicate.attempted_commands = 2;
+        assert!(
+            duplicate
+                .validate()
+                .unwrap_err()
+                .0
+                .contains("sorted and unique")
+        );
+
+        let mut overflow = batch;
+        overflow.attempted_commands = 3;
+        assert!(overflow.validate().is_err());
+        overflow.overflowed = true;
+        overflow.validate().unwrap();
     }
 }

@@ -200,6 +200,17 @@ The first version should permit one analytic shape per body. Compound bodies
 and arbitrary convex geometry are deferred until the core representation and
 contact solve are proven.
 
+P5.1 S2.1 implementation status, 2026-07-15: the reviewable initial allocation
+uses four 16-byte storage-buffer lanes per body slot: pose, motion,
+rectangle/mass properties, and generational metadata. The current total is 64
+bytes per slot. Metadata retains the live/fixed/sleep/rectangle flags and the
+exact material bits needed by the later contact path. Reset and grab transport
+uses a separate bounded 48-byte command record with a target slot and
+generation plus monotonic sequence. The allocation checks portable device
+limits before buffer creation, and stale generations or capacity overflow are
+diagnosed rather than ignored. This is a provisional P5.1 layout to measure at
+1K, 10K, and 100K; it is not frozen until the S2.6 human checkpoint.
+
 ## Later fluid-coupling contract
 
 This contract is not part of the first rigid milestone. It records the

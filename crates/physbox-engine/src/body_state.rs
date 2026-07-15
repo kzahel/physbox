@@ -1,0 +1,597 @@
+use std::mem::size_of;
+
+use bytemuck::{Pod, Zeroable};
+use physbox_contracts::{
+    BODY_LAYOUT_VERSION, BodyCommandBatchV1, BodyCommandV1, BodyId, BodyLaneAccessV1,
+    BodyLayoutLaneV1, BodyLayoutV1, BodyStateV1, CapacityRecordV1, SCHEMA_VERSION, ShapeV1,
+    Validate,
+};
+use wgpu::util::DeviceExt;
+
+pub const BODY_BYTES_PER_SLOT: u32 = 64;
+pub const BODY_COMMAND_BYTES: u32 = 48;
+
+const FLAG_LIVE: u32 = 1 << 0;
+const FLAG_SLEEPING: u32 = 1 << 1;
+const FLAG_FIXED: u32 = 1 << 2;
+const FLAG_RECTANGLE: u32 = 1 << 8;
+
+const COMMAND_RESET: u32 = 1;
+const COMMAND_GRAB_BEGIN: u32 = 2;
+const COMMAND_GRAB_TARGET: u32 = 3;
+const COMMAND_GRAB_END: u32 = 4;
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Pod, Zeroable)]
+struct BodyPoseRaw {
+    position_angle: [f32; 4],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Pod, Zeroable)]
+struct BodyMotionRaw {
+    linear_angular: [f32; 4],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Pod, Zeroable)]
+struct BodyPropertiesRaw {
+    half_extents_inverse_mass_inertia: [f32; 4],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Pod, Zeroable)]
+struct BodyMetadataRaw {
+    generation_flags_material: [u32; 4],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Pod, Zeroable)]
+struct BodyCommandRaw {
+    kind_slot_generation_sequence: [u32; 4],
+    data0: [f32; 4],
+    data1: [f32; 4],
+}
+
+const _: () = assert!(size_of::<BodyPoseRaw>() == 16);
+const _: () = assert!(size_of::<BodyMotionRaw>() == 16);
+const _: () = assert!(size_of::<BodyPropertiesRaw>() == 16);
+const _: () = assert!(size_of::<BodyMetadataRaw>() == 16);
+const _: () = assert!(size_of::<BodyCommandRaw>() == BODY_COMMAND_BYTES as usize);
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BodySlotRegistry {
+    generations: Vec<u32>,
+    live: Vec<bool>,
+}
+
+impl BodySlotRegistry {
+    pub fn with_capacity(capacity: u32) -> Result<Self, String> {
+        if capacity == 0 {
+            return Err("body slot capacity must be positive".to_owned());
+        }
+        let capacity = usize::try_from(capacity)
+            .map_err(|_| "body slot capacity does not fit usize".to_owned())?;
+        Ok(Self {
+            generations: vec![1; capacity],
+            live: vec![false; capacity],
+        })
+    }
+
+    pub fn reserve(&mut self, id: BodyId) -> Result<(), String> {
+        if id.generation == 0 {
+            return Err("body generations must be nonzero".to_owned());
+        }
+        let index = self.index(id.slot)?;
+        if self.live[index] {
+            return Err(format!("body slot {} is already live", id.slot));
+        }
+        self.generations[index] = id.generation;
+        self.live[index] = true;
+        Ok(())
+    }
+
+    pub fn release(&mut self, id: BodyId) -> Result<(), String> {
+        let index = self.index(id.slot)?;
+        if !self.matches(id) {
+            return Err(format!(
+                "body handle {}:{} is stale or not live",
+                id.slot, id.generation
+            ));
+        }
+        self.generations[index] = self.generations[index]
+            .checked_add(1)
+            .ok_or_else(|| format!("body slot {} exhausted its generation", id.slot))?;
+        self.live[index] = false;
+        Ok(())
+    }
+
+    pub fn allocate_lowest(&mut self) -> Result<BodyId, String> {
+        let index = self
+            .live
+            .iter()
+            .position(|live| !live)
+            .ok_or_else(|| "body slot capacity overflow".to_owned())?;
+        self.live[index] = true;
+        Ok(BodyId {
+            slot: index as u32,
+            generation: self.generations[index],
+        })
+    }
+
+    pub fn matches(&self, id: BodyId) -> bool {
+        let Ok(index) = usize::try_from(id.slot) else {
+            return false;
+        };
+        self.live.get(index).copied().unwrap_or(false)
+            && self.generations.get(index).copied() == Some(id.generation)
+    }
+
+    pub fn capacity(&self) -> u32 {
+        self.live.len() as u32
+    }
+
+    fn index(&self, slot: u32) -> Result<usize, String> {
+        let index = usize::try_from(slot).map_err(|_| "body slot does not fit usize".to_owned())?;
+        if index >= self.live.len() {
+            return Err(format!(
+                "body slot {slot} exceeds capacity {}",
+                self.live.len()
+            ));
+        }
+        Ok(index)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct BoundedBodyCommands {
+    capacity: u32,
+    attempted: u64,
+    overflowed: bool,
+    commands: Vec<BodyCommandV1>,
+}
+
+impl BoundedBodyCommands {
+    pub fn new(capacity: u32) -> Result<Self, String> {
+        if capacity == 0 {
+            return Err("body command capacity must be positive".to_owned());
+        }
+        Ok(Self {
+            capacity,
+            attempted: 0,
+            overflowed: false,
+            commands: Vec::with_capacity(capacity as usize),
+        })
+    }
+
+    pub fn push(&mut self, command: BodyCommandV1) -> Result<(), String> {
+        command.validate().map_err(|error| error.to_string())?;
+        if self
+            .commands
+            .last()
+            .is_some_and(|previous| previous.sequence() >= command.sequence())
+        {
+            return Err("body command sequences must be strictly increasing".to_owned());
+        }
+        self.attempted = self
+            .attempted
+            .checked_add(1)
+            .ok_or_else(|| "body command attempt count overflowed".to_owned())?;
+        if self.commands.len() == self.capacity as usize {
+            self.overflowed = true;
+            return Err(format!(
+                "body command capacity {} overflowed at attempt {}",
+                self.capacity, self.attempted
+            ));
+        }
+        self.commands.push(command);
+        Ok(())
+    }
+
+    pub fn artifact(&self) -> BodyCommandBatchV1 {
+        BodyCommandBatchV1 {
+            schema_version: SCHEMA_VERSION,
+            capacity_commands: self.capacity,
+            attempted_commands: self.attempted,
+            overflowed: self.overflowed,
+            commands: self.commands.clone(),
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.attempted = 0;
+        self.overflowed = false;
+        self.commands.clear();
+    }
+}
+
+pub struct GpuBodyStorage {
+    pose: wgpu::Buffer,
+    motion: wgpu::Buffer,
+    properties: wgpu::Buffer,
+    metadata: wgpu::Buffer,
+    commands: wgpu::Buffer,
+    layout: BodyLayoutV1,
+    command_capacity: u32,
+    slots: BodySlotRegistry,
+}
+
+impl GpuBodyStorage {
+    pub fn new(
+        device: &wgpu::Device,
+        capacity: u32,
+        command_capacity: u32,
+        bodies: &[BodyStateV1],
+    ) -> Result<Self, String> {
+        if bodies.len() > capacity as usize {
+            return Err(format!(
+                "body capacity {capacity} cannot hold {} authored bodies",
+                bodies.len()
+            ));
+        }
+        if command_capacity == 0 {
+            return Err("body command capacity must be positive".to_owned());
+        }
+        let mut slots = BodySlotRegistry::with_capacity(capacity)?;
+        let mut poses = vec![BodyPoseRaw::zeroed(); capacity as usize];
+        let mut motions = vec![BodyMotionRaw::zeroed(); capacity as usize];
+        let mut properties = vec![BodyPropertiesRaw::zeroed(); capacity as usize];
+        let mut metadata = vec![BodyMetadataRaw::zeroed(); capacity as usize];
+        for body in bodies {
+            body.validate().map_err(|error| error.to_string())?;
+            slots.reserve(body.id)?;
+            let index = body.id.slot as usize;
+            let ShapeV1::Rectangle { half_extents } = body.shape else {
+                return Err("P5.1 GPU body storage supports rectangles only".to_owned());
+            };
+            poses[index] = BodyPoseRaw {
+                position_angle: [body.position.x, body.position.y, body.angle.get(), 0.0],
+            };
+            motions[index] = BodyMotionRaw {
+                linear_angular: [
+                    body.linear_velocity.x,
+                    body.linear_velocity.y,
+                    body.angular_velocity.get(),
+                    0.0,
+                ],
+            };
+            properties[index] = BodyPropertiesRaw {
+                half_extents_inverse_mass_inertia: [
+                    half_extents.x,
+                    half_extents.y,
+                    body.inverse_mass.get(),
+                    body.inverse_inertia.get(),
+                ],
+            };
+            let mut flags = FLAG_LIVE | FLAG_RECTANGLE;
+            if body.sleeping {
+                flags |= FLAG_SLEEPING;
+            }
+            if body.inverse_mass.get() == 0.0 {
+                flags |= FLAG_FIXED;
+            }
+            metadata[index] = BodyMetadataRaw {
+                generation_flags_material: [
+                    body.id.generation,
+                    flags,
+                    body.material.friction.get().to_bits(),
+                    body.material.restitution.get().to_bits(),
+                ],
+            };
+        }
+
+        check_buffer_limits::<BodyPoseRaw>(device, capacity, "body pose")?;
+        check_buffer_limits::<BodyMotionRaw>(device, capacity, "body motion")?;
+        check_buffer_limits::<BodyPropertiesRaw>(device, capacity, "body properties")?;
+        check_buffer_limits::<BodyMetadataRaw>(device, capacity, "body metadata")?;
+        check_buffer_limits::<BodyCommandRaw>(device, command_capacity, "body commands")?;
+
+        let usage = wgpu::BufferUsages::STORAGE
+            | wgpu::BufferUsages::COPY_SRC
+            | wgpu::BufferUsages::COPY_DST;
+        let pose = storage_init(device, "physbox5_body_pose", &poses, usage);
+        let motion = storage_init(device, "physbox5_body_motion", &motions, usage);
+        let properties = storage_init(device, "physbox5_body_properties", &properties, usage);
+        let metadata = storage_init(device, "physbox5_body_metadata", &metadata, usage);
+        let commands = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("physbox5_body_commands"),
+            size: u64::from(command_capacity) * u64::from(BODY_COMMAND_BYTES),
+            usage,
+            mapped_at_creation: false,
+        });
+        let layout = layout_artifact(capacity, bodies.len() as u64, bodies.len() as u32)?;
+        layout.validate().map_err(|error| error.to_string())?;
+
+        Ok(Self {
+            pose,
+            motion,
+            properties,
+            metadata,
+            commands,
+            layout,
+            command_capacity,
+            slots,
+        })
+    }
+
+    pub fn layout(&self) -> &BodyLayoutV1 {
+        &self.layout
+    }
+
+    pub fn command_capacity(&self) -> u32 {
+        self.command_capacity
+    }
+
+    pub fn slots(&self) -> &BodySlotRegistry {
+        &self.slots
+    }
+
+    pub fn pose_buffer(&self) -> &wgpu::Buffer {
+        &self.pose
+    }
+
+    pub fn motion_buffer(&self) -> &wgpu::Buffer {
+        &self.motion
+    }
+
+    pub fn properties_buffer(&self) -> &wgpu::Buffer {
+        &self.properties
+    }
+
+    pub fn metadata_buffer(&self) -> &wgpu::Buffer {
+        &self.metadata
+    }
+
+    pub fn command_buffer(&self) -> &wgpu::Buffer {
+        &self.commands
+    }
+
+    pub fn upload_commands(
+        &self,
+        queue: &wgpu::Queue,
+        batch: &BodyCommandBatchV1,
+    ) -> Result<CapacityRecordV1, String> {
+        batch.validate().map_err(|error| error.to_string())?;
+        if batch.capacity_commands != self.command_capacity {
+            return Err(format!(
+                "command batch capacity {} does not match GPU capacity {}",
+                batch.capacity_commands, self.command_capacity
+            ));
+        }
+        for command in &batch.commands {
+            if !self.slots.matches(command.body()) {
+                let body = command.body();
+                return Err(format!(
+                    "body command targets stale handle {}:{}",
+                    body.slot, body.generation
+                ));
+            }
+        }
+        let raw = batch.commands.iter().map(command_raw).collect::<Vec<_>>();
+        if !raw.is_empty() {
+            queue.write_buffer(&self.commands, 0, bytemuck::cast_slice(&raw));
+        }
+        Ok(CapacityRecordV1 {
+            class: "body-commands".to_owned(),
+            capacity_elements: u64::from(self.command_capacity),
+            used_elements: raw.len() as u64,
+            allocated_bytes: u64::from(self.command_capacity) * u64::from(BODY_COMMAND_BYTES),
+            high_water_bytes: raw.len() as u64 * u64::from(BODY_COMMAND_BYTES),
+            overflowed: batch.overflowed,
+        })
+    }
+
+    pub fn body_capacity_record(&self) -> CapacityRecordV1 {
+        CapacityRecordV1 {
+            class: "bodies".to_owned(),
+            capacity_elements: u64::from(self.layout.capacity_elements),
+            used_elements: u64::from(self.layout.live_elements),
+            allocated_bytes: self.layout.allocated_bytes,
+            high_water_bytes: u64::from(self.layout.live_elements)
+                * u64::from(self.layout.bytes_per_body),
+            overflowed: self.layout.overflowed,
+        }
+    }
+}
+
+fn layout_artifact(capacity: u32, attempted: u64, live: u32) -> Result<BodyLayoutV1, String> {
+    let lane = |name: &str, access| BodyLayoutLaneV1 {
+        name: name.to_owned(),
+        element_stride_bytes: 16,
+        capacity_elements: capacity,
+        allocated_bytes: u64::from(capacity) * 16,
+        access,
+    };
+    let lanes = vec![
+        lane("metadata", BodyLaneAccessV1::ReadWrite),
+        lane("motion", BodyLaneAccessV1::ReadWrite),
+        lane("pose", BodyLaneAccessV1::ReadWrite),
+        lane("properties", BodyLaneAccessV1::ReadOnly),
+    ];
+    let layout = BodyLayoutV1 {
+        schema_version: SCHEMA_VERSION,
+        layout_version: BODY_LAYOUT_VERSION,
+        capacity_elements: capacity,
+        live_elements: live,
+        attempted_elements: attempted,
+        bytes_per_body: BODY_BYTES_PER_SLOT,
+        allocated_bytes: u64::from(capacity) * u64::from(BODY_BYTES_PER_SLOT),
+        overflowed: attempted > u64::from(capacity),
+        lanes,
+    };
+    layout.validate().map_err(|error| error.to_string())?;
+    Ok(layout)
+}
+
+fn command_raw(command: &BodyCommandV1) -> BodyCommandRaw {
+    let body = command.body();
+    let mut raw = BodyCommandRaw {
+        kind_slot_generation_sequence: [0, body.slot, body.generation, command.sequence()],
+        data0: [0.0; 4],
+        data1: [0.0; 4],
+    };
+    match command {
+        BodyCommandV1::Reset {
+            position,
+            angle,
+            linear_velocity,
+            angular_velocity,
+            ..
+        } => {
+            raw.kind_slot_generation_sequence[0] = COMMAND_RESET;
+            raw.data0 = [position.x, position.y, angle.get(), 0.0];
+            raw.data1 = [
+                linear_velocity.x,
+                linear_velocity.y,
+                angular_velocity.get(),
+                0.0,
+            ];
+        }
+        BodyCommandV1::GrabBegin { world_target, .. } => {
+            raw.kind_slot_generation_sequence[0] = COMMAND_GRAB_BEGIN;
+            raw.data0 = [world_target.x, world_target.y, 0.0, 0.0];
+        }
+        BodyCommandV1::GrabTarget { world_target, .. } => {
+            raw.kind_slot_generation_sequence[0] = COMMAND_GRAB_TARGET;
+            raw.data0 = [world_target.x, world_target.y, 0.0, 0.0];
+        }
+        BodyCommandV1::GrabEnd { .. } => {
+            raw.kind_slot_generation_sequence[0] = COMMAND_GRAB_END;
+        }
+    }
+    raw
+}
+
+fn storage_init<T: Pod>(
+    device: &wgpu::Device,
+    label: &'static str,
+    values: &[T],
+    usage: wgpu::BufferUsages,
+) -> wgpu::Buffer {
+    device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some(label),
+        contents: bytemuck::cast_slice(values),
+        usage,
+    })
+}
+
+fn check_buffer_limits<T>(device: &wgpu::Device, capacity: u32, label: &str) -> Result<(), String> {
+    let bytes = u64::from(capacity)
+        .checked_mul(size_of::<T>() as u64)
+        .ok_or_else(|| format!("{label} allocation overflowed u64"))?;
+    let limits = device.limits();
+    if bytes > limits.max_buffer_size || bytes > u64::from(limits.max_storage_buffer_binding_size) {
+        return Err(format!(
+            "{label} requires {bytes} bytes, exceeding portable device buffer limits"
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use physbox_contracts::Vec2;
+
+    use super::*;
+
+    fn grab(sequence: u32, body: BodyId) -> BodyCommandV1 {
+        BodyCommandV1::GrabTarget {
+            sequence,
+            body,
+            world_target: Vec2::new(0.25, 0.5),
+        }
+    }
+
+    #[test]
+    fn layout_strides_and_totals_are_exact() {
+        let layout = layout_artifact(100_000, 100_000, 100_000).unwrap();
+        assert_eq!(layout.bytes_per_body, 64);
+        assert_eq!(layout.allocated_bytes, 6_400_000);
+        assert_eq!(layout.lanes.len(), 4);
+        layout.validate().unwrap();
+    }
+
+    #[test]
+    fn releasing_a_slot_invalidates_its_old_generation() {
+        let mut slots = BodySlotRegistry::with_capacity(2).unwrap();
+        let first = slots.allocate_lowest().unwrap();
+        assert!(slots.matches(first));
+        slots.release(first).unwrap();
+        assert!(!slots.matches(first));
+        let replacement = slots.allocate_lowest().unwrap();
+        assert_eq!(replacement.slot, first.slot);
+        assert_eq!(replacement.generation, first.generation + 1);
+        assert!(!slots.matches(first));
+        assert!(slots.matches(replacement));
+    }
+
+    #[test]
+    fn command_order_and_overflow_are_diagnosed() {
+        let body = BodyId {
+            slot: 0,
+            generation: 1,
+        };
+        let mut queue = BoundedBodyCommands::new(2).unwrap();
+        queue.push(grab(1, body)).unwrap();
+        assert!(queue.push(grab(1, body)).is_err());
+        queue.push(grab(2, body)).unwrap();
+        let error = queue.push(grab(3, body)).unwrap_err();
+        assert!(error.contains("capacity 2 overflowed"));
+        let artifact = queue.artifact();
+        assert!(artifact.overflowed);
+        assert_eq!(artifact.attempted_commands, 3);
+        artifact.validate().unwrap();
+    }
+
+    #[test]
+    fn gpu_allocation_uploads_only_live_generation_commands() {
+        let instance = crate::create_instance();
+        let adapter = pollster::block_on(crate::gpu_context::request_adapter(&instance, None))
+            .expect("test GPU adapter");
+        let (device, queue) =
+            pollster::block_on(crate::gpu_context::request_device(&adapter)).unwrap();
+        let mut scenario = crate::p5_1_rectangle_floor_scenario(1).unwrap();
+        let capacity_error = match GpuBodyStorage::new(&device, 1, 4, &scenario.bodies) {
+            Ok(_) => panic!("undersized body storage unexpectedly succeeded"),
+            Err(error) => error,
+        };
+        assert!(capacity_error.contains("cannot hold 2 authored bodies"));
+        scenario.bodies[0].id.generation = 7;
+        let storage = GpuBodyStorage::new(&device, 4, 4, &scenario.bodies).unwrap();
+        assert_eq!(storage.layout().allocated_bytes, 256);
+        assert_eq!(storage.body_capacity_record().high_water_bytes, 128);
+
+        let mut accepted = BoundedBodyCommands::new(4).unwrap();
+        accepted
+            .push(grab(
+                1,
+                BodyId {
+                    slot: 0,
+                    generation: 7,
+                },
+            ))
+            .unwrap();
+        let capacity = storage
+            .upload_commands(&queue, &accepted.artifact())
+            .unwrap();
+        assert_eq!(capacity.used_elements, 1);
+        assert!(!capacity.overflowed);
+
+        let mut stale = BoundedBodyCommands::new(4).unwrap();
+        stale
+            .push(grab(
+                2,
+                BodyId {
+                    slot: 0,
+                    generation: 6,
+                },
+            ))
+            .unwrap();
+        assert!(
+            storage
+                .upload_commands(&queue, &stale.artifact())
+                .unwrap_err()
+                .contains("stale handle 0:6")
+        );
+    }
+}
