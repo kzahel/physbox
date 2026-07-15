@@ -1,9 +1,10 @@
 use physbox_engine::{
     GpuContactPersistenceTopology, GpuGatherTopology, GpuGeneratedContactRunner,
-    GpuNarrowphaseRunner, GpuSolverCandidate, P5_2_BUCKET_EVIDENCE_STEPS,
+    GpuNarrowphaseRunner, GpuSolverCandidate, GpuSolverExecutionV1, P5_2_BUCKET_EVIDENCE_STEPS,
     P5_2_CENTERED_STACK_EVIDENCE_STEPS, P5_2BucketShape, P5_2CandidatePattern,
-    P5_2GeneratedScenarioKind, benchmark_gpu_generated_contacts, p5_2_bucket_scenario,
-    p5_2_candidate_scenario, p5_2_centered_rectangle_stack_scenario, p5_2_contact_policy_candidate,
+    P5_2GeneratedScenarioKind, benchmark_gpu_generated_contact_experiment,
+    benchmark_gpu_generated_contacts, p5_2_bucket_scenario, p5_2_candidate_scenario,
+    p5_2_centered_rectangle_stack_scenario, p5_2_contact_policy_candidate,
     p5_2_generated_performance_scenario, p5_2_generated_scenario, run_gpu_soft_step_case,
 };
 use physbox_lab::analytic_narrowphase::authored_solver_projection;
@@ -38,6 +39,42 @@ fn generated_contact_benchmark_uses_qualified_split_scopes() {
         (None, None, None) => {}
         mismatch => panic!("inconsistent generated timestamp evidence: {mismatch:?}"),
     }
+}
+
+#[test]
+fn solver_experiments_are_explicit_replayable_and_not_product_defaults() {
+    let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
+    let mut scenario = p5_2_centered_rectangle_stack_scenario(2, 30).unwrap();
+    scenario.settings.iterations = 2;
+    assert!(runner.run(&scenario, 30).is_err());
+
+    let execution = GpuSolverExecutionV1::experiment(true, true);
+    let first = runner.run_experiment(&scenario, 30, execution).unwrap();
+    let replay = runner.run_experiment(&scenario, 30, execution).unwrap();
+    assert_eq!(first.solver_settings.iterations, 2);
+    assert_eq!(first.solver_execution, execution);
+    assert_eq!(first.dispatches_per_step, 129);
+    assert_eq!(first.bodies, replay.bodies);
+    assert_eq!(first.cache, replay.cache);
+    let benchmark = pollster::block_on(benchmark_gpu_generated_contact_experiment(
+        &scenario, 1, 1, execution,
+    ))
+    .unwrap();
+    assert_eq!(benchmark.dispatches_per_step, 129);
+    assert_eq!(benchmark.correctness.solver_execution, execution);
+
+    let no_warm = runner
+        .run_experiment(&scenario, 30, GpuSolverExecutionV1::experiment(false, true))
+        .unwrap();
+    assert!(!no_warm.solver_execution.warm_start);
+    assert!(no_warm.bodies.iter().all(|body| {
+        body.position.x.is_finite()
+            && body.position.y.is_finite()
+            && body.angle.get().is_finite()
+            && body.linear_velocity.x.is_finite()
+            && body.linear_velocity.y.is_finite()
+            && body.angular_velocity.get().is_finite()
+    }));
 }
 
 #[test]

@@ -15,8 +15,8 @@ use wgpu::util::DeviceExt;
 use crate::{
     GpuBodyStorage,
     body_floor_solver::{
-        GpuFixedFloorSolver, GpuGatherTopology, GpuGatherTopologyEvidence, PointInputRaw,
-        PreparedPointRaw,
+        GpuFixedFloorSolver, GpuGatherTopology, GpuGatherTopologyEvidence, GpuSolverExecutionV1,
+        PointInputRaw, PreparedPointRaw, validate_selected_settings,
     },
     collision_candidates::{CandidateCase, CandidatePipelines},
     collision_narrowphase::{NarrowphaseCase, NarrowphasePipelines},
@@ -145,25 +145,6 @@ impl GpuGeneratedContactGraph {
         )
     }
 
-    pub(crate) fn new_with_gather_topology(
-        device: &wgpu::Device,
-        storage: &GpuBodyStorage,
-        scenario: &ScenarioV1,
-        gather_topology: GpuGatherTopology,
-        permute_edge_build: bool,
-    ) -> Result<Self, String> {
-        Self::new_with_topologies(
-            device,
-            storage,
-            scenario,
-            GpuContactPersistenceTopology::StablePairSlot,
-            gather_topology,
-            permute_edge_build,
-            false,
-            u32::MAX,
-        )
-    }
-
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new_with_topologies(
         device: &wgpu::Device,
@@ -174,6 +155,32 @@ impl GpuGeneratedContactGraph {
         permute_edge_build: bool,
         permute_pair_build: bool,
         fingerprint_mask: u32,
+    ) -> Result<Self, String> {
+        validate_selected_settings(scenario)?;
+        Self::new_with_topologies_and_execution(
+            device,
+            storage,
+            scenario,
+            persistence_topology,
+            gather_topology,
+            permute_edge_build,
+            permute_pair_build,
+            fingerprint_mask,
+            GpuSolverExecutionV1::SELECTED,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn new_with_topologies_and_execution(
+        device: &wgpu::Device,
+        storage: &GpuBodyStorage,
+        scenario: &ScenarioV1,
+        persistence_topology: GpuContactPersistenceTopology,
+        gather_topology: GpuGatherTopology,
+        permute_edge_build: bool,
+        permute_pair_build: bool,
+        fingerprint_mask: u32,
+        execution: GpuSolverExecutionV1,
     ) -> Result<Self, String> {
         if !scenario.manifolds.is_empty()
             || !scenario.contact_cache.is_empty()
@@ -218,7 +225,7 @@ impl GpuGeneratedContactGraph {
             point_capacity,
             size_of::<PointInputRaw>() as u32,
         )?;
-        let solver = GpuFixedFloorSolver::new_generated_with_topology(
+        let solver = GpuFixedFloorSolver::new_generated_experiment_with_topology(
             device,
             storage,
             scenario,
@@ -226,6 +233,7 @@ impl GpuGeneratedContactGraph {
             point_capacity,
             gather_topology,
             permute_edge_build,
+            execution,
         )?;
         let persistence = GeneratedPersistenceGraph::new(
             device,
@@ -1143,6 +1151,8 @@ pub struct GpuGeneratedContactOutput {
     pub source_scenario_hash: String,
     pub completed_steps: u32,
     pub mapped_after_final_step_only: bool,
+    pub solver_settings: physbox_contracts::SolverSettingsV1,
+    pub solver_execution: GpuSolverExecutionV1,
     pub bodies: Vec<physbox_contracts::BodyStateV1>,
     pub cache: Vec<PersistentContactV1>,
     pub pass_evidence: crate::GpuFixedFloorPassEvidence,
@@ -1161,6 +1171,10 @@ impl GpuGeneratedContactOutput {
         if self.completed_steps == 0 || !self.mapped_after_final_step_only {
             return Err("generated contact output has an invalid completion phase".to_owned());
         }
+        self.solver_settings
+            .validate()
+            .map_err(|error| error.to_string())?;
+        self.solver_execution.validate()?;
         for body in &self.bodies {
             body.validate().map_err(|error| error.to_string())?;
         }
@@ -1310,6 +1324,24 @@ impl GpuGeneratedContactRunner {
         )
     }
 
+    pub fn run_experiment(
+        &self,
+        scenario: &ScenarioV1,
+        completed_steps: u32,
+        execution: GpuSolverExecutionV1,
+    ) -> Result<GpuGeneratedContactOutput, String> {
+        self.run_with_topologies_and_execution(
+            scenario,
+            completed_steps,
+            GpuContactPersistenceTopology::StablePairSlot,
+            GpuGatherTopology::StableBodyEdge,
+            false,
+            false,
+            u32::MAX,
+            execution,
+        )
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn run_with_topologies(
         &self,
@@ -1320,6 +1352,31 @@ impl GpuGeneratedContactRunner {
         permute_edge_build: bool,
         permute_pair_build: bool,
         fingerprint_mask: u32,
+    ) -> Result<GpuGeneratedContactOutput, String> {
+        validate_selected_settings(scenario)?;
+        self.run_with_topologies_and_execution(
+            scenario,
+            completed_steps,
+            persistence_topology,
+            gather_topology,
+            permute_edge_build,
+            permute_pair_build,
+            fingerprint_mask,
+            GpuSolverExecutionV1::SELECTED,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn run_with_topologies_and_execution(
+        &self,
+        scenario: &ScenarioV1,
+        completed_steps: u32,
+        persistence_topology: GpuContactPersistenceTopology,
+        gather_topology: GpuGatherTopology,
+        permute_edge_build: bool,
+        permute_pair_build: bool,
+        fingerprint_mask: u32,
+        execution: GpuSolverExecutionV1,
     ) -> Result<GpuGeneratedContactOutput, String> {
         if completed_steps == 0 {
             return Err("generated contact validation requires at least one step".to_owned());
@@ -1333,7 +1390,7 @@ impl GpuGeneratedContactRunner {
             crate::BODY_COMMAND_CAPACITY,
             &scenario.bodies,
         )?;
-        let graph = GpuGeneratedContactGraph::new_with_topologies(
+        let graph = GpuGeneratedContactGraph::new_with_topologies_and_execution(
             &self.device,
             &storage,
             scenario,
@@ -1342,6 +1399,7 @@ impl GpuGeneratedContactRunner {
             permute_edge_build,
             permute_pair_build,
             fingerprint_mask,
+            execution,
         )?;
         let lane_bytes = u64::from(body_count) * size_of::<[u32; 4]>() as u64;
         let state_readback = readback(&self.device, "generated_state_readback", lane_bytes * 3);
@@ -1656,6 +1714,8 @@ impl GpuGeneratedContactRunner {
             source_scenario_hash,
             completed_steps,
             mapped_after_final_step_only: true,
+            solver_settings: scenario.settings,
+            solver_execution: execution,
             bodies,
             cache,
             pass_evidence,
@@ -1715,13 +1775,58 @@ pub async fn benchmark_gpu_generated_contacts_with_gather_topology(
     samples: u32,
     gather_topology: GpuGatherTopology,
 ) -> Result<GpuGeneratedContactBenchmarkOutput, String> {
+    validate_selected_settings(scenario)?;
+    benchmark_gpu_generated_contacts_with_execution(
+        scenario,
+        warmup_steps,
+        samples,
+        gather_topology,
+        GpuSolverExecutionV1::SELECTED,
+    )
+    .await
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn benchmark_gpu_generated_contact_experiment(
+    scenario: &ScenarioV1,
+    warmup_steps: u32,
+    samples: u32,
+    execution: GpuSolverExecutionV1,
+) -> Result<GpuGeneratedContactBenchmarkOutput, String> {
+    benchmark_gpu_generated_contacts_with_execution(
+        scenario,
+        warmup_steps,
+        samples,
+        GpuGatherTopology::StableBodyEdge,
+        execution,
+    )
+    .await
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+async fn benchmark_gpu_generated_contacts_with_execution(
+    scenario: &ScenarioV1,
+    warmup_steps: u32,
+    samples: u32,
+    gather_topology: GpuGatherTopology,
+    execution: GpuSolverExecutionV1,
+) -> Result<GpuGeneratedContactBenchmarkOutput, String> {
     if warmup_steps == 0 || samples == 0 {
         return Err("generated-contact benchmark requires non-zero warmup and samples".to_owned());
     }
     scenario.validate().map_err(|error| error.to_string())?;
     let correctness = {
         let runner = GpuGeneratedContactRunner::new().await?;
-        runner.run_with_gather_topology(scenario, 1, gather_topology, false)?
+        runner.run_with_topologies_and_execution(
+            scenario,
+            1,
+            GpuContactPersistenceTopology::StablePairSlot,
+            gather_topology,
+            false,
+            false,
+            u32::MAX,
+            execution,
+        )?
     };
     if correctness.failure.is_some()
         || correctness
@@ -1755,12 +1860,16 @@ pub async fn benchmark_gpu_generated_contacts_with_gather_topology(
         &scenario.bodies,
     )?;
     let reset = crate::body_state::GpuBodyResetData::new(body_count, &scenario.bodies)?;
-    let graph = GpuGeneratedContactGraph::new_with_gather_topology(
+    let graph = GpuGeneratedContactGraph::new_with_topologies_and_execution(
         &device,
         &storage,
         scenario,
+        GpuContactPersistenceTopology::StablePairSlot,
         gather_topology,
         false,
+        false,
+        u32::MAX,
+        execution,
     )?;
     let query_resources = timestamps_available.then(|| {
         let query_set = device.create_query_set(&wgpu::QuerySetDescriptor {

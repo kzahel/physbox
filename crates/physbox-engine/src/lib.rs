@@ -35,13 +35,13 @@ pub use body_benchmark::{
     GpuBodyBenchmarkOutput, GpuBodyBenchmarkSession, GpuTimestampStatus, PendingBodyValidation,
     PendingCompletion, PendingTimestampReadback,
 };
+pub use body_floor_solver::{
+    GPU_SOLVER_EXECUTION_VERSION, GpuFixedFloorContactEvidence, GpuFixedFloorPassEvidence,
+    GpuGatherTopology, GpuGatherTopologyEvidence, GpuSolverExecutionV1,
+};
 #[cfg(not(target_arch = "wasm32"))]
 pub use body_floor_solver::{
     GpuAuthoredGatherBenchmarkOutput, benchmark_gpu_authored_gather_topology,
-};
-pub use body_floor_solver::{
-    GpuFixedFloorContactEvidence, GpuFixedFloorPassEvidence, GpuGatherTopology,
-    GpuGatherTopologyEvidence,
 };
 pub use body_state::{
     BODY_BYTES_PER_SLOT, BODY_COMMAND_BYTES, BODY_COMMAND_CAPACITY, BodySlotRegistry,
@@ -81,7 +81,8 @@ pub use generated_contacts::{GpuConstructionGraphEvidence, GpuContactPersistence
 #[cfg(not(target_arch = "wasm32"))]
 pub use generated_contacts::{
     GpuGeneratedContactBenchmarkOutput, GpuGeneratedContactOutput, GpuGeneratedContactRunner,
-    benchmark_gpu_generated_contacts, benchmark_gpu_generated_contacts_with_gather_topology,
+    benchmark_gpu_generated_contact_experiment, benchmark_gpu_generated_contacts,
+    benchmark_gpu_generated_contacts_with_gather_topology,
 };
 pub use gpu_context::{AdapterDiagnostics, create_instance};
 #[cfg(not(target_arch = "wasm32"))]

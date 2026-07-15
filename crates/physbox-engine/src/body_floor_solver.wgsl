@@ -325,7 +325,12 @@ fn prepare(@builtin(global_invocation_id) id: vec3u) {
         return;
     }
     var empty: PreparedPoint;
-    prepared_points[id.x] = refreshed_point(point_inputs[id.x], empty, true);
+    var point = refreshed_point(point_inputs[id.x], empty, true);
+    if (params.uints1.x == 0u) {
+        point.data1.z = 0.0;
+        point.data1.w = 0.0;
+    }
+    prepared_points[id.x] = point;
 }
 
 @compute @workgroup_size(64)
@@ -335,8 +340,13 @@ fn refresh_contacts(@builtin(global_invocation_id) id: vec3u) {
         prepared_points[id.x] = invalid_prepared_point();
         return;
     }
-    prepared_points[id.x] = refreshed_point(
+    var point = refreshed_point(
         point_inputs[id.x], prepared_points[id.x], params.uints0.w != 0u);
+    if (params.uints0.w != 0u && params.uints1.x == 0u) {
+        point.data1.z = 0.0;
+        point.data1.w = 0.0;
+    }
+    prepared_points[id.x] = point;
 }
 
 @compute @workgroup_size(64)

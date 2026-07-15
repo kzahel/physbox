@@ -4,7 +4,7 @@ use std::mem::size_of;
 use std::time::Instant;
 
 use bytemuck::{Pod, Zeroable};
-use physbox_contracts::{CapacityRecordV1, ScenarioV1};
+use physbox_contracts::{CapacityRecordV1, ScenarioV1, SolverSettingsV1};
 #[cfg(not(target_arch = "wasm32"))]
 use physbox_contracts::{Validate, canonical_hash, sha256_bytes};
 use serde::Serialize;
@@ -16,6 +16,42 @@ use crate::gpu_solver::GpuContributionEvidence;
 const WORKGROUP_SIZE: u32 = 64;
 const RADIX_WORKGROUP_SIZE: u32 = 256;
 const PARAMETER_STRIDE: usize = 256;
+
+pub const GPU_SOLVER_EXECUTION_VERSION: u32 = 1;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GpuSolverExecutionV1 {
+    pub version: u32,
+    pub warm_start: bool,
+    pub relaxation: bool,
+}
+
+impl GpuSolverExecutionV1 {
+    pub const SELECTED: Self = Self {
+        version: GPU_SOLVER_EXECUTION_VERSION,
+        warm_start: true,
+        relaxation: true,
+    };
+
+    pub const fn experiment(warm_start: bool, relaxation: bool) -> Self {
+        Self {
+            version: GPU_SOLVER_EXECUTION_VERSION,
+            warm_start,
+            relaxation,
+        }
+    }
+
+    pub(crate) fn validate(self) -> Result<(), String> {
+        if self.version != GPU_SOLVER_EXECUTION_VERSION {
+            return Err(format!(
+                "GPU solver execution version {} differs from {}",
+                self.version, GPU_SOLVER_EXECUTION_VERSION
+            ));
+        }
+        Ok(())
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -508,6 +544,7 @@ impl GpuFixedFloorSolver {
             point_count,
             GpuGatherTopology::CanonicalBodyScan,
             false,
+            GpuSolverExecutionV1::SELECTED,
         )?;
         solver._owned_point_input = Some(point_buffer);
         Ok(solver)
@@ -545,13 +582,14 @@ impl GpuFixedFloorSolver {
             point_count,
             topology,
             false,
+            GpuSolverExecutionV1::SELECTED,
         )?;
         solver._owned_point_input = Some(point_buffer);
         Ok(solver)
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn new_generated_with_topology(
+    pub(crate) fn new_generated_experiment_with_topology(
         device: &wgpu::Device,
         storage: &GpuBodyStorage,
         scenario: &ScenarioV1,
@@ -559,8 +597,9 @@ impl GpuFixedFloorSolver {
         point_capacity: u32,
         topology: GpuGatherTopology,
         permute_edge_build: bool,
+        execution: GpuSolverExecutionV1,
     ) -> Result<Self, String> {
-        validate_selected_settings(scenario)?;
+        validate_experiment_settings(&scenario.settings, execution)?;
         if !scenario.manifolds.is_empty() || point_capacity == 0 {
             return Err(
                 "generated contact solver requires a neutral scenario and nonzero point capacity"
@@ -575,6 +614,7 @@ impl GpuFixedFloorSolver {
             point_capacity,
             topology,
             permute_edge_build,
+            execution,
         )
     }
 
@@ -587,6 +627,7 @@ impl GpuFixedFloorSolver {
         point_count: u32,
         topology: GpuGatherTopology,
         permute_edge_build: bool,
+        execution: GpuSolverExecutionV1,
     ) -> Result<Self, String> {
         let body_count = storage.layout().capacity_elements;
         let topology_layout = TopologyLayout::new(topology, body_count, point_count)?;
@@ -596,6 +637,7 @@ impl GpuFixedFloorSolver {
             point_count,
             topology_layout,
             permute_edge_build,
+            execution,
         );
         let mut initial_motion = vec![[0.0; 4]; body_count as usize];
         for body in &scenario.bodies {
@@ -1260,7 +1302,7 @@ pub(crate) fn decode_pass_evidence(
     })
 }
 
-fn validate_selected_settings(scenario: &ScenarioV1) -> Result<(), String> {
+pub(crate) fn validate_selected_settings(scenario: &ScenarioV1) -> Result<(), String> {
     let settings = &scenario.settings;
     let selected = settings.fixed_dt.get().to_bits() == (1.0_f32 / 60.0).to_bits()
         && settings.substeps == 4
@@ -1271,6 +1313,22 @@ fn validate_selected_settings(scenario: &ScenarioV1) -> Result<(), String> {
         && settings.restitution_threshold.get().to_bits() == 1.0_f32.to_bits();
     if !selected {
         return Err("P5.1 fixed-floor settings differ from the accepted S1.6 baseline".to_owned());
+    }
+    Ok(())
+}
+
+fn validate_experiment_settings(
+    settings: &SolverSettingsV1,
+    execution: GpuSolverExecutionV1,
+) -> Result<(), String> {
+    execution.validate()?;
+    if settings.fixed_dt.get().to_bits() != (1.0_f32 / 60.0).to_bits() {
+        return Err("GPU solver experiments retain the governed 60 Hz fixed dt".to_owned());
+    }
+    if !(1..=16).contains(&settings.substeps) || !(1..=8).contains(&settings.iterations) {
+        return Err(
+            "GPU solver experiments require 1..=16 substeps and 1..=8 iterations".to_owned(),
+        );
     }
     Ok(())
 }
@@ -1320,6 +1378,7 @@ fn operations(
     point_count: u32,
     topology: TopologyLayout,
     permute_edge_build: bool,
+    execution: GpuSolverExecutionV1,
 ) -> (Vec<PassParamsRaw>, Vec<Operation>) {
     let mut parameters = Vec::new();
     let mut operations = Vec::new();
@@ -1349,6 +1408,7 @@ fn operations(
             prepare.uints0[3] = 1;
             PipelineKind::Refresh
         };
+        prepare.uints1[0] = u32::from(execution.warm_start);
         push_operation(
             &mut parameters,
             &mut operations,
@@ -1367,26 +1427,28 @@ fn operations(
             body_workgroups,
             topology,
         );
-        jacobi_stage(
-            &mut parameters,
-            &mut operations,
-            pass_params(scenario, body_count, point_count, 2, 0, 1),
-            PipelineKind::Normal,
-            MotionDirection::BtoA,
-            point_workgroups,
-            body_workgroups,
-            topology,
-        );
-        jacobi_stage(
-            &mut parameters,
-            &mut operations,
-            pass_params(scenario, body_count, point_count, 3, 0, 0),
-            PipelineKind::Tangent,
-            MotionDirection::AtoB,
-            point_workgroups,
-            body_workgroups,
-            topology,
-        );
+        for iteration in 0..scenario.settings.iterations {
+            jacobi_stage(
+                &mut parameters,
+                &mut operations,
+                pass_params(scenario, body_count, point_count, 2, iteration, 1),
+                PipelineKind::Normal,
+                MotionDirection::BtoA,
+                point_workgroups,
+                body_workgroups,
+                topology,
+            );
+            jacobi_stage(
+                &mut parameters,
+                &mut operations,
+                pass_params(scenario, body_count, point_count, 3, iteration, 0),
+                PipelineKind::Tangent,
+                MotionDirection::AtoB,
+                point_workgroups,
+                body_workgroups,
+                topology,
+            );
+        }
         push_operation(
             &mut parameters,
             &mut operations,
@@ -1403,26 +1465,30 @@ fn operations(
             MotionDirection::BtoA,
             point_workgroups,
         );
-        jacobi_stage(
-            &mut parameters,
-            &mut operations,
-            pass_params(scenario, body_count, point_count, 4, 0, 0),
-            PipelineKind::Normal,
-            MotionDirection::BtoA,
-            point_workgroups,
-            body_workgroups,
-            topology,
-        );
-        jacobi_stage(
-            &mut parameters,
-            &mut operations,
-            pass_params(scenario, body_count, point_count, 5, 0, 0),
-            PipelineKind::Tangent,
-            MotionDirection::AtoB,
-            point_workgroups,
-            body_workgroups,
-            topology,
-        );
+        if execution.relaxation {
+            for iteration in 0..scenario.settings.iterations {
+                jacobi_stage(
+                    &mut parameters,
+                    &mut operations,
+                    pass_params(scenario, body_count, point_count, 4, iteration, 0),
+                    PipelineKind::Normal,
+                    MotionDirection::BtoA,
+                    point_workgroups,
+                    body_workgroups,
+                    topology,
+                );
+                jacobi_stage(
+                    &mut parameters,
+                    &mut operations,
+                    pass_params(scenario, body_count, point_count, 5, iteration, 0),
+                    PipelineKind::Tangent,
+                    MotionDirection::AtoB,
+                    point_workgroups,
+                    body_workgroups,
+                    topology,
+                );
+            }
+        }
         jacobi_stage(
             &mut parameters,
             &mut operations,
@@ -1794,7 +1860,14 @@ mod tests {
     fn accepted_fixed_floor_schedule_is_exactly_sixty_eight_dispatches() {
         let scenario = crate::p5_1_rectangle_floor_scenario(120).unwrap();
         let topology = TopologyLayout::new(GpuGatherTopology::CanonicalBodyScan, 2, 2).unwrap();
-        let (parameters, operations) = operations(&scenario, 2, 2, topology, false);
+        let (parameters, operations) = operations(
+            &scenario,
+            2,
+            2,
+            topology,
+            false,
+            GpuSolverExecutionV1::SELECTED,
+        );
         assert_eq!(operations.len(), 68);
         assert_eq!(parameters.len(), operations.len());
         assert_eq!(topology.incident_base, 4);
@@ -1806,7 +1879,14 @@ mod tests {
     fn stable_body_edge_schedule_scales_with_body_key_width() {
         let scenario = crate::p5_1_rectangle_floor_scenario(120).unwrap();
         let topology = TopologyLayout::new(GpuGatherTopology::StableBodyEdge, 2, 2).unwrap();
-        let (parameters, operations) = operations(&scenario, 2, 2, topology, true);
+        let (parameters, operations) = operations(
+            &scenario,
+            2,
+            2,
+            topology,
+            true,
+            GpuSolverExecutionV1::SELECTED,
+        );
         assert_eq!(topology.edge_count, 4);
         assert_eq!(topology.radix_passes, 1);
         assert_eq!(topology.dispatches(), 6);
@@ -1824,5 +1904,43 @@ mod tests {
         validate_selected_settings(&scenario).unwrap();
         scenario.settings.iterations = 2;
         assert!(validate_selected_settings(&scenario).is_err());
+    }
+
+    #[test]
+    fn experiment_schedule_is_bounded_and_dispatch_accounted() {
+        let mut scenario = crate::p5_1_rectangle_floor_scenario(120).unwrap();
+        scenario.settings.iterations = 2;
+        let topology = TopologyLayout::new(GpuGatherTopology::StableBodyEdge, 2, 2).unwrap();
+        let (_, with_relaxation) = operations(
+            &scenario,
+            2,
+            2,
+            topology,
+            false,
+            GpuSolverExecutionV1::experiment(true, true),
+        );
+        let (_, without_relaxation) = operations(
+            &scenario,
+            2,
+            2,
+            topology,
+            false,
+            GpuSolverExecutionV1::experiment(false, false),
+        );
+        assert_eq!(with_relaxation.len(), 102);
+        assert_eq!(without_relaxation.len(), 70);
+        validate_experiment_settings(
+            &scenario.settings,
+            GpuSolverExecutionV1::experiment(true, true),
+        )
+        .unwrap();
+        scenario.settings.iterations = 9;
+        assert!(
+            validate_experiment_settings(
+                &scenario.settings,
+                GpuSolverExecutionV1::experiment(true, true),
+            )
+            .is_err()
+        );
     }
 }

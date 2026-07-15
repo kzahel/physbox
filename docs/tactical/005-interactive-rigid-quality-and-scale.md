@@ -379,6 +379,18 @@ in provenance; the prior frozen `world` lane remains unchanged. These are
 measurement facilities only: the selected GPU operation schedule, physical
 defaults, accepted tolerances, and Box2D authority are unchanged.
 
+Candidate-execution checkpoint, 2026-07-16: the existing generated-contact
+graph now has a versioned native-laboratory execution policy for reversible
+warm-start and relaxation toggles. Experimental scenarios may use one through
+16 substeps and one through eight iterations at the governed 60 Hz outer step;
+each iteration repeats the existing normal/tangent Jacobi stages before and,
+when enabled, after position integration. The complete graph benchmark reports
+the resulting dispatch and GPU cost. Ordinary product, browser, Android, and
+validation constructors still accept only the selected four-substep,
+one-iteration, warm-started, relaxed schedule. Candidate output records the
+exact solver settings and policy, and replay tests prove that candidate use
+does not promote it to a product default.
+
 ### S5.5 — P5.3 scalable broadphase bakeoff
 
 Dependency: the human accepts an S5.4 path, S3 closes, and the S4 construction
