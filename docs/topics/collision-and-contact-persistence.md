@@ -1,7 +1,7 @@
 # Collision and contact persistence
 
-Status: approved S3.5a remediation active after the first S3.6 review; contact
-representation and physical policy remain provisional, 2026-07-15.
+Status: renewed S3.6 human checkpoint; contact representation and physical
+policy remain provisional, 2026-07-15.
 
 Governing direction:
 [one GPU-resident 2D physics world](physbox5-unified-gpu-physics.md).
@@ -264,6 +264,16 @@ deep-overlap response, but it leaves `0.000508` penetration and `27.41 m/s`
 maximum multi-contact speed for human quality review. The pair and adjacency
 timings remain separate experiments, so the evidence does not claim that a
 combined product graph already achieves their joint result.
+
+The renewed S3.6 recommendation is to select stable generational pair slots
+and stable body-edge index views, then integrate them into one product graph
+under the existing exact baselines. It also recommends accepting `0.02`
+speculative distance and `3.0 m/s` per-contact depenetration velocity as
+provisional P5.2 defaults while keeping deep coincident spawn diagnosed and
+unsupported as ordinary placement. Human acceptance is required before any
+promotion. A combined exact/performance run plus reviewed structural stack
+curves gates S3 closure; the isolated candidate ratios are not a crossover
+claim.
 
 ## Reconsideration triggers
 

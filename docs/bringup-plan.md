@@ -102,16 +102,17 @@ body-plus-shape-plus-joint allocation.
 Execution tracker:
 [S3 small-world collision and contact persistence](tactical/003-small-world-collision-persistence.md).
 
-Current checkpoint, 2026-07-15: S3.1 through S3.5 evidence and the first compact
-S3.6 review are published. Human review authorized the focused S3.5a
-speculative/depenetration and representation/adjacency bakeoff. Stable
-pair-slot persistence and compact body-edge index views with segmented gather
-are the lead candidates; the full-key sort and canonical incidence scan remain
-correctness baselines. The `0.02` speculative distance and `3.0 m/s`
-depenetration limit are measured candidate values, not accepted defaults.
-PhysX remains a source reference rather than an oracle. S3.5a must regenerate
-S3.5/S3.6 evidence and stop again before any contact surface or physical
-default is frozen, P5.3 begins, or the queued menu/camera slice begins.
+Current checkpoint, 2026-07-15: S3.1 through S3.5a evidence and the renewed
+S3.6 review are published. The review recommends stable generational pair
+slots and compact stable body-edge index views with segmented gather; the
+full-key sort and canonical incidence scan remain selected correctness
+baselines pending human acceptance. It also recommends the measured `0.02`
+speculative distance and `3.0 m/s` per-contact depenetration limit as
+provisional defaults while keeping deep coincident spawn diagnosed. The first
+post-selection slice must integrate and revalidate both representation views
+and publish structural stack curves. No contact surface or physical default is
+yet frozen, and P5.3 plus the queued menu/camera slice remain paused for the
+human checkpoint.
 
 The first S3.5a representation checkpoint implements the stable pair-slot
 comparator with full feature verification and deterministic generational slot

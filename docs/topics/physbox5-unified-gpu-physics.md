@@ -604,6 +604,16 @@ These residuals, the absence of a combined pair-slot-plus-edge full-step
 timing, and the physical-device availability gap remain explicit S3.6 review
 inputs. No default, contact ABI, or product representation changed.
 
+The renewed S3.6 review recommends stable generational pair slots plus stable
+body-edge index views as the production direction, with the complete semantic
+key and canonical scan retained as validation oracles. It recommends the
+candidate `0.02` speculative distance and `3.0 m/s` per-contact depenetration
+limit as provisional defaults while treating deep coincident placement as a
+diagnosed exceptional state. Human acceptance must precede promotion. The
+first post-selection slice must combine both views in the real graph, preserve
+exact output and atomic failure, and publish structural stack curves and
+combined timing before S3 closes or any crossover is claimed.
+
 Circle/circle and circle/rectangle contact are analytic. Rectangle/rectangle
 uses SAT to select a reference and incident edge, clips the incident segment,
 and produces stable vertex/edge feature pairs. Test feature stability around

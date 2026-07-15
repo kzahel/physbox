@@ -1,6 +1,6 @@
 # S3: Small-world collision and contact persistence
 
-Status: active at approved S3.5a remediation, 2026-07-15.
+Status: manual checkpoint at renewed S3.6 review, 2026-07-15.
 Direction: [one GPU-resident 2D physics world](../topics/physbox5-unified-gpu-physics.md).
 Bring-up stage: [P5.2](../bringup-plan.md#p52--small-world-collision-and-persistence-active).
 Predecessor: [accepted P5.1 body core](../../evidence/p5.1-s2.6/README.md).
@@ -330,7 +330,7 @@ Gate: a reviewer can assess collision correctness, persistence stability,
 memory/dispatch cost, downstream broadphase compatibility, and known failures
 without reading the full implementation or raw logs.
 
-Manual checkpoint, 2026-07-15: the
+First manual checkpoint, 2026-07-15: the
 [S3.6 review](../../evidence/p5.2-s3.6/README.md) recommends against freezing
 or advancing. It requests review of proposed `0.02` speculative distance and
 `3.0 m/s` depenetration speed, a compact/pair-grouped persistence bakeoff, and
@@ -451,6 +451,15 @@ overflow is atomic, native/browser/hardware-accelerated AVD pass the same
 scene contract, and the attempted physical lane had no connected device. The
 pair and edge gains remain separately scoped; no combined candidate or CPU
 crossover claim is inferred. S3.6 remains the human selection checkpoint.
+
+Renewed manual checkpoint, 2026-07-15: the revised
+[S3.6 review](../../evidence/p5.2-s3.6/README.md) recommends selecting stable
+generational pair slots plus stable body-edge index views, and accepting the
+`0.02` speculative-distance / `3.0 m/s` per-contact depenetration candidate as
+provisional P5.2 defaults. It requires one post-selection combined-graph
+integration and structural-quality gate before closing S3 or making a CPU
+performance claim. The current full-key/body-scan baseline and physical
+defaults remain selected until human acceptance is recorded.
 
 Gate: the speculative and deep-overlap reproducers pass without widening the
 existing numerical tolerance; every candidate exactly preserves accepted

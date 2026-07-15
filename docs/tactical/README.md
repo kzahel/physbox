@@ -1,8 +1,8 @@
 # Tactical workstreams
 
 Status: S1 and S2 complete; S3 small-world collision and contact persistence is
-active in the approved S3.5a remediation after its first S3.6 review. S4 basic
-scene navigation and camera is queued after accepted P5.2 evidence.
+at its renewed S3.6 manual checkpoint. S4 basic scene navigation and camera is
+queued after human acceptance and the combined representation gate.
 
 Tactical filenames use a three-digit zero-padded prefix ordered by their first
 Git creation timestamp. This repository starts at `001`. Never renumber an
@@ -15,7 +15,7 @@ This README remains the unnumbered index.
 | --- | --- | --- | --- |
 | S1 | Oracle foundation and rigid solver laboratory | [001-rigid-solver-laboratory.md](001-rigid-solver-laboratory.md) | complete 2026-07-15 |
 | S2 | GPU body state and fixed-floor contact | [002-gpu-body-state.md](002-gpu-body-state.md) | complete 2026-07-15; limited body core accepted |
-| S3 | Small-world collision and contact persistence | [003-small-world-collision-persistence.md](003-small-world-collision-persistence.md) | active at approved S3.5a remediation, 2026-07-15 |
+| S3 | Small-world collision and contact persistence | [003-small-world-collision-persistence.md](003-small-world-collision-persistence.md) | manual checkpoint at renewed S3.6 review, 2026-07-15 |
 | S4 | Basic scene navigation and camera | [004-basic-scene-navigation-camera.md](004-basic-scene-navigation-camera.md) | proposed after S3 acceptance, 2026-07-15 |
 
 ## Conventions
