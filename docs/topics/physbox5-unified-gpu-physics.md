@@ -1188,7 +1188,8 @@ behavior is present until S3.2.
 
 ### P5.5: First construction loop
 
-- Restore placement, erase, select, and grab for circles and rectangles.
+- Extend the P5.2a minimal circle/rectangle place/erase workbench with
+  selection, editable body properties, and deliberate shape sizing.
 - Save and reload the minimal authored scene.
 - Add one joint only after free-body contact is stable.
 - Decide whether the solver foundation is sufficient for chains and ragdolls

@@ -470,6 +470,13 @@ oracles, keep deep coincident placement diagnosed rather than ordinary, and
 accept no final stack-quality band or CPU crossover claim. This authorizes the
 post-selection integration slice; it does not close S3 or authorize P5.3.
 
+Sequencing addendum, 2026-07-15: human review prioritized S4 camera, shared UI,
+diagnostics, and anchored-grab slices before the combined S3 closure work so
+interactive physics feedback becomes useful. Minimal place/erase still waits
+for combined pair-slot integration because body retirement and generational
+slot reuse must prove cache invalidation. P5.3 remains blocked until both S3
+and S4 gates close.
+
 Gate: the speculative and deep-overlap reproducers pass without widening the
 existing numerical tolerance; every candidate exactly preserves accepted
 semantic identity and deterministic replay; every overflow rejects the whole

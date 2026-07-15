@@ -51,3 +51,12 @@ objects against its pinned Box2D v3 and box2cpp headers; no Emscripten header
 was needed for those objects. This established build feasibility only: no
 oracle adapter or acceptance result was created, and no reference source was
 copied into PhysBox 5.
+
+The authorized S4 interactive-workbench plan uses PhysBox 4 handoff revision
+`4295957e15480ef701e6006c7cafb5f0728ef101` as a selective behavior and source
+reference for `camera.rs`, `input/navigation.rs`, body-local grab selection,
+`toolbar.rs`, and the `options/font.rs` plus instanced-glyph renderer pattern.
+Each implementation commit that copies or closely ports code must identify its
+exact source file and preserve any applicable license. Rapier state, PhysBox 4
+scene compatibility, fluid/settings tools, and its asynchronous coupling are
+excluded. At this planning commit no PhysBox 4 runtime source has been copied.

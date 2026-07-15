@@ -152,24 +152,37 @@ makes no CPU crossover claim and returns to S3.6 for human selection.
   speculative separation, and explicit capacity diagnostics.
 - Produce synchronized oracle/GPU failure playback.
 
-## P5.2a — basic scene navigation and camera (queued)
+## P5.2a — interactive evaluation workbench (authorized)
 
 Execution tracker:
-[S4 basic scene navigation and camera](tactical/004-basic-scene-navigation-camera.md).
+[S4 interactive evaluation workbench](tactical/004-basic-scene-navigation-camera.md).
 
-Begin only after the S3.6 contact-representation review is accepted, and
-complete this checkpoint before P5.3 broadphase work. Keep the browser a
-fullscreen canvas: the shared engine renders the menu and owns scene
-selection, camera state, pan/zoom/recenter semantics, gesture arbitration, and
-pointer-to-world conversion. Platform adapters transport raw mouse, touch, and
-wheel facts only.
+Human review authorized camera, UI, diagnostics, and anchored-grab work after
+S3.6 direction acceptance so subjective rigid feedback is practical before
+deeper tuning. The minimal place/erase slice waits for the combined S3 pair
+integration because deletion and generational slot reuse must invalidate the
+selected persistent cache. Complete both this checkpoint and the separate S3
+closure gate before P5.3.
+
+Keep the browser a fullscreen canvas: the shared engine renders the toolbar,
+menu, glyph diagnostics, and tether, and owns scene selection, camera state,
+gesture arbitration, tools, GPU hit requests, construction commands, and
+pointer-to-world conversion. Platform adapters transport raw mouse, touch,
+wheel, lifecycle, and resize facts only.
 
 - Make the maintained shared scenarios discoverable from the default deployed
   canvas without requiring query-string editing.
-- Add mouse/touch pan, wheel/pinch zoom, recenter, and camera-correct body grab.
+- Make one empty-world touch inert; use two touches for pan/pinch, right mouse
+  drag for pan, wheel for cursor-anchored zoom, and primary input for tools.
+- Add GPU-selected body-local anchored grab with a visible tether and collisions
+  retained during dragging.
+- Add an efficient engine-rendered glyph overlay with honest pacing, body,
+  contact, capacity, overflow, adapter, and asynchronous-sample-age facts.
+- Add a minimal toolbar for Grab, Circle, Rectangle, and Erase after the
+  selected pair-cache generation-invalidation gate passes.
 - Preserve direct URL/argument launches for validation and deep links.
-- Prove that camera and menu state do not affect physics, pacing, scenario
-  hashes, or cross-host outcomes.
+- Prove that camera/UI state does not affect physics, pacing, scenario hashes,
+  or cross-host outcomes, and that construction owns no CPU body mirror.
 
 ## P5.3 — scalable broadphase bake-off
 
@@ -197,8 +210,9 @@ wheel facts only.
 
 ## P5.5 — first construction loop
 
-- Restore place, erase, select, and grab for circles/rectangles.
-- Add minimal authored save/load.
+- Extend the P5.2a minimal place/erase loop with selection, editable body
+  properties, and deliberate shape sizing.
+- Add minimal authored save/load and scene-document semantics.
 - Add one joint only after free-body contact remains green.
 
 ## P5.6 — LiquidFun-oracled coupled material
