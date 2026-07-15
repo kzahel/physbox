@@ -7,5 +7,6 @@ publish.workspace = true
 
 [dependencies]
 physbox-engine = { path = "../physbox-engine" }
+physbox-launch = { path = "../physbox-launch" }
 pollster.workspace = true
 winit.workspace = true

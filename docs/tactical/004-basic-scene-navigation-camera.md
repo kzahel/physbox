@@ -273,6 +273,11 @@ off-center compliance, damping, retained release velocity, tether clarity,
 floor/stack collision, and accidental-touch behavior. Do not freeze these
 constants or proceed to construction on automated evidence alone.
 
+Interactive terminal and logcat frame markers are milestone-only by default so
+a completed scenario cannot produce one line per rendered frame. `off` and
+`all` remain explicit launch modes; Android validation requests `all` only for
+its live held-grab probe.
+
 ### S4.4 — minimal circle/rectangle construction loop
 
 Dependency: the S3 combined pair-slot plus stable-edge product integration and

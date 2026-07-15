@@ -59,7 +59,7 @@ APK="$ANDROID_DIR/app/build/outputs/apk/debug/app-debug.apk"
 "$ADB" -s "$SERIAL" install -r "$APK" >/dev/null
 "$ADB" -s "$SERIAL" logcat -c
 "$ADB" -s "$SERIAL" shell am force-stop com.kzahel.physbox5
-STARTUP_ARGV="[\"--scenario\",\"$SCENARIO\"]"
+STARTUP_ARGV="[\"--scenario\",\"$SCENARIO\",\"--frame-markers\",\"all\"]"
 START_COMMAND="am start -n com.kzahel.physbox5/android.app.NativeActivity --es physbox5.startup.argv '$STARTUP_ARGV'"
 "$ADB" -s "$SERIAL" shell "$START_COMMAND" >/dev/null
 

@@ -7,7 +7,7 @@ mod android {
 
     use physbox_engine::EngineConfig;
     use physbox_launch::{ANDROID_STARTUP_ARGV_INTENT_EXTRA, LaunchOptions, parse_android_json};
-    use physbox_shell::WinitFrameDriver;
+    use physbox_shell::{FrameMarkerGate, WinitFrameDriver};
     use winit::application::ApplicationHandler;
     use winit::event::WindowEvent;
     use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
@@ -78,6 +78,7 @@ mod android {
         event_loop.set_control_flow(ControlFlow::Wait);
         let mut host = AndroidHost {
             driver: WinitFrameDriver::new(EngineConfig::from(&options)),
+            frame_markers: FrameMarkerGate::new(options.frame_markers),
         };
         event_loop
             .run_app(&mut host)
@@ -86,6 +87,7 @@ mod android {
 
     struct AndroidHost {
         driver: WinitFrameDriver,
+        frame_markers: FrameMarkerGate,
     }
 
     impl ApplicationHandler for AndroidHost {
@@ -115,7 +117,7 @@ mod android {
             match self.driver.handle_window_event(window_id, event) {
                 Ok(outcome) => {
                     if let Some(report) = outcome.report
-                        && (report.frame_index == 1 || report.scenario.complete)
+                        && self.frame_markers.should_emit(&report)
                     {
                         log::info!(
                             "PHYSBOX5_MARK_FRAME_RENDERED {}",

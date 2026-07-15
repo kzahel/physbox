@@ -25,6 +25,18 @@ impl LaunchHost {
     const fn supports_capture(self) -> bool {
         matches!(self, Self::Headless)
     }
+
+    const fn supports_frame_markers(self) -> bool {
+        matches!(self, Self::Desktop | Self::Android)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum FrameMarkerMode {
+    Off,
+    #[default]
+    Milestones,
+    All,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
@@ -74,6 +86,7 @@ pub struct LaunchOptions {
     pub output: Option<PathBuf>,
     pub report: Option<PathBuf>,
     pub scenario: ValidationScenario,
+    pub frame_markers: FrameMarkerMode,
 }
 
 impl Default for LaunchOptions {
@@ -87,6 +100,7 @@ impl Default for LaunchOptions {
             output: None,
             report: None,
             scenario: ValidationScenario::Bootstrap,
+            frame_markers: FrameMarkerMode::Milestones,
         }
     }
 }
@@ -174,8 +188,13 @@ pub fn usage(program: &str, host: LaunchHost) -> String {
     } else {
         ""
     };
+    let frame_markers = if host.supports_frame_markers() {
+        "\n  --frame-markers MODE  off, milestones (default), or all"
+    } else {
+        ""
+    };
     format!(
-        "Usage: {program} [options]\n\n  --width PX       viewport width (default 960)\n  --height PX      viewport height (default 600)\n  --scenario NAME  bootstrap, body-free-flight, rigid-floor, rigid-stack, reset-grab, solver-jacobi, or solver-colored{capture}\n  -h, --help       print this help"
+        "Usage: {program} [options]\n\n  --width PX       viewport width (default 960)\n  --height PX      viewport height (default 600)\n  --scenario NAME  bootstrap, body-free-flight, rigid-floor, rigid-stack, reset-grab, solver-jacobi, or solver-colored{frame_markers}{capture}\n  -h, --help       print this help"
     )
 }
 
@@ -198,6 +217,16 @@ fn apply_option(
                 "solver-jacobi" => ValidationScenario::SolverJacobi,
                 "solver-colored" => ValidationScenario::SolverColored,
                 _ => return Err(LaunchError(format!("unknown scenario: {value}"))),
+            }
+        }
+        "--frame-markers" if host.supports_frame_markers() => {
+            options.frame_markers = match value.as_str() {
+                "off" => FrameMarkerMode::Off,
+                "milestones" => FrameMarkerMode::Milestones,
+                "all" => FrameMarkerMode::All,
+                _ => {
+                    return Err(LaunchError(format!("unknown frame marker mode: {value}")));
+                }
             }
         }
         "--frames" if host.supports_capture() => options.frames = parse_positive(argument, &value)?,
@@ -256,6 +285,30 @@ mod tests {
         .unwrap();
         assert_eq!(request.options.width, 1280);
         assert_eq!(request.options.height, 720);
+        assert_eq!(request.options.frame_markers, FrameMarkerMode::Milestones);
+    }
+
+    #[test]
+    fn interactive_frame_markers_are_explicit_and_host_scoped() {
+        let desktop = parse_tokens(LaunchHost::Desktop, ["--frame-markers", "all"]).unwrap();
+        assert_eq!(desktop.options.frame_markers, FrameMarkerMode::All);
+
+        let android = parse_android_json(r#"["--frame-markers","off"]"#).unwrap();
+        assert_eq!(android.options.frame_markers, FrameMarkerMode::Off);
+
+        let error = parse_tokens(
+            LaunchHost::Headless,
+            [
+                "--frame-markers",
+                "all",
+                "--output",
+                "/tmp/out.png",
+                "--report",
+                "/tmp/out.json",
+            ],
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("unknown option"));
     }
 
     #[test]

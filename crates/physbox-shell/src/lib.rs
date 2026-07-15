@@ -7,12 +7,72 @@ use physbox_engine::{
     AdapterDiagnostics, EngineConfig, FrameInput, FrameReport, InputEvent, PointerButton,
     PointerEvent, PointerPhase, StepRequest, SurfaceRenderer, WheelEvent, create_instance,
 };
+use physbox_launch::FrameMarkerMode;
 use winit::event::{ElementState, MouseButton, MouseScrollDelta, TouchPhase, WindowEvent};
 use winit::event_loop::ActiveEventLoop;
 use winit::window::{Window, WindowAttributes, WindowId};
 
 const MOUSE_POINTER_ID: u64 = 0;
 const TOUCH_POINTER_NAMESPACE: u64 = 1_u64 << 63;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct CompletionMarkerKey {
+    scenario: &'static str,
+    activations: u64,
+    restarts: u64,
+}
+
+pub struct FrameMarkerGate {
+    mode: FrameMarkerMode,
+    first_frame_seen: bool,
+    last_completion: Option<CompletionMarkerKey>,
+}
+
+impl FrameMarkerGate {
+    pub fn new(mode: FrameMarkerMode) -> Self {
+        Self {
+            mode,
+            first_frame_seen: false,
+            last_completion: None,
+        }
+    }
+
+    pub fn should_emit(&mut self, report: &FrameReport) -> bool {
+        self.observe(
+            report.scenario.name,
+            report.scenario.complete,
+            report.ui.scenario_activations_total,
+            report.ui.scenario_restarts_total,
+        )
+    }
+
+    fn observe(
+        &mut self,
+        scenario: &'static str,
+        complete: bool,
+        activations: u64,
+        restarts: u64,
+    ) -> bool {
+        match self.mode {
+            FrameMarkerMode::Off => false,
+            FrameMarkerMode::All => true,
+            FrameMarkerMode::Milestones => {
+                let first_frame = !self.first_frame_seen;
+                self.first_frame_seen = true;
+                let completion = complete.then_some(CompletionMarkerKey {
+                    scenario,
+                    activations,
+                    restarts,
+                });
+                let new_completion = completion.is_some() && completion != self.last_completion;
+                if completion.is_some() {
+                    self.last_completion = completion;
+                }
+                first_frame || new_completion
+            }
+        }
+    }
+}
 
 #[derive(Default)]
 pub struct WinitFrameOutcome {
@@ -253,6 +313,28 @@ fn touch_phase(phase: TouchPhase) -> PointerPhase {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn milestone_markers_emit_once_per_completion_event() {
+        let mut gate = FrameMarkerGate::new(FrameMarkerMode::Milestones);
+        assert!(gate.observe("bootstrap", false, 0, 0));
+        assert!(!gate.observe("bootstrap", false, 0, 0));
+        assert!(gate.observe("bootstrap", true, 0, 0));
+        assert!(!gate.observe("bootstrap", true, 0, 0));
+        assert!(gate.observe("rigid-floor", true, 1, 0));
+        assert!(!gate.observe("rigid-floor", true, 1, 0));
+        assert!(gate.observe("rigid-floor", true, 1, 1));
+    }
+
+    #[test]
+    fn all_and_off_marker_modes_are_unambiguous() {
+        let mut all = FrameMarkerGate::new(FrameMarkerMode::All);
+        assert!(all.observe("bootstrap", true, 0, 0));
+        assert!(all.observe("bootstrap", true, 0, 0));
+
+        let mut off = FrameMarkerGate::new(FrameMarkerMode::Off);
+        assert!(!off.observe("bootstrap", true, 0, 0));
+    }
 
     #[test]
     fn host_coordinates_are_normalized_once() {

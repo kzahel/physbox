@@ -2,7 +2,7 @@
 
 use physbox_engine::EngineConfig;
 use physbox_launch::{LaunchHost, parse_os_args, usage};
-use physbox_shell::WinitFrameDriver;
+use physbox_shell::{FrameMarkerGate, WinitFrameDriver};
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::event::WindowEvent;
@@ -29,6 +29,7 @@ fn main() {
     let mut app = DesktopApp {
         viewport,
         driver: WinitFrameDriver::new(EngineConfig::from(&request.options)),
+        frame_markers: FrameMarkerGate::new(request.options.frame_markers),
     };
     event_loop
         .run_app(&mut app)
@@ -38,6 +39,7 @@ fn main() {
 struct DesktopApp {
     viewport: [u32; 2],
     driver: WinitFrameDriver,
+    frame_markers: FrameMarkerGate,
 }
 
 impl ApplicationHandler for DesktopApp {
@@ -69,7 +71,7 @@ impl ApplicationHandler for DesktopApp {
         match self.driver.handle_window_event(window_id, event) {
             Ok(outcome) => {
                 if let Some(report) = outcome.report
-                    && (report.frame_index == 1 || report.scenario.complete)
+                    && self.frame_markers.should_emit(&report)
                 {
                     println!("PHYSBOX5_MARK_FRAME_RENDERED {}", report.marker_json());
                 }

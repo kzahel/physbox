@@ -1505,6 +1505,7 @@ name = "physbox-shell"
 version = "0.1.0"
 dependencies = [
  "physbox-engine",
+ "physbox-launch",
  "pollster",
  "winit",
 ]

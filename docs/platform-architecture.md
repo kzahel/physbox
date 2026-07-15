@@ -12,6 +12,13 @@ scene contracts.
 neutral frame contract. Apps own only their event loop, target/surface,
 argument transport, logging, packaging, and presentation.
 
+Interactive frame markers default to milestone-only emission: the first frame
+and each distinct scenario completion or restart are reported once. Desktop
+and Android may explicitly request `--frame-markers all` for live validation
+probes or `--frame-markers off` for silent frame reporting. Continuous markers
+are never the product default; maintained Android automation opts into them
+only while it needs current held-grab observations.
+
 ```text
 host lifecycle + raw events
           |
