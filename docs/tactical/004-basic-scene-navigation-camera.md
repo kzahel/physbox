@@ -1,7 +1,7 @@
 # S4: Interactive evaluation workbench
 
-Status: S4.3 automated implementation/evidence complete, 2026-07-15; deployed
-human grab-feel checkpoint required before S4.4.
+Status: S4.3 deployed grab-feel checkpoint accepted, 2026-07-15; S4.4 waits
+for the S3 combined graph and is sequenced by [S5](005-interactive-rigid-quality-and-scale.md).
 Direction: [one shared host and renderer](../platform-architecture.md).
 Bring-up checkpoint: [P5.2a](../bringup-plan.md#p52a--interactive-evaluation-workbench-authorized).
 Physics predecessor: [accepted S3.6 direction](003-small-world-collision-persistence.md).
@@ -272,6 +272,14 @@ Manual checkpoint: push/deploy the exact commit, then review center and
 off-center compliance, damping, retained release velocity, tether clarity,
 floor/stack collision, and accidental-touch behavior. Do not freeze these
 constants or proceed to construction on automated evidence alone.
+
+Human review, 2026-07-15: camera and scene discovery are useful, and anchored
+grab feel is accepted as the continuing workbench baseline. The current values
+remain reconsiderable rather than universal final physical defaults. Review
+also requested a centered easy rectangle stack, 100-body circle/rectangle
+bucket demonstrations, and user-authored circle/rectangle placement. Those
+requests and the remaining S3/S4/P5.3/P5.4 dependencies are ordered in
+[S5](005-interactive-rigid-quality-and-scale.md).
 
 Interactive terminal and logcat frame markers are milestone-only by default so
 a completed scenario cannot produce one line per rendered frame. `off` and

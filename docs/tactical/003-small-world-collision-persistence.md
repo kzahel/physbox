@@ -477,6 +477,13 @@ for combined pair-slot integration because body retirement and generational
 slot reuse must prove cache invalidation. P5.3 remains blocked until both S3
 and S4 gates close.
 
+Execution addendum, 2026-07-15: the accepted next sequence is tracked by
+[S5 interactive rigid quality, construction, and scale](005-interactive-rigid-quality-and-scale.md).
+It adds an easy rectangle stack and objective settling contract before the
+combined graph, then uses successful generational invalidation to unblock the
+shared circle/rectangle construction loop. This does not weaken the S3 closure
+gate or authorize P5.3 early.
+
 Gate: the speculative and deep-overlap reproducers pass without widening the
 existing numerical tolerance; every candidate exactly preserves accepted
 semantic identity and deterministic replay; every overflow rejects the whole

@@ -10,6 +10,14 @@ the first time scale is measured. Interactive scheduling follows the
 fixed `dt`, at most one outer step per engine frame, and permanent wall-time
 slip instead of catch-up.
 
+Active cross-milestone execution from the remaining P5.2/S4 closure through
+P5.4 is tracked by
+[S5 interactive rigid quality, construction, and scale](tactical/005-interactive-rigid-quality-and-scale.md).
+That tactical orders easy-stack and bucket fixtures, the selected combined
+contact graph, circle/rectangle authoring, settling review, broadphase
+selection, scalable buckets, and sleeping without changing the milestone
+dependencies below.
+
 ## P5.0 — lean shared-host bootstrap (complete)
 
 - Fresh Git history and PhysBox 4 provenance.
@@ -170,8 +178,9 @@ gesture arbitration, tools, GPU hit requests, construction commands, and
 pointer-to-world conversion. Platform adapters transport raw mouse, touch,
 wheel, lifecycle, and resize facts only.
 
-S4.3 automated implementation and evidence are complete. Camera and input-trace contracts are versioned in shared
-Rust; right-drag pan, cursor-anchored wheel zoom, two-touch pan/pinch, pointer
+S4.3 automated implementation and evidence are complete. Camera and input-trace
+contracts are versioned in shared Rust; right-drag pan, cursor-anchored wheel
+zoom, two-touch pan/pinch, pointer
 loss, resize, and all-contacts-up rearming replay deterministically. The shared
 engine now renders a bounded glyph toolbar, responsive scenario menu, restart,
 recenter, and an honestly labeled declared-fact overlay in one UI pass and two
@@ -182,8 +191,11 @@ body-free intents, retains the selected generation and body-local anchor on
 device, and applies a sparse compliant point constraint without teleporting or
 disabling collision. Tether geometry is compute-prepared into a 192-byte GPU
 vertex buffer only while held. Twenty-one exact GPU replays and 21 clean pinned
-Box2D public motor-joint processes pass. The grab constants remain provisional;
-the exact commit must be deployed for human feel review before S4.4.
+Box2D public motor-joint processes pass. Deployed human review accepts the
+camera, scene discovery, and current anchored-grab feel as the continuing
+workbench baseline. The values remain reconsiderable rather than universal
+final defaults. S4.4 construction still waits for the selected combined S3
+graph and is sequenced by S5.
 
 - Make the maintained shared scenarios discoverable from the default deployed
   canvas without requiring query-string editing.
