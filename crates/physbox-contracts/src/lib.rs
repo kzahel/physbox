@@ -10,6 +10,7 @@ use sha2::{Digest, Sha256};
 pub const SCHEMA_VERSION: u32 = 1;
 pub const BODY_LAYOUT_VERSION: u32 = 1;
 pub const GRAB_INTENT_CONTRACT_VERSION: u32 = 1;
+pub const SETTLING_OBSERVATION_VERSION: u32 = 1;
 pub const ORACLE_SUCCESS_SENTINEL: &str = "PHYSBOX5_ORACLE_SUCCESS";
 
 pub use collision::*;
@@ -1014,6 +1015,138 @@ pub struct MetricsV1 {
     pub penetration_max: FiniteF32,
     pub jitter_rms: FiniteF32,
     pub energy_delta: FiniteF32,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SettlingObservationV1 {
+    pub completed_steps: u32,
+    pub dynamic_body_count: u32,
+    pub residual_linear_speed_max: FiniteF32,
+    pub residual_linear_speed_rms: FiniteF32,
+    pub residual_angular_speed_max: FiniteF32,
+    pub residual_angular_speed_rms: FiniteF32,
+    pub center_drift_max: FiniteF32,
+    pub stack_height: FiniteF32,
+    pub penetration_max: FiniteF32,
+    pub separation_max: FiniteF32,
+    pub contact_points: u32,
+    pub contact_feature_churn: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub normal_impulse_variation: Option<FiniteF32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tangent_impulse_variation: Option<FiniteF32>,
+    pub kinetic_energy: FiniteF32,
+    pub capacities: Vec<CapacityRecordV1>,
+}
+
+impl Validate for SettlingObservationV1 {
+    fn validate(&self) -> Result<(), ContractError> {
+        if self.completed_steps == 0 || self.dynamic_body_count == 0 {
+            return Err(ContractError(
+                "settling observation requires completed steps and dynamic bodies".to_owned(),
+            ));
+        }
+        for value in [
+            self.residual_linear_speed_max,
+            self.residual_linear_speed_rms,
+            self.residual_angular_speed_max,
+            self.residual_angular_speed_rms,
+            self.center_drift_max,
+            self.stack_height,
+            self.penetration_max,
+            self.separation_max,
+            self.kinetic_energy,
+        ] {
+            value.validate()?;
+            if value.get() < 0.0 {
+                return Err(ContractError(
+                    "settling magnitudes must be nonnegative".to_owned(),
+                ));
+            }
+        }
+        for value in [
+            self.normal_impulse_variation,
+            self.tangent_impulse_variation,
+        ]
+        .into_iter()
+        .flatten()
+        {
+            value.validate()?;
+            if value.get() < 0.0 {
+                return Err(ContractError(
+                    "settling impulse variation must be nonnegative".to_owned(),
+                ));
+            }
+        }
+        validate_sorted_unique(
+            self.capacities.iter().map(|record| &record.class),
+            "settling capacities",
+        )?;
+        for capacity in &self.capacities {
+            capacity.validate()?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SettlingSeriesV1 {
+    pub schema_version: u32,
+    pub observation_version: u32,
+    pub source_scenario_hash: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub projection_hash: Option<String>,
+    pub lane: String,
+    pub sleeping_enabled: bool,
+    pub transient_end_step: u32,
+    pub settled_start_step: u32,
+    pub observations: Vec<SettlingObservationV1>,
+    pub structural_pass: bool,
+    pub structural_reason: String,
+}
+
+impl Validate for SettlingSeriesV1 {
+    fn validate(&self) -> Result<(), ContractError> {
+        version(self.schema_version)?;
+        if self.observation_version != SETTLING_OBSERVATION_VERSION
+            || !is_sha256(&self.source_scenario_hash)
+            || self
+                .projection_hash
+                .as_deref()
+                .is_some_and(|hash| !is_sha256(hash))
+            || self.lane.is_empty()
+            || self.structural_reason.is_empty()
+            || self.transient_end_step == 0
+            || self.settled_start_step <= self.transient_end_step
+            || self.observations.is_empty()
+        {
+            return Err(ContractError(
+                "invalid settling series identity or window".to_owned(),
+            ));
+        }
+        validate_sorted_unique(
+            self.observations
+                .iter()
+                .map(|observation| observation.completed_steps),
+            "settling observation steps",
+        )?;
+        for observation in &self.observations {
+            observation.validate()?;
+        }
+        let final_step = self
+            .observations
+            .last()
+            .expect("nonempty observations checked above")
+            .completed_steps;
+        if self.transient_end_step > final_step || self.settled_start_step > final_step {
+            return Err(ContractError(
+                "settling windows lie outside the observation series".to_owned(),
+            ));
+        }
+        Ok(())
+    }
 }
 
 impl Validate for MetricsV1 {

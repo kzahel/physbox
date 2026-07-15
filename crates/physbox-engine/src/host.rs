@@ -19,7 +19,8 @@ use crate::{
         SceneContract,
     },
     scenario::{
-        P5_2GeneratedScenarioKind, authored_chain_scenario, p5_1_direct_render_scenario,
+        P5_2_CENTERED_STACK_EVIDENCE_STEPS, P5_2GeneratedScenarioKind, authored_chain_scenario,
+        p5_1_direct_render_scenario, p5_2_centered_rectangle_stack_scenario,
         p5_2_generated_floor_scenario, p5_2_generated_reset_grab_scenario, p5_2_generated_scenario,
     },
     ui::{UiAction, UiFrameModel, WorkbenchUi},
@@ -360,6 +361,7 @@ impl EngineHost {
             | ValidationScenario::BodyFreeFlight
             | ValidationScenario::RigidFloor
             | ValidationScenario::RigidStack
+            | ValidationScenario::RectangleStack
             | ValidationScenario::ResetGrab => None,
             ValidationScenario::SolverJacobi => Some(GpuSolverCandidate::JacobiGather),
             ValidationScenario::SolverColored => Some(GpuSolverCandidate::ColoredSoftTgs),
@@ -425,6 +427,15 @@ impl EngineHost {
                         .expect("engine-owned generated stack GPU world is valid"),
                 )
             }
+            ValidationScenario::RectangleStack => {
+                let scenario =
+                    p5_2_centered_rectangle_stack_scenario(4, P5_2_CENTERED_STACK_EVIDENCE_STEPS)
+                        .expect("engine-owned centered rectangle stack scenario is valid");
+                Some(
+                    GpuBodyWorld::new_generated(device, color_format, &scenario)
+                        .expect("engine-owned centered rectangle stack GPU world is valid"),
+                )
+            }
             _ => None,
         };
         let scenario_hash = match config.scenario {
@@ -444,6 +455,10 @@ impl EngineHost {
                 &p5_2_generated_scenario(P5_2GeneratedScenarioKind::SmallStack, 180)
                     .expect("engine-owned generated stack scenario is valid"),
             ),
+            ValidationScenario::RectangleStack => canonical_hash(
+                &p5_2_centered_rectangle_stack_scenario(4, P5_2_CENTERED_STACK_EVIDENCE_STEPS)
+                    .expect("engine-owned centered rectangle stack scenario is valid"),
+            ),
             ValidationScenario::ResetGrab => canonical_hash(
                 &p5_2_generated_reset_grab_scenario()
                     .expect("engine-owned generated reset/grab scenario is valid"),
@@ -460,7 +475,10 @@ impl EngineHost {
             ValidationScenario::BodyFreeFlight
             | ValidationScenario::Bootstrap
             | ValidationScenario::RigidFloor
-            | ValidationScenario::RigidStack => Some(BodyInteractionState::new(Vec::new(), true)),
+            | ValidationScenario::RigidStack
+            | ValidationScenario::RectangleStack => {
+                Some(BodyInteractionState::new(Vec::new(), true))
+            }
             ValidationScenario::ResetGrab => {
                 let script = p5_2_generated_reset_grab_scenario()
                     .expect("engine-owned generated reset/grab scenario is valid");
@@ -741,6 +759,19 @@ impl EngineHost {
                         "generated mixed-shape GPU stack completed"
                     } else {
                         "waiting for 180 generated stack steps"
+                    },
+                }
+            }
+            ValidationScenario::RectangleStack => {
+                let complete = self.fixed_steps_total >= P5_2_CENTERED_STACK_EVIDENCE_STEPS as u64;
+                ScenarioResult {
+                    name: self.config.scenario.name(),
+                    complete,
+                    passed: complete,
+                    reason: if complete {
+                        "centered four-rectangle GPU stack completed its exact step contract"
+                    } else {
+                        "waiting for 1200 centered rectangle stack steps"
                     },
                 }
             }

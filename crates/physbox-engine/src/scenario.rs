@@ -6,6 +6,8 @@ use physbox_contracts::{
     ScheduledBodyCommandV1, ShapeV1, SolverSettingsV1, Validate, Vec2,
 };
 
+pub const P5_2_CENTERED_STACK_EVIDENCE_STEPS: u32 = 1_200;
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ScenarioBuildError(pub String);
 
@@ -342,6 +344,45 @@ pub fn p5_2_generated_floor_scenario(
     scenario.manifolds.clear();
     scenario.contact_cache.clear();
     scenario.settings.contact_policy = Some(p5_2_contact_policy_candidate());
+    Ok(scenario)
+}
+
+pub fn p5_2_centered_rectangle_stack_scenario(
+    rectangle_count: u32,
+    requested_steps: u32,
+) -> Result<ScenarioV1, ScenarioBuildError> {
+    if !matches!(rectangle_count, 2 | 4 | 8) {
+        return Err(ScenarioBuildError(
+            "centered rectangle stack requires exactly 2, 4, or 8 rectangles".to_owned(),
+        ));
+    }
+    let mut scenario = p5_2_generated_floor_scenario(requested_steps)?;
+    let dynamic_template = scenario.bodies[0].clone();
+    let mut floor = scenario.bodies[1].clone();
+    floor.id.slot = 0;
+    let ShapeV1::Rectangle { .. } = dynamic_template.shape else {
+        unreachable!("generated floor dynamic template is a rectangle")
+    };
+    let half_extents = Vec2::new(0.35, 0.125);
+    let mut bodies = vec![floor];
+    for level in 0..rectangle_count {
+        let mut body = dynamic_template.clone();
+        body.id.slot = level + 1;
+        body.shape = ShapeV1::Rectangle { half_extents };
+        body.position = Vec2::new(0.0, half_extents.y + level as f32 * 2.0 * half_extents.y);
+        body.angle = finite(0.0);
+        body.linear_velocity = Vec2::ZERO;
+        body.angular_velocity = finite(0.0);
+        body.inverse_inertia = finite(21.719_458);
+        body.sleeping = false;
+        bodies.push(body);
+    }
+    scenario.id = format!("p5.2-centered-rectangle-stack-{rectangle_count}");
+    scenario.seed = 0;
+    scenario.bodies = bodies;
+    scenario
+        .validate()
+        .map_err(|error| ScenarioBuildError(error.to_string()))?;
     Ok(scenario)
 }
 
@@ -966,6 +1007,26 @@ pub fn p5_2_box2d_narrowphase_projection(
     Ok(projection)
 }
 
+pub fn p5_2_box2d_world_projection(source: &ScenarioV1) -> Result<ScenarioV1, ScenarioBuildError> {
+    source
+        .validate()
+        .map_err(|error| ScenarioBuildError(error.to_string()))?;
+    if !source.manifolds.is_empty()
+        || !source.contact_cache.is_empty()
+        || !source.actions.is_empty()
+    {
+        return Err(ScenarioBuildError(
+            "P5.2 Box2D world projection rejects authored manifolds, cache, and actions".to_owned(),
+        ));
+    }
+    let mut projection = source.clone();
+    projection.id = format!("{}-box2d-world-v1", source.id);
+    projection
+        .validate()
+        .map_err(|error| ScenarioBuildError(error.to_string()))?;
+    Ok(projection)
+}
+
 pub fn authored_one_contact_scenario(seed: u64) -> ScenarioV1 {
     let mut random = StableRandom::new(seed);
     let horizontal_offset = random.signed(0.18);
@@ -1328,6 +1389,21 @@ mod tests {
     }
 
     #[test]
+    fn p5_2_box2d_world_projection_preserves_exact_step_stack_semantics() {
+        let source = p5_2_centered_rectangle_stack_scenario(4, 600).unwrap();
+        let projection = p5_2_box2d_world_projection(&source).unwrap();
+        projection.validate().unwrap();
+        assert_eq!(projection.requested_steps, 600);
+        assert_eq!(projection.settings, source.settings);
+        assert_eq!(projection.bodies, source.bodies);
+        assert_eq!(projection.id, format!("{}-box2d-world-v1", source.id));
+        assert_eq!(
+            canonical_json(&projection).unwrap(),
+            canonical_json(&p5_2_box2d_world_projection(&source).unwrap()).unwrap()
+        );
+    }
+
+    #[test]
     fn p5_2_candidate_corpus_is_shared_valid_and_replayable() {
         for pattern in P5_2CandidatePattern::ALL {
             let scenario = p5_2_candidate_scenario(pattern, 32, 91).unwrap();
@@ -1377,6 +1453,42 @@ mod tests {
         let script = p5_2_generated_reset_grab_scenario().unwrap();
         script.validate().unwrap();
         assert!(script.scenario.manifolds.is_empty());
+    }
+
+    #[test]
+    fn p5_2_centered_rectangle_stacks_are_valid_exact_and_replayable() {
+        for count in [2, 4, 8] {
+            let scenario =
+                p5_2_centered_rectangle_stack_scenario(count, P5_2_CENTERED_STACK_EVIDENCE_STEPS)
+                    .unwrap();
+            scenario.validate().unwrap();
+            assert_eq!(scenario.bodies.len(), count as usize + 1);
+            assert_eq!(scenario.bodies[0].inverse_mass.get(), 0.0);
+            assert!(scenario.bodies.iter().all(|body| !body.sleeping));
+            assert!(scenario.bodies[1..].iter().all(|body| {
+                body.position.x == 0.0
+                    && body.angle.get() == 0.0
+                    && matches!(body.shape, ShapeV1::Rectangle { .. })
+            }));
+            assert!(scenario.manifolds.is_empty());
+            assert!(scenario.contact_cache.is_empty());
+            assert!(scenario.actions.is_empty());
+            assert_eq!(
+                canonical_json(&scenario).unwrap(),
+                canonical_json(
+                    &p5_2_centered_rectangle_stack_scenario(
+                        count,
+                        P5_2_CENTERED_STACK_EVIDENCE_STEPS,
+                    )
+                    .unwrap(),
+                )
+                .unwrap()
+            );
+        }
+        assert!(
+            p5_2_centered_rectangle_stack_scenario(3, P5_2_CENTERED_STACK_EVIDENCE_STEPS).is_err()
+        );
+        assert!(p5_2_centered_rectangle_stack_scenario(4, 0).is_err());
     }
 
     #[test]

@@ -47,16 +47,18 @@ pub enum ValidationScenario {
     BodyFreeFlight,
     RigidFloor,
     RigidStack,
+    RectangleStack,
     ResetGrab,
     SolverJacobi,
     SolverColored,
 }
 
 impl ValidationScenario {
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         Self::Bootstrap,
         Self::RigidFloor,
         Self::RigidStack,
+        Self::RectangleStack,
         Self::BodyFreeFlight,
         Self::ResetGrab,
         Self::SolverJacobi,
@@ -69,6 +71,7 @@ impl ValidationScenario {
             Self::BodyFreeFlight => "body-free-flight",
             Self::RigidFloor => "rigid-floor",
             Self::RigidStack => "rigid-stack",
+            Self::RectangleStack => "rectangle-stack",
             Self::ResetGrab => "reset-grab",
             Self::SolverJacobi => "solver-jacobi",
             Self::SolverColored => "solver-colored",
@@ -194,7 +197,7 @@ pub fn usage(program: &str, host: LaunchHost) -> String {
         ""
     };
     format!(
-        "Usage: {program} [options]\n\n  --width PX       viewport width (default 960)\n  --height PX      viewport height (default 600)\n  --scenario NAME  bootstrap, body-free-flight, rigid-floor, rigid-stack, reset-grab, solver-jacobi, or solver-colored{frame_markers}{capture}\n  -h, --help       print this help"
+        "Usage: {program} [options]\n\n  --width PX       viewport width (default 960)\n  --height PX      viewport height (default 600)\n  --scenario NAME  bootstrap, body-free-flight, rigid-floor, rigid-stack, rectangle-stack, reset-grab, solver-jacobi, or solver-colored{frame_markers}{capture}\n  -h, --help       print this help"
     )
 }
 
@@ -213,6 +216,7 @@ fn apply_option(
                 "body-free-flight" => ValidationScenario::BodyFreeFlight,
                 "rigid-floor" => ValidationScenario::RigidFloor,
                 "rigid-stack" => ValidationScenario::RigidStack,
+                "rectangle-stack" => ValidationScenario::RectangleStack,
                 "reset-grab" => ValidationScenario::ResetGrab,
                 "solver-jacobi" => ValidationScenario::SolverJacobi,
                 "solver-colored" => ValidationScenario::SolverColored,
@@ -356,6 +360,11 @@ mod tests {
         assert_eq!(floor.options.scenario, ValidationScenario::RigidFloor);
         let stack = parse_web_query("?scenario=rigid-stack").unwrap();
         assert_eq!(stack.options.scenario, ValidationScenario::RigidStack);
+        let rectangle_stack = parse_web_query("?scenario=rectangle-stack").unwrap();
+        assert_eq!(
+            rectangle_stack.options.scenario,
+            ValidationScenario::RectangleStack
+        );
         let reset_grab = parse_android_json(r#"["--scenario","reset-grab"]"#).unwrap();
         assert_eq!(reset_grab.options.scenario, ValidationScenario::ResetGrab);
     }

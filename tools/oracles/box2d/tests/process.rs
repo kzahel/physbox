@@ -9,7 +9,9 @@ use physbox_box2d_oracle::BOX2D_REVISION;
 use physbox_contracts::{OracleRequestV1, SCHEMA_VERSION, canonical_hash};
 use physbox_engine::{AnalyticFixtureKind, analytic_fixture_scenario};
 use physbox_engine::{
-    P5_2CollisionScenarioKind, p5_2_box2d_narrowphase_projection, p5_2_collision_scenario,
+    P5_2_CENTERED_STACK_EVIDENCE_STEPS, P5_2CollisionScenarioKind,
+    p5_2_box2d_narrowphase_projection, p5_2_box2d_world_projection,
+    p5_2_centered_rectangle_stack_scenario, p5_2_collision_scenario,
     p5_2_narrowphase_pair_scenario,
 };
 use physbox_lab::oracle_transport::{
@@ -139,6 +141,36 @@ fn clean_pinned_process_matches_randomized_p5_2_pair_families() {
                     )
                 });
         }
+    }
+    fs::remove_dir_all(&artifact_root).expect("remove process-test artifacts");
+}
+
+#[test]
+fn clean_pinned_process_replays_centered_rectangle_stack_projections() {
+    let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    let source_identity = verify_clean_git_pin(&repository.join("reference/box2d"), BOX2D_REVISION)
+        .expect("clean pinned Box2D checkout");
+    let artifact_root = temporary_root("box2d-centered-stacks");
+    for count in [2, 4, 8] {
+        let source =
+            p5_2_centered_rectangle_stack_scenario(count, P5_2_CENTERED_STACK_EVIDENCE_STEPS)
+                .unwrap();
+        let projection = p5_2_box2d_world_projection(&source).unwrap();
+        let request = OracleRequestV1 {
+            schema_version: SCHEMA_VERSION,
+            run_id: format!("centered-stack-{count}"),
+            source_scenario_hash: canonical_hash(&projection).unwrap(),
+            scenario: projection,
+        };
+        let authority = run_oracle(&config(&artifact_root, &source_identity, "world"), &request)
+            .expect("accepted centered stack world authority result");
+        assert!(authority.result.failure.is_none());
+        assert_eq!(authority.result.bodies.len(), count as usize + 1);
+        assert!(
+            authority.result.bodies[1..]
+                .windows(2)
+                .all(|pair| { pair[0].position.y < pair[1].position.y })
+        );
     }
     fs::remove_dir_all(&artifact_root).expect("remove process-test artifacts");
 }

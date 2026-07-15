@@ -95,13 +95,13 @@ the human checkpoints below.
 
 ### S5.1 — shared evaluation scenes and settling contract
 
-- [ ] Add deterministic 2-, 4-, and 8-rectangle centered stack fixtures, with
+- [x] Add deterministic 2-, 4-, and 8-rectangle centered stack fixtures, with
   the four-rectangle form discoverable in the shared scene menu.
 - [ ] Add shared 100-circle and 100-rectangle bucket demonstrations using three
   fixed rectangle walls and declared initial spacing/seed/capacities.
 - [ ] Add neutral Box2D projections and exact-step replay for the stack and
   bucket sources; reject any unsupported projection explicitly.
-- [ ] Define settling observations for residual linear/angular speed, center
+- [x] Define settling observations for residual linear/angular speed, center
   drift, stack height, penetration/separation, contact-feature churn, impulse
   variation, energy, and capacity/overflow over declared transient and settled
   windows.
@@ -123,6 +123,18 @@ Commit boundaries: land the stack source plus metric/oracle contract first;
 then land the two 100-body bucket sources, menu exposure, captures, and labeled
 all-pairs baseline. Do not mix solver tuning or representation integration into
 either commit.
+
+Stack-contract progress, 2026-07-15: the shared source now authors centered
+2/4/8 rectangle stacks and exposes the four-body form as `rectangle-stack`
+without replacing the mixed `rigid-stack` review scene. Version 1 settling
+observations distinguish awake/sleep-enabled lanes and record every governed
+motion, geometry, persistence, impulse, energy, and capacity dimension. Exact
+1,200-step GPU replay is bit-for-bit for all three sources: the 2-body stack
+retains its upright support chain, while the 4- and 8-body sources
+deterministically topple and are preserved as structural failures for S5.4
+rather than relabeled as settled. Clean pinned Box2D world projections accept
+all three sources; its default sleeping behavior remains explicitly distinct
+from the awake GPU lane.
 
 ### S5.2 — selected combined product graph and S3 evidence
 

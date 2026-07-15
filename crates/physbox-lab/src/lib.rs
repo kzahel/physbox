@@ -13,6 +13,7 @@ pub mod fixture_contacts;
 pub mod oracle_transport;
 pub mod playback;
 pub mod scalar;
+pub mod settling;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct InvariantViolation {

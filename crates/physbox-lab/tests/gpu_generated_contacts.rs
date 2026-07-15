@@ -1,10 +1,12 @@
 use physbox_engine::{
-    GpuGeneratedContactRunner, GpuNarrowphaseRunner, GpuSolverCandidate, P5_2CandidatePattern,
-    P5_2GeneratedScenarioKind, benchmark_gpu_generated_contacts, p5_2_candidate_scenario,
-    p5_2_contact_policy_candidate, p5_2_generated_performance_scenario, p5_2_generated_scenario,
-    run_gpu_soft_step_case,
+    GpuGeneratedContactRunner, GpuNarrowphaseRunner, GpuSolverCandidate,
+    P5_2_CENTERED_STACK_EVIDENCE_STEPS, P5_2CandidatePattern, P5_2GeneratedScenarioKind,
+    benchmark_gpu_generated_contacts, p5_2_candidate_scenario,
+    p5_2_centered_rectangle_stack_scenario, p5_2_contact_policy_candidate,
+    p5_2_generated_performance_scenario, p5_2_generated_scenario, run_gpu_soft_step_case,
 };
 use physbox_lab::analytic_narrowphase::authored_solver_projection;
+use physbox_lab::settling::centered_stack_structure;
 
 const PASS_TOLERANCE: f32 = 2.0e-5;
 
@@ -212,6 +214,40 @@ fn generated_small_stack_long_exact_run_completes() {
     let output = runner.run(&scenario, 180).unwrap();
     assert!(output.failure.is_none());
     assert!(output.capacities.iter().all(|capacity| capacity.accepted));
+}
+
+#[test]
+fn centered_rectangle_stacks_complete_exact_steps_and_replay() {
+    let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
+    for count in [2, 4, 8] {
+        let scenario =
+            p5_2_centered_rectangle_stack_scenario(count, P5_2_CENTERED_STACK_EVIDENCE_STEPS)
+                .unwrap();
+        let output = runner
+            .run(&scenario, P5_2_CENTERED_STACK_EVIDENCE_STEPS)
+            .unwrap();
+        assert!(
+            output.failure.is_none(),
+            "count {count}: {:?}",
+            output.failure
+        );
+        assert_eq!(output.completed_steps, P5_2_CENTERED_STACK_EVIDENCE_STEPS);
+        assert!(output.capacities.iter().all(|capacity| capacity.accepted));
+        let overflowed = output.capacities.iter().any(|capacity| capacity.overflowed);
+        let (passed, reason) = centered_stack_structure(&scenario, &output.bodies, overflowed, 0.0);
+        assert_eq!(
+            passed,
+            count == 2,
+            "count {count}: {reason}: {:?}",
+            output.bodies
+        );
+        let replay = runner
+            .run(&scenario, P5_2_CENTERED_STACK_EVIDENCE_STEPS)
+            .unwrap();
+        assert_eq!(output.bodies, replay.bodies);
+        assert_eq!(output.cache, replay.cache);
+        assert_eq!(output.work, replay.work);
+    }
 }
 
 #[test]

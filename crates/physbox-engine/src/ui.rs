@@ -222,7 +222,7 @@ impl UiLayout {
         let logical = if self.compact_landscape() {
             [12.0, 84.0, 500.0, 260.0]
         } else {
-            [12.0, 84.0, 360.0, 368.0]
+            [12.0, 84.0, 360.0, 406.0]
         };
         logical.map(|value| value * self.scale)
     }
@@ -257,7 +257,7 @@ impl UiLayout {
         }
         [
             24.0 * self.scale,
-            402.0 * self.scale,
+            440.0 * self.scale,
             162.0 * self.scale,
             38.0 * self.scale,
         ]
@@ -274,7 +274,7 @@ impl UiLayout {
         }
         [
             198.0 * self.scale,
-            402.0 * self.scale,
+            440.0 * self.scale,
             162.0 * self.scale,
             38.0 * self.scale,
         ]
@@ -857,7 +857,14 @@ mod tests {
                 layout.menu_panel(),
                 layout.restart_button(),
                 layout.recenter_button(),
-            ] {
+            ]
+            .into_iter()
+            .chain(
+                ValidationScenario::ALL
+                    .iter()
+                    .enumerate()
+                    .map(|(index, _)| layout.scenario_button(index)),
+            ) {
                 assert!(bounds[0] >= 0.0 && bounds[1] >= 0.0);
                 assert!(bounds[0] + bounds[2] <= target[0] as f32);
                 assert!(bounds[1] + bounds[3] <= target[1] as f32);
