@@ -378,6 +378,25 @@ impl GpuGeneratedContactGraph {
             + self.solver.allocated_bytes()
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn collision_persistence_allocated_bytes(&self) -> u64 {
+        self.candidate.allocated_bytes()
+            + self.narrowphase.allocated_bytes()
+            + self
+                .persistence
+                .iter()
+                .map(PersistenceCase::allocated_bytes)
+                .sum::<u64>()
+            + self.caches.iter().map(wgpu::Buffer::size).sum::<u64>()
+            + self
+                .cache_capacities
+                .iter()
+                .map(wgpu::Buffer::size)
+                .sum::<u64>()
+            + self.empty_capacity.size()
+            + self._step_counter.size()
+    }
+
     pub(crate) fn capacity_overflowed(&self) -> bool {
         false
     }
@@ -918,6 +937,7 @@ pub struct GpuGeneratedContactBenchmarkOutput {
     pub timestamp_period_nanoseconds: Option<f32>,
     pub dispatches_per_step: u32,
     pub allocated_bytes: u64,
+    pub collision_persistence_allocated_bytes: u64,
     pub correctness: GpuGeneratedContactOutput,
 }
 
@@ -1110,6 +1130,7 @@ pub async fn benchmark_gpu_generated_contacts_with_gather_topology(
         timestamp_period_nanoseconds,
         dispatches_per_step: graph.dispatches_per_step(),
         allocated_bytes: graph.allocated_bytes(),
+        collision_persistence_allocated_bytes: graph.collision_persistence_allocated_bytes(),
         correctness,
     })
 }

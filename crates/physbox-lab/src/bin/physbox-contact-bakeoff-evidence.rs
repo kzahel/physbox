@@ -214,7 +214,7 @@ fn run() -> Result<(), String> {
             source_scenario_hash: source_hash.clone(),
             baseline_dispatches: baseline.correctness.work.dispatches,
             pair_slot_dispatches: pair.dispatches_per_step,
-            baseline_allocated_bytes: baseline.allocated_bytes,
+            baseline_allocated_bytes: baseline.collision_persistence_allocated_bytes,
             pair_slot_allocated_bytes: pair.allocated_bytes,
             baseline_persistence: optional_timing(&baseline.gpu_persistence_seconds)?,
             pair_slot_persistence: optional_timing(&pair.gpu_persistence_seconds)?,
