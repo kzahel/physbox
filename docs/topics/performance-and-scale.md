@@ -661,6 +661,20 @@ quality acceptance so known minimized policy or settling failures remain
 blocking inputs to their own gate rather than contaminating or disappearing
 inside a performance claim.
 
+S3.6 combined clean measurement, 2026-07-15: on Apple M4 Pro Metal, the actual
+selected pair-slot-plus-stable-edge product graph is exact against the retained
+oracles and measures `0.383`/`0.985`/`3.159 ms` GPU P50 at 32/256/1,024 bodies
+with 16/128/512 generated contacts. The prior full-key/canonical product was
+`2.731`/`7.163`/`23.422 ms`; the integrated 1K graph improves about 7.4x but is
+still about 20.7x slower than the fastest equivalent optimized Box2D row at
+`0.1524 ms`. Authored-contact stable-edge P50 is `0.297`/`2.555 ms` at 1K/10K
+contacts versus `0.456`/`3.736 ms` for canonical gather, a 1.54x/1.46x gain.
+The 100-body circle/rectangle bucket rows are `0.589`/`0.745 ms` complete GPU
+P50 and remain explicitly quadratic all-pairs small-world measurements. Raw
+30-sample distributions, including startup-tail behavior, are retained. These
+results close the representation-performance gate, not the solver-quality,
+broadphase-scale, liquid, or CPU-crossover gates.
+
 ## Regression and claim gates
 
 Before representative hardware is selected, store named measurements and

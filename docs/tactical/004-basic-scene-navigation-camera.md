@@ -1,7 +1,8 @@
 # S4: Interactive evaluation workbench
 
-Status: S4.3 deployed grab-feel checkpoint accepted, 2026-07-15; S4.4 waits
-for the S3 combined graph and is sequenced by [S5](005-interactive-rigid-quality-and-scale.md).
+Status: S4.3 deployed grab-feel checkpoint accepted, 2026-07-15; the S3
+combined representation gate passes and S4.4 is active through
+[S5](005-interactive-rigid-quality-and-scale.md).
 Direction: [one shared host and renderer](../platform-architecture.md).
 Bring-up checkpoint: [P5.2a](../bringup-plan.md#p52a--interactive-evaluation-workbench-authorized).
 Physics predecessor: [accepted S3.6 direction](003-small-world-collision-persistence.md).
@@ -290,6 +291,13 @@ its live held-grab probe.
 
 Dependency: the S3 combined pair-slot plus stable-edge product integration and
 generation-invalidation tests must pass first.
+
+Dependency completion, 2026-07-15: the clean
+[combined representation package](../../evidence/p5.2-s3.6-combined/README.md)
+passes exact replay, generation-reuse preparation, atomic capacity, and
+cross-host topology gates. S4.4 implementation may proceed; its actual
+erase/reuse lifecycle remains part of this slice rather than inferred from the
+preparation evidence.
 
 - [ ] Add bounded versioned place-circle, place-rectangle, and erase-at commands
   with finite values, authored material defaults, deterministic ordering, and

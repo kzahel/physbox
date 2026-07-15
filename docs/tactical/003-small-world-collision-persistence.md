@@ -1,6 +1,7 @@
 # S3: Small-world collision and contact persistence
 
-Status: S3.6 direction accepted; combined closure gate active, 2026-07-15.
+Status: active; combined representation gate passed, 2026-07-15; awake
+solver-quality acceptance remains in S5.4.
 Direction: [one GPU-resident 2D physics world](../topics/physbox5-unified-gpu-physics.md).
 Bring-up stage: [P5.2](../bringup-plan.md#p52--small-world-collision-and-persistence-active).
 Predecessor: [accepted P5.1 body core](../../evidence/p5.1-s2.6/README.md).
@@ -526,6 +527,26 @@ oracle, retains raw samples, and includes exact 1K/10K authored-contact
 canonical-versus-stable-edge rows. It reports representation acceptance and
 solver-quality acceptance independently; generated packages therefore cannot
 turn a preserved physical failure into an accepted representation claim.
+
+Combined evidence completion, 2026-07-15: the clean
+[combined representation package](../../evidence/p5.2-s3.6-combined/README.md)
+passes the selected representation gate at revision `1e40c55`. All 9 directed
+and 128 randomized replays are exact, the dense capacity negative rejects
+atomically, 1K/10K authored-contact output matches canonical gather, and clean
+native/browser/hardware-backed AVD artifacts name the selected topology. The
+actual integrated 32/256/1K GPU P50 is `0.383`/`0.985`/`3.159 ms`; the 1K row
+is about 7.4x faster than the prior `23.422 ms` full-key product baseline but
+about 20.7x slower than the fastest equivalent optimized Box2D row. Stable
+edges are 1.54x/1.46x faster than canonical gathering at 1K/10K authored
+contacts. No CPU crossover is claimed.
+
+This satisfies the post-selection combined representation requirement and
+unblocks generational construction work. It does not set a final contact ABI,
+accept stack quality, or mark the whole solver implementation accepted: the
+two minimized physical-policy failures and the 4/8-body awake stack failures
+remain explicit S5.4 inputs. S3 therefore stays active until the mandatory
+S5.4 human review accepts a quality path; P5.3 also remains blocked by that
+review and completion of the construction checkpoint.
 
 ## Validation baseline
 

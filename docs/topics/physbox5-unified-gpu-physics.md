@@ -663,6 +663,18 @@ are accounting results; S3 still requires fresh combined timings, structural
 curves, cross-host artifacts, minimized failures, and the optimized Box2D
 comparison before closure.
 
+Combined representation completion, 2026-07-15: clean same-revision evidence
+qualifies the selected pair-slot plus stable-edge product graph across exact
+directed/randomized replay, atomic capacity failure, 32/256/1K generated
+timing, 1K/10K authored contacts, structural stacks, 100-body buckets,
+optimized Box2D, and native/browser/hardware-backed AVD hosts. The integrated
+1K GPU P50 is `3.159 ms`, about 7.4x faster than the former full-key product
+but still about 20.7x slower than the fastest equivalent optimized Box2D row.
+The representation gate passes without accepting the two minimized physical
+failures or the 4/8-body awake stack failures. Generational place/erase work is
+therefore unblocked, while final solver/contact quality remains a mandatory
+S5.4 human decision and P5.3 remains downstream.
+
 Circle/circle and circle/rectangle contact are analytic. Rectangle/rectangle
 uses SAT to select a reference and incident edge, clips the incident segment,
 and produces stable vertex/edge feature pairs. Test feature stability around

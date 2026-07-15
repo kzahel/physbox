@@ -157,10 +157,10 @@ is integrated. Physical Android was unavailable; the hardware-backed
   scan as a correctness oracle.
 - [x] Integrate both selected views in one product graph; do not infer the
   combined result by adding isolated candidate timings.
-- [ ] Prove churn, recontact, reversed scheduling, body-generation reuse,
+- [x] Prove churn, recontact, reversed scheduling, body-generation reuse,
   forced fingerprint collision, reset, grab, erase preparation, and whole-stage
   overflow against exact baselines.
-- [ ] Re-run generated 32/256/1K rows, authored-contact 1K/10K rows, the easy
+- [x] Re-run generated 32/256/1K rows, authored-contact 1K/10K rows, the easy
   stacks, 100-body buckets, optimized Box2D, and cross-host evidence with
   complete dispatch/memory/timing attribution.
 
@@ -218,6 +218,23 @@ bucket checkpoint and can require a clean source tree. Representation
 acceptance is reported separately from the still-open solver-quality gate so
 known minimized failures cannot be hidden by exact layout equivalence. Fresh
 clean packages and their measured interpretation remain the next commit.
+
+S5.2 completion, 2026-07-15: the clean
+[combined graph package](../../evidence/p5.2-s3.6-combined/README.md) and
+[scene package](../../evidence/p5.2b-s5.2/README.md) qualify the actual selected
+graph. All 9 directed and 128 randomized representation cases are exact, both
+authored-contact rows match the canonical gather result, every accepted
+capacity is clean, and the deliberate dense overflow is atomic. Native,
+headless, browser WebGPU, and hardware-backed `jstorrent-tablet` AVD artifacts
+are fresh; no physical Android device was connected.
+
+The integrated 1K generated GPU row is `3.159 ms` P50 versus the prior
+full-key product's `23.422 ms`, but remains about 20.7x slower than the fastest
+equivalent optimized Box2D row. The 100-body circle/rectangle bucket GPU P50 is
+`0.589`/`0.745 ms` with 100 dispatches. The 2-body easy stack passes while the
+4/8-body awake stacks still topple. Representation acceptance is therefore
+complete and S5.3 is unblocked; solver quality, final defaults, and any CPU
+crossover remain unaccepted S5.4 decisions.
 
 ### S5.3 — GPU construction loop and interactive authoring
 
