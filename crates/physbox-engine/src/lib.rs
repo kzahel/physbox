@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+mod body_benchmark;
 mod body_floor_solver;
 mod body_state;
 mod body_world;
@@ -15,6 +16,13 @@ mod renderer;
 mod report;
 mod scenario;
 
+#[cfg(not(target_arch = "wasm32"))]
+pub use body_benchmark::benchmark_gpu_body_free_flight;
+pub use body_benchmark::{
+    BodyBenchmarkWork, BodyFinalValidation, BodyTimingSeries, GpuBodyBenchmarkOutput,
+    GpuBodyBenchmarkSession, GpuTimestampStatus, PendingBodyValidation, PendingCompletion,
+    PendingTimestampReadback,
+};
 pub use body_floor_solver::{GpuFixedFloorContactEvidence, GpuFixedFloorPassEvidence};
 pub use body_state::{
     BODY_BYTES_PER_SLOT, BODY_COMMAND_BYTES, BODY_COMMAND_CAPACITY, BodySlotRegistry,

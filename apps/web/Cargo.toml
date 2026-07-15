@@ -13,10 +13,11 @@ console_error_panic_hook.workspace = true
 js-sys.workspace = true
 physbox-engine = { path = "../../crates/physbox-engine" }
 physbox-launch = { path = "../../crates/physbox-launch" }
+serde_json.workspace = true
 wasm-bindgen.workspace = true
 wasm-bindgen-futures.workspace = true
 wgpu.workspace = true
 
 [dependencies.web-sys]
 workspace = true
-features = ["HtmlCanvasElement", "console"]
+features = ["HtmlCanvasElement", "Performance", "Window", "console"]

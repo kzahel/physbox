@@ -54,6 +54,20 @@ struct BodyCommandRaw {
     data1: [f32; 4],
 }
 
+pub(crate) struct GpuBodyResetData {
+    poses: Vec<BodyPoseRaw>,
+    motions: Vec<BodyMotionRaw>,
+    metadata: Vec<BodyMetadataRaw>,
+}
+
+struct PackedBodies {
+    slots: BodySlotRegistry,
+    poses: Vec<BodyPoseRaw>,
+    motions: Vec<BodyMotionRaw>,
+    properties: Vec<BodyPropertiesRaw>,
+    metadata: Vec<BodyMetadataRaw>,
+}
+
 const _: () = assert!(size_of::<BodyPoseRaw>() == 16);
 const _: () = assert!(size_of::<BodyMotionRaw>() == 16);
 const _: () = assert!(size_of::<BodyPropertiesRaw>() == 16);
@@ -267,53 +281,7 @@ impl GpuBodyStorage {
         if command_capacity == 0 {
             return Err("body command capacity must be positive".to_owned());
         }
-        let mut slots = BodySlotRegistry::with_capacity(capacity)?;
-        let mut poses = vec![BodyPoseRaw::zeroed(); capacity as usize];
-        let mut motions = vec![BodyMotionRaw::zeroed(); capacity as usize];
-        let mut properties = vec![BodyPropertiesRaw::zeroed(); capacity as usize];
-        let mut metadata = vec![BodyMetadataRaw::zeroed(); capacity as usize];
-        for body in bodies {
-            body.validate().map_err(|error| error.to_string())?;
-            slots.reserve(body.id)?;
-            let index = body.id.slot as usize;
-            let ShapeV1::Rectangle { half_extents } = body.shape else {
-                return Err("P5.1 GPU body storage supports rectangles only".to_owned());
-            };
-            poses[index] = BodyPoseRaw {
-                position_angle: [body.position.x, body.position.y, body.angle.get(), 0.0],
-            };
-            motions[index] = BodyMotionRaw {
-                linear_angular: [
-                    body.linear_velocity.x,
-                    body.linear_velocity.y,
-                    body.angular_velocity.get(),
-                    0.0,
-                ],
-            };
-            properties[index] = BodyPropertiesRaw {
-                half_extents_inverse_mass_inertia: [
-                    half_extents.x,
-                    half_extents.y,
-                    body.inverse_mass.get(),
-                    body.inverse_inertia.get(),
-                ],
-            };
-            let mut flags = FLAG_LIVE | FLAG_RECTANGLE;
-            if body.sleeping {
-                flags |= FLAG_SLEEPING;
-            }
-            if body.inverse_mass.get() == 0.0 {
-                flags |= FLAG_FIXED;
-            }
-            metadata[index] = BodyMetadataRaw {
-                generation_flags_material: [
-                    body.id.generation,
-                    flags,
-                    body.material.friction.get().to_bits(),
-                    body.material.restitution.get().to_bits(),
-                ],
-            };
-        }
+        let packed = pack_bodies(capacity, bodies)?;
 
         check_buffer_limits::<BodyPoseRaw>(device, capacity, "body pose")?;
         check_buffer_limits::<BodyMotionRaw>(device, capacity, "body motion")?;
@@ -324,10 +292,15 @@ impl GpuBodyStorage {
         let usage = wgpu::BufferUsages::STORAGE
             | wgpu::BufferUsages::COPY_SRC
             | wgpu::BufferUsages::COPY_DST;
-        let pose = storage_init(device, "physbox5_body_pose", &poses, usage);
-        let motion = storage_init(device, "physbox5_body_motion", &motions, usage);
-        let properties = storage_init(device, "physbox5_body_properties", &properties, usage);
-        let metadata = storage_init(device, "physbox5_body_metadata", &metadata, usage);
+        let pose = storage_init(device, "physbox5_body_pose", &packed.poses, usage);
+        let motion = storage_init(device, "physbox5_body_motion", &packed.motions, usage);
+        let properties = storage_init(
+            device,
+            "physbox5_body_properties",
+            &packed.properties,
+            usage,
+        );
+        let metadata = storage_init(device, "physbox5_body_metadata", &packed.metadata, usage);
         let commands = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("physbox5_body_commands"),
             size: u64::from(command_capacity) * u64::from(BODY_COMMAND_BYTES),
@@ -345,7 +318,7 @@ impl GpuBodyStorage {
             commands,
             layout,
             command_capacity,
-            slots,
+            slots: packed.slots,
         })
     }
 
@@ -427,6 +400,86 @@ impl GpuBodyStorage {
             overflowed: self.layout.overflowed,
         }
     }
+
+    pub(crate) fn upload_reset_data(&self, queue: &wgpu::Queue, data: &GpuBodyResetData) {
+        queue.write_buffer(&self.pose, 0, bytemuck::cast_slice(&data.poses));
+        queue.write_buffer(&self.motion, 0, bytemuck::cast_slice(&data.motions));
+        queue.write_buffer(&self.metadata, 0, bytemuck::cast_slice(&data.metadata));
+    }
+}
+
+impl GpuBodyResetData {
+    pub(crate) fn new(capacity: u32, bodies: &[BodyStateV1]) -> Result<Self, String> {
+        let packed = pack_bodies(capacity, bodies)?;
+        Ok(Self {
+            poses: packed.poses,
+            motions: packed.motions,
+            metadata: packed.metadata,
+        })
+    }
+}
+
+fn pack_bodies(capacity: u32, bodies: &[BodyStateV1]) -> Result<PackedBodies, String> {
+    if bodies.len() > capacity as usize {
+        return Err(format!(
+            "body capacity {capacity} cannot hold {} authored bodies",
+            bodies.len()
+        ));
+    }
+    let mut slots = BodySlotRegistry::with_capacity(capacity)?;
+    let mut poses = vec![BodyPoseRaw::zeroed(); capacity as usize];
+    let mut motions = vec![BodyMotionRaw::zeroed(); capacity as usize];
+    let mut properties = vec![BodyPropertiesRaw::zeroed(); capacity as usize];
+    let mut metadata = vec![BodyMetadataRaw::zeroed(); capacity as usize];
+    for body in bodies {
+        body.validate().map_err(|error| error.to_string())?;
+        slots.reserve(body.id)?;
+        let index = body.id.slot as usize;
+        let ShapeV1::Rectangle { half_extents } = body.shape else {
+            return Err("P5.1 GPU body storage supports rectangles only".to_owned());
+        };
+        poses[index] = BodyPoseRaw {
+            position_angle: [body.position.x, body.position.y, body.angle.get(), 0.0],
+        };
+        motions[index] = BodyMotionRaw {
+            linear_angular: [
+                body.linear_velocity.x,
+                body.linear_velocity.y,
+                body.angular_velocity.get(),
+                0.0,
+            ],
+        };
+        properties[index] = BodyPropertiesRaw {
+            half_extents_inverse_mass_inertia: [
+                half_extents.x,
+                half_extents.y,
+                body.inverse_mass.get(),
+                body.inverse_inertia.get(),
+            ],
+        };
+        let mut flags = FLAG_LIVE | FLAG_RECTANGLE;
+        if body.sleeping {
+            flags |= FLAG_SLEEPING;
+        }
+        if body.inverse_mass.get() == 0.0 {
+            flags |= FLAG_FIXED;
+        }
+        metadata[index] = BodyMetadataRaw {
+            generation_flags_material: [
+                body.id.generation,
+                flags,
+                body.material.friction.get().to_bits(),
+                body.material.restitution.get().to_bits(),
+            ],
+        };
+    }
+    Ok(PackedBodies {
+        slots,
+        poses,
+        motions,
+        properties,
+        metadata,
+    })
 }
 
 fn layout_artifact(capacity: u32, attempted: u64, live: u32) -> Result<BodyLayoutV1, String> {

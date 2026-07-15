@@ -328,6 +328,34 @@ unique, and predicate compaction. Each primitive validates its complete output
 with one final readback after timing, exposes dispatch and allocated/high-water
 capacity records, and has correctness coverage through 30K elements.
 
+P5.1 S2.5 implementation checkpoint, 2026-07-15: the shared body benchmark
+constructs the deterministic engine-owned free-flight scenario at 1K, 10K,
+and 100K rectangles, then measures exactly one integration/hold/render step
+per sample after pipeline warmup. Authored-state reset completes outside every
+timed window; timestamp queries, when usable, span the first integration pass
+through the final render pass and resolve only after all samples. CPU
+encode/submit and host completion remain separate raw series. Complete pose,
+motion, and generational metadata are mapped once after timing and compared
+with the scalar one-step result at the existing `1e-5` bound.
+
+The benchmark calls the same scenario generator, `GpuBodyWorld`, WGSL passes,
+layout, capacities, and renderer used by the shared product host. Its only CPU
+copy of authored body state is benchmark-owned reset/expected data; it is not
+a live product mirror or a second mechanics path. Native and Android wait with
+`Device::poll`, while the browser submits and maps a four-byte completion fence
+because the wgpu WebGPU backend does not implement queue completion callbacks.
+That fence follows, and is excluded from, the timestamp and encode/submit
+window; browser host-completion time names the fence method explicitly.
+
+Timestamp capability and usability are separate facts. A device that
+advertises queries but returns equal zero pairs for every sample publishes
+`advertised-unusable-zero`, preserves those rejected samples and the reported
+period, leaves GPU time absent, and retains valid host-completion timing. Mixed
+zero/nonzero samples are labeled quantized; reversed pairs fail the lane.
+Chromium results retain a suspected 100 microsecond security quantization.
+This prevents an advertised but broken clock from becoming a zero-cost GPU
+claim.
+
 Android measurement uses a shell-executed native benchmark binary built with
 the maintained NDK toolchain, rather than estimating compute cost from APK
 startup or frame cadence. It calls the same solver and primitive benchmark

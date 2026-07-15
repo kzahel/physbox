@@ -269,6 +269,27 @@ and validation artifacts land together.
 
 ### S2.5 — layout and free-flight scale evidence
 
+Implementation checkpoint, 2026-07-15: a shared `GpuBodyBenchmarkSession`
+now creates the engine-owned deterministic free-flight scenario and executes
+the existing `GpuBodyWorld` integration, grab-hold scan, and direct renderer.
+Each retained sample is exactly one fixed step. Pipeline/device creation,
+authored-state reset, final full-state mapping, and timestamp resolution are
+outside the measured window. The output retains raw P50/P95/P99 GPU (when
+usable), CPU encode/submit, and host-completion series; exact dispatch/draw
+work; all product capacity records; 64 bytes per body; benchmark scratch; and
+a hash of the completely validated final pose/motion/metadata state.
+
+One native/Android CLI drives both Metal and Vulkan targets. A maintained
+wrapper targets either the repeatable `jstorrent-tablet` AVD or an explicitly
+available physical device, and a browser export drives the same session with
+a post-submit mapped-buffer fence. Early diagnostics exposed that the Pixel 7a
+Mali-G710 advertises timestamp queries but returns zero for both endpoints,
+including the prior S1 solver/primitive benchmark. The body runner now records
+that as rejected, unusable timestamp evidence and uses only the separately
+named host-completion clock for that device; it never presents zero as GPU
+execution time. Clean 1K/10K/100K capture and layout interpretation remain to
+complete this slice, so the provisional ABI is still unfrozen.
+
 - [ ] Add an explicit-step benchmark mode that initializes 1K, 10K, and 100K
   rectangles from the shared deterministic generator and measures integration
   plus direct rendering after warmup.

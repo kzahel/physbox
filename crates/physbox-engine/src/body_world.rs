@@ -1,12 +1,12 @@
 use std::mem::size_of;
 
 use bytemuck::{Pod, Zeroable};
-use physbox_contracts::{BodyCommandBatchV1, CapacityRecordV1, ScenarioV1, Validate};
+use physbox_contracts::{BodyCommandBatchV1, BodyLayoutV1, CapacityRecordV1, ScenarioV1, Validate};
 use wgpu::util::DeviceExt;
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::body_floor_solver::FixedFloorEvidenceLayout;
-use crate::body_state::BODY_COMMAND_CAPACITY;
+use crate::body_state::{BODY_COMMAND_BYTES, BODY_COMMAND_CAPACITY, GpuBodyResetData};
 use crate::{GpuBodyStorage, body_floor_solver::GpuFixedFloorSolver};
 
 const WORKGROUP_SIZE: u32 = 64;
@@ -340,6 +340,21 @@ impl GpuBodyWorld {
         batch: &BodyCommandBatchV1,
         ranges: &[BodyCommandStepRange],
     ) -> Result<CapacityRecordV1, String> {
+        self.encode_steps_with_timestamp(queue, encoder, steps, batch, ranges, None)
+    }
+
+    pub(crate) fn encode_steps_with_timestamp(
+        &self,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        steps: u32,
+        batch: &BodyCommandBatchV1,
+        ranges: &[BodyCommandStepRange],
+        beginning_timestamp: Option<(&wgpu::QuerySet, u32)>,
+    ) -> Result<CapacityRecordV1, String> {
+        if beginning_timestamp.is_some() && steps != 1 {
+            return Err("timed body encoding requires exactly one step".to_owned());
+        }
         if ranges.len() != steps as usize {
             return Err("body command ranges must match the encoded step count".to_owned());
         }
@@ -375,6 +390,7 @@ impl GpuBodyWorld {
                 .copy_from_slice(bytemuck::bytes_of(parameter));
         }
         queue.write_buffer(&self.command_params, 0, &bytes);
+        let mut beginning_timestamp = beginning_timestamp;
         for parameter_index in parameter_indices {
             if let Some(parameter_index) = parameter_index {
                 let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -390,11 +406,22 @@ impl GpuBodyWorld {
                 pass.dispatch_workgroups(1, 1, 1);
             }
             if let Some(solver) = &self.floor_solver {
+                if beginning_timestamp.is_some() {
+                    return Err(
+                        "timed free-flight encoding cannot include a floor solver".to_owned()
+                    );
+                }
                 solver.encode_step(encoder);
             } else {
                 let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                     label: Some("physbox5_body_integration_pass"),
-                    timestamp_writes: None,
+                    timestamp_writes: beginning_timestamp.take().map(|(query_set, beginning)| {
+                        wgpu::ComputePassTimestampWrites {
+                            query_set,
+                            beginning_of_pass_write_index: Some(beginning),
+                            end_of_pass_write_index: None,
+                        }
+                    }),
                 });
                 pass.set_pipeline(&self.integration_pipeline);
                 pass.set_bind_group(0, &self.integration_bind_group, &[]);
@@ -417,6 +444,17 @@ impl GpuBodyWorld {
         encoder: &mut wgpu::CommandEncoder,
         target: crate::renderer::RenderFrameTarget<'_>,
         frame_index: u64,
+    ) {
+        self.encode_render_with_timestamp(queue, encoder, target, frame_index, None);
+    }
+
+    pub(crate) fn encode_render_with_timestamp(
+        &self,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        target: crate::renderer::RenderFrameTarget<'_>,
+        frame_index: u64,
+        ending_timestamp: Option<(&wgpu::QuerySet, u32)>,
     ) {
         let params = RenderParamsRaw {
             viewport: [
@@ -443,7 +481,13 @@ impl GpuBodyWorld {
                 },
             })],
             depth_stencil_attachment: None,
-            timestamp_writes: None,
+            timestamp_writes: ending_timestamp.map(|(query_set, end)| {
+                wgpu::RenderPassTimestampWrites {
+                    query_set,
+                    beginning_of_pass_write_index: None,
+                    end_of_pass_write_index: Some(end),
+                }
+            }),
             occlusion_query_set: None,
         });
         pass.set_bind_group(0, &self.render_bind_group, &[]);
@@ -455,6 +499,93 @@ impl GpuBodyWorld {
 
     pub(crate) const fn body_count(&self) -> u32 {
         self.body_count
+    }
+
+    pub(crate) fn body_layout(&self) -> &BodyLayoutV1 {
+        self.storage.layout()
+    }
+
+    pub(crate) fn benchmark_reset_data(
+        &self,
+        bodies: &[physbox_contracts::BodyStateV1],
+    ) -> Result<GpuBodyResetData, String> {
+        GpuBodyResetData::new(self.body_count, bodies)
+    }
+
+    pub(crate) fn reset_from_authored(&self, queue: &wgpu::Queue, data: &GpuBodyResetData) {
+        self.storage.upload_reset_data(queue, data);
+    }
+
+    pub(crate) fn benchmark_capacities(&self, width: u32, height: u32) -> Vec<CapacityRecordV1> {
+        let mut records = vec![
+            CapacityRecordV1 {
+                class: "body-command-parameters".to_owned(),
+                capacity_elements: u64::from(BODY_COMMAND_CAPACITY + 1),
+                used_elements: 1,
+                allocated_bytes: u64::from(BODY_COMMAND_CAPACITY + 1)
+                    * COMMAND_PARAMETER_STRIDE as u64,
+                high_water_bytes: COMMAND_PARAMETER_STRIDE as u64,
+                overflowed: false,
+            },
+            CapacityRecordV1 {
+                class: "body-commands".to_owned(),
+                capacity_elements: u64::from(BODY_COMMAND_CAPACITY),
+                used_elements: 0,
+                allocated_bytes: u64::from(BODY_COMMAND_CAPACITY) * u64::from(BODY_COMMAND_BYTES),
+                high_water_bytes: 0,
+                overflowed: false,
+            },
+            CapacityRecordV1 {
+                class: "body-integration-parameters".to_owned(),
+                capacity_elements: 1,
+                used_elements: 1,
+                allocated_bytes: size_of::<IntegrationParamsRaw>() as u64,
+                high_water_bytes: size_of::<IntegrationParamsRaw>() as u64,
+                overflowed: false,
+            },
+            CapacityRecordV1 {
+                class: "body-render-parameters".to_owned(),
+                capacity_elements: 1,
+                used_elements: 1,
+                allocated_bytes: size_of::<RenderParamsRaw>() as u64,
+                high_water_bytes: size_of::<RenderParamsRaw>() as u64,
+                overflowed: false,
+            },
+            self.storage.body_capacity_record(),
+            CapacityRecordV1 {
+                class: "render-target-rgba8-logical".to_owned(),
+                capacity_elements: u64::from(width) * u64::from(height),
+                used_elements: u64::from(width) * u64::from(height),
+                allocated_bytes: u64::from(width) * u64::from(height) * 4,
+                high_water_bytes: u64::from(width) * u64::from(height) * 4,
+                overflowed: false,
+            },
+        ];
+        records.sort_by(|left, right| left.class.cmp(&right.class));
+        records
+    }
+
+    pub(crate) fn copy_full_validation_state(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        destination: &wgpu::Buffer,
+    ) {
+        let lane_bytes = u64::from(self.body_count) * size_of::<[u32; 4]>() as u64;
+        encoder.copy_buffer_to_buffer(self.storage.pose_buffer(), 0, destination, 0, lane_bytes);
+        encoder.copy_buffer_to_buffer(
+            self.storage.motion_buffer(),
+            0,
+            destination,
+            lane_bytes,
+            lane_bytes,
+        );
+        encoder.copy_buffer_to_buffer(
+            self.storage.metadata_buffer(),
+            0,
+            destination,
+            lane_bytes * 2,
+            lane_bytes,
+        );
     }
 
     pub(crate) fn solver_dispatches_per_step(&self) -> u32 {
