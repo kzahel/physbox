@@ -300,6 +300,19 @@ tool-change grab release, and two-touch cancellation. Cross-host traces,
 high-cadence input, scene reset/switch, and visible asynchronous failure
 diagnostics remain in the S5.3 evidence boundary.
 
+Asynchronous-diagnostics checkpoint, 2026-07-16: every surface host now copies
+the 80-byte cumulative construction state only after a construction dispatch,
+maps it without waiting, and publishes the result on a later frame solely for
+reports and the shared glyph overlay. The overlay names the last placement or
+erase result, cumulative failure count, current GPU live-body count, and sample
+age. Scene activation/restart epochs discard stale in-flight samples. Frame
+reports state explicitly that construction diagnostics never block simulation
+advancement. A headless-only blocking evidence readback records the live
+candidate, manifold, point, and persistent-pair counts; exact erase/reuse tests
+show a warm graph clearing to zero, slot generation 2 starting with an empty
+graph, and contacts rebuilding only after recontact. Cross-host freshness and
+the complete shared interaction trace remain the final S5.3 evidence commit.
+
 ### S5.4 — awake settling and tuning bakeoff
 
 - [ ] Run 2/4/8 rectangle stacks and small pyramids with sleeping disabled in

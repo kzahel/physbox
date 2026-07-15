@@ -1,7 +1,8 @@
 use bytemuck::{Pod, Zeroable};
 use physbox_contracts::{
     BodyCommandBatchV1, BodyCommandV1, ConstructionIntentBatchV1, ConstructionIntentV1,
-    GrabIntentBatchV1, GrabIntentV1, SCHEMA_VERSION, ScheduledBodyCommandV1, Vec2, canonical_hash,
+    ConstructionStateV1, GrabIntentBatchV1, GrabIntentV1, SCHEMA_VERSION, ScheduledBodyCommandV1,
+    Vec2, canonical_hash,
 };
 use physbox_launch::ValidationScenario;
 
@@ -18,8 +19,8 @@ use crate::{
     input::{SharedInputState, WorldPointerEvent},
     renderer::RenderFrameContext,
     report::{
-        BodyCommandReport, CameraReport, FrameReport, SCENE_CONTRACT_VERSION, ScenarioResult,
-        SceneContract,
+        BodyCommandReport, CameraReport, ConstructionDiagnosticReport, FrameReport,
+        SCENE_CONTRACT_VERSION, ScenarioResult, SceneContract,
     },
     scenario::{
         P5_2_BUCKET_EVIDENCE_STEPS, P5_2_CENTERED_STACK_EVIDENCE_STEPS, P5_2BucketShape,
@@ -425,6 +426,7 @@ pub struct EngineHost {
     ui: WorkbenchUi,
     scenario_activations_total: u64,
     scenario_restarts_total: u64,
+    construction_diagnostic: Option<(ConstructionStateV1, u64)>,
 }
 
 impl EngineHost {
@@ -681,6 +683,7 @@ impl EngineHost {
             ui,
             scenario_activations_total: 0,
             scenario_restarts_total: 0,
+            construction_diagnostic: None,
         }
     }
 
@@ -1002,6 +1005,7 @@ impl EngineHost {
                 }
             }
         };
+        let construction_diagnostic = self.construction_diagnostic_report();
         let ui = self.ui.encode(
             context.queue,
             context.encoder,
@@ -1016,6 +1020,9 @@ impl EngineHost {
                 adapter_backend: &self.adapter.backend,
                 scenario_activations_total: self.scenario_activations_total,
                 scenario_restarts_total: self.scenario_restarts_total,
+                construction_state: construction_diagnostic.state.as_ref(),
+                construction_age_frames: construction_diagnostic.age_frames,
+                construction_diagnostic_source: construction_diagnostic.source,
             },
         );
         FrameReport {
@@ -1042,6 +1049,7 @@ impl EngineHost {
                 .map_or_else(BodyCommandReport::default, |interaction| {
                     interaction.report.clone()
                 }),
+            construction_diagnostic,
             scene_contract: contract,
             scenario,
         }
@@ -1098,7 +1106,6 @@ impl EngineHost {
         Ok(())
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
     pub fn copy_construction_state(
         &self,
         encoder: &mut wgpu::CommandEncoder,
@@ -1109,6 +1116,42 @@ impl EngineHost {
         })?;
         world.copy_construction_state(encoder, destination);
         Ok(())
+    }
+
+    pub(crate) fn construction_diagnostic_epoch(&self) -> (String, u64, u64) {
+        (
+            self.scenario_hash.clone(),
+            self.scenario_activations_total,
+            self.scenario_restarts_total,
+        )
+    }
+
+    pub(crate) fn publish_construction_diagnostic(
+        &mut self,
+        state: ConstructionStateV1,
+        observed_frame_index: u64,
+    ) {
+        self.construction_diagnostic = Some((state, observed_frame_index));
+    }
+
+    fn construction_diagnostic_report(&self) -> ConstructionDiagnosticReport {
+        let (state, observed_frame_index) = self
+            .construction_diagnostic
+            .as_ref()
+            .map_or((None, None), |(state, frame)| {
+                (Some(state.clone()), Some(*frame))
+            });
+        ConstructionDiagnosticReport {
+            source: if self.body_world.is_some() {
+                "async-gpu"
+            } else {
+                "unavailable"
+            },
+            age_frames: observed_frame_index.map(|frame| self.frame_index.saturating_sub(frame)),
+            state,
+            observed_frame_index,
+            blocking_readback_for_advancement: false,
+        }
     }
 
     #[cfg(test)]
@@ -1157,5 +1200,17 @@ impl EngineHost {
             .as_ref()
             .ok_or_else(|| "pass evidence requires the GPU body world".to_owned())?
             .copy_floor_pass_evidence(encoder, destination)
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn copy_construction_graph_evidence(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        destination: &wgpu::Buffer,
+    ) -> Result<(), String> {
+        self.body_world
+            .as_ref()
+            .ok_or_else(|| "construction graph evidence requires a GPU body world".to_owned())?
+            .copy_construction_graph_evidence(encoder, destination)
     }
 }

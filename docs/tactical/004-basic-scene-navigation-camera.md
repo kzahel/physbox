@@ -317,6 +317,14 @@ inherit a stale contact, grab, or command; every capacity/deep-overlap failure
 is explicit; direct rendering and collision consume the new GPU state without
 readback.
 
+Diagnostics checkpoint, 2026-07-16: construction outcomes now reach the one
+shared canvas overlay through a nonblocking, scene-epoch-qualified GPU map.
+They are presentation-only; frame reports declare that no mapped result is
+used to admit or advance simulation. Exact validation separately reads the
+generated graph after a warm contact, erase, generation reuse, and recontact
+to expose rather than infer stale-state invalidation. Cross-host trace and
+freshness evidence remain open.
+
 Artifacts: command/schema byte table, lifecycle traces, slot-generation and
 pair-cache invalidation evidence, toolbar captures, capacity/deep-overlap
 negatives, and cross-host scene contracts.

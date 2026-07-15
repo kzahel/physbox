@@ -1063,7 +1063,6 @@ impl GpuBodyWorld {
         );
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn copy_construction_state(
         &self,
         encoder: &mut wgpu::CommandEncoder,
@@ -1252,6 +1251,19 @@ impl GpuBodyWorld {
             lane_bytes * 2,
             lane_bytes,
         );
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn copy_construction_graph_evidence(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        destination: &wgpu::Buffer,
+    ) -> Result<(), String> {
+        self.generated_contacts
+            .as_ref()
+            .ok_or_else(|| "construction graph evidence requires generated contacts".to_owned())?
+            .copy_construction_graph_evidence(encoder, destination);
+        Ok(())
     }
 
     pub(crate) fn solver_dispatches_per_step(&self) -> u32 {

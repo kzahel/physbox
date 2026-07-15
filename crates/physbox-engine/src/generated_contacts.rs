@@ -117,6 +117,16 @@ pub(crate) struct GpuGeneratedContactGraph {
     point_capacity: u32,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GpuConstructionGraphEvidence {
+    pub candidate_pairs: u32,
+    pub manifolds: u32,
+    pub contact_points: u32,
+    pub persistent_pairs: u32,
+    pub overflowed: bool,
+}
+
 impl GpuGeneratedContactGraph {
     pub(crate) fn new(
         device: &wgpu::Device,
@@ -319,6 +329,49 @@ impl GpuGeneratedContactGraph {
     ) -> crate::body_floor_solver::FixedFloorEvidenceLayout {
         self.solver.copy_pass_evidence(encoder, destination)
     }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn copy_construction_graph_evidence(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        destination: &wgpu::Buffer,
+    ) {
+        let stride = u64::from(COLLISION_CAPACITY_COUNTER_BYTES);
+        let current = self.parity.get();
+        for (index, source) in [
+            self.candidate.candidate_capacity_buffer(),
+            self.narrowphase.manifold_capacity_buffer(),
+            self.narrowphase.point_capacity_buffer(),
+            self.persistence.current_capacity(current),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            encoder.copy_buffer_to_buffer(source, 0, destination, index as u64 * stride, stride);
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn decode_construction_graph_evidence(
+    bytes: &[u8],
+) -> Result<GpuConstructionGraphEvidence, String> {
+    let expected = COLLISION_CAPACITY_COUNTER_BYTES as usize * 4;
+    if bytes.len() != expected {
+        return Err(format!(
+            "construction graph evidence requires {expected} bytes, received {}",
+            bytes.len()
+        ));
+    }
+    let records = bytemuck::try_cast_slice::<u8, [u32; 4]>(bytes)
+        .map_err(|error| format!("decode construction graph evidence: {error}"))?;
+    Ok(GpuConstructionGraphEvidence {
+        candidate_pairs: records[0][2],
+        manifolds: records[1][2],
+        contact_points: records[2][2],
+        persistent_pairs: records[3][2],
+        overflowed: records.iter().any(|record| record[3] != 0),
+    })
 }
 
 impl GeneratedPersistenceGraph {

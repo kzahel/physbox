@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 
 use bytemuck::{Pod, Zeroable};
+use physbox_contracts::{ConstructionResultV1, ConstructionStateV1};
 use physbox_launch::ValidationScenario;
 use wgpu::util::DeviceExt;
 
@@ -73,6 +74,9 @@ pub(crate) struct UiFrameModel<'a> {
     pub adapter_backend: &'a str,
     pub scenario_activations_total: u64,
     pub scenario_restarts_total: u64,
+    pub construction_state: Option<&'a ConstructionStateV1>,
+    pub construction_age_frames: Option<u64>,
+    pub construction_diagnostic_source: &'static str,
 }
 
 /// Shared canvas UI and input capture.
@@ -725,8 +729,8 @@ impl UiRenderer {
             parameter_upload_bytes_total: self.parameter_upload_bytes_total,
             render_passes_this_frame: 1,
             draw_calls_this_frame: draw_calls,
-            diagnostic_source: "declared",
-            diagnostic_age_frames: None,
+            diagnostic_source: model.construction_diagnostic_source,
+            diagnostic_age_frames: model.construction_age_frames,
             scenario_activations_total: model.scenario_activations_total,
             scenario_restarts_total: model.scenario_restarts_total,
             overflowed: self.overflowed,
@@ -887,6 +891,28 @@ fn dynamic_batch(target_size: [u32; 2], model: &UiFrameModel<'_>) -> Batch {
         [origin[0], origin[1], width, height],
         [0.015, 0.03, 0.065, 0.80],
     );
+    let construction_failures = model.construction_state.map_or(0, |state| {
+        state
+            .capacity_failures
+            .saturating_add(state.deep_overlap_failures)
+            .saturating_add(state.erase_miss_failures)
+            .saturating_add(state.generation_failures)
+    });
+    let construction_result =
+        model
+            .construction_state
+            .map_or("WAIT", |state| match state.last_result {
+                ConstructionResultV1::None => "READY",
+                ConstructionResultV1::Placed => "PLACED",
+                ConstructionResultV1::Erased => "ERASED",
+                ConstructionResultV1::CapacityFull => "FULL",
+                ConstructionResultV1::DeepOverlap => "OVERLAP",
+                ConstructionResultV1::EraseMiss => "MISS",
+                ConstructionResultV1::GenerationExhausted => "GENFAIL",
+            });
+    let live_bodies = model
+        .construction_state
+        .map_or(model.body_count, |state| state.live_bodies);
     let lines = [
         format!("SCENE {}", model.scenario.name()),
         format!(
@@ -902,14 +928,21 @@ fn dynamic_batch(target_size: [u32; 2], model: &UiFrameModel<'_>) -> Batch {
             "STEP {} TOTAL {}",
             model.pacing.completed_outer_steps_this_frame, model.pacing.completed_outer_steps_total
         ),
-        format!("BODY {} CONTACT {}", model.body_count, model.contact_count),
+        format!("BODY {} CONTACT {}", live_bodies, model.contact_count),
         format!(
             "CAP {}KB OVERFLOW {}",
             model.capacity_bytes.div_ceil(1024),
             if model.overflowed { "YES" } else { "NO" }
         ),
         format!("GPU {}", model.adapter_backend),
-        "ASYNC AGE N/A".to_owned(),
+        format!(
+            "BUILD {} FAIL {} AGE {}",
+            construction_result,
+            construction_failures,
+            model
+                .construction_age_frames
+                .map_or_else(|| "N/A".to_owned(), |age| age.to_string())
+        ),
     ];
     let color = [0.72, 0.84, 0.96, 1.0];
     for (index, line) in lines.iter().enumerate() {

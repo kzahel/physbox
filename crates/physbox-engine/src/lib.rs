@@ -69,7 +69,7 @@ pub use construction::{
 pub use frame::{
     FrameInput, InputEvent, PointerButton, PointerEvent, PointerPhase, StepRequest, WheelEvent,
 };
-pub use generated_contacts::GpuContactPersistenceTopology;
+pub use generated_contacts::{GpuConstructionGraphEvidence, GpuContactPersistenceTopology};
 #[cfg(not(target_arch = "wasm32"))]
 pub use generated_contacts::{
     GpuGeneratedContactBenchmarkOutput, GpuGeneratedContactOutput, GpuGeneratedContactRunner,
@@ -96,7 +96,8 @@ pub use pair_slot_persistence::{
 pub use renderer::OffscreenRenderer;
 pub use renderer::SurfaceRenderer;
 pub use report::{
-    BodyCommandReport, CameraReport, FrameReport, ScenarioResult, SceneContract, UiReport,
+    BodyCommandReport, CameraReport, ConstructionDiagnosticReport, FrameReport, ScenarioResult,
+    SceneContract, UiReport,
 };
 pub use scenario::{
     AnalyticFixtureKind, P5_2_BUCKET_EVIDENCE_STEPS, P5_2_CENTERED_STACK_EVIDENCE_STEPS,

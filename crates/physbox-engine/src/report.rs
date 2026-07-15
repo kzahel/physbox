@@ -1,5 +1,7 @@
 use serde::Serialize;
 
+use physbox_contracts::ConstructionStateV1;
+
 use crate::clock::PacingReport;
 
 pub const SCENE_CONTRACT_VERSION: u32 = 3;
@@ -99,6 +101,16 @@ pub struct ScenarioResult {
     pub reason: &'static str,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConstructionDiagnosticReport {
+    pub source: &'static str,
+    pub state: Option<ConstructionStateV1>,
+    pub observed_frame_index: Option<u64>,
+    pub age_frames: Option<u64>,
+    pub blocking_readback_for_advancement: bool,
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FrameReport {
@@ -111,6 +123,7 @@ pub struct FrameReport {
     pub camera: CameraReport,
     pub ui: UiReport,
     pub body_commands: BodyCommandReport,
+    pub construction_diagnostic: ConstructionDiagnosticReport,
     pub scene_contract: SceneContract,
     pub scenario: ScenarioResult,
 }
@@ -300,6 +313,13 @@ mod tests {
                 construction_intent_dispatches_this_frame: 1,
                 grab_tether_prepare_dispatches_this_frame: 1,
                 grab_tether_draw_calls_this_frame: 1,
+            },
+            construction_diagnostic: ConstructionDiagnosticReport {
+                source: "async-gpu",
+                state: None,
+                observed_frame_index: None,
+                age_frames: None,
+                blocking_readback_for_advancement: false,
             },
             scene_contract: SceneContract {
                 version: SCENE_CONTRACT_VERSION,

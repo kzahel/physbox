@@ -5,6 +5,7 @@ use crate::{
     gpu_context::{request_adapter, request_device, surface_format},
     host::EngineHost,
 };
+use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Copy)]
 pub(crate) struct RenderFrameTarget<'a> {
@@ -27,6 +28,9 @@ pub struct SurfaceRenderer {
     view_format: wgpu::TextureFormat,
     host: EngineHost,
     diagnostics: AdapterDiagnostics,
+    construction_epoch: Option<(String, u64, u64)>,
+    construction_scheduled_total: u64,
+    pending_construction_diagnostic: Option<PendingConstructionDiagnostic>,
 }
 
 impl SurfaceRenderer {
@@ -81,6 +85,9 @@ impl SurfaceRenderer {
             view_format,
             host,
             diagnostics,
+            construction_epoch: None,
+            construction_scheduled_total: 0,
+            pending_construction_diagnostic: None,
         })
     }
 
@@ -98,6 +105,7 @@ impl SurfaceRenderer {
     }
 
     pub fn render(&mut self, input: FrameInput) -> Result<FrameReport, String> {
+        self.resolve_construction_diagnostic()?;
         let frame = match self.surface.get_current_texture() {
             Ok(frame) => frame,
             Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
@@ -130,9 +138,117 @@ impl SurfaceRenderer {
                 },
             },
         );
+        let epoch = (
+            report.scene_contract.scenario_hash.clone(),
+            report.ui.scenario_activations_total,
+            report.ui.scenario_restarts_total,
+        );
+        if self.construction_epoch.as_ref() != Some(&epoch) {
+            self.construction_epoch = Some(epoch.clone());
+            self.construction_scheduled_total = 0;
+            self.pending_construction_diagnostic = None;
+        }
+        let executed_total = report.body_commands.executed_construction_intents_total;
+        let scheduled = if self.pending_construction_diagnostic.is_none()
+            && executed_total > self.construction_scheduled_total
+        {
+            let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("physbox5_async_construction_diagnostic"),
+                size: u64::from(crate::CONSTRUCTION_STATE_BYTES),
+                usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+                mapped_at_creation: false,
+            });
+            self.host.copy_construction_state(&mut encoder, &buffer)?;
+            Some((buffer, epoch, executed_total, report.frame_index))
+        } else {
+            None
+        };
         self.queue.submit([encoder.finish()]);
+        if let Some((buffer, epoch, executed_total, observed_frame_index)) = scheduled {
+            self.construction_scheduled_total = executed_total;
+            self.pending_construction_diagnostic = Some(PendingConstructionDiagnostic::new(
+                buffer,
+                epoch,
+                observed_frame_index,
+            ));
+        }
         frame.present();
         Ok(report)
+    }
+
+    fn resolve_construction_diagnostic(&mut self) -> Result<(), String> {
+        self.device
+            .poll(wgpu::PollType::Poll)
+            .map_err(|error| format!("poll construction diagnostic: {error}"))?;
+        let ready = self
+            .pending_construction_diagnostic
+            .as_ref()
+            .is_some_and(PendingConstructionDiagnostic::is_ready);
+        if !ready {
+            return Ok(());
+        }
+        let pending = self
+            .pending_construction_diagnostic
+            .take()
+            .expect("ready construction diagnostic exists");
+        let epoch = pending.epoch.clone();
+        let observed_frame_index = pending.observed_frame_index;
+        let bytes = pending.finish()?;
+        if self.host.construction_diagnostic_epoch() == epoch {
+            self.host.publish_construction_diagnostic(
+                crate::construction_state_from_bytes(&bytes)?,
+                observed_frame_index,
+            );
+        }
+        Ok(())
+    }
+}
+
+struct PendingConstructionDiagnostic {
+    buffer: wgpu::Buffer,
+    result: Arc<Mutex<Option<Result<(), String>>>>,
+    epoch: (String, u64, u64),
+    observed_frame_index: u64,
+}
+
+impl PendingConstructionDiagnostic {
+    fn new(buffer: wgpu::Buffer, epoch: (String, u64, u64), observed_frame_index: u64) -> Self {
+        let result = Arc::new(Mutex::new(None));
+        let callback = Arc::clone(&result);
+        buffer
+            .slice(..)
+            .map_async(wgpu::MapMode::Read, move |mapped| {
+                *callback
+                    .lock()
+                    .expect("construction diagnostic callback lock") =
+                    Some(mapped.map_err(|error| error.to_string()));
+            });
+        Self {
+            buffer,
+            result,
+            epoch,
+            observed_frame_index,
+        }
+    }
+
+    fn is_ready(&self) -> bool {
+        self.result
+            .lock()
+            .expect("construction diagnostic readiness lock")
+            .is_some()
+    }
+
+    fn finish(self) -> Result<Vec<u8>, String> {
+        self.result
+            .lock()
+            .map_err(|_| "construction diagnostic result lock poisoned".to_owned())?
+            .take()
+            .ok_or_else(|| "construction diagnostic is not ready".to_owned())??;
+        let mapped = self.buffer.slice(..).get_mapped_range();
+        let bytes = mapped.to_vec();
+        drop(mapped);
+        self.buffer.unmap();
+        Ok(bytes)
     }
 }
 
@@ -297,6 +413,31 @@ impl OffscreenRenderer {
         drop(mapped);
         buffer.unmap();
         result
+    }
+
+    pub fn read_construction_graph_evidence(
+        &self,
+    ) -> Result<crate::GpuConstructionGraphEvidence, String> {
+        let size = u64::from(physbox_contracts::COLLISION_CAPACITY_COUNTER_BYTES) * 4;
+        let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("physbox5_construction_graph_evidence_readback"),
+            size,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("physbox5_construction_graph_evidence_copy"),
+            });
+        self.host
+            .copy_construction_graph_evidence(&mut encoder, &buffer)?;
+        self.queue.submit([encoder.finish()]);
+        let mapped = map_buffer(&self.device, &buffer)?;
+        let evidence = crate::generated_contacts::decode_construction_graph_evidence(&mapped);
+        drop(mapped);
+        buffer.unmap();
+        evidence
     }
 }
 
@@ -1331,6 +1472,90 @@ mod tests {
                 .attempted_intents,
             4
         );
+    }
+
+    #[test]
+    fn erase_and_generation_reuse_clear_the_live_contact_graph_before_recontact() {
+        let target_size = [960, 600];
+        let mut renderer = pollster::block_on(OffscreenRenderer::new(
+            target_size[0],
+            target_size[1],
+            EngineConfig {
+                scenario: ValidationScenario::RigidFloor,
+            },
+        ))
+        .unwrap();
+        let layout = crate::ui::UiLayout::for_target(target_size);
+        let screen = crate::Camera2d::fixed().resolve(target_size).unwrap();
+        let click = |id, at| {
+            [crate::PointerPhase::Down, crate::PointerPhase::Up]
+                .into_iter()
+                .map(|phase| {
+                    crate::InputEvent::Pointer(crate::PointerEvent {
+                        id,
+                        phase,
+                        button: crate::PointerButton::Primary,
+                        normalized_position: at,
+                    })
+                })
+                .collect::<Vec<_>>()
+        };
+
+        renderer.render(FrameInput::exact(120));
+        let warm = renderer.read_construction_graph_evidence().unwrap();
+        assert!(warm.candidate_pairs > 0);
+        assert!(warm.manifolds > 0);
+        assert!(warm.contact_points > 0);
+        assert!(warm.persistent_pairs > 0);
+        assert!(!warm.overflowed);
+
+        renderer.render(
+            FrameInput::exact(0).with_input_events(click(1, layout.center_normalized("tool", 3))),
+        );
+        renderer.render(
+            FrameInput::exact(1).with_input_events(click(2, screen.world_to_screen([0.0, 0.2]))),
+        );
+        let erased = renderer.read_construction_state().unwrap();
+        assert_eq!(erased.erased_bodies, 1);
+        assert_eq!(erased.live_bodies, 1);
+        let cleared = renderer.read_construction_graph_evidence().unwrap();
+        assert_eq!(cleared.candidate_pairs, 0);
+        assert_eq!(cleared.manifolds, 0);
+        assert_eq!(cleared.contact_points, 0);
+        assert_eq!(cleared.persistent_pairs, 0);
+
+        renderer.render(
+            FrameInput::exact(0).with_input_events(click(3, layout.center_normalized("tool", 1))),
+        );
+        let placed = renderer.render(
+            FrameInput::exact(1).with_input_events(click(4, screen.world_to_screen([0.0, 0.9]))),
+        );
+        assert!(
+            !placed
+                .construction_diagnostic
+                .blocking_readback_for_advancement
+        );
+        let reused = renderer.read_construction_state().unwrap();
+        assert_eq!(
+            reused.last_body,
+            Some(physbox_contracts::BodyId {
+                slot: 0,
+                generation: 2,
+            })
+        );
+        let before_recontact = renderer.read_construction_graph_evidence().unwrap();
+        assert_eq!(before_recontact.candidate_pairs, 0);
+        assert_eq!(before_recontact.manifolds, 0);
+        assert_eq!(before_recontact.contact_points, 0);
+        assert_eq!(before_recontact.persistent_pairs, 0);
+
+        renderer.render(FrameInput::exact(120));
+        let rebuilt = renderer.read_construction_graph_evidence().unwrap();
+        assert!(rebuilt.candidate_pairs > 0);
+        assert!(rebuilt.manifolds > 0);
+        assert!(rebuilt.contact_points > 0);
+        assert!(rebuilt.persistent_pairs > 0);
+        assert!(!rebuilt.overflowed);
     }
 
     #[test]
