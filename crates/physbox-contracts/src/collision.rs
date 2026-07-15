@@ -398,11 +398,9 @@ impl Validate for CollisionCapacityV1 {
             .checked_mul(u64::from(self.stride_bytes))
             .ok_or_else(|| ContractError("collision capacity bytes overflowed".to_owned()))?;
         let overflowed = self.attempted_elements > self.capacity_elements;
-        let committed = if overflowed {
-            0
-        } else {
-            self.attempted_elements
-        };
+        let fully_committed =
+            !overflowed && self.accepted && self.committed_elements == self.attempted_elements;
+        let atomically_rejected = !self.accepted && self.committed_elements == 0;
         let high_water = self
             .attempted_elements
             .min(self.capacity_elements)
@@ -410,8 +408,7 @@ impl Validate for CollisionCapacityV1 {
             .ok_or_else(|| ContractError("collision high-water bytes overflowed".to_owned()))?;
         if self.allocated_bytes != allocated
             || self.overflowed != overflowed
-            || self.accepted == overflowed
-            || self.committed_elements != committed
+            || !(fully_committed || atomically_rejected)
             || self.high_water_bytes != high_water
         {
             return Err(ContractError(
@@ -887,6 +884,11 @@ mod tests {
             reproducer_hash: Some("2".repeat(64)),
         });
         overflow.validate().unwrap();
+
+        let mut cascaded = artifact().capacities[0].clone();
+        cascaded.committed_elements = 0;
+        cascaded.accepted = false;
+        cascaded.validate().unwrap();
     }
 
     #[test]

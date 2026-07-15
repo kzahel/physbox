@@ -626,6 +626,81 @@ pub fn p5_2_candidate_scenario(
     })
 }
 
+pub fn p5_2_narrowphase_pair_scenario(
+    kind: P5_2CollisionScenarioKind,
+    seed: u64,
+) -> Result<ScenarioV1, ScenarioBuildError> {
+    if kind == P5_2CollisionScenarioKind::MixedSmallWorld {
+        return Err(ScenarioBuildError(
+            "randomized P5.2 narrowphase pairs require one analytic pair family".to_owned(),
+        ));
+    }
+    let mut scenario = p5_2_collision_scenario(kind, 1, seed)?;
+    let mut random = StableRandom::new(seed);
+    let center = Vec2::new(random.signed(1.0), random.signed(1.0));
+    match kind {
+        P5_2CollisionScenarioKind::CircleCircle => {
+            let radius_a = 0.1 + random.unit() * 0.4;
+            let radius_b = 0.1 + random.unit() * 0.4;
+            let direction_angle = random.signed(std::f32::consts::PI);
+            let distance = (radius_a + radius_b) * (0.2 + random.unit() * 0.79);
+            scenario.bodies[0].shape = ShapeV1::Circle {
+                radius: finite(radius_a),
+            };
+            scenario.bodies[1].shape = ShapeV1::Circle {
+                radius: finite(radius_b),
+            };
+            scenario.bodies[0].position = center;
+            scenario.bodies[1].position = Vec2::new(
+                center.x + direction_angle.cos() * distance,
+                center.y + direction_angle.sin() * distance,
+            );
+        }
+        P5_2CollisionScenarioKind::CircleRectangle => {
+            let radius = 0.1 + random.unit() * 0.3;
+            let half = Vec2::new(0.2 + random.unit() * 0.5, 0.2 + random.unit() * 0.5);
+            let rectangle_angle = random.signed(std::f32::consts::PI);
+            let local_circle = Vec2::new(
+                half.x + radius * random.unit() * 0.8,
+                random.signed(half.y * 0.8),
+            );
+            scenario.bodies[0].shape = ShapeV1::Circle {
+                radius: finite(radius),
+            };
+            scenario.bodies[1].shape = ShapeV1::Rectangle { half_extents: half };
+            scenario.bodies[1].position = center;
+            scenario.bodies[1].angle = finite(rectangle_angle);
+            scenario.bodies[0].position = Vec2::new(
+                center.x + rectangle_angle.cos() * local_circle.x
+                    - rectangle_angle.sin() * local_circle.y,
+                center.y
+                    + rectangle_angle.sin() * local_circle.x
+                    + rectangle_angle.cos() * local_circle.y,
+            );
+        }
+        P5_2CollisionScenarioKind::RectangleRectangle => {
+            let half_a = Vec2::new(0.2 + random.unit() * 0.5, 0.2 + random.unit() * 0.5);
+            let half_b = Vec2::new(0.2 + random.unit() * 0.5, 0.2 + random.unit() * 0.5);
+            scenario.bodies[0].shape = ShapeV1::Rectangle {
+                half_extents: half_a,
+            };
+            scenario.bodies[1].shape = ShapeV1::Rectangle {
+                half_extents: half_b,
+            };
+            scenario.bodies[0].position = center;
+            scenario.bodies[1].position = Vec2::new(
+                center.x + random.signed(half_a.x.min(half_b.x)),
+                center.y + random.signed(half_a.y.min(half_b.y)),
+            );
+            scenario.bodies[0].angle = finite(random.signed(std::f32::consts::PI));
+            scenario.bodies[1].angle = finite(random.signed(std::f32::consts::PI));
+        }
+        P5_2CollisionScenarioKind::MixedSmallWorld => unreachable!(),
+    }
+    scenario.id = format!("{}-randomized-pair", kind.name());
+    Ok(scenario)
+}
+
 pub fn p5_2_box2d_narrowphase_projection(
     source: &ScenarioV1,
 ) -> Result<ScenarioV1, ScenarioBuildError> {
@@ -1018,5 +1093,21 @@ mod tests {
         }
         assert!(p5_2_candidate_scenario(P5_2CandidatePattern::Random, 1, 0).is_err());
         assert!(p5_2_candidate_scenario(P5_2CandidatePattern::Random, 129, 0).is_err());
+    }
+
+    #[test]
+    fn p5_2_randomized_narrowphase_pairs_are_valid_and_replayable() {
+        for kind in P5_2CollisionScenarioKind::ALL[..3].iter().copied() {
+            let scenario = p5_2_narrowphase_pair_scenario(kind, 77).unwrap();
+            scenario.validate().unwrap();
+            assert_eq!(scenario.bodies.len(), 2);
+            assert_eq!(
+                canonical_json(&scenario).unwrap(),
+                canonical_json(&p5_2_narrowphase_pair_scenario(kind, 77).unwrap()).unwrap()
+            );
+        }
+        assert!(
+            p5_2_narrowphase_pair_scenario(P5_2CollisionScenarioKind::MixedSmallWorld, 1).is_err()
+        );
     }
 }

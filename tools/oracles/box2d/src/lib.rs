@@ -530,6 +530,7 @@ fn provenance(request: &OracleRequestV1, lane: OracleLane) -> ProvenanceV1 {
             named("contact_speed", "3"),
             named("continuous", "true"),
             named("lane", lane.name()),
+            named("narrowphase_transform", "engine-authored-sin-cos"),
             named(
                 "restitution_threshold",
                 &request
@@ -611,9 +612,13 @@ fn raw_rotation(angle: f32) -> ffi::b2Rot {
 }
 
 fn raw_transform(body: &BodyStateV1) -> ffi::b2Transform {
+    // The direct public-collision lane receives the engine-authored geometric transform.
+    // Box2D's world/body creation path intentionally keeps `raw_rotation`, which uses
+    // b2ComputeCosSin for Box2D's own deterministic angle integration semantics.
+    let (sine, cosine) = body.angle.get().sin_cos();
     ffi::b2Transform {
         p: raw_vec(body.position),
-        q: raw_rotation(body.angle.get()),
+        q: ffi::b2Rot { c: cosine, s: sine },
     }
 }
 
@@ -672,8 +677,15 @@ impl Drop for WorldGuard {
 #[cfg(test)]
 mod tests {
     use physbox_contracts::{OracleRequestV1, SCHEMA_VERSION, canonical_hash, canonical_json};
-    use physbox_engine::{AnalyticFixtureKind, analytic_fixture_scenario};
-    use physbox_lab::fixture_contacts::generate_fixture_contacts;
+    use physbox_engine::{
+        AnalyticFixtureKind, P5_2CandidatePattern, P5_2CollisionScenarioKind,
+        analytic_fixture_scenario, p5_2_candidate_scenario, p5_2_collision_scenario,
+    };
+    use physbox_lab::{
+        analytic_narrowphase::{compare_box2d_narrowphase, generate_scalar_narrowphase},
+        collision_candidates::enumerate_scalar_candidates,
+        fixture_contacts::generate_fixture_contacts,
+    };
 
     use super::*;
 
@@ -703,6 +715,89 @@ mod tests {
                 assert_vec_close(actual.world_point, expected.world_point, 2.0e-5);
             }
         }
+    }
+
+    #[test]
+    fn public_collision_functions_match_p5_2_scalar_topology_and_geometry() {
+        for kind in P5_2CollisionScenarioKind::ALL {
+            let scenario = p5_2_collision_scenario(kind, 1, 17).unwrap();
+            let candidates = enumerate_scalar_candidates(&scenario).unwrap();
+            let expected = generate_scalar_narrowphase(&scenario, &candidates.candidates).unwrap();
+            let actual = public_manifolds(&scenario.bodies).unwrap();
+            assert_eq!(actual.len(), expected.len(), "{kind:?}");
+            for expected in expected {
+                let actual = actual
+                    .iter()
+                    .find(|actual| {
+                        (actual.body_a == expected.pair.body_a
+                            && actual.body_b == expected.pair.body_b)
+                            || (actual.body_a == expected.pair.body_b
+                                && actual.body_b == expected.pair.body_a)
+                    })
+                    .unwrap_or_else(|| panic!("missing authority pair {:?}", expected.pair));
+                let expected_orientation = AuthoredManifoldV1 {
+                    id: 0,
+                    body_a: expected.pair.body_a,
+                    body_b: expected.pair.body_b,
+                    normal: expected.normal,
+                    material: expected.material,
+                    points: Vec::new(),
+                };
+                let actual = orient_like(actual, &expected_orientation);
+                assert_eq!(actual.points.len(), expected.points.len(), "{kind:?}");
+                assert_vec_close(actual.normal, expected.normal, 2.0e-5);
+                let mut actual_points = actual.points.clone();
+                let mut expected_points = expected.points.clone();
+                actual_points.sort_by(|a, b| {
+                    a.world_point
+                        .x
+                        .total_cmp(&b.world_point.x)
+                        .then_with(|| a.world_point.y.total_cmp(&b.world_point.y))
+                });
+                expected_points.sort_by(|a, b| {
+                    a.world_point
+                        .x
+                        .total_cmp(&b.world_point.x)
+                        .then_with(|| a.world_point.y.total_cmp(&b.world_point.y))
+                });
+                for (actual, expected) in actual_points.iter().zip(&expected_points) {
+                    assert_close(actual.separation.get(), expected.separation.get(), 2.0e-5);
+                    assert_vec_close(actual.world_point, expected.world_point, 2.0e-5);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn randomized_overlap_manifolds_match_public_box2d_functions() {
+        let mut differences = Vec::new();
+        for seed in 0..16_u64 {
+            for pattern in P5_2CandidatePattern::ALL {
+                let scenario =
+                    p5_2_candidate_scenario(pattern, 2 + (seed % 15) as u32, seed).unwrap();
+                let candidates = enumerate_scalar_candidates(&scenario).unwrap();
+                let expected =
+                    generate_scalar_narrowphase(&scenario, &candidates.candidates).unwrap();
+                let mut authority = public_manifolds(&scenario.bodies).unwrap();
+                authority.retain(|manifold| {
+                    manifold
+                        .points
+                        .iter()
+                        .any(|point| point.separation.get() <= 1.0e-6)
+                });
+                if let Err(difference) =
+                    compare_box2d_narrowphase(&candidates.candidates, &expected, &authority)
+                {
+                    differences.push(format!(
+                        "{} seed {seed}: {}: {}",
+                        pattern.name(),
+                        difference.signature,
+                        difference.reason
+                    ));
+                }
+            }
+        }
+        assert!(differences.is_empty(), "{differences:#?}");
     }
 
     #[test]

@@ -120,7 +120,7 @@ impl GpuCandidateOutput {
     }
 }
 
-struct CandidatePipelines {
+pub(crate) struct CandidatePipelines {
     clear: wgpu::ComputePipeline,
     aabb: wgpu::ComputePipeline,
     classify: wgpu::ComputePipeline,
@@ -138,7 +138,7 @@ struct CandidatePipelines {
 }
 
 impl CandidatePipelines {
-    fn new(device: &wgpu::Device) -> Self {
+    pub(crate) fn new(device: &wgpu::Device) -> Self {
         let clear_layout = bind_group_layout(device, "candidate_clear_layout", &[4, 5, 9, 10]);
         let aabb_layout = bind_group_layout(device, "candidate_aabb_layout", &[0, 1, 2, 3]);
         let classify_layout =
@@ -231,7 +231,7 @@ impl CandidatePipelines {
     }
 }
 
-struct CandidateCase {
+pub(crate) struct CandidateCase {
     _storage: GpuBodyStorage,
     aabbs: wgpu::Buffer,
     _pair_flags: wgpu::Buffer,
@@ -256,7 +256,7 @@ struct CandidateCase {
 }
 
 impl CandidateCase {
-    fn new(
+    pub(crate) fn new(
         device: &wgpu::Device,
         pipelines: &CandidatePipelines,
         scenario: &ScenarioV1,
@@ -411,7 +411,11 @@ impl CandidateCase {
         })
     }
 
-    fn encode(&self, encoder: &mut wgpu::CommandEncoder, pipelines: &CandidatePipelines) {
+    pub(crate) fn encode(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        pipelines: &CandidatePipelines,
+    ) {
         let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some("physbox5_collision_candidate_passes"),
             timestamp_writes: None,
@@ -462,7 +466,7 @@ impl CandidateCase {
         );
     }
 
-    fn capacities(&self, candidate: CollisionCapacityV1) -> Vec<CollisionCapacityV1> {
+    pub(crate) fn capacities(&self, candidate: CollisionCapacityV1) -> Vec<CollisionCapacityV1> {
         let fixed = |class: &str, stride: u32, capacity: u64, used: u64| CollisionCapacityV1 {
             class: class.to_owned(),
             stride_bytes: stride,
@@ -510,6 +514,26 @@ impl CandidateCase {
         ];
         capacities.sort_by(|left, right| left.class.cmp(&right.class));
         capacities
+    }
+
+    pub(crate) fn storage(&self) -> &GpuBodyStorage {
+        &self._storage
+    }
+
+    pub(crate) fn candidate_buffer(&self) -> &wgpu::Buffer {
+        &self.candidates
+    }
+
+    pub(crate) fn candidate_capacity_buffer(&self) -> &wgpu::Buffer {
+        &self.capacity
+    }
+
+    pub(crate) fn work_buffer(&self) -> &wgpu::Buffer {
+        &self.work
+    }
+
+    pub(crate) fn candidate_capacity(&self) -> u32 {
+        self.candidate_capacity
     }
 }
 
@@ -711,7 +735,7 @@ impl GpuCandidateRunner {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn map_values<T: Pod + Copy>(
+pub(crate) fn map_values<T: Pod + Copy>(
     device: &wgpu::Device,
     buffer: &wgpu::Buffer,
     count: usize,

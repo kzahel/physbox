@@ -8,8 +8,16 @@ use std::{
 use physbox_box2d_oracle::BOX2D_REVISION;
 use physbox_contracts::{OracleRequestV1, SCHEMA_VERSION, canonical_hash};
 use physbox_engine::{AnalyticFixtureKind, analytic_fixture_scenario};
+use physbox_engine::{
+    P5_2CollisionScenarioKind, p5_2_box2d_narrowphase_projection, p5_2_collision_scenario,
+    p5_2_narrowphase_pair_scenario,
+};
 use physbox_lab::oracle_transport::{
     OracleProcess, OracleRunConfig, OracleRunErrorKind, run_oracle, verify_clean_git_pin,
+};
+use physbox_lab::{
+    analytic_narrowphase::{compare_box2d_narrowphase, generate_scalar_narrowphase},
+    collision_candidates::enumerate_scalar_candidates,
 };
 
 #[test]
@@ -66,6 +74,72 @@ fn clean_pinned_process_produces_fresh_world_and_narrowphase_results() {
     assert!(rejected.exists());
     assert!(!rejected.with_file_name("oracle-result.json").exists());
 
+    fs::remove_dir_all(&artifact_root).expect("remove process-test artifacts");
+}
+
+#[test]
+fn clean_pinned_process_matches_all_governed_p5_2_manifolds() {
+    let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    let source_identity = verify_clean_git_pin(&repository.join("reference/box2d"), BOX2D_REVISION)
+        .expect("clean pinned Box2D checkout");
+    let artifact_root = temporary_root("box2d-p5.2-narrowphase");
+    for (index, kind) in P5_2CollisionScenarioKind::ALL.into_iter().enumerate() {
+        let source = p5_2_collision_scenario(kind, 1, 17).unwrap();
+        let projection = p5_2_box2d_narrowphase_projection(&source).unwrap();
+        let request = OracleRequestV1 {
+            schema_version: SCHEMA_VERSION,
+            run_id: format!("p5.2-narrowphase-{index}"),
+            source_scenario_hash: canonical_hash(&projection).unwrap(),
+            scenario: projection,
+        };
+        let authority = run_oracle(
+            &config(&artifact_root, &source_identity, "narrowphase"),
+            &request,
+        )
+        .expect("accepted public narrowphase authority result");
+        let candidates = enumerate_scalar_candidates(&source).unwrap();
+        let scalar = generate_scalar_narrowphase(&source, &candidates.candidates).unwrap();
+        compare_box2d_narrowphase(&candidates.candidates, &scalar, &authority.result.manifolds)
+            .unwrap_or_else(|difference| {
+                panic!("{kind:?}: {}: {}", difference.signature, difference.reason)
+            });
+    }
+    fs::remove_dir_all(&artifact_root).expect("remove process-test artifacts");
+}
+
+#[test]
+fn clean_pinned_process_matches_randomized_p5_2_pair_families() {
+    let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    let source_identity = verify_clean_git_pin(&repository.join("reference/box2d"), BOX2D_REVISION)
+        .expect("clean pinned Box2D checkout");
+    let artifact_root = temporary_root("box2d-p5.2-randomized-narrowphase");
+    for seed in 0..8_u64 {
+        for kind in P5_2CollisionScenarioKind::ALL[..3].iter().copied() {
+            let source = p5_2_narrowphase_pair_scenario(kind, seed).unwrap();
+            let projection = p5_2_box2d_narrowphase_projection(&source).unwrap();
+            let request = OracleRequestV1 {
+                schema_version: SCHEMA_VERSION,
+                run_id: format!("p5.2-randomized-{}-{seed}", kind.name()),
+                source_scenario_hash: canonical_hash(&projection).unwrap(),
+                scenario: projection,
+            };
+            let authority = run_oracle(
+                &config(&artifact_root, &source_identity, "narrowphase"),
+                &request,
+            )
+            .expect("accepted randomized public narrowphase authority result");
+            let candidates = enumerate_scalar_candidates(&source).unwrap();
+            let scalar = generate_scalar_narrowphase(&source, &candidates.candidates).unwrap();
+            assert!(!scalar.is_empty(), "{kind:?} seed {seed} did not overlap");
+            compare_box2d_narrowphase(&candidates.candidates, &scalar, &authority.result.manifolds)
+                .unwrap_or_else(|difference| {
+                    panic!(
+                        "{kind:?} seed {seed}: {}: {}",
+                        difference.signature, difference.reason
+                    )
+                });
+        }
+    }
     fs::remove_dir_all(&artifact_root).expect("remove process-test artifacts");
 }
 

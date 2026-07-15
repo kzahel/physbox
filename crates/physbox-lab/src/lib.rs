@@ -4,6 +4,7 @@ use std::fmt::{Display, Formatter};
 
 use physbox_contracts::{CapacityRecordV1, FiniteF32, Vec2};
 
+pub mod analytic_narrowphase;
 pub mod collision_candidates;
 pub mod evidence;
 pub mod failure_automation;

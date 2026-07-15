@@ -6,6 +6,8 @@ mod body_state;
 mod body_world;
 mod clock;
 mod collision_candidates;
+#[cfg(not(target_arch = "wasm32"))]
+mod collision_narrowphase;
 mod config;
 mod frame;
 mod gpu_context;
@@ -33,6 +35,8 @@ pub use clock::{InteractiveClockAction, PacingMode, PacingReport};
 pub use collision_candidates::GpuCandidateOutput;
 #[cfg(not(target_arch = "wasm32"))]
 pub use collision_candidates::{GpuCandidateRunner, run_gpu_collision_candidates};
+#[cfg(not(target_arch = "wasm32"))]
+pub use collision_narrowphase::{GpuNarrowphaseOutput, GpuNarrowphaseRunner};
 pub use config::EngineConfig;
 pub use frame::{FrameInput, PointerButton, PointerEvent, PointerPhase, StepRequest};
 pub use gpu_context::{AdapterDiagnostics, create_instance};
@@ -53,4 +57,5 @@ pub use scenario::{
     analytic_fixture_scenario, authored_chain_scenario, authored_one_contact_scenario,
     p5_1_free_flight_scenario, p5_1_rectangle_floor_scenario, p5_1_reset_grab_scenario,
     p5_2_box2d_narrowphase_projection, p5_2_candidate_scenario, p5_2_collision_scenario,
+    p5_2_narrowphase_pair_scenario,
 };
