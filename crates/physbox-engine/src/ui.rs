@@ -356,7 +356,6 @@ impl UiLayout {
         126.0 + (rows.saturating_sub(1)) as f32 * 38.0 + 34.0 + gap
     }
 
-    #[cfg(test)]
     pub(crate) fn center_normalized(self, hit: &str, index: usize) -> [f32; 2] {
         let bounds = match hit {
             "menu" => self.menu_button(),

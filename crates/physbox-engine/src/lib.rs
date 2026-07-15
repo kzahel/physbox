@@ -11,6 +11,7 @@ mod collision_narrowphase;
 mod collision_persistence;
 mod config;
 mod construction;
+mod construction_validation;
 mod frame;
 mod generated_contacts;
 mod gpu_context;
@@ -46,6 +47,7 @@ pub use body_state::{
     BODY_BYTES_PER_SLOT, BODY_COMMAND_BYTES, BODY_COMMAND_CAPACITY, BodySlotRegistry,
     BoundedBodyCommands, GpuBodyStorage, analytic_shape_encoding,
 };
+pub use body_world::GpuConstructionBodySlotEvidence;
 pub use camera::{
     CAMERA_STATE_VERSION, Camera2d, CameraError, CameraFrame2d, MAX_ORTHOGRAPHIC_HALF_HEIGHT,
     MIN_ORTHOGRAPHIC_HALF_HEIGHT,
@@ -65,6 +67,12 @@ pub use construction::{
     BoundedConstructionIntents, CONSTRUCTION_CIRCLE_RADIUS, CONSTRUCTION_FRICTION,
     CONSTRUCTION_INTENT_BYTES, CONSTRUCTION_INTENT_CAPACITY, CONSTRUCTION_RECTANGLE_HALF_EXTENTS,
     CONSTRUCTION_RESTITUTION, CONSTRUCTION_STATE_BYTES, construction_state_from_bytes,
+};
+pub use construction_validation::{
+    CONSTRUCTION_VALIDATION_SCRIPT_VERSION, ConstructionValidationFrameV1,
+    ConstructionValidationScriptV1, construction_capacity_validation_script,
+    construction_deep_overlap_validation_script, construction_interaction_validation_script,
+    construction_invalidation_validation_script,
 };
 pub use frame::{
     FrameInput, InputEvent, PointerButton, PointerEvent, PointerPhase, StepRequest, WheelEvent,

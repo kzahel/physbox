@@ -14,6 +14,7 @@ const captureDirectory = resolve(process.env.PHYSBOX5_CAPTURE_DIRECTORY ?? "/tmp
 const screenshot = join(captureDirectory, `physbox5-web${captureSuffix}.png`);
 const menuScreenshot = join(captureDirectory, `physbox5-web-menu${captureSuffix}.png`);
 const grabScreenshot = join(captureDirectory, `physbox5-web-grab${captureSuffix}.png`);
+const constructionScreenshot = join(captureDirectory, `physbox5-web-construction${captureSuffix}.png`);
 const provenancePath = join(captureDirectory, `physbox5-web${captureSuffix}.json`);
 const scenario = process.env.PHYSBOX5_SCENARIO ?? "bootstrap";
 const viewportWidth = Number.parseInt(process.env.PHYSBOX5_VIEWPORT_WIDTH ?? "960", 10);
@@ -23,6 +24,7 @@ await mkdir(captureDirectory, { recursive: true });
 await rm(screenshot, { force: true });
 await rm(menuScreenshot, { force: true });
 await rm(grabScreenshot, { force: true });
+await rm(constructionScreenshot, { force: true });
 await rm(provenancePath, { force: true });
 run(process.execPath, [resolve(root, "scripts/build-web.mjs")]);
 
@@ -92,6 +94,47 @@ try {
     { timeout: 10_000 },
   );
   let capturedGrab = null;
+  let capturedConstruction = null;
+  if (process.env.PHYSBOX5_CONSTRUCTION_CAPTURE === "1") {
+    if (scenario !== "bootstrap") {
+      throw new Error("PHYSBOX5_CONSTRUCTION_CAPTURE currently requires bootstrap");
+    }
+    const beforeConstruction = await page.evaluate(() => globalThis.__physbox5.frame);
+    await page.mouse.click(229 * uiScale, 50 * uiScale);
+    await page.waitForFunction(
+      () => globalThis.__physbox5?.frame?.ui?.currentTool === "circle",
+      null,
+      { timeout: 10_000 },
+    );
+    await page.mouse.click(viewportWidth * 0.75, viewportHeight * 0.3);
+    await page.waitForFunction(
+      ({ executed }) => {
+        const frame = globalThis.__physbox5?.frame;
+        return frame?.bodyCommands?.executedConstructionIntentsTotal > executed
+          && frame?.constructionDiagnostic?.state?.attemptedIntents >= 1;
+      },
+      { executed: beforeConstruction.bodyCommands.executedConstructionIntentsTotal },
+      { timeout: 10_000 },
+    );
+    capturedConstruction = await page.evaluate(() => globalThis.__physbox5.frame);
+    if (
+      capturedConstruction.constructionDiagnostic.source !== "async-gpu"
+      || capturedConstruction.constructionDiagnostic.state.lastResult !== "placed"
+      || capturedConstruction.constructionDiagnostic.state.liveBodies !== 3
+      || capturedConstruction.constructionDiagnostic.ageFrames === null
+      || capturedConstruction.constructionDiagnostic.blockingReadbackForAdvancement
+      || capturedConstruction.ui.diagnosticSource !== "async-gpu"
+    ) {
+      throw new Error(`browser construction diagnostic is invalid: ${JSON.stringify(capturedConstruction)}`);
+    }
+    await page.screenshot({ path: constructionScreenshot });
+    await page.mouse.click(153 * uiScale, 50 * uiScale);
+    await page.waitForFunction(
+      () => globalThis.__physbox5?.frame?.ui?.currentTool === "grab",
+      null,
+      { timeout: 10_000 },
+    );
+  }
   if (process.env.PHYSBOX5_GRAB_CAPTURE === "1") {
     if (scenario !== "rigid-floor") {
       throw new Error("PHYSBOX5_GRAB_CAPTURE currently requires rigid-floor");
@@ -203,10 +246,12 @@ try {
     menuScreenshot,
     grabScreenshot: capturedGrab ? grabScreenshot : null,
     grabFrame: capturedGrab,
+    constructionScreenshot: capturedConstruction ? constructionScreenshot : null,
+    constructionFrame: capturedConstruction,
     report: final.frame,
   };
   await writeFile(provenancePath, `${JSON.stringify(provenance, null, 2)}\n`);
-  console.log(JSON.stringify({ screenshot, menuScreenshot, grabScreenshot: capturedGrab ? grabScreenshot : null, provenancePath, frame: final.frame }, null, 2));
+  console.log(JSON.stringify({ screenshot, menuScreenshot, grabScreenshot: capturedGrab ? grabScreenshot : null, constructionScreenshot: capturedConstruction ? constructionScreenshot : null, provenancePath, frame: final.frame }, null, 2));
   console.log(`PHYSBOX5_VALIDATION_SUCCESS host=web run_id=${provenance.runId}`);
 } finally {
   await browser?.close();

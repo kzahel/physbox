@@ -83,6 +83,16 @@ pub(crate) struct BodyRenderPlan<'a> {
     pub(crate) ending_timestamp: Option<(&'a wgpu::QuerySet, u32)>,
 }
 
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GpuConstructionBodySlotEvidence {
+    pub slot: u32,
+    pub pose: [f32; 4],
+    pub motion: [f32; 4],
+    pub properties: [f32; 4],
+    pub metadata: [u32; 4],
+}
+
 pub(crate) struct GpuBodyWorld {
     #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     storage: GpuBodyStorage,
@@ -1264,6 +1274,36 @@ impl GpuBodyWorld {
             .ok_or_else(|| "construction graph evidence requires generated contacts".to_owned())?
             .copy_construction_graph_evidence(encoder, destination);
         Ok(())
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn copy_construction_body_evidence(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        destination: &wgpu::Buffer,
+    ) {
+        let lane_bytes = u64::from(self.body_count) * size_of::<[u32; 4]>() as u64;
+        for (index, source) in [
+            self.storage.pose_buffer(),
+            self.storage.motion_buffer(),
+            self.storage.properties_buffer(),
+            self.storage.metadata_buffer(),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            encoder.copy_buffer_to_buffer(
+                source,
+                0,
+                destination,
+                index as u64 * lane_bytes,
+                lane_bytes,
+            );
+        }
+    }
+
+    pub(crate) const fn body_capacity(&self) -> u32 {
+        self.body_count
     }
 
     pub(crate) fn solver_dispatches_per_step(&self) -> u32 {

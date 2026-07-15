@@ -439,6 +439,49 @@ impl OffscreenRenderer {
         buffer.unmap();
         evidence
     }
+
+    pub fn read_construction_body_evidence(
+        &self,
+    ) -> Result<Vec<crate::GpuConstructionBodySlotEvidence>, String> {
+        let capacity = self.host.construction_body_capacity()?;
+        let lane_bytes = u64::from(capacity) * std::mem::size_of::<[u32; 4]>() as u64;
+        let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("physbox5_construction_body_evidence_readback"),
+            size: lane_bytes * 4,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("physbox5_construction_body_evidence_copy"),
+            });
+        self.host
+            .copy_construction_body_evidence(&mut encoder, &buffer)?;
+        self.queue.submit([encoder.finish()]);
+        let mapped = map_buffer(&self.device, &buffer)?;
+        let lane = |index: usize| -> Result<&[[u32; 4]], String> {
+            let start = index * lane_bytes as usize;
+            bytemuck::try_cast_slice(&mapped[start..start + lane_bytes as usize])
+                .map_err(|error| format!("decode construction body lane {index}: {error}"))
+        };
+        let poses = lane(0)?;
+        let motions = lane(1)?;
+        let properties = lane(2)?;
+        let metadata = lane(3)?;
+        let slots = (0..capacity as usize)
+            .map(|slot| crate::GpuConstructionBodySlotEvidence {
+                slot: slot as u32,
+                pose: poses[slot].map(f32::from_bits),
+                motion: motions[slot].map(f32::from_bits),
+                properties: properties[slot].map(f32::from_bits),
+                metadata: metadata[slot],
+            })
+            .collect();
+        drop(mapped);
+        buffer.unmap();
+        Ok(slots)
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]

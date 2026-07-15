@@ -313,6 +313,19 @@ show a warm graph clearing to zero, slot generation 2 starting with an empty
 graph, and contacts rebuilding only after recontact. Cross-host freshness and
 the complete shared interaction trace remain the final S5.3 evidence commit.
 
+Evidence-automation checkpoint, 2026-07-16: shared Rust now owns versioned
+exact scripts for the full interaction sequence, warm-contact erase/reuse,
+deep-overlap rejection, and 64-slot capacity exhaustion. The construction
+runner records every frame, all four GPU body lanes, graph counts, cumulative
+results, exact replay, and finite captures. Browser and Android validation can
+request one raw circle-placement interaction and must observe its later-frame
+`async-gpu` result; compact Android markers include only bounded construction
+result counters and still declare that the diagnostic does not block. Review
+captures replay multi-step exact requests at interactive one-step submission
+cadence and require byte-exact body slots against the batched exact trace.
+Fresh clean-revision native/web/AVD/available-device artifacts remain the next
+commit.
+
 ### S5.4 — awake settling and tuning bakeoff
 
 - [ ] Run 2/4/8 rectangle stacks and small pyramids with sleeping disabled in

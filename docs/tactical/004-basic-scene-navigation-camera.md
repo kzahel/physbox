@@ -325,6 +325,12 @@ generated graph after a warm contact, erase, generation reuse, and recontact
 to expose rather than infer stale-state invalidation. Cross-host trace and
 freshness evidence remain open.
 
+The maintained S4.5 host lanes can now opt into the same raw placement smoke:
+browser and Android select the shared Circle glyph, submit one empty placement,
+and wait for the engine-owned asynchronous result rather than inventing a
+platform fixture. The authoritative lifecycle, failure, restart, switch, and
+two-touch sequence remains the versioned shared Rust evidence script.
+
 Artifacts: command/schema byte table, lifecycle traces, slot-generation and
 pair-cache invalidation evidence, toolbar captures, capacity/deep-overlap
 negatives, and cross-host scene contracts.

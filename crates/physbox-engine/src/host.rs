@@ -1213,4 +1213,25 @@ impl EngineHost {
             .ok_or_else(|| "construction graph evidence requires a GPU body world".to_owned())?
             .copy_construction_graph_evidence(encoder, destination)
     }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn construction_body_capacity(&self) -> Result<u32, String> {
+        self.body_world
+            .as_ref()
+            .map(crate::body_world::GpuBodyWorld::body_capacity)
+            .ok_or_else(|| "construction body evidence requires a GPU body world".to_owned())
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn copy_construction_body_evidence(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        destination: &wgpu::Buffer,
+    ) -> Result<(), String> {
+        self.body_world
+            .as_ref()
+            .ok_or_else(|| "construction body evidence requires a GPU body world".to_owned())?
+            .copy_construction_body_evidence(encoder, destination);
+        Ok(())
+    }
 }

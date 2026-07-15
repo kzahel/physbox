@@ -169,6 +169,20 @@ impl FrameReport {
         }
 
         #[derive(Serialize)]
+        struct CompactConstructionDiagnostic<'a> {
+            #[serde(rename = "a")]
+            attempted_intents: u64,
+            #[serde(rename = "l")]
+            live_bodies: u32,
+            #[serde(rename = "r")]
+            last_result: &'a physbox_contracts::ConstructionResultV1,
+            #[serde(rename = "x")]
+            age_frames: Option<u64>,
+            #[serde(rename = "b")]
+            blocking: bool,
+        }
+
+        #[derive(Serialize)]
         #[serde(rename_all = "camelCase")]
         struct CompactFrameReport<'a> {
             pointer_events_total: u64,
@@ -177,6 +191,8 @@ impl FrameReport {
             #[serde(rename = "u")]
             ui: u32,
             body_commands: CompactBodyCommands,
+            #[serde(rename = "d", skip_serializing_if = "Option::is_none")]
+            construction_diagnostic: Option<CompactConstructionDiagnostic<'a>>,
             scene_contract: &'a SceneContract,
             scenario: CompactScenario,
         }
@@ -208,6 +224,17 @@ impl FrameReport {
                 overflowed: self.body_commands.overflowed,
                 grab_pointer_active: self.body_commands.grab_pointer_active,
             },
+            construction_diagnostic: self.construction_diagnostic.state.as_ref().map(|state| {
+                CompactConstructionDiagnostic {
+                    attempted_intents: state.attempted_intents,
+                    live_bodies: state.live_bodies,
+                    last_result: &state.last_result,
+                    age_frames: self.construction_diagnostic.age_frames,
+                    blocking: self
+                        .construction_diagnostic
+                        .blocking_readback_for_advancement,
+                }
+            }),
             scene_contract: &self.scene_contract,
             scenario: CompactScenario {
                 name: self.scenario.name,

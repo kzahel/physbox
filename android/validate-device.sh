@@ -62,6 +62,30 @@ REPORT="$(rg 'PHYSBOX5_MARK_FRAME_RENDERED ' "$LOG" | tail -1 | sed 's/^.*PHYSBO
 }
 ADAPTER="$(rg 'PHYSBOX5_MARK_ADAPTER ' "$LOG" | tail -1 | sed 's/^.*PHYSBOX5_MARK_ADAPTER //' || true)"
 CAPTURE_PHASE="${SCENARIO}-final"
+if [[ "${PHYSBOX5_ANDROID_CONSTRUCTION_CAPTURE:-0}" = "1" ]]; then
+    [[ "$SCENARIO" = "bootstrap" ]] || { echo "error: Android construction capture requires bootstrap" >&2; exit 2; }
+    [[ "${PHYSBOX5_ANDROID_GRAB_CAPTURE:-0}" != "1" ]] || { echo "error: choose either grab or construction capture" >&2; exit 2; }
+    SIZE="$($ADB -s "$SERIAL" shell wm size | sed -n 's/.*Physical size: //p' | tail -1 | tr -d '\r')"
+    WIDTH="${SIZE%x*}"; HEIGHT="${SIZE#*x}"
+    [[ "$WIDTH" =~ ^[0-9]+$ && "$HEIGHT" =~ ^[0-9]+$ ]] || { echo "error: could not determine Android display size" >&2; exit 1; }
+    BEFORE_CONSTRUCTION="$(node -e 'console.log(JSON.parse(process.argv[1]).bodyCommands.c)' "$REPORT")"
+    TOOL_POINT="$(node -e 'const w=+process.argv[1],h=+process.argv[2],s=Math.max(1,Math.min(2,Math.min(w,h)/600)); console.log(`${Math.round(229*s)} ${Math.round(50*s)}`)' "$WIDTH" "$HEIGHT")"
+    read -r TOOL_X TOOL_Y <<< "$TOOL_POINT"
+    "$ADB" -s "$SERIAL" shell input tap "$TOOL_X" "$TOOL_Y"
+    "$ADB" -s "$SERIAL" shell input tap $((WIDTH * 75 / 100)) $((HEIGHT * 30 / 100))
+    CONSTRUCTION_VISIBLE=0
+    for _ in $(seq 1 30); do
+        "$ADB" -s "$SERIAL" logcat -d -t 10000 > "$LOG"
+        REPORT="$(rg 'PHYSBOX5_MARK_FRAME_RENDERED ' "$LOG" | tail -1 | sed 's/^.*PHYSBOX5_MARK_FRAME_RENDERED //')"
+        if node -e '
+          const frame = JSON.parse(process.argv[1]); const before = Number(process.argv[2]);
+          process.exit(frame.bodyCommands.c > before && frame.d?.a >= 1 && frame.d?.r === "placed" && frame.d?.b === false ? 0 : 1);
+        ' "$REPORT" "$BEFORE_CONSTRUCTION"; then CONSTRUCTION_VISIBLE=1; break; fi
+        sleep 0.25
+    done
+    [[ "$CONSTRUCTION_VISIBLE" -eq 1 ]] || { echo "error: Android construction diagnostic did not become visible; see $LOG" >&2; exit 1; }
+    CAPTURE_PHASE="${SCENARIO}-construction-placed"
+fi
 if [[ "${PHYSBOX5_ANDROID_GRAB_CAPTURE:-0}" = "1" ]]; then
     [[ "$SCENARIO" = "rigid-floor" ]] || { echo "error: Android grab capture requires rigid-floor" >&2; exit 2; }
     SIZE="$($ADB -s "$SERIAL" shell wm size | sed -n 's/.*Physical size: //p' | tail -1 | tr -d '\r')"
