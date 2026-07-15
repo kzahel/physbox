@@ -116,12 +116,30 @@ and status evidence land together without integration or contact behavior.
 
 ### S2.2 — GPU integration and direct rendering
 
-- [ ] Integrate gravity, position, and angle for active dynamic rectangles in
+Implementation evidence, 2026-07-15: `body-free-flight` now selects the first
+live P5.1 world inside the shared `EngineHost`. A 64-thread portable compute
+pass applies semi-implicit gravity and advances pose from the SoA motion lane;
+fixed and sleeping flags prevent integration. Rendering uses one six-vertex
+instance per live rectangle, reading pose, properties, and metadata directly
+from the GPU allocation. The fixed floor is the second fixed body in the same
+storage and render draw. The legacy bootstrap and S1 solver-laboratory lanes
+remain available while S2.3 connects this product body path to contact.
+
+The exact three-step test matches an independent scalar `f32` update within
+`1e-5`, maps only after the bounded run, and proves that an exact zero-step
+frame leaves pose and motion unchanged. Fresh native Metal, Chrome WebGPU,
+`jstorrent-tablet` Vulkan SwiftShader, and physical Pixel 9 Mali-G715/Vulkan
+runs all reported the same two-body scene contract and success sentinel. The
+free-flight screenshots intentionally show that no floor collision exists
+before S2.3; the native three-step capture retains the dynamic rectangle in
+view and all fresh pixel artifacts were inspected.
+
+- [x] Integrate gravity, position, and angle for active dynamic rectangles in
   one fixed-step GPU path using the shared clock's admitted step count.
-- [ ] Render every live rectangle directly from GPU pose/shape buffers with no
+- [x] Render every live rectangle directly from GPU pose/shape buffers with no
   per-frame body-state upload or readback.
-- [ ] Keep the fixed floor visual and body-instance count engine-owned.
-- [ ] Add bounded exact-step readback tests for analytic free flight,
+- [x] Keep the fixed floor visual and body-instance count engine-owned.
+- [x] Add bounded exact-step readback tests for analytic free flight,
   generation preservation, finite state, and zero-step immobility.
 
 Likely boundary: a focused engine body-state module and WGSL shader replace

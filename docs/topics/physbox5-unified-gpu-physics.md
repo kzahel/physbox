@@ -211,6 +211,18 @@ limits before buffer creation, and stale generations or capacity overflow are
 diagnosed rather than ignored. This is a provisional P5.1 layout to measure at
 1K, 10K, and 100K; it is not frozen until the S2.6 human checkpoint.
 
+P5.1 S2.2 implementation status, 2026-07-15: the shared host now has a
+`body-free-flight` product-state lane that integrates active rectangles with
+gravity in portable WGSL and renders one six-vertex instance per live body
+directly from the GPU pose, property, and metadata lanes. The fixed floor is a
+fixed body in the same allocation and draw. A bounded exact-step capture
+matches the independent scalar semi-implicit `f32` update within `1e-5`, while
+zero-step rendering leaves mechanics unchanged. The lane passed on native
+Metal, browser WebGPU, the `jstorrent-tablet` AVD's Vulkan SwiftShader, and a
+physical Pixel 9 Mali-G715/Vulkan adapter. It intentionally has no collision
+response yet; S2.3 supplies the precomputed fixed-floor manifold and accepted
+Jacobi solve before this path replaces the default bootstrap.
+
 ## Later fluid-coupling contract
 
 This contract is not part of the first rigid milestone. It records the

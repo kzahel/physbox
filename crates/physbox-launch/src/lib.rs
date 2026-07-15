@@ -32,6 +32,7 @@ impl LaunchHost {
 pub enum ValidationScenario {
     #[default]
     Bootstrap,
+    BodyFreeFlight,
     SolverJacobi,
     SolverColored,
 }
@@ -40,6 +41,7 @@ impl ValidationScenario {
     pub const fn name(self) -> &'static str {
         match self {
             Self::Bootstrap => "bootstrap",
+            Self::BodyFreeFlight => "body-free-flight",
             Self::SolverJacobi => "solver-jacobi",
             Self::SolverColored => "solver-colored",
         }
@@ -157,7 +159,7 @@ pub fn usage(program: &str, host: LaunchHost) -> String {
         ""
     };
     format!(
-        "Usage: {program} [options]\n\n  --width PX       viewport width (default 960)\n  --height PX      viewport height (default 600)\n  --scenario NAME  bootstrap, solver-jacobi, or solver-colored{capture}\n  -h, --help       print this help"
+        "Usage: {program} [options]\n\n  --width PX       viewport width (default 960)\n  --height PX      viewport height (default 600)\n  --scenario NAME  bootstrap, body-free-flight, solver-jacobi, or solver-colored{capture}\n  -h, --help       print this help"
     )
 }
 
@@ -173,6 +175,7 @@ fn apply_option(
         "--scenario" => {
             options.scenario = match value.as_str() {
                 "bootstrap" => ValidationScenario::Bootstrap,
+                "body-free-flight" => ValidationScenario::BodyFreeFlight,
                 "solver-jacobi" => ValidationScenario::SolverJacobi,
                 "solver-colored" => ValidationScenario::SolverColored,
                 _ => return Err(LaunchError(format!("unknown scenario: {value}"))),
@@ -272,10 +275,10 @@ mod tests {
     }
 
     #[test]
-    fn every_host_uses_the_shared_solver_scenario_names() {
+    fn every_host_uses_the_shared_validation_scenario_names() {
         let web = parse_web_query("?scenario=solver-jacobi").unwrap();
         assert_eq!(web.options.scenario, ValidationScenario::SolverJacobi);
-        let android = parse_android_json(r#"["--scenario","solver-colored"]"#).unwrap();
-        assert_eq!(android.options.scenario, ValidationScenario::SolverColored);
+        let android = parse_android_json(r#"["--scenario","body-free-flight"]"#).unwrap();
+        assert_eq!(android.options.scenario, ValidationScenario::BodyFreeFlight);
     }
 }

@@ -215,7 +215,11 @@ impl OffscreenRenderer {
     }
 
     pub fn read_capture_state(&self) -> Result<[f32; 8], String> {
-        read_state(&self.device, &self.queue, self.host.state_buffer())
+        read_state(&self.device, &self.queue, &self.host)
+    }
+
+    pub fn read_capture_identity(&self) -> Result<[u32; 4], String> {
+        read_identity(&self.device, &self.queue, &self.host)
     }
 }
 
@@ -277,7 +281,7 @@ fn read_texture(
 fn read_state(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
-    source: &wgpu::Buffer,
+    host: &EngineHost,
 ) -> Result<[f32; 8], String> {
     let size = (8 * std::mem::size_of::<f32>()) as u64;
     let buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -289,13 +293,41 @@ fn read_state(
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
         label: Some("physbox5_state_copy"),
     });
-    encoder.copy_buffer_to_buffer(source, 0, &buffer, 0, size);
+    host.copy_capture_state(&mut encoder, &buffer);
     queue.submit([encoder.finish()]);
     let mapped = map_buffer(device, &buffer)?;
     let values = bytemuck::cast_slice::<u8, f32>(&mapped);
     let result: [f32; 8] = values
         .try_into()
         .map_err(|_| "bootstrap state readback had the wrong size".to_owned())?;
+    drop(mapped);
+    buffer.unmap();
+    Ok(result)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn read_identity(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    host: &EngineHost,
+) -> Result<[u32; 4], String> {
+    let size = std::mem::size_of::<[u32; 4]>() as u64;
+    let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("physbox5_identity_readback"),
+        size,
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("physbox5_identity_copy"),
+    });
+    host.copy_capture_identity(&mut encoder, &buffer)?;
+    queue.submit([encoder.finish()]);
+    let mapped = map_buffer(device, &buffer)?;
+    let values = bytemuck::cast_slice::<u8, u32>(&mapped);
+    let result: [u32; 4] = values
+        .try_into()
+        .map_err(|_| "body identity readback had the wrong size".to_owned())?;
     drop(mapped);
     buffer.unmap();
     Ok(result)
@@ -321,4 +353,63 @@ fn map_buffer<'a>(
         .map_err(|error| format!("GPU readback channel failed: {error}"))?
         .map_err(|error| format!("GPU readback mapping failed: {error}"))?;
     Ok(slice.get_mapped_range())
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests {
+    use physbox_launch::ValidationScenario;
+
+    use super::*;
+
+    #[test]
+    fn exact_free_flight_matches_f32_semi_implicit_integration() {
+        let scenario = crate::scenario::p5_1_direct_render_scenario(3).unwrap();
+        let body = &scenario.bodies[0];
+        let dt = scenario.settings.fixed_dt.get();
+        let mut expected = [
+            body.position.x,
+            body.position.y,
+            body.angle.get(),
+            0.0,
+            body.linear_velocity.x,
+            body.linear_velocity.y,
+            body.angular_velocity.get(),
+            0.0,
+        ];
+        for _ in 0..3 {
+            expected[4] += scenario.settings.gravity.x * dt;
+            expected[5] += scenario.settings.gravity.y * dt;
+            expected[0] += expected[4] * dt;
+            expected[1] += expected[5] * dt;
+            expected[2] += expected[6] * dt;
+        }
+
+        let mut renderer = pollster::block_on(OffscreenRenderer::new(
+            320,
+            200,
+            EngineConfig {
+                scenario: ValidationScenario::BodyFreeFlight,
+            },
+        ))
+        .unwrap();
+        let initial = renderer.read_capture_state().unwrap();
+        let initial_identity = renderer.read_capture_identity().unwrap();
+        assert_eq!(initial_identity[0], 1);
+        assert_ne!(initial_identity[1] & 1, 0);
+        let zero_report = renderer.render(FrameInput::exact(0));
+        assert_eq!(zero_report.fixed_steps_this_frame, 0);
+        assert_eq!(renderer.read_capture_state().unwrap(), initial);
+
+        let report = renderer.render(FrameInput::exact(3));
+        assert!(report.scenario.complete);
+        assert!(report.scenario.passed);
+        let actual = renderer.read_capture_state().unwrap();
+        assert_eq!(renderer.read_capture_identity().unwrap(), initial_identity);
+        for (index, (actual, expected)) in actual.into_iter().zip(expected).enumerate() {
+            assert!(
+                (actual - expected).abs() <= 1.0e-5,
+                "capture value {index} differed: actual={actual}, expected={expected}"
+            );
+        }
+    }
 }

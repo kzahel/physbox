@@ -4,11 +4,12 @@ use wgpu::util::DeviceExt;
 
 use crate::{
     EngineConfig, FrameInput, StepRequest,
+    body_world::GpuBodyWorld,
     clock::{FIXED_STEP_HZ, FIXED_STEP_SECONDS, InteractiveClockInput, SimulationClock},
     gpu_solver::{GpuSolverCandidate, GpuSolverLab, GpuSolverMode},
     renderer::RenderFrameContext,
     report::{FrameReport, SCENE_CONTRACT_VERSION, ScenarioResult, SceneContract},
-    scenario::authored_chain_scenario,
+    scenario::{authored_chain_scenario, p5_1_direct_render_scenario},
 };
 
 #[repr(C)]
@@ -42,6 +43,7 @@ pub struct EngineHost {
     solver_lab: Option<GpuSolverLab>,
     solver_bind_group: Option<wgpu::BindGroup>,
     solver_executed: bool,
+    body_world: Option<GpuBodyWorld>,
     clock: SimulationClock,
     frame_index: u64,
     fixed_steps_total: u64,
@@ -155,7 +157,7 @@ impl EngineHost {
             cache: None,
         });
         let solver_candidate = match config.scenario {
-            ValidationScenario::Bootstrap => None,
+            ValidationScenario::Bootstrap | ValidationScenario::BodyFreeFlight => None,
             ValidationScenario::SolverJacobi => Some(GpuSolverCandidate::JacobiGather),
             ValidationScenario::SolverColored => Some(GpuSolverCandidate::ColoredSoftTgs),
         };
@@ -182,6 +184,17 @@ impl EngineHost {
                 ],
             })
         });
+        let body_world = match config.scenario {
+            ValidationScenario::BodyFreeFlight => {
+                let scenario = p5_1_direct_render_scenario(3)
+                    .expect("engine-owned body free-flight scenario is valid");
+                Some(
+                    GpuBodyWorld::new(device, color_format, &scenario)
+                        .expect("engine-owned body free-flight GPU world is valid"),
+                )
+            }
+            _ => None,
+        };
 
         Self {
             config,
@@ -194,6 +207,7 @@ impl EngineHost {
             solver_lab,
             solver_bind_group,
             solver_executed: false,
+            body_world,
             clock: SimulationClock::default(),
             frame_index: 0,
             fixed_steps_total: 0,
@@ -235,6 +249,8 @@ impl EngineHost {
                 lab.encode(context.encoder);
                 self.solver_executed = true;
             }
+        } else if let Some(world) = &self.body_world {
+            world.encode_steps(context.encoder, steps);
         } else {
             for _ in 0..steps {
                 let mut pass = context
@@ -249,7 +265,14 @@ impl EngineHost {
             }
         }
 
-        {
+        if let Some(world) = &self.body_world {
+            world.encode_render(
+                context.queue,
+                context.encoder,
+                context.target,
+                self.frame_index,
+            );
+        } else {
             let mut pass = context
                 .encoder
                 .begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -286,7 +309,10 @@ impl EngineHost {
             version: SCENE_CONTRACT_VERSION,
             engine: "physbox5",
             state_owner: "gpu",
-            body_count: if self.solver_lab.is_some() { 64 } else { 1 },
+            body_count: self.body_world.as_ref().map_or_else(
+                || if self.solver_lab.is_some() { 64 } else { 1 },
+                GpuBodyWorld::body_count,
+            ),
             fixed_step_hz: FIXED_STEP_HZ,
             scenario: self.config.scenario.name(),
         };
@@ -301,6 +327,19 @@ impl EngineHost {
                         "shared GPU host advanced and rendered"
                     } else {
                         "waiting for shared GPU frames"
+                    },
+                }
+            }
+            ValidationScenario::BodyFreeFlight => {
+                let complete = self.fixed_steps_total >= 3;
+                ScenarioResult {
+                    name: self.config.scenario.name(),
+                    complete,
+                    passed: complete,
+                    reason: if complete {
+                        "GPU SoA body integrated and rendered directly"
+                    } else {
+                        "waiting for three shared GPU body steps"
                     },
                 }
             }
@@ -330,9 +369,38 @@ impl EngineHost {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    pub(crate) fn state_buffer(&self) -> &wgpu::Buffer {
-        self.solver_lab
-            .as_ref()
-            .map_or(&self.state_buffer, GpuSolverLab::body_buffer)
+    pub(crate) fn copy_capture_state(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        destination: &wgpu::Buffer,
+    ) {
+        if let Some(world) = &self.body_world {
+            world.copy_capture_state(encoder, destination);
+        } else {
+            let source = self
+                .solver_lab
+                .as_ref()
+                .map_or(&self.state_buffer, GpuSolverLab::body_buffer);
+            encoder.copy_buffer_to_buffer(
+                source,
+                0,
+                destination,
+                0,
+                (8 * std::mem::size_of::<f32>()) as u64,
+            );
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn copy_capture_identity(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        destination: &wgpu::Buffer,
+    ) -> Result<(), String> {
+        let world = self.body_world.as_ref().ok_or_else(|| {
+            "capture identity is available only for the GPU body world".to_owned()
+        })?;
+        world.copy_capture_identity(encoder, destination);
+        Ok(())
     }
 }

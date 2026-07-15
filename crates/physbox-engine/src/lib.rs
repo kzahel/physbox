@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 mod body_state;
+mod body_world;
 mod clock;
 mod config;
 mod frame;
@@ -34,5 +35,5 @@ pub use renderer::SurfaceRenderer;
 pub use report::{FrameReport, ScenarioResult, SceneContract};
 pub use scenario::{
     AnalyticFixtureKind, ScenarioBuildError, analytic_fixture_scenario, authored_chain_scenario,
-    authored_one_contact_scenario, p5_1_rectangle_floor_scenario,
+    authored_one_contact_scenario, p5_1_free_flight_scenario, p5_1_rectangle_floor_scenario,
 };
