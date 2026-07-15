@@ -232,7 +232,7 @@ impl CandidatePipelines {
 }
 
 pub(crate) struct CandidateCase {
-    _storage: GpuBodyStorage,
+    owned_storage: Option<GpuBodyStorage>,
     aabbs: wgpu::Buffer,
     _pair_flags: wgpu::Buffer,
     _pair_offsets: wgpu::Buffer,
@@ -261,6 +261,35 @@ impl CandidateCase {
         pipelines: &CandidatePipelines,
         scenario: &ScenarioV1,
         requested_candidate_capacity: Option<u32>,
+    ) -> Result<Self, String> {
+        let slot_capacity = scenario
+            .bodies
+            .last()
+            .and_then(|body| body.id.slot.checked_add(1))
+            .ok_or_else(|| "GPU candidate body slot capacity overflowed".to_owned())?;
+        let storage = GpuBodyStorage::new(
+            device,
+            slot_capacity,
+            BODY_COMMAND_CAPACITY,
+            &scenario.bodies,
+        )?;
+        let mut case = Self::new_with_storage(
+            device,
+            pipelines,
+            scenario,
+            requested_candidate_capacity,
+            &storage,
+        )?;
+        case.owned_storage = Some(storage);
+        Ok(case)
+    }
+
+    pub(crate) fn new_with_storage(
+        device: &wgpu::Device,
+        pipelines: &CandidatePipelines,
+        scenario: &ScenarioV1,
+        requested_candidate_capacity: Option<u32>,
+        storage: &GpuBodyStorage,
     ) -> Result<Self, String> {
         scenario.validate().map_err(|error| error.to_string())?;
         if !scenario.manifolds.is_empty()
@@ -293,12 +322,6 @@ impl CandidateCase {
             ));
         }
         let block_count = pair_count.div_ceil(SCAN_WORKGROUP_SIZE);
-        let storage = GpuBodyStorage::new(
-            device,
-            slot_capacity,
-            BODY_COMMAND_CAPACITY,
-            &scenario.bodies,
-        )?;
         let aabbs = storage_buffer::<BodyAabbRaw>(device, "collision_aabbs", slot_capacity)?;
         let pair_flags = storage_buffer::<u32>(device, "collision_pair_flags", pair_count)?;
         let pair_offsets = storage_buffer::<u32>(device, "collision_pair_offsets", pair_count)?;
@@ -387,7 +410,7 @@ impl CandidateCase {
             &params,
         );
         Ok(Self {
-            _storage: storage,
+            owned_storage: None,
             aabbs,
             _pair_flags: pair_flags,
             _pair_offsets: pair_offsets,
@@ -416,9 +439,24 @@ impl CandidateCase {
         encoder: &mut wgpu::CommandEncoder,
         pipelines: &CandidatePipelines,
     ) {
+        self.encode_with_timestamp(encoder, pipelines, None);
+    }
+
+    pub(crate) fn encode_with_timestamp(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        pipelines: &CandidatePipelines,
+        beginning_timestamp: Option<(&wgpu::QuerySet, u32)>,
+    ) {
         let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some("physbox5_collision_candidate_passes"),
-            timestamp_writes: None,
+            timestamp_writes: beginning_timestamp.map(|(query_set, beginning)| {
+                wgpu::ComputePassTimestampWrites {
+                    query_set,
+                    beginning_of_pass_write_index: Some(beginning),
+                    end_of_pass_write_index: None,
+                }
+            }),
         });
         dispatch(
             &mut pass,
@@ -517,7 +555,9 @@ impl CandidateCase {
     }
 
     pub(crate) fn storage(&self) -> &GpuBodyStorage {
-        &self._storage
+        self.owned_storage
+            .as_ref()
+            .expect("validation candidate owns its body storage")
     }
 
     pub(crate) fn candidate_buffer(&self) -> &wgpu::Buffer {
@@ -534,6 +574,18 @@ impl CandidateCase {
 
     pub(crate) fn candidate_capacity(&self) -> u32 {
         self.candidate_capacity
+    }
+
+    pub(crate) fn allocated_bytes(&self) -> u64 {
+        self.aabbs.size()
+            + self._pair_flags.size()
+            + self._pair_offsets.size()
+            + self._pair_scratch.size()
+            + self.candidates.size()
+            + self._scan_blocks.size()
+            + self.work.size()
+            + self.capacity.size()
+            + self._params.size()
     }
 }
 

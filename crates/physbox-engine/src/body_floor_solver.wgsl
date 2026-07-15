@@ -100,6 +100,10 @@ fn apply_impulse(body_index: u32, motion: vec4f, signed_impulse: vec2f,
     return output;
 }
 
+fn valid_point(point: PointInput) -> bool {
+    return point.ids.x != 0xffffffffu && point.ids.y != 0xffffffffu;
+}
+
 @compute @workgroup_size(64)
 fn clear_topology(@builtin(global_invocation_id) id: vec3u) {
     if (id.x < params.uints1.w) {
@@ -112,6 +116,7 @@ fn count_edges(@builtin(global_invocation_id) id: vec3u) {
     let point_index = id.x;
     if (point_index >= params.uints0.y) { return; }
     let point = point_inputs[point_index];
+    if (!valid_point(point)) { return; }
     atomicAdd(&topology[point.ids.x * 2u + 1u], 1u);
     atomicAdd(&topology[point.ids.y * 2u + 1u], 1u);
 }
@@ -130,13 +135,22 @@ fn prefix_edges(@builtin(global_invocation_id) id: vec3u) {
 
 @compute @workgroup_size(64)
 fn scatter_edges(@builtin(global_invocation_id) id: vec3u) {
-    let point_index = id.x;
-    if (point_index >= params.uints0.y) { return; }
-    let point = point_inputs[point_index];
-    let slot_a = atomicAdd(&topology[params.uints0.w + point.ids.x], 1u);
-    let slot_b = atomicAdd(&topology[params.uints0.w + point.ids.y], 1u);
-    atomicStore(&topology[params.uints0.z + slot_a], point_index * 2u);
-    atomicStore(&topology[params.uints0.z + slot_b], point_index * 2u + 1u);
+    let body_index = id.x;
+    if (body_index >= params.uints0.x) { return; }
+    let start = atomicLoad(&topology[body_index * 2u]);
+    var written = 0u;
+    for (var point_index = 0u; point_index < params.uints0.y; point_index += 1u) {
+        let point = point_inputs[point_index];
+        if (!valid_point(point)) { continue; }
+        if (point.ids.x == body_index) {
+            atomicStore(&topology[params.uints0.z + start + written], point_index * 2u);
+            written += 1u;
+        }
+        if (point.ids.y == body_index) {
+            atomicStore(&topology[params.uints0.z + start + written], point_index * 2u + 1u);
+            written += 1u;
+        }
+    }
 }
 
 @compute @workgroup_size(64)
@@ -182,7 +196,7 @@ fn refreshed_point(input: PointInput, previous: PreparedPoint, reset: bool) -> P
         effective_mass(input.ids.x, input.ids.y, anchor_a, anchor_b, tangent),
         dot((pose_b.xy + anchor_b) - (pose_a.xy + anchor_a), input.normal));
     if (reset) {
-        point.data1 = vec4f(input.material.y, input.material.z, 0.0, 0.0);
+        point.data1 = vec4f(input.material.y, input.material.z, input.cache);
         point.data2 = vec4f(0.0);
     }
     return point;
@@ -191,6 +205,7 @@ fn refreshed_point(input: PointInput, previous: PreparedPoint, reset: bool) -> P
 @compute @workgroup_size(64)
 fn prepare(@builtin(global_invocation_id) id: vec3u) {
     if (id.x >= params.uints0.y) { return; }
+    if (!valid_point(point_inputs[id.x])) { return; }
     var empty: PreparedPoint;
     prepared_points[id.x] = refreshed_point(point_inputs[id.x], empty, true);
 }
@@ -198,6 +213,7 @@ fn prepare(@builtin(global_invocation_id) id: vec3u) {
 @compute @workgroup_size(64)
 fn refresh_contacts(@builtin(global_invocation_id) id: vec3u) {
     if (id.x >= params.uints0.y) { return; }
+    if (!valid_point(point_inputs[id.x])) { return; }
     prepared_points[id.x] = refreshed_point(
         point_inputs[id.x], prepared_points[id.x], params.uints0.w != 0u);
 }
@@ -205,6 +221,7 @@ fn refresh_contacts(@builtin(global_invocation_id) id: vec3u) {
 @compute @workgroup_size(64)
 fn emit_warm(@builtin(global_invocation_id) id: vec3u) {
     if (id.x >= params.uints0.y) { return; }
+    if (!valid_point(point_inputs[id.x])) { return; }
     let point = prepared_points[id.x];
     emit_pair(id.x, point, point.normal * point.data1.z + point.tangent * point.data1.w);
 }
@@ -212,6 +229,7 @@ fn emit_warm(@builtin(global_invocation_id) id: vec3u) {
 @compute @workgroup_size(64)
 fn emit_normal(@builtin(global_invocation_id) id: vec3u) {
     if (id.x >= params.uints0.y) { return; }
+    if (!valid_point(point_inputs[id.x])) { return; }
     var point = prepared_points[id.x];
     let normal_velocity = relative_velocity(point, point.normal);
     var velocity_bias = 0.0;
@@ -237,6 +255,7 @@ fn emit_normal(@builtin(global_invocation_id) id: vec3u) {
 @compute @workgroup_size(64)
 fn emit_tangent(@builtin(global_invocation_id) id: vec3u) {
     if (id.x >= params.uints0.y) { return; }
+    if (!valid_point(point_inputs[id.x])) { return; }
     var point = prepared_points[id.x];
     let tangent_velocity = relative_velocity(point, point.tangent);
     let old_impulse = point.data1.w;
@@ -250,6 +269,7 @@ fn emit_tangent(@builtin(global_invocation_id) id: vec3u) {
 @compute @workgroup_size(64)
 fn emit_restitution(@builtin(global_invocation_id) id: vec3u) {
     if (id.x >= params.uints0.y) { return; }
+    if (!valid_point(point_inputs[id.x])) { return; }
     var point = prepared_points[id.x];
     let normal_velocity = relative_velocity(point, point.normal);
     let old_impulse = point.data1.z;

@@ -23,7 +23,7 @@ while (($#)); do
     esac
 done
 case "$SCENARIO" in
-    bootstrap|body-free-flight|rigid-floor|reset-grab|solver-jacobi|solver-colored) ;;
+    bootstrap|body-free-flight|rigid-floor|rigid-stack|reset-grab|solver-jacobi|solver-colored) ;;
     *) echo "error: unsupported shared scenario: $SCENARIO" >&2; exit 2 ;;
 esac
 "$EMULATOR" -list-avds | grep -qx "$AVD_NAME" || { echo "error: AVD $AVD_NAME not found" >&2; exit 1; }

@@ -6,12 +6,11 @@ mod body_state;
 mod body_world;
 mod clock;
 mod collision_candidates;
-#[cfg(not(target_arch = "wasm32"))]
 mod collision_narrowphase;
-#[cfg(not(target_arch = "wasm32"))]
 mod collision_persistence;
 mod config;
 mod frame;
+mod generated_contacts;
 mod gpu_context;
 #[cfg(not(target_arch = "wasm32"))]
 mod gpu_primitives;
@@ -45,6 +44,11 @@ pub use collision_persistence::{
 };
 pub use config::EngineConfig;
 pub use frame::{FrameInput, PointerButton, PointerEvent, PointerPhase, StepRequest};
+#[cfg(not(target_arch = "wasm32"))]
+pub use generated_contacts::{
+    GpuGeneratedContactBenchmarkOutput, GpuGeneratedContactOutput, GpuGeneratedContactRunner,
+    benchmark_gpu_generated_contacts,
+};
 pub use gpu_context::{AdapterDiagnostics, create_instance};
 #[cfg(not(target_arch = "wasm32"))]
 pub use gpu_primitives::{GpuPrimitiveBenchmarkOutput, GpuPrimitiveKind, benchmark_gpu_primitive};
@@ -59,9 +63,11 @@ pub use renderer::OffscreenRenderer;
 pub use renderer::SurfaceRenderer;
 pub use report::{BodyCommandReport, FrameReport, ScenarioResult, SceneContract};
 pub use scenario::{
-    AnalyticFixtureKind, P5_2CandidatePattern, P5_2CollisionScenarioKind, ScenarioBuildError,
-    analytic_fixture_scenario, authored_chain_scenario, authored_one_contact_scenario,
-    p5_1_free_flight_scenario, p5_1_rectangle_floor_scenario, p5_1_reset_grab_scenario,
-    p5_2_box2d_narrowphase_projection, p5_2_candidate_scenario, p5_2_collision_scenario,
-    p5_2_narrowphase_pair_scenario,
+    AnalyticFixtureKind, P5_2CandidatePattern, P5_2CollisionScenarioKind,
+    P5_2GeneratedScenarioKind, ScenarioBuildError, analytic_fixture_scenario,
+    authored_chain_scenario, authored_one_contact_scenario, p5_1_free_flight_scenario,
+    p5_1_rectangle_floor_scenario, p5_1_reset_grab_scenario, p5_2_box2d_narrowphase_projection,
+    p5_2_candidate_scenario, p5_2_collision_scenario, p5_2_generated_floor_scenario,
+    p5_2_generated_performance_scenario, p5_2_generated_reset_grab_scenario,
+    p5_2_generated_scenario, p5_2_narrowphase_pair_scenario,
 };

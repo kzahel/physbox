@@ -438,18 +438,18 @@ mod tests {
     }
 
     #[test]
-    fn exact_fixed_floor_landing_is_finite_and_deterministic() {
+    fn exact_generated_floor_landing_is_finite_and_deterministic() {
         let config = EngineConfig {
             scenario: ValidationScenario::RigidFloor,
         };
         let run = || {
             let mut renderer = pollster::block_on(OffscreenRenderer::new(320, 200, config.clone()))
-                .expect("fixed-floor renderer initializes");
+                .expect("generated-contact renderer initializes");
             let report = renderer.render(FrameInput::exact(120));
             assert!(report.scenario.complete);
             assert_eq!(report.scene_contract.contact_point_count, 2);
-            assert_eq!(report.scene_contract.solver_dispatches_per_step, 68);
-            assert_eq!(report.scene_contract.solver_capacity_bytes, 552);
+            assert_eq!(report.scene_contract.solver_dispatches_per_step, 282);
+            assert_eq!(report.scene_contract.solver_capacity_bytes, 23_668);
             assert!(!report.scene_contract.capacity_overflowed);
             renderer.read_capture_state().unwrap()
         };
@@ -457,6 +457,7 @@ mod tests {
         let replay = run();
         assert_eq!(first, replay);
         assert!(first.into_iter().all(f32::is_finite));
+        assert!((first[1] - 0.2).abs() <= 1.0e-5);
     }
 
     #[test]

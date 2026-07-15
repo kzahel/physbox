@@ -7,7 +7,10 @@ use wgpu::util::DeviceExt;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::body_floor_solver::FixedFloorEvidenceLayout;
 use crate::body_state::{BODY_COMMAND_BYTES, BODY_COMMAND_CAPACITY, GpuBodyResetData};
-use crate::{GpuBodyStorage, body_floor_solver::GpuFixedFloorSolver};
+use crate::{
+    GpuBodyStorage, body_floor_solver::GpuFixedFloorSolver,
+    generated_contacts::GpuGeneratedContactGraph,
+};
 
 const WORKGROUP_SIZE: u32 = 64;
 const COMMAND_PARAMETER_STRIDE: usize = 256;
@@ -51,6 +54,7 @@ pub(crate) struct GpuBodyWorld {
     background_pipeline: wgpu::RenderPipeline,
     body_pipeline: wgpu::RenderPipeline,
     floor_solver: Option<GpuFixedFloorSolver>,
+    generated_contacts: Option<GpuGeneratedContactGraph>,
     body_count: u32,
 }
 
@@ -60,6 +64,23 @@ impl GpuBodyWorld {
         color_format: wgpu::TextureFormat,
         scenario: &ScenarioV1,
     ) -> Result<Self, String> {
+        Self::new_with_generated_contacts(device, color_format, scenario, false)
+    }
+
+    pub(crate) fn new_generated(
+        device: &wgpu::Device,
+        color_format: wgpu::TextureFormat,
+        scenario: &ScenarioV1,
+    ) -> Result<Self, String> {
+        Self::new_with_generated_contacts(device, color_format, scenario, true)
+    }
+
+    fn new_with_generated_contacts(
+        device: &wgpu::Device,
+        color_format: wgpu::TextureFormat,
+        scenario: &ScenarioV1,
+        generated: bool,
+    ) -> Result<Self, String> {
         scenario.validate().map_err(|error| error.to_string())?;
         let body_count = u32::try_from(scenario.bodies.len())
             .map_err(|_| "GPU body count exceeds u32".to_owned())?;
@@ -68,11 +89,14 @@ impl GpuBodyWorld {
         }
         let storage =
             GpuBodyStorage::new(device, body_count, BODY_COMMAND_CAPACITY, &scenario.bodies)?;
-        let floor_solver = if scenario.manifolds.is_empty() {
+        let floor_solver = if generated || scenario.manifolds.is_empty() {
             None
         } else {
             Some(GpuFixedFloorSolver::new(device, &storage, scenario)?)
         };
+        let generated_contacts = generated
+            .then(|| GpuGeneratedContactGraph::new(device, &storage, scenario))
+            .transpose()?;
         let integration_params = IntegrationParamsRaw {
             dt_gravity: [
                 scenario.settings.fixed_dt.get(),
@@ -328,6 +352,7 @@ impl GpuBodyWorld {
             background_pipeline,
             body_pipeline,
             floor_solver,
+            generated_contacts,
             body_count,
         })
     }
@@ -391,7 +416,7 @@ impl GpuBodyWorld {
         }
         queue.write_buffer(&self.command_params, 0, &bytes);
         let mut beginning_timestamp = beginning_timestamp;
-        for parameter_index in parameter_indices {
+        for (step_index, parameter_index) in parameter_indices.into_iter().enumerate() {
             if let Some(parameter_index) = parameter_index {
                 let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                     label: Some("physbox5_body_command_pass"),
@@ -405,7 +430,21 @@ impl GpuBodyWorld {
                 );
                 pass.dispatch_workgroups(1, 1, 1);
             }
-            if let Some(solver) = &self.floor_solver {
+            if let Some(generated) = &self.generated_contacts {
+                if beginning_timestamp.is_some() {
+                    return Err(
+                        "timed free-flight encoding cannot include generated contacts".to_owned(),
+                    );
+                }
+                let range = ranges[step_index];
+                let invalidate_cache = batch.commands
+                    [range.start as usize..(range.start + range.count) as usize]
+                    .iter()
+                    .any(|command| {
+                        matches!(command, physbox_contracts::BodyCommandV1::Reset { .. })
+                    });
+                generated.encode_step(encoder, invalidate_cache);
+            } else if let Some(solver) = &self.floor_solver {
                 if beginning_timestamp.is_some() {
                     return Err(
                         "timed free-flight encoding cannot include a floor solver".to_owned()
@@ -589,15 +628,25 @@ impl GpuBodyWorld {
     }
 
     pub(crate) fn solver_dispatches_per_step(&self) -> u32 {
-        self.floor_solver
-            .as_ref()
-            .map_or(1, GpuFixedFloorSolver::dispatches_per_step)
+        self.generated_contacts.as_ref().map_or_else(
+            || {
+                self.floor_solver
+                    .as_ref()
+                    .map_or(1, GpuFixedFloorSolver::dispatches_per_step)
+            },
+            GpuGeneratedContactGraph::dispatches_per_step,
+        )
     }
 
     pub(crate) fn contact_point_count(&self) -> u32 {
-        self.floor_solver
-            .as_ref()
-            .map_or(0, GpuFixedFloorSolver::point_count)
+        self.generated_contacts.as_ref().map_or_else(
+            || {
+                self.floor_solver
+                    .as_ref()
+                    .map_or(0, GpuFixedFloorSolver::point_count)
+            },
+            GpuGeneratedContactGraph::point_capacity,
+        )
     }
 
     pub(crate) fn solver_capacities(&self) -> &[CapacityRecordV1] {
@@ -607,24 +656,39 @@ impl GpuBodyWorld {
     }
 
     pub(crate) fn solver_capacity_bytes(&self) -> u64 {
-        self.solver_capacities()
-            .iter()
-            .map(|record| record.allocated_bytes)
-            .sum()
+        self.generated_contacts.as_ref().map_or_else(
+            || {
+                self.solver_capacities()
+                    .iter()
+                    .map(|record| record.allocated_bytes)
+                    .sum()
+            },
+            GpuGeneratedContactGraph::allocated_bytes,
+        )
     }
 
     pub(crate) fn solver_capacity_overflowed(&self) -> bool {
-        self.solver_capacities()
-            .iter()
-            .any(|record| record.overflowed)
+        self.generated_contacts.as_ref().map_or_else(
+            || {
+                self.solver_capacities()
+                    .iter()
+                    .any(|record| record.overflowed)
+            },
+            GpuGeneratedContactGraph::capacity_overflowed,
+        )
     }
 
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn floor_pass_evidence_layout(&self) -> Result<FixedFloorEvidenceLayout, String> {
-        self.floor_solver
-            .as_ref()
-            .map(GpuFixedFloorSolver::pass_evidence_layout)
-            .ok_or_else(|| "pass evidence requires the fixed-floor solver".to_owned())
+        self.generated_contacts.as_ref().map_or_else(
+            || {
+                self.floor_solver
+                    .as_ref()
+                    .map(GpuFixedFloorSolver::pass_evidence_layout)
+                    .ok_or_else(|| "pass evidence requires a contact solver".to_owned())
+            },
+            |generated| Ok(generated.pass_evidence_layout()),
+        )
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -633,10 +697,14 @@ impl GpuBodyWorld {
         encoder: &mut wgpu::CommandEncoder,
         destination: &wgpu::Buffer,
     ) -> Result<FixedFloorEvidenceLayout, String> {
-        self.floor_solver
-            .as_ref()
-            .map(|solver| solver.copy_pass_evidence(encoder, destination))
-            .ok_or_else(|| "pass evidence requires the fixed-floor solver".to_owned())
+        if let Some(generated) = &self.generated_contacts {
+            Ok(generated.copy_pass_evidence(encoder, destination))
+        } else {
+            self.floor_solver
+                .as_ref()
+                .map(|solver| solver.copy_pass_evidence(encoder, destination))
+                .ok_or_else(|| "pass evidence requires a contact solver".to_owned())
+        }
     }
 
     #[cfg(not(target_arch = "wasm32"))]

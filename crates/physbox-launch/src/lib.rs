@@ -34,6 +34,7 @@ pub enum ValidationScenario {
     Bootstrap,
     BodyFreeFlight,
     RigidFloor,
+    RigidStack,
     ResetGrab,
     SolverJacobi,
     SolverColored,
@@ -45,6 +46,7 @@ impl ValidationScenario {
             Self::Bootstrap => "bootstrap",
             Self::BodyFreeFlight => "body-free-flight",
             Self::RigidFloor => "rigid-floor",
+            Self::RigidStack => "rigid-stack",
             Self::ResetGrab => "reset-grab",
             Self::SolverJacobi => "solver-jacobi",
             Self::SolverColored => "solver-colored",
@@ -163,7 +165,7 @@ pub fn usage(program: &str, host: LaunchHost) -> String {
         ""
     };
     format!(
-        "Usage: {program} [options]\n\n  --width PX       viewport width (default 960)\n  --height PX      viewport height (default 600)\n  --scenario NAME  bootstrap, body-free-flight, rigid-floor, reset-grab, solver-jacobi, or solver-colored{capture}\n  -h, --help       print this help"
+        "Usage: {program} [options]\n\n  --width PX       viewport width (default 960)\n  --height PX      viewport height (default 600)\n  --scenario NAME  bootstrap, body-free-flight, rigid-floor, rigid-stack, reset-grab, solver-jacobi, or solver-colored{capture}\n  -h, --help       print this help"
     )
 }
 
@@ -181,6 +183,7 @@ fn apply_option(
                 "bootstrap" => ValidationScenario::Bootstrap,
                 "body-free-flight" => ValidationScenario::BodyFreeFlight,
                 "rigid-floor" => ValidationScenario::RigidFloor,
+                "rigid-stack" => ValidationScenario::RigidStack,
                 "reset-grab" => ValidationScenario::ResetGrab,
                 "solver-jacobi" => ValidationScenario::SolverJacobi,
                 "solver-colored" => ValidationScenario::SolverColored,
@@ -288,6 +291,8 @@ mod tests {
         assert_eq!(android.options.scenario, ValidationScenario::BodyFreeFlight);
         let floor = parse_web_query("?scenario=rigid-floor").unwrap();
         assert_eq!(floor.options.scenario, ValidationScenario::RigidFloor);
+        let stack = parse_web_query("?scenario=rigid-stack").unwrap();
+        assert_eq!(stack.options.scenario, ValidationScenario::RigidStack);
         let reset_grab = parse_android_json(r#"["--scenario","reset-grab"]"#).unwrap();
         assert_eq!(reset_grab.options.scenario, ValidationScenario::ResetGrab);
     }

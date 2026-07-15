@@ -328,6 +328,58 @@ pub fn generate_scalar_narrowphase(
     Ok(manifolds)
 }
 
+pub fn authored_solver_projection(
+    source: &ScenarioV1,
+    manifolds: &[CollisionManifoldV1],
+) -> Result<ScenarioV1, String> {
+    source.validate().map_err(|error| error.to_string())?;
+    if !source.manifolds.is_empty()
+        || !source.contact_cache.is_empty()
+        || !source.actions.is_empty()
+    {
+        return Err("authored solver projection requires a neutral source scenario".to_owned());
+    }
+    let mut projection = source.clone();
+    projection.id = format!("{}-authored-solver-projection", source.id);
+    projection.requested_steps = 1;
+    projection.manifolds = manifolds
+        .iter()
+        .enumerate()
+        .map(|(id, manifold)| AuthoredManifoldV1 {
+            id: id as u32,
+            body_a: manifold.pair.body_a,
+            body_b: manifold.pair.body_b,
+            normal: manifold.normal,
+            material: manifold.material,
+            points: manifold
+                .points
+                .iter()
+                .map(|point| physbox_contracts::AuthoredContactPointV1 {
+                    local_anchor_a: point.local_anchor_a,
+                    local_anchor_b: point.local_anchor_b,
+                    world_point: point.world_point,
+                    separation: point.separation,
+                    feature_a: authored_feature(point.feature_a),
+                    feature_b: authored_feature(point.feature_b),
+                })
+                .collect(),
+        })
+        .collect();
+    projection.validate().map_err(|error| error.to_string())?;
+    Ok(projection)
+}
+
+fn authored_feature(feature: GeometricFeatureV1) -> FeatureIdV1 {
+    FeatureIdV1 {
+        feature_type: match feature.kind {
+            GeometricFeatureKindV1::Circle => 0,
+            GeometricFeatureKindV1::Face => 1,
+            GeometricFeatureKindV1::Vertex => 2,
+        },
+        feature_index: feature.index,
+    }
+}
+
 fn collide_circles(
     pair: CandidatePairV1,
     body_a: &BodyStateV1,

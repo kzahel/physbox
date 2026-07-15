@@ -13,7 +13,7 @@ const PARAMETER_STRIDE: usize = 256;
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
-struct PointInputRaw {
+pub(crate) struct PointInputRaw {
     ids: [u32; 4],
     normal: [f32; 2],
     local_anchor_a: [f32; 2],
@@ -26,7 +26,7 @@ struct PointInputRaw {
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
-struct PreparedPointRaw {
+pub(crate) struct PreparedPointRaw {
     ids: [u32; 4],
     normal: [f32; 2],
     tangent: [f32; 2],
@@ -145,10 +145,12 @@ impl TopologyLayout {
 }
 
 pub(crate) struct GpuFixedFloorSolver {
+    _owned_point_input: Option<wgpu::Buffer>,
     _motion_scratch: wgpu::Buffer,
     _prepared: wgpu::Buffer,
     _contributions: wgpu::Buffer,
     _topology: wgpu::Buffer,
+    _parameter_buffer: wgpu::Buffer,
     bind_ab: wgpu::BindGroup,
     bind_ba: wgpu::BindGroup,
     topology_clear_pipeline: wgpu::ComputePipeline,
@@ -181,13 +183,51 @@ impl GpuFixedFloorSolver {
                 "P5.1 fixed-floor solver requires one authored two-point manifold".to_owned(),
             );
         }
-        let body_count = u32::try_from(scenario.bodies.len())
-            .map_err(|_| "fixed-floor body count exceeds u32".to_owned())?;
         let (points, point_count) = point_inputs(scenario)?;
+        let usage = wgpu::BufferUsages::STORAGE
+            | wgpu::BufferUsages::COPY_SRC
+            | wgpu::BufferUsages::COPY_DST;
+        let point_buffer = storage_init(
+            device,
+            "physbox5_floor_points",
+            bytemuck::cast_slice(&points),
+            usage,
+        );
+        let mut solver =
+            Self::new_with_point_buffer(device, storage, scenario, &point_buffer, point_count)?;
+        solver._owned_point_input = Some(point_buffer);
+        Ok(solver)
+    }
+
+    pub(crate) fn new_generated(
+        device: &wgpu::Device,
+        storage: &GpuBodyStorage,
+        scenario: &ScenarioV1,
+        point_buffer: &wgpu::Buffer,
+        point_capacity: u32,
+    ) -> Result<Self, String> {
+        validate_selected_settings(scenario)?;
+        if !scenario.manifolds.is_empty() || point_capacity == 0 {
+            return Err(
+                "generated contact solver requires a neutral scenario and nonzero point capacity"
+                    .to_owned(),
+            );
+        }
+        Self::new_with_point_buffer(device, storage, scenario, point_buffer, point_capacity)
+    }
+
+    fn new_with_point_buffer(
+        device: &wgpu::Device,
+        storage: &GpuBodyStorage,
+        scenario: &ScenarioV1,
+        point_buffer: &wgpu::Buffer,
+        point_count: u32,
+    ) -> Result<Self, String> {
+        let body_count = u32::try_from(scenario.bodies.len())
+            .map_err(|_| "contact solver body count exceeds u32".to_owned())?;
         let topology_layout = TopologyLayout::new(body_count, point_count)?;
         let (parameters, operations) =
             operations(scenario, body_count, point_count, topology_layout);
-
         let initial_motion = scenario
             .bodies
             .iter()
@@ -207,12 +247,6 @@ impl GpuFixedFloorSolver {
             device,
             "physbox5_floor_motion_scratch",
             bytemuck::cast_slice(&initial_motion),
-            usage,
-        );
-        let point_buffer = storage_init(
-            device,
-            "physbox5_floor_points",
-            bytemuck::cast_slice(&points),
             usage,
         );
         let prepared = storage_empty::<PreparedPointRaw>(
@@ -274,7 +308,7 @@ impl GpuFixedFloorSolver {
             storage,
             storage.motion_buffer(),
             &motion_scratch,
-            &point_buffer,
+            point_buffer,
             &prepared,
             &contributions,
             &topology,
@@ -287,7 +321,7 @@ impl GpuFixedFloorSolver {
             storage,
             &motion_scratch,
             storage.motion_buffer(),
-            &point_buffer,
+            point_buffer,
             &prepared,
             &contributions,
             &topology,
@@ -340,10 +374,12 @@ impl GpuFixedFloorSolver {
             ),
         ];
         Ok(Self {
+            _owned_point_input: None,
             _motion_scratch: motion_scratch,
             _prepared: prepared,
             _contributions: contributions,
             _topology: topology,
+            _parameter_buffer: parameter_buffer,
             bind_ab,
             bind_ba,
             topology_clear_pipeline: pipeline("floor_topology_clear", "clear_topology"),
@@ -408,6 +444,21 @@ impl GpuFixedFloorSolver {
 
     pub(crate) fn capacities(&self) -> &[CapacityRecordV1] {
         &self.capacities
+    }
+
+    pub(crate) fn allocated_bytes(&self) -> u64 {
+        self._owned_point_input
+            .as_ref()
+            .map_or(0, wgpu::Buffer::size)
+            + self._motion_scratch.size()
+            + self._prepared.size()
+            + self._contributions.size()
+            + self._topology.size()
+            + self._parameter_buffer.size()
+    }
+
+    pub(crate) fn prepared_buffer(&self) -> &wgpu::Buffer {
+        &self._prepared
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -571,7 +622,7 @@ fn operations(
         ),
         (PipelineKind::TopologyCount, point_workgroups),
         (PipelineKind::TopologyPrefix, 1),
-        (PipelineKind::TopologyScatter, point_workgroups),
+        (PipelineKind::TopologyScatter, body_workgroups),
     ] {
         push_operation(
             &mut parameters,

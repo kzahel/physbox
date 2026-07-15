@@ -1,0 +1,1098 @@
+use std::{cell::Cell, mem::size_of};
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::Instant;
+
+use bytemuck::{Pod, Zeroable};
+use physbox_contracts::{
+    CANDIDATE_PAIR_BYTES, COLLISION_CAPACITY_COUNTER_BYTES, COLLISION_CONTACT_POINT_BYTES,
+    COLLISION_MANIFOLD_BYTES, COLLISION_WORK_COUNTER_BYTES, CollisionCapacityV1, CollisionWorkV1,
+    FailureKindV1, FailureV1, PERSISTENT_CONTACT_KEY_BYTES, PersistentContactV1, ScenarioV1,
+    Validate, canonical_hash,
+};
+use wgpu::util::DeviceExt;
+
+use crate::{
+    GpuBodyStorage,
+    body_floor_solver::{GpuFixedFloorSolver, PointInputRaw, PreparedPointRaw},
+    collision_candidates::{CandidateCase, CandidatePipelines},
+    collision_narrowphase::{NarrowphaseCase, NarrowphasePipelines},
+    collision_persistence::{PersistenceCase, PersistencePipelines},
+};
+
+const WORKGROUP_SIZE: u32 = 64;
+const VALIDATION_STEPS_PER_SUBMISSION: u32 = 64;
+const CACHE_VALUE_BYTES: u32 = 16;
+const PERSISTENT_RECORD_BYTES: u32 = PERSISTENT_CONTACT_KEY_BYTES + CACHE_VALUE_BYTES;
+const COLLISION_DISPATCHES: u32 = 212;
+const BRIDGE_DISPATCHES: u32 = 2;
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct BridgeParamsRaw {
+    counts: [u32; 4],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct CapacityRaw {
+    values: [u32; 4],
+}
+
+struct BridgeCase {
+    build: wgpu::BindGroup,
+    store: wgpu::BindGroup,
+}
+
+pub(crate) struct GpuGeneratedContactGraph {
+    candidate_pipelines: CandidatePipelines,
+    candidate: CandidateCase,
+    narrowphase_pipelines: NarrowphasePipelines,
+    narrowphase: NarrowphaseCase,
+    persistence_pipelines: PersistencePipelines,
+    persistence: [PersistenceCase; 2],
+    caches: [wgpu::Buffer; 2],
+    cache_capacities: [wgpu::Buffer; 2],
+    empty_capacity: wgpu::Buffer,
+    _step_counter: wgpu::Buffer,
+    _solver_points: wgpu::Buffer,
+    _bridge_params: wgpu::Buffer,
+    bridge_pipeline_build: wgpu::ComputePipeline,
+    bridge_pipeline_store: wgpu::ComputePipeline,
+    bridge: [BridgeCase; 2],
+    solver: GpuFixedFloorSolver,
+    parity: Cell<usize>,
+    point_capacity: u32,
+}
+
+impl GpuGeneratedContactGraph {
+    pub(crate) fn new(
+        device: &wgpu::Device,
+        storage: &GpuBodyStorage,
+        scenario: &ScenarioV1,
+    ) -> Result<Self, String> {
+        if !scenario.manifolds.is_empty()
+            || !scenario.contact_cache.is_empty()
+            || !scenario.actions.is_empty()
+        {
+            return Err("generated product contacts require a neutral scenario".to_owned());
+        }
+        if scenario
+            .bodies
+            .iter()
+            .enumerate()
+            .any(|(index, body)| body.id.slot != index as u32)
+        {
+            return Err("generated product contacts currently require dense body slots".to_owned());
+        }
+        let body_count = u32::try_from(scenario.bodies.len())
+            .map_err(|_| "generated contact body count exceeds u32".to_owned())?;
+        let pair_count = body_count
+            .checked_mul(body_count.saturating_sub(1))
+            .map(|value| value / 2)
+            .ok_or_else(|| "generated contact pair count overflowed".to_owned())?;
+        let candidate_capacity = pair_count.min(body_count.saturating_mul(16)).max(1);
+        let candidate_pipelines = CandidatePipelines::new(device);
+        let candidate = CandidateCase::new_with_storage(
+            device,
+            &candidate_pipelines,
+            scenario,
+            Some(candidate_capacity),
+            storage,
+        )?;
+        let narrowphase_pipelines = NarrowphasePipelines::new(device);
+        let narrowphase = NarrowphaseCase::new_with_storage(
+            device,
+            &narrowphase_pipelines,
+            &candidate,
+            Some(candidate_capacity),
+            storage,
+        )?;
+        let point_capacity = narrowphase.point_capacity();
+        let persistence_pipelines = PersistencePipelines::new(device);
+        let caches = [
+            storage_buffer(
+                device,
+                "physbox5_generated_cache_a",
+                point_capacity,
+                PERSISTENT_RECORD_BYTES,
+            )?,
+            storage_buffer(
+                device,
+                "physbox5_generated_cache_b",
+                point_capacity,
+                PERSISTENT_RECORD_BYTES,
+            )?,
+        ];
+        let empty_capacity_value = CapacityRaw {
+            values: [point_capacity, 0, 0, 0],
+        };
+        let cache_capacities = [
+            storage_init(
+                device,
+                "physbox5_generated_cache_capacity_a",
+                &empty_capacity_value,
+            ),
+            storage_init(
+                device,
+                "physbox5_generated_cache_capacity_b",
+                &empty_capacity_value,
+            ),
+        ];
+        let empty_capacity = storage_init(
+            device,
+            "physbox5_generated_empty_cache_capacity",
+            &empty_capacity_value,
+        );
+        let step_counter = storage_init(device, "physbox5_generated_step_counter", &0_u32);
+        let persistence = [
+            PersistenceCase::new(
+                device,
+                &persistence_pipelines,
+                &narrowphase,
+                &caches[0],
+                &cache_capacities[0],
+                &caches[1],
+                &cache_capacities[1],
+                candidate.work_buffer(),
+                &step_counter,
+                point_capacity,
+                1,
+                false,
+            )?,
+            PersistenceCase::new(
+                device,
+                &persistence_pipelines,
+                &narrowphase,
+                &caches[1],
+                &cache_capacities[1],
+                &caches[0],
+                &cache_capacities[0],
+                candidate.work_buffer(),
+                &step_counter,
+                point_capacity,
+                2,
+                false,
+            )?,
+        ];
+        let solver_points = storage_buffer(
+            device,
+            "physbox5_generated_solver_points",
+            point_capacity,
+            size_of::<PointInputRaw>() as u32,
+        )?;
+        let solver = GpuFixedFloorSolver::new_generated(
+            device,
+            storage,
+            scenario,
+            &solver_points,
+            point_capacity,
+        )?;
+        let bridge_params = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("physbox5_generated_bridge_params"),
+            contents: bytemuck::bytes_of(&BridgeParamsRaw {
+                counts: [point_capacity, 0, 0, 0],
+            }),
+            usage: wgpu::BufferUsages::UNIFORM,
+        });
+        let build_layout = bridge_layout(device, "physbox5_generated_bridge_build_layout", false);
+        let store_layout = bridge_layout(device, "physbox5_generated_bridge_store_layout", true);
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("physbox5_generated_contact_bridge_shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("generated_contacts.wgsl").into()),
+        });
+        let bridge_pipeline_build = bridge_pipeline(
+            device,
+            &shader,
+            &build_layout,
+            "physbox5_generated_bridge_build_pipeline",
+            "build_solver_points",
+        );
+        let bridge_pipeline_store = bridge_pipeline(
+            device,
+            &shader,
+            &store_layout,
+            "physbox5_generated_bridge_store_pipeline",
+            "store_solver_cache",
+        );
+        let bridge = [0_usize, 1_usize].map(|parity| {
+            let output = 1 - parity;
+            BridgeCase {
+                build: bridge_group(
+                    device,
+                    &build_layout,
+                    &[
+                        (0, narrowphase.manifolds()),
+                        (1, narrowphase.points()),
+                        (2, persistence[parity].sorted_current()),
+                        (3, &caches[output]),
+                        (4, &cache_capacities[output]),
+                        (5, &solver_points),
+                    ],
+                    &bridge_params,
+                ),
+                store: bridge_group(
+                    device,
+                    &store_layout,
+                    &[
+                        (3, &caches[output]),
+                        (4, &cache_capacities[output]),
+                        (5, &solver_points),
+                        (6, solver.prepared_buffer()),
+                    ],
+                    &bridge_params,
+                ),
+            }
+        });
+        Ok(Self {
+            candidate_pipelines,
+            candidate,
+            narrowphase_pipelines,
+            narrowphase,
+            persistence_pipelines,
+            persistence,
+            caches,
+            cache_capacities,
+            empty_capacity,
+            _step_counter: step_counter,
+            _solver_points: solver_points,
+            _bridge_params: bridge_params,
+            bridge_pipeline_build,
+            bridge_pipeline_store,
+            bridge,
+            solver,
+            parity: Cell::new(0),
+            point_capacity,
+        })
+    }
+
+    pub(crate) fn encode_step(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        invalidate_previous_cache: bool,
+    ) {
+        self.encode_step_with_timestamps(encoder, invalidate_previous_cache, None);
+    }
+
+    fn encode_step_with_timestamps(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        invalidate_previous_cache: bool,
+        timestamps: Option<(&wgpu::QuerySet, u32)>,
+    ) {
+        let parity = self.parity.get();
+        if invalidate_previous_cache {
+            encoder.copy_buffer_to_buffer(
+                &self.empty_capacity,
+                0,
+                &self.cache_capacities[parity],
+                0,
+                u64::from(COLLISION_CAPACITY_COUNTER_BYTES),
+            );
+        }
+        self.candidate
+            .encode_with_timestamp(encoder, &self.candidate_pipelines, timestamps);
+        self.narrowphase
+            .encode(encoder, &self.narrowphase_pipelines);
+        self.persistence[parity].encode_with_timestamp(
+            encoder,
+            &self.persistence_pipelines,
+            timestamps.map(|(query_set, base)| (query_set, base + 1)),
+        );
+        {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("physbox5_generated_contact_bridge_build"),
+                timestamp_writes: None,
+            });
+            pass.set_pipeline(&self.bridge_pipeline_build);
+            pass.set_bind_group(0, &self.bridge[parity].build, &[]);
+            pass.dispatch_workgroups(self.point_capacity.div_ceil(WORKGROUP_SIZE), 1, 1);
+        }
+        self.solver.encode_step(encoder);
+        {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("physbox5_generated_contact_bridge_store"),
+                timestamp_writes: timestamps.map(|(query_set, base)| {
+                    wgpu::ComputePassTimestampWrites {
+                        query_set,
+                        beginning_of_pass_write_index: None,
+                        end_of_pass_write_index: Some(base + 2),
+                    }
+                }),
+            });
+            pass.set_pipeline(&self.bridge_pipeline_store);
+            pass.set_bind_group(0, &self.bridge[parity].store, &[]);
+            pass.dispatch_workgroups(self.point_capacity.div_ceil(WORKGROUP_SIZE), 1, 1);
+        }
+        self.parity.set(1 - parity);
+    }
+
+    pub(crate) fn dispatches_per_step(&self) -> u32 {
+        COLLISION_DISPATCHES + BRIDGE_DISPATCHES + self.solver.dispatches_per_step()
+    }
+
+    pub(crate) const fn point_capacity(&self) -> u32 {
+        self.point_capacity
+    }
+
+    pub(crate) fn allocated_bytes(&self) -> u64 {
+        self.candidate.allocated_bytes()
+            + self.narrowphase.allocated_bytes()
+            + self
+                .persistence
+                .iter()
+                .map(PersistenceCase::allocated_bytes)
+                .sum::<u64>()
+            + self.caches.iter().map(wgpu::Buffer::size).sum::<u64>()
+            + self
+                .cache_capacities
+                .iter()
+                .map(wgpu::Buffer::size)
+                .sum::<u64>()
+            + self.empty_capacity.size()
+            + self._step_counter.size()
+            + self._solver_points.size()
+            + self._bridge_params.size()
+            + self.solver.allocated_bytes()
+    }
+
+    pub(crate) fn capacity_overflowed(&self) -> bool {
+        false
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn pass_evidence_layout(
+        &self,
+    ) -> crate::body_floor_solver::FixedFloorEvidenceLayout {
+        self.solver.pass_evidence_layout()
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn copy_pass_evidence(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        destination: &wgpu::Buffer,
+    ) -> crate::body_floor_solver::FixedFloorEvidenceLayout {
+        self.solver.copy_pass_evidence(encoder, destination)
+    }
+}
+
+fn storage_buffer(
+    device: &wgpu::Device,
+    label: &'static str,
+    count: u32,
+    stride: u32,
+) -> Result<wgpu::Buffer, String> {
+    let size = u64::from(count)
+        .checked_mul(u64::from(stride))
+        .ok_or_else(|| format!("{label} byte count overflowed"))?;
+    let limits = device.limits();
+    if size == 0
+        || size > limits.max_buffer_size
+        || size > u64::from(limits.max_storage_buffer_binding_size)
+    {
+        return Err(format!(
+            "{label} requires {size} bytes outside portable limits"
+        ));
+    }
+    Ok(device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some(label),
+        size,
+        usage: wgpu::BufferUsages::STORAGE
+            | wgpu::BufferUsages::COPY_SRC
+            | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    }))
+}
+
+fn storage_init<T: Pod>(device: &wgpu::Device, label: &'static str, value: &T) -> wgpu::Buffer {
+    device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some(label),
+        contents: bytemuck::bytes_of(value),
+        usage: wgpu::BufferUsages::STORAGE
+            | wgpu::BufferUsages::COPY_SRC
+            | wgpu::BufferUsages::COPY_DST,
+    })
+}
+
+fn bridge_layout(
+    device: &wgpu::Device,
+    label: &'static str,
+    store_only: bool,
+) -> wgpu::BindGroupLayout {
+    let bindings: &[(u32, bool)] = if store_only {
+        &[(3, false), (4, false), (5, true), (6, true)]
+    } else {
+        &[
+            (0, true),
+            (1, true),
+            (2, true),
+            (3, false),
+            (4, false),
+            (5, false),
+        ]
+    };
+    let mut entries = bindings
+        .iter()
+        .map(|(binding, read_only)| wgpu::BindGroupLayoutEntry {
+            binding: *binding,
+            visibility: wgpu::ShaderStages::COMPUTE,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Storage {
+                    read_only: *read_only,
+                },
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        })
+        .collect::<Vec<_>>();
+    entries.push(wgpu::BindGroupLayoutEntry {
+        binding: 7,
+        visibility: wgpu::ShaderStages::COMPUTE,
+        ty: wgpu::BindingType::Buffer {
+            ty: wgpu::BufferBindingType::Uniform,
+            has_dynamic_offset: false,
+            min_binding_size: wgpu::BufferSize::new(size_of::<BridgeParamsRaw>() as u64),
+        },
+        count: None,
+    });
+    entries.sort_by_key(|entry| entry.binding);
+    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some(label),
+        entries: &entries,
+    })
+}
+
+fn bridge_pipeline(
+    device: &wgpu::Device,
+    shader: &wgpu::ShaderModule,
+    layout: &wgpu::BindGroupLayout,
+    label: &'static str,
+    entry: &'static str,
+) -> wgpu::ComputePipeline {
+    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some(label),
+        bind_group_layouts: &[layout],
+        push_constant_ranges: &[],
+    });
+    device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        label: Some(label),
+        layout: Some(&pipeline_layout),
+        module: shader,
+        entry_point: Some(entry),
+        compilation_options: Default::default(),
+        cache: None,
+    })
+}
+
+fn bridge_group(
+    device: &wgpu::Device,
+    layout: &wgpu::BindGroupLayout,
+    buffers: &[(u32, &wgpu::Buffer)],
+    params: &wgpu::Buffer,
+) -> wgpu::BindGroup {
+    let mut entries = buffers
+        .iter()
+        .map(|(binding, buffer)| wgpu::BindGroupEntry {
+            binding: *binding,
+            resource: buffer.as_entire_binding(),
+        })
+        .collect::<Vec<_>>();
+    entries.push(wgpu::BindGroupEntry {
+        binding: 7,
+        resource: params.as_entire_binding(),
+    });
+    entries.sort_by_key(|entry| entry.binding);
+    device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("physbox5_generated_contact_bridge_group"),
+        layout,
+        entries: &entries,
+    })
+}
+
+const _: () = assert!(size_of::<PointInputRaw>() == 80);
+const _: () = assert!(size_of::<PreparedPointRaw>() == 96);
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GpuGeneratedContactOutput {
+    pub adapter: crate::AdapterDiagnostics,
+    pub source_scenario_hash: String,
+    pub completed_steps: u32,
+    pub mapped_after_final_step_only: bool,
+    pub bodies: Vec<physbox_contracts::BodyStateV1>,
+    pub cache: Vec<PersistentContactV1>,
+    pub work: CollisionWorkV1,
+    pub capacities: Vec<CollisionCapacityV1>,
+    pub failure: Option<FailureV1>,
+    pub dispatches_per_step: u32,
+    pub allocated_bytes: u64,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl GpuGeneratedContactOutput {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.completed_steps == 0 || !self.mapped_after_final_step_only {
+            return Err("generated contact output has an invalid completion phase".to_owned());
+        }
+        for body in &self.bodies {
+            body.validate().map_err(|error| error.to_string())?;
+        }
+        for pair in self.cache.windows(2) {
+            if pair[0].key >= pair[1].key {
+                return Err("generated contact cache is not sorted and unique".to_owned());
+            }
+        }
+        for contact in &self.cache {
+            contact.validate().map_err(|error| error.to_string())?;
+            if contact.value.last_seen_step > self.completed_steps {
+                return Err("generated contact cache was seen after completion".to_owned());
+            }
+        }
+        self.work.validate().map_err(|error| error.to_string())?;
+        for pair in self.capacities.windows(2) {
+            if pair[0].class >= pair[1].class {
+                return Err("generated contact capacities are not sorted and unique".to_owned());
+            }
+        }
+        for capacity in &self.capacities {
+            capacity.validate().map_err(|error| error.to_string())?;
+        }
+        if let Some(failure) = &self.failure {
+            failure.validate().map_err(|error| error.to_string())?;
+        }
+        let rejected = self.capacities.iter().any(|capacity| !capacity.accepted);
+        if rejected != self.failure.is_some() || (rejected && !self.cache.is_empty()) {
+            return Err("generated contact failure/capacity state is inconsistent".to_owned());
+        }
+        Ok(())
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub struct GpuGeneratedContactRunner {
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    diagnostics: crate::AdapterDiagnostics,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl GpuGeneratedContactRunner {
+    pub async fn new() -> Result<Self, String> {
+        let instance = crate::gpu_context::create_instance();
+        let adapter = crate::gpu_context::request_adapter(&instance, None).await?;
+        let diagnostics = crate::AdapterDiagnostics::from_adapter(&adapter);
+        let (device, queue) = crate::gpu_context::request_device(&adapter).await?;
+        Ok(Self {
+            device,
+            queue,
+            diagnostics,
+        })
+    }
+
+    pub fn adapter(&self) -> &crate::AdapterDiagnostics {
+        &self.diagnostics
+    }
+
+    pub fn run(
+        &self,
+        scenario: &ScenarioV1,
+        completed_steps: u32,
+    ) -> Result<GpuGeneratedContactOutput, String> {
+        if completed_steps == 0 {
+            return Err("generated contact validation requires at least one step".to_owned());
+        }
+        scenario.validate().map_err(|error| error.to_string())?;
+        let body_count = u32::try_from(scenario.bodies.len())
+            .map_err(|_| "generated validation body count exceeds u32".to_owned())?;
+        let storage = GpuBodyStorage::new(
+            &self.device,
+            body_count,
+            crate::BODY_COMMAND_CAPACITY,
+            &scenario.bodies,
+        )?;
+        let graph = GpuGeneratedContactGraph::new(&self.device, &storage, scenario)?;
+        let lane_bytes = u64::from(body_count) * size_of::<[u32; 4]>() as u64;
+        let state_readback = readback(&self.device, "generated_state_readback", lane_bytes * 3);
+        let cache_readback = readback(
+            &self.device,
+            "generated_cache_readback",
+            u64::from(graph.point_capacity) * u64::from(PERSISTENT_RECORD_BYTES),
+        );
+        let candidate_capacity_readback = readback(
+            &self.device,
+            "generated_candidate_capacity_readback",
+            u64::from(COLLISION_CAPACITY_COUNTER_BYTES),
+        );
+        let manifold_capacity_readback = readback(
+            &self.device,
+            "generated_manifold_capacity_readback",
+            u64::from(COLLISION_CAPACITY_COUNTER_BYTES),
+        );
+        let point_capacity_readback = readback(
+            &self.device,
+            "generated_point_capacity_readback",
+            u64::from(COLLISION_CAPACITY_COUNTER_BYTES),
+        );
+        let persistence_capacity_readback = readback(
+            &self.device,
+            "generated_persistence_capacity_readback",
+            u64::from(COLLISION_CAPACITY_COUNTER_BYTES),
+        );
+        let work_readback = readback(
+            &self.device,
+            "generated_work_readback",
+            u64::from(COLLISION_WORK_COUNTER_BYTES),
+        );
+        let step_readback = readback(&self.device, "generated_step_readback", 4);
+        let mut remaining = completed_steps;
+        while remaining > 0 {
+            let chunk = remaining.min(VALIDATION_STEPS_PER_SUBMISSION);
+            let mut encoder = self
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("physbox5_generated_contact_validation_steps"),
+                });
+            for _ in 0..chunk {
+                graph.encode_step(&mut encoder, false);
+            }
+            self.queue.submit([encoder.finish()]);
+            remaining -= chunk;
+        }
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("physbox5_generated_contact_validation_readback"),
+            });
+        let current = graph.parity.get();
+        encoder.copy_buffer_to_buffer(storage.pose_buffer(), 0, &state_readback, 0, lane_bytes);
+        encoder.copy_buffer_to_buffer(
+            storage.motion_buffer(),
+            0,
+            &state_readback,
+            lane_bytes,
+            lane_bytes,
+        );
+        encoder.copy_buffer_to_buffer(
+            storage.metadata_buffer(),
+            0,
+            &state_readback,
+            lane_bytes * 2,
+            lane_bytes,
+        );
+        copy_full(&mut encoder, &graph.caches[current], &cache_readback);
+        copy_full(
+            &mut encoder,
+            graph.candidate.candidate_capacity_buffer(),
+            &candidate_capacity_readback,
+        );
+        copy_full(
+            &mut encoder,
+            graph.narrowphase.manifold_capacity_buffer(),
+            &manifold_capacity_readback,
+        );
+        copy_full(
+            &mut encoder,
+            graph.narrowphase.point_capacity_buffer(),
+            &point_capacity_readback,
+        );
+        copy_full(
+            &mut encoder,
+            &graph.cache_capacities[current],
+            &persistence_capacity_readback,
+        );
+        copy_full(&mut encoder, graph.candidate.work_buffer(), &work_readback);
+        copy_full(&mut encoder, &graph._step_counter, &step_readback);
+        self.queue.submit([encoder.finish()]);
+        self.device
+            .poll(wgpu::PollType::Wait)
+            .map_err(|error| format!("generated validation poll failed: {error}"))?;
+
+        let poses = crate::collision_candidates::map_values::<[f32; 4]>(
+            &self.device,
+            &state_readback,
+            body_count as usize,
+        )?;
+        let motions = map_range::<[f32; 4]>(
+            &self.device,
+            &state_readback,
+            lane_bytes,
+            body_count as usize,
+        )?;
+        let metadata = map_range::<[u32; 4]>(
+            &self.device,
+            &state_readback,
+            lane_bytes * 2,
+            body_count as usize,
+        )?;
+        let candidate_raw = crate::collision_candidates::map_values::<[u32; 4]>(
+            &self.device,
+            &candidate_capacity_readback,
+            1,
+        )?[0];
+        let manifold_raw = crate::collision_candidates::map_values::<[u32; 4]>(
+            &self.device,
+            &manifold_capacity_readback,
+            1,
+        )?[0];
+        let point_raw = crate::collision_candidates::map_values::<[u32; 4]>(
+            &self.device,
+            &point_capacity_readback,
+            1,
+        )?[0];
+        let persistence_raw = crate::collision_candidates::map_values::<
+            crate::collision_persistence::CapacityRaw,
+        >(&self.device, &persistence_capacity_readback, 1)?[0];
+        let work = crate::collision_persistence::work_record(
+            crate::collision_candidates::map_values::<crate::collision_persistence::WorkRaw>(
+                &self.device,
+                &work_readback,
+                1,
+            )?[0],
+        );
+        let gpu_steps =
+            crate::collision_candidates::map_values::<u32>(&self.device, &step_readback, 1)?[0];
+        if gpu_steps != completed_steps {
+            return Err(format!(
+                "GPU completed-step counter {gpu_steps} differed from {completed_steps}"
+            ));
+        }
+        let any_rejected = candidate_raw[3] != 0
+            || manifold_raw[2] != manifold_raw[1]
+            || point_raw[2] != point_raw[1]
+            || persistence_raw.values[2] != persistence_raw.values[1];
+        let cache_count = if any_rejected {
+            0
+        } else {
+            persistence_raw.values[2] as usize
+        };
+        let cache = crate::collision_candidates::map_values::<
+            crate::collision_persistence::PersistentRecordRaw,
+        >(&self.device, &cache_readback, graph.point_capacity as usize)?
+        .into_iter()
+        .take(cache_count)
+        .map(crate::collision_persistence::persistent_contact)
+        .collect::<Result<Vec<_>, _>>()?;
+        let mut bodies = scenario.bodies.clone();
+        for (index, body) in bodies.iter_mut().enumerate() {
+            if metadata[index][0] != body.id.generation {
+                return Err(format!("body {index} generation changed during validation"));
+            }
+            body.position.x = poses[index][0];
+            body.position.y = poses[index][1];
+            body.angle = physbox_contracts::FiniteF32::new(poses[index][2])
+                .map_err(|error| error.to_string())?;
+            body.linear_velocity.x = motions[index][0];
+            body.linear_velocity.y = motions[index][1];
+            body.angular_velocity = physbox_contracts::FiniteF32::new(motions[index][2])
+                .map_err(|error| error.to_string())?;
+        }
+        let candidate_capacity =
+            raw_capacity("candidate-pairs", CANDIDATE_PAIR_BYTES, candidate_raw);
+        let manifold_capacity =
+            raw_capacity("contact-manifolds", COLLISION_MANIFOLD_BYTES, manifold_raw);
+        let point_capacity =
+            raw_capacity("contact-points", COLLISION_CONTACT_POINT_BYTES, point_raw);
+        let persistence_capacity = crate::collision_persistence::capacity_record(
+            "persistent-cache",
+            PERSISTENT_RECORD_BYTES,
+            persistence_raw,
+        );
+        let mut capacities = graph.candidate.capacities(candidate_capacity);
+        capacities.extend(graph.narrowphase.capacities(
+            manifold_capacity,
+            point_capacity,
+            work.narrowphase_tests,
+        ));
+        capacities.extend(crate::collision_persistence::persistence_capacities(
+            graph.point_capacity,
+            work.cache_previous,
+            work.cache_current,
+            persistence_capacity,
+        ));
+        capacities.sort_by(|left, right| left.class.cmp(&right.class));
+        let source_scenario_hash = canonical_hash(scenario).map_err(|error| error.to_string())?;
+        let failure = capacities
+            .iter()
+            .find(|capacity| !capacity.accepted)
+            .map(|capacity| FailureV1 {
+                kind: FailureKindV1::CapacityOverflow,
+                reason: format!(
+                    "{} capacity {} rejected {} attempted records",
+                    capacity.class, capacity.capacity_elements, capacity.attempted_elements
+                ),
+                first_step: Some(completed_steps),
+                first_stage: Some(if capacity.class == "candidate-pairs" {
+                    "candidate".to_owned()
+                } else if capacity.class == "persistent-cache" {
+                    "persistence".to_owned()
+                } else {
+                    "narrowphase".to_owned()
+                }),
+                reproducer_hash: Some(source_scenario_hash.clone()),
+            });
+        let output = GpuGeneratedContactOutput {
+            adapter: self.diagnostics.clone(),
+            source_scenario_hash,
+            completed_steps,
+            mapped_after_final_step_only: true,
+            bodies,
+            cache,
+            work,
+            capacities,
+            failure,
+            dispatches_per_step: graph.dispatches_per_step(),
+            allocated_bytes: graph.allocated_bytes(),
+        };
+        output.validate()?;
+        Ok(output)
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GpuGeneratedContactBenchmarkOutput {
+    pub adapter: crate::AdapterDiagnostics,
+    pub source_scenario_hash: String,
+    pub body_count: u32,
+    pub warmup_steps: u32,
+    pub samples: u32,
+    pub gpu_collision_seconds: Option<Vec<f64>>,
+    pub gpu_end_to_end_seconds: Option<Vec<f64>>,
+    pub host_completion_seconds: Vec<f64>,
+    pub cpu_encode_submit_seconds: Vec<f64>,
+    pub timestamp_period_nanoseconds: Option<f32>,
+    pub dispatches_per_step: u32,
+    pub allocated_bytes: u64,
+    pub correctness: GpuGeneratedContactOutput,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn benchmark_gpu_generated_contacts(
+    scenario: &ScenarioV1,
+    warmup_steps: u32,
+    samples: u32,
+) -> Result<GpuGeneratedContactBenchmarkOutput, String> {
+    if warmup_steps == 0 || samples == 0 {
+        return Err("generated-contact benchmark requires non-zero warmup and samples".to_owned());
+    }
+    scenario.validate().map_err(|error| error.to_string())?;
+    let correctness = {
+        let runner = GpuGeneratedContactRunner::new().await?;
+        runner.run(scenario, 1)?
+    };
+    if correctness.failure.is_some()
+        || correctness
+            .capacities
+            .iter()
+            .any(|capacity| !capacity.accepted)
+    {
+        return Err("generated-contact benchmark correctness/capacity gate failed".to_owned());
+    }
+
+    let query_count = samples
+        .checked_mul(3)
+        .ok_or_else(|| "generated-contact benchmark query count overflowed".to_owned())?;
+    let instance = crate::gpu_context::create_instance();
+    let adapter = crate::gpu_context::request_adapter(&instance, None).await?;
+    let diagnostics = crate::AdapterDiagnostics::from_adapter(&adapter);
+    let timestamps_available = adapter.features().contains(wgpu::Features::TIMESTAMP_QUERY);
+    let required_features = if timestamps_available {
+        wgpu::Features::TIMESTAMP_QUERY
+    } else {
+        wgpu::Features::empty()
+    };
+    let (device, queue) =
+        crate::gpu_context::request_device_with_features(&adapter, required_features).await?;
+    let body_count = u32::try_from(scenario.bodies.len())
+        .map_err(|_| "generated benchmark body count exceeds u32".to_owned())?;
+    let storage = GpuBodyStorage::new(
+        &device,
+        body_count,
+        crate::BODY_COMMAND_CAPACITY,
+        &scenario.bodies,
+    )?;
+    let reset = crate::body_state::GpuBodyResetData::new(body_count, &scenario.bodies)?;
+    let graph = GpuGeneratedContactGraph::new(&device, &storage, scenario)?;
+    let query_resources = timestamps_available.then(|| {
+        let query_set = device.create_query_set(&wgpu::QuerySetDescriptor {
+            label: Some("generated_contact_benchmark_timestamps"),
+            ty: wgpu::QueryType::Timestamp,
+            count: query_count,
+        });
+        let byte_count = u64::from(query_count) * size_of::<u64>() as u64;
+        let resolve = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("generated_contact_timestamp_resolve"),
+            size: byte_count,
+            usage: wgpu::BufferUsages::QUERY_RESOLVE | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+        let readback = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("generated_contact_timestamp_readback"),
+            size: byte_count,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        (query_set, resolve, readback)
+    });
+
+    for _ in 0..warmup_steps {
+        storage.upload_reset_data(&queue, &reset);
+        device
+            .poll(wgpu::PollType::Wait)
+            .map_err(|error| format!("poll generated benchmark warmup reset: {error}"))?;
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("generated_contact_benchmark_warmup"),
+        });
+        graph.encode_step(&mut encoder, true);
+        queue.submit([encoder.finish()]);
+        device
+            .poll(wgpu::PollType::Wait)
+            .map_err(|error| format!("poll generated benchmark warmup: {error}"))?;
+    }
+
+    let mut host_completion_seconds = Vec::with_capacity(samples as usize);
+    let mut cpu_encode_submit_seconds = Vec::with_capacity(samples as usize);
+    for sample in 0..samples {
+        storage.upload_reset_data(&queue, &reset);
+        device
+            .poll(wgpu::PollType::Wait)
+            .map_err(|error| format!("poll generated benchmark sample reset: {error}"))?;
+        let started = Instant::now();
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("generated_contact_benchmark_sample"),
+        });
+        let timestamps = query_resources
+            .as_ref()
+            .map(|(query_set, _, _)| (query_set, sample * 3));
+        graph.encode_step_with_timestamps(&mut encoder, true, timestamps);
+        queue.submit([encoder.finish()]);
+        cpu_encode_submit_seconds.push(started.elapsed().as_secs_f64());
+        device
+            .poll(wgpu::PollType::Wait)
+            .map_err(|error| format!("poll generated benchmark sample: {error}"))?;
+        host_completion_seconds.push(started.elapsed().as_secs_f64());
+    }
+
+    let (gpu_collision_seconds, gpu_end_to_end_seconds, timestamp_period_nanoseconds) =
+        if let Some((query_set, resolve, readback)) = &query_resources {
+            let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("generated_contact_timestamp_copy"),
+            });
+            encoder.resolve_query_set(query_set, 0..query_count, resolve, 0);
+            encoder.copy_buffer_to_buffer(
+                resolve,
+                0,
+                readback,
+                0,
+                u64::from(query_count) * size_of::<u64>() as u64,
+            );
+            queue.submit([encoder.finish()]);
+            let values = crate::collision_candidates::map_values::<u64>(
+                &device,
+                readback,
+                query_count as usize,
+            )?;
+            let period = queue.get_timestamp_period();
+            let collision = values
+                .chunks_exact(3)
+                .map(|triple| {
+                    triple[1].saturating_sub(triple[0]) as f64 * f64::from(period) * 1.0e-9
+                })
+                .collect();
+            let end_to_end = values
+                .chunks_exact(3)
+                .map(|triple| {
+                    triple[2].saturating_sub(triple[0]) as f64 * f64::from(period) * 1.0e-9
+                })
+                .collect();
+            (Some(collision), Some(end_to_end), Some(period))
+        } else {
+            (None, None, None)
+        };
+
+    Ok(GpuGeneratedContactBenchmarkOutput {
+        adapter: diagnostics,
+        source_scenario_hash: canonical_hash(scenario).map_err(|error| error.to_string())?,
+        body_count,
+        warmup_steps,
+        samples,
+        gpu_collision_seconds,
+        gpu_end_to_end_seconds,
+        host_completion_seconds,
+        cpu_encode_submit_seconds,
+        timestamp_period_nanoseconds,
+        dispatches_per_step: graph.dispatches_per_step(),
+        allocated_bytes: graph.allocated_bytes(),
+        correctness,
+    })
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn raw_capacity(class: &str, stride: u32, values: [u32; 4]) -> CollisionCapacityV1 {
+    CollisionCapacityV1 {
+        class: class.to_owned(),
+        stride_bytes: stride,
+        capacity_elements: u64::from(values[0]),
+        attempted_elements: u64::from(values[1]),
+        committed_elements: u64::from(values[2]),
+        allocated_bytes: u64::from(values[0]) * u64::from(stride),
+        high_water_bytes: u64::from(values[1].min(values[0])) * u64::from(stride),
+        overflowed: values[3] != 0,
+        accepted: values[3] == 0 && values[2] == values[1],
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn readback(device: &wgpu::Device, label: &'static str, size: u64) -> wgpu::Buffer {
+    device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some(label),
+        size,
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    })
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn copy_full(
+    encoder: &mut wgpu::CommandEncoder,
+    source: &wgpu::Buffer,
+    destination: &wgpu::Buffer,
+) {
+    encoder.copy_buffer_to_buffer(source, 0, destination, 0, destination.size());
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn map_range<T: Pod + Copy>(
+    device: &wgpu::Device,
+    buffer: &wgpu::Buffer,
+    offset: u64,
+    count: usize,
+) -> Result<Vec<T>, String> {
+    use std::sync::mpsc;
+
+    let bytes = count
+        .checked_mul(size_of::<T>())
+        .ok_or_else(|| "generated validation map byte count overflowed".to_owned())?
+        as u64;
+    let slice = buffer.slice(offset..offset + bytes);
+    let (sender, receiver) = mpsc::sync_channel(1);
+    slice.map_async(wgpu::MapMode::Read, move |result| {
+        let _ = sender.send(result.map_err(|error| error.to_string()));
+    });
+    device
+        .poll(wgpu::PollType::Wait)
+        .map_err(|error| format!("generated validation map poll failed: {error}"))?;
+    receiver
+        .recv()
+        .map_err(|error| error.to_string())?
+        .map_err(|error| format!("generated validation map failed: {error}"))?;
+    let mapped = slice.get_mapped_range();
+    let values = bytemuck::cast_slice::<u8, T>(&mapped).to_vec();
+    drop(mapped);
+    buffer.unmap();
+    Ok(values)
+}

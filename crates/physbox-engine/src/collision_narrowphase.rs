@@ -11,7 +11,11 @@ use physbox_contracts::{
 
 use crate::{
     AdapterDiagnostics,
-    collision_candidates::{CandidateCase, CandidatePipelines, map_values},
+    collision_candidates::{CandidateCase, CandidatePipelines},
+};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::{
+    collision_candidates::map_values,
     gpu_context::{create_instance, request_adapter, request_device},
 };
 
@@ -132,6 +136,7 @@ impl GpuNarrowphaseOutput {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub struct GpuNarrowphaseRunner {
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -140,6 +145,7 @@ pub struct GpuNarrowphaseRunner {
     narrowphase_pipelines: NarrowphasePipelines,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl GpuNarrowphaseRunner {
     pub async fn new() -> Result<Self, String> {
         let instance = create_instance();
@@ -525,6 +531,22 @@ impl NarrowphaseCase {
         candidate: &CandidateCase,
         requested_manifold_capacity: Option<u32>,
     ) -> Result<Self, String> {
+        Self::new_with_storage(
+            device,
+            pipelines,
+            candidate,
+            requested_manifold_capacity,
+            candidate.storage(),
+        )
+    }
+
+    pub(crate) fn new_with_storage(
+        device: &wgpu::Device,
+        pipelines: &NarrowphasePipelines,
+        candidate: &CandidateCase,
+        requested_manifold_capacity: Option<u32>,
+        body_storage: &crate::GpuBodyStorage,
+    ) -> Result<Self, String> {
         let candidate_capacity = candidate.candidate_capacity();
         let manifold_capacity = requested_manifold_capacity.unwrap_or(candidate_capacity);
         if manifold_capacity == 0 || manifold_capacity > candidate_capacity {
@@ -576,14 +598,13 @@ impl NarrowphaseCase {
             ],
             &params,
         );
-        let storage = candidate.storage();
         let generate_group = group(
             device,
             &pipelines.generate_layout,
             &[
-                (0, storage.pose_buffer()),
-                (1, storage.properties_buffer()),
-                (2, storage.metadata_buffer()),
+                (0, body_storage.pose_buffer()),
+                (1, body_storage.properties_buffer()),
+                (2, body_storage.metadata_buffer()),
                 (3, candidate.candidate_buffer()),
                 (4, candidate.candidate_capacity_buffer()),
                 (5, &scratch),
@@ -760,8 +781,21 @@ impl NarrowphaseCase {
     pub(crate) fn point_capacity(&self) -> u32 {
         self.point_capacity
     }
+
+    pub(crate) fn allocated_bytes(&self) -> u64 {
+        self._scratch.size()
+            + self._flags.size()
+            + self._offsets.size()
+            + self._scan_blocks.size()
+            + self.manifolds.size()
+            + self.points.size()
+            + self.manifold_capacity_buffer.size()
+            + self.point_capacity_buffer.size()
+            + self._params.size()
+    }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn contact_point(raw: ContactPointRaw) -> Result<CollisionContactPointV1, String> {
     Ok(CollisionContactPointV1 {
         local_anchor_a: Vec2::new(raw.anchors[0], raw.anchors[1]),
@@ -773,6 +807,7 @@ fn contact_point(raw: ContactPointRaw) -> Result<CollisionContactPointV1, String
     })
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn feature(kind: u32, index: u32) -> Result<GeometricFeatureV1, String> {
     let kind = match kind {
         0 => GeometricFeatureKindV1::Circle,
@@ -787,6 +822,7 @@ fn feature(kind: u32, index: u32) -> Result<GeometricFeatureV1, String> {
     Ok(GeometricFeatureV1 { kind, index })
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn work_record(raw: WorkRaw) -> CollisionWorkV1 {
     let value = raw.values;
     CollisionWorkV1 {
@@ -809,6 +845,7 @@ fn work_record(raw: WorkRaw) -> CollisionWorkV1 {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn capacity_record(class: &str, stride: u32, raw: CapacityRaw) -> CollisionCapacityV1 {
     CollisionCapacityV1 {
         class: class.to_owned(),
@@ -823,6 +860,7 @@ fn capacity_record(class: &str, stride: u32, raw: CapacityRaw) -> CollisionCapac
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn finite(value: f32) -> Result<FiniteF32, String> {
     FiniteF32::new(value).map_err(|error| error.to_string())
 }
@@ -914,6 +952,7 @@ fn storage<T>(
     }))
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn readback(device: &wgpu::Device, label: &'static str, size: u64) -> wgpu::Buffer {
     device.create_buffer(&wgpu::BufferDescriptor {
         label: Some(label),
@@ -923,6 +962,7 @@ fn readback(device: &wgpu::Device, label: &'static str, size: u64) -> wgpu::Buff
     })
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn copy(
     encoder: &mut wgpu::CommandEncoder,
     source: &wgpu::Buffer,

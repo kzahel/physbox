@@ -16,8 +16,8 @@ use crate::{
         BodyCommandReport, FrameReport, SCENE_CONTRACT_VERSION, ScenarioResult, SceneContract,
     },
     scenario::{
-        authored_chain_scenario, p5_1_direct_render_scenario, p5_1_rectangle_floor_scenario,
-        p5_1_reset_grab_scenario,
+        P5_2GeneratedScenarioKind, authored_chain_scenario, p5_1_direct_render_scenario,
+        p5_2_generated_floor_scenario, p5_2_generated_reset_grab_scenario, p5_2_generated_scenario,
     },
 };
 
@@ -325,6 +325,7 @@ impl EngineHost {
             ValidationScenario::Bootstrap
             | ValidationScenario::BodyFreeFlight
             | ValidationScenario::RigidFloor
+            | ValidationScenario::RigidStack
             | ValidationScenario::ResetGrab => None,
             ValidationScenario::SolverJacobi => Some(GpuSolverCandidate::JacobiGather),
             ValidationScenario::SolverColored => Some(GpuSolverCandidate::ColoredSoftTgs),
@@ -367,19 +368,27 @@ impl EngineHost {
                 } else {
                     120
                 };
-                let scenario = p5_1_rectangle_floor_scenario(expected_steps)
-                    .expect("engine-owned fixed-floor scenario is valid");
+                let scenario = p5_2_generated_floor_scenario(expected_steps)
+                    .expect("engine-owned generated-floor scenario is valid");
                 Some(
-                    GpuBodyWorld::new(device, color_format, &scenario)
-                        .expect("engine-owned fixed-floor GPU world is valid"),
+                    GpuBodyWorld::new_generated(device, color_format, &scenario)
+                        .expect("engine-owned generated-contact GPU world is valid"),
                 )
             }
             ValidationScenario::ResetGrab => {
-                let script =
-                    p5_1_reset_grab_scenario().expect("engine-owned reset/grab scenario is valid");
+                let script = p5_2_generated_reset_grab_scenario()
+                    .expect("engine-owned generated reset/grab scenario is valid");
                 Some(
-                    GpuBodyWorld::new(device, color_format, &script.scenario)
-                        .expect("engine-owned reset/grab GPU world is valid"),
+                    GpuBodyWorld::new_generated(device, color_format, &script.scenario)
+                        .expect("engine-owned generated reset/grab GPU world is valid"),
+                )
+            }
+            ValidationScenario::RigidStack => {
+                let scenario = p5_2_generated_scenario(P5_2GeneratedScenarioKind::SmallStack, 180)
+                    .expect("engine-owned generated stack scenario is valid");
+                Some(
+                    GpuBodyWorld::new_generated(device, color_format, &scenario)
+                        .expect("engine-owned generated stack GPU world is valid"),
                 )
             }
             _ => None,
@@ -390,15 +399,20 @@ impl EngineHost {
                     .expect("engine-owned body free-flight scenario is valid"),
             ),
             ValidationScenario::Bootstrap => canonical_hash(
-                &p5_1_rectangle_floor_scenario(3)
-                    .expect("engine-owned bootstrap floor scenario is valid"),
+                &p5_2_generated_floor_scenario(3)
+                    .expect("engine-owned bootstrap generated scenario is valid"),
             ),
             ValidationScenario::RigidFloor => canonical_hash(
-                &p5_1_rectangle_floor_scenario(120)
-                    .expect("engine-owned rigid-floor scenario is valid"),
+                &p5_2_generated_floor_scenario(120)
+                    .expect("engine-owned generated-floor scenario is valid"),
+            ),
+            ValidationScenario::RigidStack => canonical_hash(
+                &p5_2_generated_scenario(P5_2GeneratedScenarioKind::SmallStack, 180)
+                    .expect("engine-owned generated stack scenario is valid"),
             ),
             ValidationScenario::ResetGrab => canonical_hash(
-                &p5_1_reset_grab_scenario().expect("engine-owned reset/grab scenario is valid"),
+                &p5_2_generated_reset_grab_scenario()
+                    .expect("engine-owned generated reset/grab scenario is valid"),
             ),
             ValidationScenario::SolverJacobi | ValidationScenario::SolverColored => {
                 let mut scenario = authored_chain_scenario(64, 91)
@@ -419,8 +433,8 @@ impl EngineHost {
                 ))
             }
             ValidationScenario::Bootstrap | ValidationScenario::RigidFloor => {
-                let scenario = p5_1_rectangle_floor_scenario(120)
-                    .expect("engine-owned rigid-floor scenario is valid");
+                let scenario = p5_2_generated_floor_scenario(120)
+                    .expect("engine-owned generated-floor scenario is valid");
                 Some(BodyInteractionState::new(
                     scenario.bodies[0].clone(),
                     Vec::new(),
@@ -428,12 +442,21 @@ impl EngineHost {
                 ))
             }
             ValidationScenario::ResetGrab => {
-                let script =
-                    p5_1_reset_grab_scenario().expect("engine-owned reset/grab scenario is valid");
+                let script = p5_2_generated_reset_grab_scenario()
+                    .expect("engine-owned generated reset/grab scenario is valid");
                 Some(BodyInteractionState::new(
                     script.scenario.bodies[0].clone(),
                     script.scheduled_commands,
                     false,
+                ))
+            }
+            ValidationScenario::RigidStack => {
+                let scenario = p5_2_generated_scenario(P5_2GeneratedScenarioKind::SmallStack, 180)
+                    .expect("engine-owned generated stack scenario is valid");
+                Some(BodyInteractionState::new(
+                    scenario.bodies[1].clone(),
+                    Vec::new(),
+                    true,
                 ))
             }
             ValidationScenario::SolverJacobi | ValidationScenario::SolverColored => None,
@@ -623,6 +646,19 @@ impl EngineHost {
                         "selected GPU Jacobi-gather floor solve completed"
                     } else {
                         "waiting for 120 shared GPU fixed-floor steps"
+                    },
+                }
+            }
+            ValidationScenario::RigidStack => {
+                let complete = self.fixed_steps_total >= 180;
+                ScenarioResult {
+                    name: self.config.scenario.name(),
+                    complete,
+                    passed: complete,
+                    reason: if complete {
+                        "generated mixed-shape GPU stack completed"
+                    } else {
+                        "waiting for 180 generated stack steps"
                     },
                 }
             }

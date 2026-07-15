@@ -261,6 +261,20 @@ accepted production-performance claim.
 
 ### S3.5 — generated-contact solve and cross-host evidence
 
+Implementation checkpoint, 2026-07-15: the shared product graph now feeds
+all-pairs candidates, generated manifolds, sorted warm-start persistence, and
+the accepted Jacobi/body-gather solver directly from the GPU body store. The
+temporary authored floor manifold is no longer used by bootstrap, rigid-floor,
+or reset/grab; the new `rigid-stack` launch exercises mixed circles and
+rectangles. Exact validation splits long requests into bounded submissions
+without changing the requested step count or mapping intermediate simulation
+state. Canonical per-body incidence construction removed an eight-body
+deep-coincidence replay race while retaining the accepted accumulation
+architecture. Native, browser, headless, and the host-GPU `jstorrent-tablet`
+AVD execute the graph; no physical Android device is currently connected.
+Correctness-qualified authority, failure, and performance publication remains
+the rest of this slice.
+
 - [ ] Replace the temporary precomputed floor manifold in the product path
   with generated and persisted contacts feeding the accepted Jacobi/gather
   solver.

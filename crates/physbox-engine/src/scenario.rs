@@ -33,6 +33,44 @@ pub enum P5_2CollisionScenarioKind {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum P5_2GeneratedScenarioKind {
+    RectangleFloor,
+    CircleFloor,
+    BilateralCircles,
+    OffCenterRectangles,
+    SmallStack,
+    FrictionSlide,
+    Restitution,
+    PairChurn,
+}
+
+impl P5_2GeneratedScenarioKind {
+    pub const ALL: [Self; 8] = [
+        Self::RectangleFloor,
+        Self::CircleFloor,
+        Self::BilateralCircles,
+        Self::OffCenterRectangles,
+        Self::SmallStack,
+        Self::FrictionSlide,
+        Self::Restitution,
+        Self::PairChurn,
+    ];
+
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::RectangleFloor => "p5.2-generated-rectangle-floor",
+            Self::CircleFloor => "p5.2-generated-circle-floor",
+            Self::BilateralCircles => "p5.2-generated-bilateral-circles",
+            Self::OffCenterRectangles => "p5.2-generated-off-center-rectangles",
+            Self::SmallStack => "p5.2-generated-small-stack",
+            Self::FrictionSlide => "p5.2-generated-friction-slide",
+            Self::Restitution => "p5.2-generated-restitution",
+            Self::PairChurn => "p5.2-generated-pair-churn",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum P5_2CandidatePattern {
     Random,
     Touching,
@@ -293,6 +331,203 @@ pub fn p5_1_reset_grab_scenario() -> Result<BodyCommandScenarioV1, ScenarioBuild
                 },
             },
         ],
+    })
+}
+
+pub fn p5_2_generated_floor_scenario(
+    requested_steps: u32,
+) -> Result<ScenarioV1, ScenarioBuildError> {
+    let mut scenario = p5_1_rectangle_floor_scenario(requested_steps)?;
+    scenario.id = "p5.2-generated-rectangle-floor".to_owned();
+    scenario.manifolds.clear();
+    scenario.contact_cache.clear();
+    Ok(scenario)
+}
+
+pub fn p5_2_generated_scenario(
+    kind: P5_2GeneratedScenarioKind,
+    requested_steps: u32,
+) -> Result<ScenarioV1, ScenarioBuildError> {
+    if requested_steps == 0 {
+        return Err(ScenarioBuildError(
+            "P5.2 generated scenario requires at least one step".to_owned(),
+        ));
+    }
+    let mut scenario = match kind {
+        P5_2GeneratedScenarioKind::RectangleFloor => {
+            p5_2_generated_floor_scenario(requested_steps)?
+        }
+        P5_2GeneratedScenarioKind::CircleFloor => {
+            analytic_fixture_scenario(AnalyticFixtureKind::CircleFloor, requested_steps)?
+        }
+        P5_2GeneratedScenarioKind::BilateralCircles => {
+            p5_2_collision_scenario(P5_2CollisionScenarioKind::CircleCircle, requested_steps, 41)?
+        }
+        P5_2GeneratedScenarioKind::OffCenterRectangles => p5_2_collision_scenario(
+            P5_2CollisionScenarioKind::RectangleRectangle,
+            requested_steps,
+            43,
+        )?,
+        P5_2GeneratedScenarioKind::SmallStack => {
+            let base = p5_2_generated_floor_scenario(requested_steps)?;
+            let mut floor = base.bodies[1].clone();
+            floor.id.slot = 0;
+            let mut bodies = vec![floor];
+            for level in 0..4_u32 {
+                let mut body = base.bodies[0].clone();
+                body.id.slot = level + 1;
+                body.shape = if level == 2 {
+                    ShapeV1::Circle {
+                        radius: finite(0.24),
+                    }
+                } else {
+                    ShapeV1::Rectangle {
+                        half_extents: Vec2::new(0.28, 0.20),
+                    }
+                };
+                body.position = Vec2::new(
+                    if level.is_multiple_of(2) {
+                        -0.015
+                    } else {
+                        0.015
+                    },
+                    0.20 + level as f32 * 0.39,
+                );
+                body.angle = finite(if level == 1 { 0.03 } else { 0.0 });
+                body.inverse_inertia = finite(4.0);
+                bodies.push(body);
+            }
+            let mut scenario = base;
+            scenario.bodies = bodies;
+            scenario
+        }
+        P5_2GeneratedScenarioKind::FrictionSlide => {
+            let mut scenario =
+                analytic_fixture_scenario(AnalyticFixtureKind::RectangleFloor, requested_steps)?;
+            scenario.bodies[0].position.y = 0.49;
+            scenario.bodies[0].linear_velocity.x = 2.0;
+            scenario
+        }
+        P5_2GeneratedScenarioKind::Restitution => {
+            let mut scenario =
+                analytic_fixture_scenario(AnalyticFixtureKind::CircleFloor, requested_steps)?;
+            scenario.bodies[0].position.y = 0.49;
+            scenario.bodies[0].linear_velocity.y = -3.0;
+            scenario.bodies[0].material.restitution = finite(0.5);
+            scenario.bodies[1].material.restitution = finite(0.5);
+            scenario
+        }
+        P5_2GeneratedScenarioKind::PairChurn => {
+            p5_2_collision_scenario(P5_2CollisionScenarioKind::CircleCircle, requested_steps, 47)?
+        }
+    };
+    scenario.id = kind.name().to_owned();
+    scenario.requested_steps = requested_steps;
+    scenario.manifolds.clear();
+    scenario.contact_cache.clear();
+    scenario.actions.clear();
+    match kind {
+        P5_2GeneratedScenarioKind::BilateralCircles => {
+            scenario.bodies[0].position.x = -0.34;
+            scenario.bodies[1].position.x = 0.34;
+            scenario.bodies[0].linear_velocity.x = 1.0;
+            scenario.bodies[1].linear_velocity.x = -1.0;
+            scenario.bodies[0].material.restitution = finite(0.0);
+            scenario.bodies[1].material.restitution = finite(0.0);
+        }
+        P5_2GeneratedScenarioKind::OffCenterRectangles => {
+            scenario.bodies[0].position = Vec2::new(-0.30, -0.10);
+            scenario.bodies[1].position = Vec2::new(0.30, 0.14);
+            scenario.bodies[0].linear_velocity = Vec2::new(1.0, 0.1);
+            scenario.bodies[1].linear_velocity = Vec2::new(-1.0, -0.1);
+            scenario.bodies[0].material.restitution = finite(0.0);
+            scenario.bodies[1].material.restitution = finite(0.0);
+        }
+        P5_2GeneratedScenarioKind::PairChurn => {
+            scenario.bodies[0].position.x = -0.42;
+            scenario.bodies[1].position.x = 0.42;
+            scenario.bodies[0].linear_velocity.x = 1.2;
+            scenario.bodies[1].linear_velocity.x = -1.2;
+            scenario.bodies[0].material.restitution = finite(0.8);
+            scenario.bodies[1].material.restitution = finite(0.8);
+        }
+        _ => {}
+    }
+    Ok(scenario)
+}
+
+pub fn p5_2_generated_reset_grab_scenario() -> Result<BodyCommandScenarioV1, ScenarioBuildError> {
+    let mut script = p5_1_reset_grab_scenario()?;
+    script.id = "p5.2-generated-reset-grab".to_owned();
+    script.scenario.id = "p5.2-generated-reset-grab-world".to_owned();
+    script.scenario.manifolds.clear();
+    script.scenario.contact_cache.clear();
+    Ok(script)
+}
+
+pub fn p5_2_generated_performance_scenario(
+    body_count: u32,
+) -> Result<ScenarioV1, ScenarioBuildError> {
+    if !(2..=1024).contains(&body_count) || !body_count.is_multiple_of(2) {
+        return Err(ScenarioBuildError(
+            "P5.2 generated performance scenario requires an even 2-1024 body count".to_owned(),
+        ));
+    }
+    let pair_count = body_count / 2;
+    let columns = (pair_count as f32).sqrt().ceil() as u32;
+    let material = MaterialV1 {
+        friction: finite(0.5),
+        restitution: finite(0.0),
+    };
+    let mut bodies = Vec::with_capacity(body_count as usize);
+    for pair in 0..pair_count {
+        let center = Vec2::new((pair % columns) as f32 * 2.0, (pair / columns) as f32 * 2.0);
+        for side in 0..2_u32 {
+            let slot = pair * 2 + side;
+            let shape = match (pair % 3, side) {
+                (0, _) => ShapeV1::Circle {
+                    radius: finite(0.25),
+                },
+                (1, 0) => ShapeV1::Rectangle {
+                    half_extents: Vec2::new(0.25, 0.20),
+                },
+                (1, _) => ShapeV1::Circle {
+                    radius: finite(0.25),
+                },
+                _ => ShapeV1::Rectangle {
+                    half_extents: Vec2::new(0.25, 0.20),
+                },
+            };
+            let direction = if side == 0 { -1.0 } else { 1.0 };
+            bodies.push(BodyStateV1 {
+                id: BodyId {
+                    slot,
+                    generation: 1,
+                },
+                shape,
+                position: Vec2::new(center.x + direction * 0.245, center.y),
+                angle: finite(if pair % 3 == 2 { direction * 0.04 } else { 0.0 }),
+                linear_velocity: Vec2::new(-direction * 0.15, 0.0),
+                angular_velocity: finite(0.0),
+                inverse_mass: finite(1.0),
+                inverse_inertia: finite(4.0),
+                material,
+                sleeping: false,
+            });
+        }
+    }
+    let mut settings = default_settings();
+    settings.gravity = Vec2::ZERO;
+    Ok(ScenarioV1 {
+        schema_version: SCHEMA_VERSION,
+        id: format!("p5.2-generated-performance-{body_count}"),
+        seed: 0x5035_3200 + u64::from(body_count),
+        requested_steps: 1,
+        settings,
+        bodies,
+        manifolds: Vec::new(),
+        contact_cache: Vec::new(),
+        actions: Vec::new(),
     })
 }
 
@@ -1109,5 +1344,41 @@ mod tests {
         assert!(
             p5_2_narrowphase_pair_scenario(P5_2CollisionScenarioKind::MixedSmallWorld, 1).is_err()
         );
+    }
+
+    #[test]
+    fn p5_2_generated_behavior_scenarios_are_neutral_and_replayable() {
+        for kind in P5_2GeneratedScenarioKind::ALL {
+            let scenario = p5_2_generated_scenario(kind, 120).unwrap();
+            scenario.validate().unwrap();
+            assert!(scenario.manifolds.is_empty());
+            assert!(scenario.contact_cache.is_empty());
+            assert!(scenario.actions.is_empty());
+            assert!(scenario.bodies.len() >= 2);
+            assert_eq!(scenario.id, kind.name());
+            assert_eq!(
+                canonical_json(&scenario).unwrap(),
+                canonical_json(&p5_2_generated_scenario(kind, 120).unwrap()).unwrap()
+            );
+        }
+        assert!(p5_2_generated_scenario(P5_2GeneratedScenarioKind::CircleFloor, 0).is_err());
+        let script = p5_2_generated_reset_grab_scenario().unwrap();
+        script.validate().unwrap();
+        assert!(script.scenario.manifolds.is_empty());
+    }
+
+    #[test]
+    fn p5_2_generated_performance_scenarios_are_sparse_and_replayable() {
+        for body_count in [32, 256, 1024] {
+            let scenario = p5_2_generated_performance_scenario(body_count).unwrap();
+            scenario.validate().unwrap();
+            assert_eq!(scenario.bodies.len(), body_count as usize);
+            assert!(scenario.manifolds.is_empty());
+            assert_eq!(
+                canonical_json(&scenario).unwrap(),
+                canonical_json(&p5_2_generated_performance_scenario(body_count).unwrap()).unwrap()
+            );
+        }
+        assert!(p5_2_generated_performance_scenario(33).is_err());
     }
 }

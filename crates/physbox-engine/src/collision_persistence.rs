@@ -12,8 +12,12 @@ use wgpu::util::DeviceExt;
 
 use crate::{
     AdapterDiagnostics,
-    collision_candidates::{CandidateCase, CandidatePipelines, map_values},
+    collision_candidates::{CandidateCase, CandidatePipelines},
     collision_narrowphase::{NarrowphaseCase, NarrowphasePipelines},
+};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::{
+    collision_candidates::map_values,
     gpu_context::{create_instance, request_adapter, request_device},
 };
 
@@ -37,7 +41,7 @@ struct CurrentRecordRaw {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod, Zeroable)]
-struct PersistentRecordRaw {
+pub(crate) struct PersistentRecordRaw {
     key0: [u32; 4],
     key1: [u32; 4],
     cache: [u32; 4],
@@ -45,14 +49,14 @@ struct PersistentRecordRaw {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod, Zeroable)]
-struct CapacityRaw {
-    values: [u32; 4],
+pub(crate) struct CapacityRaw {
+    pub(crate) values: [u32; 4],
 }
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod, Zeroable)]
-struct WorkRaw {
-    values: [u32; 32],
+pub(crate) struct WorkRaw {
+    pub(crate) values: [u32; 32],
 }
 
 #[repr(C)]
@@ -132,6 +136,7 @@ pub struct GpuPersistenceOutput {
     pub steps: Vec<GpuPersistenceStepOutput>,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub struct GpuPersistenceRunner {
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -141,6 +146,7 @@ pub struct GpuPersistenceRunner {
     persistence_pipelines: PersistencePipelines,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl GpuPersistenceRunner {
     pub async fn new() -> Result<Self, String> {
         let instance = create_instance();
@@ -222,6 +228,7 @@ impl GpuPersistenceRunner {
         ];
         let mut previous_index = 0_usize;
         let mut output_index = 1_usize;
+        let step_counter = storage_init(&self.device, "persistence_step_counter", &[0_u32]);
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -245,6 +252,7 @@ impl GpuPersistenceRunner {
                 &cache_buffers[output_index],
                 &capacity_buffers[output_index],
                 candidate.work_buffer(),
+                &step_counter,
                 cache_capacity,
                 completed_step,
                 permute_current_input,
@@ -304,7 +312,7 @@ impl GpuPersistenceRunner {
     }
 }
 
-struct PersistencePipelines {
+pub(crate) struct PersistencePipelines {
     clear: wgpu::ComputePipeline,
     prepare: wgpu::ComputePipeline,
     build: wgpu::ComputePipeline,
@@ -322,7 +330,7 @@ struct PersistencePipelines {
 }
 
 impl PersistencePipelines {
-    fn new(device: &wgpu::Device) -> Self {
+    pub(crate) fn new(device: &wgpu::Device) -> Self {
         let clear_layout = layout(
             device,
             "persistence_clear_layout",
@@ -338,7 +346,7 @@ impl PersistencePipelines {
         let prepare_layout = layout(
             device,
             "persistence_prepare_layout",
-            &[(2, false), (3, false), (8, false), (10, false)],
+            &[(2, false), (3, false), (8, false), (10, false), (13, false)],
         );
         let build_layout = layout(
             device,
@@ -360,6 +368,7 @@ impl PersistencePipelines {
                 (9, false),
                 (10, false),
                 (11, false),
+                (13, false),
             ],
         );
         let finalize_layout = layout(
@@ -436,7 +445,7 @@ impl PersistencePipelines {
     }
 }
 
-struct PersistenceCase {
+pub(crate) struct PersistenceCase {
     _sort_a: wgpu::Buffer,
     _sort_b: wgpu::Buffer,
     _blocks: wgpu::Buffer,
@@ -454,7 +463,7 @@ struct PersistenceCase {
 
 #[allow(clippy::too_many_arguments)]
 impl PersistenceCase {
-    fn new(
+    pub(crate) fn new(
         device: &wgpu::Device,
         pipelines: &PersistencePipelines,
         narrowphase: &NarrowphaseCase,
@@ -463,6 +472,7 @@ impl PersistenceCase {
         output_cache: &wgpu::Buffer,
         output_capacity: &wgpu::Buffer,
         work: &wgpu::Buffer,
+        step_counter: &wgpu::Buffer,
         cache_capacity: u32,
         completed_step: u32,
         permute_current_input: bool,
@@ -503,6 +513,7 @@ impl PersistenceCase {
                 (3, narrowphase.point_capacity_buffer()),
                 (8, previous_capacity),
                 (10, output_capacity),
+                (13, step_counter),
             ],
             &params[0],
         );
@@ -555,6 +566,7 @@ impl PersistenceCase {
                 (9, output_cache),
                 (10, output_capacity),
                 (11, work),
+                (13, step_counter),
             ],
             &params[0],
         );
@@ -581,10 +593,29 @@ impl PersistenceCase {
         })
     }
 
-    fn encode(&self, encoder: &mut wgpu::CommandEncoder, pipelines: &PersistencePipelines) {
+    pub(crate) fn encode(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        pipelines: &PersistencePipelines,
+    ) {
+        self.encode_with_timestamp(encoder, pipelines, None);
+    }
+
+    pub(crate) fn encode_with_timestamp(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        pipelines: &PersistencePipelines,
+        ending_timestamp: Option<(&wgpu::QuerySet, u32)>,
+    ) {
         let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some("physbox5_collision_persistence_passes"),
-            timestamp_writes: None,
+            timestamp_writes: ending_timestamp.map(|(query_set, end)| {
+                wgpu::ComputePassTimestampWrites {
+                    query_set,
+                    beginning_of_pass_write_index: None,
+                    end_of_pass_write_index: Some(end),
+                }
+            }),
         });
         dispatch(
             &mut pass,
@@ -620,8 +651,20 @@ impl PersistenceCase {
         );
         dispatch(&mut pass, &pipelines.finalize, &self.finalize_group, 1);
     }
+
+    pub(crate) fn sorted_current(&self) -> &wgpu::Buffer {
+        &self._sort_a
+    }
+
+    pub(crate) fn allocated_bytes(&self) -> u64 {
+        self._sort_a.size()
+            + self._sort_b.size()
+            + self._blocks.size()
+            + self._params.iter().map(wgpu::Buffer::size).sum::<u64>()
+    }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 struct StepReadback {
     cache: wgpu::Buffer,
     candidate_capacity: wgpu::Buffer,
@@ -631,6 +674,7 @@ struct StepReadback {
     work: wgpu::Buffer,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl StepReadback {
     fn new(
         device: &wgpu::Device,
@@ -797,7 +841,7 @@ impl StepReadback {
     }
 }
 
-fn persistence_capacities(
+pub(crate) fn persistence_capacities(
     cache_capacity: u32,
     previous: u64,
     current: u64,
@@ -897,7 +941,8 @@ fn invalid_persistent() -> PersistentRecordRaw {
     }
 }
 
-fn persistent_contact(raw: PersistentRecordRaw) -> Result<PersistentContactV1, String> {
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn persistent_contact(raw: PersistentRecordRaw) -> Result<PersistentContactV1, String> {
     Ok(PersistentContactV1 {
         key: PersistentContactKeyV1 {
             pair: physbox_contracts::CandidatePairV1 {
@@ -921,6 +966,7 @@ fn persistent_contact(raw: PersistentRecordRaw) -> Result<PersistentContactV1, S
     })
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn geometric_feature(kind: u32, index: u32) -> Result<GeometricFeatureV1, String> {
     let kind = match kind {
         0 => GeometricFeatureKindV1::Circle,
@@ -943,7 +989,8 @@ const fn feature_kind(kind: GeometricFeatureKindV1) -> u32 {
     }
 }
 
-fn work_record(raw: WorkRaw) -> CollisionWorkV1 {
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn work_record(raw: WorkRaw) -> CollisionWorkV1 {
     let value = raw.values;
     CollisionWorkV1 {
         bodies: u64::from(value[0]),
@@ -965,7 +1012,8 @@ fn work_record(raw: WorkRaw) -> CollisionWorkV1 {
     }
 }
 
-fn capacity_record(class: &str, stride: u32, raw: CapacityRaw) -> CollisionCapacityV1 {
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn capacity_record(class: &str, stride: u32, raw: CapacityRaw) -> CollisionCapacityV1 {
     CollisionCapacityV1 {
         class: class.to_owned(),
         stride_bytes: stride,
@@ -979,6 +1027,7 @@ fn capacity_record(class: &str, stride: u32, raw: CapacityRaw) -> CollisionCapac
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn finite(value: f32) -> Result<FiniteF32, String> {
     FiniteF32::new(value).map_err(|error| error.to_string())
 }
@@ -1090,6 +1139,7 @@ fn storage<T>(
     }))
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn readback(device: &wgpu::Device, label: &'static str, size: u64) -> wgpu::Buffer {
     device.create_buffer(&wgpu::BufferDescriptor {
         label: Some(label),
@@ -1099,6 +1149,7 @@ fn readback(device: &wgpu::Device, label: &'static str, size: u64) -> wgpu::Buff
     })
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn copy(
     encoder: &mut wgpu::CommandEncoder,
     source: &wgpu::Buffer,

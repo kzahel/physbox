@@ -41,6 +41,7 @@ struct PersistentRecord {
 @group(0) @binding(10) var<storage, read_write> output_capacity: array<atomic<u32>>;
 @group(0) @binding(11) var<storage, read_write> work: array<atomic<u32>>;
 @group(0) @binding(12) var<uniform> params: Params;
+@group(0) @binding(13) var<storage, read_write> step_counter: array<atomic<u32>>;
 
 var<workgroup> radix_digits: array<u32, 256>;
 var<workgroup> radix_histogram: array<atomic<u32>, 16>;
@@ -109,6 +110,7 @@ fn clear_persistence(@builtin(global_invocation_id) invocation: vec3u) {
 @compute @workgroup_size(1)
 fn prepare_persistence(@builtin(global_invocation_id) invocation: vec3u) {
     if (invocation.x != 0u) { return; }
+    atomicAdd(&step_counter[0], 1u);
     let attempted = atomicLoad(&point_capacity[1]);
     let intrinsic_overflow = attempted > params.counts.x;
     let upstream_rejected = atomicLoad(&manifold_capacity[3]) != 0u ||
@@ -218,11 +220,12 @@ fn merge_cache(@builtin(global_invocation_id) invocation: vec3u) {
     var output: PersistentRecord;
     output.key0 = current.key0;
     output.key1 = current.key1;
-    output.cache = vec4u(0u, 0u, params.counts.z, 0u);
+    let completed_step = atomicLoad(&step_counter[0]);
+    output.cache = vec4u(0u, 0u, completed_step, 0u);
     if (lower < previous_count) {
         let previous = previous_cache[lower];
         if (key_equal_values(previous.key0, previous.key1, current.key0, current.key1)) {
-            output.cache = vec4u(previous.cache.x, previous.cache.y, params.counts.z, 0u);
+            output.cache = vec4u(previous.cache.x, previous.cache.y, completed_step, 0u);
             atomicAdd(&work[12], 1u);
         } else {
             atomicAdd(&work[13], 1u);

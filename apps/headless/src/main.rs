@@ -10,6 +10,8 @@ use physbox_engine::{EngineConfig, FrameInput, FrameReport, OffscreenRenderer};
 use physbox_launch::{LaunchHost, parse_os_args, usage};
 use serde::Serialize;
 
+const EXACT_STEPS_PER_SUBMISSION: u32 = 64;
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Provenance<'a> {
@@ -66,7 +68,12 @@ fn run() -> Result<(), String> {
 
     let mut report = None;
     if let Some(steps) = options.steps {
-        report = Some(renderer.render(FrameInput::exact(steps)));
+        let mut remaining = steps;
+        while remaining > 0 {
+            let chunk = remaining.min(EXACT_STEPS_PER_SUBMISSION);
+            report = Some(renderer.render(FrameInput::exact(chunk)));
+            remaining -= chunk;
+        }
     } else {
         let elapsed = 1.0 / f64::from(options.fps);
         for _ in 0..options.frames {
