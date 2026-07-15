@@ -1,6 +1,6 @@
 # S3: Small-world collision and contact persistence
 
-Status: active at S3.1, 2026-07-15.
+Status: active at S3.2; S3.1 complete 2026-07-15.
 Direction: [one GPU-resident 2D physics world](../topics/physbox5-unified-gpu-physics.md).
 Bring-up stage: [P5.2](../bringup-plan.md#p52--small-world-collision-and-persistence-active).
 Predecessor: [accepted P5.1 body core](../../evidence/p5.1-s2.6/README.md).
@@ -114,16 +114,24 @@ hardware as a named gap.
 
 ### S3.1 — analytic shape and persistence contracts
 
-- [ ] Define the versioned circle encoding within the accepted analytic shape
+- [x] Define the versioned circle encoding within the accepted analytic shape
   payload and reserve a reviewed shape flag without changing body lane strides.
-- [ ] Define canonical body AABB, candidate pair, manifold, contact point,
+- [x] Define canonical body AABB, candidate pair, manifold, contact point,
   geometric feature, persistent key, cache value, work, capacity, trace, and
   failure records with complete byte accounting.
-- [ ] Add shared circle/rectangle scenario sources and neutral Box2D projection;
+- [x] Add shared circle/rectangle scenario sources and neutral Box2D projection;
   reject unsupported shapes or actions instead of approximating them.
-- [ ] Add structural and negative tests for canonical body ordering, generation
+- [x] Add structural and negative tests for canonical body ordering, generation
   participation, finite values, feature ordering, schema/hash stability, stale
   identity, and inconsistent capacity claims.
+
+Completion, 2026-07-15: collision layout version 1, the provisional geometric
+feature convention, atomic capacity artifacts, four shared sources and neutral
+projections, exact byte claims, canonical hashes, and permanent negative cases
+are recorded in the [S3.1 package](../../evidence/p5.2-s3.1/README.md). The
+accepted body lanes remain 64 bytes and commands remain 48 bytes. Rectangle
+bit 8 is unchanged; circle bit 9 uses the existing analytic payload. No GPU
+collision behavior is included.
 
 Likely boundaries: `physbox-contracts` owns serializable records;
 `physbox-engine` owns analytic body encoding and GPU layouts; `physbox-lab`

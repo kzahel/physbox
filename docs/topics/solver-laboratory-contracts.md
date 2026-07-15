@@ -20,6 +20,15 @@ results (including public narrowphase manifolds), synchronized playback
 tracks/samples, pass traces, work/timing metrics, capacity records, failures,
 and complete run/build/runtime provenance.
 
+P5.2 S3.1 additively defines a collision-layout version inside schema version
+1: analytic shape encodings, generational AABBs and pairs, geometric contact
+features, persistent keys/cache values, complete collision work and atomic
+capacity artifacts, collision-stage traces, and structured pair/topology/
+persistence failures. The top-level collision artifact retains source and
+projection hashes plus complete provenance. Exact record bytes and provisional
+feature semantics are governed by the
+[collision/persistence topic](collision-and-contact-persistence.md).
+
 ## Canonical bytes and hashes
 
 Canonical payloads are compact UTF-8 JSON emitted from Rust structs in declared

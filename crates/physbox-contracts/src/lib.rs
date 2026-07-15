@@ -1,5 +1,7 @@
 #![forbid(unsafe_code)]
 
+mod collision;
+
 use std::fmt::{Display, Formatter};
 
 use serde::{Deserialize, Serialize};
@@ -8,6 +10,8 @@ use sha2::{Digest, Sha256};
 pub const SCHEMA_VERSION: u32 = 1;
 pub const BODY_LAYOUT_VERSION: u32 = 1;
 pub const ORACLE_SUCCESS_SENTINEL: &str = "PHYSBOX5_ORACLE_SUCCESS";
+
+pub use collision::*;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ContractError(pub String);
@@ -140,6 +144,11 @@ pub struct BodyStateV1 {
 
 impl Validate for BodyStateV1 {
     fn validate(&self) -> Result<(), ContractError> {
+        if self.id.generation == 0 {
+            return Err(ContractError(
+                "body state requires a nonzero generation".to_owned(),
+            ));
+        }
         self.shape.validate()?;
         self.position.validate()?;
         self.angle.validate()?;
@@ -869,6 +878,11 @@ pub enum FailureKindV1 {
     Invariant,
     NumericalDivergence,
     CapacityOverflow,
+    MissingPair,
+    DuplicatePair,
+    ManifoldTopology,
+    StaleIdentity,
+    PersistenceMismatch,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

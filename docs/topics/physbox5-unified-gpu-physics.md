@@ -1079,6 +1079,19 @@ this stage.
   speculative separation, and explicit penetration/capacity diagnostics.
 - Render synchronized side-by-side oracle and GPU results for inspection.
 
+S3.1 contract checkpoint, 2026-07-15: P5.2 assigns metadata bit 9 to centered
+circles while retaining rectangle bit 8 and the accepted 64-byte body core.
+Circle radius repeats in `properties.xy`; rectangles retain half extents. The
+versioned collision surface defines canonical generational pairs, provisional
+circle/face/vertex features, persistent keys, exact 16-byte-aligned GPU record
+strides, full work accounting, atomic capacity failure, first-divergence
+traces, and source/projection/provenance identity. Four engine-owned sources
+and neutral Box2D projections have pinned canonical hashes. Details and
+reconsideration triggers live in the
+[collision/persistence topic](collision-and-contact-persistence.md) and
+[S3.1 evidence](../../evidence/p5.2-s3.1/README.md). No product GPU collision
+behavior is present until S3.2.
+
 ### P5.3: Scalable broadphase
 
 - Retain brute force as the pair-completeness oracle.

@@ -2,9 +2,10 @@ use std::mem::size_of;
 
 use bytemuck::{Pod, Zeroable};
 use physbox_contracts::{
-    BODY_LAYOUT_VERSION, BodyCommandBatchV1, BodyCommandV1, BodyId, BodyLaneAccessV1,
-    BodyLayoutLaneV1, BodyLayoutV1, BodyStateV1, CapacityRecordV1, SCHEMA_VERSION, ShapeV1,
-    Validate, Vec2,
+    ANALYTIC_SHAPE_FLAG_CIRCLE, ANALYTIC_SHAPE_FLAG_RECTANGLE, ANALYTIC_SHAPE_LAYOUT_VERSION,
+    AnalyticShapeEncodingV1, AnalyticShapeKindV1, BODY_LAYOUT_VERSION, BodyCommandBatchV1,
+    BodyCommandV1, BodyId, BodyLaneAccessV1, BodyLayoutLaneV1, BodyLayoutV1, BodyStateV1,
+    CapacityRecordV1, SCHEMA_VERSION, ShapeV1, Validate, Vec2,
 };
 use wgpu::util::DeviceExt;
 
@@ -15,7 +16,6 @@ pub const BODY_COMMAND_CAPACITY: u32 = 64;
 const FLAG_LIVE: u32 = 1 << 0;
 const FLAG_SLEEPING: u32 = 1 << 1;
 const FLAG_FIXED: u32 = 1 << 2;
-const FLAG_RECTANGLE: u32 = 1 << 8;
 
 const COMMAND_RESET: u32 = 1;
 const COMMAND_GRAB_BEGIN: u32 = 2;
@@ -419,6 +419,34 @@ impl GpuBodyResetData {
     }
 }
 
+pub fn analytic_shape_encoding(body: &BodyStateV1) -> Result<AnalyticShapeEncodingV1, String> {
+    body.validate().map_err(|error| error.to_string())?;
+    let (kind, property_payload, metadata_flag) = match body.shape {
+        ShapeV1::Circle { radius } => (
+            AnalyticShapeKindV1::Circle,
+            Vec2::new(radius.get(), radius.get()),
+            ANALYTIC_SHAPE_FLAG_CIRCLE,
+        ),
+        ShapeV1::Rectangle { half_extents } => (
+            AnalyticShapeKindV1::Rectangle,
+            half_extents,
+            ANALYTIC_SHAPE_FLAG_RECTANGLE,
+        ),
+    };
+    let encoding = AnalyticShapeEncodingV1 {
+        schema_version: SCHEMA_VERSION,
+        layout_version: ANALYTIC_SHAPE_LAYOUT_VERSION,
+        body: body.id,
+        kind,
+        property_payload,
+        metadata_flag,
+        property_lane_stride_bytes: size_of::<BodyPropertiesRaw>() as u32,
+        metadata_lane_stride_bytes: size_of::<BodyMetadataRaw>() as u32,
+    };
+    encoding.validate().map_err(|error| error.to_string())?;
+    Ok(encoding)
+}
+
 fn pack_bodies(capacity: u32, bodies: &[BodyStateV1]) -> Result<PackedBodies, String> {
     if bodies.len() > capacity as usize {
         return Err(format!(
@@ -435,9 +463,7 @@ fn pack_bodies(capacity: u32, bodies: &[BodyStateV1]) -> Result<PackedBodies, St
         body.validate().map_err(|error| error.to_string())?;
         slots.reserve(body.id)?;
         let index = body.id.slot as usize;
-        let ShapeV1::Rectangle { half_extents } = body.shape else {
-            return Err("P5.1 GPU body storage supports rectangles only".to_owned());
-        };
+        let shape = analytic_shape_encoding(body)?;
         poses[index] = BodyPoseRaw {
             position_angle: [body.position.x, body.position.y, body.angle.get(), 0.0],
         };
@@ -451,13 +477,13 @@ fn pack_bodies(capacity: u32, bodies: &[BodyStateV1]) -> Result<PackedBodies, St
         };
         properties[index] = BodyPropertiesRaw {
             half_extents_inverse_mass_inertia: [
-                half_extents.x,
-                half_extents.y,
+                shape.property_payload.x,
+                shape.property_payload.y,
                 body.inverse_mass.get(),
                 body.inverse_inertia.get(),
             ],
         };
-        let mut flags = FLAG_LIVE | FLAG_RECTANGLE;
+        let mut flags = FLAG_LIVE | shape.metadata_flag;
         if body.sleeping {
             flags |= FLAG_SLEEPING;
         }
@@ -578,7 +604,7 @@ fn check_buffer_limits<T>(device: &wgpu::Device, capacity: u32, label: &str) -> 
 
 #[cfg(test)]
 mod tests {
-    use physbox_contracts::Vec2;
+    use physbox_contracts::{FiniteF32, ShapeV1, Vec2};
 
     use super::*;
 
@@ -588,6 +614,39 @@ mod tests {
             body,
             world_target: Vec2::new(0.25, 0.5),
         }
+    }
+
+    #[test]
+    fn circle_and_rectangle_share_the_accepted_analytic_payload_lanes() {
+        let mut scenario = crate::p5_1_rectangle_floor_scenario(1).unwrap();
+        let rectangle = analytic_shape_encoding(&scenario.bodies[0]).unwrap();
+        assert_eq!(rectangle.kind, AnalyticShapeKindV1::Rectangle);
+        assert_eq!(rectangle.metadata_flag, ANALYTIC_SHAPE_FLAG_RECTANGLE);
+        assert_eq!(rectangle.property_lane_stride_bytes, 16);
+        assert_eq!(rectangle.metadata_lane_stride_bytes, 16);
+
+        scenario.bodies[0].shape = ShapeV1::Circle {
+            radius: FiniteF32::new(0.35).unwrap(),
+        };
+        let circle = analytic_shape_encoding(&scenario.bodies[0]).unwrap();
+        assert_eq!(circle.kind, AnalyticShapeKindV1::Circle);
+        assert_eq!(circle.property_payload, Vec2::new(0.35, 0.35));
+        assert_eq!(circle.metadata_flag, ANALYTIC_SHAPE_FLAG_CIRCLE);
+
+        let packed = pack_bodies(2, &scenario.bodies).unwrap();
+        assert_eq!(
+            packed.properties[0].half_extents_inverse_mass_inertia[0],
+            0.35
+        );
+        assert_eq!(
+            packed.properties[0].half_extents_inverse_mass_inertia[1],
+            0.35
+        );
+        assert_eq!(
+            packed.metadata[0].generation_flags_material[1] & ANALYTIC_SHAPE_FLAG_CIRCLE,
+            ANALYTIC_SHAPE_FLAG_CIRCLE
+        );
+        assert_eq!(BODY_BYTES_PER_SLOT, 64);
     }
 
     #[test]

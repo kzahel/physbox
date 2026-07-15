@@ -26,6 +26,9 @@ a running log.
 - [Box2D rigid authority](box2d-rigid-authority.md) — clean source pin, frozen
   deterministic build/world settings, shared process projection, direct public
   narrowphase, rejection policy, and microscope trigger.
+- [Collision and contact persistence](collision-and-contact-persistence.md) —
+  analytic shape encoding, canonical pairs/features, persistent keys, GPU
+  record bytes, atomic capacity semantics, and P5.2 reconsideration triggers.
 
 ## Conventions
 
@@ -41,6 +44,5 @@ a running log.
   broadening an unrelated document.
 - Add every active topic to this index in the same commit that creates it.
 
-Likely next topics include contact persistence and feature identifiers, GPU
-accumulation strategies, GPU sleeping and island-wake strategy, broadphase
-bake-off results, and oracle/failure-artifact schemas.
+Likely next topics include GPU sleeping and island-wake strategy, broadphase
+bake-off results, and the coupled liquid/rigid constraint surface.

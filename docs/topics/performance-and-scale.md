@@ -513,6 +513,14 @@ first emit the complete canonical pair set.
 Performance evidence is therefore required at every stage even though P5.4 is
 the first complete rigid-engine claim.
 
+S3.1 contract checkpoint, 2026-07-15: the collision byte surface is fixed for
+measurement but remains provisional for S3.6 review: 32-byte AABB, 16-byte
+candidate, 48-byte manifold, 48-byte point, 32-byte persistent key, 16-byte
+cache value, 16-byte capacity counter, and 128-byte complete work counters.
+Capacity artifacts distinguish attempts, atomic committed count, high-water,
+overflow, and acceptance. S3.2 and later must report those quantities rather
+than body count alone.
+
 ## Regression and claim gates
 
 Before representative hardware is selected, store named measurements and

@@ -3,7 +3,7 @@ use std::fmt::{Display, Formatter};
 use physbox_contracts::{
     AuthoredContactPointV1, AuthoredManifoldV1, BodyCommandScenarioV1, BodyCommandV1, BodyId,
     BodyStateV1, FeatureIdV1, FiniteF32, MaterialV1, SCHEMA_VERSION, ScenarioV1,
-    ScheduledBodyCommandV1, ShapeV1, SolverSettingsV1, Vec2,
+    ScheduledBodyCommandV1, ShapeV1, SolverSettingsV1, Validate, Vec2,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -22,6 +22,32 @@ pub enum AnalyticFixtureKind {
     CircleFloor,
     RectangleFloor,
     BoxOnBox,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum P5_2CollisionScenarioKind {
+    CircleCircle,
+    CircleRectangle,
+    RectangleRectangle,
+    MixedSmallWorld,
+}
+
+impl P5_2CollisionScenarioKind {
+    pub const ALL: [Self; 4] = [
+        Self::CircleCircle,
+        Self::CircleRectangle,
+        Self::RectangleRectangle,
+        Self::MixedSmallWorld,
+    ];
+
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::CircleCircle => "p5.2-circle-circle",
+            Self::CircleRectangle => "p5.2-circle-rectangle",
+            Self::RectangleRectangle => "p5.2-rectangle-rectangle",
+            Self::MixedSmallWorld => "p5.2-mixed-small-world",
+        }
+    }
 }
 
 pub fn p5_1_rectangle_floor_scenario(
@@ -344,6 +370,144 @@ pub fn analytic_fixture_scenario(
     })
 }
 
+pub fn p5_2_collision_scenario(
+    kind: P5_2CollisionScenarioKind,
+    requested_steps: u32,
+    seed: u64,
+) -> Result<ScenarioV1, ScenarioBuildError> {
+    if requested_steps == 0 {
+        return Err(ScenarioBuildError(
+            "P5.2 collision scenario requires at least one requested step".to_owned(),
+        ));
+    }
+    let material = MaterialV1 {
+        friction: finite(0.5),
+        restitution: finite(0.1),
+    };
+    let body = |slot: u32,
+                shape: ShapeV1,
+                position: Vec2,
+                angle: f32,
+                inverse_mass: f32,
+                inverse_inertia: f32| BodyStateV1 {
+        id: BodyId {
+            slot,
+            generation: 1,
+        },
+        shape,
+        position,
+        angle: finite(angle),
+        linear_velocity: Vec2::ZERO,
+        angular_velocity: finite(0.0),
+        inverse_mass: finite(inverse_mass),
+        inverse_inertia: finite(inverse_inertia),
+        material,
+        sleeping: false,
+    };
+    let circle = |radius: f32| ShapeV1::Circle {
+        radius: finite(radius),
+    };
+    let rectangle = |x: f32, y: f32| ShapeV1::Rectangle {
+        half_extents: Vec2::new(x, y),
+    };
+    let bodies = match kind {
+        P5_2CollisionScenarioKind::CircleCircle => vec![
+            body(0, circle(0.35), Vec2::new(-0.25, 0.0), 0.0, 1.0, 4.0),
+            body(1, circle(0.35), Vec2::new(0.25, 0.0), 0.0, 1.0, 4.0),
+        ],
+        P5_2CollisionScenarioKind::CircleRectangle => vec![
+            body(0, circle(0.35), Vec2::new(0.45, 0.1), 0.0, 1.0, 4.0),
+            body(1, rectangle(0.5, 0.3), Vec2::ZERO, 0.2, 1.0, 3.0),
+        ],
+        P5_2CollisionScenarioKind::RectangleRectangle => vec![
+            body(
+                0,
+                rectangle(0.45, 0.3),
+                Vec2::new(-0.2, 0.05),
+                0.2,
+                1.0,
+                3.0,
+            ),
+            body(
+                1,
+                rectangle(0.45, 0.3),
+                Vec2::new(0.35, 0.0),
+                -0.15,
+                1.0,
+                3.0,
+            ),
+        ],
+        P5_2CollisionScenarioKind::MixedSmallWorld => vec![
+            body(0, circle(0.35), Vec2::new(-0.55, 0.30), 0.0, 1.0, 4.0),
+            body(
+                1,
+                rectangle(0.45, 0.25),
+                Vec2::new(0.0, 0.20),
+                0.15,
+                1.0,
+                3.0,
+            ),
+            body(2, circle(0.30), Vec2::new(0.55, 0.30), 0.0, 1.0, 4.0),
+            body(
+                3,
+                rectangle(2.0, 0.15),
+                Vec2::new(0.0, -0.50),
+                0.0,
+                0.0,
+                0.0,
+            ),
+            body(
+                4,
+                rectangle(0.25, 0.20),
+                Vec2::new(1.50, 0.80),
+                -0.25,
+                1.0,
+                5.0,
+            ),
+            body(5, circle(0.20), Vec2::new(-1.60, 0.90), 0.0, 0.0, 0.0),
+        ],
+    };
+    let mut settings = default_settings();
+    settings.gravity = Vec2::ZERO;
+    Ok(ScenarioV1 {
+        schema_version: SCHEMA_VERSION,
+        id: kind.name().to_owned(),
+        seed,
+        requested_steps,
+        settings,
+        bodies,
+        manifolds: Vec::new(),
+        contact_cache: Vec::new(),
+        actions: Vec::new(),
+    })
+}
+
+pub fn p5_2_box2d_narrowphase_projection(
+    source: &ScenarioV1,
+) -> Result<ScenarioV1, ScenarioBuildError> {
+    source
+        .validate()
+        .map_err(|error| ScenarioBuildError(error.to_string()))?;
+    if source.bodies.len() < 2 {
+        return Err(ScenarioBuildError(
+            "P5.2 Box2D narrowphase projection requires at least two bodies".to_owned(),
+        ));
+    }
+    if !source.manifolds.is_empty()
+        || !source.contact_cache.is_empty()
+        || !source.actions.is_empty()
+    {
+        return Err(ScenarioBuildError(
+            "P5.2 Box2D narrowphase projection rejects authored manifolds, cache, and actions"
+                .to_owned(),
+        ));
+    }
+    let mut projection = source.clone();
+    projection.id = format!("{}-box2d-narrowphase-v1", source.id);
+    projection.requested_steps = 1;
+    Ok(projection)
+}
+
 pub fn authored_one_contact_scenario(seed: u64) -> ScenarioV1 {
     let mut random = StableRandom::new(seed);
     let horizontal_offset = random.signed(0.18);
@@ -542,7 +706,7 @@ impl StableRandom {
 
 #[cfg(test)]
 mod tests {
-    use physbox_contracts::{Validate, canonical_json};
+    use physbox_contracts::{NeutralActionV1, Validate, canonical_hash, canonical_json};
 
     use super::*;
 
@@ -637,5 +801,63 @@ mod tests {
         assert_eq!(scenario.bodies.len(), 2);
         assert_eq!(scenario.bodies[1].inverse_mass.get(), 0.0);
         assert!(scenario.manifolds.is_empty());
+    }
+
+    #[test]
+    fn p5_2_collision_sources_and_neutral_projections_are_stable() {
+        let expected = [
+            (
+                "f02a3a32e403b95991d1c366dd42e83121c8f1ca4cc4920a4d551ffde200cde2",
+                "f767d3f644cebb77f962c3481eba3247f02005df8f33fe8a3c372c87bf2cac9c",
+            ),
+            (
+                "5bb67226d9f4cf01137be258290c5f880f4884f04a6a3520cfb7e26fe10e6aac",
+                "b557b253cfe0c5e1760c4b44800cc86f2c197565f8ae44811747e204331a7629",
+            ),
+            (
+                "eaca28b3fc2b021561ef154041798f6e954dfd328cc4f71011d7aa3a792e0cb2",
+                "f6a5e1e3aabe16125087122d467bea32e8b7c2e5636b617be6378a9622c50bfe",
+            ),
+            (
+                "a3d5a6a239bc6b8331bc1178282a7c08e4f9b02e1d0e6e014566a30b9cfbcdfa",
+                "1ccc20c8996680824efeb68794d780ee8b8894227b08d1444122c940f7b3c18d",
+            ),
+        ];
+        for (kind, (source_hash, projection_hash)) in
+            P5_2CollisionScenarioKind::ALL.into_iter().zip(expected)
+        {
+            let source = p5_2_collision_scenario(kind, 120, 17).unwrap();
+            source.validate().unwrap();
+            assert!(source.manifolds.is_empty());
+            assert!(source.contact_cache.is_empty());
+            assert!(source.actions.is_empty());
+            let replay = p5_2_collision_scenario(kind, 120, 17).unwrap();
+            assert_eq!(
+                canonical_json(&source).unwrap(),
+                canonical_json(&replay).unwrap()
+            );
+
+            let projection = p5_2_box2d_narrowphase_projection(&source).unwrap();
+            projection.validate().unwrap();
+            assert_eq!(projection.requested_steps, 1);
+            assert_eq!(canonical_hash(&source).unwrap(), source_hash);
+            assert_eq!(canonical_hash(&projection).unwrap(), projection_hash);
+        }
+    }
+
+    #[test]
+    fn p5_2_projection_rejects_unsupported_actions_instead_of_approximating() {
+        let mut source =
+            p5_2_collision_scenario(P5_2CollisionScenarioKind::CircleCircle, 2, 5).unwrap();
+        source.actions.push(NeutralActionV1::SetGravity {
+            step: 0,
+            gravity: Vec2::new(0.0, -1.0),
+        });
+        let error = p5_2_box2d_narrowphase_projection(&source).unwrap_err();
+        assert!(
+            error
+                .0
+                .contains("rejects authored manifolds, cache, and actions")
+        );
     }
 }

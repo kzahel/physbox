@@ -15,6 +15,8 @@ struct BodyVertexOutput {
 
 const FLAG_LIVE: u32 = 1u << 0u;
 const FLAG_FIXED: u32 = 1u << 2u;
+const FLAG_RECTANGLE: u32 = 1u << 8u;
+const FLAG_CIRCLE: u32 = 1u << 9u;
 
 @vertex
 fn background_vertex(@builtin(vertex_index) vertex_index: u32) -> @builtin(position) vec4f {
@@ -66,7 +68,13 @@ fn body_vertex(
 
 @fragment
 fn body_fragment(input: BodyVertexOutput) -> @location(0) vec4f {
-    let edge_distance = 1.0 - max(abs(input.local.x), abs(input.local.y));
+    let circle = (input.flags & FLAG_CIRCLE) != 0u;
+    if (circle && dot(input.local, input.local) > 1.0) {
+        discard;
+    }
+    let rectangle_edge = 1.0 - max(abs(input.local.x), abs(input.local.y));
+    let circle_edge = 1.0 - length(input.local);
+    let edge_distance = select(rectangle_edge, circle_edge, circle);
     let rim = 1.0 - smoothstep(0.0, 0.10, edge_distance);
     let fixed = (input.flags & FLAG_FIXED) != 0u;
     let low = select(vec3f(0.10, 0.76, 0.88), vec3f(0.12, 0.20, 0.28), fixed);
