@@ -24,18 +24,24 @@ pub struct SceneContract {
 #[serde(rename_all = "camelCase")]
 pub struct BodyCommandReport {
     pub grab_intent_contract_version: u32,
+    pub construction_intent_contract_version: u32,
     pub capacity_commands: u32,
     pub capacity_grab_intents: u32,
+    pub capacity_construction_intents: u32,
     pub grab_state_bytes: u32,
     pub queued_commands_total: u64,
     pub executed_commands_total: u64,
     pub reset_commands_total: u64,
     pub coalesced_targets_total: u64,
+    pub queued_construction_intents_total: u64,
+    pub executed_construction_intents_total: u64,
     pub overflowed: bool,
     pub grab_pointer_active: bool,
+    pub construction_pointer_active: bool,
     pub gpu_selection_readback: bool,
     pub grab_intent_dispatches_this_frame: u32,
     pub grab_constraint_dispatches_this_frame: u32,
+    pub construction_intent_dispatches_this_frame: u32,
     pub grab_tether_prepare_dispatches_this_frame: u32,
     pub grab_tether_draw_calls_this_frame: u32,
 }
@@ -58,6 +64,7 @@ pub struct CameraReport {
 pub struct UiReport {
     pub version: u32,
     pub menu_open: bool,
+    pub current_tool: &'static str,
     pub current_scene: &'static str,
     pub static_instance_capacity: u32,
     pub dynamic_instance_capacity: u32,
@@ -125,11 +132,16 @@ impl FrameReport {
         }
 
         #[derive(Serialize)]
-        #[serde(rename_all = "camelCase")]
         struct CompactBodyCommands {
+            #[serde(rename = "e")]
             executed_commands_total: u64,
+            #[serde(rename = "c")]
+            executed_construction_intents_total: u64,
+            #[serde(rename = "r")]
             reset_commands_total: u64,
+            #[serde(rename = "t")]
             coalesced_targets_total: u64,
+            #[serde(rename = "o")]
             overflowed: bool,
             #[serde(rename = "g")]
             grab_pointer_active: bool,
@@ -175,6 +187,9 @@ impl FrameReport {
             ui: self.ui.draw_calls_this_frame | ((self.ui.overflowed as u32) << 31),
             body_commands: CompactBodyCommands {
                 executed_commands_total: self.body_commands.executed_commands_total,
+                executed_construction_intents_total: self
+                    .body_commands
+                    .executed_construction_intents_total,
                 reset_commands_total: self.body_commands.reset_commands_total,
                 coalesced_targets_total: self.body_commands.coalesced_targets_total,
                 overflowed: self.body_commands.overflowed,
@@ -238,6 +253,7 @@ mod tests {
             ui: UiReport {
                 version: crate::ui::UI_CONTRACT_VERSION,
                 menu_open: true,
+                current_tool: "rectangle",
                 current_scene: "bootstrap",
                 static_instance_capacity: 256,
                 dynamic_instance_capacity: 192,
@@ -264,18 +280,24 @@ mod tests {
             },
             body_commands: BodyCommandReport {
                 grab_intent_contract_version: 1,
+                construction_intent_contract_version: 1,
                 capacity_commands: 64,
                 capacity_grab_intents: 64,
+                capacity_construction_intents: 64,
                 grab_state_bytes: 64,
                 queued_commands_total: u64::MAX,
                 executed_commands_total: u64::MAX,
                 reset_commands_total: u64::MAX,
                 coalesced_targets_total: u64::MAX,
+                queued_construction_intents_total: u64::MAX,
+                executed_construction_intents_total: u64::MAX,
                 overflowed: false,
                 grab_pointer_active: false,
+                construction_pointer_active: false,
                 gpu_selection_readback: false,
                 grab_intent_dispatches_this_frame: 1,
                 grab_constraint_dispatches_this_frame: 1,
+                construction_intent_dispatches_this_frame: 1,
                 grab_tether_prepare_dispatches_this_frame: 1,
                 grab_tether_draw_calls_this_frame: 1,
             },
@@ -305,5 +327,7 @@ mod tests {
             "compact marker is {} bytes",
             marker.len()
         );
+        assert!(marker.contains("\"c\":"));
+        assert!(marker.contains("\"g\":false"));
     }
 }

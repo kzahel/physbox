@@ -304,9 +304,9 @@ preparation evidence.
   atomic capacity failure.
 - [ ] Allocate and retire body slots on the GPU, increment generations, clear
   stale grab/contact/pair state, and keep all current-state decisions on device.
-- [ ] Add `Grab`, `Circle`, `Rectangle`, and `Erase` toolbar tools with touch-
+- [x] Add `Grab`, `Circle`, `Rectangle`, and `Erase` toolbar tools with touch-
   sized targets and deterministic UI/tool capture priority.
-- [ ] Reject or diagnose unsupported deep-overlap placement rather than
+- [x] Reject or diagnose unsupported deep-overlap placement rather than
   disabling collision, silently moving the body, or widening the accepted
   contact policy.
 - [ ] Exercise place, fall, collide, grab, erase, slot reuse, reset, and scene

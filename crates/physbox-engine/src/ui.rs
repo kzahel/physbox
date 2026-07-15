@@ -15,7 +15,7 @@ use crate::{
     },
 };
 
-pub(crate) const UI_CONTRACT_VERSION: u32 = 1;
+pub(crate) const UI_CONTRACT_VERSION: u32 = 2;
 const STATIC_INSTANCE_CAPACITY: usize = 256;
 const DYNAMIC_INSTANCE_CAPACITY: usize = 192;
 
@@ -26,9 +26,41 @@ pub(crate) enum UiAction {
     Recenter,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) enum WorkbenchTool {
+    #[default]
+    Grab,
+    Circle,
+    Rectangle,
+    Erase,
+}
+
+impl WorkbenchTool {
+    const ALL: [Self; 4] = [Self::Grab, Self::Circle, Self::Rectangle, Self::Erase];
+
+    pub(crate) const fn name(self) -> &'static str {
+        match self {
+            Self::Grab => "grab",
+            Self::Circle => "circle",
+            Self::Rectangle => "rectangle",
+            Self::Erase => "erase",
+        }
+    }
+
+    const fn label(self) -> &'static str {
+        match self {
+            Self::Grab => "GRAB",
+            Self::Circle => "CIRC",
+            Self::Rectangle => "RECT",
+            Self::Erase => "ERASE",
+        }
+    }
+}
+
 pub(crate) struct UiRouting {
     pub events: Vec<InputEvent>,
     pub action: Option<UiAction>,
+    pub selected_tool: WorkbenchTool,
 }
 
 pub(crate) struct UiFrameModel<'a> {
@@ -53,6 +85,7 @@ pub(crate) struct UiFrameModel<'a> {
 pub(crate) struct WorkbenchUi {
     renderer: UiRenderer,
     menu_open: bool,
+    selected_tool: WorkbenchTool,
     captured_pointers: BTreeSet<u64>,
 }
 
@@ -65,6 +98,7 @@ impl WorkbenchUi {
         Self {
             renderer: UiRenderer::new(device, queue, color_format),
             menu_open: false,
+            selected_tool: WorkbenchTool::default(),
             captured_pointers: BTreeSet::new(),
         }
     }
@@ -76,10 +110,15 @@ impl WorkbenchUi {
     ) -> UiRouting {
         route_events(
             &mut self.menu_open,
+            &mut self.selected_tool,
             &mut self.captured_pointers,
             events,
             target_size,
         )
+    }
+
+    pub(crate) fn select_tool(&mut self, tool: WorkbenchTool) {
+        self.selected_tool = tool;
     }
 
     pub(crate) fn encode(
@@ -89,13 +128,20 @@ impl WorkbenchUi {
         target: RenderFrameTarget<'_>,
         model: UiFrameModel<'_>,
     ) -> UiReport {
-        self.renderer
-            .encode(queue, encoder, target, model, self.menu_open)
+        self.renderer.encode(
+            queue,
+            encoder,
+            target,
+            model,
+            self.menu_open,
+            self.selected_tool,
+        )
     }
 }
 
 fn route_events(
     menu_open: &mut bool,
+    selected_tool: &mut WorkbenchTool,
     captured_pointers: &mut BTreeSet<u64>,
     events: &[InputEvent],
     target_size: [u32; 2],
@@ -123,6 +169,7 @@ fn route_events(
                 captured_pointers.insert(pointer.id);
                 match hit {
                     UiHit::Menu => *menu_open = !*menu_open,
+                    UiHit::Tool(tool) => *selected_tool = tool,
                     UiHit::Scenario(scenario) => {
                         *menu_open = false;
                         action = Some(UiAction::ActivateScenario(scenario));
@@ -145,12 +192,14 @@ fn route_events(
     UiRouting {
         events: forwarded,
         action,
+        selected_tool: *selected_tool,
     }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum UiHit {
     Menu,
+    Tool(WorkbenchTool),
     Scenario(ValidationScenario),
     Restart,
     Recenter,
@@ -180,8 +229,10 @@ impl UiLayout {
         if contains(self.menu_button(), pixel) {
             return Some(UiHit::Menu);
         }
-        if contains(self.grab_button(), pixel) {
-            return Some(UiHit::Panel);
+        for tool in WorkbenchTool::ALL {
+            if contains(self.tool_button(tool), pixel) {
+                return Some(UiHit::Tool(tool));
+            }
         }
         if !menu_open {
             return None;
@@ -209,11 +260,17 @@ impl UiLayout {
         ]
     }
 
-    fn grab_button(self) -> [f32; 4] {
+    fn tool_button(self, tool: WorkbenchTool) -> [f32; 4] {
+        let index = match tool {
+            WorkbenchTool::Grab => 0,
+            WorkbenchTool::Circle => 1,
+            WorkbenchTool::Rectangle => 2,
+            WorkbenchTool::Erase => 3,
+        };
         [
-            118.0 * self.scale,
+            (118.0 + index as f32 * 76.0) * self.scale,
             24.0 * self.scale,
-            90.0 * self.scale,
+            70.0 * self.scale,
             52.0 * self.scale,
         ]
     }
@@ -299,6 +356,7 @@ impl UiLayout {
     pub(crate) fn center_normalized(self, hit: &str, index: usize) -> [f32; 2] {
         let bounds = match hit {
             "menu" => self.menu_button(),
+            "tool" => self.tool_button(WorkbenchTool::ALL[index]),
             "scenario" => self.scenario_button(index),
             "restart" => self.restart_button(),
             "recenter" => self.recenter_button(),
@@ -368,6 +426,7 @@ struct StaticKey {
     target_size: [u32; 2],
     scenario: ValidationScenario,
     menu_open: bool,
+    selected_tool: WorkbenchTool,
 }
 
 struct UiRenderer {
@@ -564,6 +623,7 @@ impl UiRenderer {
         target: RenderFrameTarget<'_>,
         model: UiFrameModel<'_>,
         menu_open: bool,
+        selected_tool: WorkbenchTool,
     ) -> UiReport {
         if self.last_target_size != Some(target.size) {
             let params = UiParams {
@@ -581,9 +641,10 @@ impl UiRenderer {
             target_size: target.size,
             scenario: model.scenario,
             menu_open,
+            selected_tool,
         };
         if self.static_key != Some(key) {
-            let batch = static_batch(target.size, model.scenario, menu_open);
+            let batch = static_batch(target.size, model.scenario, menu_open, selected_tool);
             if !batch.instances.is_empty() {
                 let bytes = bytemuck::cast_slice(&batch.instances);
                 queue.write_buffer(&self.static_instances, 0, bytes);
@@ -642,6 +703,7 @@ impl UiRenderer {
         UiReport {
             version: UI_CONTRACT_VERSION,
             menu_open,
+            current_tool: selected_tool.name(),
             current_scene: model.scenario.name(),
             static_instance_capacity: STATIC_INSTANCE_CAPACITY as u32,
             dynamic_instance_capacity: DYNAMIC_INSTANCE_CAPACITY as u32,
@@ -731,7 +793,12 @@ impl Batch {
     }
 }
 
-fn static_batch(target_size: [u32; 2], scenario: ValidationScenario, menu_open: bool) -> Batch {
+fn static_batch(
+    target_size: [u32; 2],
+    scenario: ValidationScenario,
+    menu_open: bool,
+    selected_tool: WorkbenchTool,
+) -> Batch {
     let layout = UiLayout::for_target(target_size);
     let scale = layout.scale;
     let mut batch = Batch::new(STATIC_INSTANCE_CAPACITY);
@@ -744,9 +811,24 @@ fn static_batch(target_size: [u32; 2], scenario: ValidationScenario, menu_open: 
         layout.menu_button(),
         if menu_open { selected } else { button },
     );
-    batch.push_quad(layout.grab_button(), selected);
     batch.push_text("MENU", [27.0 * scale, 41.0 * scale], 2.4 * scale, text);
-    batch.push_text("GRAB", [133.0 * scale, 41.0 * scale], 2.4 * scale, text);
+    for tool in WorkbenchTool::ALL {
+        let bounds = layout.tool_button(tool);
+        batch.push_quad(
+            bounds,
+            if tool == selected_tool {
+                selected
+            } else {
+                button
+            },
+        );
+        batch.push_text(
+            tool.label(),
+            [bounds[0] + 7.0 * scale, bounds[1] + 17.0 * scale],
+            1.8 * scale,
+            text,
+        );
+    }
     if menu_open {
         batch.push_quad(layout.menu_panel(), panel);
         batch.push_text("SCENES", [28.0 * scale, 98.0 * scale], 2.4 * scale, accent);
@@ -864,12 +946,16 @@ mod tests {
             let layout = UiLayout::for_target(target);
             for bounds in [
                 layout.menu_button(),
-                layout.grab_button(),
                 layout.menu_panel(),
                 layout.restart_button(),
                 layout.recenter_button(),
             ]
             .into_iter()
+            .chain(
+                WorkbenchTool::ALL
+                    .into_iter()
+                    .map(|tool| layout.tool_button(tool)),
+            )
             .chain(
                 ValidationScenario::ALL
                     .iter()
@@ -885,8 +971,18 @@ mod tests {
 
     #[test]
     fn batches_are_bounded_and_use_one_instance_per_visible_glyph() {
-        let static_closed = static_batch([960, 600], ValidationScenario::Bootstrap, false);
-        let static_open = static_batch([960, 600], ValidationScenario::Bootstrap, true);
+        let static_closed = static_batch(
+            [960, 600],
+            ValidationScenario::Bootstrap,
+            false,
+            WorkbenchTool::Grab,
+        );
+        let static_open = static_batch(
+            [960, 600],
+            ValidationScenario::Bootstrap,
+            true,
+            WorkbenchTool::Rectangle,
+        );
         assert!(!static_closed.overflowed && !static_open.overflowed);
         assert!(static_open.instances.len() > static_closed.instances.len());
         assert!(static_open.glyph_count > 0);
@@ -900,6 +996,7 @@ mod tests {
         let mut captured = BTreeSet::new();
         captured.insert(99);
         let mut menu_open = false;
+        let mut selected_tool = WorkbenchTool::Grab;
         let events = [
             pointer(1, PointerPhase::Down, PointerButton::Primary, menu),
             pointer(1, PointerPhase::Up, PointerButton::Primary, menu),
@@ -909,10 +1006,40 @@ mod tests {
                 zoom_steps: 1.0,
             }),
         ];
-        let routed = route_events(&mut menu_open, &mut captured, &events, target);
+        let routed = route_events(
+            &mut menu_open,
+            &mut selected_tool,
+            &mut captured,
+            &events,
+            target,
+        );
         assert!(menu_open);
         assert_eq!(routed.events.len(), 2);
         assert!(matches!(routed.events[0], InputEvent::Pointer(_)));
         assert!(matches!(routed.events[1], InputEvent::Wheel(_)));
+    }
+
+    #[test]
+    fn tool_buttons_are_shared_captured_and_select_exactly_one_tool() {
+        let target = [430, 932];
+        let layout = UiLayout::for_target(target);
+        let rectangle = layout.center_normalized("tool", 2);
+        let mut captured = BTreeSet::new();
+        let mut menu_open = false;
+        let mut selected_tool = WorkbenchTool::Grab;
+        let routed = route_events(
+            &mut menu_open,
+            &mut selected_tool,
+            &mut captured,
+            &[
+                pointer(7, PointerPhase::Down, PointerButton::Contact, rectangle),
+                pointer(7, PointerPhase::Up, PointerButton::Contact, rectangle),
+            ],
+            target,
+        );
+        assert_eq!(selected_tool, WorkbenchTool::Rectangle);
+        assert_eq!(routed.selected_tool, WorkbenchTool::Rectangle);
+        assert!(routed.events.is_empty());
+        assert!(captured.is_empty());
     }
 }

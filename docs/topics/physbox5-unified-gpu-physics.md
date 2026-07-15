@@ -688,6 +688,16 @@ render, selection, collision, persistence, and solver work sees that declared
 capacity. The small-world memory and scan cost is intentionally visible and
 remains subject to the S5.3 capacity/evidence gate.
 
+Shared authoring-toolbar checkpoint, 2026-07-16: UI contract version 2 exposes
+Grab, Circle, Rectangle, and Erase through the same engine-rendered glyph pass
+on every host. Placement and erase commit once on primary/contact release at
+the press position; a second touch therefore cancels the pending construction
+tool before it emits an intent and continues to own pan/pinch. Right-drag and
+wheel remain camera facts. Tool changes explicitly end an active grab, and all
+construction intents join the existing bounded, monotonic, first-admitted-step
+interaction stream. The UI reports selection and dispatch counts but never
+owns occupancy, body handles, or construction outcomes.
+
 Circle/circle and circle/rectangle contact are analytic. Rectangle/rectangle
 uses SAT to select a reference and incident edge, clips the incident segment,
 and produces stable vertex/edge feature pairs. Test feature stability around

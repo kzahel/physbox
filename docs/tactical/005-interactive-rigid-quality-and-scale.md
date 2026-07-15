@@ -244,9 +244,9 @@ Dependency: S5.2 generational pair invalidation passes.
   intents using existing material defaults and one declared size per shape.
 - [ ] Allocate and retire body slots on the GPU, increment generations, and
   invalidate stale pair, manifold, cache, grab, command, and render identity.
-- [ ] Expose `Grab`, `Circle`, `Rectangle`, and `Erase` in the existing shared
+- [x] Expose `Grab`, `Circle`, `Rectangle`, and `Erase` in the existing shared
   glyph toolbar with deterministic UI/tool/gesture priority.
-- [ ] Make an empty placement request finite and deterministic; reject deep
+- [x] Make an empty placement request finite and deterministic; reject deep
   coincident placement or full capacity explicitly rather than ghosting,
   disabling collision, silently moving the body, or losing work.
 - [ ] Exercise place, fall, collide, stack, grab, erase, reuse, restart, scene
@@ -284,6 +284,21 @@ from 97 dispatches/19,640 bytes to 100 dispatches/1,190,404 bytes. This is an
 explicit small-scene headroom cost, not a scale or performance improvement;
 S5.3 evidence must still prove stale pair/cache invalidation and qualify this
 capacity policy before the second lifecycle checkbox is complete.
+
+Toolbar checkpoint, 2026-07-16: UI contract version 2 renders four mutually
+exclusive touch-sized glyph tools in the one shared canvas pass and records the
+selected tool in every frame report. UI capture precedes world tools; secondary
+mouse input remains camera-owned. Grab preserves its anchored begin/target/end
+stream. Circle, Rectangle, and Erase capture a primary/contact press and emit
+exactly one construction intent on release at the press position, so a second
+touch cancels the pending tool before it can place or erase anything. Changing
+tools ends an active grab explicitly. Pending construction shares the existing
+monotonic interaction sequence, zero-step retention, first-admitted-step
+dispatch, and atomic overflow boundary without becoming a second engine path.
+Exact GPU tests cover circle/rectangle placement, erase/reuse to generation 2,
+tool-change grab release, and two-touch cancellation. Cross-host traces,
+high-cadence input, scene reset/switch, and visible asynchronous failure
+diagnostics remain in the S5.3 evidence boundary.
 
 ### S5.4 — awake settling and tuning bakeoff
 

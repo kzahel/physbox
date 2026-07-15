@@ -581,8 +581,8 @@ mod tests {
     #[test]
     fn live_pointer_targets_coalesce_until_an_admitted_step() {
         let mut renderer = pollster::block_on(OffscreenRenderer::new(
-            640,
-            400,
+            960,
+            600,
             EngineConfig {
                 scenario: ValidationScenario::RigidFloor,
             },
@@ -598,7 +598,7 @@ mod tests {
         };
         let initial = renderer.read_capture_state().unwrap();
         let initial_screen = crate::Camera2d::fixed()
-            .resolve([640, 400])
+            .resolve([960, 600])
             .unwrap()
             .world_to_screen([initial[0], initial[1]]);
         let queued = renderer.render(FrameInput {
@@ -695,7 +695,7 @@ mod tests {
 
     #[test]
     fn zero_step_motion_preserves_the_pending_begin_hit_point() {
-        let target_size = [640, 400];
+        let target_size = [960, 600];
         let frame = crate::Camera2d::fixed().resolve(target_size).unwrap();
         let pointer = |phase, world| {
             crate::InputEvent::Pointer(crate::PointerEvent {
@@ -733,7 +733,7 @@ mod tests {
 
     #[test]
     fn gpu_selection_supports_circle_and_rectangle_and_rejects_fixed_only_hits() {
-        let target_size = [640, 400];
+        let target_size = [960, 600];
         let click_world = |renderer: &mut OffscreenRenderer, id, world: [f32; 2]| {
             let at = crate::Camera2d::fixed()
                 .resolve(target_size)
@@ -792,7 +792,7 @@ mod tests {
 
     #[test]
     fn exactly_overlapping_hits_select_the_lower_body_slot() {
-        let target_size = [640, 400];
+        let target_size = [960, 600];
         let mut renderer = pollster::block_on(OffscreenRenderer::new(
             target_size[0],
             target_size[1],
@@ -832,7 +832,7 @@ mod tests {
 
     #[test]
     fn active_grab_clears_before_steering_a_reused_generation() {
-        let target_size = [640, 400];
+        let target_size = [960, 600];
         let mut renderer = pollster::block_on(OffscreenRenderer::new(
             target_size[0],
             target_size[1],
@@ -874,7 +874,7 @@ mod tests {
 
     #[test]
     fn off_center_gpu_grab_retains_anchor_rotates_and_releases_bounded_velocity() {
-        let target_size = [640, 400];
+        let target_size = [960, 600];
         let frame = crate::Camera2d::fixed().resolve(target_size).unwrap();
         let pointer = |phase, world| {
             crate::InputEvent::Pointer(crate::PointerEvent {
@@ -925,7 +925,7 @@ mod tests {
 
     #[test]
     fn active_grab_remains_collidable_against_the_fixed_floor() {
-        let target_size = [640, 400];
+        let target_size = [960, 600];
         let frame = crate::Camera2d::fixed().resolve(target_size).unwrap();
         let pointer = |phase, world| {
             crate::InputEvent::Pointer(crate::PointerEvent {
@@ -1140,8 +1140,11 @@ mod tests {
             switched.body_commands,
             crate::BodyCommandReport {
                 grab_intent_contract_version: physbox_contracts::GRAB_INTENT_CONTRACT_VERSION,
+                construction_intent_contract_version:
+                    physbox_contracts::CONSTRUCTION_INTENT_CONTRACT_VERSION,
                 capacity_commands: crate::BODY_COMMAND_CAPACITY,
                 capacity_grab_intents: crate::grab::GRAB_INTENT_CAPACITY,
+                capacity_construction_intents: crate::CONSTRUCTION_INTENT_CAPACITY,
                 grab_state_bytes: crate::grab::GRAB_STATE_BYTES,
                 ..Default::default()
             }
@@ -1163,17 +1166,185 @@ mod tests {
     }
 
     #[test]
+    fn shared_toolbar_routes_release_committed_construction_and_two_touch_cancel() {
+        let target_size = [960, 600];
+        let mut renderer = pollster::block_on(OffscreenRenderer::new(
+            target_size[0],
+            target_size[1],
+            EngineConfig {
+                scenario: ValidationScenario::Bootstrap,
+            },
+        ))
+        .unwrap();
+        let layout = crate::ui::UiLayout::for_target(target_size);
+        let click = |id, button, at| {
+            [crate::PointerPhase::Down, crate::PointerPhase::Up]
+                .into_iter()
+                .map(|phase| {
+                    crate::InputEvent::Pointer(crate::PointerEvent {
+                        id,
+                        phase,
+                        button,
+                        normalized_position: at,
+                    })
+                })
+                .collect::<Vec<_>>()
+        };
+        let world_at = |world| {
+            crate::Camera2d::fixed()
+                .resolve(target_size)
+                .unwrap()
+                .world_to_screen(world)
+        };
+        let circle_at = world_at([-0.8, 0.72]);
+        let rectangle_at = world_at([0.8, 0.72]);
+
+        let circle_tool = renderer.render(FrameInput::exact(0).with_input_events(click(
+            1,
+            crate::PointerButton::Primary,
+            layout.center_normalized("tool", 1),
+        )));
+        assert_eq!(circle_tool.ui.current_tool, "circle");
+        let placed_circle = renderer.render(FrameInput::exact(1).with_input_events(click(
+            2,
+            crate::PointerButton::Primary,
+            circle_at,
+        )));
+        assert_eq!(
+            placed_circle
+                .body_commands
+                .executed_construction_intents_total,
+            1
+        );
+
+        let rectangle_tool = renderer.render(FrameInput::exact(0).with_input_events(click(
+            3,
+            crate::PointerButton::Primary,
+            layout.center_normalized("tool", 2),
+        )));
+        assert_eq!(rectangle_tool.ui.current_tool, "rectangle");
+        renderer.render(FrameInput::exact(1).with_input_events(click(
+            4,
+            crate::PointerButton::Primary,
+            rectangle_at,
+        )));
+
+        renderer.render(FrameInput::exact(0).with_input_events(click(
+            5,
+            crate::PointerButton::Primary,
+            layout.center_normalized("tool", 3),
+        )));
+        renderer.render(FrameInput::exact(1).with_input_events(click(
+            6,
+            crate::PointerButton::Primary,
+            circle_at,
+        )));
+        renderer.render(FrameInput::exact(0).with_input_events(click(
+            7,
+            crate::PointerButton::Primary,
+            layout.center_normalized("tool", 1),
+        )));
+        renderer.render(FrameInput::exact(1).with_input_events(click(
+            8,
+            crate::PointerButton::Primary,
+            circle_at,
+        )));
+        let lifecycle = renderer.read_construction_state().unwrap();
+        assert_eq!(lifecycle.live_bodies, 4);
+        assert_eq!(lifecycle.attempted_intents, 4);
+        assert_eq!(lifecycle.succeeded_intents, 4);
+        assert_eq!(lifecycle.placed_circles, 2);
+        assert_eq!(lifecycle.placed_rectangles, 1);
+        assert_eq!(lifecycle.erased_bodies, 1);
+        assert_eq!(
+            lifecycle.last_body,
+            Some(physbox_contracts::BodyId {
+                slot: 2,
+                generation: 2,
+            })
+        );
+
+        renderer.render(FrameInput::exact(0).with_input_events(click(
+            9,
+            crate::PointerButton::Primary,
+            layout.center_normalized("tool", 0),
+        )));
+        let grabbed = renderer.render(FrameInput::exact(1).with_input_events(vec![
+            crate::InputEvent::Pointer(crate::PointerEvent {
+                id: 10,
+                phase: crate::PointerPhase::Down,
+                button: crate::PointerButton::Primary,
+                normalized_position: world_at([0.0, 0.62]),
+            }),
+        ]));
+        assert!(grabbed.body_commands.grab_pointer_active);
+        assert!(renderer.read_grab_state().unwrap().active);
+        let changed_tool = renderer.render(FrameInput::exact(1).with_input_events(click(
+            11,
+            crate::PointerButton::Primary,
+            layout.center_normalized("tool", 1),
+        )));
+        assert_eq!(changed_tool.ui.current_tool, "circle");
+        assert!(!changed_tool.body_commands.grab_pointer_active);
+        assert!(!renderer.read_grab_state().unwrap().active);
+
+        let touch_a = world_at([0.45, 0.85]);
+        let touch_b = world_at([0.65, 0.85]);
+        let cancelled = renderer.render(FrameInput::exact(0).with_input_events(vec![
+            crate::InputEvent::Pointer(crate::PointerEvent {
+                id: 20,
+                phase: crate::PointerPhase::Down,
+                button: crate::PointerButton::Contact,
+                normalized_position: touch_a,
+            }),
+            crate::InputEvent::Pointer(crate::PointerEvent {
+                id: 21,
+                phase: crate::PointerPhase::Down,
+                button: crate::PointerButton::Contact,
+                normalized_position: touch_b,
+            }),
+        ]));
+        assert!(!cancelled.body_commands.construction_pointer_active);
+        renderer.render(FrameInput::exact(0).with_input_events(vec![
+            crate::InputEvent::Pointer(crate::PointerEvent {
+                id: 20,
+                phase: crate::PointerPhase::Up,
+                button: crate::PointerButton::Contact,
+                normalized_position: touch_a,
+            }),
+            crate::InputEvent::Pointer(crate::PointerEvent {
+                id: 21,
+                phase: crate::PointerPhase::Up,
+                button: crate::PointerButton::Contact,
+                normalized_position: touch_b,
+            }),
+        ]));
+        let after_cancel = renderer.render(FrameInput::exact(1));
+        assert_eq!(
+            after_cancel.body_commands.queued_construction_intents_total,
+            4
+        );
+        assert_eq!(
+            renderer
+                .read_construction_state()
+                .unwrap()
+                .attempted_intents,
+            4
+        );
+    }
+
+    #[test]
     fn command_capacity_overflow_is_reported_without_partial_execution() {
         let mut renderer = pollster::block_on(OffscreenRenderer::new(
-            640,
-            400,
+            960,
+            600,
             EngineConfig {
                 scenario: ValidationScenario::RigidFloor,
             },
         ))
         .unwrap();
         let target = crate::Camera2d::fixed()
-            .resolve([640, 400])
+            .resolve([960, 600])
             .unwrap()
             .world_to_screen([0.0, 0.65]);
         let mut events = Vec::new();

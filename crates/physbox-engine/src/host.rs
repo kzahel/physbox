@@ -1,7 +1,7 @@
 use bytemuck::{Pod, Zeroable};
 use physbox_contracts::{
-    BodyCommandBatchV1, BodyCommandV1, GrabIntentBatchV1, GrabIntentV1, SCHEMA_VERSION,
-    ScheduledBodyCommandV1, Vec2, canonical_hash,
+    BodyCommandBatchV1, BodyCommandV1, ConstructionIntentBatchV1, ConstructionIntentV1,
+    GrabIntentBatchV1, GrabIntentV1, SCHEMA_VERSION, ScheduledBodyCommandV1, Vec2, canonical_hash,
 };
 use physbox_launch::ValidationScenario;
 
@@ -10,7 +10,9 @@ use crate::{
     FrameInput, InputEvent, PointerButton, PointerPhase, StepRequest,
     body_world::{BodyCommandStepRange, BodyStepPlan, GpuBodyWorld},
     clock::{FIXED_STEP_HZ, FIXED_STEP_SECONDS, InteractiveClockInput, SimulationClock},
-    construction::empty_construction_intent_batch,
+    construction::{
+        BoundedConstructionIntents, CONSTRUCTION_INTENT_CAPACITY, empty_construction_intent_batch,
+    },
     gpu_solver::{GpuSolverCandidate, GpuSolverLab, GpuSolverMode},
     grab::{BoundedGrabIntents, GRAB_INTENT_CAPACITY, empty_grab_intent_batch},
     input::{SharedInputState, WorldPointerEvent},
@@ -25,7 +27,7 @@ use crate::{
         p5_2_bucket_scenario, p5_2_centered_rectangle_stack_scenario,
         p5_2_generated_floor_scenario, p5_2_generated_reset_grab_scenario, p5_2_generated_scenario,
     },
-    ui::{UiAction, UiFrameModel, WorkbenchUi},
+    ui::{UiAction, UiFrameModel, WorkbenchTool, WorkbenchUi},
 };
 
 #[repr(C)]
@@ -40,18 +42,27 @@ struct PreparedBodyCommands {
     ranges: Vec<BodyCommandStepRange>,
     grab_batch: GrabIntentBatchV1,
     grab_ranges: Vec<BodyCommandStepRange>,
-    construction_batch: physbox_contracts::ConstructionIntentBatchV1,
+    construction_batch: ConstructionIntentBatchV1,
     construction_ranges: Vec<BodyCommandStepRange>,
 }
 
 struct BodyInteractionState {
     scheduled: Vec<ScheduledBodyCommandV1>,
     accept_live_input: bool,
-    active_pointer: Option<u64>,
+    active_pointer: Option<ActiveToolPointer>,
+    tool: WorkbenchTool,
     pending_body: BoundedBodyCommands,
     pending_grab: BoundedGrabIntents,
+    pending_construction: BoundedConstructionIntents,
     next_sequence: u32,
     report: BodyCommandReport,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ActiveToolPointer {
+    id: u64,
+    tool: WorkbenchTool,
+    down_target: Vec2,
 }
 
 impl BodyInteractionState {
@@ -66,19 +77,44 @@ impl BodyInteractionState {
             scheduled,
             accept_live_input,
             active_pointer: None,
+            tool: WorkbenchTool::Grab,
             pending_body: BoundedBodyCommands::new(BODY_COMMAND_CAPACITY)
                 .expect("body command capacity is valid"),
             pending_grab: BoundedGrabIntents::new(GRAB_INTENT_CAPACITY)
                 .expect("grab intent capacity is valid"),
+            pending_construction: BoundedConstructionIntents::new(CONSTRUCTION_INTENT_CAPACITY)
+                .expect("construction intent capacity is valid"),
             next_sequence,
             report: BodyCommandReport {
                 grab_intent_contract_version: physbox_contracts::GRAB_INTENT_CONTRACT_VERSION,
+                construction_intent_contract_version:
+                    physbox_contracts::CONSTRUCTION_INTENT_CONTRACT_VERSION,
                 capacity_commands: BODY_COMMAND_CAPACITY,
                 capacity_grab_intents: GRAB_INTENT_CAPACITY,
+                capacity_construction_intents: CONSTRUCTION_INTENT_CAPACITY,
                 grab_state_bytes: crate::grab::GRAB_STATE_BYTES,
                 ..Default::default()
             },
         }
+    }
+
+    fn select_tool(&mut self, tool: WorkbenchTool) {
+        if self.tool == tool {
+            return;
+        }
+        if self
+            .active_pointer
+            .is_some_and(|active| active.tool == WorkbenchTool::Grab)
+        {
+            let intent = GrabIntentV1::End {
+                sequence: self.take_sequence(),
+            };
+            self.push_grab(intent);
+        }
+        self.active_pointer = None;
+        self.report.grab_pointer_active = false;
+        self.report.construction_pointer_active = false;
+        self.tool = tool;
     }
 
     fn capture_pointer_events(&mut self, events: &[WorldPointerEvent]) {
@@ -91,32 +127,70 @@ impl BodyInteractionState {
                 (PointerButton::Primary | PointerButton::Contact, PointerPhase::Down)
                     if self.active_pointer.is_none() =>
                 {
-                    self.active_pointer = Some(event.id);
-                    let intent = GrabIntentV1::Begin {
-                        sequence: self.take_sequence(),
-                        world_target: target,
-                    };
-                    self.push_grab(intent);
-                }
-                (_, PointerPhase::Move) if self.active_pointer == Some(event.id) => {
-                    if self.pending_grab.coalesce_target(target) {
-                        self.report.coalesced_targets_total += 1;
-                    } else {
-                        let intent = GrabIntentV1::Target {
+                    self.active_pointer = Some(ActiveToolPointer {
+                        id: event.id,
+                        tool: self.tool,
+                        down_target: target,
+                    });
+                    if self.tool == WorkbenchTool::Grab {
+                        let intent = GrabIntentV1::Begin {
                             sequence: self.take_sequence(),
                             world_target: target,
                         };
                         self.push_grab(intent);
+                    } else {
+                        self.report.construction_pointer_active = true;
+                    }
+                }
+                (_, PointerPhase::Move)
+                    if self
+                        .active_pointer
+                        .is_some_and(|active| active.id == event.id) =>
+                {
+                    if self.tool == WorkbenchTool::Grab {
+                        if self.pending_grab.coalesce_target(target) {
+                            self.report.coalesced_targets_total += 1;
+                        } else {
+                            let intent = GrabIntentV1::Target {
+                                sequence: self.take_sequence(),
+                                world_target: target,
+                            };
+                            self.push_grab(intent);
+                        }
                     }
                 }
                 (_, PointerPhase::Up | PointerPhase::Cancel)
-                    if self.active_pointer == Some(event.id) =>
+                    if self
+                        .active_pointer
+                        .is_some_and(|active| active.id == event.id) =>
                 {
-                    let intent = GrabIntentV1::End {
-                        sequence: self.take_sequence(),
-                    };
-                    self.push_grab(intent);
+                    let active = self.active_pointer.expect("active pointer exists");
+                    if active.tool == WorkbenchTool::Grab {
+                        let intent = GrabIntentV1::End {
+                            sequence: self.take_sequence(),
+                        };
+                        self.push_grab(intent);
+                    } else if event.phase == PointerPhase::Up {
+                        let sequence = self.take_sequence();
+                        let intent = match active.tool {
+                            WorkbenchTool::Circle => ConstructionIntentV1::PlaceCircle {
+                                sequence,
+                                world_target: active.down_target,
+                            },
+                            WorkbenchTool::Rectangle => ConstructionIntentV1::PlaceRectangle {
+                                sequence,
+                                world_target: active.down_target,
+                            },
+                            WorkbenchTool::Erase => ConstructionIntentV1::EraseAt {
+                                sequence,
+                                world_target: active.down_target,
+                            },
+                            WorkbenchTool::Grab => unreachable!(),
+                        };
+                        self.push_construction(intent);
+                    }
                     self.active_pointer = None;
+                    self.report.construction_pointer_active = false;
                 }
                 _ => {}
             }
@@ -125,10 +199,11 @@ impl BodyInteractionState {
 
     fn prepare(&mut self, steps: u32, completed_steps: u64) -> PreparedBodyCommands {
         self.report.grab_intent_dispatches_this_frame = 0;
+        self.report.construction_intent_dispatches_this_frame = 0;
         self.report.grab_constraint_dispatches_this_frame = steps;
         let mut ranges = vec![BodyCommandStepRange { start: 0, count: 0 }; steps as usize];
         if steps == 0 {
-            self.update_grab_presentation_counts();
+            self.update_presentation_counts();
             return PreparedBodyCommands {
                 batch: empty_command_batch(),
                 ranges,
@@ -141,11 +216,15 @@ impl BodyInteractionState {
                 ],
             };
         }
-        if self.pending_body.overflowed() || self.pending_grab.overflowed() {
+        if self.pending_body.overflowed()
+            || self.pending_grab.overflowed()
+            || self.pending_construction.overflowed()
+        {
             self.report.overflowed = true;
             self.pending_body.clear();
             self.pending_grab.clear();
-            self.update_grab_presentation_counts();
+            self.pending_construction.clear();
+            self.update_presentation_counts();
             return PreparedBodyCommands {
                 batch: empty_command_batch(),
                 ranges,
@@ -160,11 +239,17 @@ impl BodyInteractionState {
         }
         let pending_body = self.pending_body.artifact().commands;
         let pending_grab = self.pending_grab.artifact().intents;
+        let pending_construction = self.pending_construction.artifact().intents;
         let mut body_builder = BoundedBodyCommands::new(BODY_COMMAND_CAPACITY)
             .expect("body command capacity is valid");
         let mut grab_builder =
             BoundedGrabIntents::new(GRAB_INTENT_CAPACITY).expect("grab intent capacity is valid");
+        let mut construction_builder =
+            BoundedConstructionIntents::new(CONSTRUCTION_INTENT_CAPACITY)
+                .expect("construction intent capacity is valid");
         let mut grab_ranges = vec![BodyCommandStepRange { start: 0, count: 0 }; steps as usize];
+        let mut construction_ranges =
+            vec![BodyCommandStepRange { start: 0, count: 0 }; steps as usize];
         for step_offset in 0..steps {
             let start = body_builder.len() as u32;
             if step_offset == 0 {
@@ -181,6 +266,15 @@ impl BodyInteractionState {
                 grab_ranges[0] = BodyCommandStepRange {
                     start: 0,
                     count: grab_builder.artifact().intents.len() as u32,
+                };
+                for intent in &pending_construction {
+                    if construction_builder.push(*intent).is_err() {
+                        self.report.overflowed = true;
+                    }
+                }
+                construction_ranges[0] = BodyCommandStepRange {
+                    start: 0,
+                    count: construction_builder.len() as u32,
                 };
             }
             let absolute_step = completed_steps + u64::from(step_offset);
@@ -201,8 +295,13 @@ impl BodyInteractionState {
         }
         self.pending_body.clear();
         self.pending_grab.clear();
-        if self.report.overflowed || body_builder.overflowed() || grab_builder.overflowed() {
-            self.update_grab_presentation_counts();
+        self.pending_construction.clear();
+        if self.report.overflowed
+            || body_builder.overflowed()
+            || grab_builder.overflowed()
+            || construction_builder.overflowed()
+        {
+            self.update_presentation_counts();
             return PreparedBodyCommands {
                 batch: empty_command_batch(),
                 ranges: vec![BodyCommandStepRange { start: 0, count: 0 }; steps as usize],
@@ -217,6 +316,7 @@ impl BodyInteractionState {
         }
         let batch = body_builder.artifact();
         let grab_batch = grab_builder.artifact();
+        let construction_batch = construction_builder.artifact();
         for command in &batch.commands {
             self.report.executed_commands_total += 1;
             match command {
@@ -234,20 +334,32 @@ impl BodyInteractionState {
             .report
             .executed_commands_total
             .saturating_add(grab_batch.intents.len() as u64);
+        self.report.executed_commands_total = self
+            .report
+            .executed_commands_total
+            .saturating_add(construction_batch.intents.len() as u64);
+        self.report.executed_construction_intents_total = self
+            .report
+            .executed_construction_intents_total
+            .saturating_add(construction_batch.intents.len() as u64);
         self.report.grab_intent_dispatches_this_frame =
             grab_ranges.iter().filter(|range| range.count != 0).count() as u32;
-        self.update_grab_presentation_counts();
+        self.report.construction_intent_dispatches_this_frame = construction_ranges
+            .iter()
+            .filter(|range| range.count != 0)
+            .count() as u32;
+        self.update_presentation_counts();
         PreparedBodyCommands {
             batch,
             ranges,
             grab_batch,
             grab_ranges,
-            construction_batch: empty_construction_intent_batch(),
-            construction_ranges: vec![BodyCommandStepRange { start: 0, count: 0 }; steps as usize],
+            construction_batch,
+            construction_ranges,
         }
     }
 
-    fn update_grab_presentation_counts(&mut self) {
+    fn update_presentation_counts(&mut self) {
         let active = u32::from(self.report.grab_pointer_active);
         self.report.grab_tether_prepare_dispatches_this_frame = active;
         self.report.grab_tether_draw_calls_this_frame = active;
@@ -266,6 +378,17 @@ impl BodyInteractionState {
         self.report.queued_commands_total += 1;
         self.report.grab_pointer_active = !matches!(intent, GrabIntentV1::End { .. });
         if self.pending_grab.push(intent).is_err() {
+            self.report.overflowed = true;
+        }
+    }
+
+    fn push_construction(&mut self, intent: ConstructionIntentV1) {
+        self.report.queued_commands_total = self.report.queued_commands_total.saturating_add(1);
+        self.report.queued_construction_intents_total = self
+            .report
+            .queued_construction_intents_total
+            .saturating_add(1);
+        if self.pending_construction.push(intent).is_err() {
             self.report.overflowed = true;
         }
     }
@@ -604,6 +727,7 @@ impl EngineHost {
                     );
                     replacement.scenario_activations_total = activations;
                     replacement.scenario_restarts_total = restarts;
+                    replacement.ui.select_tool(routing.selected_tool);
                     *self = replacement;
                 }
             }
@@ -613,6 +737,7 @@ impl EngineHost {
             self.input
                 .apply_events(&mut self.camera, &routing.events, context.target.size);
         if let Some(interaction) = &mut self.body_interaction {
+            interaction.select_tool(routing.selected_tool);
             interaction.capture_pointer_events(&world_events);
         }
         let (steps, pacing) = match input.step_request {
