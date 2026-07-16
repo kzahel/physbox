@@ -452,6 +452,8 @@ sequence; it did not authorize a product-default or quality-band change.
   output impulses with the full physical mass.
 - [x] Implement laboratory-only GPU scalar mass splitting from the accepted
   point-incidence topology without changing product construction or defaults.
+- [x] Implement laboratory-only GPU manifold-block and block-mass-split lanes
+  on stable pair slots, preserving equal-and-opposite records and body gather.
 - [ ] Evaluate the factorial matrix `current`, `mass-split`, `manifold-block`,
   and `block-mass-split` at 1/2/4/8 iterations on the unchanged six S5.4
   sources plus the 16-body stack. Preserve exact first failures and complete
@@ -523,7 +525,21 @@ normal and tangent effective mass, and leaves equal-and-opposite emission plus
 full-physical-mass gather unchanged. Both topology views produce byte-identical
 body, cache, and pass traces for the two-stack check; no dispatch, buffer, or
 product-constructor path was added. Manifold modes remain explicitly rejected
-until their separate implementation slice.
+at this checkpoint pending their separate implementation slice below.
+
+GPU block checkpoint, 2026-07-16: the generated-contact laboratory now runs
+one coupled active-set normal solve from each stable pair slot's local point
+zero and emits both points through the unchanged equal-and-opposite record and
+full-physical-mass body gather. The one-point form is byte-identical to point
+Jacobi, tangent/friction staging is unchanged, and canonical versus stable
+gather produces identical bodies, cache, and block traces. Each trace retains
+the symmetric matrix coefficients, active-set choice, final impulses, and the
+normal effective-mass incidence applied to each body; an invalid active-set
+result rejects the complete artifact. Pure manifold block adds no topology
+memory or dispatch. Combined block mass splitting counts distinct valid live
+manifolds in one candidate-only dispatch and adds exactly four topology bytes
+per body. Point Jacobi remains `SELECTED`; no constructor, tolerance, physical
+default, or acceptance band changed.
 
 ### S5.5 — P5.3 scalable broadphase bakeoff
 

@@ -1194,8 +1194,8 @@ impl GpuGeneratedContactOutput {
             !contact.valid
                 || contact.body_a >= body_count
                 || contact.body_b >= body_count
-                || contact.body_a_point_incidence == 0
-                || contact.body_b_point_incidence == 0
+                || contact.body_a_normal_mass_incidence == 0
+                || contact.body_b_normal_mass_incidence == 0
                 || [
                     contact.normal.x,
                     contact.normal.y,
@@ -1228,6 +1228,41 @@ impl GpuGeneratedContactOutput {
                 || !contribution.anchor.y.is_finite()
         }) {
             return Err("generated contribution evidence is invalid".to_owned());
+        }
+        if self.pass_evidence.manifold_blocks.iter().any(|block| {
+            block.body_a >= body_count
+                || block.body_b >= body_count
+                || !(1..=2).contains(&block.point_count)
+                || block.body_a_normal_mass_incidence == 0
+                || block.body_b_normal_mass_incidence == 0
+                || block.active_set == crate::GpuBlockActiveSetV2::Invalid
+                || block.effective_mass_matrix[0] <= 0.0
+                || (block.point_count == 2 && block.effective_mass_matrix[3] <= 0.0)
+                || block
+                    .effective_mass_matrix
+                    .into_iter()
+                    .chain(block.normal_impulses)
+                    .any(|value| !value.is_finite())
+                || block
+                    .normal_impulses
+                    .into_iter()
+                    .any(|impulse| impulse < 0.0)
+        }) {
+            return Err("generated manifold-block evidence is invalid".to_owned());
+        }
+        let traced_block_points = self
+            .pass_evidence
+            .manifold_blocks
+            .iter()
+            .map(|block| u64::from(block.point_count))
+            .sum::<u64>();
+        let expected_block_points = if self.solver_execution.normal_solver.uses_block() {
+            self.pass_evidence.contacts.len() as u64
+        } else {
+            0
+        };
+        if traced_block_points != expected_block_points {
+            return Err("generated manifold-block evidence does not match execution".to_owned());
         }
         self.work.validate().map_err(|error| error.to_string())?;
         for pair in self.capacities.windows(2) {

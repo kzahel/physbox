@@ -37,6 +37,14 @@ impl GpuNormalSolverV2 {
             Self::BlockMassSplit => 3,
         }
     }
+
+    pub const fn uses_block(self) -> bool {
+        matches!(self, Self::ManifoldBlock | Self::BlockMassSplit)
+    }
+
+    const fn uses_manifold_mass_split(self) -> bool {
+        matches!(self, Self::BlockMassSplit)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -115,6 +123,7 @@ pub struct GpuGatherTopologyEvidence {
     pub point_capacity: u32,
     pub edge_capacity: u32,
     pub radix_passes: u32,
+    pub manifold_count_dispatches: u32,
     pub canonical_scan_attempts: u64,
     pub capacities: Vec<CapacityRecordV1>,
 }
@@ -144,16 +153,18 @@ impl GpuGatherTopologyEvidence {
         match self.topology {
             GpuGatherTopology::CanonicalBodyScan => {
                 if self.edge_build_permuted
-                    || self.dispatches != 4
+                    || self.dispatches != 4 + self.manifold_count_dispatches
                     || self.radix_passes != 0
+                    || self.manifold_count_dispatches > 1
                     || self.canonical_scan_attempts == 0
                 {
                     return Err("canonical gather topology has invalid work accounting".to_owned());
                 }
             }
             GpuGatherTopology::StableBodyEdge => {
-                if self.dispatches != 3 + self.radix_passes * 3
+                if self.dispatches != 3 + self.radix_passes * 3 + self.manifold_count_dispatches
                     || self.radix_passes == 0
+                    || self.manifold_count_dispatches > 1
                     || self.canonical_scan_attempts != 0
                 {
                     return Err("stable body-edge topology has invalid work accounting".to_owned());
@@ -307,8 +318,46 @@ pub struct GpuFixedFloorContactEvidence {
     pub normal_impulse: f32,
     pub tangent_impulse: f32,
     pub total_normal_impulse: f32,
-    pub body_a_point_incidence: u32,
-    pub body_b_point_incidence: u32,
+    pub body_a_normal_mass_incidence: u32,
+    pub body_b_normal_mass_incidence: u32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum GpuBlockActiveSetV2 {
+    Both,
+    First,
+    Second,
+    None,
+    Scalar,
+    Invalid,
+}
+
+impl GpuBlockActiveSetV2 {
+    fn from_shader_code(code: u32) -> Self {
+        match code {
+            0 => Self::Both,
+            1 => Self::First,
+            2 => Self::Second,
+            3 => Self::None,
+            4 => Self::Scalar,
+            _ => Self::Invalid,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GpuManifoldBlockEvidenceV2 {
+    pub manifold_index: u32,
+    pub body_a: u32,
+    pub body_b: u32,
+    pub point_count: u32,
+    pub effective_mass_matrix: [f32; 4],
+    pub active_set: GpuBlockActiveSetV2,
+    pub body_a_normal_mass_incidence: u32,
+    pub body_b_normal_mass_incidence: u32,
+    pub normal_impulses: [f32; 2],
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -316,6 +365,7 @@ pub struct GpuFixedFloorContactEvidence {
 pub struct GpuFixedFloorPassEvidence {
     pub contacts: Vec<GpuFixedFloorContactEvidence>,
     pub contributions: Vec<GpuContributionEvidence>,
+    pub manifold_blocks: Vec<GpuManifoldBlockEvidenceV2>,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -340,6 +390,7 @@ struct PassParamsRaw {
 enum PipelineKind {
     TopologyClear,
     TopologyCount,
+    ManifoldCount,
     TopologyPrefix,
     TopologyScatter,
     EdgeBuild,
@@ -352,6 +403,7 @@ enum PipelineKind {
     Refresh,
     Warm,
     Normal,
+    NormalBlock,
     Tangent,
     Restitution,
     IntegratePosition,
@@ -373,6 +425,7 @@ impl PipelineKind {
         match self {
             Self::TopologyClear
             | Self::TopologyCount
+            | Self::ManifoldCount
             | Self::TopologyScatter
             | Self::EdgeBuild
             | Self::EdgeRadixHistograms
@@ -386,6 +439,7 @@ impl PipelineKind {
             | Self::Refresh
             | Self::Warm
             | Self::Normal
+            | Self::NormalBlock
             | Self::Tangent
             | Self::Restitution
             | Self::IntegratePosition => InstrumentedPhase::Solve,
@@ -419,15 +473,31 @@ struct TopologyLayout {
     block_count: u32,
     radix_passes: u32,
     sorted_edge_base: u32,
+    manifold_counts_base: u32,
+    has_manifold_counts: bool,
     element_count: u32,
 }
 
 impl TopologyLayout {
-    fn new(kind: GpuGatherTopology, body_count: u32, point_count: u32) -> Result<Self, String> {
-        match kind {
+    fn new(
+        kind: GpuGatherTopology,
+        body_count: u32,
+        point_count: u32,
+        include_manifold_counts: bool,
+    ) -> Result<Self, String> {
+        let mut layout = match kind {
             GpuGatherTopology::CanonicalBodyScan => Self::canonical(body_count, point_count),
             GpuGatherTopology::StableBodyEdge => Self::stable_body_edge(body_count, point_count),
+        }?;
+        if include_manifold_counts {
+            layout.manifold_counts_base = layout.element_count;
+            layout.has_manifold_counts = true;
+            layout.element_count = layout
+                .element_count
+                .checked_add(body_count)
+                .ok_or_else(|| "solver manifold-count range overflowed".to_owned())?;
         }
+        Ok(layout)
     }
 
     fn canonical(body_count: u32, point_count: u32) -> Result<Self, String> {
@@ -456,6 +526,8 @@ impl TopologyLayout {
             block_count: 0,
             radix_passes: 0,
             sorted_edge_base: 0,
+            manifold_counts_base: 0,
+            has_manifold_counts: false,
             element_count,
         })
     }
@@ -505,15 +577,18 @@ impl TopologyLayout {
             block_count,
             radix_passes,
             sorted_edge_base,
+            manifold_counts_base: 0,
+            has_manifold_counts: false,
             element_count,
         })
     }
 
     const fn dispatches(self) -> u32 {
-        match self.kind {
+        let base = match self.kind {
             GpuGatherTopology::CanonicalBodyScan => 4,
             GpuGatherTopology::StableBodyEdge => 3 + self.radix_passes * 3,
-        }
+        };
+        base + self.has_manifold_counts as u32
     }
 }
 
@@ -528,6 +603,7 @@ pub(crate) struct GpuFixedFloorSolver {
     bind_ba: wgpu::BindGroup,
     topology_clear_pipeline: wgpu::ComputePipeline,
     topology_count_pipeline: wgpu::ComputePipeline,
+    manifold_count_pipeline: Option<wgpu::ComputePipeline>,
     topology_prefix_pipeline: wgpu::ComputePipeline,
     topology_scatter_pipeline: wgpu::ComputePipeline,
     edge_build_pipeline: wgpu::ComputePipeline,
@@ -540,6 +616,7 @@ pub(crate) struct GpuFixedFloorSolver {
     refresh_pipeline: wgpu::ComputePipeline,
     warm_pipeline: wgpu::ComputePipeline,
     normal_pipeline: wgpu::ComputePipeline,
+    normal_block_pipeline: Option<wgpu::ComputePipeline>,
     tangent_pipeline: wgpu::ComputePipeline,
     restitution_pipeline: wgpu::ComputePipeline,
     integrate_position_pipeline: wgpu::ComputePipeline,
@@ -668,7 +745,12 @@ impl GpuFixedFloorSolver {
         execution: GpuSolverExecutionV2,
     ) -> Result<Self, String> {
         let body_count = storage.layout().capacity_elements;
-        let topology_layout = TopologyLayout::new(topology, body_count, point_count)?;
+        let topology_layout = TopologyLayout::new(
+            topology,
+            body_count,
+            point_count,
+            execution.normal_solver.uses_manifold_mass_split(),
+        )?;
         let (parameters, operations) = operations(
             scenario,
             body_count,
@@ -833,6 +915,10 @@ impl GpuFixedFloorSolver {
             bind_ba,
             topology_clear_pipeline: pipeline("floor_topology_clear", "clear_topology"),
             topology_count_pipeline: pipeline("floor_topology_count", "count_edges"),
+            manifold_count_pipeline: execution
+                .normal_solver
+                .uses_manifold_mass_split()
+                .then(|| pipeline("floor_manifold_count", "count_manifolds")),
             topology_prefix_pipeline: pipeline("floor_topology_prefix", "prefix_edges"),
             topology_scatter_pipeline: pipeline("floor_topology_scatter", "scatter_edges"),
             edge_build_pipeline: pipeline("floor_edge_build", "build_stable_edges"),
@@ -848,6 +934,10 @@ impl GpuFixedFloorSolver {
             refresh_pipeline: pipeline("floor_refresh", "refresh_contacts"),
             warm_pipeline: pipeline("floor_warm", "emit_warm"),
             normal_pipeline: pipeline("floor_normal", "emit_normal"),
+            normal_block_pipeline: execution
+                .normal_solver
+                .uses_block()
+                .then(|| pipeline("floor_normal_block", "emit_normal_block")),
             tangent_pipeline: pipeline("floor_tangent", "emit_tangent"),
             restitution_pipeline: pipeline("floor_restitution", "emit_restitution"),
             integrate_position_pipeline: pipeline("floor_integrate_position", "integrate_position"),
@@ -875,6 +965,10 @@ impl GpuFixedFloorSolver {
         pass.set_pipeline(match operation.pipeline {
             PipelineKind::TopologyClear => &self.topology_clear_pipeline,
             PipelineKind::TopologyCount => &self.topology_count_pipeline,
+            PipelineKind::ManifoldCount => self
+                .manifold_count_pipeline
+                .as_ref()
+                .expect("manifold count operations require the candidate pipeline"),
             PipelineKind::TopologyPrefix => &self.topology_prefix_pipeline,
             PipelineKind::TopologyScatter => &self.topology_scatter_pipeline,
             PipelineKind::EdgeBuild => &self.edge_build_pipeline,
@@ -887,6 +981,10 @@ impl GpuFixedFloorSolver {
             PipelineKind::Refresh => &self.refresh_pipeline,
             PipelineKind::Warm => &self.warm_pipeline,
             PipelineKind::Normal => &self.normal_pipeline,
+            PipelineKind::NormalBlock => self
+                .normal_block_pipeline
+                .as_ref()
+                .expect("normal block operations require the candidate pipeline"),
             PipelineKind::Tangent => &self.tangent_pipeline,
             PipelineKind::Restitution => &self.restitution_pipeline,
             PipelineKind::IntegratePosition => &self.integrate_position_pipeline,
@@ -977,6 +1075,7 @@ impl GpuFixedFloorSolver {
             point_capacity: self.point_count,
             edge_capacity: self.topology_layout.edge_count,
             radix_passes: self.topology_layout.radix_passes,
+            manifold_count_dispatches: self.topology_layout.has_manifold_counts as u32,
             canonical_scan_attempts: if self.topology_layout.kind
                 == GpuGatherTopology::CanonicalBodyScan
             {
@@ -1322,8 +1421,53 @@ pub(crate) fn decode_pass_evidence(
             normal_impulse: point.data1[2],
             tangent_impulse: point.data1[3],
             total_normal_impulse: point.data2[0],
-            body_a_point_incidence: point.data2[1] as u32,
-            body_b_point_incidence: point.data2[2] as u32,
+            body_a_normal_mass_incidence: point.data2[1] as u32,
+            body_b_normal_mass_incidence: point.data2[2] as u32,
+        })
+        .collect::<Vec<_>>();
+    let manifold_blocks = prepared
+        .iter()
+        .enumerate()
+        .filter_map(|(index, point)| {
+            if point.ids[0] == u32::MAX || point.ids[1] == u32::MAX || point.ids[3] != 0 {
+                return None;
+            }
+            let first_contribution = index * 2;
+            let k11 = f32::from_bits(raw_contributions[first_contribution].padding);
+            if !k11.is_finite() || k11 <= 0.0 {
+                return None;
+            }
+            let has_second = index + 1 < prepared.len()
+                && prepared[index + 1].ids[0] != u32::MAX
+                && prepared[index + 1].ids[0] == point.ids[0]
+                && prepared[index + 1].ids[1] == point.ids[1]
+                && prepared[index + 1].ids[2] == point.ids[2]
+                && prepared[index + 1].ids[3] == 1;
+            let (point_count, matrix, second_impulse) = if has_second {
+                (
+                    2,
+                    [
+                        k11,
+                        f32::from_bits(raw_contributions[first_contribution + 1].padding),
+                        f32::from_bits(raw_contributions[first_contribution + 1].padding),
+                        f32::from_bits(raw_contributions[first_contribution + 2].padding),
+                    ],
+                    prepared[index + 1].data1[2],
+                )
+            } else {
+                (1, [k11, 0.0, 0.0, 0.0], 0.0)
+            };
+            Some(GpuManifoldBlockEvidenceV2 {
+                manifold_index: point.ids[2],
+                body_a: point.ids[0],
+                body_b: point.ids[1],
+                point_count,
+                effective_mass_matrix: matrix,
+                active_set: GpuBlockActiveSetV2::from_shader_code(point.data2[3] as u32),
+                body_a_normal_mass_incidence: point.data2[1] as u32,
+                body_b_normal_mass_incidence: point.data2[2] as u32,
+                normal_impulses: [point.data1[2], second_impulse],
+            })
         })
         .collect();
     let contributions = raw_contributions
@@ -1339,6 +1483,7 @@ pub(crate) fn decode_pass_evidence(
     Ok(GpuFixedFloorPassEvidence {
         contacts,
         contributions,
+        manifold_blocks,
     })
 }
 
@@ -1362,12 +1507,6 @@ fn validate_experiment_settings(
     execution: GpuSolverExecutionV2,
 ) -> Result<(), String> {
     execution.validate()?;
-    if matches!(
-        execution.normal_solver,
-        GpuNormalSolverV2::ManifoldBlock | GpuNormalSolverV2::BlockMassSplit
-    ) {
-        return Err("manifold-block GPU experiments are not implemented in this slice".to_owned());
-    }
     if settings.fixed_dt.get().to_bits() != (1.0_f32 / 60.0).to_bits() {
         return Err("GPU solver experiments retain the governed 60 Hz fixed dt".to_owned());
     }
@@ -1430,6 +1569,11 @@ fn operations(
     let mut operations = Vec::new();
     let body_workgroups = workgroups(body_count);
     let point_workgroups = workgroups(point_count);
+    let normal_pipeline = if execution.normal_solver.uses_block() {
+        PipelineKind::NormalBlock
+    } else {
+        PipelineKind::Normal
+    };
     topology_operations(
         &mut parameters,
         &mut operations,
@@ -1483,8 +1627,17 @@ fn operations(
             jacobi_stage(
                 &mut parameters,
                 &mut operations,
-                pass_params(scenario, body_count, point_count, 2, iteration, 1),
-                PipelineKind::Normal,
+                normal_params(
+                    scenario,
+                    body_count,
+                    point_count,
+                    2,
+                    iteration,
+                    1,
+                    topology,
+                    execution.normal_solver,
+                ),
+                normal_pipeline,
                 MotionDirection::BtoA,
                 point_workgroups,
                 body_workgroups,
@@ -1528,8 +1681,17 @@ fn operations(
                 jacobi_stage(
                     &mut parameters,
                     &mut operations,
-                    pass_params(scenario, body_count, point_count, 4, iteration, 0),
-                    PipelineKind::Normal,
+                    normal_params(
+                        scenario,
+                        body_count,
+                        point_count,
+                        4,
+                        iteration,
+                        0,
+                        topology,
+                        execution.normal_solver,
+                    ),
+                    normal_pipeline,
                     MotionDirection::BtoA,
                     point_workgroups,
                     body_workgroups,
@@ -1572,6 +1734,33 @@ fn preparation_params(
     params.uints0[2] = topology.ranges_base;
     params.uints1[1] = normal_solver.shader_code();
     params.uints1[2] = u32::from(topology.kind == GpuGatherTopology::StableBodyEdge);
+    params.uints1[3] = topology.manifold_counts_base;
+    params
+}
+
+#[allow(clippy::too_many_arguments)]
+fn normal_params(
+    scenario: &ScenarioV1,
+    body_count: u32,
+    point_count: u32,
+    stage: u32,
+    iteration: u32,
+    use_bias: u32,
+    topology: TopologyLayout,
+    normal_solver: GpuNormalSolverV2,
+) -> PassParamsRaw {
+    let mut params = pass_params(
+        scenario,
+        body_count,
+        point_count,
+        stage,
+        iteration,
+        use_bias,
+    );
+    params.uints0[2] = topology.ranges_base;
+    params.uints0[3] = topology.manifold_counts_base;
+    params.uints1[2] = u32::from(topology.kind == GpuGatherTopology::StableBodyEdge);
+    params.floats2[1] = normal_solver.shader_code() as f32;
     params
 }
 
@@ -1686,6 +1875,18 @@ fn topology_operations(
             );
         }
     }
+    if topology.has_manifold_counts {
+        let mut counts = clear;
+        counts.uints0[2] = topology.manifold_counts_base;
+        push_operation(
+            parameters,
+            operations,
+            counts,
+            PipelineKind::ManifoldCount,
+            MotionDirection::AtoB,
+            workgroups(point_count),
+        );
+    }
 }
 
 fn pass_params(
@@ -1784,10 +1985,10 @@ fn topology_capacities(
     _point_count: u32,
     topology: TopologyLayout,
 ) -> Vec<CapacityRecordV1> {
-    match topology.kind {
+    let mut capacities = match topology.kind {
         GpuGatherTopology::CanonicalBodyScan => vec![capacity(
             "solver-topology",
-            topology.element_count,
+            topology.element_count - u32::from(topology.has_manifold_counts) * body_count,
             size_of::<u32>() as u64,
         )],
         GpuGatherTopology::StableBodyEdge => vec![
@@ -1807,7 +2008,16 @@ fn topology_capacities(
                 size_of::<[u32; 2]>() as u64,
             ),
         ],
+    };
+    if topology.has_manifold_counts {
+        capacities.push(capacity(
+            "solver-manifold-incidence",
+            body_count,
+            size_of::<u32>() as u64,
+        ));
     }
+    capacities.sort_by(|left, right| left.class.cmp(&right.class));
+    capacities
 }
 
 fn capacity(class: &str, elements: u32, stride: u64) -> CapacityRecordV1 {
@@ -1931,7 +2141,8 @@ mod tests {
     #[test]
     fn accepted_fixed_floor_schedule_is_exactly_sixty_eight_dispatches() {
         let scenario = crate::p5_1_rectangle_floor_scenario(120).unwrap();
-        let topology = TopologyLayout::new(GpuGatherTopology::CanonicalBodyScan, 2, 2).unwrap();
+        let topology =
+            TopologyLayout::new(GpuGatherTopology::CanonicalBodyScan, 2, 2, false).unwrap();
         let (parameters, operations) = operations(
             &scenario,
             2,
@@ -1950,7 +2161,7 @@ mod tests {
     #[test]
     fn stable_body_edge_schedule_scales_with_body_key_width() {
         let scenario = crate::p5_1_rectangle_floor_scenario(120).unwrap();
-        let topology = TopologyLayout::new(GpuGatherTopology::StableBodyEdge, 2, 2).unwrap();
+        let topology = TopologyLayout::new(GpuGatherTopology::StableBodyEdge, 2, 2, false).unwrap();
         let (parameters, operations) = operations(
             &scenario,
             2,
@@ -1965,7 +2176,8 @@ mod tests {
         assert_eq!(operations.len(), 70);
         assert_eq!(parameters.len(), operations.len());
 
-        let scale = TopologyLayout::new(GpuGatherTopology::StableBodyEdge, 1_024, 512).unwrap();
+        let scale =
+            TopologyLayout::new(GpuGatherTopology::StableBodyEdge, 1_024, 512, false).unwrap();
         assert_eq!(scale.radix_passes, 3);
         assert_eq!(scale.dispatches(), 12);
     }
@@ -1986,7 +2198,7 @@ mod tests {
     fn experiment_schedule_is_bounded_and_dispatch_accounted() {
         let mut scenario = crate::p5_1_rectangle_floor_scenario(120).unwrap();
         scenario.settings.iterations = 2;
-        let topology = TopologyLayout::new(GpuGatherTopology::StableBodyEdge, 2, 2).unwrap();
+        let topology = TopologyLayout::new(GpuGatherTopology::StableBodyEdge, 2, 2, false).unwrap();
         let (_, with_relaxation) = operations(
             &scenario,
             2,
@@ -2015,17 +2227,25 @@ mod tests {
             GpuSolverExecutionV2::normal_experiment(GpuNormalSolverV2::ScalarMassSplit, true, true),
         )
         .unwrap();
-        assert!(
-            validate_experiment_settings(
-                &scenario.settings,
-                GpuSolverExecutionV2::normal_experiment(
-                    GpuNormalSolverV2::ManifoldBlock,
-                    true,
-                    true,
-                ),
-            )
-            .is_err()
-        );
+        let block_execution =
+            GpuSolverExecutionV2::normal_experiment(GpuNormalSolverV2::ManifoldBlock, true, true);
+        validate_experiment_settings(&scenario.settings, block_execution).unwrap();
+        let block_topology =
+            TopologyLayout::new(GpuGatherTopology::StableBodyEdge, 2, 2, false).unwrap();
+        let (_, block_operations) =
+            operations(&scenario, 2, 2, block_topology, false, block_execution);
+        assert_eq!(block_operations.len(), with_relaxation.len());
+        assert_eq!(block_topology.dispatches(), topology.dispatches());
+        assert_eq!(block_topology.element_count, topology.element_count);
+        let split_topology =
+            TopologyLayout::new(GpuGatherTopology::StableBodyEdge, 2, 2, true).unwrap();
+        let split_execution =
+            GpuSolverExecutionV2::normal_experiment(GpuNormalSolverV2::BlockMassSplit, true, true);
+        let (_, split_operations) =
+            operations(&scenario, 2, 2, split_topology, false, split_execution);
+        assert_eq!(split_operations.len(), with_relaxation.len() + 1);
+        assert_eq!(split_topology.dispatches(), topology.dispatches() + 1);
+        assert_eq!(split_topology.element_count, topology.element_count + 2);
         scenario.settings.iterations = 9;
         assert!(
             validate_experiment_settings(

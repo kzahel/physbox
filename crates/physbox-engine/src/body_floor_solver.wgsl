@@ -37,6 +37,16 @@ struct PassParams {
     uints1: vec4u,
 };
 
+struct BlockSolution {
+    impulses: vec2f,
+    active_set: u32,
+};
+
+struct NormalEquation {
+    base: f32,
+    impulse_scale: f32,
+};
+
 @group(0) @binding(0) var<storage, read_write> poses: array<vec4f>;
 @group(0) @binding(1) var<storage, read_write> motions_source: array<vec4f>;
 @group(0) @binding(2) var<storage, read_write> motions_destination: array<vec4f>;
@@ -80,6 +90,16 @@ fn point_incidence(body_index: u32) -> f32 {
     return f32(max(count, 1u));
 }
 
+fn manifold_incidence(body_index: u32) -> f32 {
+    return f32(max(atomicLoad(&topology[params.uints1.w + body_index]), 1u));
+}
+
+fn preparation_incidence(body_index: u32) -> f32 {
+    if (params.uints1.y == 1u) { return point_incidence(body_index); }
+    if (params.uints1.y == 3u) { return manifold_incidence(body_index); }
+    return 1.0;
+}
+
 fn effective_mass(body_a: u32, body_b: u32, anchor_a: vec2f,
                   anchor_b: vec2f, axis: vec2f,
                   incidence_a: f32, incidence_b: f32) -> f32 {
@@ -87,12 +107,9 @@ fn effective_mass(body_a: u32, body_b: u32, anchor_a: vec2f,
     let property_b = properties[body_b];
     let cross_a = cross(anchor_a, axis);
     let cross_b = cross(anchor_b, axis);
-    let mass_split = params.uints1.y == 1u;
-    let count_a = select(1.0, incidence_a, mass_split);
-    let count_b = select(1.0, incidence_b, mass_split);
-    let inverse = count_a * property_a.z + count_b * property_b.z +
-        count_a * property_a.w * cross_a * cross_a +
-        count_b * property_b.w * cross_b * cross_b;
+    let inverse = incidence_a * property_a.z + incidence_b * property_b.z +
+        incidence_a * property_a.w * cross_a * cross_a +
+        incidence_b * property_b.w * cross_b * cross_b;
     return select(0.0, 1.0 / inverse, inverse > 0.0);
 }
 
@@ -151,6 +168,16 @@ fn count_edges(@builtin(global_invocation_id) id: vec3u) {
     if (!valid_point(point)) { return; }
     atomicAdd(&topology[point.ids.x * 2u + 1u], 1u);
     atomicAdd(&topology[point.ids.y * 2u + 1u], 1u);
+}
+
+@compute @workgroup_size(64)
+fn count_manifolds(@builtin(global_invocation_id) id: vec3u) {
+    let point_index = id.x;
+    if (point_index >= params.uints0.y) { return; }
+    let point = point_inputs[point_index];
+    if (!valid_point(point) || point.ids.w != 0u) { return; }
+    atomicAdd(&topology[params.uints0.z + point.ids.x], 1u);
+    atomicAdd(&topology[params.uints0.z + point.ids.y], 1u);
 }
 
 @compute @workgroup_size(1)
@@ -315,8 +342,8 @@ fn refreshed_point(input: PointInput, previous: PreparedPoint, reset: bool) -> P
     let initial_velocity = dot(point_velocity(input.ids.y, anchor_b) -
                                point_velocity(input.ids.x, anchor_a), input.normal);
     let retained_initial_velocity = previous.data0.x;
-    let incidence_a = point_incidence(input.ids.x);
-    let incidence_b = point_incidence(input.ids.y);
+    let incidence_a = preparation_incidence(input.ids.x);
+    let incidence_b = preparation_incidence(input.ids.y);
     var point = previous;
     point.ids = input.ids;
     point.normal = input.normal;
@@ -327,7 +354,8 @@ fn refreshed_point(input: PointInput, previous: PreparedPoint, reset: bool) -> P
         effective_mass(input.ids.x, input.ids.y, anchor_a, anchor_b, input.normal,
             incidence_a, incidence_b),
         effective_mass(input.ids.x, input.ids.y, anchor_a, anchor_b, tangent,
-            incidence_a, incidence_b),
+            select(1.0, incidence_a, params.uints1.y == 1u),
+            select(1.0, incidence_b, params.uints1.y == 1u)),
         dot((pose_b.xy + anchor_b) - (pose_a.xy + anchor_a), input.normal));
     if (reset) {
         point.data1 = vec4f(input.material.y, input.material.z, input.cache);
@@ -403,6 +431,173 @@ fn emit_normal(@builtin(global_invocation_id) id: vec3u) {
     point.data2.x += max(applied, 0.0);
     prepared_points[id.x] = point;
     emit_pair(id.x, point, point.normal * applied);
+}
+
+fn normal_equation(point: PreparedPoint) -> NormalEquation {
+    let normal_velocity = relative_velocity(point, point.normal);
+    var velocity_bias = 0.0;
+    var mass_scale = 1.0;
+    var output: NormalEquation;
+    output.impulse_scale = 0.0;
+    if (point.data0.w > 0.0) {
+        velocity_bias = point.data0.w / params.floats0.x;
+    } else if (params.uints1.w != 0u) {
+        velocity_bias = params.floats0.y * point.data0.w / params.floats0.x;
+        if (params.floats2.x > 0.0) {
+            velocity_bias = max(velocity_bias, -params.floats2.x);
+        }
+        mass_scale = params.floats0.z;
+        output.impulse_scale = params.floats0.w;
+    }
+    output.base = mass_scale * normal_velocity + velocity_bias;
+    return output;
+}
+
+fn block_matrix_entry(left: PreparedPoint, right: PreparedPoint,
+                      incidence_a: f32, incidence_b: f32) -> f32 {
+    let property_a = properties[left.ids.x];
+    let property_b = properties[left.ids.y];
+    return incidence_a * property_a.z + incidence_b * property_b.z +
+        incidence_a * property_a.w * cross(left.anchor_a, left.normal) *
+            cross(right.anchor_a, right.normal) +
+        incidence_b * property_b.w * cross(left.anchor_b, left.normal) *
+            cross(right.anchor_b, right.normal);
+}
+
+fn solve_normal_block(matrix: vec4f, base: vec2f, old: vec2f,
+                      impulse_scale: vec2f,
+                      point_count: u32) -> BlockSolution {
+    var output: BlockSolution;
+    output.impulses = old;
+    output.active_set = 5u;
+    if (point_count == 1u) {
+        let mass = select(0.0, 1.0 / matrix.x, matrix.x > 0.0);
+        output.impulses = vec2f(max(old.x - mass * base.x -
+            impulse_scale.x * old.x, 0.0), 0.0);
+        output.active_set = 4u;
+        return output;
+    }
+
+    let scaled_old = impulse_scale * old;
+    let rhs = base + vec2f(
+        matrix.x * scaled_old.x + matrix.y * scaled_old.y,
+        matrix.z * scaled_old.x + matrix.w * scaled_old.y);
+    let determinant = matrix.x * matrix.w - matrix.y * matrix.z;
+    if (determinant > 0.0) {
+        let delta = vec2f(
+            (-matrix.w * rhs.x + matrix.y * rhs.y) / determinant,
+            (matrix.z * rhs.x - matrix.x * rhs.y) / determinant);
+        let candidate = old + delta;
+        if (all(candidate >= vec2f(0.0))) {
+            output.impulses = candidate;
+            output.active_set = 0u;
+            return output;
+        }
+    }
+
+    if (matrix.x > 0.0) {
+        let delta1 = -old.y;
+        let delta0 = -(rhs.x + matrix.y * delta1) / matrix.x;
+        let candidate0 = old.x + delta0;
+        let inactive_velocity = rhs.y + matrix.z * delta0 + matrix.w * delta1;
+        if (candidate0 >= 0.0 && inactive_velocity >= 0.0) {
+            output.impulses = vec2f(candidate0, 0.0);
+            output.active_set = 1u;
+            return output;
+        }
+    }
+
+    if (matrix.w > 0.0) {
+        let delta0 = -old.x;
+        let delta1 = -(rhs.y + matrix.z * delta0) / matrix.w;
+        let candidate1 = old.y + delta1;
+        let inactive_velocity = rhs.x + matrix.x * delta0 + matrix.y * delta1;
+        if (candidate1 >= 0.0 && inactive_velocity >= 0.0) {
+            output.impulses = vec2f(0.0, candidate1);
+            output.active_set = 2u;
+            return output;
+        }
+    }
+
+    let delta = -old;
+    let velocity = rhs + vec2f(
+        matrix.x * delta.x + matrix.y * delta.y,
+        matrix.z * delta.x + matrix.w * delta.y);
+    if (all(velocity >= vec2f(0.0))) {
+        output.impulses = vec2f(0.0);
+        output.active_set = 3u;
+    }
+    return output;
+}
+
+fn store_block_trace(point_index: u32, matrix: vec4f, active_set: u32) {
+    contributions[point_index * 2u].padding = bitcast<u32>(matrix.x);
+    contributions[point_index * 2u + 1u].padding = bitcast<u32>(matrix.y);
+    if (point_index + 1u < params.uints0.y) {
+        contributions[(point_index + 1u) * 2u].padding = bitcast<u32>(matrix.w);
+        contributions[(point_index + 1u) * 2u + 1u].padding = active_set;
+    }
+}
+
+@compute @workgroup_size(64)
+fn emit_normal_block(@builtin(global_invocation_id) id: vec3u) {
+    if (id.x >= params.uints0.y) { return; }
+    let input0 = point_inputs[id.x];
+    if (!valid_point(input0) || input0.ids.w != 0u) { return; }
+    var point0 = prepared_points[id.x];
+    var point1 = point0;
+    var point_count = 1u;
+    if (id.x + 1u < params.uints0.y) {
+        let input1 = point_inputs[id.x + 1u];
+        if (valid_point(input1) && input1.ids.x == input0.ids.x &&
+                input1.ids.y == input0.ids.y && input1.ids.z == input0.ids.z &&
+                input1.ids.w == 1u) {
+            point1 = prepared_points[id.x + 1u];
+            point_count = 2u;
+        }
+    }
+
+    let block_mass_split = u32(params.floats2.y) == 3u;
+    var incidence_a = 1.0;
+    var incidence_b = 1.0;
+    if (block_mass_split) {
+        incidence_a = f32(max(atomicLoad(
+            &topology[params.uints0.w + point0.ids.x]), 1u));
+        incidence_b = f32(max(atomicLoad(
+            &topology[params.uints0.w + point0.ids.y]), 1u));
+    }
+    let k11 = block_matrix_entry(point0, point0, incidence_a, incidence_b);
+    var matrix = vec4f(k11, 0.0, 0.0, 0.0);
+    if (point_count == 2u) {
+        let k12 = block_matrix_entry(point0, point1, incidence_a, incidence_b);
+        let k21 = block_matrix_entry(point1, point0, incidence_a, incidence_b);
+        let k22 = block_matrix_entry(point1, point1, incidence_a, incidence_b);
+        matrix = vec4f(k11, k12, k21, k22);
+    }
+    let old = vec2f(point0.data1.z, select(0.0, point1.data1.z, point_count == 2u));
+    let equation0 = normal_equation(point0);
+    let equation1 = normal_equation(point1);
+    let base = vec2f(equation0.base,
+        select(0.0, equation1.base, point_count == 2u));
+    let impulse_scale = vec2f(equation0.impulse_scale,
+        select(0.0, equation1.impulse_scale, point_count == 2u));
+    let solution = solve_normal_block(matrix, base, old, impulse_scale, point_count);
+    store_block_trace(id.x, matrix, solution.active_set);
+
+    let applied0 = solution.impulses.x - old.x;
+    point0.data1.z = solution.impulses.x;
+    point0.data2.x += max(applied0, 0.0);
+    point0.data2.w = f32(solution.active_set);
+    prepared_points[id.x] = point0;
+    emit_pair(id.x, point0, point0.normal * applied0);
+    if (point_count == 2u) {
+        let applied1 = solution.impulses.y - old.y;
+        point1.data1.z = solution.impulses.y;
+        point1.data2.x += max(applied1, 0.0);
+        point1.data2.w = f32(solution.active_set);
+        prepared_points[id.x + 1u] = point1;
+        emit_pair(id.x + 1u, point1, point1.normal * applied1);
+    }
 }
 
 @compute @workgroup_size(64)

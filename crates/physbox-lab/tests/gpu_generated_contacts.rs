@@ -116,11 +116,11 @@ fn scalar_mass_split_uses_exact_gpu_point_incidence_on_both_gather_topologies() 
     }
     for contact in &stable.pass_evidence.contacts {
         assert_eq!(
-            contact.body_a_point_incidence,
+            contact.body_a_normal_mass_incidence,
             expected_counts[contact.body_a as usize]
         );
         assert_eq!(
-            contact.body_b_point_incidence,
+            contact.body_b_normal_mass_incidence,
             expected_counts[contact.body_b as usize]
         );
         let body_a = &scenario.bodies[contact.body_a as usize];
@@ -129,10 +129,10 @@ fn scalar_mass_split_uses_exact_gpu_point_incidence_on_both_gather_topologies() 
             contact.anchor_a.x * contact.normal.y - contact.anchor_a.y * contact.normal.x;
         let normal_cross_b =
             contact.anchor_b.x * contact.normal.y - contact.anchor_b.y * contact.normal.x;
-        let expected_inverse_normal = contact.body_a_point_incidence as f32
+        let expected_inverse_normal = contact.body_a_normal_mass_incidence as f32
             * (body_a.inverse_mass.get()
                 + body_a.inverse_inertia.get() * normal_cross_a * normal_cross_a)
-            + contact.body_b_point_incidence as f32
+            + contact.body_b_normal_mass_incidence as f32
                 * (body_b.inverse_mass.get()
                     + body_b.inverse_inertia.get() * normal_cross_b * normal_cross_b);
         assert!(
@@ -144,6 +144,149 @@ fn scalar_mass_split_uses_exact_gpu_point_incidence_on_both_gather_topologies() 
     assert_eq!(
         stable.pass_evidence.contacts,
         canonical.pass_evidence.contacts
+    );
+}
+
+#[test]
+fn manifold_block_degenerates_to_point_jacobi_for_one_point_contacts() {
+    let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
+    let scenario = p5_2_generated_scenario(P5_2GeneratedScenarioKind::Restitution, 1).unwrap();
+    let point = runner
+        .run_experiment(&scenario, 1, GpuSolverExecutionV2::experiment(true, true))
+        .unwrap();
+    let block_execution =
+        GpuSolverExecutionV2::normal_experiment(GpuNormalSolverV2::ManifoldBlock, true, true);
+    let block = runner
+        .run_experiment(&scenario, 1, block_execution)
+        .unwrap();
+    assert_eq!(point.bodies, block.bodies);
+    assert_eq!(point.cache, block.cache);
+    assert_eq!(block.pass_evidence.manifold_blocks.len(), 1);
+    assert_eq!(
+        block.pass_evidence.manifold_blocks[0].active_set,
+        physbox_engine::GpuBlockActiveSetV2::Scalar
+    );
+    assert_eq!(
+        block.gather_topology.manifold_count_dispatches, 0,
+        "the unsplit block candidate needs no incidence pass"
+    );
+    assert_eq!(block.dispatches_per_step, point.dispatches_per_step);
+    assert_eq!(
+        block.gather_topology.allocated_bytes,
+        point.gather_topology.allocated_bytes
+    );
+
+    let replay_scenario =
+        p5_2_generated_scenario(P5_2GeneratedScenarioKind::Restitution, 8).unwrap();
+    let point_replay = runner
+        .run_experiment(
+            &replay_scenario,
+            8,
+            GpuSolverExecutionV2::experiment(true, true),
+        )
+        .unwrap();
+    let block_replay = runner
+        .run_experiment(&replay_scenario, 8, block_execution)
+        .unwrap();
+    assert_eq!(point_replay.bodies, block_replay.bodies);
+    assert_eq!(point_replay.cache, block_replay.cache);
+}
+
+#[test]
+fn block_mass_split_uses_exact_manifold_incidence_and_coupled_matrix() {
+    let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
+    let scenario = p5_2_centered_rectangle_stack_scenario(2, 1).unwrap();
+    let execution =
+        GpuSolverExecutionV2::normal_experiment(GpuNormalSolverV2::BlockMassSplit, true, true);
+    let output = runner.run_experiment(&scenario, 1, execution).unwrap();
+    let unsplit = runner
+        .run_experiment(
+            &scenario,
+            1,
+            GpuSolverExecutionV2::normal_experiment(GpuNormalSolverV2::ManifoldBlock, true, true),
+        )
+        .unwrap();
+    let canonical = runner
+        .run_experiment_with_gather_topology(
+            &scenario,
+            1,
+            GpuGatherTopology::CanonicalBodyScan,
+            false,
+            execution,
+        )
+        .unwrap();
+    assert_eq!(output.bodies, canonical.bodies);
+    assert_eq!(output.cache, canonical.cache);
+    assert_eq!(
+        output.pass_evidence.manifold_blocks,
+        canonical.pass_evidence.manifold_blocks
+    );
+    assert_eq!(output.pass_evidence.manifold_blocks.len(), 2);
+    let mut expected_counts = vec![0_u32; output.bodies.len()];
+    for block in &output.pass_evidence.manifold_blocks {
+        expected_counts[block.body_a as usize] += 1;
+        expected_counts[block.body_b as usize] += 1;
+    }
+    assert_eq!(expected_counts, vec![1, 2, 1]);
+    for block in &output.pass_evidence.manifold_blocks {
+        assert_eq!(
+            block.body_a_normal_mass_incidence,
+            expected_counts[block.body_a as usize]
+        );
+        assert_eq!(
+            block.body_b_normal_mass_incidence,
+            expected_counts[block.body_b as usize]
+        );
+        assert_eq!(block.point_count, 2);
+        let points = output
+            .pass_evidence
+            .contacts
+            .iter()
+            .filter(|contact| contact.manifold_index == block.manifold_index)
+            .collect::<Vec<_>>();
+        assert_eq!(points.len(), 2);
+        let body_a = &scenario.bodies[block.body_a as usize];
+        let body_b = &scenario.bodies[block.body_b as usize];
+        let matrix_entry =
+            |left: &physbox_engine::GpuFixedFloorContactEvidence,
+             right: &physbox_engine::GpuFixedFloorContactEvidence| {
+                let cross_a_left =
+                    left.anchor_a.x * left.normal.y - left.anchor_a.y * left.normal.x;
+                let cross_a_right =
+                    right.anchor_a.x * right.normal.y - right.anchor_a.y * right.normal.x;
+                let cross_b_left =
+                    left.anchor_b.x * left.normal.y - left.anchor_b.y * left.normal.x;
+                let cross_b_right =
+                    right.anchor_b.x * right.normal.y - right.anchor_b.y * right.normal.x;
+                block.body_a_normal_mass_incidence as f32
+                    * (body_a.inverse_mass.get()
+                        + body_a.inverse_inertia.get() * cross_a_left * cross_a_right)
+                    + block.body_b_normal_mass_incidence as f32
+                        * (body_b.inverse_mass.get()
+                            + body_b.inverse_inertia.get() * cross_b_left * cross_b_right)
+            };
+        let expected = [
+            matrix_entry(points[0], points[0]),
+            matrix_entry(points[0], points[1]),
+            matrix_entry(points[1], points[0]),
+            matrix_entry(points[1], points[1]),
+        ];
+        for (actual, expected) in block.effective_mass_matrix.into_iter().zip(expected) {
+            assert!((actual - expected).abs() <= 1.0e-6, "block {block:?}");
+        }
+    }
+    assert!(
+        output
+            .gather_topology
+            .capacities
+            .iter()
+            .any(|capacity| capacity.class == "solver-manifold-incidence")
+    );
+    assert_eq!(output.gather_topology.manifold_count_dispatches, 1);
+    assert_eq!(output.dispatches_per_step, unsplit.dispatches_per_step + 1);
+    assert_eq!(
+        output.gather_topology.allocated_bytes,
+        unsplit.gather_topology.allocated_bytes + scenario.bodies.len() as u64 * 4
     );
 }
 
