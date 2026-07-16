@@ -9,8 +9,8 @@ use physbox_engine::{
     AdapterDiagnostics, GpuAuthoredGatherBenchmarkOutput, GpuGatherTopology,
     GpuGeneratedContactBenchmarkOutput, GpuSolverExecutionV4, GpuSolverInstrumentedSampleV4,
     GpuSolverSchedulingPolicyV1, P5_2_SELECTED_SOLVER_ITERATIONS, authored_chain_scenario,
-    benchmark_gpu_authored_solver_experiment, benchmark_gpu_generated_contacts,
-    p5_2_generated_performance_scenario,
+    benchmark_gpu_authored_solver_experiment,
+    benchmark_gpu_generated_contact_scheduling_experiment, p5_2_generated_performance_scenario,
 };
 use physbox_lab::scheduler_benchmark::{
     SCHEDULER_AUTHORED_CONTACT_COUNTS, SCHEDULER_BENCHMARK_CONTRACT_VERSION,
@@ -44,6 +44,7 @@ struct Arguments {
     warmup: u32,
     samples: u32,
     require_clean: bool,
+    scheduling_policy: GpuSolverSchedulingPolicyV1,
 }
 
 fn main() {
@@ -76,10 +77,12 @@ fn run() -> Result<(), String> {
     for body_count in SCHEDULER_SPARSE_BODY_COUNTS {
         let scenario =
             p5_2_generated_performance_scenario(body_count).map_err(|error| error.to_string())?;
-        let benchmark = pollster::block_on(benchmark_gpu_generated_contacts(
+        let benchmark = pollster::block_on(benchmark_gpu_generated_contact_scheduling_experiment(
             &scenario,
             arguments.warmup,
             arguments.samples,
+            GpuSolverExecutionV4::SELECTED,
+            arguments.scheduling_policy,
         ))?;
         same_adapter(&mut adapter, &benchmark.adapter)?;
         rows.push(generated_row(benchmark)?);
@@ -95,7 +98,7 @@ fn run() -> Result<(), String> {
             arguments.samples,
             GpuGatherTopology::StableBodyEdge,
             GpuSolverExecutionV4::SELECTED,
-            GpuSolverSchedulingPolicyV1::STANDARD,
+            arguments.scheduling_policy,
         ))?;
         same_adapter(&mut adapter, &benchmark.adapter)?;
         rows.push(authored_row(benchmark)?);
@@ -117,7 +120,7 @@ fn run() -> Result<(), String> {
         source_patch_digest,
         adapter: adapter.ok_or_else(|| "scheduler benchmark omitted its adapter".to_owned())?,
         solver_execution: GpuSolverExecutionV4::SELECTED,
-        solver_scheduling_policy: GpuSolverSchedulingPolicyV1::STANDARD,
+        solver_scheduling_policy: arguments.scheduling_policy,
         rows,
         slopes,
         selection_made: false,
@@ -277,6 +280,7 @@ fn parse_arguments() -> Result<Arguments, String> {
     let mut warmup = 4;
     let mut samples = 9;
     let mut require_clean = false;
+    let mut scheduling_policy = GpuSolverSchedulingPolicyV1::STANDARD;
     let mut arguments = std::env::args().skip(1);
     while let Some(argument) = arguments.next() {
         match argument.as_str() {
@@ -297,6 +301,9 @@ fn parse_arguments() -> Result<Arguments, String> {
                     .map_err(|_| "--samples must be an integer".to_owned())?;
             }
             "--require-clean" => require_clean = true,
+            "--parallel-compaction" => {
+                scheduling_policy = GpuSolverSchedulingPolicyV1::PARALLEL_COMPACTION;
+            }
             _ => return Err(format!("unknown scheduler benchmark argument {argument}")),
         }
     }
@@ -306,5 +313,6 @@ fn parse_arguments() -> Result<Arguments, String> {
         warmup,
         samples,
         require_clean,
+        scheduling_policy,
     })
 }

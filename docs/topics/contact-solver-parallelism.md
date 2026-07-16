@@ -415,6 +415,17 @@ marginal slopes. A candidate cannot enter the matrix without exact replay,
 coherent compact ranges, and clean capacity. This establishes the comparison
 contract only; it does not change assignment, compaction, or product order.
 
+Byte-exact compaction checkpoint, 2026-07-16: an unselected scheduling policy
+now replaces the serial stable compactor with four portable passes. Per-block
+color counts, per-color block prefixes, one 32-lane global range scan, and
+stable scatter ranks reproduce the accepted assignment and within-color order
+byte for byte. The original serial greedy assignment remains the only color
+chooser, and the selected product policy remains `full-rebuild`. Exact stack,
+pyramid, bucket, authored-chain, replay, and overflow tests pass. Initial dirty
+Metal smoke is materially faster, but robust ordinary-graph slope evidence is
+still required before deciding whether the remaining serial assignment
+justifies an order-changing parallel-coloring comparator.
+
 ## Fallback and reserve options
 
 - **Accepted baseline.** Manifold block i2 improves structural preservation and

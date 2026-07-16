@@ -764,7 +764,7 @@ fresh evidence supports a different implementation.
   vectors and slopes, not only absolute
   medians. Retain 32/256/1K and add bounded contact-rich 1K/10K authored-
   manifold rows that do not depend on a selected broadphase.
-- [ ] Parallelize color-range counting, prefix placement, and stable compaction
+- [x] Parallelize color-range counting, prefix placement, and stable compaction
   while preserving the accepted color assignment and within-color order byte
   for byte. Keep the serial compactor as a direct control and reject the whole
   stage atomically on scan, range, or capacity failure.
@@ -812,6 +812,20 @@ the selected execution and the same engine benchmark path; exact replay and
 capacity are required before a row or slope is admitted. A dirty development
 smoke exercised all five rows on Metal, but it is contract validation rather
 than publishable performance evidence.
+
+Byte-exact compaction checkpoint, 2026-07-16: the unselected
+`full-rebuild-parallel-compaction` policy leaves the serial greedy assignment
+untouched, counts per `(64-point block, color)` in parallel, prefixes block
+ranges per color, scans the 32 global color ranges, and scatters from stable
+block offsets plus deterministic local ranks. Four bounded portable passes
+replace the one serial compactor; no CPU construction, readback, fallback, or
+changed solve order is introduced. Generated disjoint pairs, 16-stack,
+four-row pyramid, both 100-body buckets, authored chain, exact replay, and
+33-color atomic rejection all match the serial assignments, compacted order,
+bodies, cache, contacts, and indirect arguments. A dirty one-sample Metal
+smoke reduced compaction from `7.994` to `0.098 ms` and ordinary 1K cost from
+`17.535` to `12.368 ms`; this is a promising implementation smoke, not the
+same-adapter multi-sample gate checked by the next item.
 
 Commit boundaries: accepted product-baseline integration; scheduler benchmark
 contract; byte-exact parallel compaction; evidence-triggered parallel coloring

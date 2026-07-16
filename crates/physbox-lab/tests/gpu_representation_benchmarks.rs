@@ -61,6 +61,8 @@ fn authored_selected_solver_records_exact_scheduler_work() {
     ))
     .unwrap();
     let work = benchmark.scheduler_work.unwrap();
+    let serial_assignment_digest = work.assignment_digest.clone();
+    let serial_order_digest = work.compacted_order_digest.clone();
     assert!(benchmark.replay_exact);
     assert_eq!(benchmark.manifold_count, 32);
     assert_eq!(benchmark.contact_points, 32);
@@ -82,6 +84,25 @@ fn authored_selected_solver_records_exact_scheduler_work() {
     assert_eq!(
         benchmark.instrumented_solver_phases.as_ref().map(Vec::len),
         benchmark.timestamp_period_nanoseconds.map(|_| 2)
+    );
+
+    let parallel = pollster::block_on(benchmark_gpu_authored_solver_experiment(
+        &scenario,
+        1,
+        2,
+        GpuGatherTopology::StableBodyEdge,
+        GpuSolverExecutionV4::SELECTED,
+        GpuSolverSchedulingPolicyV1::PARALLEL_COMPACTION,
+    ))
+    .unwrap();
+    let parallel_work = parallel.scheduler_work.unwrap();
+    assert_eq!(parallel.result_digest, benchmark.result_digest);
+    assert_eq!(parallel_work.assignment_digest, serial_assignment_digest);
+    assert_eq!(parallel_work.compacted_order_digest, serial_order_digest);
+    assert_eq!(parallel.topology.color_compaction_dispatches, 4);
+    assert_eq!(
+        parallel_work.compaction_point_slots_visited,
+        parallel_work.contact_point_slots * 2
     );
 }
 

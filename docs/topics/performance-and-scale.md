@@ -845,6 +845,16 @@ P50 slopes per added body and contact slot. The governed corpus is generated
 removes broadphase selection from the scheduler scaling question. The first
 dirty smoke is not an accepted baseline or performance claim.
 
+Byte-exact compaction checkpoint, 2026-07-16: the first S5.4c candidate keeps
+color assignment and solve order unchanged while replacing serial count,
+prefix, and scatter with four bounded GPU passes. Its work vector declares two
+point-slot traversals and the complete block/color prefix range; extra scratch
+capacity is explicit. A dirty one-sample Metal smoke moved generated 1K
+ordinary cost from `17.535` to `12.368 ms` and diagnostic compaction from
+`7.994` to `0.098 ms`, with matching assignment/order digests. These numbers
+are directional only. Promotion or a parallel-coloring trigger requires fresh
+same-adapter multi-sample ordinary slopes and the full correctness corpus.
+
 ## Regression and claim gates
 
 Before representative hardware is selected, store named measurements and

@@ -33,6 +33,7 @@ pub const GPU_SCHEDULER_WORK_VECTOR_VERSION: u32 = 1;
 #[serde(rename_all = "kebab-case")]
 pub enum GpuColorMaintenanceV1 {
     FullRebuild,
+    FullRebuildParallelCompaction,
     StablePairIncremental,
 }
 
@@ -63,6 +64,11 @@ impl GpuSolverSchedulingPolicyV1 {
         ..Self::STANDARD
     };
 
+    pub const PARALLEL_COMPACTION: Self = Self {
+        color_maintenance: GpuColorMaintenanceV1::FullRebuildParallelCompaction,
+        ..Self::STANDARD
+    };
+
     pub const WORKGROUP_PER_ISLAND: Self = Self {
         colored_dispatch: GpuColoredDispatchV1::WorkgroupPerIsland,
         ..Self::STANDARD
@@ -73,6 +79,13 @@ impl GpuSolverSchedulingPolicyV1 {
         colored_dispatch: GpuColoredDispatchV1::WorkgroupPerIsland,
         ..Self::STANDARD
     };
+
+    const fn uses_parallel_compaction(self) -> bool {
+        matches!(
+            self.color_maintenance,
+            GpuColorMaintenanceV1::FullRebuildParallelCompaction
+        )
+    }
 
     pub(crate) fn validate(self, execution: GpuSolverExecutionV4) -> Result<(), String> {
         if self.version != GPU_SOLVER_SCHEDULING_POLICY_VERSION {
@@ -359,7 +372,7 @@ impl GpuGatherTopologyEvidence {
                     || self.radix_passes != 0
                     || self.manifold_count_dispatches > 1
                     || self.coloring_dispatches > 1
-                    || self.color_compaction_dispatches > 1
+                    || !matches!(self.color_compaction_dispatches, 0 | 1 | 4)
                     || self.island_construction_dispatches > 1
                     || self.canonical_scan_attempts == 0
                 {
@@ -376,7 +389,7 @@ impl GpuGatherTopologyEvidence {
                     || self.radix_passes == 0
                     || self.manifold_count_dispatches > 1
                     || self.coloring_dispatches > 1
-                    || self.color_compaction_dispatches > 1
+                    || !matches!(self.color_compaction_dispatches, 0 | 1 | 4)
                     || self.island_construction_dispatches > 1
                     || self.canonical_scan_attempts != 0
                 {
@@ -663,6 +676,24 @@ impl GpuFixedFloorPassEvidence {
             })?;
         let compacted_color_units = u32::try_from(coloring.compacted_point_indices.len())
             .map_err(|_| "scheduler compacted-unit count exceeds u32".to_owned())?;
+        let parallel_compaction = coloring.scheduling_policy.uses_parallel_compaction();
+        let color_blocks = contact_point_slots.div_ceil(WORKGROUP_SIZE);
+        let prefix_color_slots_visited = if parallel_compaction {
+            color_blocks
+                .checked_mul(coloring.max_colors)
+                .and_then(|slots| slots.checked_add(coloring.max_colors))
+                .ok_or_else(|| "scheduler prefix work overflowed".to_owned())?
+        } else {
+            coloring.max_colors
+        };
+        let compaction_point_slots_visited =
+            if coloring.schedule == GpuColorScheduleV4::CompactIndirect {
+                contact_point_slots
+                    .checked_mul(if parallel_compaction { 2 } else { 1 })
+                    .ok_or_else(|| "scheduler compaction work overflowed".to_owned())?
+            } else {
+                0
+            };
         if coloring.overflowed
             || coloring.max_colors == 0
             || coloring.color_count > coloring.max_colors
@@ -684,14 +715,8 @@ impl GpuFixedFloorPassEvidence {
             body_mask_slots_cleared: body_slots,
             color_count_slots_cleared: coloring.max_colors,
             assignment_point_slots_visited: contact_point_slots,
-            prefix_color_slots_visited: coloring.max_colors,
-            compaction_point_slots_visited: if coloring.schedule
-                == GpuColorScheduleV4::CompactIndirect
-            {
-                contact_point_slots
-            } else {
-                0
-            },
+            prefix_color_slots_visited,
+            compaction_point_slots_visited,
             compacted_color_units,
             encoded_color_passes: coloring.encoded_color_passes,
             active_color_passes: coloring.active_color_passes,
@@ -759,6 +784,10 @@ enum PipelineKind {
     EdgeRanges,
     Color,
     ColorCompact,
+    ColorBlockCount,
+    ColorBlockPrefix,
+    ColorRangePrefix,
+    ColorBlockScatter,
     IslandBuild,
     IntegrateVelocity,
     Prepare,
@@ -814,6 +843,10 @@ impl PipelineKind {
             | Self::EdgeRadixScatter
             | Self::Color
             | Self::ColorCompact
+            | Self::ColorBlockCount
+            | Self::ColorBlockPrefix
+            | Self::ColorRangePrefix
+            | Self::ColorBlockScatter
             | Self::IslandBuild => InstrumentedPhase::IndexBuild,
             Self::TopologyPrefix | Self::EdgeRadixPrefix | Self::EdgeRanges => {
                 InstrumentedPhase::OffsetConstruction
@@ -872,6 +905,10 @@ struct TopologyLayout {
     color_offsets_base: u32,
     color_cursors_base: u32,
     color_indices_base: u32,
+    color_block_counts_base: u32,
+    color_block_offsets_base: u32,
+    color_local_ranks_base: u32,
+    color_block_count: u32,
     color_identity_base: u32,
     color_identity_capacity: u32,
     color_maintenance_counts_base: u32,
@@ -889,6 +926,7 @@ struct TopologyLayout {
     color_unit: GpuColorUnitV4,
     has_coloring: bool,
     has_compact_coloring: bool,
+    has_parallel_compaction: bool,
     has_incremental_coloring: bool,
     has_island_dispatch: bool,
     element_count: u32,
@@ -955,6 +993,28 @@ impl TopologyLayout {
                     .checked_add(point_count)
                     .ok_or_else(|| "solver compact color range overflowed".to_owned())?;
                 layout.has_compact_coloring = true;
+                if scheduling_policy.uses_parallel_compaction() {
+                    layout.color_block_count = point_count.div_ceil(WORKGROUP_SIZE);
+                    let block_color_words = layout
+                        .color_block_count
+                        .checked_mul(MAX_COLORS)
+                        .ok_or_else(|| "solver block-color range overflowed".to_owned())?;
+                    layout.color_block_counts_base = layout.element_count;
+                    layout.color_block_offsets_base = layout
+                        .color_block_counts_base
+                        .checked_add(block_color_words)
+                        .ok_or_else(|| "solver block-color count range overflowed".to_owned())?;
+                    layout.color_local_ranks_base = layout
+                        .color_block_offsets_base
+                        .checked_add(block_color_words)
+                        .ok_or_else(|| "solver block-color offset range overflowed".to_owned())?;
+                    layout.element_count =
+                        layout
+                            .color_local_ranks_base
+                            .checked_add(point_count)
+                            .ok_or_else(|| "solver local color-rank range overflowed".to_owned())?;
+                    layout.has_parallel_compaction = true;
+                }
             }
             if scheduling_policy.color_maintenance == GpuColorMaintenanceV1::StablePairIncremental {
                 let minimum_identity_capacity = point_count
@@ -1074,6 +1134,10 @@ impl TopologyLayout {
             color_offsets_base: 0,
             color_cursors_base: 0,
             color_indices_base: 0,
+            color_block_counts_base: 0,
+            color_block_offsets_base: 0,
+            color_local_ranks_base: 0,
+            color_block_count: 0,
             color_identity_base: 0,
             color_identity_capacity: 0,
             color_maintenance_counts_base: 0,
@@ -1091,6 +1155,7 @@ impl TopologyLayout {
             color_unit: GpuColorUnitV4::Point,
             has_coloring: false,
             has_compact_coloring: false,
+            has_parallel_compaction: false,
             has_incremental_coloring: false,
             has_island_dispatch: false,
             element_count,
@@ -1152,6 +1217,10 @@ impl TopologyLayout {
             color_offsets_base: 0,
             color_cursors_base: 0,
             color_indices_base: 0,
+            color_block_counts_base: 0,
+            color_block_offsets_base: 0,
+            color_local_ranks_base: 0,
+            color_block_count: 0,
             color_identity_base: 0,
             color_identity_capacity: 0,
             color_maintenance_counts_base: 0,
@@ -1169,6 +1238,7 @@ impl TopologyLayout {
             color_unit: GpuColorUnitV4::Point,
             has_coloring: false,
             has_compact_coloring: false,
+            has_parallel_compaction: false,
             has_incremental_coloring: false,
             has_island_dispatch: false,
             element_count,
@@ -1182,8 +1252,16 @@ impl TopologyLayout {
         };
         base + self.has_manifold_counts as u32
             + self.has_coloring as u32
-            + self.has_compact_coloring as u32
+            + self.color_compaction_dispatches()
             + self.has_island_dispatch as u32
+    }
+
+    const fn color_compaction_dispatches(self) -> u32 {
+        if self.has_parallel_compaction {
+            4
+        } else {
+            self.has_compact_coloring as u32
+        }
     }
 }
 
@@ -1210,6 +1288,10 @@ pub(crate) struct GpuFixedFloorSolver {
     edge_ranges_pipeline: wgpu::ComputePipeline,
     color_pipeline: Option<wgpu::ComputePipeline>,
     color_compact_pipeline: Option<wgpu::ComputePipeline>,
+    color_block_count_pipeline: Option<wgpu::ComputePipeline>,
+    color_block_prefix_pipeline: Option<wgpu::ComputePipeline>,
+    color_range_prefix_pipeline: Option<wgpu::ComputePipeline>,
+    color_block_scatter_pipeline: Option<wgpu::ComputePipeline>,
     island_build_pipeline: Option<wgpu::ComputePipeline>,
     integrate_velocity_pipeline: wgpu::ComputePipeline,
     prepare_pipeline: wgpu::ComputePipeline,
@@ -1578,30 +1660,61 @@ impl GpuFixedFloorSolver {
             }
             None => None,
         };
-        let color_compact_pipeline = match &color_layout {
-            Some(layout) if execution.color_schedule == GpuColorScheduleV4::CompactIndirect => {
-                let color_pipeline_layout =
-                    device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                        label: Some("physbox5_floor_color_compact_pipeline_layout"),
-                        bind_group_layouts: &[layout],
-                        push_constant_ranges: &[],
-                    });
-                Some(
-                    device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                        label: Some("floor_compact_colors"),
-                        layout: Some(&color_pipeline_layout),
-                        module: &shader,
-                        entry_point: Some("compact_colors"),
-                        compilation_options: wgpu::PipelineCompilationOptions {
-                            constants: &[],
-                            zero_initialize_workgroup_memory: false,
-                        },
-                        cache: None,
-                    }),
-                )
+        let color_stage_pipeline = |label: &'static str,
+                                    entry: &'static str,
+                                    enabled: bool|
+         -> Option<wgpu::ComputePipeline> {
+            if !enabled {
+                return None;
             }
-            _ => None,
+            let layout = color_layout.as_ref()?;
+            let color_pipeline_layout =
+                device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some(label),
+                    bind_group_layouts: &[layout],
+                    push_constant_ranges: &[],
+                });
+            Some(
+                device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                    label: Some(label),
+                    layout: Some(&color_pipeline_layout),
+                    module: &shader,
+                    entry_point: Some(entry),
+                    compilation_options: wgpu::PipelineCompilationOptions {
+                        constants: &[],
+                        zero_initialize_workgroup_memory: false,
+                    },
+                    cache: None,
+                }),
+            )
         };
+        let compact_coloring = execution.color_schedule == GpuColorScheduleV4::CompactIndirect;
+        let parallel_compaction = topology_layout.has_parallel_compaction;
+        let color_compact_pipeline = color_stage_pipeline(
+            "floor_compact_colors",
+            "compact_colors",
+            compact_coloring && !parallel_compaction,
+        );
+        let color_block_count_pipeline = color_stage_pipeline(
+            "floor_count_color_blocks",
+            "count_color_blocks",
+            parallel_compaction,
+        );
+        let color_block_prefix_pipeline = color_stage_pipeline(
+            "floor_prefix_color_blocks",
+            "prefix_color_blocks",
+            parallel_compaction,
+        );
+        let color_range_prefix_pipeline = color_stage_pipeline(
+            "floor_prefix_color_ranges",
+            "prefix_color_ranges",
+            parallel_compaction,
+        );
+        let color_block_scatter_pipeline = color_stage_pipeline(
+            "floor_scatter_color_blocks",
+            "scatter_color_blocks",
+            parallel_compaction,
+        );
         let island_build_pipeline = match &color_layout {
             Some(layout) if topology_layout.has_island_dispatch => {
                 let island_pipeline_layout =
@@ -1682,6 +1795,10 @@ impl GpuFixedFloorSolver {
             edge_ranges_pipeline: pipeline("floor_edge_ranges", "build_edge_ranges"),
             color_pipeline,
             color_compact_pipeline,
+            color_block_count_pipeline,
+            color_block_prefix_pipeline,
+            color_range_prefix_pipeline,
+            color_block_scatter_pipeline,
             island_build_pipeline,
             integrate_velocity_pipeline: pipeline("floor_integrate_velocity", "integrate_velocity"),
             prepare_pipeline: pipeline("floor_prepare", "prepare"),
@@ -1768,6 +1885,22 @@ impl GpuFixedFloorSolver {
                 .color_compact_pipeline
                 .as_ref()
                 .expect("color compaction operations require the compact pipeline"),
+            PipelineKind::ColorBlockCount => self
+                .color_block_count_pipeline
+                .as_ref()
+                .expect("parallel color count operations require the count pipeline"),
+            PipelineKind::ColorBlockPrefix => self
+                .color_block_prefix_pipeline
+                .as_ref()
+                .expect("parallel color prefix operations require the block-prefix pipeline"),
+            PipelineKind::ColorRangePrefix => self
+                .color_range_prefix_pipeline
+                .as_ref()
+                .expect("parallel color range operations require the range-prefix pipeline"),
+            PipelineKind::ColorBlockScatter => self
+                .color_block_scatter_pipeline
+                .as_ref()
+                .expect("parallel color scatter operations require the scatter pipeline"),
             PipelineKind::IslandBuild => self
                 .island_build_pipeline
                 .as_ref()
@@ -1796,7 +1929,13 @@ impl GpuFixedFloorSolver {
         });
         let bind_group = if matches!(
             operation.pipeline,
-            PipelineKind::Color | PipelineKind::ColorCompact | PipelineKind::IslandBuild
+            PipelineKind::Color
+                | PipelineKind::ColorCompact
+                | PipelineKind::ColorBlockCount
+                | PipelineKind::ColorBlockPrefix
+                | PipelineKind::ColorRangePrefix
+                | PipelineKind::ColorBlockScatter
+                | PipelineKind::IslandBuild
         ) {
             self.color_bind_ab
                 .as_ref()
@@ -1938,7 +2077,11 @@ impl GpuFixedFloorSolver {
     fn solver_instrumented_groups(&self, color_occupancy: &[u32]) -> Vec<SolverInstrumentedGroup> {
         let phase = |operation: &Operation| match operation.pipeline {
             PipelineKind::Color => SolverInstrumentedPhase::ColorConstruction,
-            PipelineKind::ColorCompact => SolverInstrumentedPhase::ColorCompaction,
+            PipelineKind::ColorCompact
+            | PipelineKind::ColorBlockCount
+            | PipelineKind::ColorBlockPrefix
+            | PipelineKind::ColorRangePrefix
+            | PipelineKind::ColorBlockScatter => SolverInstrumentedPhase::ColorCompaction,
             PipelineKind::IslandBuild => SolverInstrumentedPhase::ColorCompaction,
             PipelineKind::Colored => {
                 let color = operation
@@ -2114,7 +2257,7 @@ impl GpuFixedFloorSolver {
             radix_passes: self.topology_layout.radix_passes,
             manifold_count_dispatches: self.topology_layout.has_manifold_counts as u32,
             coloring_dispatches: self.topology_layout.has_coloring as u32,
-            color_compaction_dispatches: self.topology_layout.has_compact_coloring as u32,
+            color_compaction_dispatches: self.topology_layout.color_compaction_dispatches(),
             island_construction_dispatches: self.topology_layout.has_island_dispatch as u32,
             canonical_scan_attempts: if self.topology_layout.kind
                 == GpuGatherTopology::CanonicalBodyScan
@@ -3466,7 +3609,8 @@ fn topology_operations(
                 topology.color_count_index,
                 MAX_COLORS,
                 u32::from(topology.has_compact_coloring)
-                    | (u32::from(topology.color_unit == GpuColorUnitV4::Manifold) << 1),
+                    | (u32::from(topology.color_unit == GpuColorUnitV4::Manifold) << 1)
+                    | (u32::from(topology.has_parallel_compaction) << 2),
             ],
         };
         let mut colors = colors;
@@ -3482,14 +3626,54 @@ fn topology_operations(
             1,
         );
         if topology.has_compact_coloring {
-            push_operation(
-                parameters,
-                operations,
-                colors,
-                PipelineKind::ColorCompact,
-                MotionDirection::AtoB,
-                1,
-            );
+            if topology.has_parallel_compaction {
+                let parallel = PassParamsRaw {
+                    floats0: [
+                        f32::from_bits(topology.color_indices_base),
+                        f32::from_bits(topology.color_status_index),
+                        f32::from_bits(topology.color_block_count),
+                        f32::from_bits(u32::from(topology.color_unit == GpuColorUnitV4::Manifold)),
+                    ],
+                    floats1: [0.0; 4],
+                    floats2: [0.0; 4],
+                    uints0: [
+                        point_count,
+                        topology.color_base,
+                        topology.color_block_counts_base,
+                        topology.color_block_offsets_base,
+                    ],
+                    uints1: [
+                        topology.color_local_ranks_base,
+                        topology.color_counts_base,
+                        topology.color_offsets_base,
+                        topology.color_cursors_base,
+                    ],
+                };
+                for (pipeline, workgroups) in [
+                    (PipelineKind::ColorBlockCount, topology.color_block_count),
+                    (PipelineKind::ColorBlockPrefix, 1),
+                    (PipelineKind::ColorRangePrefix, 1),
+                    (PipelineKind::ColorBlockScatter, topology.color_block_count),
+                ] {
+                    push_operation(
+                        parameters,
+                        operations,
+                        parallel,
+                        pipeline,
+                        MotionDirection::AtoB,
+                        workgroups,
+                    );
+                }
+            } else {
+                push_operation(
+                    parameters,
+                    operations,
+                    colors,
+                    PipelineKind::ColorCompact,
+                    MotionDirection::AtoB,
+                    1,
+                );
+            }
         }
         if topology.has_island_dispatch {
             let islands = PassParamsRaw {
@@ -3814,6 +3998,26 @@ fn topology_capacities(
                     size_of::<u32>() as u64,
                 ),
             ]);
+            if topology.has_parallel_compaction {
+                let block_color_elements = topology.color_block_count * MAX_COLORS;
+                capacities.extend([
+                    capacity(
+                        "solver-color-block-counts",
+                        block_color_elements,
+                        size_of::<u32>() as u64,
+                    ),
+                    capacity(
+                        "solver-color-block-offsets",
+                        block_color_elements,
+                        size_of::<u32>() as u64,
+                    ),
+                    capacity(
+                        "solver-color-local-ranks",
+                        point_count,
+                        size_of::<u32>() as u64,
+                    ),
+                ]);
+            }
         }
         if topology.has_incremental_coloring {
             capacities.extend([
@@ -4131,6 +4335,9 @@ mod tests {
         GpuSolverSchedulingPolicyV1::INCREMENTAL
             .validate(execution)
             .unwrap();
+        GpuSolverSchedulingPolicyV1::PARALLEL_COMPACTION
+            .validate(execution)
+            .unwrap();
         GpuSolverSchedulingPolicyV1::WORKGROUP_PER_ISLAND
             .validate(execution)
             .unwrap();
@@ -4139,6 +4346,20 @@ mod tests {
                 .validate(GpuSolverExecutionV4::compact_colored_experiment(true, true))
                 .is_err()
         );
+
+        let parallel = TopologyLayout::new(
+            GpuGatherTopology::StableBodyEdge,
+            1_024,
+            2_048,
+            false,
+            execution.color_schedule,
+            execution.color_unit,
+            GpuSolverSchedulingPolicyV1::PARALLEL_COMPACTION,
+        )
+        .unwrap();
+        assert!(parallel.has_parallel_compaction);
+        assert_eq!(parallel.color_block_count, 32);
+        assert_eq!(parallel.color_compaction_dispatches(), 4);
         assert!(
             GpuSolverSchedulingPolicyV1 {
                 version: GPU_SOLVER_SCHEDULING_POLICY_VERSION + 1,

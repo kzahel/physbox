@@ -1423,6 +1423,7 @@ impl GpuGeneratedContactOutput {
                 }
                 match coloring.scheduling_policy.color_maintenance {
                     crate::GpuColorMaintenanceV1::FullRebuild
+                    | crate::GpuColorMaintenanceV1::FullRebuildParallelCompaction
                         if coloring.retained_color_units != 0
                             || coloring.new_color_units != colored_units
                             || coloring.recolored_color_units != 0
@@ -1431,7 +1432,8 @@ impl GpuGeneratedContactOutput {
                         return Err("full-rebuild color maintenance is invalid".to_owned());
                     }
                     crate::GpuColorMaintenanceV1::StablePairIncremental => {}
-                    crate::GpuColorMaintenanceV1::FullRebuild => {}
+                    crate::GpuColorMaintenanceV1::FullRebuild
+                    | crate::GpuColorMaintenanceV1::FullRebuildParallelCompaction => {}
                 }
                 match coloring.schedule {
                     crate::GpuColorScheduleV4::CompactIndirect => {

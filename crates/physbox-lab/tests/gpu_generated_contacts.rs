@@ -8,7 +8,8 @@ use physbox_engine::{
     benchmark_gpu_generated_contact_scheduling_experiment, benchmark_gpu_generated_contacts,
     p5_2_bucket_scenario, p5_2_candidate_scenario, p5_2_centered_rectangle_stack_scenario,
     p5_2_coloring_churn_snapshots, p5_2_contact_policy_candidate,
-    p5_2_generated_performance_scenario, p5_2_generated_scenario, run_gpu_soft_step_case,
+    p5_2_generated_performance_scenario, p5_2_generated_scenario, p5_2_rectangle_pyramid_scenario,
+    run_gpu_soft_step_case,
 };
 use physbox_lab::analytic_narrowphase::authored_solver_projection;
 use physbox_lab::settling::centered_stack_structure;
@@ -141,6 +142,117 @@ fn compact_coloring_benchmark_separates_construction_compaction_and_empty_work()
         assert!(samples[0].active_color_solve_seconds > 0.0);
         assert_eq!(samples[0].empty_color_solve_seconds, 0.0);
         assert!(samples[0].other_solver_seconds > 0.0);
+    }
+}
+
+#[test]
+fn parallel_compaction_is_byte_exact_with_serial_stable_order() {
+    let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
+    let scenario = p5_2_generated_performance_scenario(256).unwrap();
+    let execution = GpuSolverExecutionV4::SELECTED;
+    let serial = runner
+        .run_scheduling_experiment(
+            &scenario,
+            1,
+            execution,
+            GpuSolverSchedulingPolicyV1::STANDARD,
+        )
+        .unwrap();
+    let parallel = runner
+        .run_scheduling_experiment(
+            &scenario,
+            1,
+            execution,
+            GpuSolverSchedulingPolicyV1::PARALLEL_COMPACTION,
+        )
+        .unwrap();
+    let replay = runner
+        .run_scheduling_experiment(
+            &scenario,
+            1,
+            execution,
+            GpuSolverSchedulingPolicyV1::PARALLEL_COMPACTION,
+        )
+        .unwrap();
+    assert_eq!(serial.bodies, parallel.bodies);
+    assert_eq!(serial.cache, parallel.cache);
+    assert_eq!(parallel.bodies, replay.bodies);
+    assert_eq!(parallel.cache, replay.cache);
+    assert_eq!(parallel.pass_evidence, replay.pass_evidence);
+    let serial_coloring = serial.pass_evidence.coloring.unwrap();
+    let mut parallel_coloring = parallel.pass_evidence.coloring.unwrap();
+    assert_eq!(serial_coloring.point_colors, parallel_coloring.point_colors);
+    assert_eq!(
+        serial_coloring.compacted_point_indices,
+        parallel_coloring.compacted_point_indices
+    );
+    assert_eq!(
+        serial_coloring.indirect_workgroups,
+        parallel_coloring.indirect_workgroups
+    );
+    parallel_coloring.scheduling_policy = GpuSolverSchedulingPolicyV1::STANDARD;
+    assert_eq!(serial_coloring, parallel_coloring);
+    assert_eq!(serial.gather_topology.color_compaction_dispatches, 1);
+    assert_eq!(parallel.gather_topology.color_compaction_dispatches, 4);
+    assert_eq!(parallel.dispatches_per_step, serial.dispatches_per_step + 3);
+
+    let benchmark = pollster::block_on(benchmark_gpu_generated_contact_scheduling_experiment(
+        &scenario,
+        1,
+        1,
+        execution,
+        GpuSolverSchedulingPolicyV1::PARALLEL_COMPACTION,
+    ))
+    .unwrap();
+    let work = benchmark.scheduler_work.unwrap();
+    assert_eq!(
+        work.compaction_point_slots_visited,
+        work.contact_point_slots * 2
+    );
+    assert_eq!(
+        work.prefix_color_slots_visited,
+        work.contact_point_slots.div_ceil(64) * work.maximum_colors + work.maximum_colors
+    );
+}
+
+#[test]
+fn parallel_compaction_preserves_stack_pyramid_and_bucket_graphs() {
+    let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
+    let mut scenarios = vec![
+        p5_2_centered_rectangle_stack_scenario(16, 1).unwrap(),
+        p5_2_rectangle_pyramid_scenario(4, 1).unwrap(),
+    ];
+    scenarios.extend(
+        P5_2BucketShape::ALL
+            .into_iter()
+            .map(|shape| p5_2_bucket_scenario(shape, 100, 1).unwrap()),
+    );
+    for scenario in scenarios {
+        let serial = runner
+            .run_scheduling_experiment(
+                &scenario,
+                1,
+                GpuSolverExecutionV4::SELECTED,
+                GpuSolverSchedulingPolicyV1::STANDARD,
+            )
+            .unwrap();
+        let parallel = runner
+            .run_scheduling_experiment(
+                &scenario,
+                1,
+                GpuSolverExecutionV4::SELECTED,
+                GpuSolverSchedulingPolicyV1::PARALLEL_COMPACTION,
+            )
+            .unwrap();
+        assert_eq!(serial.bodies, parallel.bodies, "{}", scenario.id);
+        assert_eq!(serial.cache, parallel.cache, "{}", scenario.id);
+        assert_eq!(serial.work, parallel.work, "{}", scenario.id);
+        let mut parallel_pass = parallel.pass_evidence;
+        parallel_pass.coloring.as_mut().unwrap().scheduling_policy =
+            GpuSolverSchedulingPolicyV1::STANDARD;
+        assert_eq!(serial.pass_evidence, parallel_pass, "{}", scenario.id);
+        assert!(parallel.failure.is_none(), "{}", scenario.id);
+        assert!(parallel.capacities.iter().all(|capacity| capacity.accepted));
     }
 }
 
@@ -791,6 +903,25 @@ fn colored_in_place_rejects_more_than_thirty_two_incident_points_atomically() {
     );
     assert!(manifold.cache.is_empty());
     assert!(manifold.failure.is_some());
+
+    let parallel = runner
+        .run_scheduling_experiment(
+            &scenario,
+            1,
+            GpuSolverExecutionV4::manifold_colored_block_experiment(true, true),
+            GpuSolverSchedulingPolicyV1::PARALLEL_COMPACTION,
+        )
+        .unwrap();
+    let parallel_coloring = parallel.pass_evidence.coloring.as_ref().unwrap();
+    assert!(parallel_coloring.overflowed);
+    assert!(
+        parallel_coloring
+            .indirect_workgroups
+            .iter()
+            .all(|arguments| *arguments == [0, 1, 1])
+    );
+    assert!(parallel.cache.is_empty());
+    assert!(parallel.failure.is_some());
 
     let incremental = runner
         .run_scheduling_experiment(

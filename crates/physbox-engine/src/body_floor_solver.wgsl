@@ -60,6 +60,9 @@ struct NormalEquation {
 
 var<workgroup> edge_radix_digits: array<u32, 256>;
 var<workgroup> edge_radix_histogram: array<atomic<u32>, 16>;
+var<workgroup> color_block_histogram: array<atomic<u32>, 32>;
+var<workgroup> color_block_assignments: array<u32, 64>;
+var<workgroup> color_range_scan: array<u32, 32>;
 
 fn rotate(vector: vec2f, angle: f32) -> vec2f {
     let c = cos(angle);
@@ -195,6 +198,7 @@ fn color_contacts(@builtin(global_invocation_id) id: vec3u) {
     if (id.x != 0u) { return; }
     let compact = (params.uints1.w & 1u) != 0u;
     let manifold_units = (params.uints1.w & 2u) != 0u;
+    let parallel_compaction = (params.uints1.w & 4u) != 0u;
     let counts_base = params.uints1.y + 1u;
     let offsets_base = counts_base + params.uints1.z;
     let cursors_base = offsets_base + params.uints1.z + 1u;
@@ -242,7 +246,7 @@ fn color_contacts(@builtin(global_invocation_id) id: vec3u) {
             }
             atomicOr(&topology[params.uints0.w + point.ids.x], color_bit);
             atomicOr(&topology[params.uints0.w + point.ids.y], color_bit);
-            if (compact) {
+            if (compact && !parallel_compaction) {
                 atomicAdd(&topology[counts_base + color], 1u);
             }
             color_count = max(color_count, color + 1u);
@@ -480,6 +484,121 @@ fn compact_colors(@builtin(global_invocation_id) id: vec3u) {
             let offset = atomicLoad(&topology[offsets_base + color]);
             atomicStore(&topology[indices_base + offset + slot], point_index);
         }
+    }
+}
+
+@compute @workgroup_size(64)
+fn count_color_blocks(@builtin(global_invocation_id) global: vec3u,
+                      @builtin(local_invocation_id) local: vec3u,
+                      @builtin(workgroup_id) group: vec3u) {
+    let lane = local.x;
+    if (lane < 32u) {
+        atomicStore(&color_block_histogram[lane], 0u);
+    }
+    var color = 0xffffffffu;
+    let point_index = global.x;
+    if (point_index < params.uints0.x) {
+        let point = point_inputs[point_index];
+        let manifold_units = bitcast<u32>(params.floats0.w) != 0u;
+        if (valid_point(point) && (!manifold_units || point.ids.w == 0u)) {
+            let assigned = atomicLoad(&topology[params.uints0.y + point_index]);
+            if (assigned < 32u) {
+                color = assigned;
+            }
+        }
+    }
+    color_block_assignments[lane] = color;
+    workgroupBarrier();
+    if (color < 32u) {
+        atomicAdd(&color_block_histogram[color], 1u);
+    }
+    workgroupBarrier();
+    if (lane < 32u) {
+        atomicStore(&topology[params.uints0.z + group.x * 32u + lane],
+                    atomicLoad(&color_block_histogram[lane]));
+    }
+    if (color < 32u) {
+        var local_rank = 0u;
+        for (var previous = 0u; previous < lane; previous += 1u) {
+            if (color_block_assignments[previous] == color) {
+                local_rank += 1u;
+            }
+        }
+        atomicStore(&topology[params.uints1.x + point_index], local_rank);
+    }
+}
+
+@compute @workgroup_size(32)
+fn prefix_color_blocks(@builtin(global_invocation_id) id: vec3u) {
+    let color = id.x;
+    var running = 0u;
+    let block_count = bitcast<u32>(params.floats0.z);
+    for (var block = 0u; block < block_count; block += 1u) {
+        let index = block * 32u + color;
+        atomicStore(&topology[params.uints0.w + index], running);
+        running += atomicLoad(&topology[params.uints0.z + index]);
+    }
+    atomicStore(&topology[params.uints1.y + color], running);
+    atomicStore(&topology[params.uints1.w + color], running);
+}
+
+@compute @workgroup_size(32)
+fn prefix_color_ranges(@builtin(local_invocation_id) local: vec3u) {
+    let color = local.x;
+    let count = atomicLoad(&topology[params.uints1.y + color]);
+    color_range_scan[color] = count;
+    workgroupBarrier();
+    var stride = 1u;
+    loop {
+        if (stride >= 32u) { break; }
+        var addition = 0u;
+        if (color >= stride) {
+            addition = color_range_scan[color - stride];
+        }
+        workgroupBarrier();
+        color_range_scan[color] += addition;
+        workgroupBarrier();
+        stride <<= 1u;
+    }
+    let inclusive = color_range_scan[color];
+    let exclusive = inclusive - count;
+    let total = color_range_scan[31u];
+    let status_index = bitcast<u32>(params.floats0.y);
+    let overflowed = atomicLoad(&topology[status_index]) != 0u ||
+        total > params.uints0.x;
+    if (total > params.uints0.x) {
+        atomicStore(&topology[status_index], 1u);
+    }
+    atomicStore(&topology[params.uints1.z + color], exclusive);
+    atomicStore(&color_dispatches[color * 3u],
+                select(count + 63u, 0u, overflowed) / 64u);
+    atomicStore(&color_dispatches[color * 3u + 1u], 1u);
+    atomicStore(&color_dispatches[color * 3u + 2u], 1u);
+    if (color == 31u) {
+        atomicStore(&topology[params.uints1.z + 32u], total);
+    }
+}
+
+@compute @workgroup_size(64)
+fn scatter_color_blocks(@builtin(global_invocation_id) id: vec3u) {
+    let point_index = id.x;
+    if (point_index >= params.uints0.x) { return; }
+    let point = point_inputs[point_index];
+    let manifold_units = bitcast<u32>(params.floats0.w) != 0u;
+    if (!valid_point(point) || (manifold_units && point.ids.w != 0u)) { return; }
+    let color = atomicLoad(&topology[params.uints0.y + point_index]);
+    if (color >= 32u) { return; }
+    let block = point_index / 64u;
+    let block_offset = atomicLoad(
+        &topology[params.uints0.w + block * 32u + color]);
+    let local_rank = atomicLoad(&topology[params.uints1.x + point_index]);
+    let color_offset = atomicLoad(&topology[params.uints1.z + color]);
+    let slot = color_offset + block_offset + local_rank;
+    let indices_base = bitcast<u32>(params.floats0.x);
+    if (slot < params.uints0.x) {
+        atomicStore(&topology[indices_base + slot], point_index);
+    } else {
+        atomicStore(&topology[bitcast<u32>(params.floats0.y)], 1u);
     }
 }
 
