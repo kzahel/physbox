@@ -1,7 +1,8 @@
 # S5: Interactive rigid quality, construction, and scale
 
-Status: active, 2026-07-16. Human review authorized the S5.4a mass-splitting
-and manifold-block follow-up; no product solver promotion is authorized.
+Status: active, 2026-07-16. S5.4a implementation and evidence are complete;
+human review of the colored/in-place architecture recommendation is required
+before any product solver promotion or S5.5 work.
 Direction: [one GPU-resident 2D physics world](../topics/physbox5-unified-gpu-physics.md).
 Scale contract: [performance and scale](../topics/performance-and-scale.md).
 Dependencies: [S3 collision/persistence](003-small-world-collision-persistence.md)
@@ -454,7 +455,7 @@ sequence; it did not authorize a product-default or quality-band change.
   point-incidence topology without changing product construction or defaults.
 - [x] Implement laboratory-only GPU manifold-block and block-mass-split lanes
   on stable pair slots, preserving equal-and-opposite records and body gather.
-- [ ] Evaluate the factorial matrix `current`, `mass-split`, `manifold-block`,
+- [x] Evaluate the factorial matrix `current`, `mass-split`, `manifold-block`,
   `block-mass-split`, and the now-triggered `colored-in-place` comparator at
   1/2/4/8 iterations on the unchanged six S5.4 sources plus the 16-body stack.
   Preserve exact first failures and complete 32/256/1K GPU cost for every
@@ -463,7 +464,7 @@ sequence; it did not authorize a product-default or quality-band change.
   mass-split/block lane preserves all existing S5.4 structures through 1,200
   steps with monotonic iteration behavior and a complete 1K step below the
   fixed 16.67 ms feasibility boundary on the named desktop adapter.
-- [ ] Publish a renewed review package and stop before promoting a solver,
+- [x] Publish a renewed review package and stop before promoting a solver,
   accepting residual-motion bands, changing physical defaults/tolerances, or
   beginning S5.5.
 
@@ -593,6 +594,26 @@ failure artifact. Disjointness, exact replay, and that overflow path are
 permanent tests. The complete 1/2/4/8 quality and timing matrix remains the
 next evidence slice; the high fixed dispatch count is intentionally retained
 rather than hidden before measurement.
+
+S5.4a completion, 2026-07-16: the clean
+[parallel-normal factorial package](../../evidence/p5.2b-s5.4a/README.md)
+records 20 candidates, seven awake scenes, 84 clean process-isolated Box2D
+authority invocations, 48 exact first failures, 60 complete GPU timing rows,
+six optimized Box2D rows, synchronized playback, and fresh selected-product
+headless/browser/AVD artifacts. All candidates replay exactly and remain
+capacity-clean. No family passes the strict monotonic gate and no candidate
+satisfies every conditional exit.
+
+Colored in-place is the structural leader: i4 and i8 preserve all seven
+structures, whereas no Jacobi/gather formulation preserves the 16-stack.
+The fixed-pass colored i4 implementation costs `19.308 ms` and 2,360
+dispatches at 1K, versus `0.185 ms` for optimized Box2D, so it is not a
+production candidate. The recommended next human-authorized experiment is a
+GPU-owned compact manifold-color schedule with coupled two-point block normals
+and fused compatible stages. It must preserve the one-world contracts, avoid
+CPU readback, pass the same quality/capacity/cost gates, and execute through
+shared browser and AVD validation before promotion. Point Jacobi/Jacobi-gather
+remains `SELECTED`; S5.5 remains blocked at this renewed human checkpoint.
 
 ### S5.5 — P5.3 scalable broadphase bakeoff
 

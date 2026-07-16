@@ -760,6 +760,25 @@ timing evidence. Point Jacobi plus Jacobi/gather remains the product selection.
 No quality band, tolerance, oracle precedence, constructor, or physical default
 changed; measured comparison and renewed human review are still required.
 
+S5.4a measured decision checkpoint, 2026-07-16: the clean
+[factorial evidence](../../evidence/p5.2b-s5.4a/README.md) shows that colored
+in-place is the only measured accumulation architecture to preserve all seven
+awake structures: i4 and i8 retain the added 16-stack through every one of
+1,200 steps. Scalar mass split i8 and manifold block i2/i4/i8 preserve the
+original six scenes but lose the 16-stack; combined block mass splitting
+regresses. All executions are exact, finite, and capacity-clean, but every
+family has a strict residual or first-failure monotonic violation.
+
+The structural result does not authorize promotion. The deliberately complete
+32-color schedule costs `19.308 ms`/2,360 dispatches at 1K for colored i4 and
+`28.042 ms`/4,408 dispatches for i8, compared with `0.185 ms` for optimized
+Box2D. Point Jacobi/Jacobi-gather therefore remains the provisional selected
+execution. The recommendation awaiting human review is a bounded optimized
+colored comparator that compacts GPU-owned manifold colors, couples the two
+normal points, and fuses compatible stages without simulation-dependent CPU
+readback or a second world. A resulting potential candidate must pass the same
+seven-scene, residual, capacity, cost, browser, and AVD gates before selection.
+
 Circle/circle and circle/rectangle contact are analytic. Rectangle/rectangle
 uses SAT to select a reference and incident edge, clips the incident segment,
 and produces stable vertex/edge feature pairs. Test feature stability around

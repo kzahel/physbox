@@ -698,6 +698,24 @@ claim. If a candidate preserves structure but exceeds it, retain the result
 and trigger colored/in-place comparison rather than weakening the scene or
 timing scope. No mass-split result may be extrapolated to liquid.
 
+S5.4a complete cost, 2026-07-16: clean Apple M4 Pro Metal evidence retains 20
+samples for every one of 60 GPU rows. The complete 1K point/scalar/block lanes
+span `3.343` to `5.158 ms`; their allocations span `29.149` to `29.208 MiB`,
+but none preserves the seven-scene corpus. Colored in-place i1/i2/i4/i8 costs
+`12.202`/`14.741`/`19.308`/`28.042 ms` with
+824/1,336/2,360/4,408 dispatches and `29.454` through `30.329 MiB`. I4 and i8
+are the only candidates that preserve all seven structures, and both miss the
+16.67 ms feasibility boundary.
+
+The fastest equivalent optimized Box2D 1K row is `0.185 ms`, making colored
+i4 104.3x slower and i8 151.4x slower on this fixture. Actual final color use
+is four for the 16-stack and twelve for the 4-row pyramid, while the comparator
+intentionally charges every bounded pass; a future compact/fused colored lane
+must report the complete cost rather than subtracting it analytically. This is
+a generated rigid-contact small-world measurement with 512 contacts at 1K. It
+does not establish a crossover, qualify scalable broadphase, or predict
+liquid-heavy performance.
+
 ## Regression and claim gates
 
 Before representative hardware is selected, store named measurements and

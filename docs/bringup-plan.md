@@ -139,6 +139,15 @@ preserve the existing awake corpus monotonically inside the fixed 60 Hz
 feasibility boundary. This does not promote a solver or unblock P5.3; publish a
 renewed package and return to human review.
 
+S5.4a renewed checkpoint, 2026-07-16: the clean
+[parallel-normal package](../evidence/p5.2b-s5.4a/README.md) evaluates all 20
+authorized point-Jacobi, scalar-mass-split, manifold-block, combined, and
+colored/in-place executions. Only colored i4/i8 preserve all seven structures,
+including the 16-stack, but their fixed 32-pass graphs cost `19.308`/`28.042
+ms` at 1K and every family still violates the declared strict monotonic gate.
+No solver is promoted. Human review must decide whether to authorize an
+optimized GPU-owned manifold-color/block lane; P5.3 remains blocked.
+
 The first S3.5a representation checkpoint implements the stable pair-slot
 comparator with full feature verification and deterministic generational slot
 recycling. Its correctness/adversarial gates pass and its combined
