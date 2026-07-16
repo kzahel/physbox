@@ -36,10 +36,10 @@ pub use body_benchmark::{
     PendingCompletion, PendingTimestampReadback,
 };
 pub use body_floor_solver::{
-    GPU_SOLVER_EXECUTION_VERSION, GpuBlockActiveSetV2, GpuColoringEvidenceV3,
-    GpuFixedFloorContactEvidence, GpuFixedFloorPassEvidence, GpuGatherTopology,
-    GpuGatherTopologyEvidence, GpuManifoldBlockEvidenceV2, GpuNormalSolverV3,
-    GpuSolverAccumulationV3, GpuSolverExecutionV3,
+    GPU_SOLVER_EXECUTION_VERSION, GpuBlockActiveSetV2, GpuColorOrderV4, GpuColorScheduleV4,
+    GpuColorUnitV4, GpuColoringEvidenceV4, GpuFixedFloorContactEvidence, GpuFixedFloorPassEvidence,
+    GpuGatherTopology, GpuGatherTopologyEvidence, GpuManifoldBlockEvidenceV2, GpuNormalSolverV4,
+    GpuSolverAccumulationV4, GpuSolverExecutionV4,
 };
 #[cfg(not(target_arch = "wasm32"))]
 pub use body_floor_solver::{

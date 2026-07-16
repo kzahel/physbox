@@ -788,6 +788,15 @@ without silently creating a new accepted quality band. Incremental coloring
 and workgroup-per-island solving remain measured conditional comparators.
 Point Jacobi/Jacobi-gather remains the product selection.
 
+S5.4b scheduling checkpoint, 2026-07-16: a laboratory-only V4 execution
+contract now distinguishes fixed-full-grid and compact-indirect point-color
+schedules. GPU stable compaction and indirect dispatch preserve the existing
+greedy assignment, forward order, scalar equations, and exact stage sequence;
+the native eight-step i2 stack is byte-identical to the fixed-grid control and
+the overflow path schedules zero solve work. No stage fusion was admitted
+because it would change color/stage ordering. `SELECTED` remains the V4
+point-Jacobi/Jacobi-gather execution with no color schedule.
+
 Circle/circle and circle/rectangle contact are analytic. Rectangle/rectangle
 uses SAT to select a reference and incident edge, clips the incident segment,
 and produces stable vertex/edge feature pairs. Test feature stability around

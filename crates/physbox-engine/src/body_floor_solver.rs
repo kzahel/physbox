@@ -17,12 +17,14 @@ const WORKGROUP_SIZE: u32 = 64;
 const RADIX_WORKGROUP_SIZE: u32 = 256;
 const PARAMETER_STRIDE: usize = 256;
 const MAX_COLORS: u32 = 32;
+const COLOR_OFFSET_COUNT: u32 = MAX_COLORS + 1;
+const COLOR_INDIRECT_WORDS: u32 = MAX_COLORS * 3;
 
-pub const GPU_SOLVER_EXECUTION_VERSION: u32 = 3;
+pub const GPU_SOLVER_EXECUTION_VERSION: u32 = 4;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub enum GpuNormalSolverV3 {
+pub enum GpuNormalSolverV4 {
     PointJacobi,
     ScalarMassSplit,
     ManifoldBlock,
@@ -31,12 +33,34 @@ pub enum GpuNormalSolverV3 {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub enum GpuSolverAccumulationV3 {
+pub enum GpuSolverAccumulationV4 {
     JacobiGather,
     ColoredInPlace,
 }
 
-impl GpuNormalSolverV3 {
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum GpuColorScheduleV4 {
+    None,
+    FixedFullGrid,
+    CompactIndirect,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum GpuColorUnitV4 {
+    Point,
+    Manifold,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum GpuColorOrderV4 {
+    Forward,
+    Alternating,
+}
+
+impl GpuNormalSolverV4 {
     const fn shader_code(self) -> u32 {
         match self {
             Self::PointJacobi => 0,
@@ -57,19 +81,25 @@ impl GpuNormalSolverV3 {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct GpuSolverExecutionV3 {
+pub struct GpuSolverExecutionV4 {
     pub version: u32,
-    pub accumulation: GpuSolverAccumulationV3,
-    pub normal_solver: GpuNormalSolverV3,
+    pub accumulation: GpuSolverAccumulationV4,
+    pub normal_solver: GpuNormalSolverV4,
+    pub color_schedule: GpuColorScheduleV4,
+    pub color_unit: GpuColorUnitV4,
+    pub color_order: GpuColorOrderV4,
     pub warm_start: bool,
     pub relaxation: bool,
 }
 
-impl GpuSolverExecutionV3 {
+impl GpuSolverExecutionV4 {
     pub const SELECTED: Self = Self {
         version: GPU_SOLVER_EXECUTION_VERSION,
-        accumulation: GpuSolverAccumulationV3::JacobiGather,
-        normal_solver: GpuNormalSolverV3::PointJacobi,
+        accumulation: GpuSolverAccumulationV4::JacobiGather,
+        normal_solver: GpuNormalSolverV4::PointJacobi,
+        color_schedule: GpuColorScheduleV4::None,
+        color_unit: GpuColorUnitV4::Point,
+        color_order: GpuColorOrderV4::Forward,
         warm_start: true,
         relaxation: true,
     };
@@ -77,22 +107,28 @@ impl GpuSolverExecutionV3 {
     pub const fn experiment(warm_start: bool, relaxation: bool) -> Self {
         Self {
             version: GPU_SOLVER_EXECUTION_VERSION,
-            accumulation: GpuSolverAccumulationV3::JacobiGather,
-            normal_solver: GpuNormalSolverV3::PointJacobi,
+            accumulation: GpuSolverAccumulationV4::JacobiGather,
+            normal_solver: GpuNormalSolverV4::PointJacobi,
+            color_schedule: GpuColorScheduleV4::None,
+            color_unit: GpuColorUnitV4::Point,
+            color_order: GpuColorOrderV4::Forward,
             warm_start,
             relaxation,
         }
     }
 
     pub const fn normal_experiment(
-        normal_solver: GpuNormalSolverV3,
+        normal_solver: GpuNormalSolverV4,
         warm_start: bool,
         relaxation: bool,
     ) -> Self {
         Self {
             version: GPU_SOLVER_EXECUTION_VERSION,
-            accumulation: GpuSolverAccumulationV3::JacobiGather,
+            accumulation: GpuSolverAccumulationV4::JacobiGather,
             normal_solver,
+            color_schedule: GpuColorScheduleV4::None,
+            color_unit: GpuColorUnitV4::Point,
+            color_order: GpuColorOrderV4::Forward,
             warm_start,
             relaxation,
         }
@@ -101,15 +137,25 @@ impl GpuSolverExecutionV3 {
     pub const fn colored_experiment(warm_start: bool, relaxation: bool) -> Self {
         Self {
             version: GPU_SOLVER_EXECUTION_VERSION,
-            accumulation: GpuSolverAccumulationV3::ColoredInPlace,
-            normal_solver: GpuNormalSolverV3::PointJacobi,
+            accumulation: GpuSolverAccumulationV4::ColoredInPlace,
+            normal_solver: GpuNormalSolverV4::PointJacobi,
+            color_schedule: GpuColorScheduleV4::FixedFullGrid,
+            color_unit: GpuColorUnitV4::Point,
+            color_order: GpuColorOrderV4::Forward,
             warm_start,
             relaxation,
         }
     }
 
+    pub const fn compact_colored_experiment(warm_start: bool, relaxation: bool) -> Self {
+        Self {
+            color_schedule: GpuColorScheduleV4::CompactIndirect,
+            ..Self::colored_experiment(warm_start, relaxation)
+        }
+    }
+
     const fn uses_colored_in_place(self) -> bool {
-        matches!(self.accumulation, GpuSolverAccumulationV3::ColoredInPlace)
+        matches!(self.accumulation, GpuSolverAccumulationV4::ColoredInPlace)
     }
 
     pub(crate) fn validate(self) -> Result<(), String> {
@@ -119,9 +165,23 @@ impl GpuSolverExecutionV3 {
                 self.version, GPU_SOLVER_EXECUTION_VERSION
             ));
         }
-        if self.uses_colored_in_place() && self.normal_solver != GpuNormalSolverV3::PointJacobi {
+        if self.uses_colored_in_place() && self.normal_solver != GpuNormalSolverV4::PointJacobi {
             return Err(
                 "colored in-place execution currently requires the point normal solve".to_owned(),
+            );
+        }
+        match (self.accumulation, self.color_schedule) {
+            (GpuSolverAccumulationV4::JacobiGather, GpuColorScheduleV4::None)
+            | (
+                GpuSolverAccumulationV4::ColoredInPlace,
+                GpuColorScheduleV4::FixedFullGrid | GpuColorScheduleV4::CompactIndirect,
+            ) => {}
+            _ => return Err("GPU solver accumulation and color schedule disagree".to_owned()),
+        }
+        if self.color_unit != GpuColorUnitV4::Point || self.color_order != GpuColorOrderV4::Forward
+        {
+            return Err(
+                "the current GPU solver slice only implements forward point coloring".to_owned(),
             );
         }
         Ok(())
@@ -400,28 +460,44 @@ pub struct GpuManifoldBlockEvidenceV2 {
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct GpuColoringEvidenceV3 {
+pub struct GpuColoringEvidenceV4 {
+    pub schedule: GpuColorScheduleV4,
+    pub unit: GpuColorUnitV4,
+    pub order: GpuColorOrderV4,
     pub max_colors: u32,
     pub color_count: u32,
     pub point_colors: Vec<u32>,
+    pub color_occupancy: Vec<u32>,
+    pub compacted_point_indices: Vec<u32>,
+    pub indirect_workgroups: Vec<[u32; 3]>,
+    pub encoded_color_passes: u32,
+    pub active_color_passes: u32,
+    pub empty_indirect_launches: u32,
+    pub scheduled_point_invocations: u64,
     pub overflowed: bool,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GpuFixedFloorPassEvidence {
     pub contacts: Vec<GpuFixedFloorContactEvidence>,
     pub contributions: Vec<GpuContributionEvidence>,
     pub manifold_blocks: Vec<GpuManifoldBlockEvidenceV2>,
-    pub coloring: Option<GpuColoringEvidenceV3>,
+    pub coloring: Option<GpuColoringEvidenceV4>,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Clone, Copy)]
 pub(crate) struct FixedFloorEvidenceLayout {
     pub(crate) point_count: u32,
+    pub(crate) body_count: u32,
+    pub(crate) color_schedule: GpuColorScheduleV4,
+    pub(crate) color_unit: GpuColorUnitV4,
+    pub(crate) color_order: GpuColorOrderV4,
     pub(crate) prepared_bytes: u64,
     pub(crate) contribution_bytes: u64,
+    pub(crate) color_topology_bytes: u64,
+    pub(crate) color_indirect_bytes: u64,
     pub(crate) coloring_bytes: u64,
     pub(crate) total_bytes: u64,
 }
@@ -511,6 +587,7 @@ struct Operation {
     pipeline: PipelineKind,
     direction: MotionDirection,
     workgroups: u32,
+    indirect_offset: Option<u64>,
     parameter_index: u32,
 }
 
@@ -533,7 +610,12 @@ struct TopologyLayout {
     color_mask_base: u32,
     color_status_index: u32,
     color_count_index: u32,
+    color_counts_base: u32,
+    color_offsets_base: u32,
+    color_cursors_base: u32,
+    color_indices_base: u32,
     has_coloring: bool,
+    has_compact_coloring: bool,
     element_count: u32,
 }
 
@@ -543,7 +625,7 @@ impl TopologyLayout {
         body_count: u32,
         point_count: u32,
         include_manifold_counts: bool,
-        include_coloring: bool,
+        color_schedule: GpuColorScheduleV4,
     ) -> Result<Self, String> {
         let mut layout = match kind {
             GpuGatherTopology::CanonicalBodyScan => Self::canonical(body_count, point_count),
@@ -557,7 +639,7 @@ impl TopologyLayout {
                 .checked_add(body_count)
                 .ok_or_else(|| "solver manifold-count range overflowed".to_owned())?;
         }
-        if include_coloring {
+        if color_schedule != GpuColorScheduleV4::None {
             layout.color_base = layout.element_count;
             layout.color_mask_base = layout
                 .color_base
@@ -576,6 +658,26 @@ impl TopologyLayout {
                 .checked_add(1)
                 .ok_or_else(|| "solver color evidence range overflowed".to_owned())?;
             layout.has_coloring = true;
+            if color_schedule == GpuColorScheduleV4::CompactIndirect {
+                layout.color_counts_base = layout.element_count;
+                layout.color_offsets_base = layout
+                    .color_counts_base
+                    .checked_add(MAX_COLORS)
+                    .ok_or_else(|| "solver color counts range overflowed".to_owned())?;
+                layout.color_cursors_base = layout
+                    .color_offsets_base
+                    .checked_add(COLOR_OFFSET_COUNT)
+                    .ok_or_else(|| "solver color offsets range overflowed".to_owned())?;
+                layout.color_indices_base = layout
+                    .color_cursors_base
+                    .checked_add(MAX_COLORS)
+                    .ok_or_else(|| "solver color cursors range overflowed".to_owned())?;
+                layout.element_count = layout
+                    .color_indices_base
+                    .checked_add(point_count)
+                    .ok_or_else(|| "solver compact color range overflowed".to_owned())?;
+                layout.has_compact_coloring = true;
+            }
         }
         Ok(layout)
     }
@@ -612,7 +714,12 @@ impl TopologyLayout {
             color_mask_base: 0,
             color_status_index: 0,
             color_count_index: 0,
+            color_counts_base: 0,
+            color_offsets_base: 0,
+            color_cursors_base: 0,
+            color_indices_base: 0,
             has_coloring: false,
+            has_compact_coloring: false,
             element_count,
         })
     }
@@ -668,7 +775,12 @@ impl TopologyLayout {
             color_mask_base: 0,
             color_status_index: 0,
             color_count_index: 0,
+            color_counts_base: 0,
+            color_offsets_base: 0,
+            color_cursors_base: 0,
+            color_indices_base: 0,
             has_coloring: false,
+            has_compact_coloring: false,
             element_count,
         })
     }
@@ -688,9 +800,11 @@ pub(crate) struct GpuFixedFloorSolver {
     _prepared: wgpu::Buffer,
     _contributions: wgpu::Buffer,
     _topology: wgpu::Buffer,
+    _color_indirect: Option<wgpu::Buffer>,
     _parameter_buffer: wgpu::Buffer,
     bind_ab: wgpu::BindGroup,
     bind_ba: wgpu::BindGroup,
+    color_bind_ab: Option<wgpu::BindGroup>,
     topology_clear_pipeline: wgpu::ComputePipeline,
     topology_count_pipeline: wgpu::ComputePipeline,
     manifold_count_pipeline: Option<wgpu::ComputePipeline>,
@@ -718,6 +832,7 @@ pub(crate) struct GpuFixedFloorSolver {
     point_count: u32,
     body_count: u32,
     topology_layout: TopologyLayout,
+    execution: GpuSolverExecutionV4,
     edge_build_permuted: bool,
 }
 
@@ -751,7 +866,7 @@ impl GpuFixedFloorSolver {
             point_count,
             GpuGatherTopology::CanonicalBodyScan,
             false,
-            GpuSolverExecutionV3::SELECTED,
+            GpuSolverExecutionV4::SELECTED,
         )?;
         solver._owned_point_input = Some(point_buffer);
         Ok(solver)
@@ -789,7 +904,7 @@ impl GpuFixedFloorSolver {
             point_count,
             topology,
             false,
-            GpuSolverExecutionV3::SELECTED,
+            GpuSolverExecutionV4::SELECTED,
         )?;
         solver._owned_point_input = Some(point_buffer);
         Ok(solver)
@@ -804,7 +919,7 @@ impl GpuFixedFloorSolver {
         point_capacity: u32,
         topology: GpuGatherTopology,
         permute_edge_build: bool,
-        execution: GpuSolverExecutionV3,
+        execution: GpuSolverExecutionV4,
     ) -> Result<Self, String> {
         validate_experiment_settings(&scenario.settings, execution)?;
         if !scenario.manifolds.is_empty() || point_capacity == 0 {
@@ -834,7 +949,7 @@ impl GpuFixedFloorSolver {
         point_count: u32,
         topology: GpuGatherTopology,
         permute_edge_build: bool,
-        execution: GpuSolverExecutionV3,
+        execution: GpuSolverExecutionV4,
     ) -> Result<Self, String> {
         let body_count = storage.layout().capacity_elements;
         let topology_layout = TopologyLayout::new(
@@ -842,7 +957,7 @@ impl GpuFixedFloorSolver {
             body_count,
             point_count,
             execution.normal_solver.uses_manifold_mass_split(),
-            execution.uses_colored_in_place(),
+            execution.color_schedule,
         )?;
         if execution.uses_colored_in_place() && topology != GpuGatherTopology::StableBodyEdge {
             return Err(
@@ -894,6 +1009,16 @@ impl GpuFixedFloorSolver {
             topology_layout.element_count,
             usage,
         );
+        let color_indirect = topology_layout.has_coloring.then(|| {
+            storage_empty::<u32>(
+                device,
+                "physbox5_floor_color_indirect",
+                COLOR_INDIRECT_WORDS,
+                wgpu::BufferUsages::STORAGE
+                    | wgpu::BufferUsages::INDIRECT
+                    | wgpu::BufferUsages::COPY_SRC,
+            )
+        });
         let mut parameter_bytes = vec![0_u8; parameters.len() * PARAMETER_STRIDE];
         for (index, parameter) in parameters.iter().enumerate() {
             let start = index * PARAMETER_STRIDE;
@@ -905,29 +1030,45 @@ impl GpuFixedFloorSolver {
             contents: &parameter_bytes,
             usage: wgpu::BufferUsages::UNIFORM,
         });
+        let layout_entries = [
+            storage_entry(0, false),
+            storage_entry(1, false),
+            storage_entry(2, false),
+            storage_entry(3, true),
+            storage_entry(4, true),
+            storage_entry(5, false),
+            storage_entry(6, false),
+            storage_entry(7, false),
+            wgpu::BindGroupLayoutEntry {
+                binding: 8,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: true,
+                    min_binding_size: wgpu::BufferSize::new(size_of::<PassParamsRaw>() as u64),
+                },
+                count: None,
+            },
+        ];
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("physbox5_floor_solver_layout"),
-            entries: &[
-                storage_entry(0, false),
-                storage_entry(1, false),
-                storage_entry(2, false),
-                storage_entry(3, true),
-                storage_entry(4, true),
-                storage_entry(5, false),
-                storage_entry(6, false),
-                storage_entry(7, false),
-                wgpu::BindGroupLayoutEntry {
-                    binding: 8,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: true,
-                        min_binding_size: wgpu::BufferSize::new(size_of::<PassParamsRaw>() as u64),
-                    },
-                    count: None,
-                },
-            ],
+            entries: &layout_entries,
         });
+        let color_layout = if topology_layout.has_coloring {
+            Some(
+                device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    label: Some("physbox5_floor_color_layout"),
+                    entries: &[
+                        storage_entry(4, true),
+                        storage_entry(7, false),
+                        layout_entries[8],
+                        storage_entry(9, false),
+                    ],
+                }),
+            )
+        } else {
+            None
+        };
         let bind_ab = bind_group(
             device,
             &layout,
@@ -940,6 +1081,7 @@ impl GpuFixedFloorSolver {
             &contributions,
             &topology,
             &parameter_buffer,
+            None,
         );
         let bind_ba = bind_group(
             device,
@@ -953,7 +1095,21 @@ impl GpuFixedFloorSolver {
             &contributions,
             &topology,
             &parameter_buffer,
+            None,
         );
+        let color_bind_ab = match (&color_layout, &color_indirect) {
+            (Some(layout), Some(indirect)) => Some(color_bind_group(
+                device,
+                layout,
+                "physbox5_floor_color_bind_ab",
+                point_buffer,
+                &topology,
+                &parameter_buffer,
+                indirect,
+            )),
+            (None, None) => None,
+            _ => return Err("solver color bind resources disagree".to_owned()),
+        };
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("physbox5_floor_solver_shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("body_floor_solver.wgsl").into()),
@@ -975,6 +1131,30 @@ impl GpuFixedFloorSolver {
                 },
                 cache: None,
             })
+        };
+        let color_pipeline = match &color_layout {
+            Some(layout) => {
+                let color_pipeline_layout =
+                    device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                        label: Some("physbox5_floor_color_pipeline_layout"),
+                        bind_group_layouts: &[layout],
+                        push_constant_ranges: &[],
+                    });
+                Some(
+                    device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                        label: Some("floor_color_contacts"),
+                        layout: Some(&color_pipeline_layout),
+                        module: &shader,
+                        entry_point: Some("color_contacts"),
+                        compilation_options: wgpu::PipelineCompilationOptions {
+                            constants: &[],
+                            zero_initialize_workgroup_memory: false,
+                        },
+                        cache: None,
+                    }),
+                )
+            }
+            None => None,
         };
         let mut capacities = vec![
             capacity(
@@ -1009,9 +1189,11 @@ impl GpuFixedFloorSolver {
             _prepared: prepared,
             _contributions: contributions,
             _topology: topology,
+            _color_indirect: color_indirect,
             _parameter_buffer: parameter_buffer,
             bind_ab,
             bind_ba,
+            color_bind_ab,
             topology_clear_pipeline: pipeline("floor_topology_clear", "clear_topology"),
             topology_count_pipeline: pipeline("floor_topology_count", "count_edges"),
             manifold_count_pipeline: execution
@@ -1028,9 +1210,7 @@ impl GpuFixedFloorSolver {
             edge_radix_prefix_pipeline: pipeline("floor_edge_radix_prefix", "edge_radix_prefix"),
             edge_radix_scatter_pipeline: pipeline("floor_edge_radix_scatter", "edge_radix_scatter"),
             edge_ranges_pipeline: pipeline("floor_edge_ranges", "build_edge_ranges"),
-            color_pipeline: execution
-                .uses_colored_in_place()
-                .then(|| pipeline("floor_color_contacts", "color_contacts")),
+            color_pipeline,
             integrate_velocity_pipeline: pipeline("floor_integrate_velocity", "integrate_velocity"),
             prepare_pipeline: pipeline("floor_prepare", "prepare"),
             refresh_pipeline: pipeline("floor_refresh", "refresh_contacts"),
@@ -1052,11 +1232,34 @@ impl GpuFixedFloorSolver {
             point_count,
             body_count,
             topology_layout,
+            execution,
             edge_build_permuted: permute_edge_build,
         })
     }
 
     pub(crate) fn encode_step(&self, encoder: &mut wgpu::CommandEncoder) {
+        if let Some(split) = self
+            .operations
+            .iter()
+            .position(|operation| operation.indirect_offset.is_some())
+        {
+            let mut preparation = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("physbox5_fixed_floor_compact_color_prepare"),
+                timestamp_writes: None,
+            });
+            for operation in &self.operations[..split] {
+                self.encode_operation(&mut preparation, operation);
+            }
+            drop(preparation);
+            let mut solve = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("physbox5_fixed_floor_compact_color_solve"),
+                timestamp_writes: None,
+            });
+            for operation in &self.operations[split..] {
+                self.encode_operation(&mut solve, operation);
+            }
+            return;
+        }
         let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some("physbox5_fixed_floor_solve"),
             timestamp_writes: None,
@@ -1103,15 +1306,31 @@ impl GpuFixedFloorSolver {
                 .as_ref()
                 .expect("colored operations require the comparator pipeline"),
         });
-        pass.set_bind_group(
-            0,
+        let bind_group = if matches!(operation.pipeline, PipelineKind::Color) {
+            self.color_bind_ab
+                .as_ref()
+                .expect("color operations require the indirect-argument bind group")
+        } else {
             match operation.direction {
                 MotionDirection::AtoB => &self.bind_ab,
                 MotionDirection::BtoA => &self.bind_ba,
-            },
+            }
+        };
+        pass.set_bind_group(
+            0,
+            bind_group,
             &[operation.parameter_index * PARAMETER_STRIDE as u32],
         );
-        pass.dispatch_workgroups(operation.workgroups, 1, 1);
+        if let Some(offset) = operation.indirect_offset {
+            pass.dispatch_workgroups_indirect(
+                self._color_indirect
+                    .as_ref()
+                    .expect("indirect color operations require the argument buffer"),
+                offset,
+            );
+        } else {
+            pass.dispatch_workgroups(operation.workgroups, 1, 1);
+        }
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -1122,6 +1341,36 @@ impl GpuFixedFloorSolver {
         beginning: u32,
         end: u32,
     ) {
+        if let Some(split) = self
+            .operations
+            .iter()
+            .position(|operation| operation.indirect_offset.is_some())
+        {
+            let mut preparation = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("physbox5_authored_gather_benchmark_color_prepare"),
+                timestamp_writes: Some(wgpu::ComputePassTimestampWrites {
+                    query_set,
+                    beginning_of_pass_write_index: Some(beginning),
+                    end_of_pass_write_index: None,
+                }),
+            });
+            for operation in &self.operations[..split] {
+                self.encode_operation(&mut preparation, operation);
+            }
+            drop(preparation);
+            let mut solve = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("physbox5_authored_gather_benchmark_compact_solve"),
+                timestamp_writes: Some(wgpu::ComputePassTimestampWrites {
+                    query_set,
+                    beginning_of_pass_write_index: None,
+                    end_of_pass_write_index: Some(end),
+                }),
+            });
+            for operation in &self.operations[split..] {
+                self.encode_operation(&mut solve, operation);
+            }
+            return;
+        }
         let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some("physbox5_authored_gather_benchmark_total"),
             timestamp_writes: Some(wgpu::ComputePassTimestampWrites {
@@ -1176,6 +1425,7 @@ impl GpuFixedFloorSolver {
             + self._prepared.size()
             + self._contributions.size()
             + self._topology.size()
+            + self._color_indirect.as_ref().map_or(0, wgpu::Buffer::size)
             + self._parameter_buffer.size()
     }
 
@@ -1184,7 +1434,8 @@ impl GpuFixedFloorSolver {
             topology: self.topology_layout.kind,
             edge_build_permuted: self.edge_build_permuted,
             dispatches: self.topology_layout.dispatches(),
-            allocated_bytes: self._topology.size(),
+            allocated_bytes: self._topology.size()
+                + self._color_indirect.as_ref().map_or(0, wgpu::Buffer::size),
             point_capacity: self.point_count,
             edge_capacity: self.topology_layout.edge_count,
             radix_passes: self.topology_layout.radix_passes,
@@ -1214,15 +1465,24 @@ impl GpuFixedFloorSolver {
         let prepared_bytes = u64::from(self.point_count) * size_of::<PreparedPointRaw>() as u64;
         let contribution_bytes =
             u64::from(self.point_count * 2) * size_of::<ContributionRaw>() as u64;
-        let coloring_bytes = if self.topology_layout.has_coloring {
-            u64::from(self.point_count + self.body_count + 2) * size_of::<u32>() as u64
+        let color_topology_bytes = if self.topology_layout.has_coloring {
+            u64::from(self.topology_layout.element_count - self.topology_layout.color_base)
+                * size_of::<u32>() as u64
         } else {
             0
         };
+        let color_indirect_bytes = self._color_indirect.as_ref().map_or(0, wgpu::Buffer::size);
+        let coloring_bytes = color_topology_bytes + color_indirect_bytes;
         FixedFloorEvidenceLayout {
             point_count: self.point_count,
+            body_count: self.body_count,
+            color_schedule: self.execution.color_schedule,
+            color_unit: self.execution.color_unit,
+            color_order: self.execution.color_order,
             prepared_bytes,
             contribution_bytes,
+            color_topology_bytes,
+            color_indirect_bytes,
             coloring_bytes,
             total_bytes: prepared_bytes + contribution_bytes + coloring_bytes,
         }
@@ -1245,13 +1505,22 @@ impl GpuFixedFloorSolver {
             prepared_bytes,
             contribution_bytes,
         );
-        if layout.coloring_bytes != 0 {
+        if layout.color_topology_bytes != 0 {
             encoder.copy_buffer_to_buffer(
                 &self._topology,
                 u64::from(self.topology_layout.color_base) * size_of::<u32>() as u64,
                 destination,
                 prepared_bytes + contribution_bytes,
-                layout.coloring_bytes,
+                layout.color_topology_bytes,
+            );
+        }
+        if let Some(indirect) = &self._color_indirect {
+            encoder.copy_buffer_to_buffer(
+                indirect,
+                0,
+                destination,
+                prepared_bytes + contribution_bytes + layout.color_topology_bytes,
+                layout.color_indirect_bytes,
             );
         }
         layout
@@ -1625,21 +1894,136 @@ pub(crate) fn decode_pass_evidence(
     } else {
         let raw = bytemuck::try_cast_slice::<u8, u32>(&bytes[contribution_end..])
             .map_err(|error| format!("decode fixed-floor coloring: {error}"))?;
-        let evidence_words = layout.coloring_bytes as usize / size_of::<u32>();
-        if raw.len() != evidence_words || raw.len() < layout.point_count as usize + 2 {
+        let topology_words = layout.color_topology_bytes as usize / size_of::<u32>();
+        let indirect_words = layout.color_indirect_bytes as usize / size_of::<u32>();
+        if raw.len() != topology_words + indirect_words
+            || topology_words < layout.point_count as usize + layout.body_count as usize + 2
+            || indirect_words != COLOR_INDIRECT_WORDS as usize
+        {
             return Err("fixed-floor coloring evidence had the wrong word count".to_owned());
         }
-        let color_count = raw[raw.len() - 1];
-        let overflowed = raw[raw.len() - 2] != 0;
+        let status_offset = layout.point_count as usize + layout.body_count as usize;
+        let color_count = raw[status_offset + 1];
+        let overflowed = raw[status_offset] != 0;
         let point_colors = raw[..layout.point_count as usize]
             .iter()
             .zip(&contacts)
             .filter_map(|(&color, contact)| contact.valid.then_some(color))
             .collect::<Vec<_>>();
-        Some(GpuColoringEvidenceV3 {
+        if color_count > MAX_COLORS {
+            return Err("fixed-floor coloring reported too many colors".to_owned());
+        }
+        let mut full_occupancy = vec![0_u32; MAX_COLORS as usize];
+        for &color in &point_colors {
+            if color < MAX_COLORS {
+                full_occupancy[color as usize] += 1;
+            } else if !overflowed {
+                return Err("fixed-floor coloring reported an invalid assignment".to_owned());
+            }
+        }
+        let color_occupancy = full_occupancy[..color_count as usize].to_vec();
+        let active_color_passes = color_occupancy
+            .iter()
+            .filter(|&&occupancy| occupancy != 0)
+            .count() as u32;
+        let (
+            compacted_point_indices,
+            indirect_workgroups,
+            empty_indirect_launches,
+            scheduled_point_invocations,
+        ) = if layout.color_schedule == GpuColorScheduleV4::CompactIndirect {
+            let counts_start = status_offset + 2;
+            let offsets_start = counts_start + MAX_COLORS as usize;
+            let cursors_start = offsets_start + COLOR_OFFSET_COUNT as usize;
+            let indices_start = cursors_start + MAX_COLORS as usize;
+            let expected_topology_words = indices_start + layout.point_count as usize;
+            if topology_words != expected_topology_words {
+                return Err("compact color topology had the wrong word count".to_owned());
+            }
+            let counts = &raw[counts_start..offsets_start];
+            let offsets = &raw[offsets_start..cursors_start];
+            let cursors = &raw[cursors_start..indices_start];
+            if counts != full_occupancy || cursors != counts {
+                return Err("compact color counts disagree with assignments".to_owned());
+            }
+            let mut running = 0_u32;
+            for (color, &count) in counts.iter().enumerate() {
+                if offsets[color] != running {
+                    return Err("compact color offsets are not an exact prefix".to_owned());
+                }
+                running = running
+                    .checked_add(count)
+                    .ok_or_else(|| "compact color count overflowed".to_owned())?;
+            }
+            if offsets[MAX_COLORS as usize] != running || running > layout.point_count {
+                return Err("compact color terminal offset is invalid".to_owned());
+            }
+            let compacted = raw[indices_start..indices_start + running as usize].to_vec();
+            let expected_compacted = (0..MAX_COLORS)
+                .flat_map(|color| {
+                    raw[..layout.point_count as usize]
+                        .iter()
+                        .enumerate()
+                        .filter(move |&(_, &assigned)| assigned == color)
+                        .map(|(point, _)| point as u32)
+                })
+                .collect::<Vec<_>>();
+            if compacted != expected_compacted {
+                return Err("compact color point order is not stable".to_owned());
+            }
+            let indirect = raw[topology_words..]
+                .chunks_exact(3)
+                .map(|words| [words[0], words[1], words[2]])
+                .collect::<Vec<_>>();
+            if indirect.len() != MAX_COLORS as usize
+                || indirect.iter().enumerate().any(|(color, arguments)| {
+                    let expected_x = if overflowed {
+                        0
+                    } else {
+                        counts[color].div_ceil(WORKGROUP_SIZE)
+                    };
+                    *arguments != [expected_x, 1, 1]
+                })
+            {
+                return Err("compact color indirect arguments are invalid".to_owned());
+            }
+            let empty = indirect
+                .iter()
+                .filter(|arguments| arguments[0] == 0)
+                .count() as u32;
+            let invocations = indirect
+                .iter()
+                .map(|arguments| u64::from(arguments[0]) * u64::from(WORKGROUP_SIZE))
+                .sum();
+            (compacted, indirect, empty, invocations)
+        } else {
+            let expected_topology_words = status_offset + 2;
+            if topology_words != expected_topology_words {
+                return Err("fixed-grid color topology had the wrong word count".to_owned());
+            }
+            (
+                Vec::new(),
+                Vec::new(),
+                0,
+                u64::from(workgroups(layout.point_count))
+                    * u64::from(WORKGROUP_SIZE)
+                    * u64::from(MAX_COLORS),
+            )
+        };
+        Some(GpuColoringEvidenceV4 {
+            schedule: layout.color_schedule,
+            unit: layout.color_unit,
+            order: layout.color_order,
             max_colors: MAX_COLORS,
             color_count,
             point_colors,
+            color_occupancy,
+            compacted_point_indices,
+            indirect_workgroups,
+            encoded_color_passes: MAX_COLORS,
+            active_color_passes,
+            empty_indirect_launches,
+            scheduled_point_invocations,
             overflowed,
         })
     };
@@ -1668,7 +2052,7 @@ pub(crate) fn validate_selected_settings(scenario: &ScenarioV1) -> Result<(), St
 
 fn validate_experiment_settings(
     settings: &SolverSettingsV1,
-    execution: GpuSolverExecutionV3,
+    execution: GpuSolverExecutionV4,
 ) -> Result<(), String> {
     execution.validate()?;
     if settings.fixed_dt.get().to_bits() != (1.0_f32 / 60.0).to_bits() {
@@ -1727,7 +2111,7 @@ fn operations(
     point_count: u32,
     topology: TopologyLayout,
     permute_edge_build: bool,
-    execution: GpuSolverExecutionV3,
+    execution: GpuSolverExecutionV4,
 ) -> (Vec<PassParamsRaw>, Vec<Operation>) {
     let mut parameters = Vec::new();
     let mut operations = Vec::new();
@@ -1906,7 +2290,7 @@ fn preparation_params(
     body_count: u32,
     point_count: u32,
     topology: TopologyLayout,
-    normal_solver: GpuNormalSolverV3,
+    normal_solver: GpuNormalSolverV4,
 ) -> PassParamsRaw {
     let mut params = pass_params(scenario, body_count, point_count, 0, 0, 0);
     params.uints0[2] = topology.ranges_base;
@@ -1925,7 +2309,7 @@ fn normal_params(
     iteration: u32,
     use_bias: u32,
     topology: TopologyLayout,
-    normal_solver: GpuNormalSolverV3,
+    normal_solver: GpuNormalSolverV4,
 ) -> PassParamsRaw {
     let mut params = pass_params(
         scenario,
@@ -2080,7 +2464,7 @@ fn topology_operations(
                 topology.color_status_index,
                 topology.color_count_index,
                 MAX_COLORS,
-                0,
+                u32::from(topology.has_compact_coloring),
             ],
         };
         push_operation(
@@ -2133,7 +2517,7 @@ fn pass_params(
 fn solver_stage(
     parameters: &mut Vec<PassParamsRaw>,
     operations: &mut Vec<Operation>,
-    execution: GpuSolverExecutionV3,
+    execution: GpuSolverExecutionV4,
     parameter: PassParamsRaw,
     pipeline: PipelineKind,
     direction: MotionDirection,
@@ -2144,16 +2528,37 @@ fn solver_stage(
     if execution.uses_colored_in_place() {
         for color in 0..MAX_COLORS {
             let mut colored = parameter;
-            colored.uints0[2] = topology.color_base;
+            colored.uints0[0] = if topology.has_compact_coloring {
+                topology.color_counts_base
+            } else {
+                0
+            };
+            colored.uints0[2] = if topology.has_compact_coloring {
+                topology.color_indices_base
+            } else {
+                topology.color_base
+            };
             colored.uints0[3] = color;
-            push_operation(
-                parameters,
-                operations,
-                colored,
-                PipelineKind::Colored,
-                MotionDirection::AtoB,
-                point_workgroups,
-            );
+            colored.uints1[2] = topology.color_offsets_base;
+            if execution.color_schedule == GpuColorScheduleV4::CompactIndirect {
+                push_indirect_operation(
+                    parameters,
+                    operations,
+                    colored,
+                    PipelineKind::Colored,
+                    MotionDirection::AtoB,
+                    u64::from(color * 3) * size_of::<u32>() as u64,
+                );
+            } else {
+                push_operation(
+                    parameters,
+                    operations,
+                    colored,
+                    PipelineKind::Colored,
+                    MotionDirection::AtoB,
+                    point_workgroups,
+                );
+            }
         }
     } else {
         jacobi_stage(
@@ -2217,6 +2622,26 @@ fn push_operation(
         pipeline,
         direction,
         workgroups,
+        indirect_offset: None,
+        parameter_index,
+    });
+}
+
+fn push_indirect_operation(
+    parameters: &mut Vec<PassParamsRaw>,
+    operations: &mut Vec<Operation>,
+    parameter: PassParamsRaw,
+    pipeline: PipelineKind,
+    direction: MotionDirection,
+    indirect_offset: u64,
+) {
+    let parameter_index = parameters.len() as u32;
+    parameters.push(parameter);
+    operations.push(Operation {
+        pipeline,
+        direction,
+        workgroups: 0,
+        indirect_offset: Some(indirect_offset),
         parameter_index,
     });
 }
@@ -2274,7 +2699,28 @@ fn topology_capacities(
                 size_of::<u32>() as u64,
             ),
             capacity("solver-color-status", 2, size_of::<u32>() as u64),
+            capacity(
+                "solver-color-indirect-arguments",
+                MAX_COLORS,
+                size_of::<[u32; 3]>() as u64,
+            ),
         ]);
+        if topology.has_compact_coloring {
+            capacities.extend([
+                capacity("solver-color-counts", MAX_COLORS, size_of::<u32>() as u64),
+                capacity(
+                    "solver-color-offsets",
+                    COLOR_OFFSET_COUNT,
+                    size_of::<u32>() as u64,
+                ),
+                capacity("solver-color-cursors", MAX_COLORS, size_of::<u32>() as u64),
+                capacity(
+                    "solver-color-compacted-points",
+                    point_count,
+                    size_of::<u32>() as u64,
+                ),
+            ]);
+        }
     }
     capacities.sort_by(|left, right| left.class.cmp(&right.class));
     capacities
@@ -2318,38 +2764,79 @@ fn bind_group(
     contributions: &wgpu::Buffer,
     topology: &wgpu::Buffer,
     parameters: &wgpu::Buffer,
+    color_indirect: Option<&wgpu::Buffer>,
+) -> wgpu::BindGroup {
+    let mut entries = vec![
+        wgpu::BindGroupEntry {
+            binding: 0,
+            resource: storage.pose_buffer().as_entire_binding(),
+        },
+        wgpu::BindGroupEntry {
+            binding: 1,
+            resource: source_motion.as_entire_binding(),
+        },
+        wgpu::BindGroupEntry {
+            binding: 2,
+            resource: destination_motion.as_entire_binding(),
+        },
+        wgpu::BindGroupEntry {
+            binding: 3,
+            resource: storage.properties_buffer().as_entire_binding(),
+        },
+        wgpu::BindGroupEntry {
+            binding: 4,
+            resource: points.as_entire_binding(),
+        },
+        wgpu::BindGroupEntry {
+            binding: 5,
+            resource: prepared.as_entire_binding(),
+        },
+        wgpu::BindGroupEntry {
+            binding: 6,
+            resource: contributions.as_entire_binding(),
+        },
+        wgpu::BindGroupEntry {
+            binding: 7,
+            resource: topology.as_entire_binding(),
+        },
+        wgpu::BindGroupEntry {
+            binding: 8,
+            resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                buffer: parameters,
+                offset: 0,
+                size: wgpu::BufferSize::new(size_of::<PassParamsRaw>() as u64),
+            }),
+        },
+    ];
+    if let Some(indirect) = color_indirect {
+        entries.push(wgpu::BindGroupEntry {
+            binding: 9,
+            resource: indirect.as_entire_binding(),
+        });
+    }
+    device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some(label),
+        layout,
+        entries: &entries,
+    })
+}
+
+fn color_bind_group(
+    device: &wgpu::Device,
+    layout: &wgpu::BindGroupLayout,
+    label: &'static str,
+    points: &wgpu::Buffer,
+    topology: &wgpu::Buffer,
+    parameters: &wgpu::Buffer,
+    color_indirect: &wgpu::Buffer,
 ) -> wgpu::BindGroup {
     device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some(label),
         layout,
         entries: &[
             wgpu::BindGroupEntry {
-                binding: 0,
-                resource: storage.pose_buffer().as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 1,
-                resource: source_motion.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 2,
-                resource: destination_motion.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 3,
-                resource: storage.properties_buffer().as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
                 binding: 4,
                 resource: points.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 5,
-                resource: prepared.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 6,
-                resource: contributions.as_entire_binding(),
             },
             wgpu::BindGroupEntry {
                 binding: 7,
@@ -2362,6 +2849,10 @@ fn bind_group(
                     offset: 0,
                     size: wgpu::BufferSize::new(size_of::<PassParamsRaw>() as u64),
                 }),
+            },
+            wgpu::BindGroupEntry {
+                binding: 9,
+                resource: color_indirect.as_entire_binding(),
             },
         ],
     })
@@ -2401,15 +2892,21 @@ mod tests {
     #[test]
     fn accepted_fixed_floor_schedule_is_exactly_sixty_eight_dispatches() {
         let scenario = crate::p5_1_rectangle_floor_scenario(120).unwrap();
-        let topology =
-            TopologyLayout::new(GpuGatherTopology::CanonicalBodyScan, 2, 2, false, false).unwrap();
+        let topology = TopologyLayout::new(
+            GpuGatherTopology::CanonicalBodyScan,
+            2,
+            2,
+            false,
+            GpuColorScheduleV4::None,
+        )
+        .unwrap();
         let (parameters, operations) = operations(
             &scenario,
             2,
             2,
             topology,
             false,
-            GpuSolverExecutionV3::SELECTED,
+            GpuSolverExecutionV4::SELECTED,
         );
         assert_eq!(operations.len(), 68);
         assert_eq!(parameters.len(), operations.len());
@@ -2421,15 +2918,21 @@ mod tests {
     #[test]
     fn stable_body_edge_schedule_scales_with_body_key_width() {
         let scenario = crate::p5_1_rectangle_floor_scenario(120).unwrap();
-        let topology =
-            TopologyLayout::new(GpuGatherTopology::StableBodyEdge, 2, 2, false, false).unwrap();
+        let topology = TopologyLayout::new(
+            GpuGatherTopology::StableBodyEdge,
+            2,
+            2,
+            false,
+            GpuColorScheduleV4::None,
+        )
+        .unwrap();
         let (parameters, operations) = operations(
             &scenario,
             2,
             2,
             topology,
             true,
-            GpuSolverExecutionV3::SELECTED,
+            GpuSolverExecutionV4::SELECTED,
         );
         assert_eq!(topology.edge_count, 4);
         assert_eq!(topology.radix_passes, 1);
@@ -2437,9 +2940,14 @@ mod tests {
         assert_eq!(operations.len(), 70);
         assert_eq!(parameters.len(), operations.len());
 
-        let scale =
-            TopologyLayout::new(GpuGatherTopology::StableBodyEdge, 1_024, 512, false, false)
-                .unwrap();
+        let scale = TopologyLayout::new(
+            GpuGatherTopology::StableBodyEdge,
+            1_024,
+            512,
+            false,
+            GpuColorScheduleV4::None,
+        )
+        .unwrap();
         assert_eq!(scale.radix_passes, 3);
         assert_eq!(scale.dispatches(), 12);
     }
@@ -2448,12 +2956,12 @@ mod tests {
     fn fixed_floor_rejects_unreviewed_solver_defaults() {
         let mut scenario = crate::p5_1_rectangle_floor_scenario(120).unwrap();
         assert_eq!(
-            GpuSolverExecutionV3::SELECTED.normal_solver,
-            GpuNormalSolverV3::PointJacobi
+            GpuSolverExecutionV4::SELECTED.normal_solver,
+            GpuNormalSolverV4::PointJacobi
         );
         assert_eq!(
-            GpuSolverExecutionV3::SELECTED.accumulation,
-            GpuSolverAccumulationV3::JacobiGather
+            GpuSolverExecutionV4::SELECTED.accumulation,
+            GpuSolverAccumulationV4::JacobiGather
         );
         validate_selected_settings(&scenario).unwrap();
         scenario.settings.iterations = 2;
@@ -2464,15 +2972,21 @@ mod tests {
     fn experiment_schedule_is_bounded_and_dispatch_accounted() {
         let mut scenario = crate::p5_1_rectangle_floor_scenario(120).unwrap();
         scenario.settings.iterations = 2;
-        let topology =
-            TopologyLayout::new(GpuGatherTopology::StableBodyEdge, 2, 2, false, false).unwrap();
+        let topology = TopologyLayout::new(
+            GpuGatherTopology::StableBodyEdge,
+            2,
+            2,
+            false,
+            GpuColorScheduleV4::None,
+        )
+        .unwrap();
         let (_, with_relaxation) = operations(
             &scenario,
             2,
             2,
             topology,
             false,
-            GpuSolverExecutionV3::experiment(true, true),
+            GpuSolverExecutionV4::experiment(true, true),
         );
         let (_, without_relaxation) = operations(
             &scenario,
@@ -2480,50 +2994,96 @@ mod tests {
             2,
             topology,
             false,
-            GpuSolverExecutionV3::experiment(false, false),
+            GpuSolverExecutionV4::experiment(false, false),
         );
         assert_eq!(with_relaxation.len(), 102);
         assert_eq!(without_relaxation.len(), 70);
         validate_experiment_settings(
             &scenario.settings,
-            GpuSolverExecutionV3::experiment(true, true),
+            GpuSolverExecutionV4::experiment(true, true),
         )
         .unwrap();
         validate_experiment_settings(
             &scenario.settings,
-            GpuSolverExecutionV3::normal_experiment(GpuNormalSolverV3::ScalarMassSplit, true, true),
+            GpuSolverExecutionV4::normal_experiment(GpuNormalSolverV4::ScalarMassSplit, true, true),
         )
         .unwrap();
         let block_execution =
-            GpuSolverExecutionV3::normal_experiment(GpuNormalSolverV3::ManifoldBlock, true, true);
+            GpuSolverExecutionV4::normal_experiment(GpuNormalSolverV4::ManifoldBlock, true, true);
         validate_experiment_settings(&scenario.settings, block_execution).unwrap();
-        let block_topology =
-            TopologyLayout::new(GpuGatherTopology::StableBodyEdge, 2, 2, false, false).unwrap();
+        let block_topology = TopologyLayout::new(
+            GpuGatherTopology::StableBodyEdge,
+            2,
+            2,
+            false,
+            GpuColorScheduleV4::None,
+        )
+        .unwrap();
         let (_, block_operations) =
             operations(&scenario, 2, 2, block_topology, false, block_execution);
         assert_eq!(block_operations.len(), with_relaxation.len());
         assert_eq!(block_topology.dispatches(), topology.dispatches());
         assert_eq!(block_topology.element_count, topology.element_count);
-        let split_topology =
-            TopologyLayout::new(GpuGatherTopology::StableBodyEdge, 2, 2, true, false).unwrap();
+        let split_topology = TopologyLayout::new(
+            GpuGatherTopology::StableBodyEdge,
+            2,
+            2,
+            true,
+            GpuColorScheduleV4::None,
+        )
+        .unwrap();
         let split_execution =
-            GpuSolverExecutionV3::normal_experiment(GpuNormalSolverV3::BlockMassSplit, true, true);
+            GpuSolverExecutionV4::normal_experiment(GpuNormalSolverV4::BlockMassSplit, true, true);
         let (_, split_operations) =
             operations(&scenario, 2, 2, split_topology, false, split_execution);
         assert_eq!(split_operations.len(), with_relaxation.len() + 1);
         assert_eq!(split_topology.dispatches(), topology.dispatches() + 1);
         assert_eq!(split_topology.element_count, topology.element_count + 2);
-        let colored_topology =
-            TopologyLayout::new(GpuGatherTopology::StableBodyEdge, 2, 2, false, true).unwrap();
-        let colored_execution = GpuSolverExecutionV3::colored_experiment(true, true);
+        let colored_topology = TopologyLayout::new(
+            GpuGatherTopology::StableBodyEdge,
+            2,
+            2,
+            false,
+            GpuColorScheduleV4::FixedFullGrid,
+        )
+        .unwrap();
+        let colored_execution = GpuSolverExecutionV4::colored_experiment(true, true);
         let (_, colored_operations) =
             operations(&scenario, 2, 2, colored_topology, false, colored_execution);
         assert_eq!(colored_operations.len(), 1_303);
+        assert!(
+            colored_operations
+                .iter()
+                .all(|operation| operation.indirect_offset.is_none())
+        );
         assert_eq!(colored_topology.dispatches(), topology.dispatches() + 1);
         assert_eq!(colored_topology.element_count, topology.element_count + 6);
+        let compact_topology = TopologyLayout::new(
+            GpuGatherTopology::StableBodyEdge,
+            2,
+            2,
+            false,
+            GpuColorScheduleV4::CompactIndirect,
+        )
+        .unwrap();
+        let compact_execution = GpuSolverExecutionV4::compact_colored_experiment(true, true);
+        let (_, compact_operations) =
+            operations(&scenario, 2, 2, compact_topology, false, compact_execution);
+        assert_eq!(compact_operations.len(), colored_operations.len());
+        assert_eq!(
+            compact_operations
+                .iter()
+                .filter(|operation| operation.indirect_offset.is_some())
+                .count(),
+            40 * MAX_COLORS as usize
+        );
+        assert_eq!(
+            compact_topology.element_count,
+            colored_topology.element_count + MAX_COLORS * 2 + COLOR_OFFSET_COUNT + 2
+        );
         assert!(
-            GpuSolverExecutionV3 {
-                normal_solver: GpuNormalSolverV3::ManifoldBlock,
+            GpuSolverExecutionV4 {
+                normal_solver: GpuNormalSolverV4::ManifoldBlock,
                 ..colored_execution
             }
             .validate()
@@ -2533,7 +3093,7 @@ mod tests {
         assert!(
             validate_experiment_settings(
                 &scenario.settings,
-                GpuSolverExecutionV3::experiment(true, true),
+                GpuSolverExecutionV4::experiment(true, true),
             )
             .is_err()
         );

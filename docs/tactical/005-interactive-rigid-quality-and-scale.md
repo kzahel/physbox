@@ -623,8 +623,18 @@ authorizes laboratory scheduling and solver candidates only. Point
 Jacobi/Jacobi-gather remains `SELECTED`; no product default, residual band,
 tolerance, pacing rate, broadphase, liquid path, or CPU fallback is authorized.
 
-- [ ] Add a compact/fused scheduling-only point-colored control that is
+- [x] Add a compact/fused scheduling-only point-colored control that is
   byte-identical to the existing point-colored result at equal iterations.
+  The V4 laboratory execution contract distinguishes fixed-full-grid from
+  compact-indirect scheduling while retaining point units and forward order.
+  Native Metal replay of the eight-body/eight-step/i2 stack is byte-identical
+  across bodies, cache, prepared contacts, contribution impulses, and block
+  evidence. Stable per-color compaction reports occupancy, point indices,
+  indirect arguments, empty launches, and scheduled invocations; the
+  33-incident-point overflow fixture emits zero-work arguments for every color
+  and preserves the atomic failure. No solve stages were fused: every possible
+  cross-stage fusion changes the established color/stage order, so none meets
+  this slice's byte-exact attribution gate.
 - [ ] Add manifold-granularity coloring with the active-set 2x2 normal block
   and explicit one-point degeneration.
 - [ ] Compare stable forward with deterministic alternating forward/reverse

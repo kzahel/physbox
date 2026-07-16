@@ -47,7 +47,7 @@ impl GpuSolverCandidate {
     }
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GpuContributionEvidence {
     pub point_index: u32,

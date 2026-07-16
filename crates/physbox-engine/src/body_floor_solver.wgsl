@@ -56,6 +56,7 @@ struct NormalEquation {
 @group(0) @binding(6) var<storage, read_write> contributions: array<Contribution>;
 @group(0) @binding(7) var<storage, read_write> topology: array<atomic<u32>>;
 @group(0) @binding(8) var<uniform> params: PassParams;
+@group(0) @binding(9) var<storage, read_write> color_dispatches: array<atomic<u32>>;
 
 var<workgroup> edge_radix_digits: array<u32, 256>;
 var<workgroup> edge_radix_histogram: array<atomic<u32>, 16>;
@@ -183,6 +184,11 @@ fn count_manifolds(@builtin(global_invocation_id) id: vec3u) {
 @compute @workgroup_size(1)
 fn color_contacts(@builtin(global_invocation_id) id: vec3u) {
     if (id.x != 0u) { return; }
+    let compact = params.uints1.w != 0u;
+    let counts_base = params.uints1.y + 1u;
+    let offsets_base = counts_base + params.uints1.z;
+    let cursors_base = offsets_base + params.uints1.z + 1u;
+    let indices_base = cursors_base + params.uints1.z;
     var color_count = 0u;
     for (var point_index = 0u; point_index < params.uints0.y; point_index += 1u) {
         let point = point_inputs[point_index];
@@ -204,10 +210,35 @@ fn color_contacts(@builtin(global_invocation_id) id: vec3u) {
             atomicStore(&topology[params.uints0.z + point_index], color);
             atomicOr(&topology[params.uints0.w + point.ids.x], color_bit);
             atomicOr(&topology[params.uints0.w + point.ids.y], color_bit);
+            if (compact) {
+                atomicAdd(&topology[counts_base + color], 1u);
+            }
             color_count = max(color_count, color + 1u);
         }
     }
     atomicStore(&topology[params.uints1.y], color_count);
+    if (!compact) { return; }
+
+    let overflowed = atomicLoad(&topology[params.uints1.x]) != 0u;
+    var running = 0u;
+    for (var color = 0u; color < params.uints1.z; color += 1u) {
+        let count = atomicLoad(&topology[counts_base + color]);
+        atomicStore(&topology[offsets_base + color], running);
+        atomicStore(&color_dispatches[color * 3u],
+                    select(count + 63u, 0u, overflowed) / 64u);
+        atomicStore(&color_dispatches[color * 3u + 1u], 1u);
+        atomicStore(&color_dispatches[color * 3u + 2u], 1u);
+        running += count;
+    }
+    atomicStore(&topology[offsets_base + params.uints1.z], running);
+    for (var point_index = 0u; point_index < params.uints0.y; point_index += 1u) {
+        let color = atomicLoad(&topology[params.uints0.z + point_index]);
+        if (color < params.uints1.z) {
+            let slot = atomicAdd(&topology[cursors_base + color], 1u);
+            let offset = atomicLoad(&topology[offsets_base + color]);
+            atomicStore(&topology[indices_base + offset + slot], point_index);
+        }
+    }
 }
 
 @compute @workgroup_size(1)
@@ -686,9 +717,16 @@ fn gather(@builtin(global_invocation_id) id: vec3u) {
 
 @compute @workgroup_size(64)
 fn colored_stage(@builtin(global_invocation_id) id: vec3u) {
-    let point_index = id.x;
-    if (point_index >= params.uints0.y ||
-        atomicLoad(&topology[params.uints0.z + point_index]) != params.uints0.w) { return; }
+    var point_index = id.x;
+    if (params.uints0.x != 0u) {
+        let count = atomicLoad(&topology[params.uints0.x + params.uints0.w]);
+        if (id.x >= count) { return; }
+        let offset = atomicLoad(&topology[params.uints1.z + params.uints0.w]);
+        point_index = atomicLoad(&topology[params.uints0.z + offset + id.x]);
+    } else if (point_index >= params.uints0.y ||
+               atomicLoad(&topology[params.uints0.z + point_index]) != params.uints0.w) {
+        return;
+    }
     if (!valid_point(point_inputs[point_index])) { return; }
     var point = prepared_points[point_index];
     var motion_a = motions_source[point.ids.x];

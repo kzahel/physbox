@@ -724,6 +724,15 @@ memory, and raw 32/256/1K samples. Add 32/64-stack, both 100-body bucket, and
 deterministic churn diagnostics. The 16.67 ms boundary is feasibility only and
 does not establish the headroom required by later liquid-heavy scenes.
 
+S5.4b scheduling instrumentation checkpoint, 2026-07-16: the V4 colored
+execution evidence now records actual color occupancy, stable compacted point
+indices, all 32 indirect workgroup triples, active and empty color passes,
+scheduled point invocations, and the separately capacity-accounted count,
+offset, cursor, index, and indirect-argument storage. Overflow emits zero work
+for every indirect color pass. Timing claims remain deferred to the complete
+32/256/1K factorial; this checkpoint establishes byte-exact attribution and
+measurable work accounting only.
+
 ## Regression and claim gates
 
 Before representative hardware is selected, store named measurements and

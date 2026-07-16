@@ -1,8 +1,8 @@
 use physbox_contracts::Validate;
 use physbox_engine::{
     GpuContactPersistenceTopology, GpuGatherTopology, GpuGeneratedContactRunner,
-    GpuNarrowphaseRunner, GpuNormalSolverV3, GpuSolverAccumulationV3, GpuSolverCandidate,
-    GpuSolverExecutionV3, P5_2_BUCKET_EVIDENCE_STEPS, P5_2_CENTERED_STACK_EVIDENCE_STEPS,
+    GpuNarrowphaseRunner, GpuNormalSolverV4, GpuSolverAccumulationV4, GpuSolverCandidate,
+    GpuSolverExecutionV4, P5_2_BUCKET_EVIDENCE_STEPS, P5_2_CENTERED_STACK_EVIDENCE_STEPS,
     P5_2BucketShape, P5_2CandidatePattern, P5_2GeneratedScenarioKind,
     benchmark_gpu_generated_contact_experiment, benchmark_gpu_generated_contacts,
     p5_2_bucket_scenario, p5_2_candidate_scenario, p5_2_centered_rectangle_stack_scenario,
@@ -50,11 +50,11 @@ fn solver_experiments_are_explicit_replayable_and_not_product_defaults() {
     scenario.settings.iterations = 2;
     assert!(runner.run(&scenario, 30).is_err());
     assert_eq!(
-        GpuSolverExecutionV3::SELECTED.normal_solver,
-        GpuNormalSolverV3::PointJacobi
+        GpuSolverExecutionV4::SELECTED.normal_solver,
+        GpuNormalSolverV4::PointJacobi
     );
 
-    let execution = GpuSolverExecutionV3::experiment(true, true);
+    let execution = GpuSolverExecutionV4::experiment(true, true);
     let first = runner.run_experiment(&scenario, 30, execution).unwrap();
     let replay = runner.run_experiment(&scenario, 30, execution).unwrap();
     assert_eq!(first.solver_settings.iterations, 2);
@@ -70,7 +70,7 @@ fn solver_experiments_are_explicit_replayable_and_not_product_defaults() {
     assert_eq!(benchmark.correctness.solver_execution, execution);
 
     let no_warm = runner
-        .run_experiment(&scenario, 30, GpuSolverExecutionV3::experiment(false, true))
+        .run_experiment(&scenario, 30, GpuSolverExecutionV4::experiment(false, true))
         .unwrap();
     assert!(!no_warm.solver_execution.warm_start);
     assert!(no_warm.bodies.iter().all(|body| {
@@ -88,7 +88,7 @@ fn pose_history_matches_every_exact_prefix_without_intermediate_mapping() {
     let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
     let mut scenario = p5_2_centered_rectangle_stack_scenario(16, 8).unwrap();
     scenario.settings.iterations = 8;
-    let execution = GpuSolverExecutionV3::experiment(true, true);
+    let execution = GpuSolverExecutionV4::experiment(true, true);
     let history = runner
         .run_experiment_body_history(&scenario, 8, execution)
         .unwrap();
@@ -124,12 +124,12 @@ fn colored_in_place_uses_disjoint_generated_contact_batches_and_replays() {
     let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
     let mut scenario = p5_2_centered_rectangle_stack_scenario(4, 4).unwrap();
     scenario.settings.iterations = 2;
-    let execution = GpuSolverExecutionV3::colored_experiment(true, true);
+    let execution = GpuSolverExecutionV4::colored_experiment(true, true);
     let first = runner.run_experiment(&scenario, 4, execution).unwrap();
     let replay = runner.run_experiment(&scenario, 4, execution).unwrap();
     assert_eq!(
         first.solver_execution.accumulation,
-        GpuSolverAccumulationV3::ColoredInPlace
+        GpuSolverAccumulationV4::ColoredInPlace
     );
     assert_eq!(first.bodies, replay.bodies);
     assert_eq!(first.cache, replay.cache);
@@ -149,17 +149,66 @@ fn colored_in_place_uses_disjoint_generated_contact_batches_and_replays() {
 }
 
 #[test]
+fn compact_point_coloring_is_byte_exact_with_the_fixed_grid_control() {
+    let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
+    let mut scenario = p5_2_centered_rectangle_stack_scenario(8, 8).unwrap();
+    scenario.settings.iterations = 2;
+    let fixed = runner
+        .run_experiment(
+            &scenario,
+            8,
+            GpuSolverExecutionV4::colored_experiment(true, true),
+        )
+        .unwrap();
+    let execution = GpuSolverExecutionV4::compact_colored_experiment(true, true);
+    let compact = runner.run_experiment(&scenario, 8, execution).unwrap();
+    let replay = runner.run_experiment(&scenario, 8, execution).unwrap();
+
+    assert_eq!(compact.bodies, fixed.bodies);
+    assert_eq!(compact.cache, fixed.cache);
+    assert_eq!(compact.pass_evidence.contacts, fixed.pass_evidence.contacts);
+    assert_eq!(
+        compact.pass_evidence.contributions,
+        fixed.pass_evidence.contributions
+    );
+    assert_eq!(
+        compact.pass_evidence.manifold_blocks,
+        fixed.pass_evidence.manifold_blocks
+    );
+    assert_eq!(compact.bodies, replay.bodies);
+    assert_eq!(compact.cache, replay.cache);
+    assert_eq!(compact.pass_evidence, replay.pass_evidence);
+
+    let fixed_colors = fixed.pass_evidence.coloring.as_ref().unwrap();
+    let compact_colors = compact.pass_evidence.coloring.as_ref().unwrap();
+    assert_eq!(fixed_colors.point_colors, compact_colors.point_colors);
+    assert_eq!(fixed_colors.color_occupancy, compact_colors.color_occupancy);
+    assert_eq!(fixed_colors.color_count, compact_colors.color_count);
+    assert_eq!(
+        compact_colors.compacted_point_indices.len(),
+        compact_colors.point_colors.len()
+    );
+    assert_eq!(compact_colors.indirect_workgroups.len(), 32);
+    assert_eq!(
+        compact_colors.empty_indirect_launches,
+        compact_colors.max_colors - compact_colors.active_color_passes
+    );
+    assert!(compact_colors.scheduled_point_invocations < fixed_colors.scheduled_point_invocations);
+    assert!(compact.failure.is_none());
+}
+
+#[test]
 fn colored_in_place_degenerates_exactly_to_jacobi_for_one_live_point() {
     let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
     let scenario = p5_2_generated_scenario(P5_2GeneratedScenarioKind::Restitution, 8).unwrap();
     let jacobi = runner
-        .run_experiment(&scenario, 8, GpuSolverExecutionV3::experiment(true, true))
+        .run_experiment(&scenario, 8, GpuSolverExecutionV4::experiment(true, true))
         .unwrap();
     let colored = runner
         .run_experiment(
             &scenario,
             8,
-            GpuSolverExecutionV3::colored_experiment(true, true),
+            GpuSolverExecutionV4::colored_experiment(true, true),
         )
         .unwrap();
     assert_eq!(colored.bodies, jacobi.bodies);
@@ -190,7 +239,7 @@ fn colored_in_place_rejects_more_than_thirty_two_incident_points_atomically() {
         .run_experiment(
             &scenario,
             1,
-            GpuSolverExecutionV3::colored_experiment(true, true),
+            GpuSolverExecutionV4::colored_experiment(true, true),
         )
         .unwrap();
     let coloring = output.pass_evidence.coloring.as_ref().unwrap();
@@ -207,6 +256,26 @@ fn colored_in_place_rejects_more_than_thirty_two_incident_points_atomically() {
     assert_eq!(capacity.committed_elements, 0);
     assert!(capacity.overflowed);
     assert!(!capacity.accepted);
+
+    let compact = runner
+        .run_experiment(
+            &scenario,
+            1,
+            GpuSolverExecutionV4::compact_colored_experiment(true, true),
+        )
+        .unwrap();
+    let compact_coloring = compact.pass_evidence.coloring.as_ref().unwrap();
+    assert!(compact_coloring.overflowed);
+    assert!(
+        compact_coloring
+            .indirect_workgroups
+            .iter()
+            .all(|arguments| *arguments == [0, 1, 1])
+    );
+    assert_eq!(compact_coloring.empty_indirect_launches, 32);
+    assert_eq!(compact_coloring.scheduled_point_invocations, 0);
+    assert!(compact.cache.is_empty());
+    assert!(compact.failure.is_some());
 }
 
 #[test]
@@ -214,7 +283,7 @@ fn scalar_mass_split_uses_exact_gpu_point_incidence_on_both_gather_topologies() 
     let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
     let scenario = p5_2_centered_rectangle_stack_scenario(2, 1).unwrap();
     let execution =
-        GpuSolverExecutionV3::normal_experiment(GpuNormalSolverV3::ScalarMassSplit, true, true);
+        GpuSolverExecutionV4::normal_experiment(GpuNormalSolverV4::ScalarMassSplit, true, true);
     let stable = runner
         .run_experiment_with_gather_topology(
             &scenario,
@@ -280,10 +349,10 @@ fn manifold_block_degenerates_to_point_jacobi_for_one_point_contacts() {
     let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
     let scenario = p5_2_generated_scenario(P5_2GeneratedScenarioKind::Restitution, 1).unwrap();
     let point = runner
-        .run_experiment(&scenario, 1, GpuSolverExecutionV3::experiment(true, true))
+        .run_experiment(&scenario, 1, GpuSolverExecutionV4::experiment(true, true))
         .unwrap();
     let block_execution =
-        GpuSolverExecutionV3::normal_experiment(GpuNormalSolverV3::ManifoldBlock, true, true);
+        GpuSolverExecutionV4::normal_experiment(GpuNormalSolverV4::ManifoldBlock, true, true);
     let block = runner
         .run_experiment(&scenario, 1, block_execution)
         .unwrap();
@@ -310,7 +379,7 @@ fn manifold_block_degenerates_to_point_jacobi_for_one_point_contacts() {
         .run_experiment(
             &replay_scenario,
             8,
-            GpuSolverExecutionV3::experiment(true, true),
+            GpuSolverExecutionV4::experiment(true, true),
         )
         .unwrap();
     let block_replay = runner
@@ -325,13 +394,13 @@ fn block_mass_split_uses_exact_manifold_incidence_and_coupled_matrix() {
     let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
     let scenario = p5_2_centered_rectangle_stack_scenario(2, 1).unwrap();
     let execution =
-        GpuSolverExecutionV3::normal_experiment(GpuNormalSolverV3::BlockMassSplit, true, true);
+        GpuSolverExecutionV4::normal_experiment(GpuNormalSolverV4::BlockMassSplit, true, true);
     let output = runner.run_experiment(&scenario, 1, execution).unwrap();
     let unsplit = runner
         .run_experiment(
             &scenario,
             1,
-            GpuSolverExecutionV3::normal_experiment(GpuNormalSolverV3::ManifoldBlock, true, true),
+            GpuSolverExecutionV4::normal_experiment(GpuNormalSolverV4::ManifoldBlock, true, true),
         )
         .unwrap();
     let canonical = runner

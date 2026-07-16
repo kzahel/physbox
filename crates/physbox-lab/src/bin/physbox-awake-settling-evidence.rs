@@ -13,7 +13,7 @@ use physbox_contracts::{
     sha256_bytes,
 };
 use physbox_engine::{
-    GpuGeneratedContactRunner, GpuNormalSolverV3, GpuSolverExecutionV3,
+    GpuGeneratedContactRunner, GpuNormalSolverV4, GpuSolverExecutionV4,
     p5_2_box2d_world_projection, p5_2_centered_rectangle_stack_scenario,
     p5_2_generated_performance_scenario, p5_2_rectangle_pyramid_scenario,
 };
@@ -82,7 +82,7 @@ struct CandidateDefinition {
     family: CandidateFamilyV3,
     iterations: u32,
     settings: SolverSettingsV1,
-    execution: GpuSolverExecutionV3,
+    execution: GpuSolverExecutionV4,
     question: &'static str,
 }
 
@@ -421,27 +421,27 @@ fn candidate_definitions(base: SolverSettingsV1) -> Vec<CandidateDefinition> {
     let definitions = [
         (
             CandidateFamilyV3::PointJacobi,
-            GpuNormalSolverV3::PointJacobi,
+            GpuNormalSolverV4::PointJacobi,
             "current parallel point solve baseline",
         ),
         (
             CandidateFamilyV3::ScalarMassSplit,
-            GpuNormalSolverV3::ScalarMassSplit,
+            GpuNormalSolverV4::ScalarMassSplit,
             "does point-incidence mass splitting make convergence monotonic",
         ),
         (
             CandidateFamilyV3::ManifoldBlock,
-            GpuNormalSolverV3::ManifoldBlock,
+            GpuNormalSolverV4::ManifoldBlock,
             "does coupled two-point normal solving remove the rocking mode",
         ),
         (
             CandidateFamilyV3::BlockMassSplit,
-            GpuNormalSolverV3::BlockMassSplit,
+            GpuNormalSolverV4::BlockMassSplit,
             "does manifold incidence plus block solving resolve chain and rocking modes",
         ),
         (
             CandidateFamilyV3::ColoredInPlace,
-            GpuNormalSolverV3::PointJacobi,
+            GpuNormalSolverV4::PointJacobi,
             "does disjoint GPU coloring make chain convergence monotonic without a gather",
         ),
     ];
@@ -484,11 +484,11 @@ fn candidate_definitions(base: SolverSettingsV1) -> Vec<CandidateDefinition> {
             let mut settings = base;
             settings.iterations = iteration_count;
             let execution = if family == CandidateFamilyV3::PointJacobi && iteration_count == 1 {
-                GpuSolverExecutionV3::SELECTED
+                GpuSolverExecutionV4::SELECTED
             } else if family == CandidateFamilyV3::ColoredInPlace {
-                GpuSolverExecutionV3::colored_experiment(true, true)
+                GpuSolverExecutionV4::colored_experiment(true, true)
             } else {
-                GpuSolverExecutionV3::normal_experiment(normal_solver, true, true)
+                GpuSolverExecutionV4::normal_experiment(normal_solver, true, true)
             };
             candidates.push(CandidateDefinition {
                 id: ids[family_index][iteration_index],
@@ -1478,7 +1478,7 @@ mod tests {
             ]
         );
         assert_eq!(candidates[0].settings, source.settings);
-        assert_eq!(candidates[0].execution, GpuSolverExecutionV3::SELECTED);
+        assert_eq!(candidates[0].execution, GpuSolverExecutionV4::SELECTED);
         assert!(candidates.iter().all(|candidate| {
             candidate.settings.iterations == candidate.iterations
                 && candidate.execution.warm_start
@@ -1487,7 +1487,7 @@ mod tests {
         assert!(candidates.iter().all(|candidate| {
             (candidate.family == CandidateFamilyV3::ColoredInPlace)
                 == (candidate.execution.accumulation
-                    == physbox_engine::GpuSolverAccumulationV3::ColoredInPlace)
+                    == physbox_engine::GpuSolverAccumulationV4::ColoredInPlace)
         }));
         for family in [
             CandidateFamilyV3::PointJacobi,

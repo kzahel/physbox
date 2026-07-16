@@ -159,6 +159,24 @@ The 16.67 ms boundary is only feasibility; a liquid-heavy product still needs
 material rigid-solver headroom and later scale evidence. Promotion and any
 residual-motion band remain separate explicit human decisions.
 
+Scheduling-control checkpoint, 2026-07-16: the first S5.4b implementation
+keeps the exact greedy point assignments, forward color order, scalar solve,
+and stage sequence. A GPU-owned stable compaction writes per-color counts,
+prefix offsets, original point indices, and 32 indirect dispatch records. The
+color-construction pass and indirect solve are separated by a compute-pass
+boundary so the argument buffer is never simultaneously writable storage and
+an indirect source. The eight-body/eight-step/i2 stack matches the legacy
+fixed-full-grid comparator byte for byte in bodies, persistent cache, prepared
+contacts, contribution impulses, and replay. A 33-incident-point overflow
+zeros every indirect workload and retains the diagnosed atomic failure.
+
+No stage fusion qualifies as scheduling-only: moving tangent, relaxation, or
+restitution work inside a per-color dispatch changes the global stage/color
+order for bodies shared across later colors. The control therefore compacts
+work without fusing equations. This is a successful attribution floor, not a
+quality or production selection; manifold coloring and block math remain the
+next authorized slice.
+
 ## Fallback and reserve options
 
 - **Interim baseline swap.** Manifold block i2 improves structural preservation

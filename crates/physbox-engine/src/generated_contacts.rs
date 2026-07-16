@@ -15,7 +15,7 @@ use wgpu::util::DeviceExt;
 use crate::{
     GpuBodyStorage,
     body_floor_solver::{
-        GpuFixedFloorSolver, GpuGatherTopology, GpuGatherTopologyEvidence, GpuSolverExecutionV3,
+        GpuFixedFloorSolver, GpuGatherTopology, GpuGatherTopologyEvidence, GpuSolverExecutionV4,
         PointInputRaw, PreparedPointRaw, validate_selected_settings,
     },
     collision_candidates::{CandidateCase, CandidatePipelines},
@@ -166,7 +166,7 @@ impl GpuGeneratedContactGraph {
             permute_edge_build,
             permute_pair_build,
             fingerprint_mask,
-            GpuSolverExecutionV3::SELECTED,
+            GpuSolverExecutionV4::SELECTED,
         )
     }
 
@@ -180,7 +180,7 @@ impl GpuGeneratedContactGraph {
         permute_edge_build: bool,
         permute_pair_build: bool,
         fingerprint_mask: u32,
-        execution: GpuSolverExecutionV3,
+        execution: GpuSolverExecutionV4,
     ) -> Result<Self, String> {
         if !scenario.manifolds.is_empty()
             || !scenario.contact_cache.is_empty()
@@ -1157,7 +1157,7 @@ pub struct GpuGeneratedContactOutput {
     pub completed_steps: u32,
     pub mapped_after_final_step_only: bool,
     pub solver_settings: physbox_contracts::SolverSettingsV1,
-    pub solver_execution: GpuSolverExecutionV3,
+    pub solver_execution: GpuSolverExecutionV4,
     pub bodies: Vec<physbox_contracts::BodyStateV1>,
     pub cache: Vec<PersistentContactV1>,
     pub pass_evidence: crate::GpuFixedFloorPassEvidence,
@@ -1273,11 +1273,22 @@ impl GpuGeneratedContactOutput {
             self.solver_execution.accumulation,
             &self.pass_evidence.coloring,
         ) {
-            (crate::GpuSolverAccumulationV3::JacobiGather, None) => {}
-            (crate::GpuSolverAccumulationV3::ColoredInPlace, Some(coloring)) => {
+            (crate::GpuSolverAccumulationV4::JacobiGather, None) => {}
+            (crate::GpuSolverAccumulationV4::ColoredInPlace, Some(coloring)) => {
                 if coloring.max_colors != 32
+                    || coloring.schedule != self.solver_execution.color_schedule
+                    || coloring.unit != self.solver_execution.color_unit
+                    || coloring.order != self.solver_execution.color_order
                     || coloring.point_colors.len() != self.pass_evidence.contacts.len()
                     || coloring.color_count > coloring.max_colors
+                    || coloring.color_occupancy.len() != coloring.color_count as usize
+                    || coloring.encoded_color_passes != coloring.max_colors
+                    || coloring.active_color_passes
+                        != coloring
+                            .color_occupancy
+                            .iter()
+                            .filter(|&&occupancy| occupancy != 0)
+                            .count() as u32
                     || (!coloring.overflowed
                         && coloring
                             .point_colors
@@ -1285,6 +1296,39 @@ impl GpuGeneratedContactOutput {
                             .any(|&color| color >= coloring.color_count))
                 {
                     return Err("generated coloring evidence is invalid".to_owned());
+                }
+                match coloring.schedule {
+                    crate::GpuColorScheduleV4::CompactIndirect => {
+                        if coloring.indirect_workgroups.len() != coloring.max_colors as usize
+                            || coloring.empty_indirect_launches
+                                != coloring
+                                    .indirect_workgroups
+                                    .iter()
+                                    .filter(|arguments| arguments[0] == 0)
+                                    .count() as u32
+                            || coloring.scheduled_point_invocations
+                                != coloring
+                                    .indirect_workgroups
+                                    .iter()
+                                    .map(|arguments| u64::from(arguments[0]) * 64)
+                                    .sum::<u64>()
+                        {
+                            return Err("generated compact coloring schedule is invalid".to_owned());
+                        }
+                    }
+                    crate::GpuColorScheduleV4::FixedFullGrid => {
+                        if !coloring.compacted_point_indices.is_empty()
+                            || !coloring.indirect_workgroups.is_empty()
+                            || coloring.empty_indirect_launches != 0
+                        {
+                            return Err(
+                                "generated fixed-grid coloring schedule is invalid".to_owned()
+                            );
+                        }
+                    }
+                    crate::GpuColorScheduleV4::None => {
+                        return Err("colored execution lacks a color schedule".to_owned());
+                    }
                 }
                 if !coloring.overflowed {
                     let mut colored_bodies = std::collections::BTreeSet::new();
@@ -1407,7 +1451,7 @@ impl GpuGeneratedContactRunner {
         &self,
         scenario: &ScenarioV1,
         completed_steps: u32,
-        execution: GpuSolverExecutionV3,
+        execution: GpuSolverExecutionV4,
     ) -> Result<GpuGeneratedContactOutput, String> {
         self.run_experiment_with_gather_topology(
             scenario,
@@ -1424,7 +1468,7 @@ impl GpuGeneratedContactRunner {
         completed_steps: u32,
         gather_topology: GpuGatherTopology,
         permute_edge_build: bool,
-        execution: GpuSolverExecutionV3,
+        execution: GpuSolverExecutionV4,
     ) -> Result<GpuGeneratedContactOutput, String> {
         self.run_with_topologies_and_execution(
             scenario,
@@ -1444,7 +1488,7 @@ impl GpuGeneratedContactRunner {
         &self,
         scenario: &ScenarioV1,
         completed_steps: u32,
-        execution: GpuSolverExecutionV3,
+        execution: GpuSolverExecutionV4,
     ) -> Result<Vec<Vec<physbox_contracts::BodyStateV1>>, String> {
         if completed_steps == 0 {
             return Err("generated contact pose history requires at least one step".to_owned());
@@ -1648,7 +1692,7 @@ impl GpuGeneratedContactRunner {
             permute_edge_build,
             permute_pair_build,
             fingerprint_mask,
-            GpuSolverExecutionV3::SELECTED,
+            GpuSolverExecutionV4::SELECTED,
         )
     }
 
@@ -1662,7 +1706,7 @@ impl GpuGeneratedContactRunner {
         permute_edge_build: bool,
         permute_pair_build: bool,
         fingerprint_mask: u32,
-        execution: GpuSolverExecutionV3,
+        execution: GpuSolverExecutionV4,
     ) -> Result<GpuGeneratedContactOutput, String> {
         if completed_steps == 0 {
             return Err("generated contact validation requires at least one step".to_owned());
@@ -2091,7 +2135,7 @@ pub async fn benchmark_gpu_generated_contacts_with_gather_topology(
         warmup_steps,
         samples,
         gather_topology,
-        GpuSolverExecutionV3::SELECTED,
+        GpuSolverExecutionV4::SELECTED,
     )
     .await
 }
@@ -2101,7 +2145,7 @@ pub async fn benchmark_gpu_generated_contact_experiment(
     scenario: &ScenarioV1,
     warmup_steps: u32,
     samples: u32,
-    execution: GpuSolverExecutionV3,
+    execution: GpuSolverExecutionV4,
 ) -> Result<GpuGeneratedContactBenchmarkOutput, String> {
     benchmark_gpu_generated_contacts_with_execution(
         scenario,
@@ -2119,7 +2163,7 @@ async fn benchmark_gpu_generated_contacts_with_execution(
     warmup_steps: u32,
     samples: u32,
     gather_topology: GpuGatherTopology,
-    execution: GpuSolverExecutionV3,
+    execution: GpuSolverExecutionV4,
 ) -> Result<GpuGeneratedContactBenchmarkOutput, String> {
     if warmup_steps == 0 || samples == 0 {
         return Err("generated-contact benchmark requires non-zero warmup and samples".to_owned());

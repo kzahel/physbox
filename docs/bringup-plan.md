@@ -157,6 +157,13 @@ coloring or workgroup-per-island solving is conditional on measured rebuild or
 dispatch cost. No solver promotion, residual band, pacing change, or P5.3 work
 is authorized.
 
+S5.4b scheduling checkpoint, 2026-07-16: the compact-indirect point-color
+control is implemented with explicit occupancy, compaction, indirect-work,
+capacity, and overflow evidence. It is byte-identical to the fixed-grid
+control on the eight-body/eight-step/i2 native replay. No stage fusion met the
+required exact-order gate. Manifold-colored active-set block solving is the
+next authorized slice; product selection remains unchanged.
+
 The first S3.5a representation checkpoint implements the stable pair-slot
 comparator with full feature verification and deterministic generational slot
 recycling. Its correctness/adversarial gates pass and its combined
