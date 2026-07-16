@@ -406,6 +406,15 @@ crossover. Fresh Metal headless, Chrome BrowserWebGPU, and hardware-backed
 `jstorrent-tablet` AVD validation pass; no physical device was attached. The
 serial selected lane remains the byte-exact S5.4c control.
 
+Scheduler-contract checkpoint, 2026-07-16: work-vector v1 hashes both the
+accepted assignment and stable compacted order while recording the actual
+slot ranges visited by the serial passes. The shared benchmark runner applies
+that contract to generated 32/256/1K complete steps and authored
+1K/10K-contact solver steps, retains raw ordinary and phase samples, and emits
+marginal slopes. A candidate cannot enter the matrix without exact replay,
+coherent compact ranges, and clean capacity. This establishes the comparison
+contract only; it does not change assignment, compaction, or product order.
+
 ## Fallback and reserve options
 
 - **Accepted baseline.** Manifold block i2 improves structural preservation and

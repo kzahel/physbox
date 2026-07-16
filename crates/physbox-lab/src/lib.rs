@@ -14,6 +14,7 @@ pub mod oracle_transport;
 pub mod parallel_normal;
 pub mod playback;
 pub mod scalar;
+pub mod scheduler_benchmark;
 pub mod settling;
 
 #[derive(Clone, Debug, Eq, PartialEq)]

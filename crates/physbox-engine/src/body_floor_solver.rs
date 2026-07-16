@@ -26,6 +26,8 @@ const MAX_INSTRUMENTED_QUERIES_PER_SET: u32 = 4_096;
 
 pub const GPU_SOLVER_EXECUTION_VERSION: u32 = 4;
 pub const GPU_SOLVER_SCHEDULING_POLICY_VERSION: u32 = 1;
+#[cfg(not(target_arch = "wasm32"))]
+pub const GPU_SCHEDULER_WORK_VECTOR_VERSION: u32 = 1;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -393,9 +395,13 @@ pub struct GpuAuthoredGatherBenchmarkOutput {
     pub adapter: crate::AdapterDiagnostics,
     pub source_scenario_hash: String,
     pub body_count: u32,
+    pub manifold_count: u32,
     pub contact_points: u32,
     pub warmup_steps: u32,
     pub samples: u32,
+    pub solver_execution: GpuSolverExecutionV4,
+    pub solver_scheduling_policy: GpuSolverSchedulingPolicyV1,
+    pub scheduler_work: Option<GpuSchedulerWorkVectorV1>,
     pub topology: GpuGatherTopologyEvidence,
     pub dispatches_per_step: u32,
     pub allocated_bytes: u64,
@@ -406,6 +412,7 @@ pub struct GpuAuthoredGatherBenchmarkOutput {
     pub instrumented_offset_construction_seconds: Option<Vec<f64>>,
     pub instrumented_gather_seconds: Option<Vec<f64>>,
     pub instrumented_solve_seconds: Option<Vec<f64>>,
+    pub instrumented_solver_phases: Option<Vec<GpuSolverInstrumentedSampleV4>>,
     pub timestamp_period_nanoseconds: Option<f32>,
     pub replay_exact: bool,
     pub result_digest: String,
@@ -605,6 +612,97 @@ pub struct GpuFixedFloorPassEvidence {
     pub contributions: Vec<GpuContributionEvidence>,
     pub manifold_blocks: Vec<GpuManifoldBlockEvidenceV2>,
     pub coloring: Option<GpuColoringEvidenceV4>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GpuSchedulerWorkVectorV1 {
+    pub version: u32,
+    pub body_slots: u32,
+    pub contact_point_slots: u32,
+    pub live_contact_points: u32,
+    pub color_units: u32,
+    pub maximum_colors: u32,
+    pub active_colors: u32,
+    pub color_occupancy: Vec<u32>,
+    pub body_mask_slots_cleared: u32,
+    pub color_count_slots_cleared: u32,
+    pub assignment_point_slots_visited: u32,
+    pub prefix_color_slots_visited: u32,
+    pub compaction_point_slots_visited: u32,
+    pub compacted_color_units: u32,
+    pub encoded_color_passes: u32,
+    pub active_color_passes: u32,
+    pub empty_indirect_launches: u32,
+    pub scheduled_color_unit_invocations: u64,
+    pub assignment_digest: String,
+    pub compacted_order_digest: String,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl GpuFixedFloorPassEvidence {
+    pub fn scheduler_work_vector(
+        &self,
+        body_slots: u32,
+    ) -> Result<Option<GpuSchedulerWorkVectorV1>, String> {
+        let Some(coloring) = &self.coloring else {
+            return Ok(None);
+        };
+        let contact_point_slots = u32::try_from(self.contacts.len())
+            .map_err(|_| "scheduler point-slot count exceeds u32".to_owned())?;
+        let live_contact_points =
+            u32::try_from(self.contacts.iter().filter(|contact| contact.valid).count())
+                .map_err(|_| "scheduler live-point count exceeds u32".to_owned())?;
+        let color_units = coloring
+            .color_occupancy
+            .iter()
+            .try_fold(0_u32, |sum, value| {
+                sum.checked_add(*value)
+                    .ok_or_else(|| "scheduler color-unit count overflowed".to_owned())
+            })?;
+        let compacted_color_units = u32::try_from(coloring.compacted_point_indices.len())
+            .map_err(|_| "scheduler compacted-unit count exceeds u32".to_owned())?;
+        if coloring.overflowed
+            || coloring.max_colors == 0
+            || coloring.color_count > coloring.max_colors
+            || coloring.color_occupancy.len() != coloring.color_count as usize
+            || (coloring.schedule == GpuColorScheduleV4::CompactIndirect
+                && compacted_color_units != color_units)
+        {
+            return Err("scheduler work vector requires clean coherent coloring".to_owned());
+        }
+        Ok(Some(GpuSchedulerWorkVectorV1 {
+            version: GPU_SCHEDULER_WORK_VECTOR_VERSION,
+            body_slots,
+            contact_point_slots,
+            live_contact_points,
+            color_units,
+            maximum_colors: coloring.max_colors,
+            active_colors: coloring.color_count,
+            color_occupancy: coloring.color_occupancy.clone(),
+            body_mask_slots_cleared: body_slots,
+            color_count_slots_cleared: coloring.max_colors,
+            assignment_point_slots_visited: contact_point_slots,
+            prefix_color_slots_visited: coloring.max_colors,
+            compaction_point_slots_visited: if coloring.schedule
+                == GpuColorScheduleV4::CompactIndirect
+            {
+                contact_point_slots
+            } else {
+                0
+            },
+            compacted_color_units,
+            encoded_color_passes: coloring.encoded_color_passes,
+            active_color_passes: coloring.active_color_passes,
+            empty_indirect_launches: coloring.empty_indirect_launches,
+            scheduled_color_unit_invocations: coloring.scheduled_point_invocations,
+            assignment_digest: sha256_bytes(bytemuck::cast_slice(&coloring.point_colors)),
+            compacted_order_digest: sha256_bytes(bytemuck::cast_slice(
+                &coloring.compacted_point_indices,
+            )),
+        }))
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -1178,8 +1276,11 @@ impl GpuFixedFloorSolver {
         storage: &GpuBodyStorage,
         scenario: &ScenarioV1,
         topology: GpuGatherTopology,
+        execution: GpuSolverExecutionV4,
+        scheduling_policy: GpuSolverSchedulingPolicyV1,
     ) -> Result<Self, String> {
-        validate_authored_settings(scenario)?;
+        validate_experiment_settings(&scenario.settings, execution)?;
+        scheduling_policy.validate(execution)?;
         if scenario.manifolds.is_empty() {
             return Err("authored gather benchmark requires contact manifolds".to_owned());
         }
@@ -1204,8 +1305,8 @@ impl GpuFixedFloorSolver {
             point_count,
             topology,
             false,
-            GpuSolverExecutionV4::experiment(true, true),
-            GpuSolverSchedulingPolicyV1::STANDARD,
+            execution,
+            scheduling_policy,
         )?;
         solver._owned_point_input = Some(point_buffer);
         Ok(solver)
@@ -2117,6 +2218,27 @@ pub async fn benchmark_gpu_authored_gather_topology(
     samples: u32,
     topology: GpuGatherTopology,
 ) -> Result<GpuAuthoredGatherBenchmarkOutput, String> {
+    validate_authored_settings(scenario)?;
+    benchmark_gpu_authored_solver_experiment(
+        scenario,
+        warmup_steps,
+        samples,
+        topology,
+        GpuSolverExecutionV4::experiment(true, true),
+        GpuSolverSchedulingPolicyV1::STANDARD,
+    )
+    .await
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn benchmark_gpu_authored_solver_experiment(
+    scenario: &ScenarioV1,
+    warmup_steps: u32,
+    samples: u32,
+    topology: GpuGatherTopology,
+    execution: GpuSolverExecutionV4,
+    scheduling_policy: GpuSolverSchedulingPolicyV1,
+) -> Result<GpuAuthoredGatherBenchmarkOutput, String> {
     if warmup_steps == 0 || samples == 0 {
         return Err("authored gather benchmark requires nonzero warmup and samples".to_owned());
     }
@@ -2145,8 +2267,21 @@ pub async fn benchmark_gpu_authored_gather_topology(
         &scenario.bodies,
     )?;
     let reset = crate::body_state::GpuBodyResetData::new(body_count, &scenario.bodies)?;
-    let solver =
-        GpuFixedFloorSolver::new_authored_with_topology(&device, &storage, scenario, topology)?;
+    let solver = GpuFixedFloorSolver::new_authored_with_topology(
+        &device,
+        &storage,
+        scenario,
+        topology,
+        execution,
+        scheduling_policy,
+    )?;
+    let (first_digest, first_evidence) =
+        authored_gather_result_evidence(&device, &queue, &storage, &reset, &solver)?;
+    let scheduler_work = first_evidence.scheduler_work_vector(body_count)?;
+    let color_occupancy = first_evidence
+        .coloring
+        .as_ref()
+        .map_or_else(Vec::new, |coloring| coloring.color_occupancy.clone());
     let total_query_count = samples
         .checked_mul(2)
         .ok_or_else(|| "authored gather total query count overflowed".to_owned())?;
@@ -2158,7 +2293,8 @@ pub async fn benchmark_gpu_authored_gather_topology(
             total_query_count,
         )
     });
-    let instrumented_query_resources = if timestamps_available {
+    let instrumented_query_resources = if timestamps_available && !execution.uses_colored_in_place()
+    {
         (0..samples)
             .map(|_| {
                 instrumented_query_counts
@@ -2167,6 +2303,25 @@ pub async fn benchmark_gpu_authored_gather_topology(
                         BenchmarkTimestampResources::new(
                             &device,
                             "physbox5_authored_gather_subphase_queries",
+                            query_count,
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
+    let solver_phase_query_resources = if timestamps_available {
+        let query_counts = solver.solver_phase_instrumented_query_counts(&color_occupancy)?;
+        (0..samples)
+            .map(|_| {
+                query_counts
+                    .iter()
+                    .map(|&query_count| {
+                        BenchmarkTimestampResources::new(
+                            &device,
+                            "physbox5_authored_solver_phase_queries",
                             query_count,
                         )
                     })
@@ -2240,6 +2395,28 @@ pub async fn benchmark_gpu_authored_gather_topology(
                 .poll(wgpu::PollType::Wait)
                 .map_err(|error| format!("poll authored gather subphase sample: {error}"))?;
         }
+        for resources in &solver_phase_query_resources {
+            storage.upload_reset_data(&queue, &reset);
+            device
+                .poll(wgpu::PollType::Wait)
+                .map_err(|error| format!("poll authored solver phase reset: {error}"))?;
+            let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("physbox5_authored_solver_phase_sample"),
+            });
+            let query_sets = resources
+                .iter()
+                .map(|resources| &resources.query_set)
+                .collect::<Vec<_>>();
+            solver.encode_step_solver_phase_instrumented(
+                &mut encoder,
+                &query_sets,
+                &color_occupancy,
+            )?;
+            queue.submit([encoder.finish()]);
+            device
+                .poll(wgpu::PollType::Wait)
+                .map_err(|error| format!("poll authored solver phase sample: {error}"))?;
+        }
     }
 
     let mut gpu_total_seconds = None;
@@ -2257,41 +2434,62 @@ pub async fn benchmark_gpu_authored_gather_topology(
             .chunks_exact(2)
             .map(|pair| seconds(pair[0], pair[1]))
             .collect::<Vec<_>>();
-        let mut index = Vec::with_capacity(samples as usize);
-        let mut offsets = Vec::with_capacity(samples as usize);
-        let mut gather = Vec::with_capacity(samples as usize);
-        let mut solve = Vec::with_capacity(samples as usize);
-        for resources in &instrumented_query_resources {
-            let mut sample_values = Vec::new();
-            for resources in resources {
-                sample_values.extend(resources.resolve_and_map(&device, &queue)?);
+        if !instrumented_query_resources.is_empty() {
+            let mut index = Vec::with_capacity(samples as usize);
+            let mut offsets = Vec::with_capacity(samples as usize);
+            let mut gather = Vec::with_capacity(samples as usize);
+            let mut solve = Vec::with_capacity(samples as usize);
+            for resources in &instrumented_query_resources {
+                let mut sample_values = Vec::new();
+                for resources in resources {
+                    sample_values.extend(resources.resolve_and_map(&device, &queue)?);
+                }
+                let mut totals = [0.0_f64; 4];
+                for (operation, pair) in solver.operations.iter().zip(sample_values.chunks_exact(2))
+                {
+                    let phase = match operation.pipeline.instrumented_phase() {
+                        InstrumentedPhase::IndexBuild => 0,
+                        InstrumentedPhase::OffsetConstruction => 1,
+                        InstrumentedPhase::Gather => 2,
+                        InstrumentedPhase::Solve => 3,
+                    };
+                    totals[phase] += seconds(pair[0], pair[1]);
+                }
+                index.push(totals[0]);
+                offsets.push(totals[1]);
+                gather.push(totals[2]);
+                solve.push(totals[3]);
             }
-            let mut totals = [0.0_f64; 4];
-            for (operation, pair) in solver.operations.iter().zip(sample_values.chunks_exact(2)) {
-                let phase = match operation.pipeline.instrumented_phase() {
-                    InstrumentedPhase::IndexBuild => 0,
-                    InstrumentedPhase::OffsetConstruction => 1,
-                    InstrumentedPhase::Gather => 2,
-                    InstrumentedPhase::Solve => 3,
-                };
-                totals[phase] += seconds(pair[0], pair[1]);
-            }
-            index.push(totals[0]);
-            offsets.push(totals[1]);
-            gather.push(totals[2]);
-            solve.push(totals[3]);
+            index_build_seconds = Some(index);
+            offset_construction_seconds = Some(offsets);
+            gather_seconds = Some(gather);
+            solve_seconds = Some(solve);
         }
         gpu_total_seconds = Some(total);
-        index_build_seconds = Some(index);
-        offset_construction_seconds = Some(offsets);
-        gather_seconds = Some(gather);
-        solve_seconds = Some(solve);
         timestamp_period_nanoseconds = Some(period);
     }
 
-    let first_digest = authored_gather_result_digest(&device, &queue, &storage, &reset, &solver)?;
-    let second_digest = authored_gather_result_digest(&device, &queue, &storage, &reset, &solver)?;
-    let replay_exact = first_digest == second_digest;
+    let instrumented_solver_phases = if timestamps_available {
+        let period = queue.get_timestamp_period();
+        Some(
+            solver_phase_query_resources
+                .iter()
+                .map(|resources| {
+                    let mut values = Vec::new();
+                    for resources in resources {
+                        values.extend(resources.resolve_and_map(&device, &queue)?);
+                    }
+                    solver.decode_instrumented_sample(&values, period, &color_occupancy)
+                })
+                .collect::<Result<Vec<_>, String>>()?,
+        )
+    } else {
+        None
+    };
+
+    let (second_digest, second_evidence) =
+        authored_gather_result_evidence(&device, &queue, &storage, &reset, &solver)?;
+    let replay_exact = first_digest == second_digest && first_evidence == second_evidence;
     if !replay_exact {
         return Err("authored gather benchmark replay differed".to_owned());
     }
@@ -2311,9 +2509,14 @@ pub async fn benchmark_gpu_authored_gather_topology(
         adapter: diagnostics,
         source_scenario_hash: canonical_hash(scenario).map_err(|error| error.to_string())?,
         body_count,
+        manifold_count: u32::try_from(scenario.manifolds.len())
+            .map_err(|_| "authored gather manifold count exceeds u32".to_owned())?,
         contact_points: point_count,
         warmup_steps,
         samples,
+        solver_execution: execution,
+        solver_scheduling_policy: scheduling_policy,
+        scheduler_work,
         topology: solver.gather_topology_evidence(),
         dispatches_per_step: solver.dispatches_per_step(),
         allocated_bytes: storage.layout().allocated_bytes + solver.allocated_bytes(),
@@ -2324,6 +2527,7 @@ pub async fn benchmark_gpu_authored_gather_topology(
         instrumented_offset_construction_seconds: offset_construction_seconds,
         instrumented_gather_seconds: gather_seconds,
         instrumented_solve_seconds: solve_seconds,
+        instrumented_solver_phases,
         timestamp_period_nanoseconds,
         replay_exact,
         result_digest: first_digest,
@@ -2332,21 +2536,29 @@ pub async fn benchmark_gpu_authored_gather_topology(
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn authored_gather_result_digest(
+fn authored_gather_result_evidence(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     storage: &GpuBodyStorage,
     reset: &crate::body_state::GpuBodyResetData,
     solver: &GpuFixedFloorSolver,
-) -> Result<String, String> {
+) -> Result<(String, GpuFixedFloorPassEvidence), String> {
     storage.upload_reset_data(queue, reset);
     device
         .poll(wgpu::PollType::Wait)
         .map_err(|error| format!("poll authored gather digest reset: {error}"))?;
     let lane_bytes = storage.pose_buffer().size();
+    let evidence_layout = solver.pass_evidence_layout();
+    let result_bytes = lane_bytes * 2;
     let readback = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("physbox5_authored_gather_result_readback"),
-        size: lane_bytes * 2,
+        size: result_bytes,
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let evidence_readback = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("physbox5_authored_gather_evidence_readback"),
+        size: evidence_layout.total_bytes,
         usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
@@ -2362,13 +2574,18 @@ fn authored_gather_result_digest(
         lane_bytes,
         lane_bytes,
     );
+    solver.copy_pass_evidence(&mut encoder, &evidence_readback);
     queue.submit([encoder.finish()]);
-    let values = crate::collision_candidates::map_values::<u32>(
+    let values =
+        crate::collision_candidates::map_values::<u8>(device, &readback, result_bytes as usize)?;
+    let digest = sha256_bytes(&values);
+    let evidence_values = crate::collision_candidates::map_values::<u8>(
         device,
-        &readback,
-        (lane_bytes * 2 / size_of::<u32>() as u64) as usize,
+        &evidence_readback,
+        evidence_layout.total_bytes as usize,
     )?;
-    Ok(sha256_bytes(bytemuck::cast_slice(&values)))
+    let evidence = decode_pass_evidence(&evidence_values, evidence_layout)?;
+    Ok((digest, evidence))
 }
 
 #[cfg(not(target_arch = "wasm32"))]

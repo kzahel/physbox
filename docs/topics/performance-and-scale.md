@@ -835,6 +835,16 @@ against this exact serial graph and must improve ordinary complete-step slope;
 changing only diagnostic attribution, empty-dispatch count, or color order
 cannot establish a crossover.
 
+Scheduler-contract checkpoint, 2026-07-16: work-vector v1 and the
+`physbox-scheduler-benchmark` runner now make that comparison executable. Each
+row retains raw ordinary complete-step or authored-solver samples, separately
+instrumented construction/compaction/solve samples, capacity-slot and live
+work, exact assignment/order digests, replay and capacity gates, and adjacent
+P50 slopes per added body and contact slot. The governed corpus is generated
+32/256/1K plus authored 1K/10K contacts; the authored scope deliberately
+removes broadphase selection from the scheduler scaling question. The first
+dirty smoke is not an accepted baseline or performance claim.
+
 ## Regression and claim gates
 
 Before representative hardware is selected, store named measurements and

@@ -28,7 +28,9 @@ use crate::{
 };
 
 #[cfg(not(target_arch = "wasm32"))]
-use crate::body_floor_solver::{BenchmarkTimestampResources, GpuSolverInstrumentedSampleV4};
+use crate::body_floor_solver::{
+    BenchmarkTimestampResources, GpuSchedulerWorkVectorV1, GpuSolverInstrumentedSampleV4,
+};
 
 const WORKGROUP_SIZE: u32 = 64;
 const VALIDATION_STEPS_PER_SUBMISSION: u32 = 64;
@@ -2418,6 +2420,8 @@ pub struct GpuGeneratedContactBenchmarkOutput {
     pub host_completion_seconds: Vec<f64>,
     pub cpu_encode_submit_seconds: Vec<f64>,
     pub instrumented_solver_phases: Option<Vec<GpuSolverInstrumentedSampleV4>>,
+    pub scheduler_work: Option<GpuSchedulerWorkVectorV1>,
+    pub replay_exact: bool,
     pub timestamp_period_nanoseconds: Option<f32>,
     pub dispatches_per_step: u32,
     pub allocated_bytes: u64,
@@ -2526,20 +2530,34 @@ async fn benchmark_gpu_generated_contacts_with_execution_and_scheduling(
         return Err("generated-contact benchmark requires non-zero warmup and samples".to_owned());
     }
     scenario.validate().map_err(|error| error.to_string())?;
-    let correctness = {
+    let body_count = u32::try_from(scenario.bodies.len())
+        .map_err(|_| "generated benchmark body count exceeds u32".to_owned())?;
+    let (correctness, replay) = {
         let runner = GpuGeneratedContactRunner::new().await?;
-        runner.run_with_topologies_execution_and_scheduling(
-            scenario,
-            1,
-            GpuContactPersistenceTopology::StablePairSlot,
-            gather_topology,
-            false,
-            false,
-            u32::MAX,
-            execution,
-            scheduling_policy,
-        )?
+        let run = || {
+            runner.run_with_topologies_execution_and_scheduling(
+                scenario,
+                1,
+                GpuContactPersistenceTopology::StablePairSlot,
+                gather_topology,
+                false,
+                false,
+                u32::MAX,
+                execution,
+                scheduling_policy,
+            )
+        };
+        (run()?, run()?)
     };
+    let replay_exact = correctness.bodies == replay.bodies
+        && correctness.cache == replay.cache
+        && correctness.pass_evidence == replay.pass_evidence
+        && correctness.work == replay.work
+        && correctness.capacities == replay.capacities
+        && correctness.failure == replay.failure;
+    if !replay_exact {
+        return Err("generated-contact benchmark replay differed".to_owned());
+    }
     if correctness.failure.is_some()
         || correctness
             .capacities
@@ -2548,6 +2566,9 @@ async fn benchmark_gpu_generated_contacts_with_execution_and_scheduling(
     {
         return Err("generated-contact benchmark correctness/capacity gate failed".to_owned());
     }
+    let scheduler_work = correctness
+        .pass_evidence
+        .scheduler_work_vector(body_count)?;
 
     let query_count = samples
         .checked_mul(4)
@@ -2563,8 +2584,6 @@ async fn benchmark_gpu_generated_contacts_with_execution_and_scheduling(
     };
     let (device, queue) =
         crate::gpu_context::request_device_with_features(&adapter, required_features).await?;
-    let body_count = u32::try_from(scenario.bodies.len())
-        .map_err(|_| "generated benchmark body count exceeds u32".to_owned())?;
     let storage = GpuBodyStorage::new(
         &device,
         body_count,
@@ -2774,6 +2793,8 @@ async fn benchmark_gpu_generated_contacts_with_execution_and_scheduling(
         host_completion_seconds,
         cpu_encode_submit_seconds,
         instrumented_solver_phases,
+        scheduler_work,
+        replay_exact,
         timestamp_period_nanoseconds,
         dispatches_per_step: graph.dispatches_per_step(),
         allocated_bytes: graph.allocated_bytes(),

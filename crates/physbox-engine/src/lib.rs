@@ -35,6 +35,12 @@ pub use body_benchmark::{
     GpuBodyBenchmarkOutput, GpuBodyBenchmarkSession, GpuTimestampStatus, PendingBodyValidation,
     PendingCompletion, PendingTimestampReadback,
 };
+#[cfg(not(target_arch = "wasm32"))]
+pub use body_floor_solver::{
+    GPU_SCHEDULER_WORK_VECTOR_VERSION, GpuAuthoredGatherBenchmarkOutput, GpuSchedulerWorkVectorV1,
+    GpuSolverInstrumentedSampleV4, benchmark_gpu_authored_gather_topology,
+    benchmark_gpu_authored_solver_experiment,
+};
 pub use body_floor_solver::{
     GPU_SOLVER_EXECUTION_VERSION, GPU_SOLVER_SCHEDULING_POLICY_VERSION, GpuBlockActiveSetV2,
     GpuColorMaintenanceV1, GpuColorOrderV4, GpuColorScheduleV4, GpuColorUnitV4,
@@ -42,11 +48,6 @@ pub use body_floor_solver::{
     GpuFixedFloorPassEvidence, GpuGatherTopology, GpuGatherTopologyEvidence,
     GpuManifoldBlockEvidenceV2, GpuNormalSolverV4, GpuSolverAccumulationV4, GpuSolverExecutionV4,
     GpuSolverSchedulingPolicyV1,
-};
-#[cfg(not(target_arch = "wasm32"))]
-pub use body_floor_solver::{
-    GpuAuthoredGatherBenchmarkOutput, GpuSolverInstrumentedSampleV4,
-    benchmark_gpu_authored_gather_topology,
 };
 pub use body_state::{
     BODY_BYTES_PER_SLOT, BODY_COMMAND_BYTES, BODY_COMMAND_CAPACITY, BodySlotRegistry,

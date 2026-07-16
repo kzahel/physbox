@@ -23,6 +23,16 @@ fn generated_contact_benchmark_uses_qualified_split_scopes() {
     assert_eq!(benchmark.dispatches_per_step, 1_334);
     assert_eq!(benchmark.host_completion_seconds.len(), 2);
     assert_eq!(benchmark.cpu_encode_submit_seconds.len(), 2);
+    let scheduler_work = benchmark.scheduler_work.as_ref().unwrap();
+    assert_eq!(scheduler_work.body_slots, 32);
+    assert!(scheduler_work.contact_point_slots >= scheduler_work.live_contact_points);
+    assert!(scheduler_work.color_units > 0);
+    assert_eq!(
+        scheduler_work.compacted_color_units,
+        scheduler_work.color_units
+    );
+    assert_eq!(scheduler_work.assignment_digest.len(), 64);
+    assert_eq!(scheduler_work.compacted_order_digest.len(), 64);
     assert_eq!(
         benchmark.instrumented_solver_phases.as_ref().map(Vec::len),
         benchmark.timestamp_period_nanoseconds.map(|_| 2)

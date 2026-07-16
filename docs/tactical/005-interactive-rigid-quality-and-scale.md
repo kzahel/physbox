@@ -760,7 +760,7 @@ fresh evidence supports a different implementation.
 - [x] Integrate and freeze the accepted product execution as the serial
   byte-exact control. Product P5.2 scenarios use manifold-block i2 through the
   one selected graph; legacy point-Jacobi coverage is explicitly experimental.
-- [ ] Add a scheduler-construction benchmark contract that records work
+- [x] Add a scheduler-construction benchmark contract that records work
   vectors and slopes, not only absolute
   medians. Retain 32/256/1K and add bounded contact-rich 1K/10K authored-
   manifold rows that do not depend on a selected broadphase.
@@ -800,6 +800,18 @@ Artifacts: serial/parallel work-vector and slope matrices, raw ordinary and
 diagnostic samples, assignment/order deltas, minimized conflicts/overflows,
 cross-host captures, optimized Box2D rows, rejected alternatives, and a compact
 scheduler recommendation.
+
+Benchmark-contract checkpoint, 2026-07-16: scheduler work-vector v1 records
+the capacity slots visited by assignment and compaction, live point and
+manifold-unit counts, color occupancy, fixed prefix work, encoded/active/empty
+passes, scheduled invocations, and assignment/order digests. The dedicated
+`physbox-scheduler-benchmark` runner emits raw ordinary and diagnostic samples
+plus adjacent P50 marginal slopes for generated 32/256/1K complete steps and
+broadphase-independent authored 1K/10K-contact solver steps. Both sources use
+the selected execution and the same engine benchmark path; exact replay and
+capacity are required before a row or slope is admitted. A dirty development
+smoke exercised all five rows on Metal, but it is contract validation rather
+than publishable performance evidence.
 
 Commit boundaries: accepted product-baseline integration; scheduler benchmark
 contract; byte-exact parallel compaction; evidence-triggered parallel coloring
