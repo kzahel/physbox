@@ -376,9 +376,9 @@ pub fn p5_2_centered_rectangle_stack_scenario(
     rectangle_count: u32,
     requested_steps: u32,
 ) -> Result<ScenarioV1, ScenarioBuildError> {
-    if !matches!(rectangle_count, 2 | 4 | 8) {
+    if !matches!(rectangle_count, 2 | 4 | 8 | 16) {
         return Err(ScenarioBuildError(
-            "centered rectangle stack requires exactly 2, 4, or 8 rectangles".to_owned(),
+            "centered rectangle stack requires exactly 2, 4, 8, or 16 rectangles".to_owned(),
         ));
     }
     let mut scenario = p5_2_generated_floor_scenario(requested_steps)?;
@@ -1630,7 +1630,7 @@ mod tests {
 
     #[test]
     fn p5_2_centered_rectangle_stacks_are_valid_exact_and_replayable() {
-        for count in [2, 4, 8] {
+        for count in [2, 4, 8, 16] {
             let scenario =
                 p5_2_centered_rectangle_stack_scenario(count, P5_2_CENTERED_STACK_EVIDENCE_STEPS)
                     .unwrap();

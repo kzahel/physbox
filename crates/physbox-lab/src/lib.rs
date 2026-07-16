@@ -11,6 +11,7 @@ pub mod evidence;
 pub mod failure_automation;
 pub mod fixture_contacts;
 pub mod oracle_transport;
+pub mod parallel_normal;
 pub mod playback;
 pub mod scalar;
 pub mod settling;

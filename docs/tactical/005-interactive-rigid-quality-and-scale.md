@@ -437,17 +437,17 @@ physical inverse mass/inertia. More iterations then amplify rather than damp
 the unstable chain mode. Human review authorized the following laboratory
 sequence; it did not authorize a product-default or quality-band change.
 
-- [ ] Add a frozen-contact scalar diagnostic that reports the measured
+- [x] Add a frozen-contact scalar diagnostic that reports the measured
   contraction/amplification of the normal iteration for 2/4/8/16 stacks. Do
   not present a nonlinear projected solve as a formal spectral proof.
-- [ ] Implement scalar mass splitting exactly as Tonge, Benevolenski, and
+- [x] Implement scalar mass splitting exactly as Tonge, Benevolenski, and
   Voroshilov define it: multiply each dynamic body's inverse mass and inverse
   inertia by its valid contact-point incidence count only in effective-mass
   preparation, while applying impulses with the full physical mass.
-- [ ] Implement a coupled active-set 2x2 normal solve for each two-point
+- [x] Implement a coupled active-set 2x2 normal solve for each two-point
   manifold, degenerating exactly to the scalar point solve for zero/one valid
   point. Keep tangent/friction staging unchanged so its effect is attributable.
-- [ ] Implement block mass splitting by using each body's distinct live
+- [x] Implement block mass splitting by using each body's distinct live
   manifold/body-pair count in the block effective-mass matrix, again applying
   output impulses with the full physical mass.
 - [ ] Evaluate the factorial matrix `current`, `mass-split`, `manifold-block`,
@@ -501,6 +501,17 @@ Source basis: Richard Tonge, Feodor Benevolenski, and Andrey Voroshilov,
 “Mass Splitting for Jitter-Free Parallel Rigid Body Simulation,” ACM TOG 31(4),
 2012, DOI `10.1145/2185520.2185601`. Implement the declared equations
 independently; do not copy source code from an external engine.
+
+Scalar checkpoint, 2026-07-16: the executable frozen-normal specification now
+reports point/manifold incidence, effective 2x2 matrices, active-set choices,
+impulses, body results, complementarity residual, closing speed, and energy.
+The 16-stack rocking probe applies one recorded gravity substep plus alternating
+`+/-0.01 rad/s` angular velocity. In that deliberately excited frozen system,
+point Jacobi changes from a `0.705` first-iteration residual ratio to ratios
+above one and finishes iteration eight at `0.787`; scalar mass splitting keeps
+every ratio below one and finishes at `0.0369`. Unperturbed symmetric gravity
+contracts under both methods, so this probe is diagnostic evidence for the
+rocking/chain mode, not a formal spectral proof or an awake acceptance result.
 
 ### S5.5 — P5.3 scalable broadphase bakeoff
 
