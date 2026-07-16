@@ -62,7 +62,10 @@ try {
   const uiScale = Math.max(1, Math.min(2, Math.min(viewportWidth, viewportHeight) / 600));
   await page.mouse.click(62 * uiScale, 50 * uiScale);
   await page.waitForFunction(() => globalThis.__physbox5?.frame?.ui?.menuOpen, null, { timeout: 10_000 });
-  await page.screenshot({ path: menuScreenshot });
+  await page.evaluate(() => new Promise((resolveFrame) => {
+    requestAnimationFrame(() => requestAnimationFrame(resolveFrame));
+  }));
+  await captureCompleteScreenshot(page, menuScreenshot, "browser menu");
   const menuScenarios = [
     "bootstrap",
     "rigid-floor",
@@ -233,21 +236,9 @@ try {
     { timeout: 10_000 },
   );
   await page.waitForTimeout(200);
-  await page.screenshot({ path: screenshot });
+  await captureCompleteScreenshot(page, screenshot, "browser final", consoleErrors);
   const final = await page.evaluate(() => globalThis.__physbox5);
   await page.evaluate(() => globalThis.__physbox5FrameControl.pause());
-  const pixels = PNG.sync.read(await readFile(screenshot));
-  let blackPixels = 0;
-  for (let offset = 0; offset < pixels.data.length; offset += 4) {
-    if (pixels.data[offset] <= 3 && pixels.data[offset + 1] <= 3 && pixels.data[offset + 2] <= 3) {
-      blackPixels += 1;
-    }
-  }
-  if (blackPixels > pixels.width * pixels.height * 0.01) {
-    throw new Error(
-      `browser screenshot contains ${blackPixels} unexpected black pixels; console=${consoleErrors.join("; ")}`,
-    );
-  }
   const provenance = {
     runId: randomUUID(),
     sourceRevision: git(["rev-parse", "HEAD"]) ?? "unknown",
@@ -279,6 +270,27 @@ function run(command, args) {
 function git(args) {
   const result = spawnSync("git", args, { cwd: root, encoding: "utf8" });
   return result.status === 0 ? result.stdout.trim() : undefined;
+}
+
+async function captureCompleteScreenshot(page, path, label, consoleErrors = []) {
+  let blackPixels = 0;
+  let pixelCount = 0;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    await page.screenshot({ path });
+    const pixels = PNG.sync.read(await readFile(path));
+    blackPixels = 0;
+    pixelCount = pixels.width * pixels.height;
+    for (let offset = 0; offset < pixels.data.length; offset += 4) {
+      if (pixels.data[offset] <= 3 && pixels.data[offset + 1] <= 3 && pixels.data[offset + 2] <= 3) {
+        blackPixels += 1;
+      }
+    }
+    if (blackPixels <= pixelCount * 0.01) return;
+    await page.waitForTimeout(100);
+  }
+  throw new Error(
+    `${label} contains ${blackPixels}/${pixelCount} unexpected black pixels after five captures; console=${consoleErrors.join("; ")}`,
+  );
 }
 
 function requireGrabEndpoint(image, targetX, targetY) {
