@@ -193,6 +193,21 @@ passes, and preserves one atomic failure. This closes implementation and
 degeneration gates only; i1/i2/i4 quality and cost belong to the later
 factorial, and forward versus alternating order is the next slice.
 
+Ordering checkpoint, 2026-07-16: the compact scheduler now encodes either
+stable forward colors or deterministic alternating forward/reverse sweeps
+without reading the GPU-produced color count. Alternating parity is
+`substep * iterations + iteration`: normal and tangent retain one coherent
+direction, relaxation mirrors its corresponding iteration, warm start uses
+the substep's first parity, and restitution uses its last. Thus i1 alternates
+across substeps, while i2/i4 also alternate inside each substep.
+
+Native i1/i2/i4 manifold-block runs replay exactly, retain identical color
+assignments and capacities, and produce a real ordering difference on the
+stack corpus rather than aliasing forward order. A one-color manifold remains
+byte-identical in both policies. This records the comparator semantics and
+mechanical result only; the seven-source 1,200-step matrix, residuals, and cost
+decide whether either order is promising.
+
 ## Fallback and reserve options
 
 - **Interim baseline swap.** Manifold block i2 improves structural preservation

@@ -805,6 +805,14 @@ degeneration, complete block traces, and atomic 33-manifold color overflow
 pass. The lane remains laboratory-only pending ordering and full factorial
 evidence; `SELECTED` is unchanged.
 
+S5.4b ordering checkpoint, 2026-07-16: compact manifold blocks can use stable
+forward order or a deterministic alternating sweep keyed by the global
+substep/iteration ordinal. Normal/tangent and their relaxation counterpart
+keep coherent direction; no GPU color-count readback is introduced. Native
+i1/i2/i4 runs replay exactly and expose a genuine ordering delta, while a
+single-color case remains byte-identical. Full quality/cost evidence is still
+required before recommendation or selection.
+
 Circle/circle and circle/rectangle contact are analytic. Rectangle/rectangle
 uses SAT to select a reference and incident edge, clips the incident segment,
 and produces stable vertex/edge feature pairs. Test feature stability around

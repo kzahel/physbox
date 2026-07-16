@@ -644,8 +644,15 @@ tolerance, pacing rate, broadphase, liquid path, or CPU fallback is authorized.
   and active set is preserved in evidence, a one-point restitution manifold is
   byte-identical to compact scalar coloring, and 33 manifolds incident on one
   body reject atomically with zero indirect solve work.
-- [ ] Compare stable forward with deterministic alternating forward/reverse
+- [x] Compare stable forward with deterministic alternating forward/reverse
   color sweeps at i1/i2/i4.
+  Alternating parity is the global `substep * iterations + iteration` ordinal;
+  normal and tangent retain one direction, relaxation mirrors the matching
+  iteration, and warm/restitution use the first/last substep parity. Exact
+  native i1/i2/i4 replays preserve assignments and capacity, differ from the
+  forward lane on the stack corpus, and the one-color degeneration remains
+  byte-identical. Full 1,200-step quality and cost judgments remain in the
+  evidence slice below.
 - [ ] Retain the seven accepted sources and add 32/64-stack depth diagnostics,
   both 100-body buckets, and deterministic construction/erase churn.
 - [ ] Publish complete color occupancy, compaction/recoloring cost, dispatch,

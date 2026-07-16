@@ -167,6 +167,16 @@ impl GpuSolverExecutionV4 {
         }
     }
 
+    pub const fn alternating_manifold_colored_block_experiment(
+        warm_start: bool,
+        relaxation: bool,
+    ) -> Self {
+        Self {
+            color_order: GpuColorOrderV4::Alternating,
+            ..Self::manifold_colored_block_experiment(warm_start, relaxation)
+        }
+    }
+
     const fn uses_colored_in_place(self) -> bool {
         matches!(self.accumulation, GpuSolverAccumulationV4::ColoredInPlace)
     }
@@ -200,8 +210,10 @@ impl GpuSolverExecutionV4 {
         {
             return Err("manifold coloring requires the compact indirect schedule".to_owned());
         }
-        if self.color_order != GpuColorOrderV4::Forward {
-            return Err("the current GPU solver slice only implements forward coloring".to_owned());
+        if self.color_order == GpuColorOrderV4::Alternating
+            && self.color_schedule != GpuColorScheduleV4::CompactIndirect
+        {
+            return Err("alternating coloring requires the compact indirect schedule".to_owned());
         }
         Ok(())
     }
@@ -2206,6 +2218,7 @@ fn operations(
             MotionDirection::AtoB,
             point_workgroups,
             body_workgroups,
+            color_sweep_reversed(execution, substep, 0, scenario.settings.iterations),
             topology,
         );
         for iteration in 0..scenario.settings.iterations {
@@ -2227,6 +2240,7 @@ fn operations(
                 MotionDirection::BtoA,
                 point_workgroups,
                 body_workgroups,
+                color_sweep_reversed(execution, substep, iteration, scenario.settings.iterations),
                 topology,
             );
             solver_stage(
@@ -2238,6 +2252,7 @@ fn operations(
                 MotionDirection::AtoB,
                 point_workgroups,
                 body_workgroups,
+                color_sweep_reversed(execution, substep, iteration, scenario.settings.iterations),
                 topology,
             );
         }
@@ -2291,6 +2306,12 @@ fn operations(
                     MotionDirection::BtoA,
                     point_workgroups,
                     body_workgroups,
+                    color_sweep_reversed(
+                        execution,
+                        substep,
+                        iteration,
+                        scenario.settings.iterations,
+                    ),
                     topology,
                 );
                 solver_stage(
@@ -2302,6 +2323,12 @@ fn operations(
                     MotionDirection::AtoB,
                     point_workgroups,
                     body_workgroups,
+                    color_sweep_reversed(
+                        execution,
+                        substep,
+                        iteration,
+                        scenario.settings.iterations,
+                    ),
                     topology,
                 );
             }
@@ -2315,6 +2342,12 @@ fn operations(
             MotionDirection::BtoA,
             point_workgroups,
             body_workgroups,
+            color_sweep_reversed(
+                execution,
+                substep,
+                scenario.settings.iterations - 1,
+                scenario.settings.iterations,
+            ),
             topology,
         );
     }
@@ -2560,10 +2593,16 @@ fn solver_stage(
     direction: MotionDirection,
     point_workgroups: u32,
     body_workgroups: u32,
+    reverse_colors: bool,
     topology: TopologyLayout,
 ) {
     if execution.uses_colored_in_place() {
-        for color in 0..MAX_COLORS {
+        for scheduled_color in 0..MAX_COLORS {
+            let color = if reverse_colors {
+                MAX_COLORS - 1 - scheduled_color
+            } else {
+                scheduled_color
+            };
             let mut colored = parameter;
             colored.uints0[0] = if topology.has_compact_coloring {
                 topology.color_counts_base
@@ -2613,6 +2652,16 @@ fn solver_stage(
             topology,
         );
     }
+}
+
+fn color_sweep_reversed(
+    execution: GpuSolverExecutionV4,
+    substep: u32,
+    iteration: u32,
+    iterations_per_substep: u32,
+) -> bool {
+    execution.color_order == GpuColorOrderV4::Alternating
+        && (substep * iterations_per_substep + iteration) % 2 == 1
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -3156,6 +3205,36 @@ mod tests {
             compact_topology.element_count
         );
         assert_eq!(manifold_topology.color_unit, GpuColorUnitV4::Manifold);
+        let alternating_execution =
+            GpuSolverExecutionV4::alternating_manifold_colored_block_experiment(true, true);
+        alternating_execution.validate().unwrap();
+        let (_, alternating_operations) = operations(
+            &scenario,
+            2,
+            2,
+            manifold_topology,
+            false,
+            alternating_execution,
+        );
+        let alternating_offsets = alternating_operations
+            .iter()
+            .filter_map(|operation| operation.indirect_offset)
+            .collect::<Vec<_>>();
+        assert_eq!(alternating_offsets.len(), 40 * MAX_COLORS as usize);
+        assert_eq!(
+            alternating_offsets[..MAX_COLORS as usize],
+            (0..MAX_COLORS)
+                .map(|color| u64::from(color * 3) * size_of::<u32>() as u64)
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            alternating_offsets[3 * MAX_COLORS as usize],
+            u64::from((MAX_COLORS - 1) * 3) * size_of::<u32>() as u64
+        );
+        assert!(!color_sweep_reversed(alternating_execution, 0, 0, 1));
+        assert!(color_sweep_reversed(alternating_execution, 1, 0, 1));
+        assert!(color_sweep_reversed(alternating_execution, 0, 1, 2));
+        assert!(!color_sweep_reversed(alternating_execution, 1, 0, 2));
         assert!(
             GpuSolverExecutionV4 {
                 normal_solver: GpuNormalSolverV4::ManifoldBlock,

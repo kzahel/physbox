@@ -269,6 +269,13 @@ fn one_point_manifold_colored_block_degenerates_exactly_to_scalar_coloring() {
             GpuSolverExecutionV4::manifold_colored_block_experiment(true, true),
         )
         .unwrap();
+    let alternating = runner
+        .run_experiment(
+            &scenario,
+            8,
+            GpuSolverExecutionV4::alternating_manifold_colored_block_experiment(true, true),
+        )
+        .unwrap();
     assert_eq!(block.bodies, scalar.bodies);
     assert_eq!(block.cache, scalar.cache);
     assert_eq!(block.pass_evidence.contacts, scalar.pass_evidence.contacts);
@@ -283,6 +290,58 @@ fn one_point_manifold_colored_block_degenerates_exactly_to_scalar_coloring() {
             .iter()
             .all(|evidence| evidence.point_count == 1
                 && evidence.active_set == physbox_engine::GpuBlockActiveSetV2::Scalar)
+    );
+    assert_eq!(alternating.bodies, block.bodies);
+    assert_eq!(alternating.cache, block.cache);
+}
+
+#[test]
+fn alternating_manifold_color_sweeps_cover_i1_i2_i4_and_replay() {
+    let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
+    let mut any_order_difference = false;
+    for iterations in [1, 2, 4] {
+        let mut scenario = p5_2_centered_rectangle_stack_scenario(4, 4).unwrap();
+        scenario.settings.iterations = iterations;
+        let forward_execution = GpuSolverExecutionV4::manifold_colored_block_experiment(true, true);
+        let alternating_execution =
+            GpuSolverExecutionV4::alternating_manifold_colored_block_experiment(true, true);
+        let forward = runner
+            .run_experiment(&scenario, 8, forward_execution)
+            .unwrap();
+        let alternating = runner
+            .run_experiment(&scenario, 8, alternating_execution)
+            .unwrap();
+        let replay = runner
+            .run_experiment(&scenario, 8, alternating_execution)
+            .unwrap();
+        assert_eq!(alternating.bodies, replay.bodies);
+        assert_eq!(alternating.cache, replay.cache);
+        assert_eq!(alternating.pass_evidence, replay.pass_evidence);
+        assert_eq!(
+            forward
+                .pass_evidence
+                .coloring
+                .as_ref()
+                .unwrap()
+                .point_colors,
+            alternating
+                .pass_evidence
+                .coloring
+                .as_ref()
+                .unwrap()
+                .point_colors
+        );
+        assert_eq!(
+            alternating.solver_execution.color_order,
+            physbox_engine::GpuColorOrderV4::Alternating
+        );
+        assert!(forward.failure.is_none());
+        assert!(alternating.failure.is_none());
+        any_order_difference |= alternating.bodies != forward.bodies;
+    }
+    assert!(
+        any_order_difference,
+        "alternating order must not be a silent forward-order alias"
     );
 }
 

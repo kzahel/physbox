@@ -170,6 +170,12 @@ block. Exact replay, scalar one-point degeneration, matrix/active-set evidence,
 and zero-work atomic color overflow pass on native Metal. Deterministic
 forward-versus-alternating order is next; no product solver is promoted.
 
+S5.4b ordering checkpoint, 2026-07-16: stable forward and deterministic
+alternating manifold-color sweeps now share one compact scheduler. The global
+substep/iteration parity covers i1/i2/i4 without readback, replays exactly, and
+is not a silent forward-order alias. The depth/degree/churn and complete cost
+matrix is next; product selection remains unchanged.
+
 The first S3.5a representation checkpoint implements the stable pair-slot
 comparator with full feature verification and deterministic generational slot
 recycling. Its correctness/adversarial gates pass and its combined
