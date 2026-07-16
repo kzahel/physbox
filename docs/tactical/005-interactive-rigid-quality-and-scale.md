@@ -780,7 +780,7 @@ fresh evidence supports a different implementation.
 - [ ] Re-run the seven accepted scenes, 32/64-stack diagnostics, both buckets,
   churn/recontact/generation reuse, 33-color overflow, exact replay, capacity,
   memory, dispatch, and first-divergence evidence for every comparator.
-- [ ] Validate the leading potential lane on native Metal, BrowserWebGPU, and
+- [x] Validate the leading potential lane on native Metal, BrowserWebGPU, and
   the hardware-backed `jstorrent-tablet` AVD; attempt physical Android when
   attached. No CPU color construction, required readback, native-only path, or
   hidden uncolored overflow lane is allowed.
@@ -854,6 +854,17 @@ rejection, and native 32/256/1K plus authored 1K/10K smoke pass. The first
 one-sample Metal smoke moves generated 1K to about `9.22 ms` and authored 10K
 to about `7.55 ms`, with construction attribution below `0.7 ms`; these dirty
 numbers motivate the full matrix but are not accepted evidence.
+
+Cross-host comparator checkpoint, 2026-07-16: the launch-only shared
+`solver-parallel-coloring` scenario reuses the neutral four-stack source and
+selected manifold-block execution while selecting only the unpromoted
+parallel scheduling policy. Its scene completion requires that exact policy
+and clean capacity. Native headless Metal, Chrome BrowserWebGPU, and the
+hardware-backed `jstorrent-tablet` AVD Vulkan/MoltenVK paths all execute and
+report it successfully; fresh captures are visually sound. The ordinary scene
+menu deliberately excludes the unreviewed comparator. A physical Android
+device was attempted but none was attached. Clean source provenance and these
+captures will be retained by the final factorial package.
 
 Commit boundaries: accepted product-baseline integration; scheduler benchmark
 contract; byte-exact parallel compaction; evidence-triggered parallel coloring

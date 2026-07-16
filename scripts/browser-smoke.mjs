@@ -63,7 +63,7 @@ try {
   await page.mouse.click(62 * uiScale, 50 * uiScale);
   await page.waitForFunction(() => globalThis.__physbox5?.frame?.ui?.menuOpen, null, { timeout: 10_000 });
   await page.screenshot({ path: menuScreenshot });
-  const scenarioIndex = [
+  const menuScenarios = [
     "bootstrap",
     "rigid-floor",
     "rigid-stack",
@@ -75,25 +75,37 @@ try {
     "solver-jacobi",
     "solver-colored",
     "solver-manifold-i2",
-  ].indexOf(scenario);
-  if (scenarioIndex < 0) throw new Error(`scenario is absent from shared menu: ${scenario}`);
-  const compactLandscape = viewportHeight < 520 && viewportWidth > viewportHeight;
-  const scenarioColumn = compactLandscape ? scenarioIndex % 3 : 0;
-  const scenarioRow = compactLandscape ? Math.floor(scenarioIndex / 3) : scenarioIndex;
-  await page.mouse.click(
-    (118 + scenarioColumn * 198) * uiScale,
-    (143 + scenarioRow * 38) * uiScale,
-  );
-  await page.waitForFunction(
-    ({ name, activations }) => {
-      const frame = globalThis.__physbox5?.frame;
-      return frame?.sceneContract?.scenario === name
-        && frame?.ui?.scenarioActivationsTotal > activations
-        && !frame?.ui?.menuOpen;
-    },
-    { name: scenario, activations: before.frame.ui.scenarioActivationsTotal },
-    { timeout: 10_000 },
-  );
+  ];
+  const scenarioIndex = menuScenarios.indexOf(scenario);
+  if (scenarioIndex >= 0) {
+    const compactLandscape = viewportHeight < 520 && viewportWidth > viewportHeight;
+    const scenarioColumn = compactLandscape ? scenarioIndex % 3 : 0;
+    const scenarioRow = compactLandscape ? Math.floor(scenarioIndex / 3) : scenarioIndex;
+    await page.mouse.click(
+      (118 + scenarioColumn * 198) * uiScale,
+      (143 + scenarioRow * 38) * uiScale,
+    );
+    await page.waitForFunction(
+      ({ name, activations }) => {
+        const frame = globalThis.__physbox5?.frame;
+        return frame?.sceneContract?.scenario === name
+          && frame?.ui?.scenarioActivationsTotal > activations
+          && !frame?.ui?.menuOpen;
+      },
+      { name: scenario, activations: before.frame.ui.scenarioActivationsTotal },
+      { timeout: 10_000 },
+    );
+  } else if (scenario === "solver-parallel-coloring") {
+    await page.mouse.click(62 * uiScale, 50 * uiScale);
+    await page.waitForFunction(
+      (name) => globalThis.__physbox5?.frame?.sceneContract?.scenario === name
+        && !globalThis.__physbox5?.frame?.ui?.menuOpen,
+      scenario,
+      { timeout: 10_000 },
+    );
+  } else {
+    throw new Error(`scenario is absent from shared launch and menu contracts: ${scenario}`);
+  }
   let capturedGrab = null;
   let capturedConstruction = null;
   if (process.env.PHYSBOX5_CONSTRUCTION_CAPTURE === "1") {

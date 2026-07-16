@@ -856,6 +856,15 @@ standard scheduling. The validation scene is a shared adapter test surface,
 not a second engine or a solver promotion. Clean headless, BrowserWebGPU, and
 hardware-backed AVD artifacts are retained in the final renewed evidence slice.
 
+S5.4c cross-host comparator checkpoint, 2026-07-16: the launch-only shared
+`solver-parallel-coloring` scenario projects the same neutral four-stack into
+the same engine-owned generated-contact world, selecting only the unpromoted
+parallel scheduling policy. Scene-contract v4 exposes that exact policy and
+completion rejects a mismatch or capacity failure. Headless Metal, Chrome
+BrowserWebGPU, and hardware-backed AVD Vulkan/MoltenVK pass. The ordinary scene
+menu excludes this evidence lane, and the standard product constructor remains
+unchanged.
+
 S5.4b renewed human checkpoint, 2026-07-16: the clean
 [scheduling package](../../evidence/p5.2b-s5.4b-scheduling/README.md) finds all
 four full/incremental and per-color/island policies physically equivalent on

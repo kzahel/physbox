@@ -8,7 +8,7 @@ use physbox_launch::ValidationScenario;
 
 use crate::{
     AdapterDiagnostics, BODY_COMMAND_CAPACITY, BoundedBodyCommands, Camera2d, EngineConfig,
-    FrameInput, InputEvent, PointerButton, PointerPhase, StepRequest,
+    FrameInput, GpuSolverSchedulingPolicyV1, InputEvent, PointerButton, PointerPhase, StepRequest,
     body_world::{BodyCommandStepRange, BodyStepPlan, GpuBodyWorld},
     clock::{FIXED_STEP_HZ, FIXED_STEP_SECONDS, InteractiveClockInput, SimulationClock},
     construction::{
@@ -513,7 +513,8 @@ impl EngineHost {
             | ValidationScenario::CircleBucket100
             | ValidationScenario::RectangleBucket100
             | ValidationScenario::ResetGrab
-            | ValidationScenario::SolverManifoldI2 => None,
+            | ValidationScenario::SolverManifoldI2
+            | ValidationScenario::SolverParallelColoring => None,
             ValidationScenario::SolverJacobi => Some(GpuSolverCandidate::JacobiGather),
             ValidationScenario::SolverColored => Some(GpuSolverCandidate::ColoredSoftTgs),
         };
@@ -600,13 +601,20 @@ impl EngineHost {
                         .expect("engine-owned all-pairs bucket GPU world is valid"),
                 )
             }
-            ValidationScenario::SolverManifoldI2 => {
+            ValidationScenario::SolverManifoldI2 | ValidationScenario::SolverParallelColoring => {
                 let scenario = p5_2_manifold_color_validation_scenario()
                     .expect("engine-owned manifold-color validation scenario is valid");
-                Some(
+                let world = if config.scenario == ValidationScenario::SolverParallelColoring {
+                    GpuBodyWorld::new_generated_with_scheduling(
+                        device,
+                        color_format,
+                        &scenario,
+                        GpuSolverSchedulingPolicyV1::PARALLEL_COLORING,
+                    )
+                } else {
                     GpuBodyWorld::new_generated(device, color_format, &scenario)
-                        .expect("engine-owned manifold-color validation world is valid"),
-                )
+                };
+                Some(world.expect("engine-owned manifold-color validation world is valid"))
             }
             _ => None,
         };
@@ -646,10 +654,12 @@ impl EngineHost {
                 &p5_2_generated_reset_grab_scenario()
                     .expect("engine-owned generated reset/grab scenario is valid"),
             ),
-            ValidationScenario::SolverManifoldI2 => canonical_hash(
-                &p5_2_manifold_color_validation_scenario()
-                    .expect("engine-owned manifold-color validation scenario is valid"),
-            ),
+            ValidationScenario::SolverManifoldI2 | ValidationScenario::SolverParallelColoring => {
+                canonical_hash(
+                    &p5_2_manifold_color_validation_scenario()
+                        .expect("engine-owned manifold-color validation scenario is valid"),
+                )
+            }
             ValidationScenario::SolverJacobi | ValidationScenario::SolverColored => {
                 let mut scenario = authored_chain_scenario(64, 91)
                     .expect("engine-owned solver validation scenario is valid");
@@ -666,7 +676,8 @@ impl EngineHost {
             | ValidationScenario::RectangleStack
             | ValidationScenario::CircleBucket100
             | ValidationScenario::RectangleBucket100
-            | ValidationScenario::SolverManifoldI2 => {
+            | ValidationScenario::SolverManifoldI2
+            | ValidationScenario::SolverParallelColoring => {
                 Some(BodyInteractionState::new(Vec::new(), true))
             }
             ValidationScenario::ResetGrab => {
@@ -1018,18 +1029,30 @@ impl EngineHost {
                     },
                 }
             }
-            ValidationScenario::SolverManifoldI2 => {
+            ValidationScenario::SolverManifoldI2 | ValidationScenario::SolverParallelColoring => {
                 let complete =
                     self.fixed_steps_total >= u64::from(P5_2_MANIFOLD_COLOR_VALIDATION_STEPS);
-                let passed = complete && !contract.capacity_overflowed;
+                let expected_scheduling =
+                    if self.config.scenario == ValidationScenario::SolverParallelColoring {
+                        GpuSolverSchedulingPolicyV1::PARALLEL_COLORING
+                    } else {
+                        GpuSolverSchedulingPolicyV1::STANDARD
+                    };
+                let passed = complete
+                    && !contract.capacity_overflowed
+                    && contract.generated_solver_scheduling_policy == Some(expected_scheduling);
                 ScenarioResult {
                     name: self.config.scenario.name(),
                     complete,
                     passed,
                     reason: if passed {
-                        "shared generated forward manifold-block i2 candidate completed"
+                        if self.config.scenario == ValidationScenario::SolverParallelColoring {
+                            "shared generated parallel-coloring comparator completed"
+                        } else {
+                            "shared generated forward manifold-block i2 candidate completed"
+                        }
                     } else if complete {
-                        "manifold-color candidate reported capacity overflow"
+                        "manifold-color execution reported the wrong policy or capacity overflow"
                     } else {
                         "waiting for eight shared manifold-color candidate steps"
                     },

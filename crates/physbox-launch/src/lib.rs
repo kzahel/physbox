@@ -54,10 +54,26 @@ pub enum ValidationScenario {
     SolverJacobi,
     SolverColored,
     SolverManifoldI2,
+    SolverParallelColoring,
 }
 
 impl ValidationScenario {
-    pub const ALL: [Self; 11] = [
+    pub const ALL: [Self; 12] = [
+        Self::Bootstrap,
+        Self::RigidFloor,
+        Self::RigidStack,
+        Self::RectangleStack,
+        Self::CircleBucket100,
+        Self::RectangleBucket100,
+        Self::BodyFreeFlight,
+        Self::ResetGrab,
+        Self::SolverJacobi,
+        Self::SolverColored,
+        Self::SolverManifoldI2,
+        Self::SolverParallelColoring,
+    ];
+
+    pub const MENU: [Self; 11] = [
         Self::Bootstrap,
         Self::RigidFloor,
         Self::RigidStack,
@@ -84,6 +100,7 @@ impl ValidationScenario {
             Self::SolverJacobi => "solver-jacobi",
             Self::SolverColored => "solver-colored",
             Self::SolverManifoldI2 => "solver-manifold-i2",
+            Self::SolverParallelColoring => "solver-parallel-coloring",
         }
     }
 }
@@ -206,7 +223,7 @@ pub fn usage(program: &str, host: LaunchHost) -> String {
         ""
     };
     format!(
-        "Usage: {program} [options]\n\n  --width PX       viewport width (default 960)\n  --height PX      viewport height (default 600)\n  --scenario NAME  bootstrap, body-free-flight, rigid-floor, rigid-stack, rectangle-stack, circle-bucket-100, rectangle-bucket-100, reset-grab, solver-jacobi, solver-colored, or solver-manifold-i2{frame_markers}{capture}\n  -h, --help       print this help"
+        "Usage: {program} [options]\n\n  --width PX       viewport width (default 960)\n  --height PX      viewport height (default 600)\n  --scenario NAME  bootstrap, body-free-flight, rigid-floor, rigid-stack, rectangle-stack, circle-bucket-100, rectangle-bucket-100, reset-grab, solver-jacobi, solver-colored, solver-manifold-i2, or solver-parallel-coloring{frame_markers}{capture}\n  -h, --help       print this help"
     )
 }
 
@@ -232,6 +249,7 @@ fn apply_option(
                 "solver-jacobi" => ValidationScenario::SolverJacobi,
                 "solver-colored" => ValidationScenario::SolverColored,
                 "solver-manifold-i2" => ValidationScenario::SolverManifoldI2,
+                "solver-parallel-coloring" => ValidationScenario::SolverParallelColoring,
                 _ => return Err(LaunchError(format!("unknown scenario: {value}"))),
             }
         }
@@ -395,5 +413,11 @@ mod tests {
             manifold.options.scenario,
             ValidationScenario::SolverManifoldI2
         );
+        let parallel = parse_android_json(r#"["--scenario","solver-parallel-coloring"]"#).unwrap();
+        assert_eq!(
+            parallel.options.scenario,
+            ValidationScenario::SolverParallelColoring
+        );
+        assert!(!ValidationScenario::MENU.contains(&ValidationScenario::SolverParallelColoring));
     }
 }

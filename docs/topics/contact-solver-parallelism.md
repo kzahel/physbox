@@ -452,6 +452,16 @@ Gauss-Seidel order differ from the accepted serial control, this implementation
 is a comparator only and cannot be promoted without the full quality matrix and
 human review.
 
+Cross-host comparator checkpoint, 2026-07-16: the shared launch contract now
+owns a validation-only `solver-parallel-coloring` scene over the same neutral
+four-stack and selected manifold-block execution as `solver-manifold-i2`.
+Engine construction chooses the comparator scheduling policy explicitly, and
+scene completion rejects a policy mismatch or capacity failure. Native Metal,
+Chrome BrowserWebGPU, and the hardware-backed `jstorrent-tablet` AVD all pass
+the actual comparator path. The scene is excluded from the ordinary product
+menu and does not alter `GpuSolverSchedulingPolicyV1::STANDARD`; no physical
+device was attached for the attempted lane.
+
 ## Fallback and reserve options
 
 - **Accepted baseline.** Manifold block i2 improves structural preservation and

@@ -150,6 +150,20 @@ impl GpuBodyWorld {
         )
     }
 
+    pub(crate) fn new_generated_with_scheduling(
+        device: &wgpu::Device,
+        color_format: wgpu::TextureFormat,
+        scenario: &ScenarioV1,
+        scheduling_policy: GpuSolverSchedulingPolicyV1,
+    ) -> Result<Self, String> {
+        Self::new_with_generated_contacts(
+            device,
+            color_format,
+            scenario,
+            Some((GpuSolverExecutionV4::SELECTED, scheduling_policy)),
+        )
+    }
+
     fn new_with_generated_contacts(
         device: &wgpu::Device,
         color_format: wgpu::TextureFormat,

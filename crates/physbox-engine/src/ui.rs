@@ -241,7 +241,7 @@ impl UiLayout {
         if !menu_open {
             return None;
         }
-        for (index, scenario) in ValidationScenario::ALL.iter().copied().enumerate() {
+        for (index, scenario) in ValidationScenario::MENU.iter().copied().enumerate() {
             if contains(self.scenario_button(index), pixel) {
                 return Some(UiHit::Scenario(scenario));
             }
@@ -348,9 +348,9 @@ impl UiLayout {
 
     fn restart_y_logical(self) -> f32 {
         let rows = if self.compact_landscape() {
-            ValidationScenario::ALL.len().div_ceil(3)
+            ValidationScenario::MENU.len().div_ceil(3)
         } else {
-            ValidationScenario::ALL.len()
+            ValidationScenario::MENU.len()
         };
         let gap = if self.compact_landscape() { 20.0 } else { 10.0 };
         126.0 + (rows.saturating_sub(1)) as f32 * 38.0 + 34.0 + gap
@@ -835,7 +835,7 @@ fn static_batch(
     if menu_open {
         batch.push_quad(layout.menu_panel(), panel);
         batch.push_text("SCENES", [28.0 * scale, 98.0 * scale], 2.4 * scale, accent);
-        for (index, candidate) in ValidationScenario::ALL.iter().copied().enumerate() {
+        for (index, candidate) in ValidationScenario::MENU.iter().copied().enumerate() {
             let bounds = layout.scenario_button(index);
             batch.push_quad(
                 bounds,
@@ -989,7 +989,7 @@ mod tests {
                     .map(|tool| layout.tool_button(tool)),
             )
             .chain(
-                ValidationScenario::ALL
+                ValidationScenario::MENU
                     .iter()
                     .enumerate()
                     .map(|(index, _)| layout.scenario_button(index)),
