@@ -27,6 +27,9 @@ use crate::{
     },
 };
 
+#[cfg(not(target_arch = "wasm32"))]
+use crate::body_floor_solver::{BenchmarkTimestampResources, GpuSolverInstrumentedSampleV4};
+
 const WORKGROUP_SIZE: u32 = 64;
 const VALIDATION_STEPS_PER_SUBMISSION: u32 = 64;
 const CACHE_VALUE_BYTES: u32 = 16;
@@ -289,6 +292,50 @@ impl GpuGeneratedContactGraph {
         self.persistence
             .encode_after_solver(encoder, parity, self.point_capacity, timestamps);
         self.parity.set(1 - parity);
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn encode_step_solver_instrumented(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        invalidate_previous_cache: bool,
+        query_set: &wgpu::QuerySet,
+    ) {
+        let parity = self.parity.get();
+        self.candidate
+            .encode_with_timestamp(encoder, &self.candidate_pipelines, None);
+        self.narrowphase
+            .encode(encoder, &self.narrowphase_pipelines);
+        self.persistence.encode_before_solver(
+            encoder,
+            parity,
+            invalidate_previous_cache,
+            self.point_capacity,
+            None,
+        );
+        self.solver.encode_step_instrumented(encoder, query_set, 0);
+        self.persistence
+            .encode_after_solver(encoder, parity, self.point_capacity, None);
+        self.parity.set(1 - parity);
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn solver_instrumented_query_count(&self) -> Result<u32, String> {
+        self.solver.instrumented_query_count()
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn decode_solver_instrumented_sample(
+        &self,
+        values: &[u64],
+        timestamp_period_nanoseconds: f32,
+        color_occupancy: &[u32],
+    ) -> Result<GpuSolverInstrumentedSampleV4, String> {
+        self.solver.decode_instrumented_sample(
+            values,
+            timestamp_period_nanoseconds,
+            color_occupancy,
+        )
     }
 
     pub(crate) fn dispatches_per_step(&self) -> u32 {
@@ -2129,6 +2176,7 @@ pub struct GpuGeneratedContactBenchmarkOutput {
     pub gpu_end_to_end_seconds: Option<Vec<f64>>,
     pub host_completion_seconds: Vec<f64>,
     pub cpu_encode_submit_seconds: Vec<f64>,
+    pub instrumented_solver_phases: Option<Vec<GpuSolverInstrumentedSampleV4>>,
     pub timestamp_period_nanoseconds: Option<f32>,
     pub dispatches_per_step: u32,
     pub allocated_bytes: u64,
@@ -2275,6 +2323,20 @@ async fn benchmark_gpu_generated_contacts_with_execution(
         });
         (query_set, resolve, readback)
     });
+    let instrumented_query_resources = if timestamps_available {
+        let query_count = graph.solver_instrumented_query_count()?;
+        (0..samples)
+            .map(|_| {
+                BenchmarkTimestampResources::new(
+                    &device,
+                    "physbox5_generated_contact_solver_subphase_queries",
+                    query_count,
+                )
+            })
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
 
     for _ in 0..warmup_steps {
         storage.upload_reset_data(&queue, &reset);
@@ -2312,6 +2374,23 @@ async fn benchmark_gpu_generated_contacts_with_execution(
             .poll(wgpu::PollType::Wait)
             .map_err(|error| format!("poll generated benchmark sample: {error}"))?;
         host_completion_seconds.push(started.elapsed().as_secs_f64());
+    }
+
+    if timestamps_available {
+        for resources in &instrumented_query_resources {
+            storage.upload_reset_data(&queue, &reset);
+            device
+                .poll(wgpu::PollType::Wait)
+                .map_err(|error| format!("poll generated solver subphase reset: {error}"))?;
+            let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("generated_contact_solver_subphase_sample"),
+            });
+            graph.encode_step_solver_instrumented(&mut encoder, true, &resources.query_set);
+            queue.submit([encoder.finish()]);
+            device
+                .poll(wgpu::PollType::Wait)
+                .map_err(|error| format!("poll generated solver subphase sample: {error}"))?;
+        }
     }
 
     let (
@@ -2360,6 +2439,26 @@ async fn benchmark_gpu_generated_contacts_with_execution(
         (None, None, None, None)
     };
 
+    let instrumented_solver_phases = if timestamps_available {
+        let period = queue.get_timestamp_period();
+        let color_occupancy = correctness
+            .pass_evidence
+            .coloring
+            .as_ref()
+            .map_or(&[][..], |coloring| coloring.color_occupancy.as_slice());
+        Some(
+            instrumented_query_resources
+                .iter()
+                .map(|resources| {
+                    let values = resources.resolve_and_map(&device, &queue)?;
+                    graph.decode_solver_instrumented_sample(&values, period, color_occupancy)
+                })
+                .collect::<Result<Vec<_>, String>>()?,
+        )
+    } else {
+        None
+    };
+
     Ok(GpuGeneratedContactBenchmarkOutput {
         adapter: diagnostics,
         source_scenario_hash: canonical_hash(scenario).map_err(|error| error.to_string())?,
@@ -2371,6 +2470,7 @@ async fn benchmark_gpu_generated_contacts_with_execution(
         gpu_end_to_end_seconds,
         host_completion_seconds,
         cpu_encode_submit_seconds,
+        instrumented_solver_phases,
         timestamp_period_nanoseconds,
         dispatches_per_step: graph.dispatches_per_step(),
         allocated_bytes: graph.allocated_bytes(),

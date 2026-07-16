@@ -653,6 +653,11 @@ tolerance, pacing rate, broadphase, liquid path, or CPU fallback is authorized.
   forward lane on the stack corpus, and the one-color degeneration remains
   byte-identical. Full 1,200-step quality and cost judgments remain in the
   evidence slice below.
+- [x] Separate color construction, stable compaction, active-color solve, and
+  zero-work indirect timing without changing the ordinary measured graph.
+  The benchmark retains complete-step timestamps and adds per-operation
+  diagnostic attribution; the clean matrix, not this mechanical checkpoint,
+  owns every cost conclusion.
 - [ ] Retain the seven accepted sources and add 32/64-stack depth diagnostics,
   both 100-body buckets, and deterministic construction/erase churn.
 - [ ] Publish complete color occupancy, compaction/recoloring cost, dispatch,

@@ -208,6 +208,15 @@ byte-identical in both policies. This records the comparator semantics and
 mechanical result only; the seven-source 1,200-step matrix, residuals, and cost
 decide whether either order is promising.
 
+Cost-instrumentation checkpoint, 2026-07-16: compact execution now separates
+the unchanged greedy color assignment from stable range compaction with an
+explicit GPU pass boundary. The generated-contact benchmark retains ordinary
+complete-step timing and adds a diagnostic per-operation lane that attributes
+color construction, compaction, active-color solve work, zero-work indirect
+launches, and the remaining solver graph. Assignments, stable index order,
+indirect arguments, and atomic overflow semantics remain unchanged. No cost or
+quality conclusion is recorded until the clean factorial is published.
+
 ## Fallback and reserve options
 
 - **Interim baseline swap.** Manifold block i2 improves structural preservation

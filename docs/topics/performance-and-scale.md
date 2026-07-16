@@ -733,6 +733,15 @@ for every indirect color pass. Timing claims remain deferred to the complete
 32/256/1K factorial; this checkpoint establishes byte-exact attribution and
 measurable work accounting only.
 
+S5.4b timing-instrumentation checkpoint, 2026-07-16: color assignment and
+stable range compaction are distinct compute passes so their GPU timestamps no
+longer require analytical subtraction. The qualified generated-contact
+benchmark preserves its ordinary complete-step samples and adds a separate
+diagnostic sample series for construction, compaction, active-color solve,
+empty indirect solve, and all other solver operations. Those instrumented
+subphases deliberately use per-operation pass boundaries and therefore
+explain cost; only the ordinary graph establishes complete performance.
+
 ## Regression and claim gates
 
 Before representative hardware is selected, store named measurements and

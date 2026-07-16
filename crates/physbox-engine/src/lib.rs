@@ -43,7 +43,8 @@ pub use body_floor_solver::{
 };
 #[cfg(not(target_arch = "wasm32"))]
 pub use body_floor_solver::{
-    GpuAuthoredGatherBenchmarkOutput, benchmark_gpu_authored_gather_topology,
+    GpuAuthoredGatherBenchmarkOutput, GpuSolverInstrumentedSampleV4,
+    benchmark_gpu_authored_gather_topology,
 };
 pub use body_state::{
     BODY_BYTES_PER_SLOT, BODY_COMMAND_BYTES, BODY_COMMAND_CAPACITY, BodySlotRegistry,

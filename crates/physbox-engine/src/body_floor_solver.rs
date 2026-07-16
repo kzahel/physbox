@@ -247,6 +247,7 @@ pub struct GpuGatherTopologyEvidence {
     pub radix_passes: u32,
     pub manifold_count_dispatches: u32,
     pub coloring_dispatches: u32,
+    pub color_compaction_dispatches: u32,
     pub canonical_scan_attempts: u64,
     pub capacities: Vec<CapacityRecordV1>,
 }
@@ -277,10 +278,13 @@ impl GpuGatherTopologyEvidence {
             GpuGatherTopology::CanonicalBodyScan => {
                 if self.edge_build_permuted
                     || self.dispatches
-                        != 4 + self.manifold_count_dispatches + self.coloring_dispatches
+                        != 4 + self.manifold_count_dispatches
+                            + self.coloring_dispatches
+                            + self.color_compaction_dispatches
                     || self.radix_passes != 0
                     || self.manifold_count_dispatches > 1
                     || self.coloring_dispatches > 1
+                    || self.color_compaction_dispatches > 1
                     || self.canonical_scan_attempts == 0
                 {
                     return Err("canonical gather topology has invalid work accounting".to_owned());
@@ -291,9 +295,11 @@ impl GpuGatherTopologyEvidence {
                     != 3 + self.radix_passes * 3
                         + self.manifold_count_dispatches
                         + self.coloring_dispatches
+                        + self.color_compaction_dispatches
                     || self.radix_passes == 0
                     || self.manifold_count_dispatches > 1
                     || self.coloring_dispatches > 1
+                    || self.color_compaction_dispatches > 1
                     || self.canonical_scan_attempts != 0
                 {
                     return Err("stable body-edge topology has invalid work accounting".to_owned());
@@ -331,8 +337,8 @@ pub struct GpuAuthoredGatherBenchmarkOutput {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-struct BenchmarkTimestampResources {
-    query_set: wgpu::QuerySet,
+pub(crate) struct BenchmarkTimestampResources {
+    pub(crate) query_set: wgpu::QuerySet,
     resolve: wgpu::Buffer,
     readback: wgpu::Buffer,
     count: u32,
@@ -340,7 +346,7 @@ struct BenchmarkTimestampResources {
 
 #[cfg(not(target_arch = "wasm32"))]
 impl BenchmarkTimestampResources {
-    fn new(device: &wgpu::Device, label: &'static str, count: u32) -> Self {
+    pub(crate) fn new(device: &wgpu::Device, label: &'static str, count: u32) -> Self {
         let query_set = device.create_query_set(&wgpu::QuerySetDescriptor {
             label: Some(label),
             ty: wgpu::QueryType::Timestamp,
@@ -367,7 +373,7 @@ impl BenchmarkTimestampResources {
         }
     }
 
-    fn resolve_and_map(
+    pub(crate) fn resolve_and_map(
         &self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
@@ -518,6 +524,18 @@ pub struct GpuFixedFloorPassEvidence {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GpuSolverInstrumentedSampleV4 {
+    pub color_construction_seconds: f64,
+    pub color_compaction_seconds: f64,
+    pub active_color_solve_seconds: f64,
+    pub empty_color_solve_seconds: f64,
+    pub other_solver_seconds: f64,
+    pub total_instrumented_seconds: f64,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Clone, Copy)]
 pub(crate) struct FixedFloorEvidenceLayout {
     pub(crate) point_count: u32,
@@ -556,6 +574,7 @@ enum PipelineKind {
     EdgeRadixScatter,
     EdgeRanges,
     Color,
+    ColorCompact,
     IntegrateVelocity,
     Prepare,
     Refresh,
@@ -589,7 +608,8 @@ impl PipelineKind {
             | Self::EdgeBuild
             | Self::EdgeRadixHistograms
             | Self::EdgeRadixScatter
-            | Self::Color => InstrumentedPhase::IndexBuild,
+            | Self::Color
+            | Self::ColorCompact => InstrumentedPhase::IndexBuild,
             Self::TopologyPrefix | Self::EdgeRadixPrefix | Self::EdgeRanges => {
                 InstrumentedPhase::OffsetConstruction
             }
@@ -620,6 +640,7 @@ struct Operation {
     workgroups: u32,
     indirect_offset: Option<u64>,
     parameter_index: u32,
+    color: Option<u32>,
 }
 
 #[derive(Clone, Copy)]
@@ -826,7 +847,9 @@ impl TopologyLayout {
             GpuGatherTopology::CanonicalBodyScan => 4,
             GpuGatherTopology::StableBodyEdge => 3 + self.radix_passes * 3,
         };
-        base + self.has_manifold_counts as u32 + self.has_coloring as u32
+        base + self.has_manifold_counts as u32
+            + self.has_coloring as u32
+            + self.has_compact_coloring as u32
     }
 }
 
@@ -852,6 +875,7 @@ pub(crate) struct GpuFixedFloorSolver {
     edge_radix_scatter_pipeline: wgpu::ComputePipeline,
     edge_ranges_pipeline: wgpu::ComputePipeline,
     color_pipeline: Option<wgpu::ComputePipeline>,
+    color_compact_pipeline: Option<wgpu::ComputePipeline>,
     integrate_velocity_pipeline: wgpu::ComputePipeline,
     prepare_pipeline: wgpu::ComputePipeline,
     refresh_pipeline: wgpu::ComputePipeline,
@@ -1193,6 +1217,30 @@ impl GpuFixedFloorSolver {
             }
             None => None,
         };
+        let color_compact_pipeline = match &color_layout {
+            Some(layout) if execution.color_schedule == GpuColorScheduleV4::CompactIndirect => {
+                let color_pipeline_layout =
+                    device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                        label: Some("physbox5_floor_color_compact_pipeline_layout"),
+                        bind_group_layouts: &[layout],
+                        push_constant_ranges: &[],
+                    });
+                Some(
+                    device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                        label: Some("floor_compact_colors"),
+                        layout: Some(&color_pipeline_layout),
+                        module: &shader,
+                        entry_point: Some("compact_colors"),
+                        compilation_options: wgpu::PipelineCompilationOptions {
+                            constants: &[],
+                            zero_initialize_workgroup_memory: false,
+                        },
+                        cache: None,
+                    }),
+                )
+            }
+            _ => None,
+        };
         let mut capacities = vec![
             capacity(
                 "body-motion-scratch",
@@ -1248,6 +1296,7 @@ impl GpuFixedFloorSolver {
             edge_radix_scatter_pipeline: pipeline("floor_edge_radix_scatter", "edge_radix_scatter"),
             edge_ranges_pipeline: pipeline("floor_edge_ranges", "build_edge_ranges"),
             color_pipeline,
+            color_compact_pipeline,
             integrate_velocity_pipeline: pipeline("floor_integrate_velocity", "integrate_velocity"),
             prepare_pipeline: pipeline("floor_prepare", "prepare"),
             refresh_pipeline: pipeline("floor_refresh", "refresh_contacts"),
@@ -1325,6 +1374,10 @@ impl GpuFixedFloorSolver {
                 .color_pipeline
                 .as_ref()
                 .expect("color operations require the comparator pipeline"),
+            PipelineKind::ColorCompact => self
+                .color_compact_pipeline
+                .as_ref()
+                .expect("color compaction operations require the compact pipeline"),
             PipelineKind::IntegrateVelocity => &self.integrate_velocity_pipeline,
             PipelineKind::Prepare => &self.prepare_pipeline,
             PipelineKind::Refresh => &self.refresh_pipeline,
@@ -1343,7 +1396,10 @@ impl GpuFixedFloorSolver {
                 .as_ref()
                 .expect("colored operations require the comparator pipeline"),
         });
-        let bind_group = if matches!(operation.pipeline, PipelineKind::Color) {
+        let bind_group = if matches!(
+            operation.pipeline,
+            PipelineKind::Color | PipelineKind::ColorCompact
+        ) {
             self.color_bind_ab
                 .as_ref()
                 .expect("color operations require the indirect-argument bind group")
@@ -1422,7 +1478,7 @@ impl GpuFixedFloorSolver {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    fn encode_step_instrumented(
+    pub(crate) fn encode_step_instrumented(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         query_set: &wgpu::QuerySet,
@@ -1440,6 +1496,59 @@ impl GpuFixedFloorSolver {
             });
             self.encode_operation(&mut pass, operation);
         }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn instrumented_query_count(&self) -> Result<u32, String> {
+        u32::try_from(self.operations.len())
+            .map_err(|_| "solver operation count exceeds u32".to_owned())?
+            .checked_mul(2)
+            .ok_or_else(|| "solver instrumented query count overflowed".to_owned())
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn decode_instrumented_sample(
+        &self,
+        values: &[u64],
+        timestamp_period_nanoseconds: f32,
+        color_occupancy: &[u32],
+    ) -> Result<GpuSolverInstrumentedSampleV4, String> {
+        if values.len() != self.operations.len() * 2 {
+            return Err("solver instrumented sample has the wrong query count".to_owned());
+        }
+        let seconds = |pair: &[u64]| {
+            pair[1].saturating_sub(pair[0]) as f64
+                * f64::from(timestamp_period_nanoseconds)
+                * 1.0e-9
+        };
+        let mut sample = GpuSolverInstrumentedSampleV4 {
+            color_construction_seconds: 0.0,
+            color_compaction_seconds: 0.0,
+            active_color_solve_seconds: 0.0,
+            empty_color_solve_seconds: 0.0,
+            other_solver_seconds: 0.0,
+            total_instrumented_seconds: 0.0,
+        };
+        for (operation, pair) in self.operations.iter().zip(values.chunks_exact(2)) {
+            let elapsed = seconds(pair);
+            match operation.pipeline {
+                PipelineKind::Color => sample.color_construction_seconds += elapsed,
+                PipelineKind::ColorCompact => sample.color_compaction_seconds += elapsed,
+                PipelineKind::Colored => {
+                    let color = operation
+                        .color
+                        .expect("colored solver operations record their color");
+                    if color_occupancy.get(color as usize).copied().unwrap_or(0) == 0 {
+                        sample.empty_color_solve_seconds += elapsed;
+                    } else {
+                        sample.active_color_solve_seconds += elapsed;
+                    }
+                }
+                _ => sample.other_solver_seconds += elapsed,
+            }
+            sample.total_instrumented_seconds += elapsed;
+        }
+        Ok(sample)
     }
 
     pub(crate) fn dispatches_per_step(&self) -> u32 {
@@ -1478,6 +1587,7 @@ impl GpuFixedFloorSolver {
             radix_passes: self.topology_layout.radix_passes,
             manifold_count_dispatches: self.topology_layout.has_manifold_counts as u32,
             coloring_dispatches: self.topology_layout.has_coloring as u32,
+            color_compaction_dispatches: self.topology_layout.has_compact_coloring as u32,
             canonical_scan_attempts: if self.topology_layout.kind
                 == GpuGatherTopology::CanonicalBodyScan
             {
@@ -2545,6 +2655,16 @@ fn topology_operations(
             MotionDirection::AtoB,
             1,
         );
+        if topology.has_compact_coloring {
+            push_operation(
+                parameters,
+                operations,
+                colors,
+                PipelineKind::ColorCompact,
+                MotionDirection::AtoB,
+                1,
+            );
+        }
     }
 }
 
@@ -2707,6 +2827,7 @@ fn push_operation(
     workgroups: u32,
 ) {
     let parameter_index = parameters.len() as u32;
+    let color = matches!(pipeline, PipelineKind::Colored).then_some(parameter.uints0[3]);
     parameters.push(parameter);
     operations.push(Operation {
         pipeline,
@@ -2714,6 +2835,7 @@ fn push_operation(
         workgroups,
         indirect_offset: None,
         parameter_index,
+        color,
     });
 }
 
@@ -2726,6 +2848,7 @@ fn push_indirect_operation(
     indirect_offset: u64,
 ) {
     let parameter_index = parameters.len() as u32;
+    let color = matches!(pipeline, PipelineKind::Colored).then_some(parameter.uints0[3]);
     parameters.push(parameter);
     operations.push(Operation {
         pipeline,
@@ -2733,6 +2856,7 @@ fn push_indirect_operation(
         workgroups: 0,
         indirect_offset: Some(indirect_offset),
         parameter_index,
+        color,
     });
 }
 
@@ -3167,7 +3291,7 @@ mod tests {
         let compact_execution = GpuSolverExecutionV4::compact_colored_experiment(true, true);
         let (_, compact_operations) =
             operations(&scenario, 2, 2, compact_topology, false, compact_execution);
-        assert_eq!(compact_operations.len(), colored_operations.len());
+        assert_eq!(compact_operations.len(), colored_operations.len() + 1);
         assert_eq!(
             compact_operations
                 .iter()

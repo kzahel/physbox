@@ -22,6 +22,10 @@ fn generated_contact_benchmark_uses_qualified_split_scopes() {
     assert_eq!(benchmark.dispatches_per_step, 100);
     assert_eq!(benchmark.host_completion_seconds.len(), 2);
     assert_eq!(benchmark.cpu_encode_submit_seconds.len(), 2);
+    assert_eq!(
+        benchmark.instrumented_solver_phases.as_ref().map(Vec::len),
+        benchmark.timestamp_period_nanoseconds.map(|_| 2)
+    );
     match (
         benchmark.gpu_collision_seconds,
         benchmark.gpu_end_to_end_seconds,
@@ -40,6 +44,31 @@ fn generated_contact_benchmark_uses_qualified_split_scopes() {
         }
         (None, None, None) => {}
         mismatch => panic!("inconsistent generated timestamp evidence: {mismatch:?}"),
+    }
+}
+
+#[test]
+fn compact_coloring_benchmark_separates_construction_compaction_and_empty_work() {
+    let mut scenario = p5_2_generated_performance_scenario(32).unwrap();
+    scenario.settings.iterations = 1;
+    let benchmark = pollster::block_on(benchmark_gpu_generated_contact_experiment(
+        &scenario,
+        1,
+        1,
+        GpuSolverExecutionV4::compact_colored_experiment(true, true),
+    ))
+    .unwrap();
+    let coloring = benchmark.correctness.pass_evidence.coloring.unwrap();
+    assert!(coloring.active_color_passes > 0);
+    assert!(coloring.empty_indirect_launches > 0);
+    if let Some(samples) = benchmark.instrumented_solver_phases {
+        assert_eq!(samples.len(), 1);
+        let sample = &samples[0];
+        assert!(sample.color_construction_seconds > 0.0);
+        assert!(sample.color_compaction_seconds > 0.0);
+        assert!(sample.active_color_solve_seconds > 0.0);
+        assert!(sample.empty_color_solve_seconds > 0.0);
+        assert!(sample.other_solver_seconds > 0.0);
     }
 }
 

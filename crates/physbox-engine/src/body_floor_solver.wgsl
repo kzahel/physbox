@@ -249,8 +249,16 @@ fn color_contacts(@builtin(global_invocation_id) id: vec3u) {
         }
     }
     atomicStore(&topology[params.uints1.y], color_count);
-    if (!compact) { return; }
+}
 
+@compute @workgroup_size(1)
+fn compact_colors(@builtin(global_invocation_id) id: vec3u) {
+    if (id.x != 0u) { return; }
+    let manifold_units = (params.uints1.w & 2u) != 0u;
+    let counts_base = params.uints1.y + 1u;
+    let offsets_base = counts_base + params.uints1.z;
+    let cursors_base = offsets_base + params.uints1.z + 1u;
+    let indices_base = cursors_base + params.uints1.z;
     let overflowed = atomicLoad(&topology[params.uints1.x]) != 0u;
     var running = 0u;
     for (var color = 0u; color < params.uints1.z; color += 1u) {

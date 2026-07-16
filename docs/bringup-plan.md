@@ -176,6 +176,12 @@ substep/iteration parity covers i1/i2/i4 without readback, replays exactly, and
 is not a silent forward-order alias. The depth/degree/churn and complete cost
 matrix is next; product selection remains unchanged.
 
+S5.4b cost-instrumentation checkpoint, 2026-07-16: greedy coloring and stable
+compaction now have distinct GPU pass/timestamp identities. Complete-step
+timing remains an ordinary graph measurement; a separate diagnostic lane
+attributes construction, compaction, active solve, and empty indirect work.
+The clean depth/degree/churn factorial remains next and no solver is promoted.
+
 The first S3.5a representation checkpoint implements the stable pair-slot
 comparator with full feature verification and deterministic generational slot
 recycling. Its correctness/adversarial gates pass and its combined
