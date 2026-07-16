@@ -70,6 +70,22 @@ fn compact_coloring_benchmark_separates_construction_compaction_and_empty_work()
         assert!(sample.empty_color_solve_seconds > 0.0);
         assert!(sample.other_solver_seconds > 0.0);
     }
+
+    scenario.settings.iterations = 4;
+    let fixed = pollster::block_on(benchmark_gpu_generated_contact_experiment(
+        &scenario,
+        1,
+        1,
+        GpuSolverExecutionV4::colored_experiment(true, true),
+    ))
+    .unwrap();
+    if let Some(samples) = fixed.instrumented_solver_phases {
+        assert_eq!(samples.len(), 1);
+        assert!(samples[0].color_construction_seconds > 0.0);
+        assert_eq!(samples[0].color_compaction_seconds, 0.0);
+        assert!(samples[0].active_color_solve_seconds > 0.0);
+        assert!(samples[0].empty_color_solve_seconds > 0.0);
+    }
 }
 
 #[test]

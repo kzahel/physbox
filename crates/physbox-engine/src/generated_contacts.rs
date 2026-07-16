@@ -300,8 +300,9 @@ impl GpuGeneratedContactGraph {
         &self,
         encoder: &mut wgpu::CommandEncoder,
         invalidate_previous_cache: bool,
-        query_set: &wgpu::QuerySet,
-    ) {
+        query_sets: &[&wgpu::QuerySet],
+        color_occupancy: &[u32],
+    ) -> Result<(), String> {
         let parity = self.parity.get();
         self.candidate
             .encode_with_timestamp(encoder, &self.candidate_pipelines, None);
@@ -314,15 +315,21 @@ impl GpuGeneratedContactGraph {
             self.point_capacity,
             None,
         );
-        self.solver.encode_step_instrumented(encoder, query_set, 0);
+        self.solver
+            .encode_step_solver_phase_instrumented(encoder, query_sets, color_occupancy)?;
         self.persistence
             .encode_after_solver(encoder, parity, self.point_capacity, None);
         self.parity.set(1 - parity);
+        Ok(())
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    fn solver_instrumented_query_count(&self) -> Result<u32, String> {
-        self.solver.instrumented_query_count()
+    fn solver_instrumented_query_counts(
+        &self,
+        color_occupancy: &[u32],
+    ) -> Result<Vec<u32>, String> {
+        self.solver
+            .solver_phase_instrumented_query_counts(color_occupancy)
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -2375,15 +2382,25 @@ async fn benchmark_gpu_generated_contacts_with_execution(
         });
         (query_set, resolve, readback)
     });
+    let instrumented_color_occupancy = correctness
+        .pass_evidence
+        .coloring
+        .as_ref()
+        .map_or_else(Vec::new, |coloring| coloring.color_occupancy.clone());
     let instrumented_query_resources = if timestamps_available {
-        let query_count = graph.solver_instrumented_query_count()?;
+        let query_counts = graph.solver_instrumented_query_counts(&instrumented_color_occupancy)?;
         (0..samples)
             .map(|_| {
-                BenchmarkTimestampResources::new(
-                    &device,
-                    "physbox5_generated_contact_solver_subphase_queries",
-                    query_count,
-                )
+                query_counts
+                    .iter()
+                    .map(|&query_count| {
+                        BenchmarkTimestampResources::new(
+                            &device,
+                            "physbox5_generated_contact_solver_subphase_queries",
+                            query_count,
+                        )
+                    })
+                    .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>()
     } else {
@@ -2437,7 +2454,16 @@ async fn benchmark_gpu_generated_contacts_with_execution(
             let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("generated_contact_solver_subphase_sample"),
             });
-            graph.encode_step_solver_instrumented(&mut encoder, true, &resources.query_set);
+            let query_sets = resources
+                .iter()
+                .map(|resources| &resources.query_set)
+                .collect::<Vec<_>>();
+            graph.encode_step_solver_instrumented(
+                &mut encoder,
+                true,
+                &query_sets,
+                &instrumented_color_occupancy,
+            )?;
             queue.submit([encoder.finish()]);
             device
                 .poll(wgpu::PollType::Wait)
@@ -2493,17 +2519,19 @@ async fn benchmark_gpu_generated_contacts_with_execution(
 
     let instrumented_solver_phases = if timestamps_available {
         let period = queue.get_timestamp_period();
-        let color_occupancy = correctness
-            .pass_evidence
-            .coloring
-            .as_ref()
-            .map_or(&[][..], |coloring| coloring.color_occupancy.as_slice());
         Some(
             instrumented_query_resources
                 .iter()
                 .map(|resources| {
-                    let values = resources.resolve_and_map(&device, &queue)?;
-                    graph.decode_solver_instrumented_sample(&values, period, color_occupancy)
+                    let mut values = Vec::new();
+                    for resources in resources {
+                        values.extend(resources.resolve_and_map(&device, &queue)?);
+                    }
+                    graph.decode_solver_instrumented_sample(
+                        &values,
+                        period,
+                        &instrumented_color_occupancy,
+                    )
                 })
                 .collect::<Result<Vec<_>, String>>()?,
         )

@@ -211,11 +211,13 @@ decide whether either order is promising.
 Cost-instrumentation checkpoint, 2026-07-16: compact execution now separates
 the unchanged greedy color assignment from stable range compaction with an
 explicit GPU pass boundary. The generated-contact benchmark retains ordinary
-complete-step timing and adds a diagnostic per-operation lane that attributes
-color construction, compaction, active-color solve work, zero-work indirect
-launches, and the remaining solver graph. Assignments, stable index order,
-indirect arguments, and atomic overflow semantics remain unchanged. No cost or
-quality conclusion is recorded until the clean factorial is published.
+complete-step timing and adds a diagnostic ordered phase-group lane that
+attributes color construction, compaction, active-color solve work, zero-work
+indirect launches, and the remaining solver graph. Adjacent operations already
+assigned to the same declared phase share one timestamped pass; phase changes,
+operation order, dispatches, assignments, stable index order, indirect
+arguments, and atomic overflow semantics remain unchanged. No cost or quality
+conclusion is recorded until the clean factorial is published.
 
 Evidence-automation checkpoint, 2026-07-16: one bounded S5.4b runner freezes
 the fixed/compact point i4 controls and manifold forward/alternating i1/i2/i4
@@ -238,6 +240,17 @@ lets the factorial preserve the exact first failing step and permanent
 reproducer instead of aborting or allowing a later clean checkpoint to hide a
 transient capacity failure. The clean package and its conclusions remain
 pending.
+
+Timestamp-budget checkpoint, 2026-07-16: the next clean-at-start attempt
+completed all seven accepted sources, all four diagnostics, and deterministic
+churn, then rejected the first performance row before measurement because the
+fixed-grid i4 control requested 4,660 queries from one WGPU query set; the
+portable limit is 4,096. Diagnostic timestamps now partition safely across
+bounded query sets and, more importantly, group only consecutive operations of
+the same declared phase. The exact fixed-grid i4 regression completes and
+decodes construction, active, empty, and other solver time without the prior
+2,330-pass measurement explosion. Ordinary complete-step timing is still a
+separate unchanged graph. The clean publishable rerun remains pending.
 
 ## Fallback and reserve options
 

@@ -656,8 +656,11 @@ tolerance, pacing rate, broadphase, liquid path, or CPU fallback is authorized.
 - [x] Separate color construction, stable compaction, active-color solve, and
   zero-work indirect timing without changing the ordinary measured graph.
   The benchmark retains complete-step timestamps and adds per-operation
-  diagnostic attribution; the clean matrix, not this mechanical checkpoint,
-  owns every cost conclusion.
+  phase classification. Consecutive operations of one phase share a bounded
+  timestamped pass, and samples partition safely at WGPU's 4,096-query limit;
+  this avoids the fixed-grid i4 control's former 4,660-query rejection and
+  2,330-pass diagnostic explosion. The clean matrix, not this mechanical
+  checkpoint, owns every cost conclusion.
 - [ ] Retain the seven accepted sources and add 32/64-stack depth diagnostics,
   both 100-body buckets, and deterministic construction/erase churn.
   The atomic runner and shared diagnostic sources are implemented: 32/64 are

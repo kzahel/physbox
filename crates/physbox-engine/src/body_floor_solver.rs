@@ -19,6 +19,8 @@ const PARAMETER_STRIDE: usize = 256;
 const MAX_COLORS: u32 = 32;
 const COLOR_OFFSET_COUNT: u32 = MAX_COLORS + 1;
 const COLOR_INDIRECT_WORDS: u32 = MAX_COLORS * 3;
+#[cfg(not(target_arch = "wasm32"))]
+const MAX_INSTRUMENTED_QUERIES_PER_SET: u32 = 4_096;
 
 pub const GPU_SOLVER_EXECUTION_VERSION: u32 = 4;
 
@@ -595,6 +597,24 @@ enum InstrumentedPhase {
     OffsetConstruction,
     Gather,
     Solve,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum SolverInstrumentedPhase {
+    ColorConstruction,
+    ColorCompaction,
+    ActiveColorSolve,
+    EmptyColorSolve,
+    OtherSolver,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Clone, Copy)]
+struct SolverInstrumentedGroup {
+    phase: SolverInstrumentedPhase,
+    start: usize,
+    end: usize,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -1481,21 +1501,36 @@ impl GpuFixedFloorSolver {
     pub(crate) fn encode_step_instrumented(
         &self,
         encoder: &mut wgpu::CommandEncoder,
-        query_set: &wgpu::QuerySet,
-        base: u32,
-    ) {
-        for (index, operation) in self.operations.iter().enumerate() {
-            let beginning = base + index as u32 * 2;
-            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("physbox5_authored_gather_benchmark_subphase"),
-                timestamp_writes: Some(wgpu::ComputePassTimestampWrites {
-                    query_set,
-                    beginning_of_pass_write_index: Some(beginning),
-                    end_of_pass_write_index: Some(beginning + 1),
-                }),
-            });
-            self.encode_operation(&mut pass, operation);
+        query_sets: &[&wgpu::QuerySet],
+    ) -> Result<(), String> {
+        let query_counts = self.instrumented_query_counts()?;
+        if query_sets.len() != query_counts.len() {
+            return Err("solver instrumented query-set partition is incomplete".to_owned());
         }
+        let mut operation_offset = 0_usize;
+        for (query_set, query_count) in query_sets.iter().zip(query_counts) {
+            let operation_count = query_count as usize / 2;
+            let end = operation_offset
+                .checked_add(operation_count)
+                .ok_or_else(|| "solver instrumented operation partition overflowed".to_owned())?;
+            for (index, operation) in self.operations[operation_offset..end].iter().enumerate() {
+                let beginning = index as u32 * 2;
+                let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: Some("physbox5_authored_gather_benchmark_subphase"),
+                    timestamp_writes: Some(wgpu::ComputePassTimestampWrites {
+                        query_set,
+                        beginning_of_pass_write_index: Some(beginning),
+                        end_of_pass_write_index: Some(beginning + 1),
+                    }),
+                });
+                self.encode_operation(&mut pass, operation);
+            }
+            operation_offset = end;
+        }
+        if operation_offset != self.operations.len() {
+            return Err("solver instrumented query-set partition omitted operations".to_owned());
+        }
+        Ok(())
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -1507,13 +1542,125 @@ impl GpuFixedFloorSolver {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn instrumented_query_counts(&self) -> Result<Vec<u32>, String> {
+        let mut remaining = self.instrumented_query_count()?;
+        let mut counts = Vec::new();
+        while remaining != 0 {
+            let count = remaining.min(MAX_INSTRUMENTED_QUERIES_PER_SET);
+            if count % 2 != 0 {
+                return Err("solver instrumented query partition split an operation".to_owned());
+            }
+            counts.push(count);
+            remaining -= count;
+        }
+        Ok(counts)
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn solver_instrumented_groups(&self, color_occupancy: &[u32]) -> Vec<SolverInstrumentedGroup> {
+        let phase = |operation: &Operation| match operation.pipeline {
+            PipelineKind::Color => SolverInstrumentedPhase::ColorConstruction,
+            PipelineKind::ColorCompact => SolverInstrumentedPhase::ColorCompaction,
+            PipelineKind::Colored => {
+                let color = operation
+                    .color
+                    .expect("colored solver operations record their color");
+                if color_occupancy.get(color as usize).copied().unwrap_or(0) == 0 {
+                    SolverInstrumentedPhase::EmptyColorSolve
+                } else {
+                    SolverInstrumentedPhase::ActiveColorSolve
+                }
+            }
+            _ => SolverInstrumentedPhase::OtherSolver,
+        };
+        let mut groups = Vec::<SolverInstrumentedGroup>::new();
+        for (index, operation) in self.operations.iter().enumerate() {
+            let operation_phase = phase(operation);
+            if let Some(group) = groups.last_mut()
+                && group.phase == operation_phase
+            {
+                group.end = index + 1;
+                continue;
+            }
+            groups.push(SolverInstrumentedGroup {
+                phase: operation_phase,
+                start: index,
+                end: index + 1,
+            });
+        }
+        groups
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn solver_phase_instrumented_query_counts(
+        &self,
+        color_occupancy: &[u32],
+    ) -> Result<Vec<u32>, String> {
+        let mut remaining = u32::try_from(self.solver_instrumented_groups(color_occupancy).len())
+            .map_err(|_| "solver instrumented phase-group count exceeds u32".to_owned())?
+            .checked_mul(2)
+            .ok_or_else(|| "solver instrumented phase-group query count overflowed".to_owned())?;
+        let mut counts = Vec::new();
+        while remaining != 0 {
+            let count = remaining.min(MAX_INSTRUMENTED_QUERIES_PER_SET);
+            if count % 2 != 0 {
+                return Err("solver phase query partition split a group".to_owned());
+            }
+            counts.push(count);
+            remaining -= count;
+        }
+        Ok(counts)
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn encode_step_solver_phase_instrumented(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        query_sets: &[&wgpu::QuerySet],
+        color_occupancy: &[u32],
+    ) -> Result<(), String> {
+        let groups = self.solver_instrumented_groups(color_occupancy);
+        let query_counts = self.solver_phase_instrumented_query_counts(color_occupancy)?;
+        if query_sets.len() != query_counts.len() {
+            return Err("solver phase query-set partition is incomplete".to_owned());
+        }
+        let mut group_offset = 0_usize;
+        for (query_set, query_count) in query_sets.iter().zip(query_counts) {
+            let group_count = query_count as usize / 2;
+            let end = group_offset
+                .checked_add(group_count)
+                .ok_or_else(|| "solver instrumented phase partition overflowed".to_owned())?;
+            for (index, group) in groups[group_offset..end].iter().enumerate() {
+                let beginning = index as u32 * 2;
+                let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: Some("physbox5_solver_phase_benchmark"),
+                    timestamp_writes: Some(wgpu::ComputePassTimestampWrites {
+                        query_set,
+                        beginning_of_pass_write_index: Some(beginning),
+                        end_of_pass_write_index: Some(beginning + 1),
+                    }),
+                });
+                for operation in &self.operations[group.start..group.end] {
+                    self.encode_operation(&mut pass, operation);
+                }
+            }
+            group_offset = end;
+        }
+        if group_offset != groups.len() {
+            return Err("solver phase query-set partition omitted groups".to_owned());
+        }
+        Ok(())
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn decode_instrumented_sample(
         &self,
         values: &[u64],
         timestamp_period_nanoseconds: f32,
         color_occupancy: &[u32],
     ) -> Result<GpuSolverInstrumentedSampleV4, String> {
-        if values.len() != self.operations.len() * 2 {
+        let groups = self.solver_instrumented_groups(color_occupancy);
+        if values.len() != groups.len() * 2 {
             return Err("solver instrumented sample has the wrong query count".to_owned());
         }
         let seconds = |pair: &[u64]| {
@@ -1529,22 +1676,22 @@ impl GpuFixedFloorSolver {
             other_solver_seconds: 0.0,
             total_instrumented_seconds: 0.0,
         };
-        for (operation, pair) in self.operations.iter().zip(values.chunks_exact(2)) {
+        for (group, pair) in groups.iter().zip(values.chunks_exact(2)) {
             let elapsed = seconds(pair);
-            match operation.pipeline {
-                PipelineKind::Color => sample.color_construction_seconds += elapsed,
-                PipelineKind::ColorCompact => sample.color_compaction_seconds += elapsed,
-                PipelineKind::Colored => {
-                    let color = operation
-                        .color
-                        .expect("colored solver operations record their color");
-                    if color_occupancy.get(color as usize).copied().unwrap_or(0) == 0 {
-                        sample.empty_color_solve_seconds += elapsed;
-                    } else {
-                        sample.active_color_solve_seconds += elapsed;
-                    }
+            match group.phase {
+                SolverInstrumentedPhase::ColorConstruction => {
+                    sample.color_construction_seconds += elapsed;
                 }
-                _ => sample.other_solver_seconds += elapsed,
+                SolverInstrumentedPhase::ColorCompaction => {
+                    sample.color_compaction_seconds += elapsed;
+                }
+                SolverInstrumentedPhase::ActiveColorSolve => {
+                    sample.active_color_solve_seconds += elapsed;
+                }
+                SolverInstrumentedPhase::EmptyColorSolve => {
+                    sample.empty_color_solve_seconds += elapsed;
+                }
+                SolverInstrumentedPhase::OtherSolver => sample.other_solver_seconds += elapsed,
             }
             sample.total_instrumented_seconds += elapsed;
         }
@@ -1718,14 +1865,10 @@ pub async fn benchmark_gpu_authored_gather_topology(
     let reset = crate::body_state::GpuBodyResetData::new(body_count, &scenario.bodies)?;
     let solver =
         GpuFixedFloorSolver::new_authored_with_topology(&device, &storage, scenario, topology)?;
-    let operation_count = u32::try_from(solver.operations.len())
-        .map_err(|_| "authored gather operation count exceeds u32".to_owned())?;
     let total_query_count = samples
         .checked_mul(2)
         .ok_or_else(|| "authored gather total query count overflowed".to_owned())?;
-    let instrumented_queries_per_sample = operation_count
-        .checked_mul(2)
-        .ok_or_else(|| "authored gather subphase query count overflowed".to_owned())?;
+    let instrumented_query_counts = solver.instrumented_query_counts()?;
     let total_query_resources = timestamps_available.then(|| {
         BenchmarkTimestampResources::new(
             &device,
@@ -1736,11 +1879,16 @@ pub async fn benchmark_gpu_authored_gather_topology(
     let instrumented_query_resources = if timestamps_available {
         (0..samples)
             .map(|_| {
-                BenchmarkTimestampResources::new(
-                    &device,
-                    "physbox5_authored_gather_subphase_queries",
-                    instrumented_queries_per_sample,
-                )
+                instrumented_query_counts
+                    .iter()
+                    .map(|&query_count| {
+                        BenchmarkTimestampResources::new(
+                            &device,
+                            "physbox5_authored_gather_subphase_queries",
+                            query_count,
+                        )
+                    })
+                    .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>()
     } else {
@@ -1800,7 +1948,11 @@ pub async fn benchmark_gpu_authored_gather_topology(
             let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("physbox5_authored_gather_subphase_sample"),
             });
-            solver.encode_step_instrumented(&mut encoder, &resources.query_set, 0);
+            let query_sets = resources
+                .iter()
+                .map(|resources| &resources.query_set)
+                .collect::<Vec<_>>();
+            solver.encode_step_instrumented(&mut encoder, &query_sets)?;
             queue.submit([encoder.finish()]);
             device
                 .poll(wgpu::PollType::Wait)
@@ -1828,7 +1980,10 @@ pub async fn benchmark_gpu_authored_gather_topology(
         let mut gather = Vec::with_capacity(samples as usize);
         let mut solve = Vec::with_capacity(samples as usize);
         for resources in &instrumented_query_resources {
-            let sample_values = resources.resolve_and_map(&device, &queue)?;
+            let mut sample_values = Vec::new();
+            for resources in resources {
+                sample_values.extend(resources.resolve_and_map(&device, &queue)?);
+            }
             let mut totals = [0.0_f64; 4];
             for (operation, pair) in solver.operations.iter().zip(sample_values.chunks_exact(2)) {
                 let phase = match operation.pipeline.instrumented_phase() {
