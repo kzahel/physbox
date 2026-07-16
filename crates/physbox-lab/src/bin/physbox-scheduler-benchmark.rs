@@ -304,6 +304,9 @@ fn parse_arguments() -> Result<Arguments, String> {
             "--parallel-compaction" => {
                 scheduling_policy = GpuSolverSchedulingPolicyV1::PARALLEL_COMPACTION;
             }
+            "--parallel-coloring" => {
+                scheduling_policy = GpuSolverSchedulingPolicyV1::PARALLEL_COLORING;
+            }
             _ => return Err(format!("unknown scheduler benchmark argument {argument}")),
         }
     }

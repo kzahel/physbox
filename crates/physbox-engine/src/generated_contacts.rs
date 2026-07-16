@@ -1424,6 +1424,7 @@ impl GpuGeneratedContactOutput {
                 match coloring.scheduling_policy.color_maintenance {
                     crate::GpuColorMaintenanceV1::FullRebuild
                     | crate::GpuColorMaintenanceV1::FullRebuildParallelCompaction
+                    | crate::GpuColorMaintenanceV1::FullRebuildParallelSpeculative
                         if coloring.retained_color_units != 0
                             || coloring.new_color_units != colored_units
                             || coloring.recolored_color_units != 0
@@ -1433,7 +1434,20 @@ impl GpuGeneratedContactOutput {
                     }
                     crate::GpuColorMaintenanceV1::StablePairIncremental => {}
                     crate::GpuColorMaintenanceV1::FullRebuild
-                    | crate::GpuColorMaintenanceV1::FullRebuildParallelCompaction => {}
+                    | crate::GpuColorMaintenanceV1::FullRebuildParallelCompaction
+                    | crate::GpuColorMaintenanceV1::FullRebuildParallelSpeculative => {}
+                }
+                let parallel = coloring.scheduling_policy.color_maintenance
+                    == crate::GpuColorMaintenanceV1::FullRebuildParallelSpeculative;
+                if parallel
+                    != (coloring.parallel_round_limit != 0
+                        || coloring.parallel_rounds_used != 0
+                        || coloring.parallel_conflict_retries != 0
+                        || coloring.parallel_uncolored_units != 0)
+                    || coloring.parallel_rounds_used > coloring.parallel_round_limit
+                    || (!coloring.overflowed && coloring.parallel_uncolored_units != 0)
+                {
+                    return Err("generated parallel-coloring evidence is inconsistent".to_owned());
                 }
                 match coloring.schedule {
                     crate::GpuColorScheduleV4::CompactIndirect => {

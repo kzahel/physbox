@@ -255,6 +255,140 @@ fn color_contacts(@builtin(global_invocation_id) id: vec3u) {
     atomicStore(&topology[params.uints1.y], color_count);
 }
 
+const PARALLEL_COLOR_UNCOLORED: u32 = 0xfffffffeu;
+const PARALLEL_COLOR_INVALID: u32 = 0xffffffffu;
+const PARALLEL_COLOR_PROPOSAL: u32 = 0x80000000u;
+
+fn parallel_color_seed(point: PointInput) -> u32 {
+    var value = point.ids.x * 0x9e3779b9u;
+    value ^= point.ids.y * 0x85ebca6bu;
+    value ^= bitcast<u32>(point.padding1.x) * 0xc2b2ae35u;
+    value ^= bitcast<u32>(point.padding1.y) * 0x27d4eb2fu;
+    value ^= value >> 16u;
+    value *= 0x7feb352du;
+    value ^= value >> 15u;
+    return value;
+}
+
+@compute @workgroup_size(64)
+fn initialize_parallel_colors(@builtin(global_invocation_id) id: vec3u) {
+    let point_index = id.x;
+    if (point_index >= params.uints0.y) { return; }
+    let point = point_inputs[point_index];
+    let manifold_units = (params.uints1.w & 2u) != 0u;
+    if (!valid_point(point)) {
+        atomicStore(&topology[params.uints0.z + point_index], PARALLEL_COLOR_INVALID);
+        return;
+    }
+    atomicStore(&topology[params.uints0.z + point_index], PARALLEL_COLOR_UNCOLORED);
+    if (manifold_units && point.ids.w != 0u) {
+        var paired = false;
+        if (point_index > 0u && point.ids.w == 1u) {
+            let previous = point_inputs[point_index - 1u];
+            paired = valid_point(previous) && previous.ids.x == point.ids.x &&
+                previous.ids.y == point.ids.y && previous.ids.z == point.ids.z &&
+                previous.ids.w == 0u;
+        }
+        if (!paired) {
+            atomicStore(&topology[params.uints1.x], 1u);
+        }
+    }
+}
+
+@compute @workgroup_size(64)
+fn clear_parallel_color_winners(@builtin(global_invocation_id) id: vec3u) {
+    let winner_count = params.uints0.x * params.uints1.z;
+    if (id.x >= winner_count) { return; }
+    let winners_base = bitcast<u32>(params.floats0.x);
+    atomicStore(&topology[winners_base + id.x], 0xffffffffu);
+}
+
+@compute @workgroup_size(64)
+fn propose_parallel_colors(@builtin(global_invocation_id) id: vec3u) {
+    let point_index = id.x;
+    if (point_index >= params.uints0.y) { return; }
+    let point = point_inputs[point_index];
+    let manifold_units = (params.uints1.w & 2u) != 0u;
+    if (!valid_point(point) || (manifold_units && point.ids.w != 0u)) { return; }
+    let assignment_index = params.uints0.z + point_index;
+    if (atomicLoad(&topology[assignment_index]) != PARALLEL_COLOR_UNCOLORED) { return; }
+    let used = atomicLoad(&topology[params.uints0.w + point.ids.x]) |
+        atomicLoad(&topology[params.uints0.w + point.ids.y]);
+    let start = parallel_color_seed(point) & 3u;
+    var selected = PARALLEL_COLOR_INVALID;
+    for (var offset = 0u; offset < params.uints1.z; offset += 1u) {
+        let color = (start + offset) & 31u;
+        if ((used & (1u << color)) == 0u) {
+            selected = color;
+            break;
+        }
+    }
+    if (selected >= params.uints1.z) {
+        atomicStore(&topology[params.uints1.x], 1u);
+        return;
+    }
+    atomicStore(&topology[assignment_index], PARALLEL_COLOR_PROPOSAL | selected);
+    let winners_base = bitcast<u32>(params.floats0.x);
+    atomicMin(&topology[winners_base + point.ids.x * params.uints1.z + selected], point_index);
+    atomicMin(&topology[winners_base + point.ids.y * params.uints1.z + selected], point_index);
+}
+
+@compute @workgroup_size(64)
+fn resolve_parallel_colors(@builtin(global_invocation_id) id: vec3u) {
+    let point_index = id.x;
+    if (point_index >= params.uints0.y) { return; }
+    let point = point_inputs[point_index];
+    let manifold_units = (params.uints1.w & 2u) != 0u;
+    if (!valid_point(point) || (manifold_units && point.ids.w != 0u)) { return; }
+    let assignment_index = params.uints0.z + point_index;
+    let proposal = atomicLoad(&topology[assignment_index]);
+    if ((proposal & PARALLEL_COLOR_PROPOSAL) == 0u ||
+            proposal == PARALLEL_COLOR_UNCOLORED ||
+            proposal == PARALLEL_COLOR_INVALID) {
+        return;
+    }
+    let color = proposal & 31u;
+    let winners_base = bitcast<u32>(params.floats0.x);
+    let winner_a = atomicLoad(
+        &topology[winners_base + point.ids.x * params.uints1.z + color]);
+    let winner_b = atomicLoad(
+        &topology[winners_base + point.ids.y * params.uints1.z + color]);
+    let stats_base = bitcast<u32>(params.floats0.y);
+    if (winner_a == point_index && winner_b == point_index) {
+        atomicStore(&topology[assignment_index], color);
+        if (manifold_units && point_index + 1u < params.uints0.y) {
+            let next = point_inputs[point_index + 1u];
+            if (valid_point(next) && next.ids.x == point.ids.x &&
+                    next.ids.y == point.ids.y && next.ids.z == point.ids.z &&
+                    next.ids.w == 1u) {
+                atomicStore(&topology[assignment_index + 1u], color);
+            }
+        }
+        let bit = 1u << color;
+        atomicOr(&topology[params.uints0.w + point.ids.x], bit);
+        atomicOr(&topology[params.uints0.w + point.ids.y], bit);
+        atomicMax(&topology[params.uints1.y], color + 1u);
+        atomicMax(&topology[stats_base + 2u], bitcast<u32>(params.floats0.z) + 1u);
+    } else {
+        atomicStore(&topology[assignment_index], PARALLEL_COLOR_UNCOLORED);
+        atomicAdd(&topology[stats_base], 1u);
+    }
+}
+
+@compute @workgroup_size(64)
+fn finalize_parallel_colors(@builtin(global_invocation_id) id: vec3u) {
+    let point_index = id.x;
+    if (point_index >= params.uints0.y) { return; }
+    let point = point_inputs[point_index];
+    let manifold_units = (params.uints1.w & 2u) != 0u;
+    if (!valid_point(point) || (manifold_units && point.ids.w != 0u)) { return; }
+    let color = atomicLoad(&topology[params.uints0.z + point_index]);
+    if (color >= params.uints1.z) {
+        atomicStore(&topology[params.uints1.x], 1u);
+        atomicAdd(&topology[bitcast<u32>(params.floats0.y) + 1u], 1u);
+    }
+}
+
 fn incremental_identity_hash(point: PointInput, mask: u32) -> u32 {
     var value = point.ids.x * 0x9e3779b9u;
     value ^= point.ids.y * 0x85ebca6bu;

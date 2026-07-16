@@ -772,7 +772,7 @@ fresh evidence supports a different implementation.
   It must reduce complete cost and the 256-to-1K marginal slope on the same
   adapter; a diagnostic timestamp improvement without an ordinary-graph
   improvement does not qualify.
-- [ ] If serial greedy coloring remains material, implement at least one
+- [x] If serial greedy coloring remains material, implement at least one
   portable parallel coloring comparator with deterministic stable-id seeding,
   explicit conflict detection/repair, bounded rounds, and atomic fallback or
   rejection. Vivace-style speculative coloring is source guidance, not a code
@@ -839,6 +839,21 @@ for compaction. Fresh four-worker Box2D is `0.153 ms` at 1K and its 256-to-1K
 marginal slope is about `0.090 us/body`. The byte-exact gate passes, but serial
 greedy assignment remains material and fires the recorded parallel-coloring
 comparator trigger. No production policy is promoted by this checkpoint.
+
+Parallel-coloring implementation checkpoint, 2026-07-16: the unselected
+`full-rebuild-parallel-speculative` policy seeds first-fit proposals from the
+canonical stable contact identity into four initial colors, resolves each
+body/color conflict by deterministic atomic-min stable slot, and repairs losers
+for at most 32 rounds. A separate winner table, retry count, rounds used, and
+uncolored count are capacity-accounted in scheduler work-vector v2. Any unit
+still uncolored after the bound, or any graph requiring more than 32 colors,
+sets the shared failure status before parallel compaction and zeros every solve
+indirect argument. No CPU construction, readback, fallback, or product-policy
+change is introduced. Exact replay, body/color disjointness, 33-color atomic
+rejection, and native 32/256/1K plus authored 1K/10K smoke pass. The first
+one-sample Metal smoke moves generated 1K to about `9.22 ms` and authored 10K
+to about `7.55 ms`, with construction attribution below `0.7 ms`; these dirty
+numbers motivate the full matrix but are not accepted evidence.
 
 Commit boundaries: accepted product-baseline integration; scheduler benchmark
 contract; byte-exact parallel compaction; evidence-triggered parallel coloring

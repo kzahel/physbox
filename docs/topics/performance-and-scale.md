@@ -869,6 +869,18 @@ optimization gate and fires, rather than resolves, the required parallel-color
 construction work. It does not establish a crossover or change the product
 selection.
 
+Parallel-coloring implementation smoke, 2026-07-16: the bounded speculative
+candidate replaces the one serial assignment dispatch with 98 portable GPU
+dispatches and reuses the four-pass parallel compactor. Work-vector v2 declares
+all fixed winner-table and point-slot visits plus convergence counters. A dirty
+one-sample Metal run reports about `9.22 ms` for generated 1K and `7.55 ms` for
+authored 10K, with separately instrumented construction about `0.40` and
+`0.67 ms`. Small generated 32 rises to about `8.89 ms`, exposing the fixed
+dispatch floor. These values are directional implementation smoke only; clean
+multi-sample ordinary slopes, the complete quality corpus, and required-host
+evidence decide whether the comparator is viable. No crossover or product
+selection is claimed.
+
 ## Regression and claim gates
 
 Before representative hardware is selected, store named measurements and

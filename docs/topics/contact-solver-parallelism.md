@@ -439,6 +439,19 @@ comparator. Because that comparator can change Gauss-Seidel order, it remains
 unpromoted until full quality evidence and human review. The product policy is
 still the serial `full-rebuild` control.
 
+Parallel-coloring implementation checkpoint, 2026-07-16: the authorized
+unselected comparator uses four stable-identity-seeded initial colors, bounded
+speculative proposals, per-body/color atomic-min winners, and deterministic
+conflict repair. Thirty-two fixed rounds provide a portable upper bound; a
+final GPU pass rejects any uncolored unit, while the existing status-gated
+parallel prefix zeros all solve dispatches on failure. Scheduler work-vector v2
+records the 98 construction dispatches, winner-slot visits, rounds used,
+conflict retries, and final uncolored units. Focused stack, pyramid, sparse,
+replay, disjointness, and 33-color overflow tests pass. Because assignments and
+Gauss-Seidel order differ from the accepted serial control, this implementation
+is a comparator only and cannot be promoted without the full quality matrix and
+human review.
+
 ## Fallback and reserve options
 
 - **Accepted baseline.** Manifold block i2 improves structural preservation and

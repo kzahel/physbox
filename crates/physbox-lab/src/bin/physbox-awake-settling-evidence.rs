@@ -478,7 +478,7 @@ fn main() {
 
 fn run() -> Result<(), String> {
     let arguments = Arguments::parse()?;
-    if arguments.scheduling_factorial {
+    if arguments.scheduling_factorial || arguments.parallel_scheduling_factorial {
         return run_scheduling_factorial(arguments);
     }
     if arguments.colored_factorial {
@@ -815,10 +815,14 @@ fn run_colored_factorial(arguments: Arguments) -> Result<(), String> {
 }
 
 fn run_scheduling_factorial(arguments: Arguments) -> Result<(), String> {
+    let parallel = arguments.parallel_scheduling_factorial;
+    let milestone = if parallel { "S5.4c" } else { "S5.4b" };
     let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let (source_revision, source_dirty, source_patch_digest) = repository_state(&repository)?;
     if arguments.require_clean && source_dirty {
-        return Err("S5.4b scheduling evidence requires a clean source tree".to_owned());
+        return Err(format!(
+            "{milestone} scheduling evidence requires a clean source tree"
+        ));
     }
     let box2d = verify_clean_git_pin(&arguments.box2d_source, BOX2D_REVISION)
         .map_err(|error| error.to_string())?;
@@ -835,13 +839,17 @@ fn run_scheduling_factorial(arguments: Arguments) -> Result<(), String> {
     let base = p5_2_centered_rectangle_stack_scenario(2, 1)
         .map_err(|error| error.to_string())?
         .settings;
-    let candidates = scheduling_candidate_definitions(base);
+    let candidates = if parallel {
+        parallel_scheduling_candidate_definitions(base)
+    } else {
+        scheduling_candidate_definitions(base)
+    };
 
     let mut accepted_scenes = Vec::new();
     let mut accepted_kinds = Vec::new();
     for count in [2, 4, 8, 16] {
         let label = format!("rectangle-stack-{count}");
-        eprintln!("S5.4b scheduling accepted scene {label}");
+        eprintln!("{milestone} scheduling accepted scene {label}");
         accepted_scenes.push(evaluate_scene(
             &arguments,
             &staging,
@@ -860,7 +868,7 @@ fn run_scheduling_factorial(arguments: Arguments) -> Result<(), String> {
     }
     for rows in [2, 3, 4] {
         let label = format!("rectangle-pyramid-{rows}");
-        eprintln!("S5.4b scheduling accepted scene {label}");
+        eprintln!("{milestone} scheduling accepted scene {label}");
         accepted_scenes.push(evaluate_scene(
             &arguments,
             &staging,
@@ -882,7 +890,7 @@ fn run_scheduling_factorial(arguments: Arguments) -> Result<(), String> {
     let mut diagnostic_kinds = Vec::new();
     for count in [32, 64] {
         let label = format!("rectangle-stack-{count}-diagnostic");
-        eprintln!("S5.4b scheduling depth diagnostic {label}");
+        eprintln!("{milestone} scheduling depth diagnostic {label}");
         diagnostic_scenes.push(evaluate_scene(
             &arguments,
             &staging,
@@ -901,7 +909,7 @@ fn run_scheduling_factorial(arguments: Arguments) -> Result<(), String> {
     }
     for shape in P5_2BucketShape::ALL {
         let label = format!("{}-bucket-100-diagnostic", shape.name());
-        eprintln!("S5.4b scheduling degree diagnostic {label}");
+        eprintln!("{milestone} scheduling degree diagnostic {label}");
         diagnostic_scenes.push(evaluate_scene(
             &arguments,
             &staging,
@@ -955,7 +963,11 @@ fn run_scheduling_factorial(arguments: Arguments) -> Result<(), String> {
     let manifest = SchedulingManifest {
         schema_version: SCHEMA_VERSION,
         metrics_version: AWAKE_SETTLING_METRICS_VERSION,
-        artifact_kind: "p5.2b-s5.4b-scheduling-factorial",
+        artifact_kind: if parallel {
+            "p5.2b-s5.4c-parallel-scheduling-factorial"
+        } else {
+            "p5.2b-s5.4b-scheduling-factorial"
+        },
         run_id: arguments.run_id.clone(),
         source_revision,
         source_dirty,
@@ -986,7 +998,12 @@ fn run_scheduling_factorial(arguments: Arguments) -> Result<(), String> {
     let manifest_bytes =
         fs::read(arguments.output.join("manifest.json")).map_err(|error| error.to_string())?;
     println!(
-        "PHYSBOX5_VALIDATION_SUCCESS host=native scenario=s5.4b-scheduling-factorial run_id={} manifest_sha256={} output={}",
+        "PHYSBOX5_VALIDATION_SUCCESS host=native scenario={} run_id={} manifest_sha256={} output={}",
+        if parallel {
+            "s5.4c-parallel-scheduling-factorial"
+        } else {
+            "s5.4b-scheduling-factorial"
+        },
         arguments.run_id,
         sha256_bytes(&manifest_bytes),
         arguments.output.display()
@@ -1241,6 +1258,41 @@ fn scheduling_candidate_definitions(base: SolverSettingsV1) -> Vec<CandidateDefi
     .collect()
 }
 
+fn parallel_scheduling_candidate_definitions(base: SolverSettingsV1) -> Vec<CandidateDefinition> {
+    [
+        (
+            "forward-i2-serial-control",
+            GpuSolverSchedulingPolicyV1::STANDARD,
+            "accepted serial greedy assignment and stable serial compaction control",
+        ),
+        (
+            "forward-i2-parallel-compaction",
+            GpuSolverSchedulingPolicyV1::PARALLEL_COMPACTION,
+            "serial greedy assignment with byte-exact parallel stable compaction",
+        ),
+        (
+            "forward-i2-parallel-speculative",
+            GpuSolverSchedulingPolicyV1::PARALLEL_COLORING,
+            "stable-identity seeded speculative assignment with bounded conflict repair and parallel compaction",
+        ),
+    ]
+    .into_iter()
+    .map(|(id, scheduling_policy, question)| {
+        let mut settings = base;
+        settings.iterations = 2;
+        CandidateDefinition {
+            id,
+            family: CandidateFamilyV3::ManifoldColorForward,
+            iterations: 2,
+            settings,
+            execution: GpuSolverExecutionV4::manifold_colored_block_experiment(true, true),
+            scheduling_policy,
+            question,
+        }
+    })
+    .collect()
+}
+
 fn run_candidate(
     runner: &GpuGeneratedContactRunner,
     scenario: &ScenarioV1,
@@ -1433,7 +1485,7 @@ fn coloring_churn_evidence(
         version: physbox_engine::P5_2_COLORING_CHURN_VERSION,
         full_rebuild_each_snapshot: candidates.iter().all(|candidate| {
             candidate.scheduling_policy.color_maintenance
-                == physbox_engine::GpuColorMaintenanceV1::FullRebuild
+                != physbox_engine::GpuColorMaintenanceV1::StablePairIncremental
         }),
         incremental_maintenance_included: candidates.iter().any(|candidate| {
             candidate.scheduling_policy.color_maintenance
@@ -2749,6 +2801,7 @@ struct Arguments {
     physical_device_gap: Option<String>,
     colored_factorial: bool,
     scheduling_factorial: bool,
+    parallel_scheduling_factorial: bool,
 }
 
 impl Arguments {
@@ -2765,6 +2818,7 @@ impl Arguments {
         let mut physical_device_gap = None;
         let mut colored_factorial = false;
         let mut scheduling_factorial = false;
+        let mut parallel_scheduling_factorial = false;
         let mut arguments = std::env::args().skip(1);
         while let Some(argument) = arguments.next() {
             if argument == "--require-clean" {
@@ -2777,6 +2831,10 @@ impl Arguments {
             }
             if argument == "--s5.4b-scheduling" {
                 scheduling_factorial = true;
+                continue;
+            }
+            if argument == "--s5.4c-parallel-scheduling" {
+                parallel_scheduling_factorial = true;
                 continue;
             }
             let value = arguments
@@ -2803,8 +2861,17 @@ impl Arguments {
         if warmup == 0 || samples == 0 {
             return Err("warmup and samples must be positive".to_owned());
         }
-        if colored_factorial && scheduling_factorial {
-            return Err("choose only one S5.4b factorial mode".to_owned());
+        if [
+            colored_factorial,
+            scheduling_factorial,
+            parallel_scheduling_factorial,
+        ]
+        .into_iter()
+        .filter(|selected| *selected)
+        .count()
+            > 1
+        {
+            return Err("choose only one S5.4 factorial mode".to_owned());
         }
         Ok(Self {
             run_id: run_id.ok_or_else(|| "missing --run-id".to_owned())?,
@@ -2820,6 +2887,7 @@ impl Arguments {
             physical_device_gap,
             colored_factorial,
             scheduling_factorial,
+            parallel_scheduling_factorial,
         })
     }
 }
@@ -2993,6 +3061,45 @@ mod tests {
                     == GpuSolverExecutionV4::manifold_colored_block_experiment(true, true)
                 && !candidate.question.is_empty()
         }));
+    }
+
+    #[test]
+    fn parallel_scheduler_factorial_keeps_order_changing_lane_unselected() {
+        let source = p5_2_centered_rectangle_stack_scenario(2, 1).unwrap();
+        let candidates = parallel_scheduling_candidate_definitions(source.settings);
+        assert_eq!(
+            candidates
+                .iter()
+                .map(|candidate| candidate.id)
+                .collect::<Vec<_>>(),
+            vec![
+                "forward-i2-serial-control",
+                "forward-i2-parallel-compaction",
+                "forward-i2-parallel-speculative",
+            ]
+        );
+        assert_eq!(
+            candidates
+                .iter()
+                .map(|candidate| candidate.scheduling_policy)
+                .collect::<Vec<_>>(),
+            vec![
+                GpuSolverSchedulingPolicyV1::STANDARD,
+                GpuSolverSchedulingPolicyV1::PARALLEL_COMPACTION,
+                GpuSolverSchedulingPolicyV1::PARALLEL_COLORING,
+            ]
+        );
+        assert!(candidates.iter().all(|candidate| {
+            candidate.family == CandidateFamilyV3::ManifoldColorForward
+                && candidate.iterations == 2
+                && candidate.settings.iterations == 2
+                && candidate.execution == GpuSolverExecutionV4::SELECTED
+                && !candidate.question.is_empty()
+        }));
+        assert_eq!(
+            GpuSolverSchedulingPolicyV1::STANDARD.color_maintenance,
+            physbox_engine::GpuColorMaintenanceV1::FullRebuild
+        );
     }
 
     #[test]

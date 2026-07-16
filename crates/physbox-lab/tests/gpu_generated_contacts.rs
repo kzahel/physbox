@@ -257,6 +257,100 @@ fn parallel_compaction_preserves_stack_pyramid_and_bucket_graphs() {
 }
 
 #[test]
+fn speculative_parallel_coloring_replays_and_resolves_every_body_color_conflict() {
+    let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
+    let scenarios = [
+        p5_2_generated_performance_scenario(256).unwrap(),
+        p5_2_centered_rectangle_stack_scenario(16, 1).unwrap(),
+        p5_2_rectangle_pyramid_scenario(4, 1).unwrap(),
+    ];
+    for scenario in scenarios {
+        let candidate = runner
+            .run_scheduling_experiment(
+                &scenario,
+                1,
+                GpuSolverExecutionV4::SELECTED,
+                GpuSolverSchedulingPolicyV1::PARALLEL_COLORING,
+            )
+            .unwrap();
+        let replay = runner
+            .run_scheduling_experiment(
+                &scenario,
+                1,
+                GpuSolverExecutionV4::SELECTED,
+                GpuSolverSchedulingPolicyV1::PARALLEL_COLORING,
+            )
+            .unwrap();
+        assert_eq!(candidate.bodies, replay.bodies, "{}", scenario.id);
+        assert_eq!(candidate.cache, replay.cache, "{}", scenario.id);
+        assert_eq!(
+            candidate.pass_evidence, replay.pass_evidence,
+            "{}",
+            scenario.id
+        );
+        assert!(candidate.failure.is_none(), "{}", scenario.id);
+        assert!(
+            candidate
+                .capacities
+                .iter()
+                .all(|capacity| capacity.accepted)
+        );
+        let coloring = candidate.pass_evidence.coloring.as_ref().unwrap();
+        assert_eq!(
+            coloring.scheduling_policy,
+            GpuSolverSchedulingPolicyV1::PARALLEL_COLORING
+        );
+        assert_eq!(coloring.parallel_round_limit, 32);
+        assert!((1..=32).contains(&coloring.parallel_rounds_used));
+        assert_eq!(coloring.parallel_uncolored_units, 0);
+        let mut body_colors = std::collections::HashSet::new();
+        for (contact, &color) in candidate
+            .pass_evidence
+            .contacts
+            .iter()
+            .filter(|contact| contact.valid)
+            .zip(&coloring.point_colors)
+        {
+            if contact.point_in_manifold != 0 {
+                continue;
+            }
+            assert!(
+                body_colors.insert((contact.body_a, color)),
+                "{}",
+                scenario.id
+            );
+            assert!(
+                body_colors.insert((contact.body_b, color)),
+                "{}",
+                scenario.id
+            );
+        }
+    }
+
+    let scenario = p5_2_generated_performance_scenario(256).unwrap();
+    let serial = runner
+        .run_scheduling_experiment(
+            &scenario,
+            1,
+            GpuSolverExecutionV4::SELECTED,
+            GpuSolverSchedulingPolicyV1::STANDARD,
+        )
+        .unwrap();
+    let parallel = runner
+        .run_scheduling_experiment(
+            &scenario,
+            1,
+            GpuSolverExecutionV4::SELECTED,
+            GpuSolverSchedulingPolicyV1::PARALLEL_COLORING,
+        )
+        .unwrap();
+    assert_ne!(
+        serial.pass_evidence.coloring.unwrap().point_colors,
+        parallel.pass_evidence.coloring.unwrap().point_colors
+    );
+}
+
+#[test]
 fn colored_diagnostic_sources_cover_deep_stacks_and_construction_erase_churn() {
     let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
     let execution = GpuSolverExecutionV4::alternating_manifold_colored_block_experiment(true, true);
@@ -922,6 +1016,28 @@ fn colored_in_place_rejects_more_than_thirty_two_incident_points_atomically() {
     );
     assert!(parallel.cache.is_empty());
     assert!(parallel.failure.is_some());
+
+    let speculative = runner
+        .run_scheduling_experiment(
+            &scenario,
+            1,
+            GpuSolverExecutionV4::manifold_colored_block_experiment(true, true),
+            GpuSolverSchedulingPolicyV1::PARALLEL_COLORING,
+        )
+        .unwrap();
+    let speculative_coloring = speculative.pass_evidence.coloring.as_ref().unwrap();
+    assert!(speculative_coloring.overflowed);
+    assert_eq!(speculative_coloring.parallel_round_limit, 32);
+    assert!((1..=32).contains(&speculative_coloring.parallel_rounds_used));
+    assert_eq!(speculative_coloring.parallel_uncolored_units, 1);
+    assert!(
+        speculative_coloring
+            .indirect_workgroups
+            .iter()
+            .all(|arguments| *arguments == [0, 1, 1])
+    );
+    assert!(speculative.cache.is_empty());
+    assert!(speculative.failure.is_some());
 
     let incremental = runner
         .run_scheduling_experiment(
