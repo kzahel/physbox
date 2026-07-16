@@ -1054,7 +1054,7 @@ fn command_bytes(command: &mut Command) -> Result<Vec<u8>, String> {
 fn atomic_json(path: &Path, value: &impl Serialize) -> Result<(), String> {
     atomic_write(
         path,
-        &serde_json::to_vec_pretty(value).map_err(|error| error.to_string())?,
+        &serde_json::to_vec(value).map_err(|error| error.to_string())?,
     )
 }
 

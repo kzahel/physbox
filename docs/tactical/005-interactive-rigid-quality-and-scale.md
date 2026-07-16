@@ -399,7 +399,8 @@ the process-isolated awake Box2D lane, retains raw contacts/cache/work/capacity
 state, reports complete 32/256/1K GPU cost and optimized Box2D cost, renders
 synchronized playback, and replays every first structural failure into an
 exact scenario artifact. Candidate output remains explicitly experimental;
-the clean evidence package and recommendation are the next commit.
+the compact atomic manifest retains the complete data without pretty-print
+inflation. The clean evidence package and recommendation are the next commit.
 
 ### S5.5 — P5.3 scalable broadphase bakeoff
 
