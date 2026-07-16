@@ -1,9 +1,9 @@
 # Contact solver parallelism and scheduling
 
-Status: human checkpoint, 2026-07-16. The colored/manifold family is the
-selected direction for the bounded S5.4b laboratory experiment. The product
-execution remains the provisional point-Jacobi graph; no candidate, quality
-band, tolerance, or default is promoted by this document.
+Status: active laboratory authorization, 2026-07-16. Human review authorized
+the bounded S5.4b coloring factorial below. The product execution remains the
+provisional point-Jacobi graph; no candidate, quality band, tolerance, or
+default is promoted by this document.
 
 Governing direction:
 [one GPU-resident 2D physics world](physbox5-unified-gpu-physics.md).
@@ -26,8 +26,8 @@ chain of contacts. How those coupled solves are ordered on a massively
 parallel device decides both structural stability and portable scheduling
 cost. This topic records why the independent-parallel (Jacobi) formulation
 fails tall structures, which alternatives were measured, why sequential-style
-(colored Gauss-Seidel) solving is the selected direction, and what its WebGPU
-dispatch floor implies for the product.
+(colored Gauss-Seidel) solving is the selected next experiment, and what its
+WebGPU dispatch floor may imply for the product.
 
 ## Why independent-parallel solving fails stacks
 
@@ -72,29 +72,30 @@ of five formulations at 1/2/4/8 iterations over seven structures including a
 | Family | Best structural result | Interpretation |
 | --- | --- | --- |
 | Point Jacobi | 3/7 at every iteration count | Depth-limited; iteration-amplified divergence |
-| Scalar mass splitting | 6/7 at i8; 16-stack falls at step 44 | Provably contractive but too slow; sags ("memory foam"), 8-stack residual 0.377 m/s |
+| Scalar mass splitting | 6/7 at i8; 16-stack falls at step 44 | Contracts the frozen rocking probe but is too slow in the awake chain; sags ("memory foam"), 8-stack residual 0.377 m/s |
 | Manifold block normal | 6/7 from i2; 16-stack falls even at i8 | Removes rocking, moves the depth horizon, does not remove it |
 | Block + mass splitting | 3/7, worse with iterations | Negative interaction; do not compose these fixes |
-| Colored in-place | **7/7 at i4 and i8** | Only family with no depth horizon; blocker is scheduling cost, not physics |
+| Colored in-place | **7/7 at i4 and i8** | Only family that preserves every tested structure through the 16-stack; scheduling cost and residual quality remain blockers |
 
 Cost at 1,024 bodies (Apple M4 Pro Metal, complete graph P50): manifold block
 i2 `3.564 ms` / 135 dispatches; colored i4 `19.308 ms` / 2,360 dispatches;
 fastest optimized Box2D `0.185 ms`. The colored comparator encodes 32
 worst-case color passes times five separate stages, while actual color counts
-are only 4 (16-stack) to 12 (4-row pyramid) — the cost is dominated by
-scheduling waste, not solve work.
+are only 4 (16-stack) to 12 (4-row pyramid). Scheduling waste is therefore the
+leading cost hypothesis, not a measured decomposition of the `19.308 ms` row.
 
 Conclusions recorded as decided:
 
-- Sequential propagation is required for deep rigid structures; no
-  Jacobi-family tuning (damping, blocks, iterations, substeps, warm-start or
-  relaxation policy, bias) removes the depth horizon. The colored family is
-  the rigid direction.
-- Mass splitting is excluded from the colored lane: Gauss-Seidel does not
-  need its convergence guarantee and the measured composition is a
-  regression.
-- The two-point manifold block solve is validated and carried forward inside
-  the colored schedule, where it should reduce the iterations needed at all.
+- The tested Jacobi-family changes do not preserve the 16-stack. Colored
+  propagation is the selected bounded experiment, not yet a production rigid
+  direction or proof that no other parallel formulation can succeed.
+- Mass splitting is excluded from the first colored factorial because no
+  measured colored failure requires it and it would confound attribution. The
+  measured block-plus-mass-split regression occurred under Jacobi and does not
+  prove the same interaction under colored execution.
+- The two-point manifold block solve is validated independently. Whether it
+  reduces colored iteration count is an explicit S5.4b question, not a
+  conclusion.
 
 ## The portable dispatch floor
 
@@ -103,56 +104,68 @@ boundary with fixed driver/queue cost, independent of pass size. The frame
 contract forbids CPU readback of GPU results, so the CPU encodes the command
 stream blind: the current comparator therefore encodes the 32-pass worst case
 even when four colors exist, and empty passes still launch full grids that
-exit on a color check. The CPU authority pays effectively nothing for the
-same barrier (a user-space thread sync) and always knows its color count.
+exit on a color check. The optimized CPU lane has a fundamentally cheaper
+small-scene scheduling path and retains its measured advantage.
 
 The floor is an arithmetic, not a mystery: optimized passes scale as
 (actual colors) x (fused stages) x (iterations) x (substeps). With 4–12
 colors, ~2 fused stages, <=2 iterations, and 4 substeps, the expected count is
-a few hundred dispatches — the territory where manifold block i2 already runs
-`3.564 ms`. 60 Hz at 1K on desktop is therefore plausible but unmeasured;
-S5.4b exists to measure it. Two structural facts frame the decision:
+a few hundred dispatches. Whether that reaches the cost territory of the
+Jacobi/gather lanes is plausible but unmeasured; S5.4b exists to measure it.
+Two structural facts frame the decision:
 
 - The dispatch floor is roughly constant in body count (colors track contact
   graph degree, not N), while solve work and any CPU engine scale with N. The
-  floor amortizes exactly as scenes approach the product target of thousands
-  of solids plus liquid. Small-fixture ratios such as 20.8x or 104.3x versus
-  Box2D at 1K are not decision metrics; scale claims belong to the
-  performance-and-scale contract.
+  floor may amortize as scenes approach the product target of thousands of
+  solids plus liquid. Small-fixture ratios such as 20.8x or 104.3x versus
+  Box2D remain material decision evidence even though they cannot establish
+  the eventual crossover; scale claims belong to the performance-and-scale
+  contract.
 - Per-dispatch overhead differs by host. The floor must be measured on
   browser WebGPU and Android, not extrapolated from Metal.
 
-## Selected next experiment (S5.4b)
+## Authorized next experiment (S5.4b)
 
-One bounded laboratory lane combining the validated pieces:
+One bounded, attributable factorial over a shared compact scheduler:
 
-- color at manifold granularity, so both points of a pair are co-scheduled
-  and the proven two-point block normal solve runs inside the colored unit;
-- compact GPU-owned color ranges so a pass launches exactly its contacts;
-- GPU-written indirect dispatch arguments so pre-encoded passes for absent
-  colors become zero-workgroup launches, preserving the no-readback contract;
-- fused compatible stages to divide the per-color pass count;
-- iteration sweep downward (i1/i2 first) — if only i4 preserves all seven
-  structures, the block solve is not buying convergence and that is a
-  material result;
-- added observations: color-count distribution and cost on the 100-body
-  bucket scenes (high-degree contact graphs), and recoloring cost under
-  construction/erase churn;
-- exclusions: no mass splitting, no CPU readback, no second world; the same
-  generated contacts, pair slots, body-edge views, caches, capacities, and
-  physical settings.
+1. **Scheduling-only control:** preserve the existing point coloring and
+   scalar point solve while compacting GPU-owned color ranges, emitting
+   indirect zero-work arguments for absent colors, and fusing only stages that
+   remain byte-exact. This owns the scheduling-cost attribution gate.
+2. **Manifold-colored block lane:** color whole manifolds, keep both points in
+   one colored unit, and run the validated active-set 2x2 normal solve. Sweep
+   i1/i2/i4; i4-only preservation would show that block coupling did not buy a
+   lower iteration count.
+3. **Ordering lane:** compare stable forward color order with deterministic
+   alternating forward/reverse sweeps. Do not add gravity-directed or random
+   ordering unless this comparison leaves a material question.
+4. **Depth, degree, and churn diagnostics:** retain the seven S5.4a acceptance
+   sources, add 32/64 stacks as depth diagnostics rather than new accepted
+   quality bands, and measure both 100-body buckets plus deterministic
+   construction/erase churn. Record actual/allocated colors, color occupancy,
+   compaction and recoloring work, empty indirect launches, dispatches, memory,
+   and complete time.
 
-Gates repeat S5.4a: all seven structures over 1,200 exact steps, complete
-32/256/1K cost, exact replay, browser and AVD execution. Promotion remains a
-separate explicit human decision.
+The compact control must match the existing point-colored result byte for byte
+at the same iteration count. All lanes retain the same generated contacts,
+pair slots, body-edge views, caches, capacities, physical settings, one world,
+and no-readback contract. Mass splitting, pacing changes, production
+broadphase, liquid, and product promotion remain excluded.
+
+Gates repeat S5.4a: all seven accepted structures over every one of 1,200 exact
+steps, complete 32/256/1K cost, exact replay, explicit capacity/failure data,
+and browser plus hardware-backed AVD execution for a potential candidate.
+The 16.67 ms boundary is only feasibility; a liquid-heavy product still needs
+material rigid-solver headroom and later scale evidence. Promotion and any
+residual-motion band remain separate explicit human decisions.
 
 ## Fallback and reserve options
 
-- **Interim baseline swap.** Manifold block i2 strictly dominates the current
-  provisional point-Jacobi execution (6/7 versus 3/7 structures, `3.564 ms`
-  versus `4.244 ms`). Swapping the provisional interactive baseline is a
-  physical-default change requiring explicit human acceptance; recorded here
-  as low-risk if S5.4b runs long.
+- **Interim baseline swap.** Manifold block i2 improves structural preservation
+  and measured 1K cost over the provisional point-Jacobi execution, but it does
+  not dominate every residual-motion metric. Swapping the interactive baseline
+  is a physical-default change requiring explicit human acceptance and is not
+  authorized by S5.4b.
 - **Workgroup-per-island sequential solve.** Islands small enough for one
   workgroup (a 16-stack easily fits) can be solved in a single dispatch using
   `workgroupBarrier()` between color phases — full sequential semantics with
@@ -230,10 +243,12 @@ Literature (conclusions replicated by S5.4/S5.4a evidence):
 
 Revisit this topic's direction only with fresh governed evidence showing:
 
-- the S5.4b optimized colored lane misses the 16.67 ms feasibility boundary
-  or seven-structure preservation on a required host — evaluate the
-  workgroup-per-island reserve first, then any pacing retarget under the
-  simulation-time-and-overload contract;
+- compact scheduling still spends material time rebuilding colors — authorize
+  a stable-pair incremental-coloring comparator under deterministic churn;
+- the optimized colored lane remains dispatch-bound or misses the 16.67 ms
+  feasibility boundary on a required host — evaluate the workgroup-per-island
+  reserve before any pacing retarget under the simulation-time-and-overload
+  contract;
 - bucket or other high-degree scenes push color counts past the bounded pass
   budget, or recoloring under construction churn dominates frame cost —
   revisit coloring granularity and PhysX-style incremental maintenance;

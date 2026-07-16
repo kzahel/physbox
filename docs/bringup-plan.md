@@ -148,6 +148,15 @@ ms` at 1K and every family still violates the declared strict monotonic gate.
 No solver is promoted. Human review must decide whether to authorize an
 optimized GPU-owned manifold-color/block lane; P5.3 remains blocked.
 
+S5.4b authorization, 2026-07-16: human review authorized an attributable
+compact-coloring factorial: a byte-exact scheduling-only point-color control,
+manifold-colored active-set block solving, and forward versus alternating
+color order. The seven accepted scenes remain the quality gate; 32/64 stacks,
+100-body buckets, and construction churn are added as diagnostics. Incremental
+coloring or workgroup-per-island solving is conditional on measured rebuild or
+dispatch cost. No solver promotion, residual band, pacing change, or P5.3 work
+is authorized.
+
 The first S3.5a representation checkpoint implements the stable pair-slot
 comparator with full feature verification and deterministic generational slot
 recycling. Its correctness/adversarial gates pass and its combined

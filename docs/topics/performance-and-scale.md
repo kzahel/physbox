@@ -716,6 +716,14 @@ a generated rigid-contact small-world measurement with 512 contacts at 1K. It
 does not establish a crossover, qualify scalable broadphase, or predict
 liquid-heavy performance.
 
+S5.4b cost authorization, 2026-07-16: measure a scheduling-only compact
+point-color control before combining manifold coloring and block math. Retain
+separate GPU time for color construction, compaction, indirect empty passes,
+and solve; report actual and allocated colors, occupancy, complete dispatches,
+memory, and raw 32/256/1K samples. Add 32/64-stack, both 100-body bucket, and
+deterministic churn diagnostics. The 16.67 ms boundary is feasibility only and
+does not establish the headroom required by later liquid-heavy scenes.
+
 ## Regression and claim gates
 
 Before representative hardware is selected, store named measurements and

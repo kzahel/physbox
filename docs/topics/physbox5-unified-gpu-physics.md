@@ -779,6 +779,15 @@ normal points, and fuses compatible stages without simulation-dependent CPU
 readback or a second world. A resulting potential candidate must pass the same
 seven-scene, residual, capacity, cost, browser, and AVD gates before selection.
 
+S5.4b authorization, 2026-07-16: the colored follow-up must keep scheduling
+attribution separate from solver math. First make the existing point-colored
+execution compact/fused and byte-identical; then compare manifold-colored
+active-set blocks and deterministic alternating color order at i1/i2/i4.
+Extended 32/64 stacks, buckets, and churn diagnose depth and scheduling scale
+without silently creating a new accepted quality band. Incremental coloring
+and workgroup-per-island solving remain measured conditional comparators.
+Point Jacobi/Jacobi-gather remains the product selection.
+
 Circle/circle and circle/rectangle contact are analytic. Rectangle/rectangle
 uses SAT to select a reference and incident edge, clips the incident segment,
 and produces stable vertex/edge feature pairs. Test feature stability around

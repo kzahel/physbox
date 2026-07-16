@@ -615,6 +615,42 @@ CPU readback, pass the same quality/capacity/cost gates, and execute through
 shared browser and AVD validation before promotion. Point Jacobi/Jacobi-gather
 remains `SELECTED`; S5.5 remains blocked at this renewed human checkpoint.
 
+### S5.4b — compact colored scheduling and manifold blocks
+
+Human authorization, 2026-07-16: proceed with the bounded factorial in
+[contact solver parallelism](../topics/contact-solver-parallelism.md). This
+authorizes laboratory scheduling and solver candidates only. Point
+Jacobi/Jacobi-gather remains `SELECTED`; no product default, residual band,
+tolerance, pacing rate, broadphase, liquid path, or CPU fallback is authorized.
+
+- [ ] Add a compact/fused scheduling-only point-colored control that is
+  byte-identical to the existing point-colored result at equal iterations.
+- [ ] Add manifold-granularity coloring with the active-set 2x2 normal block
+  and explicit one-point degeneration.
+- [ ] Compare stable forward with deterministic alternating forward/reverse
+  color sweeps at i1/i2/i4.
+- [ ] Retain the seven accepted sources and add 32/64-stack depth diagnostics,
+  both 100-body buckets, and deterministic construction/erase churn.
+- [ ] Publish complete color occupancy, compaction/recoloring cost, dispatch,
+  memory, 32/256/1K timing, exact replay, capacity, and first-failure evidence.
+- [ ] Run a potential candidate through native/headless/browser and the
+  hardware-backed `jstorrent-tablet` AVD; attempt physical Android if attached.
+- [ ] Add incremental coloring only if rebuild cost is material, or a
+  workgroup-per-island comparator only if dispatch boundaries remain material.
+- [ ] Publish a renewed review package and stop before solver promotion,
+  accepting a residual band, retargeting pacing, or beginning S5.5.
+
+Commit boundaries:
+
+1. authorization, corrected evidence claims, factorial, exclusions, and gates;
+2. compact/fused point-color control and byte-equivalence evidence;
+3. manifold-colored active-set block execution;
+4. forward versus alternating order;
+5. depth/degree/churn automation and complete cost;
+6. a conditional incremental-color or workgroup-island comparator only if its
+   recorded trigger fires; and
+7. clean evidence, governing status, and renewed human checkpoint.
+
 ### S5.5 — P5.3 scalable broadphase bakeoff
 
 Dependency: the human accepts an S5.4 path, S3 closes, and the S4 construction
