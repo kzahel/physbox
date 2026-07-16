@@ -198,6 +198,95 @@ fn compact_point_coloring_is_byte_exact_with_the_fixed_grid_control() {
 }
 
 #[test]
+fn manifold_colored_block_replays_disjoint_units_and_traces_coupled_normals() {
+    let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
+    let mut scenario = p5_2_centered_rectangle_stack_scenario(4, 4).unwrap();
+    scenario.settings.iterations = 2;
+    let execution = GpuSolverExecutionV4::manifold_colored_block_experiment(true, true);
+    let first = runner.run_experiment(&scenario, 8, execution).unwrap();
+    let replay = runner.run_experiment(&scenario, 8, execution).unwrap();
+    assert_eq!(first.bodies, replay.bodies);
+    assert_eq!(first.cache, replay.cache);
+    assert_eq!(first.pass_evidence, replay.pass_evidence);
+    assert_eq!(
+        first.solver_execution.normal_solver,
+        GpuNormalSolverV4::ManifoldBlock
+    );
+
+    let coloring = first.pass_evidence.coloring.as_ref().unwrap();
+    assert_eq!(coloring.unit, physbox_engine::GpuColorUnitV4::Manifold);
+    assert_eq!(
+        coloring.color_occupancy.iter().sum::<u32>(),
+        first
+            .pass_evidence
+            .contacts
+            .iter()
+            .filter(|contact| contact.point_in_manifold == 0)
+            .count() as u32
+    );
+    for (points, colors) in first
+        .pass_evidence
+        .contacts
+        .chunks(2)
+        .zip(coloring.point_colors.chunks(2))
+    {
+        if points.len() == 2 && points[1].point_in_manifold == 1 {
+            assert_eq!(colors[0], colors[1]);
+        }
+    }
+    assert_eq!(
+        first
+            .pass_evidence
+            .manifold_blocks
+            .iter()
+            .map(|block| block.point_count)
+            .sum::<u32>(),
+        first.pass_evidence.contacts.len() as u32
+    );
+    assert!(first.pass_evidence.manifold_blocks.iter().all(|block| {
+        block.active_set != physbox_engine::GpuBlockActiveSetV2::Invalid
+            && block.body_a_normal_mass_incidence == 1
+            && block.body_b_normal_mass_incidence == 1
+    }));
+    assert!(first.failure.is_none());
+}
+
+#[test]
+fn one_point_manifold_colored_block_degenerates_exactly_to_scalar_coloring() {
+    let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
+    let scenario = p5_2_generated_scenario(P5_2GeneratedScenarioKind::Restitution, 8).unwrap();
+    let scalar = runner
+        .run_experiment(
+            &scenario,
+            8,
+            GpuSolverExecutionV4::compact_colored_experiment(true, true),
+        )
+        .unwrap();
+    let block = runner
+        .run_experiment(
+            &scenario,
+            8,
+            GpuSolverExecutionV4::manifold_colored_block_experiment(true, true),
+        )
+        .unwrap();
+    assert_eq!(block.bodies, scalar.bodies);
+    assert_eq!(block.cache, scalar.cache);
+    assert_eq!(block.pass_evidence.contacts, scalar.pass_evidence.contacts);
+    assert_eq!(
+        block.pass_evidence.contributions,
+        scalar.pass_evidence.contributions
+    );
+    assert!(
+        block
+            .pass_evidence
+            .manifold_blocks
+            .iter()
+            .all(|evidence| evidence.point_count == 1
+                && evidence.active_set == physbox_engine::GpuBlockActiveSetV2::Scalar)
+    );
+}
+
+#[test]
 fn colored_in_place_degenerates_exactly_to_jacobi_for_one_live_point() {
     let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
     let scenario = p5_2_generated_scenario(P5_2GeneratedScenarioKind::Restitution, 8).unwrap();
@@ -276,6 +365,37 @@ fn colored_in_place_rejects_more_than_thirty_two_incident_points_atomically() {
     assert_eq!(compact_coloring.scheduled_point_invocations, 0);
     assert!(compact.cache.is_empty());
     assert!(compact.failure.is_some());
+
+    while scenario.bodies.len() < 34 {
+        let mut body = scenario.bodies[1].clone();
+        body.id.slot = scenario.bodies.len() as u32;
+        scenario.bodies.push(body);
+    }
+    if let physbox_contracts::ShapeV1::Rectangle { half_extents } = &mut scenario.bodies[0].shape {
+        half_extents.x = 20.0;
+    }
+    for (index, body) in scenario.bodies[1..].iter_mut().enumerate() {
+        body.position.x = (index as f32 - 16.0) * 1.1;
+        body.position.y = 0.125;
+    }
+    scenario.validate().unwrap();
+    let manifold = runner
+        .run_experiment(
+            &scenario,
+            1,
+            GpuSolverExecutionV4::manifold_colored_block_experiment(true, true),
+        )
+        .unwrap();
+    let manifold_coloring = manifold.pass_evidence.coloring.as_ref().unwrap();
+    assert!(manifold_coloring.overflowed);
+    assert!(
+        manifold_coloring
+            .indirect_workgroups
+            .iter()
+            .all(|arguments| *arguments == [0, 1, 1])
+    );
+    assert!(manifold.cache.is_empty());
+    assert!(manifold.failure.is_some());
 }
 
 #[test]

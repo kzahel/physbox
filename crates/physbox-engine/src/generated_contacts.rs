@@ -1261,11 +1261,17 @@ impl GpuGeneratedContactOutput {
             .iter()
             .map(|block| u64::from(block.point_count))
             .sum::<u64>();
-        let expected_block_points = if self.solver_execution.normal_solver.uses_block() {
-            self.pass_evidence.contacts.len() as u64
-        } else {
-            0
-        };
+        let coloring_rejected = self
+            .pass_evidence
+            .coloring
+            .as_ref()
+            .is_some_and(|coloring| coloring.overflowed);
+        let expected_block_points =
+            if self.solver_execution.normal_solver.uses_block() && !coloring_rejected {
+                self.pass_evidence.contacts.len() as u64
+            } else {
+                0
+            };
         if traced_block_points != expected_block_points {
             return Err("generated manifold-block evidence does not match execution".to_owned());
         }
@@ -1289,6 +1295,18 @@ impl GpuGeneratedContactOutput {
                             .iter()
                             .filter(|&&occupancy| occupancy != 0)
                             .count() as u32
+                    || (!coloring.overflowed
+                        && coloring.color_occupancy.iter().sum::<u32>()
+                            != match coloring.unit {
+                                crate::GpuColorUnitV4::Point => coloring.point_colors.len() as u32,
+                                crate::GpuColorUnitV4::Manifold => {
+                                    self.pass_evidence
+                                        .contacts
+                                        .iter()
+                                        .filter(|contact| contact.point_in_manifold == 0)
+                                        .count() as u32
+                                }
+                            })
                     || (!coloring.overflowed
                         && coloring
                             .point_colors
@@ -1332,12 +1350,23 @@ impl GpuGeneratedContactOutput {
                 }
                 if !coloring.overflowed {
                     let mut colored_bodies = std::collections::BTreeSet::new();
-                    for (contact, &color) in self
+                    for (index, (contact, &color)) in self
                         .pass_evidence
                         .contacts
                         .iter()
                         .zip(&coloring.point_colors)
+                        .enumerate()
                     {
+                        if coloring.unit == crate::GpuColorUnitV4::Manifold
+                            && contact.point_in_manifold != 0
+                        {
+                            if index == 0 || coloring.point_colors[index - 1] != color {
+                                return Err(
+                                    "generated manifold points have different colors".to_owned()
+                                );
+                            }
+                            continue;
+                        }
                         if !colored_bodies.insert((color, contact.body_a))
                             || !colored_bodies.insert((color, contact.body_b))
                         {

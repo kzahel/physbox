@@ -797,6 +797,14 @@ the overflow path schedules zero solve work. No stage fusion was admitted
 because it would change color/stage ordering. `SELECTED` remains the V4
 point-Jacobi/Jacobi-gather execution with no color schedule.
 
+S5.4b manifold checkpoint, 2026-07-16: the same compact scheduler can color a
+whole one- or two-point generated manifold and execute the existing active-set
+normal block in place. Tangent and restitution remain ordered scalar point
+operations within the disjoint manifold unit. Native replay, exact one-point
+degeneration, complete block traces, and atomic 33-manifold color overflow
+pass. The lane remains laboratory-only pending ordering and full factorial
+evidence; `SELECTED` is unchanged.
+
 Circle/circle and circle/rectangle contact are analytic. Rectangle/rectangle
 uses SAT to select a reference and incident edge, clips the incident segment,
 and produces stable vertex/edge feature pairs. Test feature stability around

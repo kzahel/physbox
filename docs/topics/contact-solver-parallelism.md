@@ -177,6 +177,22 @@ work without fusing equations. This is a successful attribution floor, not a
 quality or production selection; manifold coloring and block math remain the
 next authorized slice.
 
+Manifold-block checkpoint, 2026-07-16: compact coloring can now treat one
+complete generated manifold as the disjoint unit. Both points receive the same
+color; the representative point enters the stable compact range once. Normal
+stages execute the validated active-set 2x2 equations against the current
+in-place body motions, while warm start, friction, and restitution retain
+deterministic point order inside the manifold. Matrix, active-set, impulse,
+occupancy, compaction, and indirect-work evidence all remain explicit.
+
+The four-body native stack replays exactly with coupled block evidence. A
+one-point restitution manifold is byte-identical to compact scalar point
+coloring and records the scalar active set. A 33-manifold shared-body fixture
+exceeds the declared 32-color capacity, emits zero work for all indirect solve
+passes, and preserves one atomic failure. This closes implementation and
+degeneration gates only; i1/i2/i4 quality and cost belong to the later
+factorial, and forward versus alternating order is the next slice.
+
 ## Fallback and reserve options
 
 - **Interim baseline swap.** Manifold block i2 improves structural preservation

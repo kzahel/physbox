@@ -2,10 +2,10 @@
 
 Status: S1 and S2 complete; the S3 combined representation gate passes while
 S5.4a finds a structurally successful but performance-ineligible colored
-architecture leader. The S5.4b byte-exact compact point-color scheduling
-control is complete; manifold-color block solving is next. S4.3 grab feel and
-S4.4 construction mechanics are complete; product solver promotion and S5.5
-broadphase work remain blocked.
+architecture leader. The S5.4b compact point-color control and manifold-color
+block execution are complete; deterministic order comparison is next. S4.3
+grab feel and S4.4 construction mechanics are complete; product solver
+promotion and S5.5 broadphase work remain blocked.
 
 Tactical filenames use a three-digit zero-padded prefix ordered by their first
 Git creation timestamp. This repository starts at `001`. Never renumber an
@@ -20,7 +20,7 @@ This README remains the unnumbered index.
 | S2 | GPU body state and fixed-floor contact | [002-gpu-body-state.md](002-gpu-body-state.md) | complete 2026-07-15; limited body core accepted |
 | S3 | Small-world collision and contact persistence | [003-small-world-collision-persistence.md](003-small-world-collision-persistence.md) | combined representation gate passed; S5.4a quality experiment authorized, 2026-07-16 |
 | S4 | Interactive evaluation workbench | [004-basic-scene-navigation-camera.md](004-basic-scene-navigation-camera.md) | S4.4 complete; S4.5 construction-feel review ready, 2026-07-16 |
-| S5 | Interactive rigid quality, construction, and scale | [005-interactive-rigid-quality-and-scale.md](005-interactive-rigid-quality-and-scale.md) | active; S5.4b compact point-color control complete, manifold block next, 2026-07-16 |
+| S5 | Interactive rigid quality, construction, and scale | [005-interactive-rigid-quality-and-scale.md](005-interactive-rigid-quality-and-scale.md) | active; S5.4b manifold block complete, order comparison next, 2026-07-16 |
 
 ## Conventions
 

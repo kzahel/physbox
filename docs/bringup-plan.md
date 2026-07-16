@@ -164,6 +164,12 @@ control on the eight-body/eight-step/i2 native replay. No stage fusion met the
 required exact-order gate. Manifold-colored active-set block solving is the
 next authorized slice; product selection remains unchanged.
 
+S5.4b manifold checkpoint, 2026-07-16: compact manifold coloring now keeps two
+contact points in one disjoint unit and runs the validated active-set normal
+block. Exact replay, scalar one-point degeneration, matrix/active-set evidence,
+and zero-work atomic color overflow pass on native Metal. Deterministic
+forward-versus-alternating order is next; no product solver is promoted.
+
 The first S3.5a representation checkpoint implements the stable pair-slot
 comparator with full feature verification and deterministic generational slot
 recycling. Its correctness/adversarial gates pass and its combined

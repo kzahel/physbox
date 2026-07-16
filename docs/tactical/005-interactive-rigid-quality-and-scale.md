@@ -635,8 +635,15 @@ tolerance, pacing rate, broadphase, liquid path, or CPU fallback is authorized.
   and preserves the atomic failure. No solve stages were fused: every possible
   cross-stage fusion changes the established color/stage order, so none meets
   this slice's byte-exact attribution gate.
-- [ ] Add manifold-granularity coloring with the active-set 2x2 normal block
+- [x] Add manifold-granularity coloring with the active-set 2x2 normal block
   and explicit one-point degeneration.
+  One compact color item now owns a complete generated manifold. Two-point
+  normal stages run the existing validated active-set block equations; warm
+  start, tangent, and restitution points execute deterministically inside the
+  same disjoint item. Native Metal stack replay is exact, every coupled matrix
+  and active set is preserved in evidence, a one-point restitution manifold is
+  byte-identical to compact scalar coloring, and 33 manifolds incident on one
+  body reject atomically with zero indirect solve work.
 - [ ] Compare stable forward with deterministic alternating forward/reverse
   color sweeps at i1/i2/i4.
 - [ ] Retain the seven accepted sources and add 32/64-stack depth diagnostics,

@@ -154,6 +154,19 @@ impl GpuSolverExecutionV4 {
         }
     }
 
+    pub const fn manifold_colored_block_experiment(warm_start: bool, relaxation: bool) -> Self {
+        Self {
+            version: GPU_SOLVER_EXECUTION_VERSION,
+            accumulation: GpuSolverAccumulationV4::ColoredInPlace,
+            normal_solver: GpuNormalSolverV4::ManifoldBlock,
+            color_schedule: GpuColorScheduleV4::CompactIndirect,
+            color_unit: GpuColorUnitV4::Manifold,
+            color_order: GpuColorOrderV4::Forward,
+            warm_start,
+            relaxation,
+        }
+    }
+
     const fn uses_colored_in_place(self) -> bool {
         matches!(self.accumulation, GpuSolverAccumulationV4::ColoredInPlace)
     }
@@ -165,10 +178,14 @@ impl GpuSolverExecutionV4 {
                 self.version, GPU_SOLVER_EXECUTION_VERSION
             ));
         }
-        if self.uses_colored_in_place() && self.normal_solver != GpuNormalSolverV4::PointJacobi {
-            return Err(
-                "colored in-place execution currently requires the point normal solve".to_owned(),
-            );
+        if self.uses_colored_in_place()
+            && !matches!(
+                (self.normal_solver, self.color_unit),
+                (GpuNormalSolverV4::PointJacobi, GpuColorUnitV4::Point)
+                    | (GpuNormalSolverV4::ManifoldBlock, GpuColorUnitV4::Manifold)
+            )
+        {
+            return Err("colored solver and color unit disagree".to_owned());
         }
         match (self.accumulation, self.color_schedule) {
             (GpuSolverAccumulationV4::JacobiGather, GpuColorScheduleV4::None)
@@ -178,11 +195,13 @@ impl GpuSolverExecutionV4 {
             ) => {}
             _ => return Err("GPU solver accumulation and color schedule disagree".to_owned()),
         }
-        if self.color_unit != GpuColorUnitV4::Point || self.color_order != GpuColorOrderV4::Forward
+        if self.color_unit == GpuColorUnitV4::Manifold
+            && self.color_schedule != GpuColorScheduleV4::CompactIndirect
         {
-            return Err(
-                "the current GPU solver slice only implements forward point coloring".to_owned(),
-            );
+            return Err("manifold coloring requires the compact indirect schedule".to_owned());
+        }
+        if self.color_order != GpuColorOrderV4::Forward {
+            return Err("the current GPU solver slice only implements forward coloring".to_owned());
         }
         Ok(())
     }
@@ -614,6 +633,7 @@ struct TopologyLayout {
     color_offsets_base: u32,
     color_cursors_base: u32,
     color_indices_base: u32,
+    color_unit: GpuColorUnitV4,
     has_coloring: bool,
     has_compact_coloring: bool,
     element_count: u32,
@@ -626,6 +646,7 @@ impl TopologyLayout {
         point_count: u32,
         include_manifold_counts: bool,
         color_schedule: GpuColorScheduleV4,
+        color_unit: GpuColorUnitV4,
     ) -> Result<Self, String> {
         let mut layout = match kind {
             GpuGatherTopology::CanonicalBodyScan => Self::canonical(body_count, point_count),
@@ -658,6 +679,7 @@ impl TopologyLayout {
                 .checked_add(1)
                 .ok_or_else(|| "solver color evidence range overflowed".to_owned())?;
             layout.has_coloring = true;
+            layout.color_unit = color_unit;
             if color_schedule == GpuColorScheduleV4::CompactIndirect {
                 layout.color_counts_base = layout.element_count;
                 layout.color_offsets_base = layout
@@ -718,6 +740,7 @@ impl TopologyLayout {
             color_offsets_base: 0,
             color_cursors_base: 0,
             color_indices_base: 0,
+            color_unit: GpuColorUnitV4::Point,
             has_coloring: false,
             has_compact_coloring: false,
             element_count,
@@ -779,6 +802,7 @@ impl TopologyLayout {
             color_offsets_base: 0,
             color_cursors_base: 0,
             color_indices_base: 0,
+            color_unit: GpuColorUnitV4::Point,
             has_coloring: false,
             has_compact_coloring: false,
             element_count,
@@ -958,6 +982,7 @@ impl GpuFixedFloorSolver {
             point_count,
             execution.normal_solver.uses_manifold_mass_split(),
             execution.color_schedule,
+            execution.color_unit,
         )?;
         if execution.uses_colored_in_place() && topology != GpuGatherTopology::StableBodyEdge {
             return Err(
@@ -1914,7 +1939,12 @@ pub(crate) fn decode_pass_evidence(
             return Err("fixed-floor coloring reported too many colors".to_owned());
         }
         let mut full_occupancy = vec![0_u32; MAX_COLORS as usize];
-        for &color in &point_colors {
+        for (&color, contact) in raw[..layout.point_count as usize].iter().zip(&contacts) {
+            if !contact.valid
+                || (layout.color_unit == GpuColorUnitV4::Manifold && contact.point_in_manifold != 0)
+            {
+                continue;
+            }
             if color < MAX_COLORS {
                 full_occupancy[color as usize] += 1;
             } else if !overflowed {
@@ -1963,8 +1993,14 @@ pub(crate) fn decode_pass_evidence(
                 .flat_map(|color| {
                     raw[..layout.point_count as usize]
                         .iter()
+                        .zip(&contacts)
                         .enumerate()
-                        .filter(move |&(_, &assigned)| assigned == color)
+                        .filter(move |&(_, (&assigned, contact))| {
+                            assigned == color
+                                && contact.valid
+                                && (layout.color_unit == GpuColorUnitV4::Point
+                                    || contact.point_in_manifold == 0)
+                        })
                         .map(|(point, _)| point as u32)
                 })
                 .collect::<Vec<_>>();
@@ -2464,7 +2500,8 @@ fn topology_operations(
                 topology.color_status_index,
                 topology.color_count_index,
                 MAX_COLORS,
-                u32::from(topology.has_compact_coloring),
+                u32::from(topology.has_compact_coloring)
+                    | (u32::from(topology.color_unit == GpuColorUnitV4::Manifold) << 1),
             ],
         };
         push_operation(
@@ -2540,6 +2577,10 @@ fn solver_stage(
             };
             colored.uints0[3] = color;
             colored.uints1[2] = topology.color_offsets_base;
+            colored.floats2[2] = match execution.color_unit {
+                GpuColorUnitV4::Point => 0.0,
+                GpuColorUnitV4::Manifold => 1.0,
+            };
             if execution.color_schedule == GpuColorScheduleV4::CompactIndirect {
                 push_indirect_operation(
                     parameters,
@@ -2898,6 +2939,7 @@ mod tests {
             2,
             false,
             GpuColorScheduleV4::None,
+            GpuColorUnitV4::Point,
         )
         .unwrap();
         let (parameters, operations) = operations(
@@ -2924,6 +2966,7 @@ mod tests {
             2,
             false,
             GpuColorScheduleV4::None,
+            GpuColorUnitV4::Point,
         )
         .unwrap();
         let (parameters, operations) = operations(
@@ -2946,6 +2989,7 @@ mod tests {
             512,
             false,
             GpuColorScheduleV4::None,
+            GpuColorUnitV4::Point,
         )
         .unwrap();
         assert_eq!(scale.radix_passes, 3);
@@ -2978,6 +3022,7 @@ mod tests {
             2,
             false,
             GpuColorScheduleV4::None,
+            GpuColorUnitV4::Point,
         )
         .unwrap();
         let (_, with_relaxation) = operations(
@@ -3017,6 +3062,7 @@ mod tests {
             2,
             false,
             GpuColorScheduleV4::None,
+            GpuColorUnitV4::Point,
         )
         .unwrap();
         let (_, block_operations) =
@@ -3030,6 +3076,7 @@ mod tests {
             2,
             true,
             GpuColorScheduleV4::None,
+            GpuColorUnitV4::Point,
         )
         .unwrap();
         let split_execution =
@@ -3045,6 +3092,7 @@ mod tests {
             2,
             false,
             GpuColorScheduleV4::FixedFullGrid,
+            GpuColorUnitV4::Point,
         )
         .unwrap();
         let colored_execution = GpuSolverExecutionV4::colored_experiment(true, true);
@@ -3064,6 +3112,7 @@ mod tests {
             2,
             false,
             GpuColorScheduleV4::CompactIndirect,
+            GpuColorUnitV4::Point,
         )
         .unwrap();
         let compact_execution = GpuSolverExecutionV4::compact_colored_experiment(true, true);
@@ -3081,6 +3130,32 @@ mod tests {
             compact_topology.element_count,
             colored_topology.element_count + MAX_COLORS * 2 + COLOR_OFFSET_COUNT + 2
         );
+        let manifold_topology = TopologyLayout::new(
+            GpuGatherTopology::StableBodyEdge,
+            2,
+            2,
+            false,
+            GpuColorScheduleV4::CompactIndirect,
+            GpuColorUnitV4::Manifold,
+        )
+        .unwrap();
+        let manifold_execution =
+            GpuSolverExecutionV4::manifold_colored_block_experiment(true, true);
+        manifold_execution.validate().unwrap();
+        let (_, manifold_operations) = operations(
+            &scenario,
+            2,
+            2,
+            manifold_topology,
+            false,
+            manifold_execution,
+        );
+        assert_eq!(manifold_operations.len(), compact_operations.len());
+        assert_eq!(
+            manifold_topology.element_count,
+            compact_topology.element_count
+        );
+        assert_eq!(manifold_topology.color_unit, GpuColorUnitV4::Manifold);
         assert!(
             GpuSolverExecutionV4 {
                 normal_solver: GpuNormalSolverV4::ManifoldBlock,

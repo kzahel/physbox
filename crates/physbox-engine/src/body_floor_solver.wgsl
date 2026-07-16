@@ -71,14 +71,23 @@ fn cross(a: vec2f, b: vec2f) -> f32 {
     return a.x * b.y - a.y * b.x;
 }
 
-fn point_velocity(body_index: u32, anchor: vec2f) -> vec2f {
-    let motion = motions_source[body_index];
+fn point_velocity_from_motion(motion: vec4f, anchor: vec2f) -> vec2f {
     return motion.xy + vec2f(-motion.z * anchor.y, motion.z * anchor.x);
+}
+
+fn point_velocity(body_index: u32, anchor: vec2f) -> vec2f {
+    return point_velocity_from_motion(motions_source[body_index], anchor);
 }
 
 fn relative_velocity(point: PreparedPoint, axis: vec2f) -> f32 {
     return dot(point_velocity(point.ids.y, point.anchor_b) -
                point_velocity(point.ids.x, point.anchor_a), axis);
+}
+
+fn relative_velocity_from_motions(point: PreparedPoint, axis: vec2f,
+                                  motion_a: vec4f, motion_b: vec4f) -> f32 {
+    return dot(point_velocity_from_motion(motion_b, point.anchor_b) -
+               point_velocity_from_motion(motion_a, point.anchor_a), axis);
 }
 
 fn point_incidence(body_index: u32) -> f32 {
@@ -184,7 +193,8 @@ fn count_manifolds(@builtin(global_invocation_id) id: vec3u) {
 @compute @workgroup_size(1)
 fn color_contacts(@builtin(global_invocation_id) id: vec3u) {
     if (id.x != 0u) { return; }
-    let compact = params.uints1.w != 0u;
+    let compact = (params.uints1.w & 1u) != 0u;
+    let manifold_units = (params.uints1.w & 2u) != 0u;
     let counts_base = params.uints1.y + 1u;
     let offsets_base = counts_base + params.uints1.z;
     let cursors_base = offsets_base + params.uints1.z + 1u;
@@ -194,6 +204,20 @@ fn color_contacts(@builtin(global_invocation_id) id: vec3u) {
         let point = point_inputs[point_index];
         if (!valid_point(point)) {
             atomicStore(&topology[params.uints0.z + point_index], 0xffffffffu);
+            continue;
+        }
+        if (manifold_units && point.ids.w != 0u) {
+            var paired = false;
+            if (point_index > 0u) {
+                let previous = point_inputs[point_index - 1u];
+                paired = valid_point(previous) && previous.ids.x == point.ids.x &&
+                    previous.ids.y == point.ids.y && previous.ids.z == point.ids.z &&
+                    previous.ids.w == 0u && point.ids.w == 1u;
+            }
+            if (!paired) {
+                atomicStore(&topology[params.uints0.z + point_index], 0xffffffffu);
+                atomicStore(&topology[params.uints1.x], 1u);
+            }
             continue;
         }
         let used = atomicLoad(&topology[params.uints0.w + point.ids.x]) |
@@ -208,6 +232,14 @@ fn color_contacts(@builtin(global_invocation_id) id: vec3u) {
         } else {
             let color_bit = 1u << color;
             atomicStore(&topology[params.uints0.z + point_index], color);
+            if (manifold_units && point_index + 1u < params.uints0.y) {
+                let next = point_inputs[point_index + 1u];
+                if (valid_point(next) && next.ids.x == point.ids.x &&
+                        next.ids.y == point.ids.y && next.ids.z == point.ids.z &&
+                        next.ids.w == 1u) {
+                    atomicStore(&topology[params.uints0.z + point_index + 1u], color);
+                }
+            }
             atomicOr(&topology[params.uints0.w + point.ids.x], color_bit);
             atomicOr(&topology[params.uints0.w + point.ids.y], color_bit);
             if (compact) {
@@ -232,6 +264,7 @@ fn color_contacts(@builtin(global_invocation_id) id: vec3u) {
     }
     atomicStore(&topology[offsets_base + params.uints1.z], running);
     for (var point_index = 0u; point_index < params.uints0.y; point_index += 1u) {
+        if (manifold_units && point_inputs[point_index].ids.w != 0u) { continue; }
         let color = atomicLoad(&topology[params.uints0.z + point_index]);
         if (color < params.uints1.z) {
             let slot = atomicAdd(&topology[cursors_base + color], 1u);
@@ -494,8 +527,8 @@ fn emit_normal(@builtin(global_invocation_id) id: vec3u) {
     emit_pair(id.x, point, point.normal * applied);
 }
 
-fn normal_equation(point: PreparedPoint) -> NormalEquation {
-    let normal_velocity = relative_velocity(point, point.normal);
+fn normal_equation_from_velocity(point: PreparedPoint,
+                                 normal_velocity: f32) -> NormalEquation {
     var velocity_bias = 0.0;
     var mass_scale = 1.0;
     var output: NormalEquation;
@@ -512,6 +545,11 @@ fn normal_equation(point: PreparedPoint) -> NormalEquation {
     }
     output.base = mass_scale * normal_velocity + velocity_bias;
     return output;
+}
+
+fn normal_equation(point: PreparedPoint) -> NormalEquation {
+    return normal_equation_from_velocity(
+        point, relative_velocity(point, point.normal));
 }
 
 fn block_matrix_entry(left: PreparedPoint, right: PreparedPoint,
@@ -715,6 +753,141 @@ fn gather(@builtin(global_invocation_id) id: vec3u) {
     motions_destination[body_index] = motion;
 }
 
+fn solve_colored_manifold(point_index: u32) {
+    let input0 = point_inputs[point_index];
+    if (!valid_point(input0) || input0.ids.w != 0u) { return; }
+    var point0 = prepared_points[point_index];
+    var point1 = point0;
+    var point_count = 1u;
+    if (point_index + 1u < params.uints0.y) {
+        let input1 = point_inputs[point_index + 1u];
+        if (valid_point(input1) && input1.ids.x == input0.ids.x &&
+                input1.ids.y == input0.ids.y && input1.ids.z == input0.ids.z &&
+                input1.ids.w == 1u) {
+            point1 = prepared_points[point_index + 1u];
+            point_count = 2u;
+        }
+    }
+
+    var motion_a = motions_source[point0.ids.x];
+    var motion_b = motions_source[point0.ids.y];
+    let stage = params.uints1.y;
+    if (stage == 1u) {
+        let impulse0 = point0.normal * point0.data1.z + point0.tangent * point0.data1.w;
+        motion_a = apply_impulse(point0.ids.x, motion_a, -impulse0, point0.anchor_a);
+        motion_b = apply_impulse(point0.ids.y, motion_b, impulse0, point0.anchor_b);
+        emit_pair(point_index, point0, impulse0);
+        if (point_count == 2u) {
+            let impulse1 = point1.normal * point1.data1.z + point1.tangent * point1.data1.w;
+            motion_a = apply_impulse(point1.ids.x, motion_a, -impulse1, point1.anchor_a);
+            motion_b = apply_impulse(point1.ids.y, motion_b, impulse1, point1.anchor_b);
+            emit_pair(point_index + 1u, point1, impulse1);
+        }
+    } else if (stage == 2u || stage == 4u) {
+        let k11 = block_matrix_entry(point0, point0, 1.0, 1.0);
+        var matrix = vec4f(k11, 0.0, 0.0, 0.0);
+        if (point_count == 2u) {
+            matrix = vec4f(
+                k11,
+                block_matrix_entry(point0, point1, 1.0, 1.0),
+                block_matrix_entry(point1, point0, 1.0, 1.0),
+                block_matrix_entry(point1, point1, 1.0, 1.0));
+        }
+        let old = vec2f(point0.data1.z,
+            select(0.0, point1.data1.z, point_count == 2u));
+        let equation0 = normal_equation_from_velocity(point0,
+            relative_velocity_from_motions(point0, point0.normal, motion_a, motion_b));
+        let equation1 = normal_equation_from_velocity(point1,
+            relative_velocity_from_motions(point1, point1.normal, motion_a, motion_b));
+        let solution = solve_normal_block(
+            matrix,
+            vec2f(equation0.base,
+                select(0.0, equation1.base, point_count == 2u)),
+            old,
+            vec2f(equation0.impulse_scale,
+                select(0.0, equation1.impulse_scale, point_count == 2u)),
+            point_count);
+        store_block_trace(point_index, matrix, solution.active_set);
+
+        let applied0 = solution.impulses.x - old.x;
+        point0.data1.z = solution.impulses.x;
+        point0.data2.x += max(applied0, 0.0);
+        point0.data2.w = f32(solution.active_set);
+        let impulse0 = point0.normal * applied0;
+        motion_a = apply_impulse(point0.ids.x, motion_a, -impulse0, point0.anchor_a);
+        motion_b = apply_impulse(point0.ids.y, motion_b, impulse0, point0.anchor_b);
+        emit_pair(point_index, point0, impulse0);
+        if (point_count == 2u) {
+            let applied1 = solution.impulses.y - old.y;
+            point1.data1.z = solution.impulses.y;
+            point1.data2.x += max(applied1, 0.0);
+            point1.data2.w = f32(solution.active_set);
+            let impulse1 = point1.normal * applied1;
+            motion_a = apply_impulse(point1.ids.x, motion_a, -impulse1, point1.anchor_a);
+            motion_b = apply_impulse(point1.ids.y, motion_b, impulse1, point1.anchor_b);
+            emit_pair(point_index + 1u, point1, impulse1);
+        }
+    } else if (stage == 3u || stage == 5u) {
+        let tangent_velocity0 = relative_velocity_from_motions(
+            point0, point0.tangent, motion_a, motion_b);
+        let old0 = point0.data1.w;
+        let limit0 = point0.data1.x * point0.data1.z;
+        point0.data1.w = clamp(old0 - point0.data0.z * tangent_velocity0, -limit0, limit0);
+        let impulse0 = point0.tangent * (point0.data1.w - old0);
+        motion_a = apply_impulse(point0.ids.x, motion_a, -impulse0, point0.anchor_a);
+        motion_b = apply_impulse(point0.ids.y, motion_b, impulse0, point0.anchor_b);
+        emit_pair(point_index, point0, impulse0);
+        if (point_count == 2u) {
+            let tangent_velocity1 = relative_velocity_from_motions(
+                point1, point1.tangent, motion_a, motion_b);
+            let old1 = point1.data1.w;
+            let limit1 = point1.data1.x * point1.data1.z;
+            point1.data1.w = clamp(
+                old1 - point1.data0.z * tangent_velocity1, -limit1, limit1);
+            let impulse1 = point1.tangent * (point1.data1.w - old1);
+            motion_a = apply_impulse(point1.ids.x, motion_a, -impulse1, point1.anchor_a);
+            motion_b = apply_impulse(point1.ids.y, motion_b, impulse1, point1.anchor_b);
+            emit_pair(point_index + 1u, point1, impulse1);
+        }
+    } else if (stage == 6u) {
+        let normal_velocity0 = relative_velocity_from_motions(
+            point0, point0.normal, motion_a, motion_b);
+        let old0 = point0.data1.z;
+        let eligible0 = point0.data1.y > 0.0 && point0.data0.x < -params.floats1.x &&
+            point0.data2.x > 0.0;
+        if (eligible0) {
+            point0.data1.z = max(old0 - point0.data0.y *
+                (normal_velocity0 + point0.data1.y * point0.data0.x), 0.0);
+        }
+        let impulse0 = point0.normal * (point0.data1.z - old0);
+        motion_a = apply_impulse(point0.ids.x, motion_a, -impulse0, point0.anchor_a);
+        motion_b = apply_impulse(point0.ids.y, motion_b, impulse0, point0.anchor_b);
+        emit_pair(point_index, point0, impulse0);
+        if (point_count == 2u) {
+            let normal_velocity1 = relative_velocity_from_motions(
+                point1, point1.normal, motion_a, motion_b);
+            let old1 = point1.data1.z;
+            let eligible1 = point1.data1.y > 0.0 &&
+                point1.data0.x < -params.floats1.x && point1.data2.x > 0.0;
+            if (eligible1) {
+                point1.data1.z = max(old1 - point1.data0.y *
+                    (normal_velocity1 + point1.data1.y * point1.data0.x), 0.0);
+            }
+            let impulse1 = point1.normal * (point1.data1.z - old1);
+            motion_a = apply_impulse(point1.ids.x, motion_a, -impulse1, point1.anchor_a);
+            motion_b = apply_impulse(point1.ids.y, motion_b, impulse1, point1.anchor_b);
+            emit_pair(point_index + 1u, point1, impulse1);
+        }
+    }
+
+    prepared_points[point_index] = point0;
+    if (point_count == 2u) {
+        prepared_points[point_index + 1u] = point1;
+    }
+    motions_source[point0.ids.x] = motion_a;
+    motions_source[point0.ids.y] = motion_b;
+}
+
 @compute @workgroup_size(64)
 fn colored_stage(@builtin(global_invocation_id) id: vec3u) {
     var point_index = id.x;
@@ -725,6 +898,10 @@ fn colored_stage(@builtin(global_invocation_id) id: vec3u) {
         point_index = atomicLoad(&topology[params.uints0.z + offset + id.x]);
     } else if (point_index >= params.uints0.y ||
                atomicLoad(&topology[params.uints0.z + point_index]) != params.uints0.w) {
+        return;
+    }
+    if (u32(params.floats2.z) == 1u) {
+        solve_colored_manifold(point_index);
         return;
     }
     if (!valid_point(point_inputs[point_index])) { return; }
