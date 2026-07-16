@@ -686,6 +686,7 @@ mod tests {
             contacts: vec![contact(0, -0.25, 3.0), contact(1, 0.25, 1.0)],
             contributions: Vec::new(),
             manifold_blocks: Vec::new(),
+            coloring: None,
         };
         let balance = observe_contact_balance(12, &evidence).unwrap();
         assert_eq!(balance.contact_points, 2);

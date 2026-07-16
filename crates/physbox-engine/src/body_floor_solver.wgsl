@@ -181,6 +181,36 @@ fn count_manifolds(@builtin(global_invocation_id) id: vec3u) {
 }
 
 @compute @workgroup_size(1)
+fn color_contacts(@builtin(global_invocation_id) id: vec3u) {
+    if (id.x != 0u) { return; }
+    var color_count = 0u;
+    for (var point_index = 0u; point_index < params.uints0.y; point_index += 1u) {
+        let point = point_inputs[point_index];
+        if (!valid_point(point)) {
+            atomicStore(&topology[params.uints0.z + point_index], 0xffffffffu);
+            continue;
+        }
+        let used = atomicLoad(&topology[params.uints0.w + point.ids.x]) |
+                   atomicLoad(&topology[params.uints0.w + point.ids.y]);
+        var color = 0u;
+        while (color < params.uints1.z && (used & (1u << color)) != 0u) {
+            color += 1u;
+        }
+        if (color == params.uints1.z) {
+            atomicStore(&topology[params.uints0.z + point_index], 0xffffffffu);
+            atomicStore(&topology[params.uints1.x], 1u);
+        } else {
+            let color_bit = 1u << color;
+            atomicStore(&topology[params.uints0.z + point_index], color);
+            atomicOr(&topology[params.uints0.w + point.ids.x], color_bit);
+            atomicOr(&topology[params.uints0.w + point.ids.y], color_bit);
+            color_count = max(color_count, color + 1u);
+        }
+    }
+    atomicStore(&topology[params.uints1.y], color_count);
+}
+
+@compute @workgroup_size(1)
 fn prefix_edges(@builtin(global_invocation_id) id: vec3u) {
     if (id.x != 0u) { return; }
     var running = 0u;
@@ -652,4 +682,64 @@ fn gather(@builtin(global_invocation_id) id: vec3u) {
         motion = apply_impulse(body_index, motion, contribution.impulse, contribution.anchor);
     }
     motions_destination[body_index] = motion;
+}
+
+@compute @workgroup_size(64)
+fn colored_stage(@builtin(global_invocation_id) id: vec3u) {
+    let point_index = id.x;
+    if (point_index >= params.uints0.y ||
+        atomicLoad(&topology[params.uints0.z + point_index]) != params.uints0.w) { return; }
+    if (!valid_point(point_inputs[point_index])) { return; }
+    var point = prepared_points[point_index];
+    var motion_a = motions_source[point.ids.x];
+    var motion_b = motions_source[point.ids.y];
+    let stage = params.uints1.y;
+    var impulse = vec2f(0.0);
+    if (stage == 1u) {
+        impulse = point.normal * point.data1.z + point.tangent * point.data1.w;
+    } else if (stage == 2u || stage == 4u) {
+        let normal_velocity = relative_velocity(point, point.normal);
+        var velocity_bias = 0.0;
+        var mass_scale = 1.0;
+        var impulse_scale = 0.0;
+        if (point.data0.w > 0.0) {
+            velocity_bias = point.data0.w / params.floats0.x;
+        } else if (params.uints1.w != 0u) {
+            velocity_bias = params.floats0.y * point.data0.w / params.floats0.x;
+            if (params.floats2.x > 0.0) {
+                velocity_bias = max(velocity_bias, -params.floats2.x);
+            }
+            mass_scale = params.floats0.z;
+            impulse_scale = params.floats0.w;
+        }
+        let old_impulse = point.data1.z;
+        let candidate = -point.data0.y * (mass_scale * normal_velocity + velocity_bias) -
+                        impulse_scale * old_impulse;
+        point.data1.z = max(old_impulse + candidate, 0.0);
+        let applied = point.data1.z - old_impulse;
+        point.data2.x += max(applied, 0.0);
+        impulse = point.normal * applied;
+    } else if (stage == 3u || stage == 5u) {
+        let tangent_velocity = relative_velocity(point, point.tangent);
+        let old_impulse = point.data1.w;
+        let limit = point.data1.x * point.data1.z;
+        point.data1.w = clamp(old_impulse - point.data0.z * tangent_velocity, -limit, limit);
+        impulse = point.tangent * (point.data1.w - old_impulse);
+    } else if (stage == 6u) {
+        let normal_velocity = relative_velocity(point, point.normal);
+        let old_impulse = point.data1.z;
+        let eligible = point.data1.y > 0.0 && point.data0.x < -params.floats1.x &&
+                         point.data2.x > 0.0;
+        if (eligible) {
+            let candidate = -point.data0.y * (normal_velocity + point.data1.y * point.data0.x);
+            point.data1.z = max(old_impulse + candidate, 0.0);
+        }
+        impulse = point.normal * (point.data1.z - old_impulse);
+    }
+    motion_a = apply_impulse(point.ids.x, motion_a, -impulse, point.anchor_a);
+    motion_b = apply_impulse(point.ids.y, motion_b, impulse, point.anchor_b);
+    emit_pair(point_index, point, impulse);
+    prepared_points[point_index] = point;
+    motions_source[point.ids.x] = motion_a;
+    motions_source[point.ids.y] = motion_b;
 }

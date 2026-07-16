@@ -747,6 +747,19 @@ current generated-contact product shader does not; porting it is therefore an
 explicit comparator slice rather than a hidden switch. This authorization does
 not select a solver, change a constructor/default/tolerance, or unblock P5.3.
 
+S5.4a colored comparator checkpoint, 2026-07-16: the corrected every-step
+factorial record triggered the authorized fallback comparison. Execution
+schema v3 now names `jacobi-gather` versus `colored-in-place` independently of
+the normal formulation. The new laboratory path performs deterministic
+GPU-side point coloring over generated contacts and applies each disjoint color
+in place to the same body motion buffers; collision generation, stable pair
+slots, stable body-edge ranges, contact preparation/cache, and physical
+settings remain shared. The 32-color portable bound is an explicit atomic
+capacity failure, and every encoded color pass is included in dispatch and
+timing evidence. Point Jacobi plus Jacobi/gather remains the product selection.
+No quality band, tolerance, oracle precedence, constructor, or physical default
+changed; measured comparison and renewed human review are still required.
+
 Circle/circle and circle/rectangle contact are analytic. Rectangle/rectangle
 uses SAT to select a reference and incident edge, clips the incident segment,
 and produces stable vertex/edge feature pairs. Test feature stability around

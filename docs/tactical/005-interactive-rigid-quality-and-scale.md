@@ -455,10 +455,11 @@ sequence; it did not authorize a product-default or quality-band change.
 - [x] Implement laboratory-only GPU manifold-block and block-mass-split lanes
   on stable pair slots, preserving equal-and-opposite records and body gather.
 - [ ] Evaluate the factorial matrix `current`, `mass-split`, `manifold-block`,
-  and `block-mass-split` at 1/2/4/8 iterations on the unchanged six S5.4
-  sources plus the 16-body stack. Preserve exact first failures and complete
-  32/256/1K GPU cost for every governed candidate.
-- [ ] Add the generated-contact colored/in-place comparator only if no
+  `block-mass-split`, and the now-triggered `colored-in-place` comparator at
+  1/2/4/8 iterations on the unchanged six S5.4 sources plus the 16-body stack.
+  Preserve exact first failures and complete 32/256/1K GPU cost for every
+  governed candidate.
+- [x] Add the generated-contact colored/in-place comparator only if no
   mass-split/block lane preserves all existing S5.4 structures through 1,200
   steps with monotonic iteration behavior and a complete 1K step below the
   fixed 16.67 ms feasibility boundary on the named desktop adapter.
@@ -569,6 +570,29 @@ preserve structure throughout, avoiding a misleading comparison between a
 quiet toppled structure and an active upright one. This changes evidence
 reporting only; it does not change simulation execution or the colored-family
 trigger found by the preliminary probe.
+
+Colored comparator checkpoint, 2026-07-16: corrected every-step decision
+version 2 confirmed the conditional trigger, so solver-execution schema v3 now
+separates normal formulation from accumulation architecture. The comparator
+colors the current generated point graph deterministically on the GPU, then
+applies each disjoint color directly to the shared motion state. It retains the
+same generated narrowphase points, stable pair slots, stable body-edge view,
+warm-start cache, preparation, physical parameters, friction, restitution,
+relaxation, and body storage as the Jacobi/gather lanes. It neither constructs
+a second world nor changes `SELECTED`, which remains point Jacobi with
+Jacobi/gather accumulation.
+
+The portable comparator deliberately encodes all 32 bounded color passes for
+each warm, normal, tangent, relaxation, and restitution stage; unused colors
+perform no work. One deterministic GPU invocation rebuilds colors after each
+generated contact graph, and no CPU count or result advances the solve. Color
+evidence records every live point assignment, the used count, the fixed
+32-color bound, topology bytes, and dispatches. A 33rd incident contact point
+atomically rejects the candidate with an explicit `solver-colors` capacity and
+failure artifact. Disjointness, exact replay, and that overflow path are
+permanent tests. The complete 1/2/4/8 quality and timing matrix remains the
+next evidence slice; the high fixed dispatch count is intentionally retained
+rather than hidden before measurement.
 
 ### S5.5 — P5.3 scalable broadphase bakeoff
 

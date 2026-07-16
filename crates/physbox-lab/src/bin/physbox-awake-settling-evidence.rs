@@ -13,7 +13,7 @@ use physbox_contracts::{
     sha256_bytes,
 };
 use physbox_engine::{
-    GpuGeneratedContactRunner, GpuNormalSolverV2, GpuSolverExecutionV2,
+    GpuGeneratedContactRunner, GpuNormalSolverV3, GpuSolverExecutionV3,
     p5_2_box2d_world_projection, p5_2_centered_rectangle_stack_scenario,
     p5_2_generated_performance_scenario, p5_2_rectangle_pyramid_scenario,
 };
@@ -56,14 +56,33 @@ enum SceneKind {
     Pyramid,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum CandidateFamilyV3 {
+    PointJacobi,
+    ScalarMassSplit,
+    ManifoldBlock,
+    BlockMassSplit,
+    ColoredInPlace,
+}
+
+impl CandidateFamilyV3 {
+    const fn is_precolored_experiment(self) -> bool {
+        matches!(
+            self,
+            Self::ScalarMassSplit | Self::ManifoldBlock | Self::BlockMassSplit
+        )
+    }
+}
+
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct CandidateDefinition {
     id: &'static str,
-    family: GpuNormalSolverV2,
+    family: CandidateFamilyV3,
     iterations: u32,
     settings: SolverSettingsV1,
-    execution: GpuSolverExecutionV2,
+    execution: GpuSolverExecutionV3,
     question: &'static str,
 }
 
@@ -110,7 +129,7 @@ struct ConvergenceDecision {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct MonotonicViolation {
-    family: GpuNormalSolverV2,
+    family: CandidateFamilyV3,
     scene: String,
     lower_candidate: &'static str,
     higher_candidate: &'static str,
@@ -123,7 +142,7 @@ struct MonotonicViolation {
 #[serde(rename_all = "camelCase")]
 struct CandidateEligibility {
     candidate: &'static str,
-    family: GpuNormalSolverV2,
+    family: CandidateFamilyV3,
     iterations: u32,
     exact_and_capacity_clean: bool,
     preserves_existing_s5_4_corpus: bool,
@@ -401,20 +420,29 @@ fn run() -> Result<(), String> {
 fn candidate_definitions(base: SolverSettingsV1) -> Vec<CandidateDefinition> {
     let definitions = [
         (
-            GpuNormalSolverV2::PointJacobi,
+            CandidateFamilyV3::PointJacobi,
+            GpuNormalSolverV3::PointJacobi,
             "current parallel point solve baseline",
         ),
         (
-            GpuNormalSolverV2::ScalarMassSplit,
+            CandidateFamilyV3::ScalarMassSplit,
+            GpuNormalSolverV3::ScalarMassSplit,
             "does point-incidence mass splitting make convergence monotonic",
         ),
         (
-            GpuNormalSolverV2::ManifoldBlock,
+            CandidateFamilyV3::ManifoldBlock,
+            GpuNormalSolverV3::ManifoldBlock,
             "does coupled two-point normal solving remove the rocking mode",
         ),
         (
-            GpuNormalSolverV2::BlockMassSplit,
+            CandidateFamilyV3::BlockMassSplit,
+            GpuNormalSolverV3::BlockMassSplit,
             "does manifold incidence plus block solving resolve chain and rocking modes",
+        ),
+        (
+            CandidateFamilyV3::ColoredInPlace,
+            GpuNormalSolverV3::PointJacobi,
+            "does disjoint GPU coloring make chain convergence monotonic without a gather",
         ),
     ];
     let ids = [
@@ -442,17 +470,25 @@ fn candidate_definitions(base: SolverSettingsV1) -> Vec<CandidateDefinition> {
             "block-mass-split-i4",
             "block-mass-split-i8",
         ],
+        [
+            "colored-in-place-i1",
+            "colored-in-place-i2",
+            "colored-in-place-i4",
+            "colored-in-place-i8",
+        ],
     ];
     let iterations = [1, 2, 4, 8];
-    let mut candidates = Vec::with_capacity(16);
-    for (family_index, (family, question)) in definitions.into_iter().enumerate() {
+    let mut candidates = Vec::with_capacity(20);
+    for (family_index, (family, normal_solver, question)) in definitions.into_iter().enumerate() {
         for (iteration_index, iteration_count) in iterations.into_iter().enumerate() {
             let mut settings = base;
             settings.iterations = iteration_count;
-            let execution = if family == GpuNormalSolverV2::PointJacobi && iteration_count == 1 {
-                GpuSolverExecutionV2::SELECTED
+            let execution = if family == CandidateFamilyV3::PointJacobi && iteration_count == 1 {
+                GpuSolverExecutionV3::SELECTED
+            } else if family == CandidateFamilyV3::ColoredInPlace {
+                GpuSolverExecutionV3::colored_experiment(true, true)
             } else {
-                GpuSolverExecutionV2::normal_experiment(family, true, true)
+                GpuSolverExecutionV3::normal_experiment(normal_solver, true, true)
             };
             candidates.push(CandidateDefinition {
                 id: ids[family_index][iteration_index],
@@ -507,10 +543,11 @@ fn convergence_decision(
         }
     }
     let families = [
-        GpuNormalSolverV2::PointJacobi,
-        GpuNormalSolverV2::ScalarMassSplit,
-        GpuNormalSolverV2::ManifoldBlock,
-        GpuNormalSolverV2::BlockMassSplit,
+        CandidateFamilyV3::PointJacobi,
+        CandidateFamilyV3::ScalarMassSplit,
+        CandidateFamilyV3::ManifoldBlock,
+        CandidateFamilyV3::BlockMassSplit,
+        CandidateFamilyV3::ColoredInPlace,
     ];
     let mut monotonic_violations = Vec::new();
     for family in families {
@@ -637,7 +674,7 @@ fn convergence_decision(
         let one_k_below_feasibility_boundary = one_k.capacity_clean
             && one_k_complete_step_seconds
                 .is_some_and(|seconds| seconds < FEASIBILITY_BOUNDARY_SECONDS);
-        let satisfies_conditional_exit = candidate.family != GpuNormalSolverV2::PointJacobi
+        let satisfies_conditional_exit = candidate.family != CandidateFamilyV3::PointJacobi
             && exact_and_capacity_clean
             && preserves_existing_s5_4_corpus
             && family_is_monotonic
@@ -656,7 +693,9 @@ fn convergence_decision(
     }
     let qualifying = eligibility
         .iter()
-        .filter(|candidate| candidate.satisfies_conditional_exit)
+        .filter(|candidate| {
+            candidate.family.is_precolored_experiment() && candidate.satisfies_conditional_exit
+        })
         .map(|candidate| candidate.candidate)
         .collect::<Vec<_>>();
     let colored_comparator_triggered = qualifying.is_empty();
@@ -670,7 +709,7 @@ fn convergence_decision(
         )
     };
     Ok(ConvergenceDecision {
-        version: 2,
+        version: 3,
         feasibility_boundary_seconds: FEASIBILITY_BOUNDARY_SECONDS,
         required_existing_scenes: EXISTING_S5_4_SCENES,
         monotonic_violations,
@@ -1128,6 +1167,7 @@ fn render_playback(
         "scalar-mass-split-i4",
         "manifold-block-i4",
         "block-mass-split-i4",
+        "colored-in-place-i4",
     ];
     for id in candidate_ids {
         if !candidates.iter().any(|candidate| candidate.id == id) {
@@ -1431,21 +1471,30 @@ mod tests {
                 "block-mass-split-i2",
                 "block-mass-split-i4",
                 "block-mass-split-i8",
+                "colored-in-place-i1",
+                "colored-in-place-i2",
+                "colored-in-place-i4",
+                "colored-in-place-i8",
             ]
         );
         assert_eq!(candidates[0].settings, source.settings);
-        assert_eq!(candidates[0].execution, GpuSolverExecutionV2::SELECTED);
+        assert_eq!(candidates[0].execution, GpuSolverExecutionV3::SELECTED);
         assert!(candidates.iter().all(|candidate| {
             candidate.settings.iterations == candidate.iterations
-                && candidate.execution.normal_solver == candidate.family
                 && candidate.execution.warm_start
                 && candidate.execution.relaxation
         }));
+        assert!(candidates.iter().all(|candidate| {
+            (candidate.family == CandidateFamilyV3::ColoredInPlace)
+                == (candidate.execution.accumulation
+                    == physbox_engine::GpuSolverAccumulationV3::ColoredInPlace)
+        }));
         for family in [
-            GpuNormalSolverV2::PointJacobi,
-            GpuNormalSolverV2::ScalarMassSplit,
-            GpuNormalSolverV2::ManifoldBlock,
-            GpuNormalSolverV2::BlockMassSplit,
+            CandidateFamilyV3::PointJacobi,
+            CandidateFamilyV3::ScalarMassSplit,
+            CandidateFamilyV3::ManifoldBlock,
+            CandidateFamilyV3::BlockMassSplit,
+            CandidateFamilyV3::ColoredInPlace,
         ] {
             assert_eq!(
                 candidates

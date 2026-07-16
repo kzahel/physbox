@@ -15,7 +15,7 @@ use wgpu::util::DeviceExt;
 use crate::{
     GpuBodyStorage,
     body_floor_solver::{
-        GpuFixedFloorSolver, GpuGatherTopology, GpuGatherTopologyEvidence, GpuSolverExecutionV2,
+        GpuFixedFloorSolver, GpuGatherTopology, GpuGatherTopologyEvidence, GpuSolverExecutionV3,
         PointInputRaw, PreparedPointRaw, validate_selected_settings,
     },
     collision_candidates::{CandidateCase, CandidatePipelines},
@@ -166,7 +166,7 @@ impl GpuGeneratedContactGraph {
             permute_edge_build,
             permute_pair_build,
             fingerprint_mask,
-            GpuSolverExecutionV2::SELECTED,
+            GpuSolverExecutionV3::SELECTED,
         )
     }
 
@@ -180,7 +180,7 @@ impl GpuGeneratedContactGraph {
         permute_edge_build: bool,
         permute_pair_build: bool,
         fingerprint_mask: u32,
-        execution: GpuSolverExecutionV2,
+        execution: GpuSolverExecutionV3,
     ) -> Result<Self, String> {
         if !scenario.manifolds.is_empty()
             || !scenario.contact_cache.is_empty()
@@ -336,6 +336,11 @@ impl GpuGeneratedContactGraph {
         destination: &wgpu::Buffer,
     ) -> crate::body_floor_solver::FixedFloorEvidenceLayout {
         self.solver.copy_pass_evidence(encoder, destination)
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn color_status_source(&self) -> Option<(&wgpu::Buffer, u64)> {
+        self.solver.color_status_source()
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -1152,7 +1157,7 @@ pub struct GpuGeneratedContactOutput {
     pub completed_steps: u32,
     pub mapped_after_final_step_only: bool,
     pub solver_settings: physbox_contracts::SolverSettingsV1,
-    pub solver_execution: GpuSolverExecutionV2,
+    pub solver_execution: GpuSolverExecutionV3,
     pub bodies: Vec<physbox_contracts::BodyStateV1>,
     pub cache: Vec<PersistentContactV1>,
     pub pass_evidence: crate::GpuFixedFloorPassEvidence,
@@ -1264,6 +1269,43 @@ impl GpuGeneratedContactOutput {
         if traced_block_points != expected_block_points {
             return Err("generated manifold-block evidence does not match execution".to_owned());
         }
+        match (
+            self.solver_execution.accumulation,
+            &self.pass_evidence.coloring,
+        ) {
+            (crate::GpuSolverAccumulationV3::JacobiGather, None) => {}
+            (crate::GpuSolverAccumulationV3::ColoredInPlace, Some(coloring)) => {
+                if coloring.max_colors != 32
+                    || coloring.point_colors.len() != self.pass_evidence.contacts.len()
+                    || coloring.color_count > coloring.max_colors
+                    || (!coloring.overflowed
+                        && coloring
+                            .point_colors
+                            .iter()
+                            .any(|&color| color >= coloring.color_count))
+                {
+                    return Err("generated coloring evidence is invalid".to_owned());
+                }
+                if !coloring.overflowed {
+                    let mut colored_bodies = std::collections::BTreeSet::new();
+                    for (contact, &color) in self
+                        .pass_evidence
+                        .contacts
+                        .iter()
+                        .zip(&coloring.point_colors)
+                    {
+                        if !colored_bodies.insert((color, contact.body_a))
+                            || !colored_bodies.insert((color, contact.body_b))
+                        {
+                            return Err(
+                                "generated color contains contacts with a shared body".to_owned()
+                            );
+                        }
+                    }
+                }
+            }
+            _ => return Err("generated coloring evidence does not match execution".to_owned()),
+        }
         self.work.validate().map_err(|error| error.to_string())?;
         for pair in self.capacities.windows(2) {
             if pair[0].class >= pair[1].class {
@@ -1365,7 +1407,7 @@ impl GpuGeneratedContactRunner {
         &self,
         scenario: &ScenarioV1,
         completed_steps: u32,
-        execution: GpuSolverExecutionV2,
+        execution: GpuSolverExecutionV3,
     ) -> Result<GpuGeneratedContactOutput, String> {
         self.run_experiment_with_gather_topology(
             scenario,
@@ -1382,7 +1424,7 @@ impl GpuGeneratedContactRunner {
         completed_steps: u32,
         gather_topology: GpuGatherTopology,
         permute_edge_build: bool,
-        execution: GpuSolverExecutionV2,
+        execution: GpuSolverExecutionV3,
     ) -> Result<GpuGeneratedContactOutput, String> {
         self.run_with_topologies_and_execution(
             scenario,
@@ -1402,7 +1444,7 @@ impl GpuGeneratedContactRunner {
         &self,
         scenario: &ScenarioV1,
         completed_steps: u32,
-        execution: GpuSolverExecutionV2,
+        execution: GpuSolverExecutionV3,
     ) -> Result<Vec<Vec<physbox_contracts::BodyStateV1>>, String> {
         if completed_steps == 0 {
             return Err("generated contact pose history requires at least one step".to_owned());
@@ -1445,6 +1487,13 @@ impl GpuGeneratedContactRunner {
             "generated_capacity_history_readback",
             capacity_history_bytes,
         );
+        let color_status_history = graph.color_status_source().map(|_| {
+            readback(
+                &self.device,
+                "generated_color_status_history_readback",
+                u64::from(completed_steps) * size_of::<u32>() as u64,
+            )
+        });
         let step_readback = readback(&self.device, "generated_history_step_readback", 4);
 
         let mut encoded_steps = 0;
@@ -1484,6 +1533,17 @@ impl GpuGeneratedContactRunner {
                         u64::from(COLLISION_CAPACITY_COUNTER_BYTES),
                     );
                 }
+                if let (Some((source, source_offset)), Some(destination)) =
+                    (graph.color_status_source(), &color_status_history)
+                {
+                    encoder.copy_buffer_to_buffer(
+                        source,
+                        source_offset,
+                        destination,
+                        u64::from(step) * size_of::<u32>() as u64,
+                        size_of::<u32>() as u64,
+                    );
+                }
             }
             self.queue.submit([encoder.finish()]);
             encoded_steps += chunk;
@@ -1517,6 +1577,16 @@ impl GpuGeneratedContactRunner {
             &capacity_history,
             4 * completed_steps as usize,
         )?;
+        let color_statuses = color_status_history
+            .as_ref()
+            .map(|buffer| {
+                crate::collision_candidates::map_values::<u32>(
+                    &self.device,
+                    buffer,
+                    completed_steps as usize,
+                )
+            })
+            .transpose()?;
         let mut history = Vec::with_capacity(completed_steps as usize);
         for step in 0..completed_steps as usize {
             let step_capacities = &capacities[step * 4..step * 4 + 4];
@@ -1527,6 +1597,15 @@ impl GpuGeneratedContactRunner {
             {
                 return Err(format!(
                     "generated construction capacity rejected post-step {} pose history",
+                    step + 1
+                ));
+            }
+            if color_statuses
+                .as_ref()
+                .is_some_and(|statuses| statuses[step] != 0)
+            {
+                return Err(format!(
+                    "generated solver coloring rejected post-step {} pose history",
                     step + 1
                 ));
             }
@@ -1569,7 +1648,7 @@ impl GpuGeneratedContactRunner {
             permute_edge_build,
             permute_pair_build,
             fingerprint_mask,
-            GpuSolverExecutionV2::SELECTED,
+            GpuSolverExecutionV3::SELECTED,
         )
     }
 
@@ -1583,7 +1662,7 @@ impl GpuGeneratedContactRunner {
         permute_edge_build: bool,
         permute_pair_build: bool,
         fingerprint_mask: u32,
-        execution: GpuSolverExecutionV2,
+        execution: GpuSolverExecutionV3,
     ) -> Result<GpuGeneratedContactOutput, String> {
         if completed_steps == 0 {
             return Err("generated contact validation requires at least one step".to_owned());
@@ -1766,7 +1845,7 @@ impl GpuGeneratedContactRunner {
                 "GPU completed-step counter {gpu_steps} differed from {completed_steps}"
             ));
         }
-        let any_rejected = candidate_raw[3] != 0
+        let mut any_rejected = candidate_raw[3] != 0
             || manifold_raw[2] != manifold_raw[1]
             || point_raw[2] != point_raw[1]
             || persistence_raw.values[2] != persistence_raw.values[1];
@@ -1795,6 +1874,10 @@ impl GpuGeneratedContactRunner {
             })
             .map(|(_, contribution)| contribution)
             .collect();
+        any_rejected |= pass_evidence
+            .coloring
+            .as_ref()
+            .is_some_and(|coloring| coloring.overflowed);
         let cache = if any_rejected {
             Vec::new()
         } else {
@@ -1851,6 +1934,24 @@ impl GpuGeneratedContactRunner {
             point_capacity,
             work.narrowphase_tests,
         ));
+        if let Some(coloring) = &pass_evidence.coloring {
+            let attempted = if coloring.overflowed {
+                u64::from(coloring.max_colors) + 1
+            } else {
+                u64::from(coloring.color_count)
+            };
+            capacities.push(CollisionCapacityV1 {
+                class: "solver-colors".to_owned(),
+                stride_bytes: 4,
+                capacity_elements: u64::from(coloring.max_colors),
+                attempted_elements: attempted,
+                committed_elements: if coloring.overflowed { 0 } else { attempted },
+                allocated_bytes: u64::from(coloring.max_colors) * 4,
+                high_water_bytes: attempted.min(u64::from(coloring.max_colors)) * 4,
+                overflowed: coloring.overflowed,
+                accepted: !coloring.overflowed,
+            });
+        }
         match &graph.persistence {
             GeneratedPersistenceGraph::FullKey(_) => {
                 let persistence_capacity = crate::collision_persistence::capacity_record(
@@ -1907,6 +2008,8 @@ impl GpuGeneratedContactRunner {
                 first_step: Some(completed_steps),
                 first_stage: Some(if capacity.class == "candidate-pairs" {
                     "candidate".to_owned()
+                } else if capacity.class == "solver-colors" {
+                    "solver-coloring".to_owned()
                 } else if capacity.class == "persistent-cache"
                     || capacity.class == "pair-slot-cache"
                 {
@@ -1988,7 +2091,7 @@ pub async fn benchmark_gpu_generated_contacts_with_gather_topology(
         warmup_steps,
         samples,
         gather_topology,
-        GpuSolverExecutionV2::SELECTED,
+        GpuSolverExecutionV3::SELECTED,
     )
     .await
 }
@@ -1998,7 +2101,7 @@ pub async fn benchmark_gpu_generated_contact_experiment(
     scenario: &ScenarioV1,
     warmup_steps: u32,
     samples: u32,
-    execution: GpuSolverExecutionV2,
+    execution: GpuSolverExecutionV3,
 ) -> Result<GpuGeneratedContactBenchmarkOutput, String> {
     benchmark_gpu_generated_contacts_with_execution(
         scenario,
@@ -2016,7 +2119,7 @@ async fn benchmark_gpu_generated_contacts_with_execution(
     warmup_steps: u32,
     samples: u32,
     gather_topology: GpuGatherTopology,
-    execution: GpuSolverExecutionV2,
+    execution: GpuSolverExecutionV3,
 ) -> Result<GpuGeneratedContactBenchmarkOutput, String> {
     if warmup_steps == 0 || samples == 0 {
         return Err("generated-contact benchmark requires non-zero warmup and samples".to_owned());
