@@ -541,6 +541,21 @@ manifolds in one candidate-only dispatch and adds exactly four topology bytes
 per body. Point Jacobi remains `SELECTED`; no constructor, tolerance, physical
 default, or acceptance band changed.
 
+Factorial automation checkpoint, 2026-07-16: the awake evidence runner now
+defines exactly sixteen candidates—point Jacobi, scalar mass split, manifold
+block, and block mass split at 1/2/4/8 iterations—and evaluates the unchanged
+six S5.4 sources plus the 16-body stack. It retains the frozen eight-iteration
+normal traces, exact GPU checkpoints, process-isolated awake Box2D samples,
+first-failure reproducers, complete 32/256/1K timing rows, topology capacity,
+dispatch, and raw timing evidence. A versioned decision record checks earlier
+structural failure and strict increases in settled peak linear speed, angular
+speed, or energy between adjacent iteration counts. It triggers the colored
+generated-contact comparator only when no experimental family member also
+preserves all six existing structures, replays exactly and capacity-clean, and
+fits a complete 1K step below 16.67 ms. This checkpoint implements the runner;
+the clean measured package and any conditionally required comparator remain
+separate commits.
+
 ### S5.5 — P5.3 scalable broadphase bakeoff
 
 Dependency: the human accepts an S5.4 path, S3 closes, and the S4 construction

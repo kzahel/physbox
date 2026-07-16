@@ -8,13 +8,13 @@ use std::{
 };
 
 use physbox_contracts::{
-    BodyStateV1, FiniteF32, OracleRequestV1, OracleResultV1, SCHEMA_VERSION, ScenarioV1,
+    BodyStateV1, OracleRequestV1, OracleResultV1, SCHEMA_VERSION, ScenarioV1,
     SettlingObservationV1, ShapeV1, SolverSettingsV1, Validate, canonical_hash, canonical_json,
     sha256_bytes,
 };
 use physbox_engine::{
-    GpuGeneratedContactRunner, GpuSolverExecutionV2, p5_2_box2d_world_projection,
-    p5_2_centered_rectangle_stack_scenario, p5_2_contact_policy_candidate,
+    GpuGeneratedContactRunner, GpuNormalSolverV2, GpuSolverExecutionV2,
+    p5_2_box2d_world_projection, p5_2_centered_rectangle_stack_scenario,
     p5_2_generated_performance_scenario, p5_2_rectangle_pyramid_scenario,
 };
 use physbox_lab::{
@@ -22,6 +22,9 @@ use physbox_lab::{
     collision_candidates::enumerate_scalar_candidates,
     oracle_transport::{
         OracleProcess, OracleRunConfig, OracleSourceIdentity, run_oracle, verify_clean_git_pin,
+    },
+    parallel_normal::{
+        FrozenNormalDiagnosticV1, ParallelNormalModeV1, frozen_rectangle_stack_diagnostic,
     },
     settling::{
         AWAKE_SETTLING_METRICS_VERSION, AwakeFirstDivergenceV1, AwakeSettlingWindowV1,
@@ -37,6 +40,15 @@ const CHECKPOINTS: [u32; 11] = [1, 60, 180, 360, 600, 900, 960, 1_020, 1_080, 1_
 const PLAYBACK_STEPS: [u32; 4] = [1, 180, 600, 1_200];
 const SETTLED_WINDOW_START: u32 = 900;
 const SETTLED_WINDOW_END: u32 = 1_200;
+const FEASIBILITY_BOUNDARY_SECONDS: f64 = 1.0 / 60.0;
+const EXISTING_S5_4_SCENES: [&str; 6] = [
+    "rectangle-stack-2",
+    "rectangle-stack-4",
+    "rectangle-stack-8",
+    "rectangle-pyramid-2",
+    "rectangle-pyramid-3",
+    "rectangle-pyramid-4",
+];
 
 #[derive(Clone, Copy)]
 enum SceneKind {
@@ -48,6 +60,8 @@ enum SceneKind {
 #[serde(rename_all = "camelCase")]
 struct CandidateDefinition {
     id: &'static str,
+    family: GpuNormalSolverV2,
+    iterations: u32,
     settings: SolverSettingsV1,
     execution: GpuSolverExecutionV2,
     question: &'static str,
@@ -66,10 +80,12 @@ struct Manifest {
     box2d_revision: &'static str,
     adapter: physbox_engine::AdapterDiagnostics,
     candidates: Vec<CandidateDefinition>,
+    frozen_normal_diagnostics: Vec<FrozenNormalDiagnosticV1>,
     scenes: Vec<SceneEvidence>,
     failures: Vec<FailureRecord>,
     gpu_performance: Vec<GpuPerformanceRow>,
     optimized_box2d_performance: Vec<OptimizedBox2dRow>,
+    convergence: ConvergenceDecision,
     platform_artifacts: Vec<PlatformArtifact>,
     physical_device_gap: Option<String>,
     physical_defaults_changed: bool,
@@ -77,6 +93,44 @@ struct Manifest {
     oracle_precedence_changed: bool,
     product_constructor_changed: bool,
     playback: &'static str,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ConvergenceDecision {
+    version: u32,
+    feasibility_boundary_seconds: f64,
+    required_existing_scenes: [&'static str; 6],
+    monotonic_violations: Vec<MonotonicViolation>,
+    candidates: Vec<CandidateEligibility>,
+    colored_comparator_triggered: bool,
+    reason: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MonotonicViolation {
+    family: GpuNormalSolverV2,
+    scene: String,
+    lower_candidate: &'static str,
+    higher_candidate: &'static str,
+    dimension: &'static str,
+    lower_value: f64,
+    higher_value: f64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CandidateEligibility {
+    candidate: &'static str,
+    family: GpuNormalSolverV2,
+    iterations: u32,
+    exact_and_capacity_clean: bool,
+    preserves_existing_s5_4_corpus: bool,
+    family_is_monotonic: bool,
+    one_k_complete_step_seconds: Option<f64>,
+    one_k_below_feasibility_boundary: bool,
+    satisfies_conditional_exit: bool,
 }
 
 #[derive(Serialize)]
@@ -218,9 +272,10 @@ fn run() -> Result<(), String> {
     let base = p5_2_centered_rectangle_stack_scenario(2, 1)
         .map_err(|error| error.to_string())?
         .settings;
-    let candidates = candidate_definitions(base)?;
+    let candidates = candidate_definitions(base);
+    let frozen_normal_diagnostics = frozen_normal_diagnostics()?;
     let mut scene_inputs = Vec::new();
-    for count in [2, 4, 8] {
+    for count in [2, 4, 8, 16] {
         scene_inputs.push((
             format!("rectangle-stack-{count}"),
             SceneKind::Stack,
@@ -240,7 +295,7 @@ fn run() -> Result<(), String> {
     let mut scenes = Vec::new();
     let mut failures = Vec::new();
     for (label, kind, source) in scene_inputs {
-        eprintln!("S5.4 scene {label}");
+        eprintln!("S5.4a scene {label}");
         let scene = evaluate_scene(
             &arguments,
             &staging,
@@ -296,6 +351,7 @@ fn run() -> Result<(), String> {
 
     let gpu_performance = performance_matrix(&arguments, &candidates)?;
     let optimized_box2d_performance = optimized_box2d_matrix(&arguments, &staging)?;
+    let convergence = convergence_decision(&candidates, &scenes, &gpu_performance)?;
     let platform_artifacts = copy_platform_artifacts(&arguments.platforms, &staging)?;
     atomic_write(
         &staging.join("playback.svg"),
@@ -304,7 +360,7 @@ fn run() -> Result<(), String> {
     let manifest = Manifest {
         schema_version: SCHEMA_VERSION,
         metrics_version: AWAKE_SETTLING_METRICS_VERSION,
-        artifact_kind: "p5.2b-s5.4-awake-settling-bakeoff",
+        artifact_kind: "p5.2b-s5.4a-parallel-normal-factorial",
         run_id: arguments.run_id.clone(),
         source_revision,
         source_dirty,
@@ -312,10 +368,12 @@ fn run() -> Result<(), String> {
         box2d_revision: BOX2D_REVISION,
         adapter: runner.diagnostics().clone(),
         candidates,
+        frozen_normal_diagnostics,
         scenes,
         failures,
         gpu_performance,
         optimized_box2d_performance,
+        convergence,
         platform_artifacts,
         physical_device_gap: arguments.physical_device_gap,
         physical_defaults_changed: false,
@@ -331,7 +389,7 @@ fn run() -> Result<(), String> {
     let manifest_bytes =
         fs::read(arguments.output.join("manifest.json")).map_err(|error| error.to_string())?;
     println!(
-        "PHYSBOX5_VALIDATION_SUCCESS host=native scenario=s5.4-awake-settling run_id={} manifest_sha256={} output={}",
+        "PHYSBOX5_VALIDATION_SUCCESS host=native scenario=s5.4a-parallel-normal-factorial run_id={} manifest_sha256={} output={}",
         arguments.run_id,
         sha256_bytes(&manifest_bytes),
         arguments.output.display()
@@ -339,75 +397,292 @@ fn run() -> Result<(), String> {
     Ok(())
 }
 
-fn candidate_definitions(base: SolverSettingsV1) -> Result<Vec<CandidateDefinition>, String> {
-    let mut substeps_8 = base;
-    substeps_8.substeps = 8;
-    let mut iterations_2 = base;
-    iterations_2.iterations = 2;
-    let mut iterations_4 = base;
-    iterations_4.iterations = 4;
-    let mut substeps_8_iterations_2 = substeps_8;
-    substeps_8_iterations_2.iterations = 2;
-    let mut lower_bias = base;
-    lower_bias.bias_rate = finite(0.1)?;
-    let mut bounded_contact = base;
-    bounded_contact.contact_policy = Some(p5_2_contact_policy_candidate());
-    Ok(vec![
-        CandidateDefinition {
-            id: "selected-4x1",
-            settings: base,
-            execution: GpuSolverExecutionV2::SELECTED,
-            question: "selected product execution baseline",
-        },
-        CandidateDefinition {
-            id: "substeps-8x1",
-            settings: substeps_8,
-            execution: GpuSolverExecutionV2::experiment(true, true),
-            question: "does smaller substep dt improve awake structure and residual motion",
-        },
-        CandidateDefinition {
-            id: "iterations-4x2",
-            settings: iterations_2,
-            execution: GpuSolverExecutionV2::experiment(true, true),
-            question: "does a second Jacobi iteration resolve convergence or torque imbalance",
-        },
-        CandidateDefinition {
-            id: "iterations-4x4",
-            settings: iterations_4,
-            execution: GpuSolverExecutionV2::experiment(true, true),
-            question: "does four-iteration convergence materially outperform two iterations",
-        },
-        CandidateDefinition {
-            id: "combined-8x2",
-            settings: substeps_8_iterations_2,
-            execution: GpuSolverExecutionV2::experiment(true, true),
-            question: "does combined substep and iteration work answer a remaining quality gap",
-        },
-        CandidateDefinition {
-            id: "no-warm-start",
-            settings: base,
-            execution: GpuSolverExecutionV2::experiment(false, true),
-            question: "is cached impulse transfer a measured jitter source",
-        },
-        CandidateDefinition {
-            id: "no-relaxation",
-            settings: base,
-            execution: GpuSolverExecutionV2::experiment(true, false),
-            question: "is the post-position relaxation stage a measured jitter source",
-        },
-        CandidateDefinition {
-            id: "bias-0.1",
-            settings: lower_bias,
-            execution: GpuSolverExecutionV2::experiment(true, true),
-            question: "does lower overlap bias reduce residual energy without losing support",
-        },
-        CandidateDefinition {
-            id: "bounded-contact-policy",
-            settings: bounded_contact,
-            execution: GpuSolverExecutionV2::experiment(true, true),
-            question: "does governed speculation and depenetration bounding change the failure",
-        },
-    ])
+fn candidate_definitions(base: SolverSettingsV1) -> Vec<CandidateDefinition> {
+    let definitions = [
+        (
+            GpuNormalSolverV2::PointJacobi,
+            "current parallel point solve baseline",
+        ),
+        (
+            GpuNormalSolverV2::ScalarMassSplit,
+            "does point-incidence mass splitting make convergence monotonic",
+        ),
+        (
+            GpuNormalSolverV2::ManifoldBlock,
+            "does coupled two-point normal solving remove the rocking mode",
+        ),
+        (
+            GpuNormalSolverV2::BlockMassSplit,
+            "does manifold incidence plus block solving resolve chain and rocking modes",
+        ),
+    ];
+    let ids = [
+        [
+            "point-jacobi-i1",
+            "point-jacobi-i2",
+            "point-jacobi-i4",
+            "point-jacobi-i8",
+        ],
+        [
+            "scalar-mass-split-i1",
+            "scalar-mass-split-i2",
+            "scalar-mass-split-i4",
+            "scalar-mass-split-i8",
+        ],
+        [
+            "manifold-block-i1",
+            "manifold-block-i2",
+            "manifold-block-i4",
+            "manifold-block-i8",
+        ],
+        [
+            "block-mass-split-i1",
+            "block-mass-split-i2",
+            "block-mass-split-i4",
+            "block-mass-split-i8",
+        ],
+    ];
+    let iterations = [1, 2, 4, 8];
+    let mut candidates = Vec::with_capacity(16);
+    for (family_index, (family, question)) in definitions.into_iter().enumerate() {
+        for (iteration_index, iteration_count) in iterations.into_iter().enumerate() {
+            let mut settings = base;
+            settings.iterations = iteration_count;
+            let execution = if family == GpuNormalSolverV2::PointJacobi && iteration_count == 1 {
+                GpuSolverExecutionV2::SELECTED
+            } else {
+                GpuSolverExecutionV2::normal_experiment(family, true, true)
+            };
+            candidates.push(CandidateDefinition {
+                id: ids[family_index][iteration_index],
+                family,
+                iterations: iteration_count,
+                settings,
+                execution,
+                question,
+            });
+        }
+    }
+    candidates
+}
+
+fn frozen_normal_diagnostics() -> Result<Vec<FrozenNormalDiagnosticV1>, String> {
+    let modes = [
+        ParallelNormalModeV1::PointJacobi,
+        ParallelNormalModeV1::ScalarMassSplit,
+        ParallelNormalModeV1::ManifoldBlock,
+        ParallelNormalModeV1::BlockMassSplit,
+    ];
+    let mut diagnostics = Vec::with_capacity(16);
+    for rectangle_count in [2, 4, 8, 16] {
+        for mode in modes {
+            diagnostics.push(frozen_rectangle_stack_diagnostic(rectangle_count, mode, 8)?);
+        }
+    }
+    Ok(diagnostics)
+}
+
+fn convergence_decision(
+    candidates: &[CandidateDefinition],
+    scenes: &[SceneEvidence],
+    performance: &[GpuPerformanceRow],
+) -> Result<ConvergenceDecision, String> {
+    if scenes.len() != EXISTING_S5_4_SCENES.len() + 1 {
+        return Err("factorial evidence does not contain exactly seven scenes".to_owned());
+    }
+    for required in EXISTING_S5_4_SCENES
+        .into_iter()
+        .chain(["rectangle-stack-16"])
+    {
+        if scenes
+            .iter()
+            .filter(|scene| scene.label == required)
+            .count()
+            != 1
+        {
+            return Err(format!(
+                "factorial evidence omitted or duplicated {required}"
+            ));
+        }
+    }
+    let families = [
+        GpuNormalSolverV2::PointJacobi,
+        GpuNormalSolverV2::ScalarMassSplit,
+        GpuNormalSolverV2::ManifoldBlock,
+        GpuNormalSolverV2::BlockMassSplit,
+    ];
+    let mut monotonic_violations = Vec::new();
+    for family in families {
+        let family_candidates = candidates
+            .iter()
+            .filter(|candidate| candidate.family == family)
+            .collect::<Vec<_>>();
+        if family_candidates.len() != 4
+            || family_candidates
+                .windows(2)
+                .any(|pair| pair[0].iterations >= pair[1].iterations)
+        {
+            return Err(format!(
+                "factorial family {family:?} is incomplete or unordered"
+            ));
+        }
+        for pair in family_candidates.windows(2) {
+            for scene in scenes {
+                let lower = candidate_scene(scene, pair[0].id)?;
+                let higher = candidate_scene(scene, pair[1].id)?;
+                let lower_failure = lower
+                    .first_structural_failure_step
+                    .unwrap_or(SETTLED_WINDOW_END + 1);
+                let higher_failure = higher
+                    .first_structural_failure_step
+                    .unwrap_or(SETTLED_WINDOW_END + 1);
+                if higher_failure < lower_failure {
+                    monotonic_violations.push(MonotonicViolation {
+                        family,
+                        scene: scene.label.clone(),
+                        lower_candidate: pair[0].id,
+                        higher_candidate: pair[1].id,
+                        dimension: "first-structural-failure-step",
+                        lower_value: f64::from(lower_failure),
+                        higher_value: f64::from(higher_failure),
+                    });
+                }
+                for (dimension, lower_value, higher_value) in [
+                    (
+                        "settled-residual-linear-speed-max",
+                        lower.window.residual_linear_speed_max,
+                        higher.window.residual_linear_speed_max,
+                    ),
+                    (
+                        "settled-residual-angular-speed-max",
+                        lower.window.residual_angular_speed_max,
+                        higher.window.residual_angular_speed_max,
+                    ),
+                    (
+                        "settled-kinetic-energy-max",
+                        lower.window.kinetic_energy_max,
+                        higher.window.kinetic_energy_max,
+                    ),
+                ] {
+                    if higher_value > lower_value {
+                        monotonic_violations.push(MonotonicViolation {
+                            family,
+                            scene: scene.label.clone(),
+                            lower_candidate: pair[0].id,
+                            higher_candidate: pair[1].id,
+                            dimension,
+                            lower_value: f64::from(lower_value),
+                            higher_value: f64::from(higher_value),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    let mut eligibility = Vec::with_capacity(candidates.len());
+    for candidate in candidates {
+        let candidate_performance = performance
+            .iter()
+            .filter(|row| row.candidate == candidate.id)
+            .collect::<Vec<_>>();
+        if candidate_performance.len() != 3
+            || [32, 256, 1_024].into_iter().any(|body_count| {
+                candidate_performance
+                    .iter()
+                    .filter(|row| row.bodies == body_count)
+                    .count()
+                    != 1
+            })
+        {
+            return Err(format!(
+                "candidate {} has an incomplete performance matrix",
+                candidate.id
+            ));
+        }
+        let family_is_monotonic = !monotonic_violations
+            .iter()
+            .any(|violation| violation.family == candidate.family);
+        let preserves_existing_s5_4_corpus = EXISTING_S5_4_SCENES.iter().all(|required| {
+            scenes
+                .iter()
+                .find(|scene| scene.label == *required)
+                .and_then(|scene| {
+                    scene
+                        .candidates
+                        .iter()
+                        .find(|evidence| evidence.candidate == candidate.id)
+                })
+                .is_some_and(|evidence| evidence.structural_pass)
+        });
+        let exact_and_capacity_clean = scenes.iter().all(|scene| {
+            candidate_scene(scene, candidate.id).is_ok_and(|evidence| {
+                evidence.exact_replay && evidence.samples.iter().all(|sample| sample.capacity_clean)
+            })
+        }) && candidate_performance
+            .iter()
+            .all(|row| row.capacity_clean);
+        let one_k = candidate_performance
+            .iter()
+            .copied()
+            .find(|row| row.bodies == 1_024)
+            .ok_or_else(|| format!("candidate {} omitted the 1K timing row", candidate.id))?;
+        let one_k_complete_step_seconds = one_k.gpu_end_to_end_p50_seconds;
+        let one_k_below_feasibility_boundary = one_k.capacity_clean
+            && one_k_complete_step_seconds
+                .is_some_and(|seconds| seconds < FEASIBILITY_BOUNDARY_SECONDS);
+        let satisfies_conditional_exit = candidate.family != GpuNormalSolverV2::PointJacobi
+            && exact_and_capacity_clean
+            && preserves_existing_s5_4_corpus
+            && family_is_monotonic
+            && one_k_below_feasibility_boundary;
+        eligibility.push(CandidateEligibility {
+            candidate: candidate.id,
+            family: candidate.family,
+            iterations: candidate.iterations,
+            exact_and_capacity_clean,
+            preserves_existing_s5_4_corpus,
+            family_is_monotonic,
+            one_k_complete_step_seconds,
+            one_k_below_feasibility_boundary,
+            satisfies_conditional_exit,
+        });
+    }
+    let qualifying = eligibility
+        .iter()
+        .filter(|candidate| candidate.satisfies_conditional_exit)
+        .map(|candidate| candidate.candidate)
+        .collect::<Vec<_>>();
+    let colored_comparator_triggered = qualifying.is_empty();
+    let reason = if colored_comparator_triggered {
+        "no mass-split/block candidate preserves the existing S5.4 corpus with exact clean replay, monotonic family behavior, and a complete 1K step below 16.67 ms"
+            .to_owned()
+    } else {
+        format!(
+            "the conditional colored comparator is not triggered because these candidates satisfy every recorded exit gate: {}",
+            qualifying.join(", ")
+        )
+    };
+    Ok(ConvergenceDecision {
+        version: 1,
+        feasibility_boundary_seconds: FEASIBILITY_BOUNDARY_SECONDS,
+        required_existing_scenes: EXISTING_S5_4_SCENES,
+        monotonic_violations,
+        candidates: eligibility,
+        colored_comparator_triggered,
+        reason,
+    })
+}
+
+fn candidate_scene<'a>(
+    scene: &'a SceneEvidence,
+    candidate: &str,
+) -> Result<&'a CandidateSceneEvidence, String> {
+    scene
+        .candidates
+        .iter()
+        .find(|evidence| evidence.candidate == candidate)
+        .ok_or_else(|| format!("scene {} omitted candidate {candidate}", scene.label))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -738,7 +1013,7 @@ fn performance_matrix(
     let mut rows = Vec::new();
     for candidate in candidates {
         for bodies in [32_u32, 256, 1_024] {
-            eprintln!("S5.4 performance {} bodies {bodies}", candidate.id);
+            eprintln!("S5.4a performance {} bodies {bodies}", candidate.id);
             let mut scenario =
                 p5_2_generated_performance_scenario(bodies).map_err(|error| error.to_string())?;
             scenario.settings = candidate.settings;
@@ -879,10 +1154,10 @@ fn render_playback(
     candidates: &[CandidateDefinition],
 ) -> Result<String, String> {
     let candidate_ids = [
-        "selected-4x1",
-        "substeps-8x1",
-        "iterations-4x2",
-        "combined-8x2",
+        "point-jacobi-i1",
+        "scalar-mass-split-i4",
+        "manifold-block-i4",
+        "block-mass-split-i4",
     ];
     for id in candidate_ids {
         if !candidates.iter().any(|candidate| candidate.id == id) {
@@ -896,7 +1171,7 @@ fn render_playback(
     let width = label_width + cell_width * PLAYBACK_STEPS.len() as f32 + 16.0;
     let height = 42.0 + scenes.len() as f32 * cell_height * lanes as f32;
     let mut svg = format!(
-        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width}\" height=\"{height}\" viewBox=\"0 0 {width} {height}\"><rect width=\"100%\" height=\"100%\" fill=\"#0b1823\"/><style>text{{font:10px monospace;fill:#dce8f2}} .plot{{fill:#132738;stroke:#355166}} .body{{fill:#62dce8;stroke:#d8ffff;stroke-width:.5}} .authority{{fill:#f3a85f;stroke:#ffe1ba;stroke-width:.5}} .fixed{{fill:#60798c}}</style><text x=\"12\" y=\"20\">PhysBox 5 S5.4 synchronized awake settling</text>"
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width}\" height=\"{height}\" viewBox=\"0 0 {width} {height}\"><rect width=\"100%\" height=\"100%\" fill=\"#0b1823\"/><style>text{{font:10px monospace;fill:#dce8f2}} .plot{{fill:#132738;stroke:#355166}} .body{{fill:#62dce8;stroke:#d8ffff;stroke-width:.5}} .authority{{fill:#f3a85f;stroke:#ffe1ba;stroke-width:.5}} .fixed{{fill:#60798c}}</style><text x=\"12\" y=\"20\">PhysBox 5 S5.4a synchronized parallel-normal factorial</text>"
     );
     let mut y = 34.0;
     for scene in scenes {
@@ -1085,10 +1360,6 @@ fn sync_directory(path: &Path) -> Result<(), String> {
         .map_err(|error| error.to_string())
 }
 
-fn finite(value: f32) -> Result<FiniteF32, String> {
-    FiniteF32::new(value).map_err(|error| error.to_string())
-}
-
 struct Arguments {
     run_id: String,
     output: PathBuf,
@@ -1167,26 +1438,54 @@ mod tests {
     #[test]
     fn candidate_matrix_covers_every_governed_question_without_changing_selected() {
         let source = p5_2_centered_rectangle_stack_scenario(2, 1).unwrap();
-        let candidates = candidate_definitions(source.settings).unwrap();
+        let candidates = candidate_definitions(source.settings);
         assert_eq!(
             candidates
                 .iter()
                 .map(|candidate| candidate.id)
                 .collect::<Vec<_>>(),
             vec![
-                "selected-4x1",
-                "substeps-8x1",
-                "iterations-4x2",
-                "iterations-4x4",
-                "combined-8x2",
-                "no-warm-start",
-                "no-relaxation",
-                "bias-0.1",
-                "bounded-contact-policy",
+                "point-jacobi-i1",
+                "point-jacobi-i2",
+                "point-jacobi-i4",
+                "point-jacobi-i8",
+                "scalar-mass-split-i1",
+                "scalar-mass-split-i2",
+                "scalar-mass-split-i4",
+                "scalar-mass-split-i8",
+                "manifold-block-i1",
+                "manifold-block-i2",
+                "manifold-block-i4",
+                "manifold-block-i8",
+                "block-mass-split-i1",
+                "block-mass-split-i2",
+                "block-mass-split-i4",
+                "block-mass-split-i8",
             ]
         );
         assert_eq!(candidates[0].settings, source.settings);
         assert_eq!(candidates[0].execution, GpuSolverExecutionV2::SELECTED);
+        assert!(candidates.iter().all(|candidate| {
+            candidate.settings.iterations == candidate.iterations
+                && candidate.execution.normal_solver == candidate.family
+                && candidate.execution.warm_start
+                && candidate.execution.relaxation
+        }));
+        for family in [
+            GpuNormalSolverV2::PointJacobi,
+            GpuNormalSolverV2::ScalarMassSplit,
+            GpuNormalSolverV2::ManifoldBlock,
+            GpuNormalSolverV2::BlockMassSplit,
+        ] {
+            assert_eq!(
+                candidates
+                    .iter()
+                    .filter(|candidate| candidate.family == family)
+                    .map(|candidate| candidate.iterations)
+                    .collect::<Vec<_>>(),
+                vec![1, 2, 4, 8]
+            );
+        }
         assert!(
             candidates
                 .iter()
@@ -1223,7 +1522,7 @@ mod tests {
         let scenario = p5_2_rectangle_pyramid_scenario(2, 1).unwrap();
         assert!(upright_pyramid_structure(&scenario, &scenario.bodies, false).0);
         let mut toppled = scenario.bodies.clone();
-        toppled[1].angle = finite(std::f32::consts::FRAC_PI_2).unwrap();
+        toppled[1].angle = physbox_contracts::FiniteF32::new(std::f32::consts::FRAC_PI_2).unwrap();
         assert!(!upright_pyramid_structure(&scenario, &toppled, false).0);
     }
 }
