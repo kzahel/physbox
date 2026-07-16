@@ -131,6 +131,14 @@ promoted. Human review must choose whether to authorize the recommended
 manifold-coupled two-point laboratory experiment (and possible colored/in-place
 comparison) before P5.3 broadphase work begins.
 
+Human follow-up decision, 2026-07-16: authorize a laboratory-only factorial
+comparison of current point Jacobi, scalar mass splitting, coupled two-point
+manifold normal blocks, and block mass splitting at 1/2/4/8 iterations. Add a
+generated-contact colored/in-place comparator only if those candidates cannot
+preserve the existing awake corpus monotonically inside the fixed 60 Hz
+feasibility boundary. This does not promote a solver or unblock P5.3; publish a
+renewed package and return to human review.
+
 The first S3.5a representation checkpoint implements the stable pair-slot
 comparator with full feature verification and deterministic generational slot
 recycling. Its correctness/adversarial gates pass and its combined

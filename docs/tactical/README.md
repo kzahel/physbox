@@ -1,10 +1,10 @@
 # Tactical workstreams
 
 Status: S1 and S2 complete; the S3 combined representation gate passes while
-S5.4 finds no acceptable awake solver-quality candidate. S4.3 deployed grab
-feel is accepted and S4.4 construction is complete. S5 is paused at its first
-mandatory human checkpoint before any solver architecture/default decision or
-S5.5 broadphase work.
+S5.4 finds no acceptable awake solver-quality candidate. Human review has
+authorized the S5.4a mass-splitting/manifold-block laboratory follow-up. S4.3
+grab feel and S4.4 construction mechanics are complete; no product solver
+promotion or S5.5 broadphase work is authorized.
 
 Tactical filenames use a three-digit zero-padded prefix ordered by their first
 Git creation timestamp. This repository starts at `001`. Never renumber an
@@ -17,9 +17,9 @@ This README remains the unnumbered index.
 | --- | --- | --- | --- |
 | S1 | Oracle foundation and rigid solver laboratory | [001-rigid-solver-laboratory.md](001-rigid-solver-laboratory.md) | complete 2026-07-15 |
 | S2 | GPU body state and fixed-floor contact | [002-gpu-body-state.md](002-gpu-body-state.md) | complete 2026-07-15; limited body core accepted |
-| S3 | Small-world collision and contact persistence | [003-small-world-collision-persistence.md](003-small-world-collision-persistence.md) | combined representation gate passed; S5.4 recommends a new quality experiment, 2026-07-16 |
+| S3 | Small-world collision and contact persistence | [003-small-world-collision-persistence.md](003-small-world-collision-persistence.md) | combined representation gate passed; S5.4a quality experiment authorized, 2026-07-16 |
 | S4 | Interactive evaluation workbench | [004-basic-scene-navigation-camera.md](004-basic-scene-navigation-camera.md) | S4.4 complete; S4.5 construction-feel review ready, 2026-07-16 |
-| S5 | Interactive rigid quality, construction, and scale | [005-interactive-rigid-quality-and-scale.md](005-interactive-rigid-quality-and-scale.md) | manual checkpoint; S5.4 complete with no candidate promoted, 2026-07-16 |
+| S5 | Interactive rigid quality, construction, and scale | [005-interactive-rigid-quality-and-scale.md](005-interactive-rigid-quality-and-scale.md) | active; S5.4a mass-split/block follow-up authorized, 2026-07-16 |
 
 ## Conventions
 

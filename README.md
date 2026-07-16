@@ -13,8 +13,9 @@ stable body-edge views, a qualified combined product graph, shared camera/menu/
 grab tools, and bounded GPU circle/rectangle construction. The clean S5.4
 awake bakeoff finds that none of nine reversible executions preserves the
 8-body rectangle stack even though awake Box2D does; no new solver default or
-quality band has been accepted. Work is paused at the mandatory human
-architecture checkpoint before another solver experiment or P5.3 broadphase.
+quality band has been accepted. Human review authorized a laboratory-only
+mass-splitting/manifold-block factorial follow-up, with colored/in-place work
+conditional on its measured outcome. P5.3 broadphase remains blocked.
 The repository still contains no Rapier or CPU product physics backend, fluid
 solver, legacy settings UI, or PhysBox 4 scene compatibility.
 

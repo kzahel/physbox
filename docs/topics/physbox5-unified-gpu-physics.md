@@ -730,6 +730,23 @@ records and the selected stable views where possible; if it cannot, compare
 the documented colored/in-place family before changing product architecture.
 Human review is required before that experiment or P5.3 broadphase work.
 
+S5.4a authorization, 2026-07-16: human review accepted a sequenced
+laboratory-only comparison of the current point Jacobi solve, scalar mass
+splitting, a coupled two-point manifold normal block, and block mass splitting.
+Scalar splitting uses valid point incidence; block splitting uses distinct
+live manifolds/body pairs. Split inverse mass/inertia changes effective-mass
+preparation only, while equal-and-opposite impulses are applied through the
+existing gather with full physical mass. The factorial matrix at 1/2/4/8
+iterations must distinguish chain convergence from intra-manifold rocking.
+
+The generated-contact colored/in-place comparator is conditional: add it only
+if no mass-split/block candidate preserves the existing S5.4 corpus with
+monotonic iteration behavior inside the fixed 60 Hz feasibility boundary. The
+old precomputed-contact laboratory has useful colored-stage machinery, but the
+current generated-contact product shader does not; porting it is therefore an
+explicit comparator slice rather than a hidden switch. This authorization does
+not select a solver, change a constructor/default/tolerance, or unblock P5.3.
+
 Circle/circle and circle/rectangle contact are analytic. Rectangle/rectangle
 uses SAT to select a reference and incident edge, clips the incident segment,
 and produces stable vertex/edge feature pairs. Test feature stability around

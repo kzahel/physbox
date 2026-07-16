@@ -1,7 +1,7 @@
 # S5: Interactive rigid quality, construction, and scale
 
-Status: manual checkpoint, 2026-07-16. S5.4 evidence is complete; solver-quality
-direction and continued construction feel require human review before S5.5.
+Status: active, 2026-07-16. Human review authorized the S5.4a mass-splitting
+and manifold-block follow-up; no product solver promotion is authorized.
 Direction: [one GPU-resident 2D physics world](../topics/physbox5-unified-gpu-physics.md).
 Scale contract: [performance and scale](../topics/performance-and-scale.md).
 Dependencies: [S3 collision/persistence](003-small-world-collision-persistence.md)
@@ -426,6 +426,81 @@ promoted. The recommended next laboratory question is manifold-coupled
 two-point normal solving, with a colored/in-place comparison if preserving the
 accepted equal-and-opposite accumulation proves impossible. That is a
 mandatory human architecture decision before S5.5.
+
+### S5.4a — mass-splitting and manifold-block follow-up
+
+Human authorization, 2026-07-16: reviewer analysis identified the unscaled
+parallel point-Jacobi iteration as the leading explanation for the depth-graded
+stack failure. Every point computes a standalone effective mass from the same
+stage snapshot and the body gather applies all incident contributions at full
+physical inverse mass/inertia. More iterations then amplify rather than damp
+the unstable chain mode. Human review authorized the following laboratory
+sequence; it did not authorize a product-default or quality-band change.
+
+- [ ] Add a frozen-contact scalar diagnostic that reports the measured
+  contraction/amplification of the normal iteration for 2/4/8/16 stacks. Do
+  not present a nonlinear projected solve as a formal spectral proof.
+- [ ] Implement scalar mass splitting exactly as Tonge, Benevolenski, and
+  Voroshilov define it: multiply each dynamic body's inverse mass and inverse
+  inertia by its valid contact-point incidence count only in effective-mass
+  preparation, while applying impulses with the full physical mass.
+- [ ] Implement a coupled active-set 2x2 normal solve for each two-point
+  manifold, degenerating exactly to the scalar point solve for zero/one valid
+  point. Keep tangent/friction staging unchanged so its effect is attributable.
+- [ ] Implement block mass splitting by using each body's distinct live
+  manifold/body-pair count in the block effective-mass matrix, again applying
+  output impulses with the full physical mass.
+- [ ] Evaluate the factorial matrix `current`, `mass-split`, `manifold-block`,
+  and `block-mass-split` at 1/2/4/8 iterations on the unchanged six S5.4
+  sources plus the 16-body stack. Preserve exact first failures and complete
+  32/256/1K GPU cost for every governed candidate.
+- [ ] Add the generated-contact colored/in-place comparator only if no
+  mass-split/block lane preserves all existing S5.4 structures through 1,200
+  steps with monotonic iteration behavior and a complete 1K step below the
+  fixed 16.67 ms feasibility boundary on the named desktop adapter.
+- [ ] Publish a renewed review package and stop before promoting a solver,
+  accepting residual-motion bands, changing physical defaults/tolerances, or
+  beginning S5.5.
+
+The scalar mass-split count is contact-point incidence, including both points
+of a two-point manifold. The block count is distinct live manifolds/body
+pairs, not point incidence. Fixed bodies retain zero inverse mass/inertia.
+Counts are generated from the same accepted contact graph and must reject the
+complete candidate if their topology/capacity is invalid. Equal-and-opposite
+records, stable pair slots, stable body-edge ranges, device residency, and the
+single product graph remain unchanged.
+
+Quality gates: every lane is deterministic, finite, capacity-clean, and exact
+under replay. The unchanged structural checks own pass/failure. A credible
+convergence result must not merely delay failure: increasing iterations must
+not introduce an earlier first failure or increase the settled-window peak
+energy/residual-speed trend across the required corpus. Sleeping remains off,
+and a quiet toppled structure remains a failure. No new numerical acceptance
+tolerance is introduced here.
+
+Evidence gates: retain raw per-iteration impulses, two-point matrix/active-set
+choice, incident/manifold counts, body results, work, memory, dispatches, and
+timing samples. Compare clean awake Box2D at the same checkpoints. Re-run the
+current product baseline on native/headless/browser and the hardware-backed
+`jstorrent-tablet` AVD; attempt physical Android when attached. A potential
+candidate must execute through a shared validation lane on browser and AVD
+before it can be recommended, without making it a product constructor default.
+
+Commit boundaries:
+
+1. this authorization, definitions, gates, and source attribution;
+2. scalar mass-split/block specification and frozen-chain diagnostics;
+3. laboratory-only GPU scalar mass splitting with exact count/topology tests;
+4. laboratory-only manifold block and combined block-mass-split candidates;
+5. factorial runner, convergence checks, minimization, and complete cost;
+6. conditional generated-contact colored/in-place comparator only if its
+   trigger becomes true; and
+7. clean evidence, governing status, and renewed mandatory human checkpoint.
+
+Source basis: Richard Tonge, Feodor Benevolenski, and Andrey Voroshilov,
+“Mass Splitting for Jitter-Free Parallel Rigid Body Simulation,” ACM TOG 31(4),
+2012, DOI `10.1145/2185520.2185601`. Implement the declared equations
+independently; do not copy source code from an external engine.
 
 ### S5.5 — P5.3 scalable broadphase bakeoff
 

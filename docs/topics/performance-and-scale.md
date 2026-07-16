@@ -688,6 +688,16 @@ because every candidate loses the awake 8-body stack. These measurements do
 not establish a GPU crossover and must not be extrapolated to liquid-heavy or
 scalable-broadphase workloads.
 
+S5.4a cost contract, 2026-07-16: the approved mass-split/block follow-up must
+report the complete current, scalar-mass-split, manifold-block, and combined
+block-mass-split graph at 1/2/4/8 iterations. Retain 32/256/1K raw samples,
+dispatches, allocations, count-topology bytes, and correctness/capacity hashes.
+The fixed 16.67 ms 1K desktop boundary is only a conditional-comparator
+feasibility trigger, not an accepted quality target or public performance
+claim. If a candidate preserves structure but exceeds it, retain the result
+and trigger colored/in-place comparison rather than weakening the scene or
+timing scope. No mass-split result may be extrapolated to liquid.
+
 ## Regression and claim gates
 
 Before representative hardware is selected, store named measurements and
