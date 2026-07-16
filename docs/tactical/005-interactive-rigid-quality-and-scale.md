@@ -391,6 +391,16 @@ one-iteration, warm-started, relaxed schedule. Candidate output records the
 exact solver settings and policy, and replay tests prove that candidate use
 does not promote it to a product default.
 
+Candidate-automation checkpoint, 2026-07-16: one fresh-artifact runner now
+screens the selected execution, 8-substep, 2/4-iteration, combined 8x2,
+no-warm-start, no-relaxation, lower-bias, and governed bounded-contact variants
+on all 2/4/8 stacks and 2/3/4-row pyramids. It compares every checkpoint with
+the process-isolated awake Box2D lane, retains raw contacts/cache/work/capacity
+state, reports complete 32/256/1K GPU cost and optimized Box2D cost, renders
+synchronized playback, and replays every first structural failure into an
+exact scenario artifact. Candidate output remains explicitly experimental;
+the clean evidence package and recommendation are the next commit.
+
 ### S5.5 — P5.3 scalable broadphase bakeoff
 
 Dependency: the human accepts an S5.4 path, S3 closes, and the S4 construction
