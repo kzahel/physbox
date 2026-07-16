@@ -813,6 +813,17 @@ i1/i2/i4 runs replay exactly and expose a genuine ordering delta, while a
 single-color case remains byte-identical. Full quality/cost evidence is still
 required before recommendation or selection.
 
+S5.4b measured checkpoint, 2026-07-16: the clean
+[compact-coloring factorial](../../evidence/p5.2b-s5.4b/README.md) qualifies
+manifold forward i2/i4 and alternating i4 across all seven accepted awake
+structures. Forward i2 is the cost leader at `17.685 ms` and 1,337 dispatches
+for the 1K rigid fixture, versus `0.170 ms` for optimized Box2D. It spends only
+`0.393 ms` in active colored solves while color rebuild/compaction and empty
+dispatches dominate. Both predeclared conditional comparators are therefore
+required: stable-pair incremental coloring and bounded workgroup-per-island
+sequential solve. Point Jacobi/Jacobi-gather remains `SELECTED`; no physical
+default, residual band, pacing, broadphase, or liquid decision changed.
+
 Circle/circle and circle/rectangle contact are analytic. Rectangle/rectangle
 uses SAT to select a reference and incident edge, clips the incident segment,
 and produces stable vertex/edge feature pairs. Test feature stability around

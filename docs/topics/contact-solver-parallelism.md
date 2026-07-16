@@ -252,6 +252,25 @@ decodes construction, active, empty, and other solver time without the prior
 2,330-pass measurement explosion. Ordinary complete-step timing is still a
 separate unchanged graph. The clean publishable rerun remains pending.
 
+Measured factorial checkpoint, 2026-07-16: the clean
+[S5.4b package](../../evidence/p5.2b-s5.4b/README.md) completes all eight
+executions, seven accepted sources, four diagnostics, five churn snapshots,
+and 24 GPU timing rows. Manifold forward i2, forward i4, and alternating i4
+preserve every accepted structure through every exact step. Forward i2 is the
+leading qualified lane at `17.685 ms`/1,337 dispatches for 1K, versus
+`0.170 ms` for the fastest optimized Box2D row. Forward/alternating i1 lose the
+16-stack at steps 40/22; alternating i2 transiently loses it at step 480 and
+therefore does not qualify despite final recovery.
+
+The leader's diagnostic P50 attributes `8.742 ms` to color construction,
+`7.998 ms` to compaction, `4.080 ms` to empty color launches, and only
+`0.393 ms` to active color solves. Every surviving unit also retains its color
+through the governed churn corpus while the implementation rebuilds all
+units. Both recorded conditional triggers are therefore true: implement the
+stable-pair incremental-color comparator and the workgroup-per-island reserve
+before renewed review. These are laboratory comparators, not authorization to
+promote a solver, accept a residual band, retarget pacing, or begin S5.5.
+
 ## Fallback and reserve options
 
 - **Interim baseline swap.** Manifold block i2 improves structural preservation

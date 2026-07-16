@@ -1,8 +1,9 @@
 # S5: Interactive rigid quality, construction, and scale
 
-Status: active, 2026-07-16. S5.4a implementation and evidence are complete;
-human review of the colored/in-place architecture recommendation is required
-before any product solver promotion or S5.5 work.
+Status: active, 2026-07-16. S5.4b compact-coloring evidence is complete and
+triggers the bounded incremental-color and workgroup-per-island comparators;
+product solver promotion, quality-band acceptance, and S5.5 remain blocked on
+the renewed human checkpoint.
 Direction: [one GPU-resident 2D physics world](../topics/physbox5-unified-gpu-physics.md).
 Scale contract: [performance and scale](../topics/performance-and-scale.md).
 Dependencies: [S3 collision/persistence](003-small-world-collision-persistence.md)
@@ -661,7 +662,7 @@ tolerance, pacing rate, broadphase, liquid path, or CPU fallback is authorized.
   this avoids the fixed-grid i4 control's former 4,660-query rejection and
   2,330-pass diagnostic explosion. The clean matrix, not this mechanical
   checkpoint, owns every cost conclusion.
-- [ ] Retain the seven accepted sources and add 32/64-stack depth diagnostics,
+- [x] Retain the seven accepted sources and add 32/64-stack depth diagnostics,
   both 100-body buckets, and deterministic construction/erase churn.
   The atomic runner and shared diagnostic sources are implemented: 32/64 are
   accepted by the stack generator only as named diagnostics, and five churn
@@ -670,13 +671,22 @@ tolerance, pacing rate, broadphase, liquid path, or CPU fallback is authorized.
   all seven accepted sources and stack-32, then exposed the declared 32-color
   limit at stack-64 post-step 357. Diagnostic histories now preserve that
   transient `FailureV1` and continue, while strict history callers still
-  reject it. This checkbox remains open until the clean package completes.
-- [ ] Publish complete color occupancy, compaction/recoloring cost, dispatch,
+  reject it. The clean package completes every diagnostic and preserves all
+  resulting failures.
+- [x] Publish complete color occupancy, compaction/recoloring cost, dispatch,
   memory, 32/256/1K timing, exact replay, capacity, and first-failure evidence.
+  The clean S5.4b package retains 24 GPU rows, six optimized Box2D rows, 19
+  permanent reproducers, 124 authority runs, all color work/capacity records,
+  and raw ordinary plus diagnostic timing samples.
 - [ ] Run a potential candidate through native/headless/browser and the
   hardware-backed `jstorrent-tablet` AVD; attempt physical Android if attached.
 - [ ] Add incremental coloring only if rebuild cost is material, or a
   workgroup-per-island comparator only if dispatch boundaries remain material.
+  Both conditions are measured true. The leading qualified forward-i2 lane is
+  `17.685 ms` at 1K; construction plus compaction is `16.740 ms` diagnostic
+  P50 versus `0.393 ms` active solve, and empty color work is `4.080 ms`.
+  Every surviving churn unit keeps its color while all units are rebuilt.
+  Implement both bounded comparators before closing this gate.
 - [ ] Publish a renewed review package and stop before solver promotion,
   accepting a residual band, retargeting pacing, or beginning S5.5.
 

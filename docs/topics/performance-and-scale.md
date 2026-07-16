@@ -750,6 +750,23 @@ scene, deterministic construction/erase recoloring counts, optimized Box2D
 rows, and explicit incremental-coloring/workgroup-island trigger results. The
 runner cannot change the selected execution or acceptance tolerances.
 
+S5.4b complete cost, 2026-07-16: clean Apple M4 Pro Metal evidence retains 20
+ordinary and 20 diagnostic samples for all 24 GPU rows. The three structurally
+qualified manifold lanes cost `17.685 ms` forward i2, `21.825 ms` forward i4,
+and `21.853 ms` alternating i4 at 1K. The fastest equivalent optimized Box2D
+row is `0.170 ms`, so the leading complete GPU lane remains 104.1x slower and
+slightly misses the fixed 16.67 ms feasibility boundary. The point compact
+scheduling control regresses from fixed-grid `19.228 ms` to `25.448 ms`; stable
+compaction does not remove the bounded empty-dispatch floor.
+
+For forward i2 at 1K, diagnostic phase P50 is `8.742 ms` construction,
+`7.998 ms` compaction, `0.393 ms` active color solve, and `4.080 ms` empty color
+solve. Those grouped diagnostic phases explain cost but do not replace the
+ordinary complete graph measurement. The construction/compaction and empty
+dispatch triggers both fire, authorizing the already bounded incremental-color
+and workgroup-per-island comparators. This rigid small-world result neither
+accepts a product timing band nor predicts liquid-heavy crossover.
+
 ## Regression and claim gates
 
 Before representative hardware is selected, store named measurements and
