@@ -846,6 +846,16 @@ Existing hosts and product construction still use the standard selected
 Jacobi/gather path. Renewed cross-host cost and quality evidence remains
 required before the S5.4b human checkpoint.
 
+S5.4b cross-host validation checkpoint, 2026-07-16: the shared host owns one
+opt-in `solver-manifold-i2` scene using the neutral four-stack source and the
+exact forward manifold-block i2/full-rebuild/per-color policy. Scene contract
+v4 serializes that complete execution and scheduling identity for desktop,
+headless, browser, and Android rather than relying on a host-local label.
+Default product construction still uses `GpuSolverExecutionV4::SELECTED` and
+standard scheduling. The validation scene is a shared adapter test surface,
+not a second engine or a solver promotion; clean cross-host artifacts remain
+part of the final renewed evidence slice.
+
 Circle/circle and circle/rectangle contact are analytic. Rectangle/rectangle
 uses SAT to select a reference and incident edge, clips the incident segment,
 and produces stable vertex/edge feature pairs. Test feature stability around

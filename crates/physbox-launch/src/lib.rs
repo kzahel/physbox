@@ -53,10 +53,11 @@ pub enum ValidationScenario {
     ResetGrab,
     SolverJacobi,
     SolverColored,
+    SolverManifoldI2,
 }
 
 impl ValidationScenario {
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 11] = [
         Self::Bootstrap,
         Self::RigidFloor,
         Self::RigidStack,
@@ -67,6 +68,7 @@ impl ValidationScenario {
         Self::ResetGrab,
         Self::SolverJacobi,
         Self::SolverColored,
+        Self::SolverManifoldI2,
     ];
 
     pub const fn name(self) -> &'static str {
@@ -81,6 +83,7 @@ impl ValidationScenario {
             Self::ResetGrab => "reset-grab",
             Self::SolverJacobi => "solver-jacobi",
             Self::SolverColored => "solver-colored",
+            Self::SolverManifoldI2 => "solver-manifold-i2",
         }
     }
 }
@@ -203,7 +206,7 @@ pub fn usage(program: &str, host: LaunchHost) -> String {
         ""
     };
     format!(
-        "Usage: {program} [options]\n\n  --width PX       viewport width (default 960)\n  --height PX      viewport height (default 600)\n  --scenario NAME  bootstrap, body-free-flight, rigid-floor, rigid-stack, rectangle-stack, circle-bucket-100, rectangle-bucket-100, reset-grab, solver-jacobi, or solver-colored{frame_markers}{capture}\n  -h, --help       print this help"
+        "Usage: {program} [options]\n\n  --width PX       viewport width (default 960)\n  --height PX      viewport height (default 600)\n  --scenario NAME  bootstrap, body-free-flight, rigid-floor, rigid-stack, rectangle-stack, circle-bucket-100, rectangle-bucket-100, reset-grab, solver-jacobi, solver-colored, or solver-manifold-i2{frame_markers}{capture}\n  -h, --help       print this help"
     )
 }
 
@@ -228,6 +231,7 @@ fn apply_option(
                 "reset-grab" => ValidationScenario::ResetGrab,
                 "solver-jacobi" => ValidationScenario::SolverJacobi,
                 "solver-colored" => ValidationScenario::SolverColored,
+                "solver-manifold-i2" => ValidationScenario::SolverManifoldI2,
                 _ => return Err(LaunchError(format!("unknown scenario: {value}"))),
             }
         }
@@ -386,5 +390,10 @@ mod tests {
         );
         let reset_grab = parse_android_json(r#"["--scenario","reset-grab"]"#).unwrap();
         assert_eq!(reset_grab.options.scenario, ValidationScenario::ResetGrab);
+        let manifold = parse_web_query("?scenario=solver-manifold-i2").unwrap();
+        assert_eq!(
+            manifold.options.scenario,
+            ValidationScenario::SolverManifoldI2
+        );
     }
 }

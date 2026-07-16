@@ -681,6 +681,11 @@ tolerance, pacing rate, broadphase, liquid path, or CPU fallback is authorized.
   and raw ordinary plus diagnostic timing samples.
 - [ ] Run a potential candidate through native/headless/browser and the
   hardware-backed `jstorrent-tablet` AVD; attempt physical Android if attached.
+  The shared opt-in `solver-manifold-i2` scene and scene-contract-v4 execution
+  identity are implemented. Native exact-eight-step and Chrome BrowserWebGPU
+  smokes pass without changing the selected product execution. Keep this item
+  open until clean-revision headless/browser/AVD artifacts are copied into the
+  renewed package and a physical device is attempted if attached.
 - [x] Add incremental coloring only if rebuild cost is material, or a
   workgroup-per-island comparator only if dispatch boundaries remain material.
   Both conditions are measured true. The leading qualified forward-i2 lane is

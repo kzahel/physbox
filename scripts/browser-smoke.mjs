@@ -74,13 +74,14 @@ try {
     "reset-grab",
     "solver-jacobi",
     "solver-colored",
+    "solver-manifold-i2",
   ].indexOf(scenario);
   if (scenarioIndex < 0) throw new Error(`scenario is absent from shared menu: ${scenario}`);
   const compactLandscape = viewportHeight < 520 && viewportWidth > viewportHeight;
-  const scenarioColumn = compactLandscape ? scenarioIndex % 2 : 0;
-  const scenarioRow = compactLandscape ? Math.floor(scenarioIndex / 2) : scenarioIndex;
+  const scenarioColumn = compactLandscape ? scenarioIndex % 3 : 0;
+  const scenarioRow = compactLandscape ? Math.floor(scenarioIndex / 3) : scenarioIndex;
   await page.mouse.click(
-    (192 + scenarioColumn * 238) * uiScale,
+    (118 + scenarioColumn * 198) * uiScale,
     (143 + scenarioRow * 38) * uiScale,
   );
   await page.waitForFunction(

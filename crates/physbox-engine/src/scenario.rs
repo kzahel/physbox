@@ -9,6 +9,7 @@ use physbox_contracts::{
 pub const P5_2_CENTERED_STACK_EVIDENCE_STEPS: u32 = 1_200;
 pub const P5_2_BUCKET_EVIDENCE_STEPS: u32 = 600;
 pub const P5_2_COLORING_CHURN_VERSION: u32 = 1;
+pub const P5_2_MANIFOLD_COLOR_VALIDATION_STEPS: u32 = 8;
 
 #[derive(Clone, Debug, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -539,6 +540,17 @@ pub fn p5_2_coloring_churn_snapshots(
         reused,
     )?;
     Ok(snapshots)
+}
+
+pub fn p5_2_manifold_color_validation_scenario() -> Result<ScenarioV1, ScenarioBuildError> {
+    let mut scenario =
+        p5_2_centered_rectangle_stack_scenario(4, P5_2_MANIFOLD_COLOR_VALIDATION_STEPS)?;
+    scenario.id = "p5.2-manifold-color-forward-i2-validation".to_owned();
+    scenario.settings.iterations = 2;
+    scenario
+        .validate()
+        .map_err(|error| ScenarioBuildError(error.to_string()))?;
+    Ok(scenario)
 }
 
 pub fn p5_2_rectangle_pyramid_scenario(
@@ -1825,6 +1837,24 @@ mod tests {
             serde_json::to_vec(&p5_2_coloring_churn_snapshots(1).unwrap()).unwrap()
         );
         assert!(p5_2_coloring_churn_snapshots(0).is_err());
+    }
+
+    #[test]
+    fn p5_2_manifold_color_validation_is_the_bounded_forward_i2_source() {
+        let scenario = p5_2_manifold_color_validation_scenario().unwrap();
+        scenario.validate().unwrap();
+        assert_eq!(
+            scenario.requested_steps,
+            P5_2_MANIFOLD_COLOR_VALIDATION_STEPS
+        );
+        assert_eq!(scenario.settings.iterations, 2);
+        assert_eq!(scenario.bodies.len(), 5);
+        assert!(scenario.manifolds.is_empty());
+        assert!(scenario.contact_cache.is_empty());
+        assert_eq!(
+            serde_json::to_vec(&scenario).unwrap(),
+            serde_json::to_vec(&p5_2_manifold_color_validation_scenario().unwrap()).unwrap()
+        );
     }
 
     #[test]

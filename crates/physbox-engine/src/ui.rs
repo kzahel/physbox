@@ -282,7 +282,7 @@ impl UiLayout {
     fn menu_panel(self) -> [f32; 4] {
         let restart_y = self.restart_y_logical();
         let logical = if self.compact_landscape() {
-            [12.0, 84.0, 500.0, restart_y + 50.0 - 84.0]
+            [12.0, 84.0, 620.0, restart_y + 50.0 - 84.0]
         } else {
             [12.0, 84.0, 360.0, restart_y + 50.0 - 84.0]
         };
@@ -291,12 +291,12 @@ impl UiLayout {
 
     fn scenario_button(self, index: usize) -> [f32; 4] {
         if self.compact_landscape() {
-            let column = index % 2;
-            let row = index / 2;
+            let column = index % 3;
+            let row = index / 3;
             return [
-                (24.0 + column as f32 * 238.0) * self.scale,
+                (24.0 + column as f32 * 198.0) * self.scale,
                 (126.0 + row as f32 * 38.0) * self.scale,
-                226.0 * self.scale,
+                188.0 * self.scale,
                 34.0 * self.scale,
             ];
         }
@@ -348,11 +348,11 @@ impl UiLayout {
 
     fn restart_y_logical(self) -> f32 {
         let rows = if self.compact_landscape() {
-            ValidationScenario::ALL.len().div_ceil(2)
+            ValidationScenario::ALL.len().div_ceil(3)
         } else {
             ValidationScenario::ALL.len()
         };
-        let gap = if self.compact_landscape() { 20.0 } else { 14.0 };
+        let gap = if self.compact_landscape() { 20.0 } else { 10.0 };
         126.0 + (rows.saturating_sub(1)) as f32 * 38.0 + 34.0 + gap
     }
 

@@ -3,8 +3,13 @@ use serde::Serialize;
 use physbox_contracts::ConstructionStateV1;
 
 use crate::clock::PacingReport;
+use crate::{
+    GpuColorMaintenanceV1, GpuColorOrderV4, GpuColorScheduleV4, GpuColorUnitV4,
+    GpuColoredDispatchV1, GpuNormalSolverV4, GpuSolverAccumulationV4, GpuSolverExecutionV4,
+    GpuSolverSchedulingPolicyV1,
+};
 
-pub const SCENE_CONTRACT_VERSION: u32 = 3;
+pub const SCENE_CONTRACT_VERSION: u32 = 4;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -17,6 +22,8 @@ pub struct SceneContract {
     pub solver_dispatches_per_step: u32,
     pub solver_capacity_bytes: u64,
     pub capacity_overflowed: bool,
+    pub generated_solver_execution: Option<GpuSolverExecutionV4>,
+    pub generated_solver_scheduling_policy: Option<GpuSolverSchedulingPolicyV1>,
     pub fixed_step_hz: u32,
     pub scenario: &'static str,
     pub scenario_hash: String,
@@ -169,6 +176,30 @@ impl FrameReport {
         }
 
         #[derive(Serialize)]
+        struct CompactSceneContract<'a> {
+            #[serde(rename = "v")]
+            version: u32,
+            #[serde(rename = "b")]
+            body_count: u32,
+            #[serde(rename = "c")]
+            contact_point_count: u32,
+            #[serde(rename = "d")]
+            solver_dispatches_per_step: u32,
+            #[serde(rename = "m")]
+            solver_capacity_bytes: u64,
+            #[serde(rename = "o")]
+            capacity_overflowed: bool,
+            #[serde(rename = "x", skip_serializing_if = "Option::is_none")]
+            generated_solver_execution: Option<[u32; 8]>,
+            #[serde(rename = "g", skip_serializing_if = "Option::is_none")]
+            generated_solver_scheduling_policy: Option<[u32; 3]>,
+            #[serde(rename = "n")]
+            scenario: &'static str,
+            #[serde(rename = "h")]
+            scenario_hash: &'a str,
+        }
+
+        #[derive(Serialize)]
         struct CompactConstructionDiagnostic<'a> {
             #[serde(rename = "a")]
             attempted_intents: u64,
@@ -193,7 +224,7 @@ impl FrameReport {
             body_commands: CompactBodyCommands,
             #[serde(rename = "d", skip_serializing_if = "Option::is_none")]
             construction_diagnostic: Option<CompactConstructionDiagnostic<'a>>,
-            scene_contract: &'a SceneContract,
+            scene_contract: CompactSceneContract<'a>,
             scenario: CompactScenario,
         }
 
@@ -235,7 +266,24 @@ impl FrameReport {
                         .blocking_readback_for_advancement,
                 }
             }),
-            scene_contract: &self.scene_contract,
+            scene_contract: CompactSceneContract {
+                version: self.scene_contract.version,
+                body_count: self.scene_contract.body_count,
+                contact_point_count: self.scene_contract.contact_point_count,
+                solver_dispatches_per_step: self.scene_contract.solver_dispatches_per_step,
+                solver_capacity_bytes: self.scene_contract.solver_capacity_bytes,
+                capacity_overflowed: self.scene_contract.capacity_overflowed,
+                generated_solver_execution: self
+                    .scene_contract
+                    .generated_solver_execution
+                    .map(compact_execution),
+                generated_solver_scheduling_policy: self
+                    .scene_contract
+                    .generated_solver_scheduling_policy
+                    .map(compact_scheduling),
+                scenario: self.scene_contract.scenario,
+                scenario_hash: &self.scene_contract.scenario_hash,
+            },
             scenario: CompactScenario {
                 name: self.scenario.name,
                 complete: self.scenario.complete,
@@ -244,6 +292,51 @@ impl FrameReport {
         })
         .expect("compact frame reports are serializable")
     }
+}
+
+const fn compact_execution(execution: GpuSolverExecutionV4) -> [u32; 8] {
+    [
+        execution.version,
+        match execution.accumulation {
+            GpuSolverAccumulationV4::JacobiGather => 0,
+            GpuSolverAccumulationV4::ColoredInPlace => 1,
+        },
+        match execution.normal_solver {
+            GpuNormalSolverV4::PointJacobi => 0,
+            GpuNormalSolverV4::ScalarMassSplit => 1,
+            GpuNormalSolverV4::ManifoldBlock => 2,
+            GpuNormalSolverV4::BlockMassSplit => 3,
+        },
+        match execution.color_schedule {
+            GpuColorScheduleV4::None => 0,
+            GpuColorScheduleV4::FixedFullGrid => 1,
+            GpuColorScheduleV4::CompactIndirect => 2,
+        },
+        match execution.color_unit {
+            GpuColorUnitV4::Point => 0,
+            GpuColorUnitV4::Manifold => 1,
+        },
+        match execution.color_order {
+            GpuColorOrderV4::Forward => 0,
+            GpuColorOrderV4::Alternating => 1,
+        },
+        execution.warm_start as u32,
+        execution.relaxation as u32,
+    ]
+}
+
+const fn compact_scheduling(policy: GpuSolverSchedulingPolicyV1) -> [u32; 3] {
+    [
+        policy.version,
+        match policy.color_maintenance {
+            GpuColorMaintenanceV1::FullRebuild => 0,
+            GpuColorMaintenanceV1::StablePairIncremental => 1,
+        },
+        match policy.colored_dispatch {
+            GpuColoredDispatchV1::PerColorIndirect => 0,
+            GpuColoredDispatchV1::WorkgroupPerIsland => 1,
+        },
+    ]
 }
 
 #[cfg(test)]
@@ -357,6 +450,8 @@ mod tests {
                 solver_dispatches_per_step: 68,
                 solver_capacity_bytes: 512,
                 capacity_overflowed: false,
+                generated_solver_execution: Some(GpuSolverExecutionV4::SELECTED),
+                generated_solver_scheduling_policy: Some(GpuSolverSchedulingPolicyV1::STANDARD),
                 fixed_step_hz: 60,
                 scenario: "bootstrap",
                 scenario_hash: "f".repeat(64),

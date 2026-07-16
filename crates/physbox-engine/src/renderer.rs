@@ -1350,6 +1350,36 @@ mod tests {
     }
 
     #[test]
+    fn manifold_i2_validation_reports_the_exact_non_product_execution() {
+        let mut renderer = pollster::block_on(OffscreenRenderer::new(
+            320,
+            200,
+            EngineConfig {
+                scenario: ValidationScenario::SolverManifoldI2,
+            },
+        ))
+        .unwrap();
+        let report = renderer.render(FrameInput::exact(
+            crate::P5_2_MANIFOLD_COLOR_VALIDATION_STEPS,
+        ));
+        assert!(report.scenario.complete && report.scenario.passed);
+        assert_eq!(
+            report.scene_contract.generated_solver_execution,
+            Some(crate::GpuSolverExecutionV4::manifold_colored_block_experiment(true, true,))
+        );
+        assert_eq!(
+            report.scene_contract.generated_solver_scheduling_policy,
+            Some(crate::GpuSolverSchedulingPolicyV1::STANDARD)
+        );
+        assert_eq!(
+            crate::GpuSolverExecutionV4::SELECTED.normal_solver,
+            crate::GpuNormalSolverV4::PointJacobi
+        );
+        assert_eq!(report.fixed_steps_total, 8);
+        assert!(!report.scene_contract.capacity_overflowed);
+    }
+
+    #[test]
     fn shared_toolbar_routes_release_committed_construction_and_two_touch_cancel() {
         let target_size = [960, 600];
         let mut renderer = pollster::block_on(OffscreenRenderer::new(

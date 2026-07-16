@@ -322,6 +322,18 @@ mechanical comparator checkpoint, not a cost or production-selection result;
 the renewed factorial must measure whether serial island construction and the
 dense bin views cost less than the dispatch work they replace.
 
+Cross-host validation checkpoint, 2026-07-16: the shared launch/host contract
+now names `solver-manifold-i2`, an eight-step neutral four-stack that runs the
+same forward manifold-block i2 execution with full color rebuild and per-color
+indirect dispatch. Scene contract v4 records the complete generated solver
+execution and scheduling policy, so native/headless, browser, and Android
+artifacts can prove which laboratory lane actually ran. The compact Android
+marker carries lossless numeric encodings of those same versioned fields while
+remaining below the log-line bound. This opt-in validation scene does not alter
+`GpuSolverExecutionV4::SELECTED`, the default scenario, or any physical
+setting. Native exact-step and Chrome BrowserWebGPU smokes pass; the clean AVD
+and final evidence captures remain in the renewed package slice.
+
 ## Fallback and reserve options
 
 - **Interim baseline swap.** Manifold block i2 improves structural preservation

@@ -8,7 +8,8 @@ use physbox_launch::ValidationScenario;
 
 use crate::{
     AdapterDiagnostics, BODY_COMMAND_CAPACITY, BoundedBodyCommands, Camera2d, EngineConfig,
-    FrameInput, InputEvent, PointerButton, PointerPhase, StepRequest,
+    FrameInput, GpuSolverExecutionV4, GpuSolverSchedulingPolicyV1, InputEvent, PointerButton,
+    PointerPhase, StepRequest,
     body_world::{BodyCommandStepRange, BodyStepPlan, GpuBodyWorld},
     clock::{FIXED_STEP_HZ, FIXED_STEP_SECONDS, InteractiveClockInput, SimulationClock},
     construction::{
@@ -23,10 +24,12 @@ use crate::{
         SCENE_CONTRACT_VERSION, ScenarioResult, SceneContract,
     },
     scenario::{
-        P5_2_BUCKET_EVIDENCE_STEPS, P5_2_CENTERED_STACK_EVIDENCE_STEPS, P5_2BucketShape,
-        P5_2GeneratedScenarioKind, authored_chain_scenario, p5_1_direct_render_scenario,
-        p5_2_bucket_scenario, p5_2_centered_rectangle_stack_scenario,
-        p5_2_generated_floor_scenario, p5_2_generated_reset_grab_scenario, p5_2_generated_scenario,
+        P5_2_BUCKET_EVIDENCE_STEPS, P5_2_CENTERED_STACK_EVIDENCE_STEPS,
+        P5_2_MANIFOLD_COLOR_VALIDATION_STEPS, P5_2BucketShape, P5_2GeneratedScenarioKind,
+        authored_chain_scenario, p5_1_direct_render_scenario, p5_2_bucket_scenario,
+        p5_2_centered_rectangle_stack_scenario, p5_2_generated_floor_scenario,
+        p5_2_generated_reset_grab_scenario, p5_2_generated_scenario,
+        p5_2_manifold_color_validation_scenario,
     },
     ui::{UiAction, UiFrameModel, WorkbenchTool, WorkbenchUi},
 };
@@ -510,7 +513,8 @@ impl EngineHost {
             | ValidationScenario::RectangleStack
             | ValidationScenario::CircleBucket100
             | ValidationScenario::RectangleBucket100
-            | ValidationScenario::ResetGrab => None,
+            | ValidationScenario::ResetGrab
+            | ValidationScenario::SolverManifoldI2 => None,
             ValidationScenario::SolverJacobi => Some(GpuSolverCandidate::JacobiGather),
             ValidationScenario::SolverColored => Some(GpuSolverCandidate::ColoredSoftTgs),
         };
@@ -597,6 +601,20 @@ impl EngineHost {
                         .expect("engine-owned all-pairs bucket GPU world is valid"),
                 )
             }
+            ValidationScenario::SolverManifoldI2 => {
+                let scenario = p5_2_manifold_color_validation_scenario()
+                    .expect("engine-owned manifold-color validation scenario is valid");
+                Some(
+                    GpuBodyWorld::new_generated_validation(
+                        device,
+                        color_format,
+                        &scenario,
+                        GpuSolverExecutionV4::manifold_colored_block_experiment(true, true),
+                        GpuSolverSchedulingPolicyV1::STANDARD,
+                    )
+                    .expect("engine-owned manifold-color validation world is valid"),
+                )
+            }
             _ => None,
         };
         let scenario_hash = match config.scenario {
@@ -635,6 +653,10 @@ impl EngineHost {
                 &p5_2_generated_reset_grab_scenario()
                     .expect("engine-owned generated reset/grab scenario is valid"),
             ),
+            ValidationScenario::SolverManifoldI2 => canonical_hash(
+                &p5_2_manifold_color_validation_scenario()
+                    .expect("engine-owned manifold-color validation scenario is valid"),
+            ),
             ValidationScenario::SolverJacobi | ValidationScenario::SolverColored => {
                 let mut scenario = authored_chain_scenario(64, 91)
                     .expect("engine-owned solver validation scenario is valid");
@@ -650,7 +672,8 @@ impl EngineHost {
             | ValidationScenario::RigidStack
             | ValidationScenario::RectangleStack
             | ValidationScenario::CircleBucket100
-            | ValidationScenario::RectangleBucket100 => {
+            | ValidationScenario::RectangleBucket100
+            | ValidationScenario::SolverManifoldI2 => {
                 Some(BodyInteractionState::new(Vec::new(), true))
             }
             ValidationScenario::ResetGrab => {
@@ -884,6 +907,16 @@ impl EngineHost {
                     .body_interaction
                     .as_ref()
                     .is_some_and(|interaction| interaction.report.overflowed),
+            generated_solver_execution: self
+                .body_world
+                .as_ref()
+                .and_then(GpuBodyWorld::generated_solver_configuration)
+                .map(|(execution, _)| execution),
+            generated_solver_scheduling_policy: self
+                .body_world
+                .as_ref()
+                .and_then(GpuBodyWorld::generated_solver_configuration)
+                .map(|(_, scheduling)| scheduling),
             fixed_step_hz: FIXED_STEP_HZ,
             scenario: self.config.scenario.name(),
             scenario_hash: self.scenario_hash.clone(),
@@ -989,6 +1022,23 @@ impl EngineHost {
                         "reset/grab command counters did not match the shared scenario"
                     } else {
                         "waiting for 150 shared reset/grab steps"
+                    },
+                }
+            }
+            ValidationScenario::SolverManifoldI2 => {
+                let complete =
+                    self.fixed_steps_total >= u64::from(P5_2_MANIFOLD_COLOR_VALIDATION_STEPS);
+                let passed = complete && !contract.capacity_overflowed;
+                ScenarioResult {
+                    name: self.config.scenario.name(),
+                    complete,
+                    passed,
+                    reason: if passed {
+                        "shared generated forward manifold-block i2 candidate completed"
+                    } else if complete {
+                        "manifold-color candidate reported capacity overflow"
+                    } else {
+                        "waiting for eight shared manifold-color candidate steps"
                     },
                 }
             }

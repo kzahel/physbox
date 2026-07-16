@@ -22,8 +22,8 @@ use crate::grab::{
     GrabParamsRaw, GrabStateRaw, NO_GRAB_SLOT, grab_intent_raw,
 };
 use crate::{
-    GpuBodyStorage, body_floor_solver::GpuFixedFloorSolver,
-    generated_contacts::GpuGeneratedContactGraph,
+    GpuBodyStorage, GpuGatherTopology, GpuSolverExecutionV4, GpuSolverSchedulingPolicyV1,
+    body_floor_solver::GpuFixedFloorSolver, generated_contacts::GpuGeneratedContactGraph,
 };
 
 const WORKGROUP_SIZE: u32 = 64;
@@ -120,6 +120,7 @@ pub(crate) struct GpuBodyWorld {
     grab_pipeline: wgpu::RenderPipeline,
     floor_solver: Option<GpuFixedFloorSolver>,
     generated_contacts: Option<GpuGeneratedContactGraph>,
+    generated_solver_configuration: Option<(GpuSolverExecutionV4, GpuSolverSchedulingPolicyV1)>,
     body_count: u32,
     initial_live_count: u32,
 }
@@ -130,7 +131,7 @@ impl GpuBodyWorld {
         color_format: wgpu::TextureFormat,
         scenario: &ScenarioV1,
     ) -> Result<Self, String> {
-        Self::new_with_generated_contacts(device, color_format, scenario, false)
+        Self::new_with_generated_contacts(device, color_format, scenario, None)
     }
 
     pub(crate) fn new_generated(
@@ -138,14 +139,40 @@ impl GpuBodyWorld {
         color_format: wgpu::TextureFormat,
         scenario: &ScenarioV1,
     ) -> Result<Self, String> {
-        Self::new_with_generated_contacts(device, color_format, scenario, true)
+        Self::new_with_generated_contacts(
+            device,
+            color_format,
+            scenario,
+            Some((
+                GpuSolverExecutionV4::SELECTED,
+                GpuSolverSchedulingPolicyV1::STANDARD,
+            )),
+        )
+    }
+
+    pub(crate) fn new_generated_validation(
+        device: &wgpu::Device,
+        color_format: wgpu::TextureFormat,
+        scenario: &ScenarioV1,
+        execution: GpuSolverExecutionV4,
+        scheduling_policy: GpuSolverSchedulingPolicyV1,
+    ) -> Result<Self, String> {
+        if execution == GpuSolverExecutionV4::SELECTED {
+            return Err("generated solver validation requires a non-product execution".to_owned());
+        }
+        Self::new_with_generated_contacts(
+            device,
+            color_format,
+            scenario,
+            Some((execution, scheduling_policy)),
+        )
     }
 
     fn new_with_generated_contacts(
         device: &wgpu::Device,
         color_format: wgpu::TextureFormat,
         scenario: &ScenarioV1,
-        generated: bool,
+        generated_solver_configuration: Option<(GpuSolverExecutionV4, GpuSolverSchedulingPolicyV1)>,
     ) -> Result<Self, String> {
         scenario.validate().map_err(|error| error.to_string())?;
         let initial_live_count = u32::try_from(scenario.bodies.len())
@@ -153,20 +180,40 @@ impl GpuBodyWorld {
         if initial_live_count == 0 {
             return Err("GPU body world requires at least one body".to_owned());
         }
-        let body_count = if generated {
+        let body_count = if generated_solver_configuration.is_some() {
             interactive_body_capacity(initial_live_count)?
         } else {
             initial_live_count
         };
         let storage =
             GpuBodyStorage::new(device, body_count, BODY_COMMAND_CAPACITY, &scenario.bodies)?;
-        let floor_solver = if generated || scenario.manifolds.is_empty() {
-            None
-        } else {
-            Some(GpuFixedFloorSolver::new(device, &storage, scenario)?)
-        };
-        let generated_contacts = generated
-            .then(|| GpuGeneratedContactGraph::new(device, &storage, scenario))
+        let floor_solver =
+            if generated_solver_configuration.is_some() || scenario.manifolds.is_empty() {
+                None
+            } else {
+                Some(GpuFixedFloorSolver::new(device, &storage, scenario)?)
+            };
+        let generated_contacts = generated_solver_configuration
+            .map(|(execution, scheduling_policy)| {
+                if execution == GpuSolverExecutionV4::SELECTED
+                    && scheduling_policy == GpuSolverSchedulingPolicyV1::STANDARD
+                {
+                    GpuGeneratedContactGraph::new(device, &storage, scenario)
+                } else {
+                    GpuGeneratedContactGraph::new_with_topologies_execution_and_scheduling(
+                        device,
+                        &storage,
+                        scenario,
+                        crate::GpuContactPersistenceTopology::StablePairSlot,
+                        GpuGatherTopology::StableBodyEdge,
+                        false,
+                        false,
+                        u32::MAX,
+                        execution,
+                        scheduling_policy,
+                    )
+                }
+            })
             .transpose()?;
         let integration_params = IntegrationParamsRaw {
             dt_gravity: [
@@ -682,6 +729,7 @@ impl GpuBodyWorld {
             grab_pipeline,
             floor_solver,
             generated_contacts,
+            generated_solver_configuration,
             body_count,
             initial_live_count,
         })
@@ -1315,6 +1363,12 @@ impl GpuBodyWorld {
             },
             GpuGeneratedContactGraph::dispatches_per_step,
         )
+    }
+
+    pub(crate) const fn generated_solver_configuration(
+        &self,
+    ) -> Option<(GpuSolverExecutionV4, GpuSolverSchedulingPolicyV1)> {
+        self.generated_solver_configuration
     }
 
     pub(crate) fn contact_point_count(&self) -> u32 {

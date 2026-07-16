@@ -21,7 +21,7 @@ while (($#)); do
     esac
 done
 case "$SCENARIO" in
-    bootstrap|body-free-flight|rigid-floor|rigid-stack|rectangle-stack|circle-bucket-100|rectangle-bucket-100|reset-grab|solver-jacobi|solver-colored) ;;
+    bootstrap|body-free-flight|rigid-floor|rigid-stack|rectangle-stack|circle-bucket-100|rectangle-bucket-100|reset-grab|solver-jacobi|solver-colored|solver-manifold-i2) ;;
     *) echo "error: unsupported shared scenario: $SCENARIO" >&2; exit 2 ;;
 esac
 if [[ -z "$SERIAL" ]]; then
