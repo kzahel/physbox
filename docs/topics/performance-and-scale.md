@@ -742,6 +742,14 @@ empty indirect solve, and all other solver operations. Those instrumented
 subphases deliberately use per-operation pass boundaries and therefore
 explain cost; only the ordinary graph establishes complete performance.
 
+S5.4b evidence-automation checkpoint, 2026-07-16: the clean runner requires
+all eight authorized controls/candidates at 32/256/1,024 bodies and retains
+ordinary complete-step samples separately from instrumented solver subphases.
+It also publishes actual/allocated color work for every quality and diagnostic
+scene, deterministic construction/erase recoloring counts, optimized Box2D
+rows, and explicit incremental-coloring/workgroup-island trigger results. The
+runner cannot change the selected execution or acceptance tolerances.
+
 ## Regression and claim gates
 
 Before representative hardware is selected, store named measurements and

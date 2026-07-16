@@ -8,6 +8,17 @@ use physbox_contracts::{
 
 pub const P5_2_CENTERED_STACK_EVIDENCE_STEPS: u32 = 1_200;
 pub const P5_2_BUCKET_EVIDENCE_STEPS: u32 = 600;
+pub const P5_2_COLORING_CHURN_VERSION: u32 = 1;
+
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct P5_2ColoringChurnSnapshotV1 {
+    pub version: u32,
+    pub label: String,
+    pub constructed: Vec<BodyId>,
+    pub erased: Vec<BodyId>,
+    pub scenario: ScenarioV1,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ScenarioBuildError(pub String);
@@ -376,9 +387,10 @@ pub fn p5_2_centered_rectangle_stack_scenario(
     rectangle_count: u32,
     requested_steps: u32,
 ) -> Result<ScenarioV1, ScenarioBuildError> {
-    if !matches!(rectangle_count, 2 | 4 | 8 | 16) {
+    if !matches!(rectangle_count, 2 | 4 | 8 | 16 | 32 | 64) {
         return Err(ScenarioBuildError(
-            "centered rectangle stack requires exactly 2, 4, 8, or 16 rectangles".to_owned(),
+            "centered rectangle stack requires exactly 2, 4, 8, 16, 32, or 64 rectangles"
+                .to_owned(),
         ));
     }
     let mut scenario = p5_2_generated_floor_scenario(requested_steps)?;
@@ -409,6 +421,124 @@ pub fn p5_2_centered_rectangle_stack_scenario(
         .validate()
         .map_err(|error| ScenarioBuildError(error.to_string()))?;
     Ok(scenario)
+}
+
+pub fn p5_2_coloring_churn_snapshots(
+    requested_steps: u32,
+) -> Result<Vec<P5_2ColoringChurnSnapshotV1>, ScenarioBuildError> {
+    if requested_steps == 0 {
+        return Err(ScenarioBuildError(
+            "P5.2 coloring churn snapshots require at least one requested step".to_owned(),
+        ));
+    }
+    let initial = p5_2_centered_rectangle_stack_scenario(8, requested_steps)?;
+    let mut snapshots = Vec::with_capacity(5);
+    let push = |snapshots: &mut Vec<P5_2ColoringChurnSnapshotV1>,
+                label: &str,
+                constructed: Vec<BodyId>,
+                erased: Vec<BodyId>,
+                mut scenario: ScenarioV1|
+     -> Result<(), ScenarioBuildError> {
+        scenario.id = format!("p5.2-coloring-churn-{label}");
+        scenario.seed = 0x5035_4c00 + snapshots.len() as u64;
+        scenario.bodies.sort_by_key(|body| body.id);
+        scenario
+            .validate()
+            .map_err(|error| ScenarioBuildError(error.to_string()))?;
+        snapshots.push(P5_2ColoringChurnSnapshotV1 {
+            version: P5_2_COLORING_CHURN_VERSION,
+            label: label.to_owned(),
+            constructed,
+            erased,
+            scenario,
+        });
+        Ok(())
+    };
+    push(
+        &mut snapshots,
+        "initial-eight-stack",
+        Vec::new(),
+        Vec::new(),
+        initial.clone(),
+    )?;
+
+    let mut constructed_circle = initial.clone();
+    let mut circle = constructed_circle.bodies[1].clone();
+    circle.id = BodyId {
+        slot: 9,
+        generation: 1,
+    };
+    circle.shape = ShapeV1::Circle {
+        radius: finite(0.125),
+    };
+    circle.position = Vec2::new(0.475, 0.125);
+    circle.inverse_inertia = finite(64.0);
+    let circle_id = circle.id;
+    constructed_circle.bodies.push(circle);
+    push(
+        &mut snapshots,
+        "construct-circle",
+        vec![circle_id],
+        Vec::new(),
+        constructed_circle.clone(),
+    )?;
+
+    let mut constructed_rectangle = constructed_circle.clone();
+    let mut rectangle = constructed_rectangle.bodies[1].clone();
+    rectangle.id = BodyId {
+        slot: 10,
+        generation: 1,
+    };
+    rectangle.shape = ShapeV1::Rectangle {
+        half_extents: Vec2::new(0.15, 0.10),
+    };
+    rectangle.position = Vec2::new(-0.50, 0.10);
+    rectangle.inverse_inertia = finite(92.307_69);
+    let rectangle_id = rectangle.id;
+    constructed_rectangle.bodies.push(rectangle);
+    push(
+        &mut snapshots,
+        "construct-rectangle",
+        vec![rectangle_id],
+        Vec::new(),
+        constructed_rectangle.clone(),
+    )?;
+
+    let erased_id = BodyId {
+        slot: 10,
+        generation: 1,
+    };
+    let mut erased = constructed_rectangle.clone();
+    erased.bodies.retain(|body| body.id != erased_id);
+    push(
+        &mut snapshots,
+        "erase-constructed-rectangle",
+        Vec::new(),
+        vec![erased_id],
+        erased.clone(),
+    )?;
+
+    let mut reused = erased;
+    let mut replacement = reused.bodies[1].clone();
+    replacement.id = BodyId {
+        slot: 10,
+        generation: 2,
+    };
+    replacement.shape = ShapeV1::Circle {
+        radius: finite(0.10),
+    };
+    replacement.position = Vec2::new(0.70, 0.10);
+    replacement.inverse_inertia = finite(100.0);
+    let replacement_id = replacement.id;
+    reused.bodies.push(replacement);
+    push(
+        &mut snapshots,
+        "reuse-erased-slot",
+        vec![replacement_id],
+        Vec::new(),
+        reused,
+    )?;
+    Ok(snapshots)
 }
 
 pub fn p5_2_rectangle_pyramid_scenario(
@@ -1630,7 +1760,7 @@ mod tests {
 
     #[test]
     fn p5_2_centered_rectangle_stacks_are_valid_exact_and_replayable() {
-        for count in [2, 4, 8, 16] {
+        for count in [2, 4, 8, 16, 32, 64] {
             let scenario =
                 p5_2_centered_rectangle_stack_scenario(count, P5_2_CENTERED_STACK_EVIDENCE_STEPS)
                     .unwrap();
@@ -1662,6 +1792,39 @@ mod tests {
             p5_2_centered_rectangle_stack_scenario(3, P5_2_CENTERED_STACK_EVIDENCE_STEPS).is_err()
         );
         assert!(p5_2_centered_rectangle_stack_scenario(4, 0).is_err());
+    }
+
+    #[test]
+    fn p5_2_coloring_churn_snapshots_replay_construction_erase_and_generation_reuse() {
+        let snapshots = p5_2_coloring_churn_snapshots(1).unwrap();
+        assert_eq!(snapshots.len(), 5);
+        assert!(snapshots.iter().all(|snapshot| {
+            snapshot.version == P5_2_COLORING_CHURN_VERSION
+                && snapshot.scenario.requested_steps == 1
+                && snapshot.scenario.manifolds.is_empty()
+                && snapshot.scenario.contact_cache.is_empty()
+        }));
+        assert_eq!(snapshots[1].constructed.len(), 1);
+        assert_eq!(snapshots[2].constructed.len(), 1);
+        assert_eq!(
+            snapshots[3].erased,
+            vec![BodyId {
+                slot: 10,
+                generation: 1
+            }]
+        );
+        assert_eq!(
+            snapshots[4].constructed,
+            vec![BodyId {
+                slot: 10,
+                generation: 2
+            }]
+        );
+        assert_eq!(
+            serde_json::to_vec(&snapshots).unwrap(),
+            serde_json::to_vec(&p5_2_coloring_churn_snapshots(1).unwrap()).unwrap()
+        );
+        assert!(p5_2_coloring_churn_snapshots(0).is_err());
     }
 
     #[test]

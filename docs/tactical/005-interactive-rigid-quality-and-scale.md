@@ -660,6 +660,11 @@ tolerance, pacing rate, broadphase, liquid path, or CPU fallback is authorized.
   owns every cost conclusion.
 - [ ] Retain the seven accepted sources and add 32/64-stack depth diagnostics,
   both 100-body buckets, and deterministic construction/erase churn.
+  The atomic runner and shared diagnostic sources are implemented: 32/64 are
+  accepted by the stack generator only as named diagnostics, and five churn
+  snapshots record construction, erase, generation reuse, full rebuild units,
+  surviving units, and surviving color changes. This checkbox remains open
+  until the clean package completes.
 - [ ] Publish complete color occupancy, compaction/recoloring cost, dispatch,
   memory, 32/256/1K timing, exact replay, capacity, and first-failure evidence.
 - [ ] Run a potential candidate through native/headless/browser and the

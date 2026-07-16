@@ -6,8 +6,8 @@ use physbox_engine::{
     P5_2BucketShape, P5_2CandidatePattern, P5_2GeneratedScenarioKind,
     benchmark_gpu_generated_contact_experiment, benchmark_gpu_generated_contacts,
     p5_2_bucket_scenario, p5_2_candidate_scenario, p5_2_centered_rectangle_stack_scenario,
-    p5_2_contact_policy_candidate, p5_2_generated_performance_scenario, p5_2_generated_scenario,
-    run_gpu_soft_step_case,
+    p5_2_coloring_churn_snapshots, p5_2_contact_policy_candidate,
+    p5_2_generated_performance_scenario, p5_2_generated_scenario, run_gpu_soft_step_case,
 };
 use physbox_lab::analytic_narrowphase::authored_solver_projection;
 use physbox_lab::settling::centered_stack_structure;
@@ -69,6 +69,32 @@ fn compact_coloring_benchmark_separates_construction_compaction_and_empty_work()
         assert!(sample.active_color_solve_seconds > 0.0);
         assert!(sample.empty_color_solve_seconds > 0.0);
         assert!(sample.other_solver_seconds > 0.0);
+    }
+}
+
+#[test]
+fn colored_diagnostic_sources_cover_deep_stacks_and_construction_erase_churn() {
+    let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
+    let execution = GpuSolverExecutionV4::alternating_manifold_colored_block_experiment(true, true);
+    for count in [32, 64] {
+        let mut scenario = p5_2_centered_rectangle_stack_scenario(count, 1).unwrap();
+        scenario.settings.iterations = 2;
+        let output = runner.run_experiment(&scenario, 1, execution).unwrap();
+        let coloring = output.pass_evidence.coloring.unwrap();
+        assert!(!coloring.overflowed);
+        assert!(coloring.color_count > 0);
+        assert!(output.failure.is_none());
+    }
+    for snapshot in p5_2_coloring_churn_snapshots(1).unwrap() {
+        let mut scenario = snapshot.scenario;
+        scenario.settings.iterations = 2;
+        let output = runner.run_experiment(&scenario, 1, execution).unwrap();
+        let replay = runner.run_experiment(&scenario, 1, execution).unwrap();
+        assert_eq!(output.bodies, replay.bodies);
+        assert_eq!(output.cache, replay.cache);
+        assert_eq!(output.pass_evidence, replay.pass_evidence);
+        assert!(output.pass_evidence.coloring.is_some());
+        assert!(output.failure.is_none());
     }
 }
 

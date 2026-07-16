@@ -182,6 +182,13 @@ timing remains an ordinary graph measurement; a separate diagnostic lane
 attributes construction, compaction, active solve, and empty indirect work.
 The clean depth/degree/churn factorial remains next and no solver is promoted.
 
+S5.4b automation checkpoint, 2026-07-16: the atomic evidence runner now owns
+the eight-lane factorial, seven accepted structures, four separately labeled
+depth/degree diagnostics, deterministic construction/erase recoloring source,
+raw cost matrix, first failures, Box2D comparison, and conditional comparator
+triggers. A clean package run remains next; no evidence result or solver
+promotion is implied by the automation itself.
+
 The first S3.5a representation checkpoint implements the stable pair-slot
 comparator with full feature verification and deterministic generational slot
 recycling. Its correctness/adversarial gates pass and its combined

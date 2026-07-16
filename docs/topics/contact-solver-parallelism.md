@@ -217,6 +217,16 @@ launches, and the remaining solver graph. Assignments, stable index order,
 indirect arguments, and atomic overflow semantics remain unchanged. No cost or
 quality conclusion is recorded until the clean factorial is published.
 
+Evidence-automation checkpoint, 2026-07-16: one bounded S5.4b runner freezes
+the fixed/compact point i4 controls and manifold forward/alternating i1/i2/i4
+matrix. The seven governed structures remain the only acceptance corpus;
+32/64 stacks and 100-body circle/rectangle buckets are separately labeled
+diagnostics. A shared five-snapshot source records deterministic construction,
+erase, and generation reuse and counts full rebuild work plus surviving color
+changes. Fresh failure reproducers, Box2D authority, raw 32/256/1K timing,
+platform provenance, and the conditional comparator triggers are mandatory
+outputs. No result is claimed until a clean atomic package completes.
+
 ## Fallback and reserve options
 
 - **Interim baseline swap.** Manifold block i2 improves structural preservation

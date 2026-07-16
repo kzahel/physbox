@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     ffi::OsString,
     fs::{self, OpenOptions},
     io::Write,
@@ -8,13 +9,14 @@ use std::{
 };
 
 use physbox_contracts::{
-    BodyStateV1, OracleRequestV1, OracleResultV1, SCHEMA_VERSION, ScenarioV1,
+    BodyId, BodyStateV1, OracleRequestV1, OracleResultV1, SCHEMA_VERSION, ScenarioV1,
     SettlingObservationV1, ShapeV1, SolverSettingsV1, Validate, canonical_hash, canonical_json,
     sha256_bytes,
 };
 use physbox_engine::{
-    GpuGeneratedContactRunner, GpuNormalSolverV4, GpuSolverExecutionV4,
-    p5_2_box2d_world_projection, p5_2_centered_rectangle_stack_scenario,
+    GpuColoringEvidenceV4, GpuGeneratedContactRunner, GpuNormalSolverV4, GpuSolverExecutionV4,
+    GpuSolverInstrumentedSampleV4, P5_2BucketShape, p5_2_box2d_world_projection,
+    p5_2_bucket_scenario, p5_2_centered_rectangle_stack_scenario, p5_2_coloring_churn_snapshots,
     p5_2_generated_performance_scenario, p5_2_rectangle_pyramid_scenario,
 };
 use physbox_lab::{
@@ -37,6 +39,7 @@ use serde::Serialize;
 
 const BOX2D_REVISION: &str = "3a4f0da8374af61293a03021c9a0b3ebcfe67948";
 const CHECKPOINTS: [u32; 11] = [1, 60, 180, 360, 600, 900, 960, 1_020, 1_080, 1_140, 1_200];
+const BUCKET_CHECKPOINTS: [u32; 7] = [1, 60, 180, 300, 420, 540, 600];
 const PLAYBACK_STEPS: [u32; 4] = [1, 180, 600, 1_200];
 const SETTLED_WINDOW_START: u32 = 900;
 const SETTLED_WINDOW_END: u32 = 1_200;
@@ -54,6 +57,7 @@ const EXISTING_S5_4_SCENES: [&str; 6] = [
 enum SceneKind {
     Stack,
     Pyramid,
+    Bucket,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -64,6 +68,9 @@ enum CandidateFamilyV3 {
     ManifoldBlock,
     BlockMassSplit,
     ColoredInPlace,
+    CompactPointControl,
+    ManifoldColorForward,
+    ManifoldColorAlternating,
 }
 
 impl CandidateFamilyV3 {
@@ -112,6 +119,114 @@ struct Manifest {
     oracle_precedence_changed: bool,
     product_constructor_changed: bool,
     playback: &'static str,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ColoredManifest {
+    schema_version: u32,
+    metrics_version: u32,
+    artifact_kind: &'static str,
+    run_id: String,
+    source_revision: String,
+    source_dirty: bool,
+    source_patch_digest: Option<String>,
+    box2d_revision: &'static str,
+    adapter: physbox_engine::AdapterDiagnostics,
+    candidates: Vec<CandidateDefinition>,
+    scheduling_control: SchedulingControlEvidence,
+    accepted_scenes: Vec<SceneEvidence>,
+    diagnostic_scenes: Vec<SceneEvidence>,
+    churn: ChurnEvidence,
+    failures: Vec<FailureRecord>,
+    gpu_performance: Vec<GpuPerformanceRow>,
+    optimized_box2d_performance: Vec<OptimizedBox2dRow>,
+    decision: ColoredDecision,
+    platform_artifacts: Vec<PlatformArtifact>,
+    physical_device_gap: Option<String>,
+    physical_defaults_changed: bool,
+    numerical_tolerances_changed: bool,
+    oracle_precedence_changed: bool,
+    product_constructor_changed: bool,
+    selected_product_execution: GpuSolverExecutionV4,
+    playback: &'static str,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SchedulingControlEvidence {
+    scenario_hash: String,
+    completed_steps: u32,
+    iterations: u32,
+    byte_exact: bool,
+    fixed_result_hash: String,
+    compact_result_hash: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ChurnEvidence {
+    version: u32,
+    full_rebuild_each_snapshot: bool,
+    snapshots: Vec<ChurnSnapshotEvidence>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ChurnSnapshotEvidence {
+    label: String,
+    constructed: Vec<BodyId>,
+    erased: Vec<BodyId>,
+    source_scenario_hash: String,
+    candidates: Vec<ChurnCandidateEvidence>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ChurnCandidateEvidence {
+    candidate: &'static str,
+    exact_replay: bool,
+    capacity_clean: bool,
+    rebuilt_color_units: u32,
+    surviving_color_units: u32,
+    surviving_color_changes: u32,
+    result_hash: String,
+    coloring: GpuColoringEvidenceV4,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ColoredDecision {
+    version: u32,
+    feasibility_boundary_seconds: f64,
+    accepted_scene_count: u32,
+    diagnostic_scene_count: u32,
+    candidates: Vec<ColoredCandidateDecision>,
+    potential_candidates: Vec<&'static str>,
+    incremental_coloring_triggered: bool,
+    incremental_coloring_reason: String,
+    workgroup_per_island_triggered: bool,
+    workgroup_per_island_reason: String,
+    production_selection_deferred: bool,
+    recommendation_deferred_to_human_review: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ColoredCandidateDecision {
+    candidate: &'static str,
+    family: CandidateFamilyV3,
+    iterations: u32,
+    accepted_structural_passes: u32,
+    accepted_exact_and_capacity_clean: bool,
+    diagnostic_structural_passes: u32,
+    one_k_complete_step_seconds: Option<f64>,
+    one_k_below_feasibility_boundary: bool,
+    one_k_color_construction_seconds: Option<f64>,
+    one_k_color_compaction_seconds: Option<f64>,
+    one_k_active_color_solve_seconds: Option<f64>,
+    one_k_empty_color_solve_seconds: Option<f64>,
+    potential_candidate: bool,
 }
 
 #[derive(Serialize)]
@@ -235,6 +350,8 @@ struct GpuPerformanceRow {
     gpu_end_to_end_p50_seconds: Option<f64>,
     host_completion_seconds: Vec<f64>,
     cpu_encode_submit_seconds: Vec<f64>,
+    instrumented_solver_phases: Option<Vec<GpuSolverInstrumentedSampleV4>>,
+    coloring: Option<GpuColoringEvidenceV4>,
     capacity_clean: bool,
     correctness_hash: String,
 }
@@ -272,6 +389,9 @@ fn main() {
 
 fn run() -> Result<(), String> {
     let arguments = Arguments::parse()?;
+    if arguments.colored_factorial {
+        return run_colored_factorial(arguments);
+    }
     let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let (source_revision, source_dirty, source_patch_digest) = repository_state(&repository)?;
     if arguments.require_clean && source_dirty {
@@ -325,6 +445,9 @@ fn run() -> Result<(), String> {
             &label,
             kind,
             source,
+            &CHECKPOINTS,
+            SETTLED_WINDOW_START,
+            SETTLED_WINDOW_END,
         )?;
         for candidate in &scene.candidates {
             if let Some(first_failure_step) = candidate.first_structural_failure_step {
@@ -417,6 +540,234 @@ fn run() -> Result<(), String> {
     Ok(())
 }
 
+fn run_colored_factorial(arguments: Arguments) -> Result<(), String> {
+    let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let (source_revision, source_dirty, source_patch_digest) = repository_state(&repository)?;
+    if arguments.require_clean && source_dirty {
+        return Err("S5.4b coloring evidence requires a clean source tree".to_owned());
+    }
+    let box2d = verify_clean_git_pin(&arguments.box2d_source, BOX2D_REVISION)
+        .map_err(|error| error.to_string())?;
+    let staging = arguments.output.with_extension("partial");
+    if arguments.output.exists() || staging.exists() {
+        return Err("output or staging evidence directory already exists".to_owned());
+    }
+    fs::create_dir_all(staging.join("oracles")).map_err(|error| error.to_string())?;
+    fs::create_dir_all(staging.join("failures")).map_err(|error| error.to_string())?;
+    fs::create_dir_all(staging.join("performance")).map_err(|error| error.to_string())?;
+    fs::create_dir_all(staging.join("platform")).map_err(|error| error.to_string())?;
+
+    let runner = pollster::block_on(GpuGeneratedContactRunner::new())?;
+    let base = p5_2_centered_rectangle_stack_scenario(2, 1)
+        .map_err(|error| error.to_string())?
+        .settings;
+    let candidates = colored_candidate_definitions(base);
+    let scheduling_control = scheduling_control_evidence(&runner, base)?;
+    if !scheduling_control.byte_exact {
+        return Err("compact point scheduling no longer matches the fixed-grid control".to_owned());
+    }
+
+    let mut accepted_scenes = Vec::new();
+    let mut accepted_kinds = Vec::new();
+    for count in [2, 4, 8, 16] {
+        let label = format!("rectangle-stack-{count}");
+        eprintln!("S5.4b accepted scene {label}");
+        accepted_scenes.push(evaluate_scene(
+            &arguments,
+            &staging,
+            &box2d,
+            &runner,
+            &candidates,
+            &label,
+            SceneKind::Stack,
+            p5_2_centered_rectangle_stack_scenario(count, SETTLED_WINDOW_END)
+                .map_err(|error| error.to_string())?,
+            &CHECKPOINTS,
+            SETTLED_WINDOW_START,
+            SETTLED_WINDOW_END,
+        )?);
+        accepted_kinds.push(SceneKind::Stack);
+    }
+    for rows in [2, 3, 4] {
+        let label = format!("rectangle-pyramid-{rows}");
+        eprintln!("S5.4b accepted scene {label}");
+        accepted_scenes.push(evaluate_scene(
+            &arguments,
+            &staging,
+            &box2d,
+            &runner,
+            &candidates,
+            &label,
+            SceneKind::Pyramid,
+            p5_2_rectangle_pyramid_scenario(rows, SETTLED_WINDOW_END)
+                .map_err(|error| error.to_string())?,
+            &CHECKPOINTS,
+            SETTLED_WINDOW_START,
+            SETTLED_WINDOW_END,
+        )?);
+        accepted_kinds.push(SceneKind::Pyramid);
+    }
+
+    let mut diagnostic_scenes = Vec::new();
+    let mut diagnostic_kinds = Vec::new();
+    for count in [32, 64] {
+        let label = format!("rectangle-stack-{count}-diagnostic");
+        eprintln!("S5.4b depth diagnostic {label}");
+        diagnostic_scenes.push(evaluate_scene(
+            &arguments,
+            &staging,
+            &box2d,
+            &runner,
+            &candidates,
+            &label,
+            SceneKind::Stack,
+            p5_2_centered_rectangle_stack_scenario(count, SETTLED_WINDOW_END)
+                .map_err(|error| error.to_string())?,
+            &CHECKPOINTS,
+            SETTLED_WINDOW_START,
+            SETTLED_WINDOW_END,
+        )?);
+        diagnostic_kinds.push(SceneKind::Stack);
+    }
+    for shape in P5_2BucketShape::ALL {
+        let label = format!("{}-bucket-100-diagnostic", shape.name());
+        eprintln!("S5.4b degree diagnostic {label}");
+        diagnostic_scenes.push(evaluate_scene(
+            &arguments,
+            &staging,
+            &box2d,
+            &runner,
+            &candidates,
+            &label,
+            SceneKind::Bucket,
+            p5_2_bucket_scenario(shape, 100, 600).map_err(|error| error.to_string())?,
+            &BUCKET_CHECKPOINTS,
+            300,
+            600,
+        )?);
+        diagnostic_kinds.push(SceneKind::Bucket);
+    }
+
+    let mut failures = Vec::new();
+    for (scene, kind) in accepted_scenes
+        .iter()
+        .zip(&accepted_kinds)
+        .chain(diagnostic_scenes.iter().zip(&diagnostic_kinds))
+    {
+        failures.extend(scene_failure_records(scene, *kind, &runner, &candidates)?);
+    }
+    minimize_failure_scene_aliases(&mut failures);
+    for failure in &failures {
+        atomic_json(
+            &staging
+                .join("failures")
+                .join(format!("{}-{}.json", failure.candidate, failure.scene)),
+            failure,
+        )?;
+    }
+
+    let churn = coloring_churn_evidence(&runner, &candidates)?;
+    let gpu_performance = performance_matrix(&arguments, &candidates)?;
+    let optimized_box2d_performance = optimized_box2d_matrix(&arguments, &staging)?;
+    let decision = colored_decision(
+        &candidates,
+        &accepted_scenes,
+        &diagnostic_scenes,
+        &gpu_performance,
+    )?;
+    let platform_artifacts = copy_platform_artifacts(&arguments.platforms, &staging)?;
+    atomic_write(
+        &staging.join("playback.svg"),
+        render_colored_playback(&accepted_scenes, &candidates)?.as_bytes(),
+    )?;
+    let manifest = ColoredManifest {
+        schema_version: SCHEMA_VERSION,
+        metrics_version: AWAKE_SETTLING_METRICS_VERSION,
+        artifact_kind: "p5.2b-s5.4b-compact-coloring-factorial",
+        run_id: arguments.run_id.clone(),
+        source_revision,
+        source_dirty,
+        source_patch_digest,
+        box2d_revision: BOX2D_REVISION,
+        adapter: runner.diagnostics().clone(),
+        candidates,
+        scheduling_control,
+        accepted_scenes,
+        diagnostic_scenes,
+        churn,
+        failures,
+        gpu_performance,
+        optimized_box2d_performance,
+        decision,
+        platform_artifacts,
+        physical_device_gap: arguments.physical_device_gap,
+        physical_defaults_changed: false,
+        numerical_tolerances_changed: false,
+        oracle_precedence_changed: false,
+        product_constructor_changed: false,
+        selected_product_execution: GpuSolverExecutionV4::SELECTED,
+        playback: "playback.svg",
+    };
+    atomic_json(&staging.join("manifest.json"), &manifest)?;
+    sync_directory(&staging)?;
+    fs::rename(&staging, &arguments.output).map_err(|error| error.to_string())?;
+    sync_directory(arguments.output.parent().unwrap_or(Path::new(".")))?;
+    let manifest_bytes =
+        fs::read(arguments.output.join("manifest.json")).map_err(|error| error.to_string())?;
+    println!(
+        "PHYSBOX5_VALIDATION_SUCCESS host=native scenario=s5.4b-compact-coloring-factorial run_id={} manifest_sha256={} output={}",
+        arguments.run_id,
+        sha256_bytes(&manifest_bytes),
+        arguments.output.display()
+    );
+    Ok(())
+}
+
+fn scheduling_control_evidence(
+    runner: &GpuGeneratedContactRunner,
+    mut settings: SolverSettingsV1,
+) -> Result<SchedulingControlEvidence, String> {
+    let mut scenario =
+        p5_2_centered_rectangle_stack_scenario(8, 8).map_err(|error| error.to_string())?;
+    settings.iterations = 4;
+    scenario.settings = settings;
+    let fixed = runner.run_experiment(
+        &scenario,
+        8,
+        GpuSolverExecutionV4::colored_experiment(true, true),
+    )?;
+    let compact = runner.run_experiment(
+        &scenario,
+        8,
+        GpuSolverExecutionV4::compact_colored_experiment(true, true),
+    )?;
+    let fixed_coloring = fixed
+        .pass_evidence
+        .coloring
+        .as_ref()
+        .ok_or_else(|| "fixed scheduling control omitted coloring evidence".to_owned())?;
+    let compact_coloring = compact
+        .pass_evidence
+        .coloring
+        .as_ref()
+        .ok_or_else(|| "compact scheduling control omitted coloring evidence".to_owned())?;
+    let byte_exact = fixed.bodies == compact.bodies
+        && fixed.cache == compact.cache
+        && fixed.pass_evidence.contacts == compact.pass_evidence.contacts
+        && fixed.pass_evidence.contributions == compact.pass_evidence.contributions
+        && fixed.pass_evidence.manifold_blocks == compact.pass_evidence.manifold_blocks
+        && fixed_coloring.point_colors == compact_coloring.point_colors
+        && fixed_coloring.color_occupancy == compact_coloring.color_occupancy;
+    Ok(SchedulingControlEvidence {
+        scenario_hash: canonical_hash(&scenario).map_err(|error| error.to_string())?,
+        completed_steps: 8,
+        iterations: 4,
+        byte_exact,
+        fixed_result_hash: serialized_hash(&fixed)?,
+        compact_result_hash: serialized_hash(&compact)?,
+    })
+}
+
 fn candidate_definitions(base: SolverSettingsV1) -> Vec<CandidateDefinition> {
     let definitions = [
         (
@@ -501,6 +852,371 @@ fn candidate_definitions(base: SolverSettingsV1) -> Vec<CandidateDefinition> {
         }
     }
     candidates
+}
+
+fn colored_candidate_definitions(base: SolverSettingsV1) -> Vec<CandidateDefinition> {
+    let definitions = [
+        (
+            "point-fixed-i4",
+            CandidateFamilyV3::CompactPointControl,
+            4,
+            GpuSolverExecutionV4::colored_experiment(true, true),
+            "fixed-grid point-color scheduling attribution control",
+        ),
+        (
+            "point-compact-i4",
+            CandidateFamilyV3::CompactPointControl,
+            4,
+            GpuSolverExecutionV4::compact_colored_experiment(true, true),
+            "does compact indirect scheduling preserve the fixed-grid point result",
+        ),
+        (
+            "manifold-forward-i1",
+            CandidateFamilyV3::ManifoldColorForward,
+            1,
+            GpuSolverExecutionV4::manifold_colored_block_experiment(true, true),
+            "does manifold coupling preserve the corpus at one forward iteration",
+        ),
+        (
+            "manifold-forward-i2",
+            CandidateFamilyV3::ManifoldColorForward,
+            2,
+            GpuSolverExecutionV4::manifold_colored_block_experiment(true, true),
+            "does manifold coupling preserve the corpus at two forward iterations",
+        ),
+        (
+            "manifold-forward-i4",
+            CandidateFamilyV3::ManifoldColorForward,
+            4,
+            GpuSolverExecutionV4::manifold_colored_block_experiment(true, true),
+            "does manifold coupling preserve the corpus at four forward iterations",
+        ),
+        (
+            "manifold-alternating-i1",
+            CandidateFamilyV3::ManifoldColorAlternating,
+            1,
+            GpuSolverExecutionV4::alternating_manifold_colored_block_experiment(true, true),
+            "does alternating order improve one-iteration propagation",
+        ),
+        (
+            "manifold-alternating-i2",
+            CandidateFamilyV3::ManifoldColorAlternating,
+            2,
+            GpuSolverExecutionV4::alternating_manifold_colored_block_experiment(true, true),
+            "does alternating order improve two-iteration propagation",
+        ),
+        (
+            "manifold-alternating-i4",
+            CandidateFamilyV3::ManifoldColorAlternating,
+            4,
+            GpuSolverExecutionV4::alternating_manifold_colored_block_experiment(true, true),
+            "does alternating order improve four-iteration propagation",
+        ),
+    ];
+    definitions
+        .into_iter()
+        .map(|(id, family, iterations, execution, question)| {
+            let mut settings = base;
+            settings.iterations = iterations;
+            CandidateDefinition {
+                id,
+                family,
+                iterations,
+                settings,
+                execution,
+                question,
+            }
+        })
+        .collect()
+}
+
+fn scene_failure_records(
+    scene: &SceneEvidence,
+    kind: SceneKind,
+    runner: &GpuGeneratedContactRunner,
+    candidates: &[CandidateDefinition],
+) -> Result<Vec<FailureRecord>, String> {
+    let mut failures = Vec::new();
+    for candidate in &scene.candidates {
+        let Some(first_failure_step) = candidate.first_structural_failure_step else {
+            continue;
+        };
+        let definition = candidates
+            .iter()
+            .find(|definition| definition.id == candidate.candidate)
+            .expect("candidate definition exists");
+        let mut reproducer = scene.source.clone();
+        reproducer.settings = definition.settings;
+        reproducer.requested_steps = first_failure_step;
+        let output =
+            runner.run_experiment(&reproducer, first_failure_step, definition.execution)?;
+        let overflowed = output.failure.is_some()
+            || output
+                .capacities
+                .iter()
+                .any(|capacity| !capacity.accepted || capacity.overflowed);
+        let (_, exact_reason) = structure(kind, &reproducer, &output.bodies, overflowed);
+        failures.push(FailureRecord {
+            candidate: candidate.candidate,
+            scene: scene.label.clone(),
+            minimized_scene: scene.label.clone(),
+            first_failure_step,
+            reason: exact_reason,
+            scenario_hash: canonical_hash(&reproducer).map_err(|error| error.to_string())?,
+            result_hash: serialized_hash(&output)?,
+            reproducer,
+            bodies: output.bodies,
+        });
+    }
+    Ok(failures)
+}
+
+type ColorUnitKey = (BodyId, BodyId, u32);
+
+fn color_unit_map(
+    scenario: &ScenarioV1,
+    output: &physbox_engine::GpuGeneratedContactOutput,
+    coloring: &GpuColoringEvidenceV4,
+) -> Result<BTreeMap<ColorUnitKey, u32>, String> {
+    let mut units = BTreeMap::new();
+    for (contact, &color) in output
+        .pass_evidence
+        .contacts
+        .iter()
+        .filter(|contact| contact.valid)
+        .zip(&coloring.point_colors)
+    {
+        if coloring.unit == physbox_engine::GpuColorUnitV4::Manifold
+            && contact.point_in_manifold != 0
+        {
+            continue;
+        }
+        let body_a = scenario
+            .bodies
+            .get(contact.body_a as usize)
+            .ok_or_else(|| "color evidence body A is outside the scenario".to_owned())?
+            .id;
+        let body_b = scenario
+            .bodies
+            .get(contact.body_b as usize)
+            .ok_or_else(|| "color evidence body B is outside the scenario".to_owned())?
+            .id;
+        let key = if body_a <= body_b {
+            (body_a, body_b, contact.point_in_manifold)
+        } else {
+            (body_b, body_a, contact.point_in_manifold)
+        };
+        if units.insert(key, color).is_some() {
+            return Err("color churn evidence produced a duplicate unit key".to_owned());
+        }
+    }
+    Ok(units)
+}
+
+fn coloring_churn_evidence(
+    runner: &GpuGeneratedContactRunner,
+    candidates: &[CandidateDefinition],
+) -> Result<ChurnEvidence, String> {
+    let sources = p5_2_coloring_churn_snapshots(1).map_err(|error| error.to_string())?;
+    let mut previous = BTreeMap::<&'static str, BTreeMap<ColorUnitKey, u32>>::new();
+    let mut snapshots = Vec::with_capacity(sources.len());
+    for source in sources {
+        let source_scenario_hash =
+            canonical_hash(&source.scenario).map_err(|error| error.to_string())?;
+        let mut candidate_evidence = Vec::with_capacity(candidates.len());
+        for candidate in candidates {
+            let mut scenario = source.scenario.clone();
+            scenario.settings = candidate.settings;
+            let output = runner.run_experiment(&scenario, 1, candidate.execution)?;
+            let replay = runner.run_experiment(&scenario, 1, candidate.execution)?;
+            let result_hash = serialized_hash(&output)?;
+            let exact_replay = serialized_hash(&replay)? == result_hash;
+            let capacity_clean = output.failure.is_none()
+                && output
+                    .capacities
+                    .iter()
+                    .all(|capacity| capacity.accepted && !capacity.overflowed);
+            let coloring = output
+                .pass_evidence
+                .coloring
+                .clone()
+                .ok_or_else(|| format!("{} omitted churn coloring evidence", candidate.id))?;
+            let colors = color_unit_map(&scenario, &output, &coloring)?;
+            let prior = previous.get(candidate.id);
+            let surviving_color_units = prior.map_or(0, |prior| {
+                colors.keys().filter(|key| prior.contains_key(key)).count() as u32
+            });
+            let surviving_color_changes = prior.map_or(0, |prior| {
+                colors
+                    .iter()
+                    .filter(|(key, color)| prior.get(key).is_some_and(|prior| prior != *color))
+                    .count() as u32
+            });
+            previous.insert(candidate.id, colors);
+            candidate_evidence.push(ChurnCandidateEvidence {
+                candidate: candidate.id,
+                exact_replay,
+                capacity_clean,
+                rebuilt_color_units: coloring.color_occupancy.iter().sum(),
+                surviving_color_units,
+                surviving_color_changes,
+                result_hash,
+                coloring,
+            });
+        }
+        snapshots.push(ChurnSnapshotEvidence {
+            label: source.label,
+            constructed: source.constructed,
+            erased: source.erased,
+            source_scenario_hash,
+            candidates: candidate_evidence,
+        });
+    }
+    Ok(ChurnEvidence {
+        version: physbox_engine::P5_2_COLORING_CHURN_VERSION,
+        full_rebuild_each_snapshot: true,
+        snapshots,
+    })
+}
+
+fn phase_p50(
+    row: &GpuPerformanceRow,
+    value: impl Fn(&GpuSolverInstrumentedSampleV4) -> f64,
+) -> Result<Option<f64>, String> {
+    row.instrumented_solver_phases
+        .as_ref()
+        .map(|samples| nearest_rank_p50(&samples.iter().map(value).collect::<Vec<_>>()))
+        .transpose()
+}
+
+fn colored_decision(
+    candidates: &[CandidateDefinition],
+    accepted_scenes: &[SceneEvidence],
+    diagnostic_scenes: &[SceneEvidence],
+    performance: &[GpuPerformanceRow],
+) -> Result<ColoredDecision, String> {
+    if accepted_scenes.len() != 7 || diagnostic_scenes.len() != 4 {
+        return Err("S5.4b evidence has the wrong acceptance or diagnostic scene count".to_owned());
+    }
+    let mut candidate_decisions = Vec::with_capacity(candidates.len());
+    for candidate in candidates {
+        let accepted = accepted_scenes
+            .iter()
+            .map(|scene| candidate_scene(scene, candidate.id))
+            .collect::<Result<Vec<_>, _>>()?;
+        let diagnostics = diagnostic_scenes
+            .iter()
+            .map(|scene| candidate_scene(scene, candidate.id))
+            .collect::<Result<Vec<_>, _>>()?;
+        let one_k = performance
+            .iter()
+            .find(|row| row.candidate == candidate.id && row.bodies == 1_024)
+            .ok_or_else(|| format!("{} omitted its 1K performance row", candidate.id))?;
+        let accepted_exact_and_capacity_clean = accepted.iter().all(|scene| {
+            scene.exact_replay
+                && scene.preserves_structure_through_run
+                && scene.samples.iter().all(|sample| sample.capacity_clean)
+        });
+        let accepted_structural_passes = accepted
+            .iter()
+            .filter(|scene| scene.preserves_structure_through_run)
+            .count() as u32;
+        let diagnostic_structural_passes = diagnostics
+            .iter()
+            .filter(|scene| scene.preserves_structure_through_run)
+            .count() as u32;
+        let one_k_complete_step_seconds = one_k.gpu_end_to_end_p50_seconds;
+        let potential_candidate = candidate.family != CandidateFamilyV3::CompactPointControl
+            && accepted_structural_passes == 7
+            && accepted_exact_and_capacity_clean
+            && one_k.capacity_clean;
+        candidate_decisions.push(ColoredCandidateDecision {
+            candidate: candidate.id,
+            family: candidate.family,
+            iterations: candidate.iterations,
+            accepted_structural_passes,
+            accepted_exact_and_capacity_clean,
+            diagnostic_structural_passes,
+            one_k_complete_step_seconds,
+            one_k_below_feasibility_boundary: one_k_complete_step_seconds
+                .is_some_and(|seconds| seconds < FEASIBILITY_BOUNDARY_SECONDS),
+            one_k_color_construction_seconds: phase_p50(one_k, |sample| {
+                sample.color_construction_seconds
+            })?,
+            one_k_color_compaction_seconds: phase_p50(one_k, |sample| {
+                sample.color_compaction_seconds
+            })?,
+            one_k_active_color_solve_seconds: phase_p50(one_k, |sample| {
+                sample.active_color_solve_seconds
+            })?,
+            one_k_empty_color_solve_seconds: phase_p50(one_k, |sample| {
+                sample.empty_color_solve_seconds
+            })?,
+            potential_candidate,
+        });
+    }
+    let potential_candidates = candidate_decisions
+        .iter()
+        .filter(|candidate| candidate.potential_candidate)
+        .map(|candidate| candidate.candidate)
+        .collect::<Vec<_>>();
+    let leading = candidate_decisions
+        .iter()
+        .filter(|candidate| candidate.potential_candidate)
+        .filter_map(|candidate| {
+            candidate
+                .one_k_complete_step_seconds
+                .map(|seconds| (seconds, candidate))
+        })
+        .min_by(|left, right| left.0.total_cmp(&right.0));
+    let incremental_coloring_triggered = leading.is_some_and(|(_, candidate)| {
+        match (
+            candidate.one_k_color_construction_seconds,
+            candidate.one_k_color_compaction_seconds,
+            candidate.one_k_active_color_solve_seconds,
+        ) {
+            (Some(construction), Some(compaction), Some(active)) => {
+                construction + compaction >= active
+            }
+            _ => false,
+        }
+    });
+    let workgroup_per_island_triggered = leading.is_some_and(|(_, candidate)| {
+        !candidate.one_k_below_feasibility_boundary
+            || match (
+                candidate.one_k_empty_color_solve_seconds,
+                candidate.one_k_active_color_solve_seconds,
+            ) {
+                (Some(empty), Some(active)) => empty >= active,
+                _ => false,
+            }
+    });
+    Ok(ColoredDecision {
+        version: 4,
+        feasibility_boundary_seconds: FEASIBILITY_BOUNDARY_SECONDS,
+        accepted_scene_count: accepted_scenes.len() as u32,
+        diagnostic_scene_count: diagnostic_scenes.len() as u32,
+        candidates: candidate_decisions,
+        potential_candidates,
+        incremental_coloring_triggered,
+        incremental_coloring_reason: if incremental_coloring_triggered {
+            "the leading structurally qualified lane spends at least as much diagnostic GPU time rebuilding/compacting colors as executing active colored solve work"
+                .to_owned()
+        } else {
+            "the leading structurally qualified lane does not spend as much diagnostic GPU time rebuilding/compacting colors as executing active colored solve work"
+                .to_owned()
+        },
+        workgroup_per_island_triggered,
+        workgroup_per_island_reason: if workgroup_per_island_triggered {
+            "the leading structurally qualified lane either misses 16.67 ms complete or spends at least as much diagnostic GPU time on empty indirect color solves as active color solves"
+                .to_owned()
+        } else {
+            "the leading structurally qualified lane is below 16.67 ms complete and empty indirect solve time is below active solve time"
+                .to_owned()
+        },
+        production_selection_deferred: true,
+        recommendation_deferred_to_human_review: true,
+    })
 }
 
 fn frozen_normal_diagnostics() -> Result<Vec<FrozenNormalDiagnosticV1>, String> {
@@ -740,18 +1456,22 @@ fn evaluate_scene(
     label: &str,
     kind: SceneKind,
     source: ScenarioV1,
+    checkpoints: &[u32],
+    settled_window_start: u32,
+    completed_steps: u32,
 ) -> Result<SceneEvidence, String> {
     let source_scenario_hash = canonical_hash(&source).map_err(|error| error.to_string())?;
     let projection = p5_2_box2d_world_projection(&source).map_err(|error| error.to_string())?;
     let neutral_projection_hash = canonical_hash(&projection).map_err(|error| error.to_string())?;
-    let authority = run_awake_authority(arguments, staging, box2d, label, &projection)?;
+    let authority =
+        run_awake_authority(arguments, staging, box2d, label, &projection, checkpoints)?;
     let authority_replay = run_awake_oracle(
         arguments,
         staging,
         box2d,
         &format!("{label}-replay"),
         projection.clone(),
-        SETTLED_WINDOW_END,
+        completed_steps,
     )?;
     let authority_exact_replay = authority_replay.result.bodies
         == authority
@@ -778,8 +1498,8 @@ fn evaluate_scene(
         let mut deltas = Vec::new();
         let mut previous_manifolds = None;
         let mut previous_cache = None;
-        for (&completed_steps, authority_sample) in CHECKPOINTS.iter().zip(&authority) {
-            let output = runner.run_experiment(&scenario, completed_steps, candidate.execution)?;
+        for (&checkpoint, authority_sample) in checkpoints.iter().zip(&authority) {
+            let output = runner.run_experiment(&scenario, checkpoint, candidate.execution)?;
             let result_hash = serialized_hash(&output)?;
             let mut final_scenario = scenario.clone();
             final_scenario.bodies.clone_from(&output.bodies);
@@ -788,7 +1508,7 @@ fn evaluate_scene(
             let observation = observe_settling(
                 &scenario,
                 SettlingSnapshotInput {
-                    completed_steps,
+                    completed_steps: checkpoint,
                     bodies: &output.bodies,
                     manifolds: &manifolds,
                     cache: &output.cache,
@@ -798,7 +1518,7 @@ fn evaluate_scene(
                     support_height: 0.0,
                 },
             )?;
-            let contact_balance = observe_contact_balance(completed_steps, &output.pass_evidence)?;
+            let contact_balance = observe_contact_balance(checkpoint, &output.pass_evidence)?;
             let authority_contact_points = authority_sample
                 .result
                 .manifolds
@@ -806,7 +1526,7 @@ fn evaluate_scene(
                 .map(|manifold| manifold.points.len() as u32)
                 .sum();
             let authority_delta = compare_awake_authority(
-                completed_steps,
+                checkpoint,
                 &output.bodies,
                 &authority_sample.result.bodies,
                 output.pass_evidence.contacts.len() as u32,
@@ -824,7 +1544,7 @@ fn evaluate_scene(
             let contact_points = output.pass_evidence.contacts.len() as u32;
             let cache_points = output.cache.len() as u32;
             samples.push(CandidateSample {
-                completed_steps,
+                completed_steps: checkpoint,
                 observation,
                 contact_balance,
                 authority_delta,
@@ -848,17 +1568,14 @@ fn evaluate_scene(
             &final_sample.bodies,
             !final_sample.capacity_clean,
         );
-        let pose_history = runner.run_experiment_body_history(
-            &scenario,
-            SETTLED_WINDOW_END,
-            candidate.execution,
-        )?;
+        let pose_history =
+            runner.run_experiment_body_history(&scenario, completed_steps, candidate.execution)?;
         let first_structural_failure_step = pose_history
             .iter()
             .position(|bodies| !structure(kind, &scenario, bodies, false).0)
             .map(|step| step as u32 + 1);
         let preserves_structure_through_run = first_structural_failure_step.is_none();
-        let replay = runner.run_experiment(&scenario, SETTLED_WINDOW_END, candidate.execution)?;
+        let replay = runner.run_experiment(&scenario, completed_steps, candidate.execution)?;
         let exact_replay = serialized_hash(&replay)? == final_sample.result_hash;
         candidate_evidence.push(CandidateSceneEvidence {
             candidate: candidate.id,
@@ -868,11 +1585,7 @@ fn evaluate_scene(
             structural_reason,
             preserves_structure_through_run,
             first_structural_failure_step,
-            window: summarize_awake_window(
-                &observations,
-                SETTLED_WINDOW_START,
-                SETTLED_WINDOW_END,
-            )?,
+            window: summarize_awake_window(&observations, settled_window_start, completed_steps)?,
             first_authority_divergence: first_awake_divergence(&deltas),
             samples,
         });
@@ -894,8 +1607,9 @@ fn run_awake_authority(
     source: &OracleSourceIdentity,
     label: &str,
     projection: &ScenarioV1,
+    checkpoints: &[u32],
 ) -> Result<Vec<AuthoritySample>, String> {
-    CHECKPOINTS
+    checkpoints
         .iter()
         .map(|&completed_steps| {
             run_awake_oracle(
@@ -963,6 +1677,19 @@ fn structure(
     match kind {
         SceneKind::Stack => centered_stack_structure(scenario, bodies, overflowed, 0.0),
         SceneKind::Pyramid => upright_pyramid_structure(scenario, bodies, overflowed),
+        SceneKind::Bucket => {
+            let valid = !overflowed
+                && bodies.len() == scenario.bodies.len()
+                && bodies.iter().all(|body| body.validate().is_ok());
+            if valid {
+                (
+                    true,
+                    "all bucket bodies remain finite and capacity-clean".to_owned(),
+                )
+            } else {
+                (false, "bucket body or capacity contract failed".to_owned())
+            }
+        }
     }
 }
 
@@ -1057,6 +1784,8 @@ fn performance_matrix(
                 gpu_end_to_end_p50_seconds,
                 host_completion_seconds: benchmark.host_completion_seconds,
                 cpu_encode_submit_seconds: benchmark.cpu_encode_submit_seconds,
+                instrumented_solver_phases: benchmark.instrumented_solver_phases,
+                coloring: benchmark.correctness.pass_evidence.coloring.clone(),
                 capacity_clean,
                 correctness_hash,
             });
@@ -1169,8 +1898,40 @@ fn render_playback(
         "block-mass-split-i4",
         "colored-in-place-i4",
     ];
+    render_playback_for(
+        scenes,
+        candidates,
+        &candidate_ids,
+        "PhysBox 5 S5.4a synchronized parallel-normal factorial",
+    )
+}
+
+fn render_colored_playback(
+    scenes: &[SceneEvidence],
+    candidates: &[CandidateDefinition],
+) -> Result<String, String> {
+    render_playback_for(
+        scenes,
+        candidates,
+        &[
+            "point-compact-i4",
+            "manifold-forward-i2",
+            "manifold-forward-i4",
+            "manifold-alternating-i2",
+            "manifold-alternating-i4",
+        ],
+        "PhysBox 5 S5.4b synchronized compact-coloring factorial",
+    )
+}
+
+fn render_playback_for(
+    scenes: &[SceneEvidence],
+    candidates: &[CandidateDefinition],
+    candidate_ids: &[&str],
+    title: &str,
+) -> Result<String, String> {
     for id in candidate_ids {
-        if !candidates.iter().any(|candidate| candidate.id == id) {
+        if !candidates.iter().any(|candidate| candidate.id == *id) {
             return Err(format!("playback candidate {id} is missing"));
         }
     }
@@ -1181,7 +1942,7 @@ fn render_playback(
     let width = label_width + cell_width * PLAYBACK_STEPS.len() as f32 + 16.0;
     let height = 42.0 + scenes.len() as f32 * cell_height * lanes as f32;
     let mut svg = format!(
-        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width}\" height=\"{height}\" viewBox=\"0 0 {width} {height}\"><rect width=\"100%\" height=\"100%\" fill=\"#0b1823\"/><style>text{{font:10px monospace;fill:#dce8f2}} .plot{{fill:#132738;stroke:#355166}} .body{{fill:#62dce8;stroke:#d8ffff;stroke-width:.5}} .authority{{fill:#f3a85f;stroke:#ffe1ba;stroke-width:.5}} .fixed{{fill:#60798c}}</style><text x=\"12\" y=\"20\">PhysBox 5 S5.4a synchronized parallel-normal factorial</text>"
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width}\" height=\"{height}\" viewBox=\"0 0 {width} {height}\"><rect width=\"100%\" height=\"100%\" fill=\"#0b1823\"/><style>text{{font:10px monospace;fill:#dce8f2}} .plot{{fill:#132738;stroke:#355166}} .body{{fill:#62dce8;stroke:#d8ffff;stroke-width:.5}} .authority{{fill:#f3a85f;stroke:#ffe1ba;stroke-width:.5}} .fixed{{fill:#60798c}}</style><text x=\"12\" y=\"20\">{title}</text>"
     );
     let mut y = 34.0;
     for scene in scenes {
@@ -1381,6 +2142,7 @@ struct Arguments {
     require_clean: bool,
     platforms: Vec<(String, PathBuf)>,
     physical_device_gap: Option<String>,
+    colored_factorial: bool,
 }
 
 impl Arguments {
@@ -1395,10 +2157,15 @@ impl Arguments {
         let mut require_clean = false;
         let mut platforms = Vec::new();
         let mut physical_device_gap = None;
+        let mut colored_factorial = false;
         let mut arguments = std::env::args().skip(1);
         while let Some(argument) = arguments.next() {
             if argument == "--require-clean" {
                 require_clean = true;
+                continue;
+            }
+            if argument == "--s5.4b" {
+                colored_factorial = true;
                 continue;
             }
             let value = arguments
@@ -1437,6 +2204,7 @@ impl Arguments {
             require_clean,
             platforms,
             physical_device_gap,
+            colored_factorial,
         })
     }
 }
@@ -1509,6 +2277,52 @@ mod tests {
             candidates
                 .iter()
                 .all(|candidate| !candidate.question.is_empty())
+        );
+    }
+
+    #[test]
+    fn colored_factorial_is_bounded_attribution_first_and_never_selected() {
+        let source = p5_2_centered_rectangle_stack_scenario(2, 1).unwrap();
+        let candidates = colored_candidate_definitions(source.settings);
+        assert_eq!(
+            candidates
+                .iter()
+                .map(|candidate| candidate.id)
+                .collect::<Vec<_>>(),
+            vec![
+                "point-fixed-i4",
+                "point-compact-i4",
+                "manifold-forward-i1",
+                "manifold-forward-i2",
+                "manifold-forward-i4",
+                "manifold-alternating-i1",
+                "manifold-alternating-i2",
+                "manifold-alternating-i4",
+            ]
+        );
+        assert!(candidates.iter().all(|candidate| {
+            candidate.execution != GpuSolverExecutionV4::SELECTED
+                && candidate.settings.iterations == candidate.iterations
+                && candidate.execution.warm_start
+                && candidate.execution.relaxation
+        }));
+        assert_eq!(
+            candidates
+                .iter()
+                .filter(|candidate| { candidate.family == CandidateFamilyV3::ManifoldColorForward })
+                .map(|candidate| candidate.iterations)
+                .collect::<Vec<_>>(),
+            vec![1, 2, 4]
+        );
+        assert_eq!(
+            candidates
+                .iter()
+                .filter(|candidate| {
+                    candidate.family == CandidateFamilyV3::ManifoldColorAlternating
+                })
+                .map(|candidate| candidate.iterations)
+                .collect::<Vec<_>>(),
+            vec![1, 2, 4]
         );
     }
 

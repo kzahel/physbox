@@ -113,12 +113,13 @@ pub use report::{
 };
 pub use scenario::{
     AnalyticFixtureKind, P5_2_BUCKET_EVIDENCE_STEPS, P5_2_CENTERED_STACK_EVIDENCE_STEPS,
-    P5_2BucketShape, P5_2CandidatePattern, P5_2CollisionScenarioKind, P5_2GeneratedScenarioKind,
-    ScenarioBuildError, analytic_fixture_scenario, authored_chain_scenario,
-    authored_one_contact_scenario, p5_1_free_flight_scenario, p5_1_rectangle_floor_scenario,
-    p5_1_reset_grab_scenario, p5_2_box2d_narrowphase_projection, p5_2_box2d_world_projection,
-    p5_2_bucket_scenario, p5_2_candidate_scenario, p5_2_centered_rectangle_stack_scenario,
-    p5_2_collision_scenario, p5_2_contact_policy_candidate, p5_2_generated_floor_scenario,
+    P5_2_COLORING_CHURN_VERSION, P5_2BucketShape, P5_2CandidatePattern, P5_2CollisionScenarioKind,
+    P5_2ColoringChurnSnapshotV1, P5_2GeneratedScenarioKind, ScenarioBuildError,
+    analytic_fixture_scenario, authored_chain_scenario, authored_one_contact_scenario,
+    p5_1_free_flight_scenario, p5_1_rectangle_floor_scenario, p5_1_reset_grab_scenario,
+    p5_2_box2d_narrowphase_projection, p5_2_box2d_world_projection, p5_2_bucket_scenario,
+    p5_2_candidate_scenario, p5_2_centered_rectangle_stack_scenario, p5_2_collision_scenario,
+    p5_2_coloring_churn_snapshots, p5_2_contact_policy_candidate, p5_2_generated_floor_scenario,
     p5_2_generated_performance_scenario, p5_2_generated_reset_grab_scenario,
     p5_2_generated_scenario, p5_2_narrowphase_pair_scenario, p5_2_rectangle_pyramid_scenario,
 };
