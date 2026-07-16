@@ -958,7 +958,7 @@ fn run_scheduling_factorial(arguments: Arguments) -> Result<(), String> {
     let platform_artifacts = copy_platform_artifacts(&arguments.platforms, &staging)?;
     atomic_write(
         &staging.join("playback.svg"),
-        render_scheduling_playback(&accepted_scenes, &candidates)?.as_bytes(),
+        render_scheduling_playback(&accepted_scenes, &candidates, parallel)?.as_bytes(),
     )?;
     let manifest = SchedulingManifest {
         schema_version: SCHEMA_VERSION,
@@ -2567,18 +2567,33 @@ fn render_colored_playback(
 fn render_scheduling_playback(
     scenes: &[SceneEvidence],
     candidates: &[CandidateDefinition],
+    parallel: bool,
 ) -> Result<String, String> {
-    render_playback_for(
-        scenes,
-        candidates,
-        &[
-            "forward-i2-full-per-color",
-            "forward-i2-incremental-per-color",
-            "forward-i2-full-island",
-            "forward-i2-incremental-island",
-        ],
-        "PhysBox 5 S5.4b synchronized coloring-scheduling factorial",
-    )
+    let (candidate_ids, title) = scheduling_playback_contract(parallel);
+    render_playback_for(scenes, candidates, candidate_ids, title)
+}
+
+fn scheduling_playback_contract(parallel: bool) -> (&'static [&'static str], &'static str) {
+    if parallel {
+        (
+            &[
+                "forward-i2-serial-control",
+                "forward-i2-parallel-compaction",
+                "forward-i2-parallel-speculative",
+            ],
+            "PhysBox 5 S5.4c synchronized parallel-scheduling factorial",
+        )
+    } else {
+        (
+            &[
+                "forward-i2-full-per-color",
+                "forward-i2-incremental-per-color",
+                "forward-i2-full-island",
+                "forward-i2-incremental-island",
+            ],
+            "PhysBox 5 S5.4b synchronized coloring-scheduling factorial",
+        )
+    }
 }
 
 fn render_playback_for(
@@ -3100,6 +3115,15 @@ mod tests {
             GpuSolverSchedulingPolicyV1::STANDARD.color_maintenance,
             physbox_engine::GpuColorMaintenanceV1::FullRebuild
         );
+        let (playback_candidates, title) = scheduling_playback_contract(true);
+        assert_eq!(
+            playback_candidates,
+            candidates
+                .iter()
+                .map(|candidate| candidate.id)
+                .collect::<Vec<_>>()
+        );
+        assert!(title.contains("S5.4c"));
     }
 
     #[test]
