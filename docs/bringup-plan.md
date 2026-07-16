@@ -222,6 +222,19 @@ S5.4c scheduler benchmark/byte-exact parallel compaction and the independent
 S5.5 SAP/grid bakeoff, stopping before either order-changing coloring or a
 product broadphase is selected.
 
+S5.4c renewed review checkpoint, 2026-07-16: the clean
+[parallel-scheduler package](../evidence/p5.2b-s5.4c-parallel-scheduling/README.md)
+compares the serial control, byte-exact parallel compaction, and bounded
+speculative parallel coloring. All three preserve the seven accepted
+structures, both bucket diagnostics, exact replay, and capacity. The parallel
+candidate explicitly changes color/order, retains no uncolored fallback, and
+leads at `8.780 ms` for the quality-factorial 1K row. Dedicated scheduler
+scaling reports `8.781 ms` at generated 1K and `7.535 ms` for authored 10K
+contacts. This is still 50.8x optimized Box2D at 1K with a roughly 19.8x worse
+marginal curve, so it is a scheduler recommendation rather than a crossover.
+The serial product policy remains selected pending the required human review;
+no broadphase, residual band, or liquid claim is accepted.
+
 The first S3.5a representation checkpoint implements the stable pair-slot
 comparator with full feature verification and deterministic generational slot
 recycling. Its correctness/adversarial gates pass and its combined

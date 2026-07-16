@@ -1,10 +1,10 @@
 # S5: Interactive rigid quality, construction, and scale
 
-Status: active, 2026-07-16. Forward manifold-block i2 with full rebuild and
-per-color dispatch is integrated as the selected product baseline. Parallel
-scheduler construction is required S5.4c work and may proceed alongside the
-authorized S5.5 broadphase bakeoff. No residual band, performance claim,
-parallel-scheduler promotion, or broadphase selection is accepted.
+Status: manual checkpoint, 2026-07-16. Forward manifold-block i2 with full
+rebuild and per-color dispatch remains the selected product baseline. S5.4c
+recommends the quality-qualified parallel-coloring scheduler, but its changed
+assignment/order is awaiting human review. No residual band, performance
+claim, parallel-scheduler promotion, or broadphase selection is accepted.
 Direction: [one GPU-resident 2D physics world](../topics/physbox5-unified-gpu-physics.md).
 Scale contract: [performance and scale](../topics/performance-and-scale.md).
 Dependencies: [S3 collision/persistence](003-small-world-collision-persistence.md)
@@ -777,14 +777,14 @@ fresh evidence supports a different implementation.
   explicit conflict detection/repair, bounded rounds, and atomic fallback or
   rejection. Vivace-style speculative coloring is source guidance, not a code
   dependency or preselected winner.
-- [ ] Re-run the seven accepted scenes, 32/64-stack diagnostics, both buckets,
+- [x] Re-run the seven accepted scenes, 32/64-stack diagnostics, both buckets,
   churn/recontact/generation reuse, 33-color overflow, exact replay, capacity,
   memory, dispatch, and first-divergence evidence for every comparator.
 - [x] Validate the leading potential lane on native Metal, BrowserWebGPU, and
   the hardware-backed `jstorrent-tablet` AVD; attempt physical Android when
   attached. No CPU color construction, required readback, native-only path, or
   hidden uncolored overflow lane is allowed.
-- [ ] Publish the full cost/quality package and stop before promoting a parallel
+- [x] Publish the full cost/quality package and stop before promoting a parallel
   coloring implementation if assignments or Gauss-Seidel order differ from the
   accepted baseline.
 
@@ -865,6 +865,28 @@ report it successfully; fresh captures are visually sound. The ordinary scene
 menu deliberately excludes the unreviewed comparator. A physical Android
 device was attempted but none was attached. Clean source provenance and these
 captures will be retained by the final factorial package.
+
+Clean parallel-scheduler review checkpoint, 2026-07-16: the
+[S5.4c package](../../evidence/p5.2b-s5.4c-parallel-scheduling/README.md)
+qualifies all three policies on the seven accepted structures, both buckets,
+exact replay, churn/recontact/generation snapshots, capacity, and the permanent
+33-color atomic-rejection test. Serial and parallel-compaction assignment/order
+digests match on every scaling row. The bounded speculative candidate changes
+both digests explicitly, uses no uncolored fallback, and preserves the complete
+accepted quality corpus. The known 32/64-stack failures remain minimized at
+steps 27/40 for that candidate versus 25/29 for both controls.
+
+On the same Apple M4 Pro Metal adapter, the dedicated generated 1K P50 falls
+from `16.794 ms` serial and `13.206 ms` byte-exact to `8.781 ms` parallel-
+coloring. Its 256-to-1K slope is `2.140 us/body`, down 77.8% from serial.
+Authored 10K contacts fall from `16.181` to `7.535 ms`; the 32-body row regresses
+4.9% because the fixed 98-dispatch construction graph dominates. The leader is
+still 50.8x the fastest optimized 1K Box2D row and its marginal curve is about
+19.8x worse, so no CPU or liquid crossover is accepted. Native Metal,
+BrowserWebGPU, and the hardware-backed AVD pass the actual comparator; no
+physical device was attached. The recommendation is to promote the parallel
+scheduler while keeping manifold-block i2 and all physical settings fixed, but
+the product standard remains serial until human review.
 
 Commit boundaries: accepted product-baseline integration; scheduler benchmark
 contract; byte-exact parallel compaction; evidence-triggered parallel coloring

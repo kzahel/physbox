@@ -906,6 +906,19 @@ and scene-contract-v4 identity; no adapter owns a solver choice or second
 world. This is a human-approved physical-default promotion, not acceptance of
 the current performance curve, deep-stack diagnostics, or liquid readiness.
 
+S5.4c renewed review checkpoint, 2026-07-16: the clean
+[parallel-scheduler package](../../evidence/p5.2b-s5.4c-parallel-scheduling/README.md)
+qualifies the bounded GPU-only speculative scheduler on the full accepted
+quality, churn, replay, capacity, performance, and platform matrix. It changes
+assignment and Gauss-Seidel order explicitly but keeps one manifold-block i2
+solver, one generated-contact state, one frame graph, and no result-dependent
+CPU path. Generated 1K improves from `16.794` to `8.781 ms` and authored 10K
+contacts from `16.181` to `7.535 ms`; native Metal, BrowserWebGPU, and the
+hardware-backed AVD execute the actual comparator. The result recommends a
+scheduler promotion only. `GpuSolverSchedulingPolicyV1::STANDARD` remains
+serial until human review, and the 50.8x 1K Box2D gap, deep-stack diagnostics,
+liquid coupling, broadphase, and final scale advantage remain unresolved.
+
 Circle/circle and circle/rectangle contact are analytic. Rectangle/rectangle
 uses SAT to select a reference and incident edge, clips the incident segment,
 and produces stable vertex/edge feature pairs. Test feature stability around

@@ -1,10 +1,9 @@
 # Contact solver parallelism and scheduling
 
-Status: active product baseline and scheduler work, 2026-07-16. Human review
-accepted forward manifold-block i2 with full rebuild/per-color indirect
-dispatch, and that exact lane is now the selected shared product execution.
-S5.4c must improve its scheduler-construction curve without weakening quality,
-capacity, portability, or the one-world contract.
+Status: changed-order scheduler human checkpoint, 2026-07-16. Forward
+manifold-block i2 with full rebuild/per-color indirect dispatch remains the
+selected shared product execution. S5.4c qualifies and recommends bounded
+parallel coloring, but the product scheduler is unchanged pending review.
 
 Governing direction:
 [one GPU-resident 2D physics world](physbox5-unified-gpu-physics.md).
@@ -17,7 +16,8 @@ retarget are owned by
 owned by the [scalar contact specification](scalar-contact-specification.md).
 Primary evidence:
 [S5.4 awake settling bakeoff](../../evidence/p5.2b-s5.4/README.md) and
-[S5.4a parallel-normal factorial](../../evidence/p5.2b-s5.4a/README.md).
+[S5.4a parallel-normal factorial](../../evidence/p5.2b-s5.4a/README.md), with
+the current [S5.4c scheduler review](../../evidence/p5.2b-s5.4c-parallel-scheduling/README.md).
 
 ## The concern
 
@@ -461,6 +461,27 @@ Chrome BrowserWebGPU, and the hardware-backed `jstorrent-tablet` AVD all pass
 the actual comparator path. The scene is excluded from the ordinary product
 menu and does not alter `GpuSolverSchedulingPolicyV1::STANDARD`; no physical
 device was attached for the attempted lane.
+
+S5.4c clean review checkpoint, 2026-07-16: the
+[parallel-scheduler package](../../evidence/p5.2b-s5.4c-parallel-scheduling/README.md)
+holds forward manifold-block i2 fixed and compares serial full rebuild,
+byte-exact parallel compaction, and bounded speculative parallel coloring. All
+three preserve the seven accepted stack/pyramid structures, both 100-body
+buckets, exact replay, and capacity. The speculative lane delays but does not
+resolve the known 32/64-stack failures, reaching steps 27/40 versus 25/29 for
+the controls. Its assignment and compacted-order digests differ on all five
+scaling rows, making the changed Gauss-Seidel order explicit rather than a
+silent implementation substitution.
+
+The candidate finishes generated sparse rows in one bounded round and authored
+1K/10K chains in four, with zero uncolored units. The permanent 33-color case
+atomically zeros solve work for serial, parallel-compaction, and speculative
+policies. Native Metal, BrowserWebGPU, and hardware-backed AVD execution pass.
+At generated 1K the quality factorial records `8.780 ms`; the separate scaling
+runner records `8.781 ms`, versus `16.794 ms` serial. The recommendation is to
+make the bounded parallel scheduler the next product scheduling baseline while
+retaining the same solver family and physical settings. Because assignment and
+order change, `STANDARD` remains serial until human acceptance.
 
 ## Fallback and reserve options
 

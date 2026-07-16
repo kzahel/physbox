@@ -881,6 +881,30 @@ multi-sample ordinary slopes, the complete quality corpus, and required-host
 evidence decide whether the comparator is viable. No crossover or product
 selection is claimed.
 
+Clean parallel-scheduler measurement, 2026-07-16: five warmups and 20 retained
+same-adapter Metal samples qualify the bounded candidate against both controls.
+Generated ordinary P50 is `6.069`, `7.138`, and `8.781 ms` at 32/256/1K versus
+serial `5.787`, `9.377`, and `16.794 ms`. The fixed 98-dispatch construction
+graph therefore costs 4.9% at 32 bodies but cuts generated 1K by 47.7%; the
+256-to-1K marginal cost falls from `9.658` to `2.140 us/body`. Byte-exact
+parallel compaction remains between them at `13.206 ms` and `6.525 us/body`.
+
+Broadphase-independent authored solver P50 is `6.238 ms` at 1K and `7.535 ms`
+at 10K contacts for parallel coloring, versus serial `6.618` and `16.181 ms`.
+Parallel compaction narrowly leads the 1K authored row at `6.080 ms`, exposing
+the same fixed small-scope floor, but loses at 10K with `11.550 ms`. Separately
+instrumented candidate construction is `0.407 ms` at generated 1K and
+`0.758 ms` at authored 10K; ordinary complete-step timing remains the
+controlling result.
+
+Fresh optimized Box2D is `0.173 ms` at 1K. The GPU leader is therefore still
+50.8x slower, and its best 256-to-1K marginal curve is about 19.8x worse than
+best-per-count Box2D. Parallel construction repairs the prior load-bearing
+serial curve enough to fit the measured 60 Hz boundary, but it does not create
+a credible CPU crossover, predict liquid-heavy behavior, or satisfy the
+approximately 2x public scale-advantage contract. Promotion remains a
+changed-order human decision, not a performance-band acceptance.
+
 ## Regression and claim gates
 
 Before representative hardware is selected, store named measurements and
