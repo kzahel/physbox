@@ -767,6 +767,17 @@ dispatch triggers both fire, authorizing the already bounded incremental-color
 and workgroup-per-island comparators. This rigid small-world result neither
 accepts a product timing band nor predicts liquid-heavy crossover.
 
+S5.4b incremental-maintenance checkpoint, 2026-07-16: the generated-contact
+benchmark and output contracts now accept an explicit versioned scheduling
+policy while every existing entry point defaults to full rebuild plus
+per-color indirect dispatch. The incremental lane reports retained/new/
+recolored/removed units and capacity-accounted persistent identities; complete
+timing and diagnostic phase attribution use the same benchmark path as the
+full-rebuild control. Native exactness, replay, first-step allocation, stable
+retention, and atomic color overflow pass. No performance claim is made from
+the implementation check: the renewed 32/256/1K factorial must measure it,
+and the workgroup-per-island factor is still absent.
+
 ## Regression and claim gates
 
 Before representative hardware is selected, store named measurements and

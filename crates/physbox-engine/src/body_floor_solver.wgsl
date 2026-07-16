@@ -251,6 +251,207 @@ fn color_contacts(@builtin(global_invocation_id) id: vec3u) {
     atomicStore(&topology[params.uints1.y], color_count);
 }
 
+fn incremental_identity_hash(point: PointInput, mask: u32) -> u32 {
+    var value = point.ids.x * 0x9e3779b9u;
+    value ^= point.ids.y * 0x85ebca6bu;
+    value ^= bitcast<u32>(point.padding1.x) * 0xc2b2ae35u;
+    value ^= bitcast<u32>(point.padding1.y) * 0x27d4eb2fu;
+    value ^= value >> 16u;
+    return value & mask;
+}
+
+fn incremental_identity_matches(base: u32, point: PointInput) -> bool {
+    return atomicLoad(&topology[base]) == 0xc0110a1u &&
+        atomicLoad(&topology[base + 1u]) == point.ids.x &&
+        atomicLoad(&topology[base + 2u]) == point.ids.y &&
+        atomicLoad(&topology[base + 3u]) == bitcast<u32>(point.padding1.x) &&
+        atomicLoad(&topology[base + 4u]) == bitcast<u32>(point.padding1.y);
+}
+
+fn find_incremental_identity(table_base: u32, table_capacity: u32,
+                             point: PointInput) -> vec2u {
+    let mask = table_capacity - 1u;
+    var slot = incremental_identity_hash(point, mask);
+    for (var probe = 0u; probe < table_capacity; probe += 1u) {
+        let base = table_base + slot * 6u;
+        let marker = atomicLoad(&topology[base]);
+        if (marker == 0u) { return vec2u(0u); }
+        if (incremental_identity_matches(base, point)) {
+            return vec2u(1u, atomicLoad(&topology[base + 5u]));
+        }
+        slot = (slot + 1u) & mask;
+    }
+    return vec2u(0u);
+}
+
+fn insert_incremental_identity(table_base: u32, table_capacity: u32,
+                               point: PointInput, color: u32) -> bool {
+    let mask = table_capacity - 1u;
+    var slot = incremental_identity_hash(point, mask);
+    for (var probe = 0u; probe < table_capacity; probe += 1u) {
+        let base = table_base + slot * 6u;
+        if (atomicLoad(&topology[base]) == 0u) {
+            atomicStore(&topology[base], 0xc0110a1u);
+            atomicStore(&topology[base + 1u], point.ids.x);
+            atomicStore(&topology[base + 2u], point.ids.y);
+            atomicStore(&topology[base + 3u], bitcast<u32>(point.padding1.x));
+            atomicStore(&topology[base + 4u], bitcast<u32>(point.padding1.y));
+            atomicStore(&topology[base + 5u], color);
+            return true;
+        }
+        if (incremental_identity_matches(base, point)) { return false; }
+        slot = (slot + 1u) & mask;
+    }
+    return false;
+}
+
+fn paired_manifold_representative(point_index: u32, point: PointInput) -> bool {
+    if (point.ids.w == 0u) { return true; }
+    if (point_index == 0u || point.ids.w != 1u) { return false; }
+    let previous = point_inputs[point_index - 1u];
+    return valid_point(previous) && previous.ids.x == point.ids.x &&
+        previous.ids.y == point.ids.y && previous.ids.z == point.ids.z &&
+        previous.ids.w == 0u;
+}
+
+fn store_incremental_color(point_index: u32, point: PointInput, color: u32,
+                           color_base: u32, manifold_units: bool) {
+    atomicStore(&topology[color_base + point_index], color);
+    if (manifold_units && point_index + 1u < params.uints0.y) {
+        let next = point_inputs[point_index + 1u];
+        if (valid_point(next) && next.ids.x == point.ids.x &&
+                next.ids.y == point.ids.y && next.ids.z == point.ids.z &&
+                next.ids.w == 1u) {
+            atomicStore(&topology[color_base + point_index + 1u], color);
+        }
+    }
+}
+
+@compute @workgroup_size(1)
+fn color_contacts_incremental(@builtin(global_invocation_id) id: vec3u) {
+    if (id.x != 0u) { return; }
+    let manifold_units = (params.uints1.w & 2u) != 0u;
+    let identity_base = params.uints0.x;
+    let color_base = params.uints0.z;
+    let mask_base = params.uints0.w;
+    let status_index = params.uints1.x;
+    let color_count_index = params.uints1.y;
+    let counts_base = color_count_index + 1u;
+    let offsets_base = counts_base + params.uints1.z;
+    let cursors_base = offsets_base + params.uints1.z + 1u;
+    var identity_capacity = 1u;
+    while (identity_capacity < params.uints0.y * 2u) {
+        identity_capacity <<= 1u;
+    }
+    let maintenance_base = identity_base + identity_capacity * 12u;
+    let state_base = maintenance_base + 4u;
+    let previous_parity = atomicLoad(&topology[state_base]) & 1u;
+    let next_parity = 1u - previous_parity;
+    let previous_table = identity_base + previous_parity * identity_capacity * 6u;
+    let next_table = identity_base + next_parity * identity_capacity * 6u;
+    let previous_count = atomicLoad(&topology[state_base + 1u]);
+    let body_count = status_index - mask_base;
+
+    atomicStore(&topology[status_index], 0u);
+    atomicStore(&topology[color_count_index], 0u);
+    for (var body = 0u; body < body_count; body += 1u) {
+        atomicStore(&topology[mask_base + body], 0u);
+    }
+    for (var color = 0u; color < params.uints1.z; color += 1u) {
+        atomicStore(&topology[counts_base + color], 0u);
+        atomicStore(&topology[cursors_base + color], 0u);
+    }
+    for (var count = 0u; count < 4u; count += 1u) {
+        atomicStore(&topology[maintenance_base + count], 0u);
+    }
+    for (var slot = 0u; slot < identity_capacity; slot += 1u) {
+        atomicStore(&topology[next_table + slot * 6u], 0u);
+    }
+    for (var point_index = 0u; point_index < params.uints0.y; point_index += 1u) {
+        atomicStore(&topology[color_base + point_index], 0xffffffffu);
+    }
+
+    var color_count = 0u;
+    var inserted_count = 0u;
+    for (var point_index = 0u; point_index < params.uints0.y; point_index += 1u) {
+        let point = point_inputs[point_index];
+        if (!valid_point(point)) { continue; }
+        if (manifold_units && point.ids.w != 0u) {
+            if (!paired_manifold_representative(point_index, point)) {
+                atomicStore(&topology[status_index], 1u);
+            }
+            continue;
+        }
+        let previous = find_incremental_identity(previous_table, identity_capacity, point);
+        if (previous.x != 0u && previous.y < params.uints1.z) {
+            let used = atomicLoad(&topology[mask_base + point.ids.x]) |
+                       atomicLoad(&topology[mask_base + point.ids.y]);
+            let bit = 1u << previous.y;
+            if ((used & bit) == 0u) {
+                atomicOr(&topology[mask_base + point.ids.x], bit);
+                atomicOr(&topology[mask_base + point.ids.y], bit);
+                atomicAdd(&topology[counts_base + previous.y], 1u);
+                atomicAdd(&topology[maintenance_base], 1u);
+                store_incremental_color(
+                    point_index, point, previous.y, color_base, manifold_units);
+                if (!insert_incremental_identity(
+                        next_table, identity_capacity, point, previous.y)) {
+                    atomicStore(&topology[status_index], 1u);
+                } else {
+                    inserted_count += 1u;
+                }
+                color_count = max(color_count, previous.y + 1u);
+                continue;
+            }
+        }
+    }
+
+    for (var point_index = 0u; point_index < params.uints0.y; point_index += 1u) {
+        let point = point_inputs[point_index];
+        if (!valid_point(point) || (manifold_units && point.ids.w != 0u) ||
+                atomicLoad(&topology[color_base + point_index]) != 0xffffffffu) {
+            continue;
+        }
+        let previous = find_incremental_identity(previous_table, identity_capacity, point);
+        let used = atomicLoad(&topology[mask_base + point.ids.x]) |
+                   atomicLoad(&topology[mask_base + point.ids.y]);
+        var color = 0u;
+        while (color < params.uints1.z && (used & (1u << color)) != 0u) {
+            color += 1u;
+        }
+        if (color == params.uints1.z) {
+            atomicStore(&topology[status_index], 1u);
+        } else {
+            let bit = 1u << color;
+            atomicOr(&topology[mask_base + point.ids.x], bit);
+            atomicOr(&topology[mask_base + point.ids.y], bit);
+            atomicAdd(&topology[counts_base + color], 1u);
+            if (previous.x == 0u) {
+                atomicAdd(&topology[maintenance_base + 1u], 1u);
+            } else {
+                atomicAdd(&topology[maintenance_base + 2u], 1u);
+            }
+            store_incremental_color(point_index, point, color, color_base, manifold_units);
+            if (!insert_incremental_identity(next_table, identity_capacity, point, color)) {
+                atomicStore(&topology[status_index], 1u);
+            } else {
+                inserted_count += 1u;
+            }
+            color_count = max(color_count, color + 1u);
+        }
+    }
+    let matched_count = atomicLoad(&topology[maintenance_base]) +
+        atomicLoad(&topology[maintenance_base + 2u]);
+    var removed_count = 0u;
+    if (previous_count >= matched_count) {
+        removed_count = previous_count - matched_count;
+    }
+    atomicStore(&topology[maintenance_base + 3u], removed_count);
+    atomicStore(&topology[state_base], next_parity);
+    atomicStore(&topology[state_base + 1u], inserted_count);
+    atomicStore(&topology[color_count_index], color_count);
+}
+
 @compute @workgroup_size(1)
 fn compact_colors(@builtin(global_invocation_id) id: vec3u) {
     if (id.x != 0u) { return; }

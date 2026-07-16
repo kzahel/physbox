@@ -101,7 +101,7 @@ fn build_pair_solver_points(@builtin(global_invocation_id) invocation: vec3u) {
         manifold.normal_material.zw,
         0.0);
     output.cache = vec2f(bitcast<f32>(cache.x), bitcast<f32>(cache.y));
-    output.padding1 = vec2f(0.0);
+    output.padding1 = bitcast<vec2f>(manifold.identities.yw);
     solver_points[point_index] = output;
 }
 

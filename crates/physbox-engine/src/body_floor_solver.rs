@@ -23,6 +23,73 @@ const COLOR_INDIRECT_WORDS: u32 = MAX_COLORS * 3;
 const MAX_INSTRUMENTED_QUERIES_PER_SET: u32 = 4_096;
 
 pub const GPU_SOLVER_EXECUTION_VERSION: u32 = 4;
+pub const GPU_SOLVER_SCHEDULING_POLICY_VERSION: u32 = 1;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum GpuColorMaintenanceV1 {
+    FullRebuild,
+    StablePairIncremental,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum GpuColoredDispatchV1 {
+    PerColorIndirect,
+    WorkgroupPerIsland,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GpuSolverSchedulingPolicyV1 {
+    pub version: u32,
+    pub color_maintenance: GpuColorMaintenanceV1,
+    pub colored_dispatch: GpuColoredDispatchV1,
+}
+
+impl GpuSolverSchedulingPolicyV1 {
+    pub const STANDARD: Self = Self {
+        version: GPU_SOLVER_SCHEDULING_POLICY_VERSION,
+        color_maintenance: GpuColorMaintenanceV1::FullRebuild,
+        colored_dispatch: GpuColoredDispatchV1::PerColorIndirect,
+    };
+
+    pub const INCREMENTAL: Self = Self {
+        color_maintenance: GpuColorMaintenanceV1::StablePairIncremental,
+        ..Self::STANDARD
+    };
+
+    pub const WORKGROUP_PER_ISLAND: Self = Self {
+        colored_dispatch: GpuColoredDispatchV1::WorkgroupPerIsland,
+        ..Self::STANDARD
+    };
+
+    pub const INCREMENTAL_WORKGROUP_PER_ISLAND: Self = Self {
+        color_maintenance: GpuColorMaintenanceV1::StablePairIncremental,
+        colored_dispatch: GpuColoredDispatchV1::WorkgroupPerIsland,
+        ..Self::STANDARD
+    };
+
+    pub(crate) fn validate(self, execution: GpuSolverExecutionV4) -> Result<(), String> {
+        if self.version != GPU_SOLVER_SCHEDULING_POLICY_VERSION {
+            return Err(format!(
+                "GPU solver scheduling policy version {} differs from {}",
+                self.version, GPU_SOLVER_SCHEDULING_POLICY_VERSION
+            ));
+        }
+        if self != Self::STANDARD
+            && (execution.accumulation != GpuSolverAccumulationV4::ColoredInPlace
+                || execution.color_schedule != GpuColorScheduleV4::CompactIndirect
+                || execution.color_unit != GpuColorUnitV4::Manifold)
+        {
+            return Err(
+                "solver scheduling comparators require compact manifold-colored execution"
+                    .to_owned(),
+            );
+        }
+        Ok(())
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -513,6 +580,11 @@ pub struct GpuColoringEvidenceV4 {
     pub active_color_passes: u32,
     pub empty_indirect_launches: u32,
     pub scheduled_point_invocations: u64,
+    pub scheduling_policy: GpuSolverSchedulingPolicyV1,
+    pub retained_color_units: u32,
+    pub new_color_units: u32,
+    pub recolored_color_units: u32,
+    pub removed_color_units: u32,
     pub overflowed: bool,
 }
 
@@ -545,6 +617,8 @@ pub(crate) struct FixedFloorEvidenceLayout {
     pub(crate) color_schedule: GpuColorScheduleV4,
     pub(crate) color_unit: GpuColorUnitV4,
     pub(crate) color_order: GpuColorOrderV4,
+    pub(crate) scheduling_policy: GpuSolverSchedulingPolicyV1,
+    pub(crate) color_identity_capacity: u32,
     pub(crate) prepared_bytes: u64,
     pub(crate) contribution_bytes: u64,
     pub(crate) color_topology_bytes: u64,
@@ -686,9 +760,14 @@ struct TopologyLayout {
     color_offsets_base: u32,
     color_cursors_base: u32,
     color_indices_base: u32,
+    color_identity_base: u32,
+    color_identity_capacity: u32,
+    color_maintenance_counts_base: u32,
+    color_maintenance_state_base: u32,
     color_unit: GpuColorUnitV4,
     has_coloring: bool,
     has_compact_coloring: bool,
+    has_incremental_coloring: bool,
     element_count: u32,
 }
 
@@ -700,6 +779,7 @@ impl TopologyLayout {
         include_manifold_counts: bool,
         color_schedule: GpuColorScheduleV4,
         color_unit: GpuColorUnitV4,
+        scheduling_policy: GpuSolverSchedulingPolicyV1,
     ) -> Result<Self, String> {
         let mut layout = match kind {
             GpuGatherTopology::CanonicalBodyScan => Self::canonical(body_count, point_count),
@@ -753,6 +833,35 @@ impl TopologyLayout {
                     .ok_or_else(|| "solver compact color range overflowed".to_owned())?;
                 layout.has_compact_coloring = true;
             }
+            if scheduling_policy.color_maintenance == GpuColorMaintenanceV1::StablePairIncremental {
+                let minimum_identity_capacity = point_count
+                    .checked_mul(2)
+                    .ok_or_else(|| "solver color identity capacity overflowed".to_owned())?;
+                layout.color_identity_capacity = minimum_identity_capacity
+                    .max(1)
+                    .checked_next_power_of_two()
+                    .ok_or_else(|| "solver color identity capacity overflowed".to_owned())?;
+                layout.color_identity_base = layout.element_count;
+                layout.color_maintenance_counts_base = layout
+                    .color_identity_base
+                    .checked_add(
+                        layout
+                            .color_identity_capacity
+                            .checked_mul(6)
+                            .and_then(|words| words.checked_mul(2))
+                            .ok_or_else(|| "solver color identity range overflowed".to_owned())?,
+                    )
+                    .ok_or_else(|| "solver color identity range overflowed".to_owned())?;
+                layout.color_maintenance_state_base = layout
+                    .color_maintenance_counts_base
+                    .checked_add(4)
+                    .ok_or_else(|| "solver color maintenance range overflowed".to_owned())?;
+                layout.element_count = layout
+                    .color_maintenance_state_base
+                    .checked_add(2)
+                    .ok_or_else(|| "solver color maintenance state overflowed".to_owned())?;
+                layout.has_incremental_coloring = true;
+            }
         }
         Ok(layout)
     }
@@ -793,9 +902,14 @@ impl TopologyLayout {
             color_offsets_base: 0,
             color_cursors_base: 0,
             color_indices_base: 0,
+            color_identity_base: 0,
+            color_identity_capacity: 0,
+            color_maintenance_counts_base: 0,
+            color_maintenance_state_base: 0,
             color_unit: GpuColorUnitV4::Point,
             has_coloring: false,
             has_compact_coloring: false,
+            has_incremental_coloring: false,
             element_count,
         })
     }
@@ -855,9 +969,14 @@ impl TopologyLayout {
             color_offsets_base: 0,
             color_cursors_base: 0,
             color_indices_base: 0,
+            color_identity_base: 0,
+            color_identity_capacity: 0,
+            color_maintenance_counts_base: 0,
+            color_maintenance_state_base: 0,
             color_unit: GpuColorUnitV4::Point,
             has_coloring: false,
             has_compact_coloring: false,
+            has_incremental_coloring: false,
             element_count,
         })
     }
@@ -913,6 +1032,7 @@ pub(crate) struct GpuFixedFloorSolver {
     body_count: u32,
     topology_layout: TopologyLayout,
     execution: GpuSolverExecutionV4,
+    scheduling_policy: GpuSolverSchedulingPolicyV1,
     edge_build_permuted: bool,
 }
 
@@ -947,6 +1067,7 @@ impl GpuFixedFloorSolver {
             GpuGatherTopology::CanonicalBodyScan,
             false,
             GpuSolverExecutionV4::SELECTED,
+            GpuSolverSchedulingPolicyV1::STANDARD,
         )?;
         solver._owned_point_input = Some(point_buffer);
         Ok(solver)
@@ -985,13 +1106,14 @@ impl GpuFixedFloorSolver {
             topology,
             false,
             GpuSolverExecutionV4::SELECTED,
+            GpuSolverSchedulingPolicyV1::STANDARD,
         )?;
         solver._owned_point_input = Some(point_buffer);
         Ok(solver)
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn new_generated_experiment_with_topology(
+    pub(crate) fn new_generated_experiment_with_topology_and_scheduling(
         device: &wgpu::Device,
         storage: &GpuBodyStorage,
         scenario: &ScenarioV1,
@@ -1000,8 +1122,13 @@ impl GpuFixedFloorSolver {
         topology: GpuGatherTopology,
         permute_edge_build: bool,
         execution: GpuSolverExecutionV4,
+        scheduling_policy: GpuSolverSchedulingPolicyV1,
     ) -> Result<Self, String> {
         validate_experiment_settings(&scenario.settings, execution)?;
+        scheduling_policy.validate(execution)?;
+        if scheduling_policy.colored_dispatch == GpuColoredDispatchV1::WorkgroupPerIsland {
+            return Err("workgroup-per-island scheduling is not implemented yet".to_owned());
+        }
         if !scenario.manifolds.is_empty() || point_capacity == 0 {
             return Err(
                 "generated contact solver requires a neutral scenario and nonzero point capacity"
@@ -1017,6 +1144,7 @@ impl GpuFixedFloorSolver {
             topology,
             permute_edge_build,
             execution,
+            scheduling_policy,
         )
     }
 
@@ -1030,7 +1158,9 @@ impl GpuFixedFloorSolver {
         topology: GpuGatherTopology,
         permute_edge_build: bool,
         execution: GpuSolverExecutionV4,
+        scheduling_policy: GpuSolverSchedulingPolicyV1,
     ) -> Result<Self, String> {
+        scheduling_policy.validate(execution)?;
         let body_count = storage.layout().capacity_elements;
         let topology_layout = TopologyLayout::new(
             topology,
@@ -1039,6 +1169,7 @@ impl GpuFixedFloorSolver {
             execution.normal_solver.uses_manifold_mass_split(),
             execution.color_schedule,
             execution.color_unit,
+            scheduling_policy,
         )?;
         if execution.uses_colored_in_place() && topology != GpuGatherTopology::StableBodyEdge {
             return Err(
@@ -1053,6 +1184,7 @@ impl GpuFixedFloorSolver {
             topology_layout,
             permute_edge_build,
             execution,
+            scheduling_policy,
         );
         let mut initial_motion = vec![[0.0; 4]; body_count as usize];
         for body in &scenario.bodies {
@@ -1226,7 +1358,15 @@ impl GpuFixedFloorSolver {
                         label: Some("floor_color_contacts"),
                         layout: Some(&color_pipeline_layout),
                         module: &shader,
-                        entry_point: Some("color_contacts"),
+                        entry_point: Some(
+                            if scheduling_policy.color_maintenance
+                                == GpuColorMaintenanceV1::StablePairIncremental
+                            {
+                                "color_contacts_incremental"
+                            } else {
+                                "color_contacts"
+                            },
+                        ),
                         compilation_options: wgpu::PipelineCompilationOptions {
                             constants: &[],
                             zero_initialize_workgroup_memory: false,
@@ -1339,6 +1479,7 @@ impl GpuFixedFloorSolver {
             body_count,
             topology_layout,
             execution,
+            scheduling_policy,
             edge_build_permuted: permute_edge_build,
         })
     }
@@ -1773,6 +1914,8 @@ impl GpuFixedFloorSolver {
             color_schedule: self.execution.color_schedule,
             color_unit: self.execution.color_unit,
             color_order: self.execution.color_order,
+            scheduling_policy: self.scheduling_policy,
+            color_identity_capacity: self.topology_layout.color_identity_capacity,
             prepared_bytes,
             contribution_bytes,
             color_topology_bytes,
@@ -2243,7 +2386,14 @@ pub(crate) fn decode_pass_evidence(
             let offsets_start = counts_start + MAX_COLORS as usize;
             let cursors_start = offsets_start + COLOR_OFFSET_COUNT as usize;
             let indices_start = cursors_start + MAX_COLORS as usize;
-            let expected_topology_words = indices_start + layout.point_count as usize;
+            let compact_words = indices_start + layout.point_count as usize;
+            let expected_topology_words = if layout.scheduling_policy.color_maintenance
+                == GpuColorMaintenanceV1::StablePairIncremental
+            {
+                compact_words + layout.color_identity_capacity as usize * 6 * 2 + 4 + 2
+            } else {
+                compact_words
+            };
             if topology_words != expected_topology_words {
                 return Err("compact color topology had the wrong word count".to_owned());
             }
@@ -2323,6 +2473,21 @@ pub(crate) fn decode_pass_evidence(
                     * u64::from(MAX_COLORS),
             )
         };
+        let color_units = color_occupancy.iter().sum();
+        let (retained_color_units, new_color_units, recolored_color_units, removed_color_units) =
+            if layout.scheduling_policy.color_maintenance
+                == GpuColorMaintenanceV1::StablePairIncremental
+            {
+                let maintenance_start = topology_words - 6;
+                (
+                    raw[maintenance_start],
+                    raw[maintenance_start + 1],
+                    raw[maintenance_start + 2],
+                    raw[maintenance_start + 3],
+                )
+            } else {
+                (0, color_units, 0, 0)
+            };
         Some(GpuColoringEvidenceV4 {
             schedule: layout.color_schedule,
             unit: layout.color_unit,
@@ -2337,6 +2502,11 @@ pub(crate) fn decode_pass_evidence(
             active_color_passes,
             empty_indirect_launches,
             scheduled_point_invocations,
+            scheduling_policy: layout.scheduling_policy,
+            retained_color_units,
+            new_color_units,
+            recolored_color_units,
+            removed_color_units,
             overflowed,
         })
     };
@@ -2425,6 +2595,7 @@ fn operations(
     topology: TopologyLayout,
     permute_edge_build: bool,
     execution: GpuSolverExecutionV4,
+    scheduling_policy: GpuSolverSchedulingPolicyV1,
 ) -> (Vec<PassParamsRaw>, Vec<Operation>) {
     let mut parameters = Vec::new();
     let mut operations = Vec::new();
@@ -2442,6 +2613,7 @@ fn operations(
         point_count,
         topology,
         permute_edge_build,
+        scheduling_policy,
     );
     for substep in 0..scenario.settings.substeps {
         push_operation(
@@ -2667,13 +2839,20 @@ fn topology_operations(
     point_count: u32,
     topology: TopologyLayout,
     permute_edge_build: bool,
+    scheduling_policy: GpuSolverSchedulingPolicyV1,
 ) {
+    let clear_words =
+        if scheduling_policy.color_maintenance == GpuColorMaintenanceV1::StablePairIncremental {
+            topology.color_base
+        } else {
+            topology.element_count
+        };
     let clear = PassParamsRaw {
         floats0: [0.0; 4],
         floats1: [0.0; 4],
         floats2: [0.0; 4],
         uints0: [body_count, point_count, 0, 0],
-        uints1: [0, 0, 0, topology.element_count],
+        uints1: [0, 0, 0, clear_words],
     };
     push_operation(
         parameters,
@@ -2681,7 +2860,7 @@ fn topology_operations(
         clear,
         PipelineKind::TopologyClear,
         MotionDirection::AtoB,
-        workgroups(topology.element_count),
+        workgroups(clear_words),
     );
     match topology.kind {
         GpuGatherTopology::CanonicalBodyScan => {
@@ -2802,6 +2981,10 @@ fn topology_operations(
                     | (u32::from(topology.color_unit == GpuColorUnitV4::Manifold) << 1),
             ],
         };
+        let mut colors = colors;
+        if topology.has_incremental_coloring {
+            colors.uints0[0] = topology.color_identity_base;
+        }
         push_operation(
             parameters,
             operations,
@@ -3090,6 +3273,21 @@ fn topology_capacities(
                 ),
             ]);
         }
+        if topology.has_incremental_coloring {
+            capacities.extend([
+                capacity(
+                    "solver-color-persistent-identity-tables",
+                    topology.color_identity_capacity * 2,
+                    size_of::<[u32; 6]>() as u64,
+                ),
+                capacity(
+                    "solver-color-maintenance-counts",
+                    4,
+                    size_of::<u32>() as u64,
+                ),
+                capacity("solver-color-maintenance-state", 2, size_of::<u32>() as u64),
+            ]);
+        }
     }
     capacities.sort_by(|left, right| left.class.cmp(&right.class));
     capacities
@@ -3268,6 +3466,7 @@ mod tests {
             false,
             GpuColorScheduleV4::None,
             GpuColorUnitV4::Point,
+            GpuSolverSchedulingPolicyV1::STANDARD,
         )
         .unwrap();
         let (parameters, operations) = operations(
@@ -3277,6 +3476,7 @@ mod tests {
             topology,
             false,
             GpuSolverExecutionV4::SELECTED,
+            GpuSolverSchedulingPolicyV1::STANDARD,
         );
         assert_eq!(operations.len(), 68);
         assert_eq!(parameters.len(), operations.len());
@@ -3295,6 +3495,7 @@ mod tests {
             false,
             GpuColorScheduleV4::None,
             GpuColorUnitV4::Point,
+            GpuSolverSchedulingPolicyV1::STANDARD,
         )
         .unwrap();
         let (parameters, operations) = operations(
@@ -3304,6 +3505,7 @@ mod tests {
             topology,
             true,
             GpuSolverExecutionV4::SELECTED,
+            GpuSolverSchedulingPolicyV1::STANDARD,
         );
         assert_eq!(topology.edge_count, 4);
         assert_eq!(topology.radix_passes, 1);
@@ -3318,6 +3520,7 @@ mod tests {
             false,
             GpuColorScheduleV4::None,
             GpuColorUnitV4::Point,
+            GpuSolverSchedulingPolicyV1::STANDARD,
         )
         .unwrap();
         assert_eq!(scale.radix_passes, 3);
@@ -3341,6 +3544,33 @@ mod tests {
     }
 
     #[test]
+    fn scheduling_comparators_are_versioned_and_limited_to_compact_manifolds() {
+        let execution = GpuSolverExecutionV4::manifold_colored_block_experiment(true, true);
+        GpuSolverSchedulingPolicyV1::STANDARD
+            .validate(GpuSolverExecutionV4::SELECTED)
+            .unwrap();
+        GpuSolverSchedulingPolicyV1::INCREMENTAL
+            .validate(execution)
+            .unwrap();
+        GpuSolverSchedulingPolicyV1::WORKGROUP_PER_ISLAND
+            .validate(execution)
+            .unwrap();
+        assert!(
+            GpuSolverSchedulingPolicyV1::INCREMENTAL
+                .validate(GpuSolverExecutionV4::compact_colored_experiment(true, true))
+                .is_err()
+        );
+        assert!(
+            GpuSolverSchedulingPolicyV1 {
+                version: GPU_SOLVER_SCHEDULING_POLICY_VERSION + 1,
+                ..GpuSolverSchedulingPolicyV1::STANDARD
+            }
+            .validate(GpuSolverExecutionV4::SELECTED)
+            .is_err()
+        );
+    }
+
+    #[test]
     fn experiment_schedule_is_bounded_and_dispatch_accounted() {
         let mut scenario = crate::p5_1_rectangle_floor_scenario(120).unwrap();
         scenario.settings.iterations = 2;
@@ -3351,6 +3581,7 @@ mod tests {
             false,
             GpuColorScheduleV4::None,
             GpuColorUnitV4::Point,
+            GpuSolverSchedulingPolicyV1::STANDARD,
         )
         .unwrap();
         let (_, with_relaxation) = operations(
@@ -3360,6 +3591,7 @@ mod tests {
             topology,
             false,
             GpuSolverExecutionV4::experiment(true, true),
+            GpuSolverSchedulingPolicyV1::STANDARD,
         );
         let (_, without_relaxation) = operations(
             &scenario,
@@ -3368,6 +3600,7 @@ mod tests {
             topology,
             false,
             GpuSolverExecutionV4::experiment(false, false),
+            GpuSolverSchedulingPolicyV1::STANDARD,
         );
         assert_eq!(with_relaxation.len(), 102);
         assert_eq!(without_relaxation.len(), 70);
@@ -3391,10 +3624,18 @@ mod tests {
             false,
             GpuColorScheduleV4::None,
             GpuColorUnitV4::Point,
+            GpuSolverSchedulingPolicyV1::STANDARD,
         )
         .unwrap();
-        let (_, block_operations) =
-            operations(&scenario, 2, 2, block_topology, false, block_execution);
+        let (_, block_operations) = operations(
+            &scenario,
+            2,
+            2,
+            block_topology,
+            false,
+            block_execution,
+            GpuSolverSchedulingPolicyV1::STANDARD,
+        );
         assert_eq!(block_operations.len(), with_relaxation.len());
         assert_eq!(block_topology.dispatches(), topology.dispatches());
         assert_eq!(block_topology.element_count, topology.element_count);
@@ -3405,12 +3646,20 @@ mod tests {
             true,
             GpuColorScheduleV4::None,
             GpuColorUnitV4::Point,
+            GpuSolverSchedulingPolicyV1::STANDARD,
         )
         .unwrap();
         let split_execution =
             GpuSolverExecutionV4::normal_experiment(GpuNormalSolverV4::BlockMassSplit, true, true);
-        let (_, split_operations) =
-            operations(&scenario, 2, 2, split_topology, false, split_execution);
+        let (_, split_operations) = operations(
+            &scenario,
+            2,
+            2,
+            split_topology,
+            false,
+            split_execution,
+            GpuSolverSchedulingPolicyV1::STANDARD,
+        );
         assert_eq!(split_operations.len(), with_relaxation.len() + 1);
         assert_eq!(split_topology.dispatches(), topology.dispatches() + 1);
         assert_eq!(split_topology.element_count, topology.element_count + 2);
@@ -3421,11 +3670,19 @@ mod tests {
             false,
             GpuColorScheduleV4::FixedFullGrid,
             GpuColorUnitV4::Point,
+            GpuSolverSchedulingPolicyV1::STANDARD,
         )
         .unwrap();
         let colored_execution = GpuSolverExecutionV4::colored_experiment(true, true);
-        let (_, colored_operations) =
-            operations(&scenario, 2, 2, colored_topology, false, colored_execution);
+        let (_, colored_operations) = operations(
+            &scenario,
+            2,
+            2,
+            colored_topology,
+            false,
+            colored_execution,
+            GpuSolverSchedulingPolicyV1::STANDARD,
+        );
         assert_eq!(colored_operations.len(), 1_303);
         assert!(
             colored_operations
@@ -3441,11 +3698,19 @@ mod tests {
             false,
             GpuColorScheduleV4::CompactIndirect,
             GpuColorUnitV4::Point,
+            GpuSolverSchedulingPolicyV1::STANDARD,
         )
         .unwrap();
         let compact_execution = GpuSolverExecutionV4::compact_colored_experiment(true, true);
-        let (_, compact_operations) =
-            operations(&scenario, 2, 2, compact_topology, false, compact_execution);
+        let (_, compact_operations) = operations(
+            &scenario,
+            2,
+            2,
+            compact_topology,
+            false,
+            compact_execution,
+            GpuSolverSchedulingPolicyV1::STANDARD,
+        );
         assert_eq!(compact_operations.len(), colored_operations.len() + 1);
         assert_eq!(
             compact_operations
@@ -3465,6 +3730,7 @@ mod tests {
             false,
             GpuColorScheduleV4::CompactIndirect,
             GpuColorUnitV4::Manifold,
+            GpuSolverSchedulingPolicyV1::STANDARD,
         )
         .unwrap();
         let manifold_execution =
@@ -3477,6 +3743,7 @@ mod tests {
             manifold_topology,
             false,
             manifold_execution,
+            GpuSolverSchedulingPolicyV1::STANDARD,
         );
         assert_eq!(manifold_operations.len(), compact_operations.len());
         assert_eq!(
@@ -3484,6 +3751,38 @@ mod tests {
             compact_topology.element_count
         );
         assert_eq!(manifold_topology.color_unit, GpuColorUnitV4::Manifold);
+        let incremental_topology = TopologyLayout::new(
+            GpuGatherTopology::StableBodyEdge,
+            2,
+            2,
+            false,
+            GpuColorScheduleV4::CompactIndirect,
+            GpuColorUnitV4::Manifold,
+            GpuSolverSchedulingPolicyV1::INCREMENTAL,
+        )
+        .unwrap();
+        let (incremental_parameters, incremental_operations) = operations(
+            &scenario,
+            2,
+            2,
+            incremental_topology,
+            false,
+            manifold_execution,
+            GpuSolverSchedulingPolicyV1::INCREMENTAL,
+        );
+        assert!(incremental_topology.has_incremental_coloring);
+        assert_eq!(
+            incremental_topology.element_count,
+            manifold_topology.element_count
+                + incremental_topology.color_identity_capacity * 6 * 2
+                + 4
+                + 2
+        );
+        assert_eq!(incremental_operations.len(), manifold_operations.len());
+        assert_eq!(
+            incremental_parameters[0].uints1[3],
+            incremental_topology.color_base
+        );
         let alternating_execution =
             GpuSolverExecutionV4::alternating_manifold_colored_block_experiment(true, true);
         alternating_execution.validate().unwrap();
@@ -3494,6 +3793,7 @@ mod tests {
             manifold_topology,
             false,
             alternating_execution,
+            GpuSolverSchedulingPolicyV1::STANDARD,
         );
         let alternating_offsets = alternating_operations
             .iter()

@@ -2,9 +2,10 @@ use physbox_contracts::{FailureKindV1, Validate};
 use physbox_engine::{
     GpuContactPersistenceTopology, GpuGatherTopology, GpuGeneratedContactRunner,
     GpuNarrowphaseRunner, GpuNormalSolverV4, GpuSolverAccumulationV4, GpuSolverCandidate,
-    GpuSolverExecutionV4, P5_2_BUCKET_EVIDENCE_STEPS, P5_2_CENTERED_STACK_EVIDENCE_STEPS,
-    P5_2BucketShape, P5_2CandidatePattern, P5_2GeneratedScenarioKind,
-    benchmark_gpu_generated_contact_experiment, benchmark_gpu_generated_contacts,
+    GpuSolverExecutionV4, GpuSolverSchedulingPolicyV1, P5_2_BUCKET_EVIDENCE_STEPS,
+    P5_2_CENTERED_STACK_EVIDENCE_STEPS, P5_2BucketShape, P5_2CandidatePattern,
+    P5_2GeneratedScenarioKind, benchmark_gpu_generated_contact_experiment,
+    benchmark_gpu_generated_contact_scheduling_experiment, benchmark_gpu_generated_contacts,
     p5_2_bucket_scenario, p5_2_candidate_scenario, p5_2_centered_rectangle_stack_scenario,
     p5_2_coloring_churn_snapshots, p5_2_contact_policy_candidate,
     p5_2_generated_performance_scenario, p5_2_generated_scenario, run_gpu_soft_step_case,
@@ -86,6 +87,26 @@ fn compact_coloring_benchmark_separates_construction_compaction_and_empty_work()
         assert!(samples[0].active_color_solve_seconds > 0.0);
         assert!(samples[0].empty_color_solve_seconds > 0.0);
     }
+
+    scenario.settings.iterations = 2;
+    let incremental = pollster::block_on(benchmark_gpu_generated_contact_scheduling_experiment(
+        &scenario,
+        1,
+        1,
+        GpuSolverExecutionV4::manifold_colored_block_experiment(true, true),
+        GpuSolverSchedulingPolicyV1::INCREMENTAL,
+    ))
+    .unwrap();
+    assert_eq!(
+        incremental.correctness.solver_scheduling_policy,
+        GpuSolverSchedulingPolicyV1::INCREMENTAL
+    );
+    let coloring = incremental.correctness.pass_evidence.coloring.unwrap();
+    assert_eq!(coloring.retained_color_units, 0);
+    assert_eq!(
+        coloring.new_color_units,
+        coloring.color_occupancy.iter().sum::<u32>()
+    );
 }
 
 #[test]
@@ -323,6 +344,117 @@ fn manifold_colored_block_replays_disjoint_units_and_traces_coupled_normals() {
 }
 
 #[test]
+fn incremental_manifold_coloring_reuses_stable_pairs_without_changing_physics() {
+    let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
+    let mut scenario = p5_2_centered_rectangle_stack_scenario(4, 4).unwrap();
+    scenario.settings.iterations = 2;
+    let execution = GpuSolverExecutionV4::manifold_colored_block_experiment(true, true);
+    let full = runner.run_experiment(&scenario, 8, execution).unwrap();
+    let first_incremental = runner
+        .run_scheduling_experiment(
+            &scenario,
+            1,
+            execution,
+            GpuSolverSchedulingPolicyV1::INCREMENTAL,
+        )
+        .unwrap();
+    let incremental = runner
+        .run_scheduling_experiment(
+            &scenario,
+            8,
+            execution,
+            GpuSolverSchedulingPolicyV1::INCREMENTAL,
+        )
+        .unwrap();
+    let replay = runner
+        .run_scheduling_experiment(
+            &scenario,
+            8,
+            execution,
+            GpuSolverSchedulingPolicyV1::INCREMENTAL,
+        )
+        .unwrap();
+
+    assert_eq!(incremental.bodies, full.bodies);
+    assert_eq!(incremental.cache, full.cache);
+    assert_eq!(
+        incremental.pass_evidence.contacts,
+        full.pass_evidence.contacts
+    );
+    assert_eq!(incremental.bodies, replay.bodies);
+    assert_eq!(incremental.cache, replay.cache);
+    assert_eq!(incremental.pass_evidence, replay.pass_evidence);
+
+    let full_colors = full.pass_evidence.coloring.as_ref().unwrap();
+    let first_colors = first_incremental.pass_evidence.coloring.as_ref().unwrap();
+    let colors = incremental.pass_evidence.coloring.as_ref().unwrap();
+    assert_eq!(colors.point_colors, full_colors.point_colors);
+    assert_eq!(colors.color_occupancy, full_colors.color_occupancy);
+    assert_eq!(first_colors.retained_color_units, 0);
+    assert_eq!(first_colors.recolored_color_units, 0);
+    assert_eq!(first_colors.removed_color_units, 0);
+    assert_eq!(
+        first_colors.new_color_units,
+        first_colors.color_occupancy.iter().sum::<u32>()
+    );
+    assert_eq!(colors.new_color_units, 0);
+    assert_eq!(colors.recolored_color_units, 0);
+    assert_eq!(colors.removed_color_units, 0);
+    assert_eq!(
+        colors.retained_color_units,
+        colors.color_occupancy.iter().sum::<u32>()
+    );
+    assert!(incremental.failure.is_none());
+}
+
+#[test]
+fn scheduling_comparators_reject_non_compact_solver_executions() {
+    let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
+    let scenario = p5_2_centered_rectangle_stack_scenario(2, 1).unwrap();
+    let error = runner
+        .run_scheduling_experiment(
+            &scenario,
+            1,
+            GpuSolverExecutionV4::SELECTED,
+            GpuSolverSchedulingPolicyV1::INCREMENTAL,
+        )
+        .unwrap_err();
+    assert!(error.contains("compact manifold-colored execution"));
+}
+
+#[test]
+fn incremental_manifold_coloring_reports_contact_churn() {
+    let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
+    let scenario = p5_2_generated_scenario(P5_2GeneratedScenarioKind::Restitution, 3).unwrap();
+    let execution = GpuSolverExecutionV4::manifold_colored_block_experiment(true, true);
+    let incremental = runner
+        .run_scheduling_experiment(
+            &scenario,
+            3,
+            execution,
+            GpuSolverSchedulingPolicyV1::INCREMENTAL,
+        )
+        .unwrap();
+    let replay = runner
+        .run_scheduling_experiment(
+            &scenario,
+            3,
+            execution,
+            GpuSolverSchedulingPolicyV1::INCREMENTAL,
+        )
+        .unwrap();
+    let coloring = incremental.pass_evidence.coloring.as_ref().unwrap();
+    assert_eq!(incremental.bodies, replay.bodies);
+    assert_eq!(incremental.cache, replay.cache);
+    assert_eq!(incremental.pass_evidence, replay.pass_evidence);
+    assert_eq!(coloring.retained_color_units, 0);
+    assert_eq!(coloring.new_color_units, 0);
+    assert_eq!(coloring.recolored_color_units, 0);
+    assert_eq!(coloring.removed_color_units, 1);
+    assert!(coloring.color_occupancy.is_empty());
+}
+
+#[test]
 fn one_point_manifold_colored_block_degenerates_exactly_to_scalar_coloring() {
     let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
     let scenario = p5_2_generated_scenario(P5_2GeneratedScenarioKind::Restitution, 8).unwrap();
@@ -526,6 +658,25 @@ fn colored_in_place_rejects_more_than_thirty_two_incident_points_atomically() {
     );
     assert!(manifold.cache.is_empty());
     assert!(manifold.failure.is_some());
+
+    let incremental = runner
+        .run_scheduling_experiment(
+            &scenario,
+            1,
+            GpuSolverExecutionV4::manifold_colored_block_experiment(true, true),
+            GpuSolverSchedulingPolicyV1::INCREMENTAL,
+        )
+        .unwrap();
+    let incremental_coloring = incremental.pass_evidence.coloring.as_ref().unwrap();
+    assert!(incremental_coloring.overflowed);
+    assert!(
+        incremental_coloring
+            .indirect_workgroups
+            .iter()
+            .all(|arguments| *arguments == [0, 1, 1])
+    );
+    assert!(incremental.cache.is_empty());
+    assert!(incremental.failure.is_some());
 
     let history = runner
         .run_experiment_body_history_diagnostic(

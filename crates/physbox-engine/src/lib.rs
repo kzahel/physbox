@@ -36,10 +36,12 @@ pub use body_benchmark::{
     PendingCompletion, PendingTimestampReadback,
 };
 pub use body_floor_solver::{
-    GPU_SOLVER_EXECUTION_VERSION, GpuBlockActiveSetV2, GpuColorOrderV4, GpuColorScheduleV4,
-    GpuColorUnitV4, GpuColoringEvidenceV4, GpuFixedFloorContactEvidence, GpuFixedFloorPassEvidence,
-    GpuGatherTopology, GpuGatherTopologyEvidence, GpuManifoldBlockEvidenceV2, GpuNormalSolverV4,
-    GpuSolverAccumulationV4, GpuSolverExecutionV4,
+    GPU_SOLVER_EXECUTION_VERSION, GPU_SOLVER_SCHEDULING_POLICY_VERSION, GpuBlockActiveSetV2,
+    GpuColorMaintenanceV1, GpuColorOrderV4, GpuColorScheduleV4, GpuColorUnitV4,
+    GpuColoredDispatchV1, GpuColoringEvidenceV4, GpuFixedFloorContactEvidence,
+    GpuFixedFloorPassEvidence, GpuGatherTopology, GpuGatherTopologyEvidence,
+    GpuManifoldBlockEvidenceV2, GpuNormalSolverV4, GpuSolverAccumulationV4, GpuSolverExecutionV4,
+    GpuSolverSchedulingPolicyV1,
 };
 #[cfg(not(target_arch = "wasm32"))]
 pub use body_floor_solver::{
@@ -84,7 +86,8 @@ pub use frame::{
 pub use generated_contacts::{
     GPU_GENERATED_CONTACT_BODY_HISTORY_VERSION, GpuGeneratedContactBenchmarkOutput,
     GpuGeneratedContactBodyHistoryV1, GpuGeneratedContactOutput, GpuGeneratedContactRunner,
-    benchmark_gpu_generated_contact_experiment, benchmark_gpu_generated_contacts,
+    benchmark_gpu_generated_contact_experiment,
+    benchmark_gpu_generated_contact_scheduling_experiment, benchmark_gpu_generated_contacts,
     benchmark_gpu_generated_contacts_with_gather_topology,
 };
 pub use generated_contacts::{GpuConstructionGraphEvidence, GpuContactPersistenceTopology};

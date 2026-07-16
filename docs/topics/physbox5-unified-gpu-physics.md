@@ -824,6 +824,17 @@ required: stable-pair incremental coloring and bounded workgroup-per-island
 sequential solve. Point Jacobi/Jacobi-gather remains `SELECTED`; no physical
 default, residual band, pacing, broadphase, or liquid decision changed.
 
+S5.4b incremental-maintenance checkpoint, 2026-07-16: color maintenance and
+colored dispatch are now a versioned laboratory scheduling policy orthogonal
+to V4 solver execution. Existing hosts and product construction use the
+standard full-rebuild/per-color-indirect policy. An explicit generated-contact
+experiment may instead retain generation-safe stable-pair manifold colors,
+with deterministic conflict repair and complete maintenance/capacity
+evidence. Native forward-i2 exactness, replay, stable retention, and atomic
+overflow pass without changing solver math or requiring readback. This does
+not select the lane or close S5.4b; workgroup-per-island execution and renewed
+cross-host cost/quality evidence remain required.
+
 Circle/circle and circle/rectangle contact are analytic. Rectangle/rectangle
 uses SAT to select a reference and incident edge, clips the incident segment,
 and produces stable vertex/edge feature pairs. Test feature stability around

@@ -1,7 +1,8 @@
 # S5: Interactive rigid quality, construction, and scale
 
-Status: active, 2026-07-16. S5.4b compact-coloring evidence is complete and
-triggers the bounded incremental-color and workgroup-per-island comparators;
+Status: active, 2026-07-16. S5.4b compact-coloring evidence is complete, the
+bounded incremental-color comparator is implemented, and workgroup-per-island
+execution plus the renewed evidence package remain;
 product solver promotion, quality-band acceptance, and S5.5 remain blocked on
 the renewed human checkpoint.
 Direction: [one GPU-resident 2D physics world](../topics/physbox5-unified-gpu-physics.md).
@@ -686,7 +687,12 @@ tolerance, pacing rate, broadphase, liquid path, or CPU fallback is authorized.
   `17.685 ms` at 1K; construction plus compaction is `16.740 ms` diagnostic
   P50 versus `0.393 ms` active solve, and empty color work is `4.080 ms`.
   Every surviving churn unit keeps its color while all units are rebuilt.
-  Implement both bounded comparators before closing this gate.
+  The first comparator is now a versioned scheduling policy that retains
+  generation-safe stable-pair manifold colors and reports retained, new,
+  recolored, and removed work. Native forward-i2 exactness/replay and the
+  33-manifold atomic overflow pass. Implement workgroup-per-island execution
+  and run the shared matrix before closing this gate; no cost conclusion is
+  implied by the mechanical checkpoint.
 - [ ] Publish a renewed review package and stop before solver promotion,
   accepting a residual band, retargeting pacing, or beginning S5.5.
 

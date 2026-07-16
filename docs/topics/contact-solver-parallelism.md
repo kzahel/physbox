@@ -271,6 +271,32 @@ stable-pair incremental-color comparator and the workgroup-per-island reserve
 before renewed review. These are laboratory comparators, not authorization to
 promote a solver, accept a residual band, retarget pacing, or begin S5.5.
 
+Incremental-maintenance checkpoint, 2026-07-16: a versioned scheduling policy
+now varies color maintenance independently from the V4 physical execution.
+The stable-pair lane preserves compact manifold assignments across steps using
+a double-buffered GPU pair-to-color table keyed by the body slots and body
+generations already carried by generated contacts. The table follows a pair
+when contact compaction changes its point slot. It retains a prior color only
+when the complete identity matches and neither body has already retained that
+color; new or conflicting units enter the same deterministic greedy allocator.
+Retained, new, recolored, and removed unit counts, identity-table storage, and
+its capacity are explicit evidence. No CPU readback, second world, physical
+equation, color limit, or selected product default changed. Preserving colors
+can preserve a different valid Gauss-Seidel order than a fresh rebuild after
+churn; exact replay and governed structure, not rebuild byte-equivalence, own
+that comparison.
+
+The native forward-i2 four-stack is byte-exact with full rebuilding after
+eight steps in bodies, cache, and prepared contact evidence, replays exactly,
+reports every initial unit as new, and reports every final unit as retained.
+The 33-manifold shared-body fixture still rejects atomically and emits zero
+indirect solve work. Body generations are embedded in both generated-contact
+bridge protocols so slot reuse cannot inherit an earlier body's color. This
+checkpoint establishes mechanics only: stable maintenance still scans the
+bounded contact storage and does not remove range compaction or topology work,
+so the clean cost matrix must decide whether it helps. The independently
+triggered workgroup-per-island comparator remains required.
+
 ## Fallback and reserve options
 
 - **Interim baseline swap.** Manifold block i2 improves structural preservation

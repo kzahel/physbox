@@ -16,7 +16,7 @@ use crate::{
     GpuBodyStorage,
     body_floor_solver::{
         GpuFixedFloorSolver, GpuGatherTopology, GpuGatherTopologyEvidence, GpuSolverExecutionV4,
-        PointInputRaw, PreparedPointRaw, validate_selected_settings,
+        GpuSolverSchedulingPolicyV1, PointInputRaw, PreparedPointRaw, validate_selected_settings,
     },
     collision_candidates::{CandidateCase, CandidatePipelines},
     collision_narrowphase::{NarrowphaseCase, NarrowphasePipelines},
@@ -186,6 +186,33 @@ impl GpuGeneratedContactGraph {
         fingerprint_mask: u32,
         execution: GpuSolverExecutionV4,
     ) -> Result<Self, String> {
+        Self::new_with_topologies_execution_and_scheduling(
+            device,
+            storage,
+            scenario,
+            persistence_topology,
+            gather_topology,
+            permute_edge_build,
+            permute_pair_build,
+            fingerprint_mask,
+            execution,
+            GpuSolverSchedulingPolicyV1::STANDARD,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn new_with_topologies_execution_and_scheduling(
+        device: &wgpu::Device,
+        storage: &GpuBodyStorage,
+        scenario: &ScenarioV1,
+        persistence_topology: GpuContactPersistenceTopology,
+        gather_topology: GpuGatherTopology,
+        permute_edge_build: bool,
+        permute_pair_build: bool,
+        fingerprint_mask: u32,
+        execution: GpuSolverExecutionV4,
+        scheduling_policy: GpuSolverSchedulingPolicyV1,
+    ) -> Result<Self, String> {
         if !scenario.manifolds.is_empty()
             || !scenario.contact_cache.is_empty()
             || !scenario.actions.is_empty()
@@ -229,7 +256,7 @@ impl GpuGeneratedContactGraph {
             point_capacity,
             size_of::<PointInputRaw>() as u32,
         )?;
-        let solver = GpuFixedFloorSolver::new_generated_experiment_with_topology(
+        let solver = GpuFixedFloorSolver::new_generated_experiment_with_topology_and_scheduling(
             device,
             storage,
             scenario,
@@ -238,6 +265,7 @@ impl GpuGeneratedContactGraph {
             gather_topology,
             permute_edge_build,
             execution,
+            scheduling_policy,
         )?;
         let persistence = GeneratedPersistenceGraph::new(
             device,
@@ -1213,6 +1241,7 @@ pub struct GpuGeneratedContactOutput {
     pub mapped_after_final_step_only: bool,
     pub solver_settings: physbox_contracts::SolverSettingsV1,
     pub solver_execution: GpuSolverExecutionV4,
+    pub solver_scheduling_policy: GpuSolverSchedulingPolicyV1,
     pub bodies: Vec<physbox_contracts::BodyStateV1>,
     pub cache: Vec<PersistentContactV1>,
     pub pass_evidence: crate::GpuFixedFloorPassEvidence,
@@ -1235,6 +1264,8 @@ impl GpuGeneratedContactOutput {
             .validate()
             .map_err(|error| error.to_string())?;
         self.solver_execution.validate()?;
+        self.solver_scheduling_policy
+            .validate(self.solver_execution)?;
         for body in &self.bodies {
             body.validate().map_err(|error| error.to_string())?;
         }
@@ -1340,6 +1371,7 @@ impl GpuGeneratedContactOutput {
                     || coloring.schedule != self.solver_execution.color_schedule
                     || coloring.unit != self.solver_execution.color_unit
                     || coloring.order != self.solver_execution.color_order
+                    || coloring.scheduling_policy != self.solver_scheduling_policy
                     || coloring.point_colors.len() != self.pass_evidence.contacts.len()
                     || coloring.color_count > coloring.max_colors
                     || coloring.color_occupancy.len() != coloring.color_count as usize
@@ -1369,6 +1401,28 @@ impl GpuGeneratedContactOutput {
                             .any(|&color| color >= coloring.color_count))
                 {
                     return Err("generated coloring evidence is invalid".to_owned());
+                }
+                let colored_units = coloring.color_occupancy.iter().sum::<u32>();
+                if !coloring.overflowed
+                    && coloring
+                        .retained_color_units
+                        .checked_add(coloring.new_color_units)
+                        .and_then(|value| value.checked_add(coloring.recolored_color_units))
+                        != Some(colored_units)
+                {
+                    return Err("generated color-maintenance evidence is inconsistent".to_owned());
+                }
+                match coloring.scheduling_policy.color_maintenance {
+                    crate::GpuColorMaintenanceV1::FullRebuild
+                        if coloring.retained_color_units != 0
+                            || coloring.new_color_units != colored_units
+                            || coloring.recolored_color_units != 0
+                            || coloring.removed_color_units != 0 =>
+                    {
+                        return Err("full-rebuild color maintenance is invalid".to_owned());
+                    }
+                    crate::GpuColorMaintenanceV1::StablePairIncremental => {}
+                    crate::GpuColorMaintenanceV1::FullRebuild => {}
                 }
                 match coloring.schedule {
                     crate::GpuColorScheduleV4::CompactIndirect => {
@@ -1574,6 +1628,26 @@ impl GpuGeneratedContactRunner {
         )
     }
 
+    pub fn run_scheduling_experiment(
+        &self,
+        scenario: &ScenarioV1,
+        completed_steps: u32,
+        execution: GpuSolverExecutionV4,
+        scheduling_policy: GpuSolverSchedulingPolicyV1,
+    ) -> Result<GpuGeneratedContactOutput, String> {
+        self.run_with_topologies_execution_and_scheduling(
+            scenario,
+            completed_steps,
+            GpuContactPersistenceTopology::StablePairSlot,
+            GpuGatherTopology::StableBodyEdge,
+            false,
+            false,
+            u32::MAX,
+            execution,
+            scheduling_policy,
+        )
+    }
+
     /// Captures post-step body poses for bounded native validation while keeping
     /// every result resident until the requested step count has completed.
     pub fn run_experiment_body_history(
@@ -1598,6 +1672,21 @@ impl GpuGeneratedContactRunner {
         completed_steps: u32,
         execution: GpuSolverExecutionV4,
     ) -> Result<GpuGeneratedContactBodyHistoryV1, String> {
+        self.run_scheduling_experiment_body_history_diagnostic(
+            scenario,
+            completed_steps,
+            execution,
+            GpuSolverSchedulingPolicyV1::STANDARD,
+        )
+    }
+
+    pub fn run_scheduling_experiment_body_history_diagnostic(
+        &self,
+        scenario: &ScenarioV1,
+        completed_steps: u32,
+        execution: GpuSolverExecutionV4,
+        scheduling_policy: GpuSolverSchedulingPolicyV1,
+    ) -> Result<GpuGeneratedContactBodyHistoryV1, String> {
         if completed_steps == 0 {
             return Err("generated contact pose history requires at least one step".to_owned());
         }
@@ -1610,7 +1699,7 @@ impl GpuGeneratedContactRunner {
             crate::BODY_COMMAND_CAPACITY,
             &scenario.bodies,
         )?;
-        let graph = GpuGeneratedContactGraph::new_with_topologies_and_execution(
+        let graph = GpuGeneratedContactGraph::new_with_topologies_execution_and_scheduling(
             &self.device,
             &storage,
             scenario,
@@ -1620,6 +1709,7 @@ impl GpuGeneratedContactRunner {
             false,
             u32::MAX,
             execution,
+            scheduling_policy,
         )?;
         let pose_step_bytes = u64::from(body_count) * size_of::<[f32; 4]>() as u64;
         let pose_history_bytes = pose_step_bytes
@@ -1843,6 +1933,32 @@ impl GpuGeneratedContactRunner {
         fingerprint_mask: u32,
         execution: GpuSolverExecutionV4,
     ) -> Result<GpuGeneratedContactOutput, String> {
+        self.run_with_topologies_execution_and_scheduling(
+            scenario,
+            completed_steps,
+            persistence_topology,
+            gather_topology,
+            permute_edge_build,
+            permute_pair_build,
+            fingerprint_mask,
+            execution,
+            GpuSolverSchedulingPolicyV1::STANDARD,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn run_with_topologies_execution_and_scheduling(
+        &self,
+        scenario: &ScenarioV1,
+        completed_steps: u32,
+        persistence_topology: GpuContactPersistenceTopology,
+        gather_topology: GpuGatherTopology,
+        permute_edge_build: bool,
+        permute_pair_build: bool,
+        fingerprint_mask: u32,
+        execution: GpuSolverExecutionV4,
+        scheduling_policy: GpuSolverSchedulingPolicyV1,
+    ) -> Result<GpuGeneratedContactOutput, String> {
         if completed_steps == 0 {
             return Err("generated contact validation requires at least one step".to_owned());
         }
@@ -1855,7 +1971,7 @@ impl GpuGeneratedContactRunner {
             crate::BODY_COMMAND_CAPACITY,
             &scenario.bodies,
         )?;
-        let graph = GpuGeneratedContactGraph::new_with_topologies_and_execution(
+        let graph = GpuGeneratedContactGraph::new_with_topologies_execution_and_scheduling(
             &self.device,
             &storage,
             scenario,
@@ -1865,6 +1981,7 @@ impl GpuGeneratedContactRunner {
             permute_pair_build,
             fingerprint_mask,
             execution,
+            scheduling_policy,
         )?;
         let lane_bytes = u64::from(body_count) * size_of::<[u32; 4]>() as u64;
         let state_readback = readback(&self.device, "generated_state_readback", lane_bytes * 3);
@@ -2205,6 +2322,7 @@ impl GpuGeneratedContactRunner {
             mapped_after_final_step_only: true,
             solver_settings: scenario.settings,
             solver_execution: execution,
+            solver_scheduling_policy: scheduling_policy,
             bodies,
             cache,
             pass_evidence,
@@ -2294,6 +2412,25 @@ pub async fn benchmark_gpu_generated_contact_experiment(
 }
 
 #[cfg(not(target_arch = "wasm32"))]
+pub async fn benchmark_gpu_generated_contact_scheduling_experiment(
+    scenario: &ScenarioV1,
+    warmup_steps: u32,
+    samples: u32,
+    execution: GpuSolverExecutionV4,
+    scheduling_policy: GpuSolverSchedulingPolicyV1,
+) -> Result<GpuGeneratedContactBenchmarkOutput, String> {
+    benchmark_gpu_generated_contacts_with_execution_and_scheduling(
+        scenario,
+        warmup_steps,
+        samples,
+        GpuGatherTopology::StableBodyEdge,
+        execution,
+        scheduling_policy,
+    )
+    .await
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 async fn benchmark_gpu_generated_contacts_with_execution(
     scenario: &ScenarioV1,
     warmup_steps: u32,
@@ -2301,13 +2438,33 @@ async fn benchmark_gpu_generated_contacts_with_execution(
     gather_topology: GpuGatherTopology,
     execution: GpuSolverExecutionV4,
 ) -> Result<GpuGeneratedContactBenchmarkOutput, String> {
+    benchmark_gpu_generated_contacts_with_execution_and_scheduling(
+        scenario,
+        warmup_steps,
+        samples,
+        gather_topology,
+        execution,
+        GpuSolverSchedulingPolicyV1::STANDARD,
+    )
+    .await
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+async fn benchmark_gpu_generated_contacts_with_execution_and_scheduling(
+    scenario: &ScenarioV1,
+    warmup_steps: u32,
+    samples: u32,
+    gather_topology: GpuGatherTopology,
+    execution: GpuSolverExecutionV4,
+    scheduling_policy: GpuSolverSchedulingPolicyV1,
+) -> Result<GpuGeneratedContactBenchmarkOutput, String> {
     if warmup_steps == 0 || samples == 0 {
         return Err("generated-contact benchmark requires non-zero warmup and samples".to_owned());
     }
     scenario.validate().map_err(|error| error.to_string())?;
     let correctness = {
         let runner = GpuGeneratedContactRunner::new().await?;
-        runner.run_with_topologies_and_execution(
+        runner.run_with_topologies_execution_and_scheduling(
             scenario,
             1,
             GpuContactPersistenceTopology::StablePairSlot,
@@ -2316,6 +2473,7 @@ async fn benchmark_gpu_generated_contacts_with_execution(
             false,
             u32::MAX,
             execution,
+            scheduling_policy,
         )?
     };
     if correctness.failure.is_some()
@@ -2350,7 +2508,7 @@ async fn benchmark_gpu_generated_contacts_with_execution(
         &scenario.bodies,
     )?;
     let reset = crate::body_state::GpuBodyResetData::new(body_count, &scenario.bodies)?;
-    let graph = GpuGeneratedContactGraph::new_with_topologies_and_execution(
+    let graph = GpuGeneratedContactGraph::new_with_topologies_execution_and_scheduling(
         &device,
         &storage,
         scenario,
@@ -2360,6 +2518,7 @@ async fn benchmark_gpu_generated_contacts_with_execution(
         false,
         u32::MAX,
         execution,
+        scheduling_policy,
     )?;
     let query_resources = timestamps_available.then(|| {
         let query_set = device.create_query_set(&wgpu::QuerySetDescriptor {
