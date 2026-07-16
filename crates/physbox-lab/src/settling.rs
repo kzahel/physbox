@@ -679,6 +679,8 @@ mod tests {
             normal_impulse,
             tangent_impulse: 0.0,
             total_normal_impulse: normal_impulse,
+            body_a_point_incidence: 2,
+            body_b_point_incidence: 2,
         };
         let evidence = GpuFixedFloorPassEvidence {
             contacts: vec![contact(0, -0.25, 3.0), contact(1, 0.25, 1.0)],

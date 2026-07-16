@@ -450,6 +450,8 @@ sequence; it did not authorize a product-default or quality-band change.
 - [x] Implement block mass splitting by using each body's distinct live
   manifold/body-pair count in the block effective-mass matrix, again applying
   output impulses with the full physical mass.
+- [x] Implement laboratory-only GPU scalar mass splitting from the accepted
+  point-incidence topology without changing product construction or defaults.
 - [ ] Evaluate the factorial matrix `current`, `mass-split`, `manifold-block`,
   and `block-mass-split` at 1/2/4/8 iterations on the unchanged six S5.4
   sources plus the 16-body stack. Preserve exact first failures and complete
@@ -512,6 +514,16 @@ above one and finishes iteration eight at `0.787`; scalar mass splitting keeps
 every ratio below one and finishes at `0.0369`. Unperturbed symmetric gravity
 contracts under both methods, so this probe is diagnostic evidence for the
 rocking/chain mode, not a formal spectral proof or an awake acceptance result.
+
+GPU scalar checkpoint, 2026-07-16: solver-execution schema v2 names the normal
+candidate explicitly while retaining point Jacobi as `SELECTED`. The
+laboratory-only scalar-mass-split lane reads exact point incidence from either
+the canonical body scan or stable body-edge ranges during preparation, scales
+normal and tangent effective mass, and leaves equal-and-opposite emission plus
+full-physical-mass gather unchanged. Both topology views produce byte-identical
+body, cache, and pass traces for the two-stack check; no dispatch, buffer, or
+product-constructor path was added. Manifold modes remain explicitly rejected
+until their separate implementation slice.
 
 ### S5.5 — P5.3 scalable broadphase bakeoff
 

@@ -70,14 +70,29 @@ fn relative_velocity(point: PreparedPoint, axis: vec2f) -> f32 {
                point_velocity(point.ids.x, point.anchor_a), axis);
 }
 
+fn point_incidence(body_index: u32) -> f32 {
+    var count = atomicLoad(&topology[body_index * 2u + 1u]);
+    if (params.uints1.z != 0u) {
+        let start = atomicLoad(&topology[params.uints0.z + body_index * 2u]);
+        let end = atomicLoad(&topology[params.uints0.z + body_index * 2u + 1u]);
+        count = end - start;
+    }
+    return f32(max(count, 1u));
+}
+
 fn effective_mass(body_a: u32, body_b: u32, anchor_a: vec2f,
-                  anchor_b: vec2f, axis: vec2f) -> f32 {
+                  anchor_b: vec2f, axis: vec2f,
+                  incidence_a: f32, incidence_b: f32) -> f32 {
     let property_a = properties[body_a];
     let property_b = properties[body_b];
     let cross_a = cross(anchor_a, axis);
     let cross_b = cross(anchor_b, axis);
-    let inverse = property_a.z + property_b.z +
-        property_a.w * cross_a * cross_a + property_b.w * cross_b * cross_b;
+    let mass_split = params.uints1.y == 1u;
+    let count_a = select(1.0, incidence_a, mass_split);
+    let count_b = select(1.0, incidence_b, mass_split);
+    let inverse = count_a * property_a.z + count_b * property_b.z +
+        count_a * property_a.w * cross_a * cross_a +
+        count_b * property_b.w * cross_b * cross_b;
     return select(0.0, 1.0 / inverse, inverse > 0.0);
 }
 
@@ -300,6 +315,8 @@ fn refreshed_point(input: PointInput, previous: PreparedPoint, reset: bool) -> P
     let initial_velocity = dot(point_velocity(input.ids.y, anchor_b) -
                                point_velocity(input.ids.x, anchor_a), input.normal);
     let retained_initial_velocity = previous.data0.x;
+    let incidence_a = point_incidence(input.ids.x);
+    let incidence_b = point_incidence(input.ids.y);
     var point = previous;
     point.ids = input.ids;
     point.normal = input.normal;
@@ -307,12 +324,14 @@ fn refreshed_point(input: PointInput, previous: PreparedPoint, reset: bool) -> P
     point.anchor_a = anchor_a;
     point.anchor_b = anchor_b;
     point.data0 = vec4f(select(retained_initial_velocity, initial_velocity, reset),
-        effective_mass(input.ids.x, input.ids.y, anchor_a, anchor_b, input.normal),
-        effective_mass(input.ids.x, input.ids.y, anchor_a, anchor_b, tangent),
+        effective_mass(input.ids.x, input.ids.y, anchor_a, anchor_b, input.normal,
+            incidence_a, incidence_b),
+        effective_mass(input.ids.x, input.ids.y, anchor_a, anchor_b, tangent,
+            incidence_a, incidence_b),
         dot((pose_b.xy + anchor_b) - (pose_a.xy + anchor_a), input.normal));
     if (reset) {
         point.data1 = vec4f(input.material.y, input.material.z, input.cache);
-        point.data2 = vec4f(0.0);
+        point.data2 = vec4f(0.0, incidence_a, incidence_b, f32(params.uints1.y));
     }
     return point;
 }

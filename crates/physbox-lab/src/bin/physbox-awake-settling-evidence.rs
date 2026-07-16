@@ -13,7 +13,7 @@ use physbox_contracts::{
     sha256_bytes,
 };
 use physbox_engine::{
-    GpuGeneratedContactRunner, GpuSolverExecutionV1, p5_2_box2d_world_projection,
+    GpuGeneratedContactRunner, GpuSolverExecutionV2, p5_2_box2d_world_projection,
     p5_2_centered_rectangle_stack_scenario, p5_2_contact_policy_candidate,
     p5_2_generated_performance_scenario, p5_2_rectangle_pyramid_scenario,
 };
@@ -49,7 +49,7 @@ enum SceneKind {
 struct CandidateDefinition {
     id: &'static str,
     settings: SolverSettingsV1,
-    execution: GpuSolverExecutionV1,
+    execution: GpuSolverExecutionV2,
     question: &'static str,
 }
 
@@ -356,55 +356,55 @@ fn candidate_definitions(base: SolverSettingsV1) -> Result<Vec<CandidateDefiniti
         CandidateDefinition {
             id: "selected-4x1",
             settings: base,
-            execution: GpuSolverExecutionV1::SELECTED,
+            execution: GpuSolverExecutionV2::SELECTED,
             question: "selected product execution baseline",
         },
         CandidateDefinition {
             id: "substeps-8x1",
             settings: substeps_8,
-            execution: GpuSolverExecutionV1::experiment(true, true),
+            execution: GpuSolverExecutionV2::experiment(true, true),
             question: "does smaller substep dt improve awake structure and residual motion",
         },
         CandidateDefinition {
             id: "iterations-4x2",
             settings: iterations_2,
-            execution: GpuSolverExecutionV1::experiment(true, true),
+            execution: GpuSolverExecutionV2::experiment(true, true),
             question: "does a second Jacobi iteration resolve convergence or torque imbalance",
         },
         CandidateDefinition {
             id: "iterations-4x4",
             settings: iterations_4,
-            execution: GpuSolverExecutionV1::experiment(true, true),
+            execution: GpuSolverExecutionV2::experiment(true, true),
             question: "does four-iteration convergence materially outperform two iterations",
         },
         CandidateDefinition {
             id: "combined-8x2",
             settings: substeps_8_iterations_2,
-            execution: GpuSolverExecutionV1::experiment(true, true),
+            execution: GpuSolverExecutionV2::experiment(true, true),
             question: "does combined substep and iteration work answer a remaining quality gap",
         },
         CandidateDefinition {
             id: "no-warm-start",
             settings: base,
-            execution: GpuSolverExecutionV1::experiment(false, true),
+            execution: GpuSolverExecutionV2::experiment(false, true),
             question: "is cached impulse transfer a measured jitter source",
         },
         CandidateDefinition {
             id: "no-relaxation",
             settings: base,
-            execution: GpuSolverExecutionV1::experiment(true, false),
+            execution: GpuSolverExecutionV2::experiment(true, false),
             question: "is the post-position relaxation stage a measured jitter source",
         },
         CandidateDefinition {
             id: "bias-0.1",
             settings: lower_bias,
-            execution: GpuSolverExecutionV1::experiment(true, true),
+            execution: GpuSolverExecutionV2::experiment(true, true),
             question: "does lower overlap bias reduce residual energy without losing support",
         },
         CandidateDefinition {
             id: "bounded-contact-policy",
             settings: bounded_contact,
-            execution: GpuSolverExecutionV1::experiment(true, true),
+            execution: GpuSolverExecutionV2::experiment(true, true),
             question: "does governed speculation and depenetration bounding change the failure",
         },
     ])
@@ -1186,7 +1186,7 @@ mod tests {
             ]
         );
         assert_eq!(candidates[0].settings, source.settings);
-        assert_eq!(candidates[0].execution, GpuSolverExecutionV1::SELECTED);
+        assert_eq!(candidates[0].execution, GpuSolverExecutionV2::SELECTED);
         assert!(
             candidates
                 .iter()

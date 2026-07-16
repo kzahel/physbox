@@ -1,8 +1,8 @@
 use physbox_engine::{
     GpuContactPersistenceTopology, GpuGatherTopology, GpuGeneratedContactRunner,
-    GpuNarrowphaseRunner, GpuSolverCandidate, GpuSolverExecutionV1, P5_2_BUCKET_EVIDENCE_STEPS,
-    P5_2_CENTERED_STACK_EVIDENCE_STEPS, P5_2BucketShape, P5_2CandidatePattern,
-    P5_2GeneratedScenarioKind, benchmark_gpu_generated_contact_experiment,
+    GpuNarrowphaseRunner, GpuNormalSolverV2, GpuSolverCandidate, GpuSolverExecutionV2,
+    P5_2_BUCKET_EVIDENCE_STEPS, P5_2_CENTERED_STACK_EVIDENCE_STEPS, P5_2BucketShape,
+    P5_2CandidatePattern, P5_2GeneratedScenarioKind, benchmark_gpu_generated_contact_experiment,
     benchmark_gpu_generated_contacts, p5_2_bucket_scenario, p5_2_candidate_scenario,
     p5_2_centered_rectangle_stack_scenario, p5_2_contact_policy_candidate,
     p5_2_generated_performance_scenario, p5_2_generated_scenario, run_gpu_soft_step_case,
@@ -47,8 +47,12 @@ fn solver_experiments_are_explicit_replayable_and_not_product_defaults() {
     let mut scenario = p5_2_centered_rectangle_stack_scenario(2, 30).unwrap();
     scenario.settings.iterations = 2;
     assert!(runner.run(&scenario, 30).is_err());
+    assert_eq!(
+        GpuSolverExecutionV2::SELECTED.normal_solver,
+        GpuNormalSolverV2::PointJacobi
+    );
 
-    let execution = GpuSolverExecutionV1::experiment(true, true);
+    let execution = GpuSolverExecutionV2::experiment(true, true);
     let first = runner.run_experiment(&scenario, 30, execution).unwrap();
     let replay = runner.run_experiment(&scenario, 30, execution).unwrap();
     assert_eq!(first.solver_settings.iterations, 2);
@@ -64,7 +68,7 @@ fn solver_experiments_are_explicit_replayable_and_not_product_defaults() {
     assert_eq!(benchmark.correctness.solver_execution, execution);
 
     let no_warm = runner
-        .run_experiment(&scenario, 30, GpuSolverExecutionV1::experiment(false, true))
+        .run_experiment(&scenario, 30, GpuSolverExecutionV2::experiment(false, true))
         .unwrap();
     assert!(!no_warm.solver_execution.warm_start);
     assert!(no_warm.bodies.iter().all(|body| {
@@ -75,6 +79,72 @@ fn solver_experiments_are_explicit_replayable_and_not_product_defaults() {
             && body.linear_velocity.y.is_finite()
             && body.angular_velocity.get().is_finite()
     }));
+}
+
+#[test]
+fn scalar_mass_split_uses_exact_gpu_point_incidence_on_both_gather_topologies() {
+    let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
+    let scenario = p5_2_centered_rectangle_stack_scenario(2, 1).unwrap();
+    let execution =
+        GpuSolverExecutionV2::normal_experiment(GpuNormalSolverV2::ScalarMassSplit, true, true);
+    let stable = runner
+        .run_experiment_with_gather_topology(
+            &scenario,
+            1,
+            GpuGatherTopology::StableBodyEdge,
+            true,
+            execution,
+        )
+        .unwrap();
+    let canonical = runner
+        .run_experiment_with_gather_topology(
+            &scenario,
+            1,
+            GpuGatherTopology::CanonicalBodyScan,
+            false,
+            execution,
+        )
+        .unwrap();
+    assert_eq!(stable.solver_execution, execution);
+    assert_eq!(stable.bodies, canonical.bodies);
+    assert_eq!(stable.cache, canonical.cache);
+
+    let mut expected_counts = vec![0_u32; stable.bodies.len()];
+    for contact in &stable.pass_evidence.contacts {
+        expected_counts[contact.body_a as usize] += 1;
+        expected_counts[contact.body_b as usize] += 1;
+    }
+    for contact in &stable.pass_evidence.contacts {
+        assert_eq!(
+            contact.body_a_point_incidence,
+            expected_counts[contact.body_a as usize]
+        );
+        assert_eq!(
+            contact.body_b_point_incidence,
+            expected_counts[contact.body_b as usize]
+        );
+        let body_a = &scenario.bodies[contact.body_a as usize];
+        let body_b = &scenario.bodies[contact.body_b as usize];
+        let normal_cross_a =
+            contact.anchor_a.x * contact.normal.y - contact.anchor_a.y * contact.normal.x;
+        let normal_cross_b =
+            contact.anchor_b.x * contact.normal.y - contact.anchor_b.y * contact.normal.x;
+        let expected_inverse_normal = contact.body_a_point_incidence as f32
+            * (body_a.inverse_mass.get()
+                + body_a.inverse_inertia.get() * normal_cross_a * normal_cross_a)
+            + contact.body_b_point_incidence as f32
+                * (body_b.inverse_mass.get()
+                    + body_b.inverse_inertia.get() * normal_cross_b * normal_cross_b);
+        assert!(
+            (contact.normal_effective_mass - 1.0 / expected_inverse_normal).abs() <= 1.0e-6,
+            "contact {contact:?}, expected inverse {expected_inverse_normal}"
+        );
+    }
+    assert_eq!(expected_counts, vec![2, 4, 2]);
+    assert_eq!(
+        stable.pass_evidence.contacts,
+        canonical.pass_evidence.contacts
+    );
 }
 
 #[test]

@@ -17,19 +17,41 @@ const WORKGROUP_SIZE: u32 = 64;
 const RADIX_WORKGROUP_SIZE: u32 = 256;
 const PARAMETER_STRIDE: usize = 256;
 
-pub const GPU_SOLVER_EXECUTION_VERSION: u32 = 1;
+pub const GPU_SOLVER_EXECUTION_VERSION: u32 = 2;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum GpuNormalSolverV2 {
+    PointJacobi,
+    ScalarMassSplit,
+    ManifoldBlock,
+    BlockMassSplit,
+}
+
+impl GpuNormalSolverV2 {
+    const fn shader_code(self) -> u32 {
+        match self {
+            Self::PointJacobi => 0,
+            Self::ScalarMassSplit => 1,
+            Self::ManifoldBlock => 2,
+            Self::BlockMassSplit => 3,
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct GpuSolverExecutionV1 {
+pub struct GpuSolverExecutionV2 {
     pub version: u32,
+    pub normal_solver: GpuNormalSolverV2,
     pub warm_start: bool,
     pub relaxation: bool,
 }
 
-impl GpuSolverExecutionV1 {
+impl GpuSolverExecutionV2 {
     pub const SELECTED: Self = Self {
         version: GPU_SOLVER_EXECUTION_VERSION,
+        normal_solver: GpuNormalSolverV2::PointJacobi,
         warm_start: true,
         relaxation: true,
     };
@@ -37,6 +59,20 @@ impl GpuSolverExecutionV1 {
     pub const fn experiment(warm_start: bool, relaxation: bool) -> Self {
         Self {
             version: GPU_SOLVER_EXECUTION_VERSION,
+            normal_solver: GpuNormalSolverV2::PointJacobi,
+            warm_start,
+            relaxation,
+        }
+    }
+
+    pub const fn normal_experiment(
+        normal_solver: GpuNormalSolverV2,
+        warm_start: bool,
+        relaxation: bool,
+    ) -> Self {
+        Self {
+            version: GPU_SOLVER_EXECUTION_VERSION,
+            normal_solver,
             warm_start,
             relaxation,
         }
@@ -249,7 +285,7 @@ struct ContributionRaw {
     padding: u32,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GpuFixedFloorContactEvidence {
     pub point_index: u32,
@@ -271,6 +307,8 @@ pub struct GpuFixedFloorContactEvidence {
     pub normal_impulse: f32,
     pub tangent_impulse: f32,
     pub total_normal_impulse: f32,
+    pub body_a_point_incidence: u32,
+    pub body_b_point_incidence: u32,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -544,7 +582,7 @@ impl GpuFixedFloorSolver {
             point_count,
             GpuGatherTopology::CanonicalBodyScan,
             false,
-            GpuSolverExecutionV1::SELECTED,
+            GpuSolverExecutionV2::SELECTED,
         )?;
         solver._owned_point_input = Some(point_buffer);
         Ok(solver)
@@ -582,7 +620,7 @@ impl GpuFixedFloorSolver {
             point_count,
             topology,
             false,
-            GpuSolverExecutionV1::SELECTED,
+            GpuSolverExecutionV2::SELECTED,
         )?;
         solver._owned_point_input = Some(point_buffer);
         Ok(solver)
@@ -597,7 +635,7 @@ impl GpuFixedFloorSolver {
         point_capacity: u32,
         topology: GpuGatherTopology,
         permute_edge_build: bool,
-        execution: GpuSolverExecutionV1,
+        execution: GpuSolverExecutionV2,
     ) -> Result<Self, String> {
         validate_experiment_settings(&scenario.settings, execution)?;
         if !scenario.manifolds.is_empty() || point_capacity == 0 {
@@ -627,7 +665,7 @@ impl GpuFixedFloorSolver {
         point_count: u32,
         topology: GpuGatherTopology,
         permute_edge_build: bool,
-        execution: GpuSolverExecutionV1,
+        execution: GpuSolverExecutionV2,
     ) -> Result<Self, String> {
         let body_count = storage.layout().capacity_elements;
         let topology_layout = TopologyLayout::new(topology, body_count, point_count)?;
@@ -1284,6 +1322,8 @@ pub(crate) fn decode_pass_evidence(
             normal_impulse: point.data1[2],
             tangent_impulse: point.data1[3],
             total_normal_impulse: point.data2[0],
+            body_a_point_incidence: point.data2[1] as u32,
+            body_b_point_incidence: point.data2[2] as u32,
         })
         .collect();
     let contributions = raw_contributions
@@ -1319,9 +1359,15 @@ pub(crate) fn validate_selected_settings(scenario: &ScenarioV1) -> Result<(), St
 
 fn validate_experiment_settings(
     settings: &SolverSettingsV1,
-    execution: GpuSolverExecutionV1,
+    execution: GpuSolverExecutionV2,
 ) -> Result<(), String> {
     execution.validate()?;
+    if matches!(
+        execution.normal_solver,
+        GpuNormalSolverV2::ManifoldBlock | GpuNormalSolverV2::BlockMassSplit
+    ) {
+        return Err("manifold-block GPU experiments are not implemented in this slice".to_owned());
+    }
     if settings.fixed_dt.get().to_bits() != (1.0_f32 / 60.0).to_bits() {
         return Err("GPU solver experiments retain the governed 60 Hz fixed dt".to_owned());
     }
@@ -1378,7 +1424,7 @@ fn operations(
     point_count: u32,
     topology: TopologyLayout,
     permute_edge_build: bool,
-    execution: GpuSolverExecutionV1,
+    execution: GpuSolverExecutionV2,
 ) -> (Vec<PassParamsRaw>, Vec<Operation>) {
     let mut parameters = Vec::new();
     let mut operations = Vec::new();
@@ -1401,7 +1447,13 @@ fn operations(
             MotionDirection::AtoB,
             body_workgroups,
         );
-        let mut prepare = pass_params(scenario, body_count, point_count, 0, 0, 0);
+        let mut prepare = preparation_params(
+            scenario,
+            body_count,
+            point_count,
+            topology,
+            execution.normal_solver,
+        );
         let prepare_kind = if substep == 0 {
             PipelineKind::Prepare
         } else {
@@ -1460,7 +1512,13 @@ fn operations(
         push_operation(
             &mut parameters,
             &mut operations,
-            pass_params(scenario, body_count, point_count, 0, 0, 0),
+            preparation_params(
+                scenario,
+                body_count,
+                point_count,
+                topology,
+                execution.normal_solver,
+            ),
             PipelineKind::Refresh,
             MotionDirection::BtoA,
             point_workgroups,
@@ -1501,6 +1559,20 @@ fn operations(
         );
     }
     (parameters, operations)
+}
+
+fn preparation_params(
+    scenario: &ScenarioV1,
+    body_count: u32,
+    point_count: u32,
+    topology: TopologyLayout,
+    normal_solver: GpuNormalSolverV2,
+) -> PassParamsRaw {
+    let mut params = pass_params(scenario, body_count, point_count, 0, 0, 0);
+    params.uints0[2] = topology.ranges_base;
+    params.uints1[1] = normal_solver.shader_code();
+    params.uints1[2] = u32::from(topology.kind == GpuGatherTopology::StableBodyEdge);
+    params
 }
 
 fn topology_operations(
@@ -1866,7 +1938,7 @@ mod tests {
             2,
             topology,
             false,
-            GpuSolverExecutionV1::SELECTED,
+            GpuSolverExecutionV2::SELECTED,
         );
         assert_eq!(operations.len(), 68);
         assert_eq!(parameters.len(), operations.len());
@@ -1885,7 +1957,7 @@ mod tests {
             2,
             topology,
             true,
-            GpuSolverExecutionV1::SELECTED,
+            GpuSolverExecutionV2::SELECTED,
         );
         assert_eq!(topology.edge_count, 4);
         assert_eq!(topology.radix_passes, 1);
@@ -1901,6 +1973,10 @@ mod tests {
     #[test]
     fn fixed_floor_rejects_unreviewed_solver_defaults() {
         let mut scenario = crate::p5_1_rectangle_floor_scenario(120).unwrap();
+        assert_eq!(
+            GpuSolverExecutionV2::SELECTED.normal_solver,
+            GpuNormalSolverV2::PointJacobi
+        );
         validate_selected_settings(&scenario).unwrap();
         scenario.settings.iterations = 2;
         assert!(validate_selected_settings(&scenario).is_err());
@@ -1917,7 +1993,7 @@ mod tests {
             2,
             topology,
             false,
-            GpuSolverExecutionV1::experiment(true, true),
+            GpuSolverExecutionV2::experiment(true, true),
         );
         let (_, without_relaxation) = operations(
             &scenario,
@@ -1925,20 +2001,36 @@ mod tests {
             2,
             topology,
             false,
-            GpuSolverExecutionV1::experiment(false, false),
+            GpuSolverExecutionV2::experiment(false, false),
         );
         assert_eq!(with_relaxation.len(), 102);
         assert_eq!(without_relaxation.len(), 70);
         validate_experiment_settings(
             &scenario.settings,
-            GpuSolverExecutionV1::experiment(true, true),
+            GpuSolverExecutionV2::experiment(true, true),
         )
         .unwrap();
+        validate_experiment_settings(
+            &scenario.settings,
+            GpuSolverExecutionV2::normal_experiment(GpuNormalSolverV2::ScalarMassSplit, true, true),
+        )
+        .unwrap();
+        assert!(
+            validate_experiment_settings(
+                &scenario.settings,
+                GpuSolverExecutionV2::normal_experiment(
+                    GpuNormalSolverV2::ManifoldBlock,
+                    true,
+                    true,
+                ),
+            )
+            .is_err()
+        );
         scenario.settings.iterations = 9;
         assert!(
             validate_experiment_settings(
                 &scenario.settings,
-                GpuSolverExecutionV1::experiment(true, true),
+                GpuSolverExecutionV2::experiment(true, true),
             )
             .is_err()
         );

@@ -37,7 +37,7 @@ pub use body_benchmark::{
 };
 pub use body_floor_solver::{
     GPU_SOLVER_EXECUTION_VERSION, GpuFixedFloorContactEvidence, GpuFixedFloorPassEvidence,
-    GpuGatherTopology, GpuGatherTopologyEvidence, GpuSolverExecutionV1,
+    GpuGatherTopology, GpuGatherTopologyEvidence, GpuNormalSolverV2, GpuSolverExecutionV2,
 };
 #[cfg(not(target_arch = "wasm32"))]
 pub use body_floor_solver::{
