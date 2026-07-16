@@ -1,7 +1,8 @@
 use physbox_engine::{
-    GpuGatherTopology, GpuGeneratedContactOutput, GpuGeneratedContactRunner, P5_2CandidatePattern,
-    P5_2GeneratedScenarioKind, benchmark_gpu_generated_contacts_with_gather_topology,
-    p5_2_candidate_scenario, p5_2_generated_performance_scenario, p5_2_generated_scenario,
+    GpuGatherTopology, GpuGeneratedContactOutput, GpuGeneratedContactRunner, GpuSolverExecutionV4,
+    P5_2CandidatePattern, P5_2GeneratedScenarioKind,
+    benchmark_gpu_generated_contacts_with_gather_topology, p5_2_candidate_scenario,
+    p5_2_generated_performance_scenario, p5_2_generated_scenario,
 };
 
 #[test]
@@ -44,9 +45,23 @@ fn stable_body_edges_preserve_upstream_atomic_overflow() {
     let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
     let scenario = p5_2_candidate_scenario(P5_2CandidatePattern::Coincident, 34, 7).unwrap();
     let baseline = runner
-        .run_with_gather_topology(&scenario, 1, GpuGatherTopology::CanonicalBodyScan, false)
+        .run_experiment_with_gather_topology(
+            &scenario,
+            1,
+            GpuGatherTopology::CanonicalBodyScan,
+            false,
+            GpuSolverExecutionV4::experiment(true, true),
+        )
         .unwrap();
-    let candidate = runner.run(&scenario, 1).unwrap();
+    let candidate = runner
+        .run_experiment_with_gather_topology(
+            &scenario,
+            1,
+            GpuGatherTopology::StableBodyEdge,
+            false,
+            GpuSolverExecutionV4::experiment(true, true),
+        )
+        .unwrap();
     assert_equivalent(&baseline, &candidate, "atomic overflow");
     assert!(candidate.failure.is_some());
     assert!(candidate.cache.is_empty());
@@ -69,12 +84,12 @@ fn stable_body_edge_benchmark_retains_qualified_completion() {
     ))
     .unwrap();
     assert_eq!(benchmark.correctness.gather_topology.radix_passes, 2);
-    assert_eq!(benchmark.correctness.gather_topology.dispatches, 9);
+    assert_eq!(benchmark.correctness.gather_topology.dispatches, 11);
     assert_eq!(benchmark.correctness.gather_topology.point_capacity, 992);
     assert_eq!(benchmark.correctness.gather_topology.edge_capacity, 1_984);
     assert_eq!(
         benchmark.correctness.gather_topology.allocated_bytes,
-        32_512
+        41_356
     );
     assert_eq!(
         benchmark
@@ -84,9 +99,9 @@ fn stable_body_edge_benchmark_retains_qualified_completion() {
             .iter()
             .map(|capacity| capacity.allocated_bytes)
             .collect::<Vec<_>>(),
-        vec![31_744, 512, 256]
+        vec![31_744, 512, 256, 3_968, 128, 3_968, 128, 128, 384, 132, 8]
     );
-    assert_eq!(benchmark.dispatches_per_step, 100);
+    assert_eq!(benchmark.dispatches_per_step, 1_334);
     assert_eq!(benchmark.host_completion_seconds.len(), 2);
     assert!(benchmark.correctness.failure.is_none());
 }
@@ -98,11 +113,31 @@ fn compare_topologies(
     label: &str,
 ) {
     let baseline = runner
-        .run_with_gather_topology(scenario, steps, GpuGatherTopology::CanonicalBodyScan, false)
+        .run_experiment_with_gather_topology(
+            scenario,
+            steps,
+            GpuGatherTopology::CanonicalBodyScan,
+            false,
+            GpuSolverExecutionV4::experiment(true, true),
+        )
         .unwrap();
-    let candidate = runner.run(scenario, steps).unwrap();
+    let candidate = runner
+        .run_experiment_with_gather_topology(
+            scenario,
+            steps,
+            GpuGatherTopology::StableBodyEdge,
+            false,
+            GpuSolverExecutionV4::experiment(true, true),
+        )
+        .unwrap();
     let permuted = runner
-        .run_with_gather_topology(scenario, steps, GpuGatherTopology::StableBodyEdge, true)
+        .run_experiment_with_gather_topology(
+            scenario,
+            steps,
+            GpuGatherTopology::StableBodyEdge,
+            true,
+            GpuSolverExecutionV4::experiment(true, true),
+        )
         .unwrap();
     assert_equivalent(&baseline, &candidate, label);
     assert_equivalent(&candidate, &permuted, label);

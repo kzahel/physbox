@@ -1,7 +1,7 @@
 # S5: Interactive rigid quality, construction, and scale
 
-Status: active, 2026-07-16. Human review accepts forward manifold-block i2 with
-full rebuild/per-color dispatch as the next integration baseline. Parallel
+Status: active, 2026-07-16. Forward manifold-block i2 with full rebuild and
+per-color dispatch is integrated as the selected product baseline. Parallel
 scheduler construction is required S5.4c work and may proceed alongside the
 authorized S5.5 broadphase bakeoff. No residual band, performance claim,
 parallel-scheduler promotion, or broadphase selection is accepted.
@@ -724,6 +724,19 @@ the 32/64-stack diagnostic failures, a new residual band, the 17.623 ms 1K
 result, a liquid crossover, or a CPU fallback. The product-default change and
 its full cross-host validation are the next independently reviewable commit.
 
+Product-integration checkpoint, 2026-07-16: the selected product graph now
+uses colored in-place manifold-block normals, compact per-color indirect
+dispatch, forward order, and two iterations under the unchanged standard
+full-rebuild scheduling policy. Normal product construction and the shared
+`solver-manifold-i2` validation scenario resolve to that same graph. The S1.6
+authored point-Jacobi i1 path remains an explicitly named scalar/GPU control.
+Native generated-contact tests replay exactly, preserve capacity behavior, and
+hold the centered 2/4/8 stacks for all 1,200 requested steps. Fresh Metal
+headless, Chrome BrowserWebGPU, and hardware-backed `jstorrent-tablet` AVD
+captures pass; no physical device was attached. The accepted serial
+implementation becomes the byte-exact S5.4c control, not an accepted timing
+band.
+
 Commit boundaries:
 
 1. authorization, corrected evidence claims, factorial, exclusions, and gates;
@@ -744,8 +757,11 @@ body/manifold contracts but own independent stages. The accepted serial
 full-rebuild/per-color path remains the correctness and product baseline until
 fresh evidence supports a different implementation.
 
-- [ ] Freeze the accepted product execution and add a scheduler-construction
-  benchmark contract that records work vectors and slopes, not only absolute
+- [x] Integrate and freeze the accepted product execution as the serial
+  byte-exact control. Product P5.2 scenarios use manifold-block i2 through the
+  one selected graph; legacy point-Jacobi coverage is explicitly experimental.
+- [ ] Add a scheduler-construction benchmark contract that records work
+  vectors and slopes, not only absolute
   medians. Retain 32/256/1K and add bounded contact-rich 1K/10K authored-
   manifold rows that do not depend on a selected broadphase.
 - [ ] Parallelize color-range counting, prefix placement, and stable compaction

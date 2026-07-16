@@ -1626,7 +1626,7 @@ impl GpuGeneratedContactRunner {
             scenario,
             completed_steps,
             GpuContactPersistenceTopology::FullKeyOracle,
-            GpuGatherTopology::CanonicalBodyScan,
+            GpuGatherTopology::StableBodyEdge,
             false,
             false,
             u32::MAX,
@@ -1958,6 +1958,30 @@ impl GpuGeneratedContactRunner {
             permute_pair_build,
             fingerprint_mask,
             GpuSolverExecutionV4::SELECTED,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn run_topology_experiment(
+        &self,
+        scenario: &ScenarioV1,
+        completed_steps: u32,
+        persistence_topology: GpuContactPersistenceTopology,
+        gather_topology: GpuGatherTopology,
+        permute_edge_build: bool,
+        permute_pair_build: bool,
+        fingerprint_mask: u32,
+        execution: GpuSolverExecutionV4,
+    ) -> Result<GpuGeneratedContactOutput, String> {
+        self.run_with_topologies_and_execution(
+            scenario,
+            completed_steps,
+            persistence_topology,
+            gather_topology,
+            permute_edge_build,
+            permute_pair_build,
+            fingerprint_mask,
+            execution,
         )
     }
 

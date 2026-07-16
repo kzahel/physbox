@@ -211,6 +211,17 @@ the now-authorized P5.3 broadphase bakeoff. Stop before selecting a parallel
 coloring implementation that changes Gauss-Seidel order and before selecting a
 product broadphase.
 
+S5.4 integration checkpoint, 2026-07-16: forward manifold-block i2 with full
+rebuild/per-color indirect dispatch is now the selected P5.2 product graph.
+Shared generated-contact scenarios fix two iterations and publish the exact
+execution through scene contract v4; the S1.6 authored point-Jacobi i1 lane is
+retained only as an explicit validation control. Native exact replay,
+capacity, and 2/4/8-stack structural tests pass. Cross-host validation is part
+of the same reviewable integration slice. The next unattended work is the
+S5.4c scheduler benchmark/byte-exact parallel compaction and the independent
+S5.5 SAP/grid bakeoff, stopping before either order-changing coloring or a
+product broadphase is selected.
+
 The first S3.5a representation checkpoint implements the stable pair-slot
 comparator with full feature verification and deterministic generational slot
 recycling. Its correctness/adversarial gates pass and its combined

@@ -150,24 +150,6 @@ impl GpuBodyWorld {
         )
     }
 
-    pub(crate) fn new_generated_validation(
-        device: &wgpu::Device,
-        color_format: wgpu::TextureFormat,
-        scenario: &ScenarioV1,
-        execution: GpuSolverExecutionV4,
-        scheduling_policy: GpuSolverSchedulingPolicyV1,
-    ) -> Result<Self, String> {
-        if execution == GpuSolverExecutionV4::SELECTED {
-            return Err("generated solver validation requires a non-product execution".to_owned());
-        }
-        Self::new_with_generated_contacts(
-            device,
-            color_format,
-            scenario,
-            Some((execution, scheduling_policy)),
-        )
-    }
-
     fn new_with_generated_contacts(
         device: &wgpu::Device,
         color_format: wgpu::TextureFormat,

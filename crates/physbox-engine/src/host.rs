@@ -8,8 +8,7 @@ use physbox_launch::ValidationScenario;
 
 use crate::{
     AdapterDiagnostics, BODY_COMMAND_CAPACITY, BoundedBodyCommands, Camera2d, EngineConfig,
-    FrameInput, GpuSolverExecutionV4, GpuSolverSchedulingPolicyV1, InputEvent, PointerButton,
-    PointerPhase, StepRequest,
+    FrameInput, InputEvent, PointerButton, PointerPhase, StepRequest,
     body_world::{BodyCommandStepRange, BodyStepPlan, GpuBodyWorld},
     clock::{FIXED_STEP_HZ, FIXED_STEP_SECONDS, InteractiveClockInput, SimulationClock},
     construction::{
@@ -605,14 +604,8 @@ impl EngineHost {
                 let scenario = p5_2_manifold_color_validation_scenario()
                     .expect("engine-owned manifold-color validation scenario is valid");
                 Some(
-                    GpuBodyWorld::new_generated_validation(
-                        device,
-                        color_format,
-                        &scenario,
-                        GpuSolverExecutionV4::manifold_colored_block_experiment(true, true),
-                        GpuSolverSchedulingPolicyV1::STANDARD,
-                    )
-                    .expect("engine-owned manifold-color validation world is valid"),
+                    GpuBodyWorld::new_generated(device, color_format, &scenario)
+                        .expect("engine-owned manifold-color validation world is valid"),
                 )
             }
             _ => None,
@@ -955,7 +948,7 @@ impl EngineHost {
                     complete,
                     passed: complete,
                     reason: if complete {
-                        "selected GPU Jacobi-gather floor solve completed"
+                        "selected GPU manifold-block colored floor solve completed"
                     } else {
                         "waiting for 120 shared GPU fixed-floor steps"
                     },

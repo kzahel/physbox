@@ -166,10 +166,10 @@ pub struct GpuSolverExecutionV4 {
 impl GpuSolverExecutionV4 {
     pub const SELECTED: Self = Self {
         version: GPU_SOLVER_EXECUTION_VERSION,
-        accumulation: GpuSolverAccumulationV4::JacobiGather,
-        normal_solver: GpuNormalSolverV4::PointJacobi,
-        color_schedule: GpuColorScheduleV4::None,
-        color_unit: GpuColorUnitV4::Point,
+        accumulation: GpuSolverAccumulationV4::ColoredInPlace,
+        normal_solver: GpuNormalSolverV4::ManifoldBlock,
+        color_schedule: GpuColorScheduleV4::CompactIndirect,
+        color_unit: GpuColorUnitV4::Manifold,
         color_order: GpuColorOrderV4::Forward,
         warm_start: true,
         relaxation: true,
@@ -1141,7 +1141,7 @@ impl GpuFixedFloorSolver {
         storage: &GpuBodyStorage,
         scenario: &ScenarioV1,
     ) -> Result<Self, String> {
-        validate_selected_settings(scenario)?;
+        validate_authored_settings(scenario)?;
         if scenario.manifolds.len() != 1 || scenario.manifolds[0].points.len() != 2 {
             return Err(
                 "P5.1 fixed-floor solver requires one authored two-point manifold".to_owned(),
@@ -1165,7 +1165,7 @@ impl GpuFixedFloorSolver {
             point_count,
             GpuGatherTopology::CanonicalBodyScan,
             false,
-            GpuSolverExecutionV4::SELECTED,
+            GpuSolverExecutionV4::experiment(true, true),
             GpuSolverSchedulingPolicyV1::STANDARD,
         )?;
         solver._owned_point_input = Some(point_buffer);
@@ -1179,7 +1179,7 @@ impl GpuFixedFloorSolver {
         scenario: &ScenarioV1,
         topology: GpuGatherTopology,
     ) -> Result<Self, String> {
-        validate_selected_settings(scenario)?;
+        validate_authored_settings(scenario)?;
         if scenario.manifolds.is_empty() {
             return Err("authored gather benchmark requires contact manifolds".to_owned());
         }
@@ -1204,7 +1204,7 @@ impl GpuFixedFloorSolver {
             point_count,
             topology,
             false,
-            GpuSolverExecutionV4::SELECTED,
+            GpuSolverExecutionV4::experiment(true, true),
             GpuSolverSchedulingPolicyV1::STANDARD,
         )?;
         solver._owned_point_input = Some(point_buffer);
@@ -2778,13 +2778,28 @@ pub(crate) fn validate_selected_settings(scenario: &ScenarioV1) -> Result<(), St
     let settings = &scenario.settings;
     let selected = settings.fixed_dt.get().to_bits() == (1.0_f32 / 60.0).to_bits()
         && settings.substeps == 4
-        && settings.iterations == 1
+        && settings.iterations == 2
         && settings.bias_rate.get().to_bits() == 0.2_f32.to_bits()
         && settings.mass_coefficient.get().to_bits() == 1.0_f32.to_bits()
         && settings.impulse_coefficient.get().to_bits() == 0.0_f32.to_bits()
         && settings.restitution_threshold.get().to_bits() == 1.0_f32.to_bits();
     if !selected {
-        return Err("P5.1 fixed-floor settings differ from the accepted S1.6 baseline".to_owned());
+        return Err("solver settings differ from the accepted S5.4 baseline".to_owned());
+    }
+    Ok(())
+}
+
+fn validate_authored_settings(scenario: &ScenarioV1) -> Result<(), String> {
+    let settings = &scenario.settings;
+    let accepted = settings.fixed_dt.get().to_bits() == (1.0_f32 / 60.0).to_bits()
+        && settings.substeps == 4
+        && settings.iterations == 1
+        && settings.bias_rate.get().to_bits() == 0.2_f32.to_bits()
+        && settings.mass_coefficient.get().to_bits() == 1.0_f32.to_bits()
+        && settings.impulse_coefficient.get().to_bits() == 0.0_f32.to_bits()
+        && settings.restitution_threshold.get().to_bits() == 1.0_f32.to_bits();
+    if !accepted {
+        return Err("authored fixed-floor settings differ from the S1.6 control".to_owned());
     }
     Ok(())
 }
@@ -3822,7 +3837,7 @@ mod tests {
             2,
             topology,
             false,
-            GpuSolverExecutionV4::SELECTED,
+            GpuSolverExecutionV4::experiment(true, true),
             GpuSolverSchedulingPolicyV1::STANDARD,
         );
         assert_eq!(operations.len(), 68);
@@ -3851,7 +3866,7 @@ mod tests {
             2,
             topology,
             true,
-            GpuSolverExecutionV4::SELECTED,
+            GpuSolverExecutionV4::experiment(true, true),
             GpuSolverSchedulingPolicyV1::STANDARD,
         );
         assert_eq!(topology.edge_count, 4);
@@ -3875,19 +3890,19 @@ mod tests {
     }
 
     #[test]
-    fn fixed_floor_rejects_unreviewed_solver_defaults() {
+    fn fixed_floor_retains_the_authored_s1_6_control() {
         let mut scenario = crate::p5_1_rectangle_floor_scenario(120).unwrap();
         assert_eq!(
             GpuSolverExecutionV4::SELECTED.normal_solver,
-            GpuNormalSolverV4::PointJacobi
+            GpuNormalSolverV4::ManifoldBlock
         );
         assert_eq!(
             GpuSolverExecutionV4::SELECTED.accumulation,
-            GpuSolverAccumulationV4::JacobiGather
+            GpuSolverAccumulationV4::ColoredInPlace
         );
-        validate_selected_settings(&scenario).unwrap();
+        validate_authored_settings(&scenario).unwrap();
         scenario.settings.iterations = 2;
-        assert!(validate_selected_settings(&scenario).is_err());
+        assert!(validate_authored_settings(&scenario).is_err());
     }
 
     #[test]

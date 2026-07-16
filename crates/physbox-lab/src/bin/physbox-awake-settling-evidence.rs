@@ -1105,9 +1105,7 @@ fn candidate_definitions(base: SolverSettingsV1) -> Vec<CandidateDefinition> {
         for (iteration_index, iteration_count) in iterations.into_iter().enumerate() {
             let mut settings = base;
             settings.iterations = iteration_count;
-            let execution = if family == CandidateFamilyV3::PointJacobi && iteration_count == 1 {
-                GpuSolverExecutionV4::SELECTED
-            } else if family == CandidateFamilyV3::ColoredInPlace {
+            let execution = if family == CandidateFamilyV3::ColoredInPlace {
                 GpuSolverExecutionV4::colored_experiment(true, true)
             } else {
                 GpuSolverExecutionV4::normal_experiment(normal_solver, true, true)
@@ -2862,8 +2860,11 @@ mod tests {
                 "colored-in-place-i8",
             ]
         );
-        assert_eq!(candidates[0].settings, source.settings);
-        assert_eq!(candidates[0].execution, GpuSolverExecutionV4::SELECTED);
+        assert_eq!(candidates[0].settings.iterations, 1);
+        assert_eq!(
+            candidates[0].execution,
+            GpuSolverExecutionV4::experiment(true, true)
+        );
         assert!(candidates.iter().all(|candidate| {
             candidate.settings.iterations == candidate.iterations
                 && candidate.execution.warm_start
@@ -2899,7 +2900,7 @@ mod tests {
     }
 
     #[test]
-    fn colored_factorial_is_bounded_attribution_first_and_never_selected() {
+    fn colored_factorial_retains_the_now_selected_forward_i2_lane() {
         let source = p5_2_centered_rectangle_stack_scenario(2, 1).unwrap();
         let candidates = colored_candidate_definitions(source.settings);
         assert_eq!(
@@ -2919,12 +2920,23 @@ mod tests {
             ]
         );
         assert!(candidates.iter().all(|candidate| {
-            candidate.execution != GpuSolverExecutionV4::SELECTED
-                && candidate.settings.iterations == candidate.iterations
+            candidate.settings.iterations == candidate.iterations
                 && candidate.execution.warm_start
                 && candidate.execution.relaxation
                 && candidate.scheduling_policy == GpuSolverSchedulingPolicyV1::STANDARD
         }));
+        assert_eq!(
+            candidates
+                .iter()
+                .filter(|candidate| candidate.execution == GpuSolverExecutionV4::SELECTED)
+                .map(|candidate| candidate.id)
+                .collect::<Vec<_>>(),
+            vec![
+                "manifold-forward-i1",
+                "manifold-forward-i2",
+                "manifold-forward-i4"
+            ]
+        );
         assert_eq!(
             candidates
                 .iter()
@@ -2979,7 +2991,6 @@ mod tests {
                 && candidate.settings.iterations == 2
                 && candidate.execution
                     == GpuSolverExecutionV4::manifold_colored_block_experiment(true, true)
-                && candidate.execution != GpuSolverExecutionV4::SELECTED
                 && !candidate.question.is_empty()
         }));
     }

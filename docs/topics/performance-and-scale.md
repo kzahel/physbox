@@ -827,6 +827,14 @@ S5.5 broadphase remains separately necessary for candidate-generation scale,
 and may proceed in parallel, but neither lane satisfies the public crossover
 contract without correctness-qualified end-to-end evidence.
 
+Product-baseline checkpoint, 2026-07-16: the accepted forward manifold-block
+i2/full-rebuild/per-color lane is now the selected product execution. Its
+published 17.623 ms/1K row remains the controlling pre-optimization evidence,
+not an accepted performance band. S5.4c compares every scheduler candidate
+against this exact serial graph and must improve ordinary complete-step slope;
+changing only diagnostic attribution, empty-dispatch count, or color order
+cannot establish a crossover.
+
 ## Regression and claim gates
 
 Before representative hardware is selected, store named measurements and

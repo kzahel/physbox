@@ -1,9 +1,10 @@
 # Contact solver parallelism and scheduling
 
-Status: active laboratory authorization, 2026-07-16. Human review authorized
-the bounded S5.4b coloring factorial below. The product execution remains the
-provisional point-Jacobi graph; no candidate, quality band, tolerance, or
-default is promoted by this document.
+Status: active product baseline and scheduler work, 2026-07-16. Human review
+accepted forward manifold-block i2 with full rebuild/per-color indirect
+dispatch, and that exact lane is now the selected shared product execution.
+S5.4c must improve its scheduler-construction curve without weakening quality,
+capacity, portability, or the one-world contract.
 
 Governing direction:
 [one GPU-resident 2D physics world](physbox5-unified-gpu-physics.md).
@@ -385,13 +386,33 @@ requires full quality evidence plus human review before promotion. S5.4c may
 run beside the independent S5.5 broadphase bakeoff; neither result can by
 itself establish a scale advantage.
 
+Product-integration checkpoint, 2026-07-16: `GpuSolverExecutionV4::SELECTED`
+now names colored in-place accumulation, manifold-block normals, compact
+per-color indirect dispatch, manifold units, stable forward order, warm start,
+and relaxation. Shared P5.2 generated-contact product scenarios fix two solver
+iterations; the older S1.6 authored-contact point-Jacobi i1 lane remains an
+explicit laboratory control rather than an alternate product engine. Normal
+product construction and the cross-host `solver-manifold-i2` validation scene
+use the same selected graph and standard full-rebuild/per-color scheduling.
+Scene-contract v4 already carries this complete identity, so no schema fork or
+host-local selection was added.
+
+The promotion changes a physical product default from point-Jacobi i1 to the
+human-accepted manifold-block i2 lane. Exact native replay and capacity tests
+pass; 2/4/8 centered rectangle stacks now all preserve their structural gate
+through 1,200 steps. This integration does not accept the measured 17.623 ms
+1K cost, the 32/64-stack diagnostic failures, a residual band, or a liquid
+crossover. Fresh Metal headless, Chrome BrowserWebGPU, and hardware-backed
+`jstorrent-tablet` AVD validation pass; no physical device was attached. The
+serial selected lane remains the byte-exact S5.4c control.
+
 ## Fallback and reserve options
 
-- **Interim baseline swap.** Manifold block i2 improves structural preservation
-  and measured 1K cost over the provisional point-Jacobi execution, but it does
-  not dominate every residual-motion metric. Swapping the interactive baseline
-  is a physical-default change requiring explicit human acceptance and is not
-  authorized by S5.4b.
+- **Accepted baseline.** Manifold block i2 improves structural preservation and
+  measured 1K cost over the provisional point-Jacobi execution, but it does not
+  dominate every residual-motion metric. Human review accepted this exact
+  physical-default change; later scheduler work may not silently change its
+  assignment/order or quality contract.
 - **Workgroup-per-island sequential solve.** The bounded S5.4b comparator now
   implements this reserve for dynamic contact islands using one workgroup and
   barriers between color phases. Its current deterministic island builder is

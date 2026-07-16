@@ -886,6 +886,17 @@ parallel coloring comparator that changes order remains laboratory-only until
 fresh quality evidence and human review. This is not authorization for liquid,
 CPU fallback, native-only scheduling, or weaker capacity behavior.
 
+S5.4 product-integration checkpoint, 2026-07-16: the selected generated-
+contact product graph is now forward manifold-block i2 with colored in-place
+accumulation, compact per-color indirect dispatch, warm start, relaxation, and
+the standard full-rebuild scheduling policy. Shared P5.2 product scenarios
+carry the two-iteration setting, while the S1.6 authored point-Jacobi i1
+specification remains an explicit validation control. Product, headless,
+browser, Android, and the named validation scene all use the same constructor
+and scene-contract-v4 identity; no adapter owns a solver choice or second
+world. This is a human-approved physical-default promotion, not acceptance of
+the current performance curve, deep-stack diagnostics, or liquid readiness.
+
 Circle/circle and circle/rectangle contact are analytic. Rectangle/rectangle
 uses SAT to select a reference and incident edge, clips the incident segment,
 and produces stable vertex/edge feature pairs. Test feature stability around

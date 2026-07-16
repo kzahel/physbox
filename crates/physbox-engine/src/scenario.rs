@@ -10,6 +10,7 @@ pub const P5_2_CENTERED_STACK_EVIDENCE_STEPS: u32 = 1_200;
 pub const P5_2_BUCKET_EVIDENCE_STEPS: u32 = 600;
 pub const P5_2_COLORING_CHURN_VERSION: u32 = 1;
 pub const P5_2_MANIFOLD_COLOR_VALIDATION_STEPS: u32 = 8;
+pub const P5_2_SELECTED_SOLVER_ITERATIONS: u32 = 2;
 
 #[derive(Clone, Debug, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -380,6 +381,7 @@ pub fn p5_2_generated_floor_scenario(
     scenario.id = "p5.2-generated-rectangle-floor".to_owned();
     scenario.manifolds.clear();
     scenario.contact_cache.clear();
+    scenario.settings.iterations = P5_2_SELECTED_SOLVER_ITERATIONS;
     scenario.settings.contact_policy = Some(p5_2_contact_policy_candidate());
     Ok(scenario)
 }
@@ -683,6 +685,7 @@ pub fn p5_2_bucket_scenario(
         });
     }
     let mut settings = default_settings();
+    settings.iterations = P5_2_SELECTED_SOLVER_ITERATIONS;
     settings.contact_policy = Some(p5_2_contact_policy_candidate());
     let scenario = ScenarioV1 {
         schema_version: SCHEMA_VERSION,
@@ -783,6 +786,7 @@ pub fn p5_2_generated_scenario(
     scenario.manifolds.clear();
     scenario.contact_cache.clear();
     scenario.actions.clear();
+    scenario.settings.iterations = P5_2_SELECTED_SOLVER_ITERATIONS;
     scenario.settings.contact_policy = Some(p5_2_contact_policy_candidate());
     match kind {
         P5_2GeneratedScenarioKind::BilateralCircles => {
@@ -820,6 +824,7 @@ pub fn p5_2_generated_reset_grab_scenario() -> Result<BodyCommandScenarioV1, Sce
     script.scenario.id = "p5.2-generated-reset-grab-world".to_owned();
     script.scenario.manifolds.clear();
     script.scenario.contact_cache.clear();
+    script.scenario.settings.iterations = P5_2_SELECTED_SOLVER_ITERATIONS;
     script.scenario.settings.contact_policy = Some(p5_2_contact_policy_candidate());
     Ok(script)
 }
@@ -876,6 +881,7 @@ pub fn p5_2_generated_performance_scenario(
         }
     }
     let mut settings = default_settings();
+    settings.iterations = P5_2_SELECTED_SOLVER_ITERATIONS;
     settings.gravity = Vec2::ZERO;
     settings.contact_policy = Some(p5_2_contact_policy_candidate());
     Ok(ScenarioV1 {
@@ -1207,6 +1213,7 @@ pub fn p5_2_candidate_scenario(
         });
     }
     let mut settings = default_settings();
+    settings.iterations = P5_2_SELECTED_SOLVER_ITERATIONS;
     settings.gravity = Vec2::ZERO;
     Ok(ScenarioV1 {
         schema_version: SCHEMA_VERSION,
@@ -1723,6 +1730,10 @@ mod tests {
         for pattern in P5_2CandidatePattern::ALL {
             let scenario = p5_2_candidate_scenario(pattern, 32, 91).unwrap();
             scenario.validate().unwrap();
+            assert_eq!(
+                scenario.settings.iterations,
+                P5_2_SELECTED_SOLVER_ITERATIONS
+            );
             assert_eq!(scenario.bodies.len(), 32);
             assert_eq!(
                 canonical_json(&scenario).unwrap(),
@@ -1760,6 +1771,10 @@ mod tests {
             assert!(scenario.bodies.len() >= 2);
             assert_eq!(scenario.id, kind.name());
             assert_eq!(
+                scenario.settings.iterations,
+                P5_2_SELECTED_SOLVER_ITERATIONS
+            );
+            assert_eq!(
                 canonical_json(&scenario).unwrap(),
                 canonical_json(&p5_2_generated_scenario(kind, 120).unwrap()).unwrap()
             );
@@ -1768,6 +1783,10 @@ mod tests {
         let script = p5_2_generated_reset_grab_scenario().unwrap();
         script.validate().unwrap();
         assert!(script.scenario.manifolds.is_empty());
+        assert_eq!(
+            script.scenario.settings.iterations,
+            P5_2_SELECTED_SOLVER_ITERATIONS
+        );
     }
 
     #[test]
@@ -1778,6 +1797,10 @@ mod tests {
                     .unwrap();
             scenario.validate().unwrap();
             assert_eq!(scenario.bodies.len(), count as usize + 1);
+            assert_eq!(
+                scenario.settings.iterations,
+                P5_2_SELECTED_SOLVER_ITERATIONS
+            );
             assert_eq!(scenario.bodies[0].inverse_mass.get(), 0.0);
             assert!(scenario.bodies.iter().all(|body| !body.sleeping));
             assert!(scenario.bodies[1..].iter().all(|body| {
@@ -1885,6 +1908,10 @@ mod tests {
             let scenario = p5_2_bucket_scenario(shape, 100, P5_2_BUCKET_EVIDENCE_STEPS).unwrap();
             scenario.validate().unwrap();
             assert_eq!(scenario.bodies.len(), 103);
+            assert_eq!(
+                scenario.settings.iterations,
+                P5_2_SELECTED_SOLVER_ITERATIONS
+            );
             assert_eq!(scenario.seed, shape.seed());
             assert!(scenario.bodies[..3].iter().all(|body| {
                 body.inverse_mass.get() == 0.0 && matches!(body.shape, ShapeV1::Rectangle { .. })
@@ -1915,6 +1942,10 @@ mod tests {
             let scenario = p5_2_generated_performance_scenario(body_count).unwrap();
             scenario.validate().unwrap();
             assert_eq!(scenario.bodies.len(), body_count as usize);
+            assert_eq!(
+                scenario.settings.iterations,
+                P5_2_SELECTED_SOLVER_ITERATIONS
+            );
             assert!(scenario.manifolds.is_empty());
             assert_eq!(
                 canonical_json(&scenario).unwrap(),

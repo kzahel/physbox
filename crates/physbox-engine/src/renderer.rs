@@ -685,8 +685,8 @@ mod tests {
             let report = renderer.render(FrameInput::exact(120));
             assert!(report.scenario.complete);
             assert_eq!(report.scene_contract.contact_point_count, 2_048);
-            assert_eq!(report.scene_contract.solver_dispatches_per_step, 100);
-            assert_eq!(report.scene_contract.solver_capacity_bytes, 1_190_404);
+            assert_eq!(report.scene_contract.solver_dispatches_per_step, 1_334);
+            assert_eq!(report.scene_contract.solver_capacity_bytes, 1_523_728);
             assert!(!report.scene_contract.capacity_overflowed);
             renderer.read_capture_state().unwrap()
         };
@@ -1350,7 +1350,7 @@ mod tests {
     }
 
     #[test]
-    fn manifold_i2_validation_reports_the_exact_non_product_execution() {
+    fn manifold_i2_validation_reports_the_exact_selected_execution() {
         let mut renderer = pollster::block_on(OffscreenRenderer::new(
             320,
             200,
@@ -1373,7 +1373,7 @@ mod tests {
         );
         assert_eq!(
             crate::GpuSolverExecutionV4::SELECTED.normal_solver,
-            crate::GpuNormalSolverV4::PointJacobi
+            crate::GpuNormalSolverV4::ManifoldBlock
         );
         assert_eq!(report.fixed_steps_total, 8);
         assert!(!report.scene_contract.capacity_overflowed);

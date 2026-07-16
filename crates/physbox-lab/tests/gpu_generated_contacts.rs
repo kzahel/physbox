@@ -20,7 +20,7 @@ fn generated_contact_benchmark_uses_qualified_split_scopes() {
     let scenario = p5_2_generated_performance_scenario(32).unwrap();
     let benchmark = pollster::block_on(benchmark_gpu_generated_contacts(&scenario, 1, 2)).unwrap();
     assert!(benchmark.correctness.failure.is_none());
-    assert_eq!(benchmark.dispatches_per_step, 100);
+    assert_eq!(benchmark.dispatches_per_step, 1_334);
     assert_eq!(benchmark.host_completion_seconds.len(), 2);
     assert_eq!(benchmark.cpu_encode_submit_seconds.len(), 2);
     assert_eq!(
@@ -161,14 +161,19 @@ fn colored_diagnostic_sources_cover_deep_stacks_and_construction_erase_churn() {
 }
 
 #[test]
-fn solver_experiments_are_explicit_replayable_and_not_product_defaults() {
+fn selected_solver_and_point_experiments_are_explicit_and_replayable() {
     let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
     let mut scenario = p5_2_centered_rectangle_stack_scenario(2, 30).unwrap();
     scenario.settings.iterations = 2;
-    assert!(runner.run(&scenario, 30).is_err());
+    let selected = runner.run(&scenario, 30).unwrap();
     assert_eq!(
         GpuSolverExecutionV4::SELECTED.normal_solver,
-        GpuNormalSolverV4::PointJacobi
+        GpuNormalSolverV4::ManifoldBlock
+    );
+    assert_eq!(selected.solver_execution, GpuSolverExecutionV4::SELECTED);
+    assert_eq!(
+        selected.solver_scheduling_policy,
+        GpuSolverSchedulingPolicyV1::STANDARD
     );
 
     let execution = GpuSolverExecutionV4::experiment(true, true);
@@ -533,7 +538,7 @@ fn scheduling_comparators_reject_non_compact_solver_executions() {
         .run_scheduling_experiment(
             &scenario,
             1,
-            GpuSolverExecutionV4::SELECTED,
+            GpuSolverExecutionV4::experiment(true, true),
             GpuSolverSchedulingPolicyV1::INCREMENTAL,
         )
         .unwrap_err();
@@ -1054,8 +1059,9 @@ fn block_mass_split_uses_exact_manifold_incidence_and_coupled_matrix() {
 }
 
 #[test]
-fn product_pair_slots_and_body_edges_match_full_key_canonical_oracles() {
+fn point_pair_slots_and_body_edges_match_full_key_canonical_oracles() {
     let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
+    let execution = GpuSolverExecutionV4::experiment(true, true);
     for kind in P5_2GeneratedScenarioKind::ALL {
         let steps = if kind == P5_2GeneratedScenarioKind::PairChurn {
             30
@@ -1064,12 +1070,23 @@ fn product_pair_slots_and_body_edges_match_full_key_canonical_oracles() {
         };
         let scenario = p5_2_generated_scenario(kind, steps).unwrap();
         for completed_steps in 1..=steps {
-            let product = runner.run(&scenario, completed_steps).unwrap();
+            let product = runner
+                .run_experiment(&scenario, completed_steps, execution)
+                .unwrap();
             let full_key = runner
-                .run_full_key_oracle(&scenario, completed_steps)
+                .run_topology_experiment(
+                    &scenario,
+                    completed_steps,
+                    GpuContactPersistenceTopology::FullKeyOracle,
+                    GpuGatherTopology::CanonicalBodyScan,
+                    false,
+                    false,
+                    u32::MAX,
+                    execution,
+                )
                 .unwrap();
             let reversed_and_colliding = runner
-                .run_with_topologies(
+                .run_topology_experiment(
                     &scenario,
                     completed_steps,
                     GpuContactPersistenceTopology::StablePairSlot,
@@ -1077,6 +1094,7 @@ fn product_pair_slots_and_body_edges_match_full_key_canonical_oracles() {
                     false,
                     true,
                     0,
+                    execution,
                 )
                 .unwrap();
 
@@ -1121,14 +1139,14 @@ fn product_pair_slots_and_body_edges_match_full_key_canonical_oracles() {
                 reversed_and_colliding.gather_topology.topology,
                 GpuGatherTopology::CanonicalBodyScan
             );
-            assert_eq!(product.dispatches_per_step, 97);
-            assert_eq!(full_key.dispatches_per_step, 282);
+            assert_eq!(product.dispatches_per_step, 129);
+            assert_eq!(full_key.dispatches_per_step, 314);
         }
     }
 }
 
 #[test]
-fn generated_bridge_matches_the_scalar_qualified_authored_solver() {
+fn point_jacobi_bridge_matches_the_scalar_qualified_authored_solver() {
     let generated = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
     let narrowphase = pollster::block_on(GpuNarrowphaseRunner::new()).unwrap();
     for kind in [
@@ -1137,7 +1155,8 @@ fn generated_bridge_matches_the_scalar_qualified_authored_solver() {
         P5_2GeneratedScenarioKind::FrictionSlide,
         P5_2GeneratedScenarioKind::Restitution,
     ] {
-        let source = p5_2_generated_scenario(kind, 1).unwrap();
+        let mut source = p5_2_generated_scenario(kind, 1).unwrap();
+        source.settings.iterations = 1;
         let contacts = narrowphase.run(&source, None, None).unwrap();
         assert!(contacts.failure.is_none());
         assert!(!contacts.manifolds.is_empty(), "{kind:?}");
@@ -1147,7 +1166,9 @@ fn generated_bridge_matches_the_scalar_qualified_authored_solver() {
             GpuSolverCandidate::JacobiGather,
         ))
         .unwrap();
-        let actual = generated.run(&source, 1).unwrap();
+        let actual = generated
+            .run_experiment(&source, 1, GpuSolverExecutionV4::experiment(true, true))
+            .unwrap();
         assert_eq!(
             actual.pass_evidence.contacts.len(),
             actual.cache.len(),
@@ -1212,7 +1233,7 @@ fn generated_floor_contacts_settle_and_replay_exactly() {
         assert_eq!(first.cache, replay.cache);
         assert_eq!(first.work, replay.work);
         assert!(first.failure.is_none());
-        assert_eq!(first.dispatches_per_step, 97);
+        assert_eq!(first.dispatches_per_step, 1_331);
         assert!(
             (first.bodies[0].position.y - expected_height).abs() <= 2.0e-2,
             "{kind:?}: {:?}",
@@ -1338,12 +1359,7 @@ fn centered_rectangle_stacks_complete_exact_steps_and_replay() {
         assert!(output.capacities.iter().all(|capacity| capacity.accepted));
         let overflowed = output.capacities.iter().any(|capacity| capacity.overflowed);
         let (passed, reason) = centered_stack_structure(&scenario, &output.bodies, overflowed, 0.0);
-        assert_eq!(
-            passed,
-            count == 2,
-            "count {count}: {reason}: {:?}",
-            output.bodies
-        );
+        assert!(passed, "count {count}: {reason}: {:?}", output.bodies);
         let replay = runner
             .run(&scenario, P5_2_CENTERED_STACK_EVIDENCE_STEPS)
             .unwrap();
