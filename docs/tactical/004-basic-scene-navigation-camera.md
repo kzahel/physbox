@@ -1,8 +1,8 @@
 # S4: Interactive evaluation workbench
 
 Status: S4.3 deployed grab-feel checkpoint accepted, 2026-07-15; the S3
-combined representation gate and S4.4 construction gate pass, while the S4.5
-combined human checkpoint remains open through
+combined representation gate and S4.4 construction gate pass. S4.5
+construction-feel review is now ready at the mandatory S5.4 checkpoint through
 [S5](005-interactive-rigid-quality-and-scale.md).
 Direction: [one shared host and renderer](../platform-architecture.md).
 Bring-up checkpoint: [P5.2a](../bringup-plan.md#p52a--interactive-evaluation-workbench-authorized).

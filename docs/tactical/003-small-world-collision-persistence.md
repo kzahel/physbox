@@ -1,7 +1,8 @@
 # S3: Small-world collision and contact persistence
 
-Status: active; combined representation gate passed, 2026-07-15; awake
-solver-quality acceptance remains in S5.4.
+Status: manual checkpoint, 2026-07-16; combined representation gate passed,
+but S5.4 found no acceptable awake solver execution and recommends a bounded
+architecture experiment before closure.
 Direction: [one GPU-resident 2D physics world](../topics/physbox5-unified-gpu-physics.md).
 Bring-up stage: [P5.2](../bringup-plan.md#p52--small-world-collision-and-persistence-active).
 Predecessor: [accepted P5.1 body core](../../evidence/p5.1-s2.6/README.md).
@@ -547,6 +548,14 @@ two minimized physical-policy failures and the 4/8-body awake stack failures
 remain explicit S5.4 inputs. S3 therefore stays active until the mandatory
 S5.4 human review accepts a quality path; P5.3 also remains blocked by that
 review and completion of the construction checkpoint.
+
+S5.4 update, 2026-07-16: construction is complete and the
+[awake settling package](../../evidence/p5.2b-s5.4/README.md) confirms all
+nine reversible executions lose the 8-body stack while clean awake Box2D
+preserves it. The representation exactness decision still stands, but no
+contact-quality band or solver default is accepted. S3 remains at the human
+checkpoint for the recommended manifold-coupled two-point laboratory question;
+P5.3 remains blocked until that direction is reviewed.
 
 ## Validation baseline
 

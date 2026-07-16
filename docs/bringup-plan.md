@@ -120,6 +120,17 @@ diagnosed. The first post-selection slice must integrate and revalidate both
 representation views and publish structural stack curves. S3 closure and any
 CPU crossover claim remain gated on that combined evidence.
 
+S5.4 awake-quality checkpoint, 2026-07-16: selected pair-slot plus stable-edge
+integration and bounded GPU construction are complete. Nine reversible
+executions have now been compared on six awake stack/pyramid sources against
+clean awake Box2D. Every GPU candidate loses the 8-body stack while Box2D
+preserves it, and additional substeps/iterations are non-monotonic. The
+[review package](../evidence/p5.2b-s5.4/README.md) preserves all first failures,
+complete cost, synchronized playback, and platform evidence. No candidate is
+promoted. Human review must choose whether to authorize the recommended
+manifold-coupled two-point laboratory experiment (and possible colored/in-place
+comparison) before P5.3 broadphase work begins.
+
 The first S3.5a representation checkpoint implements the stable pair-slot
 comparator with full feature verification and deterministic generational slot
 recycling. Its correctness/adversarial gates pass and its combined

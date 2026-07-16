@@ -675,6 +675,19 @@ P50 and remain explicitly quadratic all-pairs small-world measurements. Raw
 results close the representation-performance gate, not the solver-quality,
 broadphase-scale, liquid, or CPU-crossover gates.
 
+S5.4 awake candidate cost, 2026-07-16: clean Apple M4 Pro Metal measurements
+retain 20 complete samples for nine reversible solver executions at
+32/256/1,024 bodies. The selected 4x1 graph is
+`0.635`/`1.867`/`3.532 ms` P50 with 100/103/103 dispatches, versus the fastest
+optimized Box2D rows at `0.0150`/`0.0785`/`0.170 ms`. The selected 1K row uses
+about 21% of a 60 Hz frame but remains 20.8x slower than Box2D. The other
+quality-relevant 1K rows span `3.244 ms` for 8x1 through `5.981 ms` for
+combined 8x2, with 167 through 231 dispatches. All timing rows are
+capacity-clean and correctness-hashed, but none is physically qualified
+because every candidate loses the awake 8-body stack. These measurements do
+not establish a GPU crossover and must not be extrapolated to liquid-heavy or
+scalable-broadphase workloads.
+
 ## Regression and claim gates
 
 Before representative hardware is selected, store named measurements and

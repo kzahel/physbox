@@ -1,6 +1,7 @@
 # S5: Interactive rigid quality, construction, and scale
 
-Status: active, 2026-07-15.
+Status: manual checkpoint, 2026-07-16. S5.4 evidence is complete; solver-quality
+direction and continued construction feel require human review before S5.5.
 Direction: [one GPU-resident 2D physics world](../topics/physbox5-unified-gpu-physics.md).
 Scale contract: [performance and scale](../topics/performance-and-scale.md).
 Dependencies: [S3 collision/persistence](003-small-world-collision-persistence.md)
@@ -341,16 +342,16 @@ the mandatory S5.4 review.
 
 ### S5.4 — awake settling and tuning bakeoff
 
-- [ ] Run 2/4/8 rectangle stacks and small pyramids with sleeping disabled in
+- [x] Run 2/4/8 rectangle stacks and small pyramids with sleeping disabled in
   both GPU and Box2D lanes to separate solver residuals from sleep policy.
-- [ ] Attribute visible jitter to contact churn, warm-start transfer,
+- [x] Attribute visible jitter to contact churn, warm-start transfer,
   two-point torque balance, convergence, relaxation, speculative distance,
   depenetration, or another measured source; preserve the first divergence.
-- [ ] Evaluate reversible tuning candidates inside the accepted solver family,
+- [x] Evaluate reversible tuning candidates inside the accepted solver family,
   including substep/iteration count, relaxation, warm-start policy, and the
   already governed bias/contact policy. Include their complete GPU cost.
-- [ ] Minimize every structural failure and add it as a permanent reproducer.
-- [ ] Publish synchronized playback and an objective recommendation without
+- [x] Minimize every structural failure and add it as a permanent reproducer.
+- [x] Publish synchronized playback and an objective recommendation without
   accepting a new physical default or quality band silently.
 
 Gate: the package distinguishes stable awake behavior, bounded residual motion,
@@ -401,6 +402,30 @@ synchronized playback, and replays every first structural failure into an
 exact scenario artifact. Candidate output remains explicitly experimental;
 the compact atomic manifest retains the complete data without pretty-print
 inflation. The clean evidence package and recommendation are the next commit.
+
+S5.4 completion, 2026-07-16: the clean
+[awake settling package](../../evidence/p5.2b-s5.4/README.md) compares nine
+reversible executions on all six awake sources through 1,200 exact steps. All
+54 GPU lanes replay exactly and remain capacity-clean; 72 process-isolated
+clean pinned Box2D checkpoints replay exactly with sleep disabled. Box2D keeps
+every structure upright with settled-window linear/angular maxima below
+`2.72e-6`/`1.78e-6`, while every GPU candidate loses the 8-body stack. More
+substeps or iterations, warm-start/relaxation removal, and lower bias are
+non-monotonic. The governed bounded-contact lane is byte-identical to the
+selected execution on this corpus, excluding that policy change as an
+explanation.
+
+Twenty first failures are preserved as exact permanent reproducers. The
+20-sample selected complete-graph P50 is `0.635`/`1.867`/`3.532 ms` at
+32/256/1,024 bodies versus fastest optimized Box2D at
+`0.0150`/`0.0785`/`0.170 ms`; the 1K GPU row fits 60 Hz but is 20.8x slower and
+is not quality-qualified. Native/headless, browser, and hardware-backed
+`jstorrent-tablet` AVD artifacts are fresh; no physical device was attached.
+No candidate, quality band, tolerance, oracle rule, or product constructor was
+promoted. The recommended next laboratory question is manifold-coupled
+two-point normal solving, with a colored/in-place comparison if preserving the
+accepted equal-and-opposite accumulation proves impossible. That is a
+mandatory human architecture decision before S5.5.
 
 ### S5.5 — P5.3 scalable broadphase bakeoff
 

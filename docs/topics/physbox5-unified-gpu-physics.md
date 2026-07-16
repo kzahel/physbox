@@ -710,6 +710,26 @@ physical-device lane. This closes bounded construction mechanics, not
 large-world allocation, arbitrary geometry, physical defaults, or subjective
 construction feel.
 
+Awake solver-quality checkpoint, 2026-07-16: the clean
+[S5.4 package](../../evidence/p5.2b-s5.4/README.md) compares the selected 4x1
+execution with eight reversible substep, iteration, warm-start, relaxation,
+bias, and governed contact-policy variants on 2/4/8 rectangle stacks and
+2/3/4-row pyramids. Clean pinned Box2D remains awake and effectively
+motionless while preserving every structure. All GPU variants lose the
+8-body stack; improvements on smaller fixtures are non-monotonic, and a lane
+can report negligible residual motion only after toppling. The bounded-policy
+lane is byte-identical to the selected execution on these initially touching
+sources, so speculation/depenetration does not explain the observed failure.
+
+No physical default, quality band, tolerance, oracle precedence, product
+constructor, or solver architecture changes at this checkpoint. Independent
+two-point Jacobi coupling/convergence is the leading measured hypothesis, not
+a proven root cause. The recommended next bounded laboratory experiment is a
+manifold-coupled two-point normal solve that preserves equal-and-opposite
+records and the selected stable views where possible; if it cannot, compare
+the documented colored/in-place family before changing product architecture.
+Human review is required before that experiment or P5.3 broadphase work.
+
 Circle/circle and circle/rectangle contact are analytic. Rectangle/rectangle
 uses SAT to select a reference and incident edge, clips the incident segment,
 and produces stable vertex/edge feature pairs. Test feature stability around
