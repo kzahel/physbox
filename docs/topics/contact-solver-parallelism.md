@@ -426,6 +426,19 @@ Metal smoke is materially faster, but robust ordinary-graph slope evidence is
 still required before deciding whether the remaining serial assignment
 justifies an order-changing parallel-coloring comparator.
 
+Clean compaction measurement, 2026-07-16: 21 retained Metal samples at clean
+revision `42c5bff` confirm that the byte-exact candidate reduces generated 1K
+ordinary cost from `17.575` to `12.347 ms` and the 256-to-1K marginal slope
+from `10.691` to `5.355 us/body`. All five assignment and compacted-order
+digests match. The 10K authored row improves by 24.6%; the 1K authored row is
+13.9% slower because three added dispatches dominate that small scope. The
+remaining serial greedy construction measures `9.618 ms` in the separately
+instrumented candidate 1K row, while compaction is `0.098 ms`. The accepted
+trigger therefore authorizes a bounded deterministic parallel-coloring
+comparator. Because that comparator can change Gauss-Seidel order, it remains
+unpromoted until full quality evidence and human review. The product policy is
+still the serial `full-rebuild` control.
+
 ## Fallback and reserve options
 
 - **Accepted baseline.** Manifold block i2 improves structural preservation and

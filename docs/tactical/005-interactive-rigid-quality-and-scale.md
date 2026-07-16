@@ -768,7 +768,7 @@ fresh evidence supports a different implementation.
   while preserving the accepted color assignment and within-color order byte
   for byte. Keep the serial compactor as a direct control and reject the whole
   stage atomically on scan, range, or capacity failure.
-- [ ] Measure the byte-exact compaction lane before changing color assignment.
+- [x] Measure the byte-exact compaction lane before changing color assignment.
   It must reduce complete cost and the 256-to-1K marginal slope on the same
   adapter; a diagnostic timestamp improvement without an ordinary-graph
   improvement does not qualify.
@@ -826,6 +826,19 @@ bodies, cache, contacts, and indirect arguments. A dirty one-sample Metal
 smoke reduced compaction from `7.994` to `0.098 ms` and ordinary 1K cost from
 `17.535` to `12.368 ms`; this is a promising implementation smoke, not the
 same-adapter multi-sample gate checked by the next item.
+
+Clean compaction evidence checkpoint, 2026-07-16: revision `42c5bff` retains
+21 Metal samples after six warmups for both policies. Generated complete-step
+P50 improves from `17.575` to `12.347 ms` at 1K and the governed 256-to-1K
+slope falls from `10.691` to `5.355 us/body`; assignments and compacted order
+match on every row. Authored 10K improves from `15.275` to `11.522 ms`, while
+authored 1K regresses from `5.302` to `6.036 ms` because the extra three
+dispatches dominate that small isolated solver graph. Separately instrumented
+candidate construction remains `9.618 ms` at generated 1K versus `0.098 ms`
+for compaction. Fresh four-worker Box2D is `0.153 ms` at 1K and its 256-to-1K
+marginal slope is about `0.090 us/body`. The byte-exact gate passes, but serial
+greedy assignment remains material and fires the recorded parallel-coloring
+comparator trigger. No production policy is promoted by this checkpoint.
 
 Commit boundaries: accepted product-baseline integration; scheduler benchmark
 contract; byte-exact parallel compaction; evidence-triggered parallel coloring

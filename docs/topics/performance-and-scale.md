@@ -855,6 +855,20 @@ ordinary cost from `17.535` to `12.368 ms` and diagnostic compaction from
 are directional only. Promotion or a parallel-coloring trigger requires fresh
 same-adapter multi-sample ordinary slopes and the full correctness corpus.
 
+Clean compaction measurement, 2026-07-16: paired 21-sample Metal runs at clean
+revision `42c5bff` qualify the byte-exact candidate. Generated ordinary P50 is
+`5.960`, `8.234`, and `12.347 ms` at 32/256/1K versus the serial control's
+`6.003`, `9.364`, and `17.575 ms`. The 256-to-1K marginal cost falls by 49.9%
+from `10.691` to `5.355 us/body`. Authored 10K improves 24.6%; authored 1K
+regresses 13.9%, exposing the three-dispatch small-scope floor. Fresh optimized
+four-worker Box2D is `0.153 ms` at 1K and has a `0.090 us/body` 256-to-1K
+slope, so the candidate remains 80.9x slower at 1K with a 59.7x worse marginal
+curve. Separately instrumented serial assignment remains `9.618 ms` at 1K;
+parallel compaction is `0.098 ms`. This satisfies the order-preserving
+optimization gate and fires, rather than resolves, the required parallel-color
+construction work. It does not establish a crossover or change the product
+selection.
+
 ## Regression and claim gates
 
 Before representative hardware is selected, store named measurements and
