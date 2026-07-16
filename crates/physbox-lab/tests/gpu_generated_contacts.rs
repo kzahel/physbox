@@ -82,6 +82,42 @@ fn solver_experiments_are_explicit_replayable_and_not_product_defaults() {
 }
 
 #[test]
+fn pose_history_matches_every_exact_prefix_without_intermediate_mapping() {
+    let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
+    let mut scenario = p5_2_centered_rectangle_stack_scenario(16, 8).unwrap();
+    scenario.settings.iterations = 8;
+    let execution = GpuSolverExecutionV2::experiment(true, true);
+    let history = runner
+        .run_experiment_body_history(&scenario, 8, execution)
+        .unwrap();
+    assert_eq!(history.len(), 8);
+
+    let history_failure = history
+        .iter()
+        .position(|bodies| !centered_stack_structure(&scenario, bodies, false, 0.0).0);
+    let mut prefix_failure = None;
+    for completed_steps in 1..=8 {
+        let prefix = runner
+            .run_experiment(&scenario, completed_steps, execution)
+            .unwrap();
+        for (history_body, prefix_body) in history[completed_steps as usize - 1]
+            .iter()
+            .zip(&prefix.bodies)
+        {
+            assert_eq!(history_body.position, prefix_body.position);
+            assert_eq!(history_body.angle, prefix_body.angle);
+        }
+        if prefix_failure.is_none()
+            && !centered_stack_structure(&scenario, &prefix.bodies, false, 0.0).0
+        {
+            prefix_failure = Some(completed_steps as usize - 1);
+        }
+    }
+    assert_eq!(history_failure, prefix_failure);
+    assert!(history_failure.is_some(), "fixture must exercise a failure");
+}
+
+#[test]
 fn scalar_mass_split_uses_exact_gpu_point_incidence_on_both_gather_topologies() {
     let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
     let scenario = p5_2_centered_rectangle_stack_scenario(2, 1).unwrap();

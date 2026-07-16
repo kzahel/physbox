@@ -556,6 +556,20 @@ fits a complete 1K step below 16.67 ms. This checkpoint implements the runner;
 the clean measured package and any conditionally required comparator remain
 separate commits.
 
+Every-step evidence correction, 2026-07-16: convergence decision version 2 now
+defines structural preservation by evaluating every one of the 1,200 requested
+GPU steps. The bounded native runner copies post-step poses and
+construction-capacity counters into one
+validation-only history buffer, maps it only after the final step, and scans
+the exact ordered history without assuming that failure is monotonic. A lane
+that topples or separates transiently and later recovers therefore retains its
+first failed step and no longer qualifies as preserving the corpus. Settled
+speed and energy trends are compared only when both adjacent iteration lanes
+preserve structure throughout, avoiding a misleading comparison between a
+quiet toppled structure and an active upright one. This changes evidence
+reporting only; it does not change simulation execution or the colored-family
+trigger found by the preliminary probe.
+
 ### S5.5 — P5.3 scalable broadphase bakeoff
 
 Dependency: the human accepts an S5.4 path, S3 closes, and the S4 construction

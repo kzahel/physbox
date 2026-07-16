@@ -162,6 +162,7 @@ struct CandidateSceneEvidence {
     exact_replay: bool,
     structural_pass: bool,
     structural_reason: String,
+    preserves_structure_through_run: bool,
     first_structural_failure_step: Option<u32>,
     window: AwakeSettlingWindowV1,
     first_authority_divergence: Option<AwakeFirstDivergenceV1>,
@@ -547,6 +548,11 @@ fn convergence_decision(
                         higher_value: f64::from(higher_failure),
                     });
                 }
+                if !(lower.preserves_structure_through_run
+                    && higher.preserves_structure_through_run)
+                {
+                    continue;
+                }
                 for (dimension, lower_value, higher_value) in [
                     (
                         "settled-residual-linear-speed-max",
@@ -613,7 +619,7 @@ fn convergence_decision(
                         .iter()
                         .find(|evidence| evidence.candidate == candidate.id)
                 })
-                .is_some_and(|evidence| evidence.structural_pass)
+                .is_some_and(|evidence| evidence.preserves_structure_through_run)
         });
         let exact_and_capacity_clean = scenes.iter().all(|scene| {
             candidate_scene(scene, candidate.id).is_ok_and(|evidence| {
@@ -664,7 +670,7 @@ fn convergence_decision(
         )
     };
     Ok(ConvergenceDecision {
-        version: 1,
+        version: 2,
         feasibility_boundary_seconds: FEASIBILITY_BOUNDARY_SECONDS,
         required_existing_scenes: EXISTING_S5_4_SCENES,
         monotonic_violations,
@@ -733,8 +739,6 @@ fn evaluate_scene(
         let mut deltas = Vec::new();
         let mut previous_manifolds = None;
         let mut previous_cache = None;
-        let mut first_failed_checkpoint = None;
-        let mut prior_passing_checkpoint = 0;
         for (&completed_steps, authority_sample) in CHECKPOINTS.iter().zip(&authority) {
             let output = runner.run_experiment(&scenario, completed_steps, candidate.execution)?;
             let result_hash = serialized_hash(&output)?;
@@ -774,12 +778,6 @@ fn evaluate_scene(
                 .iter()
                 .all(|capacity| capacity.accepted && !capacity.overflowed)
                 && output.failure.is_none();
-            let (structural_pass, _) = structure(kind, &scenario, &output.bodies, !capacity_clean);
-            if structural_pass && first_failed_checkpoint.is_none() {
-                prior_passing_checkpoint = completed_steps;
-            } else if !structural_pass && first_failed_checkpoint.is_none() {
-                first_failed_checkpoint = Some(completed_steps);
-            }
             previous_manifolds = Some(manifolds);
             previous_cache = Some(output.cache.clone());
             observations.push(observation.clone());
@@ -811,18 +809,16 @@ fn evaluate_scene(
             &final_sample.bodies,
             !final_sample.capacity_clean,
         );
-        let first_structural_failure_step = if let Some(failed) = first_failed_checkpoint {
-            Some(find_first_failure_step(
-                runner,
-                candidate,
-                &scenario,
-                kind,
-                prior_passing_checkpoint,
-                failed,
-            )?)
-        } else {
-            None
-        };
+        let pose_history = runner.run_experiment_body_history(
+            &scenario,
+            SETTLED_WINDOW_END,
+            candidate.execution,
+        )?;
+        let first_structural_failure_step = pose_history
+            .iter()
+            .position(|bodies| !structure(kind, &scenario, bodies, false).0)
+            .map(|step| step as u32 + 1);
+        let preserves_structure_through_run = first_structural_failure_step.is_none();
         let replay = runner.run_experiment(&scenario, SETTLED_WINDOW_END, candidate.execution)?;
         let exact_replay = serialized_hash(&replay)? == final_sample.result_hash;
         candidate_evidence.push(CandidateSceneEvidence {
@@ -831,6 +827,7 @@ fn evaluate_scene(
             exact_replay,
             structural_pass,
             structural_reason,
+            preserves_structure_through_run,
             first_structural_failure_step,
             window: summarize_awake_window(
                 &observations,
@@ -952,33 +949,6 @@ fn upright_pyramid_structure(
         true,
         "all pyramid rectangles remain finite and upright".to_owned(),
     )
-}
-
-fn find_first_failure_step(
-    runner: &GpuGeneratedContactRunner,
-    candidate: &CandidateDefinition,
-    scenario: &ScenarioV1,
-    kind: SceneKind,
-    passing_step: u32,
-    failing_step: u32,
-) -> Result<u32, String> {
-    let mut low = passing_step;
-    let mut high = failing_step;
-    while high.saturating_sub(low) > 1 {
-        let middle = low + (high - low) / 2;
-        let output = runner.run_experiment(scenario, middle, candidate.execution)?;
-        let overflowed = output.failure.is_some()
-            || output
-                .capacities
-                .iter()
-                .any(|capacity| !capacity.accepted || capacity.overflowed);
-        if structure(kind, scenario, &output.bodies, overflowed).0 {
-            low = middle;
-        } else {
-            high = middle;
-        }
-    }
-    Ok(high)
 }
 
 fn minimize_failure_scene_aliases(failures: &mut [FailureRecord]) {

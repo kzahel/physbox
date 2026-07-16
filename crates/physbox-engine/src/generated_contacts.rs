@@ -1396,6 +1396,159 @@ impl GpuGeneratedContactRunner {
         )
     }
 
+    /// Captures post-step body poses for bounded native validation while keeping
+    /// every result resident until the requested step count has completed.
+    pub fn run_experiment_body_history(
+        &self,
+        scenario: &ScenarioV1,
+        completed_steps: u32,
+        execution: GpuSolverExecutionV2,
+    ) -> Result<Vec<Vec<physbox_contracts::BodyStateV1>>, String> {
+        if completed_steps == 0 {
+            return Err("generated contact pose history requires at least one step".to_owned());
+        }
+        scenario.validate().map_err(|error| error.to_string())?;
+        let body_count = u32::try_from(scenario.bodies.len())
+            .map_err(|_| "generated validation body count exceeds u32".to_owned())?;
+        let storage = GpuBodyStorage::new(
+            &self.device,
+            body_count,
+            crate::BODY_COMMAND_CAPACITY,
+            &scenario.bodies,
+        )?;
+        let graph = GpuGeneratedContactGraph::new_with_topologies_and_execution(
+            &self.device,
+            &storage,
+            scenario,
+            GpuContactPersistenceTopology::StablePairSlot,
+            GpuGatherTopology::StableBodyEdge,
+            false,
+            false,
+            u32::MAX,
+            execution,
+        )?;
+        let pose_step_bytes = u64::from(body_count) * size_of::<[f32; 4]>() as u64;
+        let pose_history_bytes = pose_step_bytes
+            .checked_mul(u64::from(completed_steps))
+            .ok_or_else(|| "generated pose-history byte count overflowed".to_owned())?;
+        let capacity_step_bytes = u64::from(COLLISION_CAPACITY_COUNTER_BYTES) * 4;
+        let capacity_history_bytes = capacity_step_bytes
+            .checked_mul(u64::from(completed_steps))
+            .ok_or_else(|| "generated capacity-history byte count overflowed".to_owned())?;
+        let pose_history = readback(
+            &self.device,
+            "generated_pose_history_readback",
+            pose_history_bytes,
+        );
+        let capacity_history = readback(
+            &self.device,
+            "generated_capacity_history_readback",
+            capacity_history_bytes,
+        );
+        let step_readback = readback(&self.device, "generated_history_step_readback", 4);
+
+        let mut encoded_steps = 0;
+        while encoded_steps < completed_steps {
+            let chunk = (completed_steps - encoded_steps).min(VALIDATION_STEPS_PER_SUBMISSION);
+            let mut encoder = self
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("physbox5_generated_contact_pose_history"),
+                });
+            for local_step in 0..chunk {
+                graph.encode_step(&mut encoder, false);
+                let step = encoded_steps + local_step;
+                encoder.copy_buffer_to_buffer(
+                    storage.pose_buffer(),
+                    0,
+                    &pose_history,
+                    u64::from(step) * pose_step_bytes,
+                    pose_step_bytes,
+                );
+                let current = graph.parity.get();
+                for (index, source) in [
+                    graph.candidate.candidate_capacity_buffer(),
+                    graph.narrowphase.manifold_capacity_buffer(),
+                    graph.narrowphase.point_capacity_buffer(),
+                    graph.persistence.current_capacity(current),
+                ]
+                .into_iter()
+                .enumerate()
+                {
+                    encoder.copy_buffer_to_buffer(
+                        source,
+                        0,
+                        &capacity_history,
+                        u64::from(step) * capacity_step_bytes
+                            + index as u64 * u64::from(COLLISION_CAPACITY_COUNTER_BYTES),
+                        u64::from(COLLISION_CAPACITY_COUNTER_BYTES),
+                    );
+                }
+            }
+            self.queue.submit([encoder.finish()]);
+            encoded_steps += chunk;
+        }
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("physbox5_generated_contact_pose_history_step"),
+            });
+        let (step_source, step_offset) = graph.persistence.step_counter_source();
+        encoder.copy_buffer_to_buffer(step_source, step_offset, &step_readback, 0, 4);
+        self.queue.submit([encoder.finish()]);
+        self.device
+            .poll(wgpu::PollType::Wait)
+            .map_err(|error| format!("generated pose-history poll failed: {error}"))?;
+
+        let gpu_steps =
+            crate::collision_candidates::map_values::<u32>(&self.device, &step_readback, 1)?[0];
+        if gpu_steps != completed_steps {
+            return Err(format!(
+                "GPU completed-step counter {gpu_steps} differed from {completed_steps}"
+            ));
+        }
+        let poses = crate::collision_candidates::map_values::<[f32; 4]>(
+            &self.device,
+            &pose_history,
+            scenario.bodies.len() * completed_steps as usize,
+        )?;
+        let capacities = crate::collision_candidates::map_values::<[u32; 4]>(
+            &self.device,
+            &capacity_history,
+            4 * completed_steps as usize,
+        )?;
+        let mut history = Vec::with_capacity(completed_steps as usize);
+        for step in 0..completed_steps as usize {
+            let step_capacities = &capacities[step * 4..step * 4 + 4];
+            if step_capacities[0][3] != 0
+                || step_capacities[1][2] != step_capacities[1][1]
+                || step_capacities[2][2] != step_capacities[2][1]
+                || step_capacities[3][2] != step_capacities[3][1]
+            {
+                return Err(format!(
+                    "generated construction capacity rejected post-step {} pose history",
+                    step + 1
+                ));
+            }
+            let mut bodies = scenario.bodies.clone();
+            for (body_index, body) in bodies.iter_mut().enumerate() {
+                let pose = poses[step * scenario.bodies.len() + body_index];
+                if !pose[0].is_finite() || !pose[1].is_finite() {
+                    return Err(format!(
+                        "body {body_index} has a non-finite post-step {} position",
+                        step + 1
+                    ));
+                }
+                body.position.x = pose[0];
+                body.position.y = pose[1];
+                body.angle = physbox_contracts::FiniteF32::new(pose[2])
+                    .map_err(|error| error.to_string())?;
+            }
+            history.push(bodies);
+        }
+        Ok(history)
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn run_with_topologies(
         &self,
