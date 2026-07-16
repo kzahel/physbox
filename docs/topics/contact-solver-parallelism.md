@@ -360,6 +360,31 @@ quality recommendation, not a rigid performance victory or liquid-heavy
 crossover claim. Point Jacobi/Jacobi-gather remains selected until review;
 S5.5 remains blocked.
 
+Human acceptance, 2026-07-16: forward manifold-block i2 with full color rebuild
+and per-color indirect dispatch is the accepted product integration baseline.
+Incremental maintenance and workgroup-island dispatch remain measured reserves.
+This accepts the solver family and present scheduling baseline; it does not
+accept the 32/64-stack diagnostic failures, a residual/tolerance change, the
+current 1K cost, or a liquid-heavy crossover claim.
+
+The measured scaling also changes the status of scheduler construction.
+Between 256 and 1,024 bodies the accepted GPU lane adds about `11.84 us` per
+body-step. Depending on whether Box2D workers are held constant or chosen per
+count, that marginal gap is roughly 55x to 106x. Diagnostic construction and
+compaction dominate the identified work, although their instrumented pass
+boundaries mean their times are attribution rather than a literal percentage
+of the ordinary graph. The current crossover premise is therefore
+unsatisfied: parallel color construction and byte-stable compaction are
+required S5.4c work, not discretionary tuning.
+
+S5.4c first preserves assignments and within-color order while parallelizing
+counts, prefix placement, and compaction. Only if serial greedy assignment
+remains material may a deterministic speculative/conflict-repair coloring
+comparator be added. Any changed assignment changes Gauss-Seidel order and
+requires full quality evidence plus human review before promotion. S5.4c may
+run beside the independent S5.5 broadphase bakeoff; neither result can by
+itself establish a scale advantage.
+
 ## Fallback and reserve options
 
 - **Interim baseline swap.** Manifold block i2 improves structural preservation

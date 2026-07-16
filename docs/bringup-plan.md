@@ -201,6 +201,16 @@ baseline while retaining the other policies as reserves. This is the mandatory
 human checkpoint: point Jacobi/Jacobi-gather remains selected and P5.3 remains
 blocked until review.
 
+Human S5.4 acceptance, 2026-07-16: integrate forward manifold-block i2 with
+full rebuild/per-color indirect scheduling as the product baseline. The
+current 17.623 ms 1K result and 32/64-stack diagnostic failures are not accepted
+quality or performance bands. Because the measured 256-to-1K marginal cost is
+roughly two orders of magnitude worse than best-per-count Box2D, parallel
+scheduler construction/compaction is required S5.4c work and may proceed beside
+the now-authorized P5.3 broadphase bakeoff. Stop before selecting a parallel
+coloring implementation that changes Gauss-Seidel order and before selecting a
+product broadphase.
+
 The first S3.5a representation checkpoint implements the stable pair-slot
 comparator with full feature verification and deterministic generational slot
 recycling. Its correctness/adversarial gates pass and its combined

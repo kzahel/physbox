@@ -870,6 +870,22 @@ manifold-block i2/full-per-color as the next product integration baseline.
 `GpuSolverExecutionV4::SELECTED` remains point Jacobi/Jacobi-gather, and no
 broadphase or liquid work is unblocked before that decision.
 
+Human acceptance, 2026-07-16: forward manifold-block i2 with full rebuild and
+per-color indirect dispatch is the next product integration baseline. The
+shared generated-contact graph may replace the provisional point-Jacobi
+selection with that exact execution and scheduling policy. Incremental and
+workgroup-island policies remain laboratory reserves. The promotion must keep
+one GPU world, require no result readback, preserve all versioned contracts,
+and pass native, browser, and Android validation in its own commit.
+
+Acceptance also authorizes S5.4c parallel scheduler construction alongside the
+S5.5 broadphase bakeoff. The present serial construction/compaction marginal
+cost makes the large-N crossover contract unsatisfied. Parallel compaction must
+first preserve accepted assignments and order byte for byte; any later
+parallel coloring comparator that changes order remains laboratory-only until
+fresh quality evidence and human review. This is not authorization for liquid,
+CPU fallback, native-only scheduling, or weaker capacity behavior.
+
 Circle/circle and circle/rectangle contact are analytic. Rectangle/rectangle
 uses SAT to select a reference and incident edge, clips the incident segment,
 and produces stable vertex/edge feature pairs. Test feature stability around

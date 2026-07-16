@@ -1,10 +1,10 @@
 # S5: Interactive rigid quality, construction, and scale
 
-Status: manual checkpoint, 2026-07-16. The clean S5.4b scheduling package
-recommends forward manifold-block i2 with full rebuild/per-color dispatch; both
-conditional scheduling optimizations are correct but regress at 1K. Product
-solver promotion, quality-band acceptance, and S5.5 remain blocked on human
-review.
+Status: active, 2026-07-16. Human review accepts forward manifold-block i2 with
+full rebuild/per-color dispatch as the next integration baseline. Parallel
+scheduler construction is required S5.4c work and may proceed alongside the
+authorized S5.5 broadphase bakeoff. No residual band, performance claim,
+parallel-scheduler promotion, or broadphase selection is accepted.
 Direction: [one GPU-resident 2D physics world](../topics/physbox5-unified-gpu-physics.md).
 Scale contract: [performance and scale](../topics/performance-and-scale.md).
 Dependencies: [S3 collision/persistence](003-small-world-collision-persistence.md)
@@ -716,6 +716,14 @@ tolerance, pacing rate, broadphase, liquid path, or CPU fallback is authorized.
   recommends full-rebuild/per-color forward manifold-block i2 for human
   acceptance while leaving point Jacobi/Jacobi-gather selected.
 
+Human acceptance, 2026-07-16: promote forward manifold-block i2 with full
+color rebuild and per-color indirect dispatch through the one product graph.
+Retain incremental maintenance and workgroup-island dispatch as measured
+reserves. This accepts the solver family and current scheduling baseline, not
+the 32/64-stack diagnostic failures, a new residual band, the 17.623 ms 1K
+result, a liquid crossover, or a CPU fallback. The product-default change and
+its full cross-host validation are the next independently reviewable commit.
+
 Commit boundaries:
 
 1. authorization, corrected evidence claims, factorial, exclusions, and gates;
@@ -727,10 +735,66 @@ Commit boundaries:
    recorded trigger fires; and
 7. clean evidence, governing status, and renewed human checkpoint.
 
+### S5.4c — parallel scheduler construction and compaction
+
+Human authorization, 2026-07-16: the S5.4b scaling evidence makes parallel
+scheduler construction required follow-on work rather than an optional
+optimization. It may proceed alongside S5.5 because both consume the shared
+body/manifold contracts but own independent stages. The accepted serial
+full-rebuild/per-color path remains the correctness and product baseline until
+fresh evidence supports a different implementation.
+
+- [ ] Freeze the accepted product execution and add a scheduler-construction
+  benchmark contract that records work vectors and slopes, not only absolute
+  medians. Retain 32/256/1K and add bounded contact-rich 1K/10K authored-
+  manifold rows that do not depend on a selected broadphase.
+- [ ] Parallelize color-range counting, prefix placement, and stable compaction
+  while preserving the accepted color assignment and within-color order byte
+  for byte. Keep the serial compactor as a direct control and reject the whole
+  stage atomically on scan, range, or capacity failure.
+- [ ] Measure the byte-exact compaction lane before changing color assignment.
+  It must reduce complete cost and the 256-to-1K marginal slope on the same
+  adapter; a diagnostic timestamp improvement without an ordinary-graph
+  improvement does not qualify.
+- [ ] If serial greedy coloring remains material, implement at least one
+  portable parallel coloring comparator with deterministic stable-id seeding,
+  explicit conflict detection/repair, bounded rounds, and atomic fallback or
+  rejection. Vivace-style speculative coloring is source guidance, not a code
+  dependency or preselected winner.
+- [ ] Re-run the seven accepted scenes, 32/64-stack diagnostics, both buckets,
+  churn/recontact/generation reuse, 33-color overflow, exact replay, capacity,
+  memory, dispatch, and first-divergence evidence for every comparator.
+- [ ] Validate the leading potential lane on native Metal, BrowserWebGPU, and
+  the hardware-backed `jstorrent-tablet` AVD; attempt physical Android when
+  attached. No CPU color construction, required readback, native-only path, or
+  hidden uncolored overflow lane is allowed.
+- [ ] Publish the full cost/quality package and stop before promoting a parallel
+  coloring implementation if assignments or Gauss-Seidel order differ from the
+  accepted baseline.
+
+Gate: the byte-exact compaction candidate must preserve bodies, contacts,
+color assignments, within-color order, exact replay, and capacity behavior.
+Any parallel coloring candidate must preserve the accepted quality corpus and
+declare every order difference. No large-N crossover is credible while
+ordinary construction/compaction marginal cost remains materially worse than
+optimized Box2D; the approximately 2x public scale-advantage contract is not
+weakened to pass this slice.
+
+Artifacts: serial/parallel work-vector and slope matrices, raw ordinary and
+diagnostic samples, assignment/order deltas, minimized conflicts/overflows,
+cross-host captures, optimized Box2D rows, rejected alternatives, and a compact
+scheduler recommendation.
+
+Commit boundaries: accepted product-baseline integration; scheduler benchmark
+contract; byte-exact parallel compaction; evidence-triggered parallel coloring
+comparator; clean matrix and human checkpoint.
+
 ### S5.5 — P5.3 scalable broadphase bakeoff
 
-Dependency: the human accepts an S5.4 path, S3 closes, and the S4 construction
-checkpoint is adequate for continued evaluation.
+Dependency: satisfied 2026-07-16. Human review accepts the S5.4 path, the S3
+combined representation gate passes, and the S4 construction checkpoint is
+adequate for continued evaluation. S5.5 candidates may proceed alongside
+S5.4c; neither lane may silently select or promote the other's result.
 
 - [ ] Keep brute force as the complete pair oracle and implement portable
   sorted sweep-and-prune plus multi-cell grid candidates over the same shape
@@ -824,10 +888,12 @@ experimental/evidence portion of S5.4. It then stops with one compact package
 for combined review of construction feel, awake stack quality, and any proposed
 default changes.
 
-After that decision, the agent may close the accepted S3/S4 gates and execute
-all SAP/grid candidates and evidence in S5.5 unattended. It stops before
-broadphase selection. After explicit selection, it may integrate the winner and
-execute S5.6 plus sleep/wake candidate evidence in S5.7, then stops before
+After that decision, recorded on 2026-07-16, the agent may promote the accepted
+S5.4 baseline, execute S5.4c scheduler candidates, and execute all SAP/grid
+candidates and evidence in S5.5 unattended. It stops before promoting a
+parallel coloring implementation that changes assignment/order and before
+broadphase selection. After explicit selection, it may integrate the winner
+and execute S5.6 plus sleep/wake candidate evidence in S5.7, then stops before
 accepting sleep thresholds, rigid quality bands, or final crossover claims.
 
 Human direction is required earlier if evidence demands any of the following:

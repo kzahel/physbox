@@ -811,6 +811,22 @@ other scheduled work. Neither comparator qualifies as a current production
 optimization. These small-world rigid measurements do not establish a liquid
 crossover and do not weaken the approximately 2x public scale-advantage goal.
 
+Human scaling decision, 2026-07-16: accepting the full-rebuild/per-color solver
+baseline does not accept its performance curve. From 256 to 1,024 bodies the
+GPU leader grows from `8.527` to `17.623 ms`, about `11.84 us` per added
+body-step. The best-per-count Box2D curve grows from `0.078` to `0.164 ms`,
+about `0.112 us` per added body-step; holding worker count fixed changes the
+exact ratio but not the conclusion. The present implementation has no credible
+large-N crossover while serial construction and compaction scale this way.
+
+Parallel scheduler construction and compaction are therefore a required named
+workstream. It must report ordinary complete-step slopes, work vectors, and
+same-adapter Box2D comparisons alongside diagnostic attribution. A smaller
+dispatch floor or faster diagnostic pass alone cannot establish improvement.
+S5.5 broadphase remains separately necessary for candidate-generation scale,
+and may proceed in parallel, but neither lane satisfies the public crossover
+contract without correctness-qualified end-to-end evidence.
+
 ## Regression and claim gates
 
 Before representative hardware is selected, store named measurements and
