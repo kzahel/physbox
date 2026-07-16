@@ -107,6 +107,31 @@ fn compact_coloring_benchmark_separates_construction_compaction_and_empty_work()
         coloring.new_color_units,
         coloring.color_occupancy.iter().sum::<u32>()
     );
+
+    let islands = pollster::block_on(benchmark_gpu_generated_contact_scheduling_experiment(
+        &scenario,
+        1,
+        1,
+        GpuSolverExecutionV4::manifold_colored_block_experiment(true, true),
+        GpuSolverSchedulingPolicyV1::WORKGROUP_PER_ISLAND,
+    ))
+    .unwrap();
+    assert_eq!(
+        islands.correctness.solver_scheduling_policy,
+        GpuSolverSchedulingPolicyV1::WORKGROUP_PER_ISLAND
+    );
+    assert!(islands.dispatches_per_step < incremental.dispatches_per_step);
+    let coloring = islands.correctness.pass_evidence.coloring.unwrap();
+    assert!(coloring.island_count > 0);
+    assert_eq!(coloring.encoded_color_passes, 1);
+    if let Some(samples) = islands.instrumented_solver_phases {
+        assert_eq!(samples.len(), 1);
+        assert!(samples[0].color_construction_seconds > 0.0);
+        assert!(samples[0].color_compaction_seconds > 0.0);
+        assert!(samples[0].active_color_solve_seconds > 0.0);
+        assert_eq!(samples[0].empty_color_solve_seconds, 0.0);
+        assert!(samples[0].other_solver_seconds > 0.0);
+    }
 }
 
 #[test]
@@ -408,6 +433,99 @@ fn incremental_manifold_coloring_reuses_stable_pairs_without_changing_physics() 
 }
 
 #[test]
+fn workgroup_per_island_matches_color_sweeps_and_separates_static_anchors() {
+    let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
+    let mut stack = p5_2_centered_rectangle_stack_scenario(4, 4).unwrap();
+    stack.settings.iterations = 2;
+    let execution = GpuSolverExecutionV4::manifold_colored_block_experiment(true, true);
+    let per_color = runner.run_experiment(&stack, 4, execution).unwrap();
+    let island = runner
+        .run_scheduling_experiment(
+            &stack,
+            4,
+            execution,
+            GpuSolverSchedulingPolicyV1::WORKGROUP_PER_ISLAND,
+        )
+        .unwrap();
+    let replay = runner
+        .run_scheduling_experiment(
+            &stack,
+            4,
+            execution,
+            GpuSolverSchedulingPolicyV1::WORKGROUP_PER_ISLAND,
+        )
+        .unwrap();
+    assert_eq!(island.bodies, per_color.bodies);
+    assert_eq!(island.cache, per_color.cache);
+    assert_eq!(island.bodies, replay.bodies);
+    assert_eq!(island.cache, replay.cache);
+    assert_eq!(island.pass_evidence, replay.pass_evidence);
+    let coloring = island.pass_evidence.coloring.as_ref().unwrap();
+    assert_eq!(coloring.island_count, 1);
+    assert_eq!(coloring.island_body_occupancy, vec![4]);
+    assert_eq!(coloring.island_manifold_occupancy, vec![4]);
+    assert_eq!(coloring.encoded_color_passes, 1);
+    assert_eq!(coloring.indirect_workgroups, vec![[1, 1, 1]]);
+
+    let mut separated = p5_2_centered_rectangle_stack_scenario(2, 1).unwrap();
+    separated.bodies[1].position.x = -1.0;
+    separated.bodies[2].position.x = 1.0;
+    separated.bodies[2].position.y = separated.bodies[1].position.y;
+    separated.validate().unwrap();
+    let separated_per_color = runner.run_experiment(&separated, 1, execution).unwrap();
+    let separated_islands = runner
+        .run_scheduling_experiment(
+            &separated,
+            1,
+            execution,
+            GpuSolverSchedulingPolicyV1::WORKGROUP_PER_ISLAND,
+        )
+        .unwrap();
+    assert_eq!(separated_islands.bodies, separated_per_color.bodies);
+    assert_eq!(separated_islands.cache, separated_per_color.cache);
+    let coloring = separated_islands.pass_evidence.coloring.as_ref().unwrap();
+    assert_eq!(coloring.island_count, 2);
+    assert_eq!(coloring.island_body_occupancy, vec![1, 1]);
+    assert_eq!(coloring.island_manifold_occupancy, vec![1, 1]);
+    assert_eq!(coloring.indirect_workgroups, vec![[2, 1, 1]]);
+    assert!(separated_islands.failure.is_none());
+}
+
+#[test]
+fn incremental_workgroup_islands_replay_the_combined_scheduling_policy() {
+    let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
+    let mut scenario = p5_2_centered_rectangle_stack_scenario(4, 4).unwrap();
+    scenario.settings.iterations = 2;
+    let execution = GpuSolverExecutionV4::alternating_manifold_colored_block_experiment(true, true);
+    let output = runner
+        .run_scheduling_experiment(
+            &scenario,
+            4,
+            execution,
+            GpuSolverSchedulingPolicyV1::INCREMENTAL_WORKGROUP_PER_ISLAND,
+        )
+        .unwrap();
+    let replay = runner
+        .run_scheduling_experiment(
+            &scenario,
+            4,
+            execution,
+            GpuSolverSchedulingPolicyV1::INCREMENTAL_WORKGROUP_PER_ISLAND,
+        )
+        .unwrap();
+    assert_eq!(output.bodies, replay.bodies);
+    assert_eq!(output.cache, replay.cache);
+    assert_eq!(output.pass_evidence, replay.pass_evidence);
+    let coloring = output.pass_evidence.coloring.as_ref().unwrap();
+    assert_eq!(coloring.island_count, 1);
+    assert_eq!(coloring.retained_color_units, 4);
+    assert_eq!(coloring.new_color_units, 0);
+    assert_eq!(coloring.recolored_color_units, 0);
+    assert_eq!(coloring.removed_color_units, 0);
+    assert!(output.failure.is_none());
+}
+
+#[test]
 fn scheduling_comparators_reject_non_compact_solver_executions() {
     let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
     let scenario = p5_2_centered_rectangle_stack_scenario(2, 1).unwrap();
@@ -677,6 +795,23 @@ fn colored_in_place_rejects_more_than_thirty_two_incident_points_atomically() {
     );
     assert!(incremental.cache.is_empty());
     assert!(incremental.failure.is_some());
+
+    let islands = runner
+        .run_scheduling_experiment(
+            &scenario,
+            1,
+            GpuSolverExecutionV4::manifold_colored_block_experiment(true, true),
+            GpuSolverSchedulingPolicyV1::WORKGROUP_PER_ISLAND,
+        )
+        .unwrap();
+    let island_coloring = islands.pass_evidence.coloring.as_ref().unwrap();
+    assert!(island_coloring.overflowed);
+    assert_eq!(island_coloring.island_count, 0);
+    assert_eq!(island_coloring.indirect_workgroups, vec![[0, 1, 1]]);
+    assert_eq!(island_coloring.empty_indirect_launches, 1);
+    assert_eq!(island_coloring.scheduled_point_invocations, 0);
+    assert!(islands.cache.is_empty());
+    assert!(islands.failure.is_some());
 
     let history = runner
         .run_experiment_body_history_diagnostic(

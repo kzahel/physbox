@@ -1375,7 +1375,14 @@ impl GpuGeneratedContactOutput {
                     || coloring.point_colors.len() != self.pass_evidence.contacts.len()
                     || coloring.color_count > coloring.max_colors
                     || coloring.color_occupancy.len() != coloring.color_count as usize
-                    || coloring.encoded_color_passes != coloring.max_colors
+                    || coloring.encoded_color_passes
+                        != if coloring.scheduling_policy.colored_dispatch
+                            == crate::GpuColoredDispatchV1::WorkgroupPerIsland
+                        {
+                            1
+                        } else {
+                            coloring.max_colors
+                        }
                     || coloring.active_color_passes
                         != coloring
                             .color_occupancy
@@ -1426,7 +1433,14 @@ impl GpuGeneratedContactOutput {
                 }
                 match coloring.schedule {
                     crate::GpuColorScheduleV4::CompactIndirect => {
-                        if coloring.indirect_workgroups.len() != coloring.max_colors as usize
+                        let expected_indirect = if coloring.scheduling_policy.colored_dispatch
+                            == crate::GpuColoredDispatchV1::WorkgroupPerIsland
+                        {
+                            1
+                        } else {
+                            coloring.max_colors as usize
+                        };
+                        if coloring.indirect_workgroups.len() != expected_indirect
                             || coloring.empty_indirect_launches
                                 != coloring
                                     .indirect_workgroups
@@ -1441,6 +1455,32 @@ impl GpuGeneratedContactOutput {
                                     .sum::<u64>()
                         {
                             return Err("generated compact coloring schedule is invalid".to_owned());
+                        }
+                        match coloring.scheduling_policy.colored_dispatch {
+                            crate::GpuColoredDispatchV1::PerColorIndirect
+                                if coloring.island_count != 0
+                                    || !coloring.island_body_occupancy.is_empty()
+                                    || !coloring.island_manifold_occupancy.is_empty() =>
+                            {
+                                return Err(
+                                    "per-color scheduling contains island evidence".to_owned()
+                                );
+                            }
+                            crate::GpuColoredDispatchV1::WorkgroupPerIsland
+                                if coloring.island_body_occupancy.len()
+                                    != coloring.island_count as usize
+                                    || coloring.island_manifold_occupancy.len()
+                                        != coloring.island_count as usize
+                                    || (!coloring.overflowed
+                                        && coloring
+                                            .island_manifold_occupancy
+                                            .iter()
+                                            .sum::<u32>()
+                                            != colored_units) =>
+                            {
+                                return Err("workgroup-per-island evidence is invalid".to_owned());
+                            }
+                            _ => {}
                         }
                     }
                     crate::GpuColorScheduleV4::FixedFullGrid => {

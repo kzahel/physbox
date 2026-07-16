@@ -19,6 +19,8 @@ const PARAMETER_STRIDE: usize = 256;
 const MAX_COLORS: u32 = 32;
 const COLOR_OFFSET_COUNT: u32 = MAX_COLORS + 1;
 const COLOR_INDIRECT_WORDS: u32 = MAX_COLORS * 3;
+const ISLAND_INDIRECT_WORDS: u32 = 3;
+const ISLAND_INDIRECT_OFFSET: u64 = COLOR_INDIRECT_WORDS as u64 * size_of::<u32>() as u64;
 #[cfg(not(target_arch = "wasm32"))]
 const MAX_INSTRUMENTED_QUERIES_PER_SET: u32 = 4_096;
 
@@ -317,6 +319,7 @@ pub struct GpuGatherTopologyEvidence {
     pub manifold_count_dispatches: u32,
     pub coloring_dispatches: u32,
     pub color_compaction_dispatches: u32,
+    pub island_construction_dispatches: u32,
     pub canonical_scan_attempts: u64,
     pub capacities: Vec<CapacityRecordV1>,
 }
@@ -350,10 +353,12 @@ impl GpuGatherTopologyEvidence {
                         != 4 + self.manifold_count_dispatches
                             + self.coloring_dispatches
                             + self.color_compaction_dispatches
+                            + self.island_construction_dispatches
                     || self.radix_passes != 0
                     || self.manifold_count_dispatches > 1
                     || self.coloring_dispatches > 1
                     || self.color_compaction_dispatches > 1
+                    || self.island_construction_dispatches > 1
                     || self.canonical_scan_attempts == 0
                 {
                     return Err("canonical gather topology has invalid work accounting".to_owned());
@@ -365,10 +370,12 @@ impl GpuGatherTopologyEvidence {
                         + self.manifold_count_dispatches
                         + self.coloring_dispatches
                         + self.color_compaction_dispatches
+                        + self.island_construction_dispatches
                     || self.radix_passes == 0
                     || self.manifold_count_dispatches > 1
                     || self.coloring_dispatches > 1
                     || self.color_compaction_dispatches > 1
+                    || self.island_construction_dispatches > 1
                     || self.canonical_scan_attempts != 0
                 {
                     return Err("stable body-edge topology has invalid work accounting".to_owned());
@@ -585,6 +592,9 @@ pub struct GpuColoringEvidenceV4 {
     pub new_color_units: u32,
     pub recolored_color_units: u32,
     pub removed_color_units: u32,
+    pub island_count: u32,
+    pub island_body_occupancy: Vec<u32>,
+    pub island_manifold_occupancy: Vec<u32>,
     pub overflowed: bool,
 }
 
@@ -618,7 +628,7 @@ pub(crate) struct FixedFloorEvidenceLayout {
     pub(crate) color_unit: GpuColorUnitV4,
     pub(crate) color_order: GpuColorOrderV4,
     pub(crate) scheduling_policy: GpuSolverSchedulingPolicyV1,
-    pub(crate) color_identity_capacity: u32,
+    topology_layout: TopologyLayout,
     pub(crate) prepared_bytes: u64,
     pub(crate) contribution_bytes: u64,
     pub(crate) color_topology_bytes: u64,
@@ -651,6 +661,7 @@ enum PipelineKind {
     EdgeRanges,
     Color,
     ColorCompact,
+    IslandBuild,
     IntegrateVelocity,
     Prepare,
     Refresh,
@@ -662,6 +673,7 @@ enum PipelineKind {
     IntegratePosition,
     Gather,
     Colored,
+    IslandColored,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -703,7 +715,8 @@ impl PipelineKind {
             | Self::EdgeRadixHistograms
             | Self::EdgeRadixScatter
             | Self::Color
-            | Self::ColorCompact => InstrumentedPhase::IndexBuild,
+            | Self::ColorCompact
+            | Self::IslandBuild => InstrumentedPhase::IndexBuild,
             Self::TopologyPrefix | Self::EdgeRadixPrefix | Self::EdgeRanges => {
                 InstrumentedPhase::OffsetConstruction
             }
@@ -717,7 +730,8 @@ impl PipelineKind {
             | Self::Tangent
             | Self::Restitution
             | Self::IntegratePosition
-            | Self::Colored => InstrumentedPhase::Solve,
+            | Self::Colored
+            | Self::IslandColored => InstrumentedPhase::Solve,
         }
     }
 }
@@ -764,10 +778,21 @@ struct TopologyLayout {
     color_identity_capacity: u32,
     color_maintenance_counts_base: u32,
     color_maintenance_state_base: u32,
+    island_parent_base: u32,
+    body_island_base: u32,
+    island_roots_base: u32,
+    island_body_counts_base: u32,
+    island_manifold_counts_base: u32,
+    island_bin_counts_base: u32,
+    island_bin_offsets_base: u32,
+    island_bin_cursors_base: u32,
+    island_point_indices_base: u32,
+    island_count_index: u32,
     color_unit: GpuColorUnitV4,
     has_coloring: bool,
     has_compact_coloring: bool,
     has_incremental_coloring: bool,
+    has_island_dispatch: bool,
     element_count: u32,
 }
 
@@ -862,6 +887,55 @@ impl TopologyLayout {
                     .ok_or_else(|| "solver color maintenance state overflowed".to_owned())?;
                 layout.has_incremental_coloring = true;
             }
+            if scheduling_policy.colored_dispatch == GpuColoredDispatchV1::WorkgroupPerIsland {
+                let island_bin_capacity = body_count
+                    .checked_mul(MAX_COLORS)
+                    .ok_or_else(|| "solver island-bin capacity overflowed".to_owned())?;
+                layout.island_parent_base = layout.element_count;
+                layout.body_island_base = layout
+                    .island_parent_base
+                    .checked_add(body_count)
+                    .ok_or_else(|| "solver island parent range overflowed".to_owned())?;
+                layout.island_roots_base = layout
+                    .body_island_base
+                    .checked_add(body_count)
+                    .ok_or_else(|| "solver body-island range overflowed".to_owned())?;
+                layout.island_body_counts_base =
+                    layout
+                        .island_roots_base
+                        .checked_add(body_count)
+                        .ok_or_else(|| "solver island-root range overflowed".to_owned())?;
+                layout.island_manifold_counts_base = layout
+                    .island_body_counts_base
+                    .checked_add(body_count)
+                    .ok_or_else(|| "solver island body-count range overflowed".to_owned())?;
+                layout.island_bin_counts_base = layout
+                    .island_manifold_counts_base
+                    .checked_add(body_count)
+                    .ok_or_else(|| "solver island manifold-count range overflowed".to_owned())?;
+                layout.island_bin_offsets_base = layout
+                    .island_bin_counts_base
+                    .checked_add(island_bin_capacity)
+                    .ok_or_else(|| "solver island-bin count range overflowed".to_owned())?;
+                layout.island_bin_cursors_base = layout
+                    .island_bin_offsets_base
+                    .checked_add(island_bin_capacity)
+                    .and_then(|end| end.checked_add(1))
+                    .ok_or_else(|| "solver island-bin offset range overflowed".to_owned())?;
+                layout.island_point_indices_base = layout
+                    .island_bin_cursors_base
+                    .checked_add(island_bin_capacity)
+                    .ok_or_else(|| "solver island-bin cursor range overflowed".to_owned())?;
+                layout.island_count_index = layout
+                    .island_point_indices_base
+                    .checked_add(point_count)
+                    .ok_or_else(|| "solver island point-index range overflowed".to_owned())?;
+                layout.element_count = layout
+                    .island_count_index
+                    .checked_add(1)
+                    .ok_or_else(|| "solver island count range overflowed".to_owned())?;
+                layout.has_island_dispatch = true;
+            }
         }
         Ok(layout)
     }
@@ -906,10 +980,21 @@ impl TopologyLayout {
             color_identity_capacity: 0,
             color_maintenance_counts_base: 0,
             color_maintenance_state_base: 0,
+            island_parent_base: 0,
+            body_island_base: 0,
+            island_roots_base: 0,
+            island_body_counts_base: 0,
+            island_manifold_counts_base: 0,
+            island_bin_counts_base: 0,
+            island_bin_offsets_base: 0,
+            island_bin_cursors_base: 0,
+            island_point_indices_base: 0,
+            island_count_index: 0,
             color_unit: GpuColorUnitV4::Point,
             has_coloring: false,
             has_compact_coloring: false,
             has_incremental_coloring: false,
+            has_island_dispatch: false,
             element_count,
         })
     }
@@ -973,10 +1058,21 @@ impl TopologyLayout {
             color_identity_capacity: 0,
             color_maintenance_counts_base: 0,
             color_maintenance_state_base: 0,
+            island_parent_base: 0,
+            body_island_base: 0,
+            island_roots_base: 0,
+            island_body_counts_base: 0,
+            island_manifold_counts_base: 0,
+            island_bin_counts_base: 0,
+            island_bin_offsets_base: 0,
+            island_bin_cursors_base: 0,
+            island_point_indices_base: 0,
+            island_count_index: 0,
             color_unit: GpuColorUnitV4::Point,
             has_coloring: false,
             has_compact_coloring: false,
             has_incremental_coloring: false,
+            has_island_dispatch: false,
             element_count,
         })
     }
@@ -989,6 +1085,7 @@ impl TopologyLayout {
         base + self.has_manifold_counts as u32
             + self.has_coloring as u32
             + self.has_compact_coloring as u32
+            + self.has_island_dispatch as u32
     }
 }
 
@@ -1015,6 +1112,7 @@ pub(crate) struct GpuFixedFloorSolver {
     edge_ranges_pipeline: wgpu::ComputePipeline,
     color_pipeline: Option<wgpu::ComputePipeline>,
     color_compact_pipeline: Option<wgpu::ComputePipeline>,
+    island_build_pipeline: Option<wgpu::ComputePipeline>,
     integrate_velocity_pipeline: wgpu::ComputePipeline,
     prepare_pipeline: wgpu::ComputePipeline,
     refresh_pipeline: wgpu::ComputePipeline,
@@ -1026,6 +1124,7 @@ pub(crate) struct GpuFixedFloorSolver {
     integrate_position_pipeline: wgpu::ComputePipeline,
     gather_pipeline: wgpu::ComputePipeline,
     colored_pipeline: Option<wgpu::ComputePipeline>,
+    island_colored_pipeline: Option<wgpu::ComputePipeline>,
     operations: Vec<Operation>,
     capacities: Vec<CapacityRecordV1>,
     point_count: u32,
@@ -1126,9 +1225,6 @@ impl GpuFixedFloorSolver {
     ) -> Result<Self, String> {
         validate_experiment_settings(&scenario.settings, execution)?;
         scheduling_policy.validate(execution)?;
-        if scheduling_policy.colored_dispatch == GpuColoredDispatchV1::WorkgroupPerIsland {
-            return Err("workgroup-per-island scheduling is not implemented yet".to_owned());
-        }
         if !scenario.manifolds.is_empty() || point_capacity == 0 {
             return Err(
                 "generated contact solver requires a neutral scenario and nonzero point capacity"
@@ -1223,10 +1319,12 @@ impl GpuFixedFloorSolver {
             usage,
         );
         let color_indirect = topology_layout.has_coloring.then(|| {
+            let words = COLOR_INDIRECT_WORDS
+                + u32::from(topology_layout.has_island_dispatch) * ISLAND_INDIRECT_WORDS;
             storage_empty::<u32>(
                 device,
                 "physbox5_floor_color_indirect",
-                COLOR_INDIRECT_WORDS,
+                words,
                 wgpu::BufferUsages::STORAGE
                     | wgpu::BufferUsages::INDIRECT
                     | wgpu::BufferUsages::COPY_SRC,
@@ -1272,6 +1370,7 @@ impl GpuFixedFloorSolver {
                 device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                     label: Some("physbox5_floor_color_layout"),
                     entries: &[
+                        storage_entry(3, true),
                         storage_entry(4, true),
                         storage_entry(7, false),
                         layout_entries[8],
@@ -1315,6 +1414,7 @@ impl GpuFixedFloorSolver {
                 device,
                 layout,
                 "physbox5_floor_color_bind_ab",
+                storage.properties_buffer(),
                 point_buffer,
                 &topology,
                 &parameter_buffer,
@@ -1401,6 +1501,30 @@ impl GpuFixedFloorSolver {
             }
             _ => None,
         };
+        let island_build_pipeline = match &color_layout {
+            Some(layout) if topology_layout.has_island_dispatch => {
+                let island_pipeline_layout =
+                    device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                        label: Some("physbox5_floor_island_build_pipeline_layout"),
+                        bind_group_layouts: &[layout],
+                        push_constant_ranges: &[],
+                    });
+                Some(
+                    device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                        label: Some("floor_build_solver_islands"),
+                        layout: Some(&island_pipeline_layout),
+                        module: &shader,
+                        entry_point: Some("build_solver_islands"),
+                        compilation_options: wgpu::PipelineCompilationOptions {
+                            constants: &[],
+                            zero_initialize_workgroup_memory: false,
+                        },
+                        cache: None,
+                    }),
+                )
+            }
+            _ => None,
+        };
         let mut capacities = vec![
             capacity(
                 "body-motion-scratch",
@@ -1457,6 +1581,7 @@ impl GpuFixedFloorSolver {
             edge_ranges_pipeline: pipeline("floor_edge_ranges", "build_edge_ranges"),
             color_pipeline,
             color_compact_pipeline,
+            island_build_pipeline,
             integrate_velocity_pipeline: pipeline("floor_integrate_velocity", "integrate_velocity"),
             prepare_pipeline: pipeline("floor_prepare", "prepare"),
             refresh_pipeline: pipeline("floor_refresh", "refresh_contacts"),
@@ -1473,6 +1598,9 @@ impl GpuFixedFloorSolver {
             colored_pipeline: execution
                 .uses_colored_in_place()
                 .then(|| pipeline("floor_colored", "colored_stage")),
+            island_colored_pipeline: topology_layout
+                .has_island_dispatch
+                .then(|| pipeline("floor_island_colored", "island_colored_stage")),
             operations,
             capacities,
             point_count,
@@ -1539,6 +1667,10 @@ impl GpuFixedFloorSolver {
                 .color_compact_pipeline
                 .as_ref()
                 .expect("color compaction operations require the compact pipeline"),
+            PipelineKind::IslandBuild => self
+                .island_build_pipeline
+                .as_ref()
+                .expect("island-build operations require the island pipeline"),
             PipelineKind::IntegrateVelocity => &self.integrate_velocity_pipeline,
             PipelineKind::Prepare => &self.prepare_pipeline,
             PipelineKind::Refresh => &self.refresh_pipeline,
@@ -1556,10 +1688,14 @@ impl GpuFixedFloorSolver {
                 .colored_pipeline
                 .as_ref()
                 .expect("colored operations require the comparator pipeline"),
+            PipelineKind::IslandColored => self
+                .island_colored_pipeline
+                .as_ref()
+                .expect("island-colored operations require the comparator pipeline"),
         });
         let bind_group = if matches!(
             operation.pipeline,
-            PipelineKind::Color | PipelineKind::ColorCompact
+            PipelineKind::Color | PipelineKind::ColorCompact | PipelineKind::IslandBuild
         ) {
             self.color_bind_ab
                 .as_ref()
@@ -1702,6 +1838,7 @@ impl GpuFixedFloorSolver {
         let phase = |operation: &Operation| match operation.pipeline {
             PipelineKind::Color => SolverInstrumentedPhase::ColorConstruction,
             PipelineKind::ColorCompact => SolverInstrumentedPhase::ColorCompaction,
+            PipelineKind::IslandBuild => SolverInstrumentedPhase::ColorCompaction,
             PipelineKind::Colored => {
                 let color = operation
                     .color
@@ -1712,6 +1849,7 @@ impl GpuFixedFloorSolver {
                     SolverInstrumentedPhase::ActiveColorSolve
                 }
             }
+            PipelineKind::IslandColored => SolverInstrumentedPhase::ActiveColorSolve,
             _ => SolverInstrumentedPhase::OtherSolver,
         };
         let mut groups = Vec::<SolverInstrumentedGroup>::new();
@@ -1876,6 +2014,7 @@ impl GpuFixedFloorSolver {
             manifold_count_dispatches: self.topology_layout.has_manifold_counts as u32,
             coloring_dispatches: self.topology_layout.has_coloring as u32,
             color_compaction_dispatches: self.topology_layout.has_compact_coloring as u32,
+            island_construction_dispatches: self.topology_layout.has_island_dispatch as u32,
             canonical_scan_attempts: if self.topology_layout.kind
                 == GpuGatherTopology::CanonicalBodyScan
             {
@@ -1915,7 +2054,7 @@ impl GpuFixedFloorSolver {
             color_unit: self.execution.color_unit,
             color_order: self.execution.color_order,
             scheduling_policy: self.scheduling_policy,
-            color_identity_capacity: self.topology_layout.color_identity_capacity,
+            topology_layout: self.topology_layout,
             prepared_bytes,
             contribution_bytes,
             color_topology_bytes,
@@ -2341,9 +2480,11 @@ pub(crate) fn decode_pass_evidence(
             .map_err(|error| format!("decode fixed-floor coloring: {error}"))?;
         let topology_words = layout.color_topology_bytes as usize / size_of::<u32>();
         let indirect_words = layout.color_indirect_bytes as usize / size_of::<u32>();
+        let expected_indirect_words = COLOR_INDIRECT_WORDS
+            + u32::from(layout.topology_layout.has_island_dispatch) * ISLAND_INDIRECT_WORDS;
         if raw.len() != topology_words + indirect_words
             || topology_words < layout.point_count as usize + layout.body_count as usize + 2
-            || indirect_words != COLOR_INDIRECT_WORDS as usize
+            || indirect_words != expected_indirect_words as usize
         {
             return Err("fixed-floor coloring evidence had the wrong word count".to_owned());
         }
@@ -2378,22 +2519,16 @@ pub(crate) fn decode_pass_evidence(
             .count() as u32;
         let (
             compacted_point_indices,
-            indirect_workgroups,
-            empty_indirect_launches,
-            scheduled_point_invocations,
+            mut indirect_workgroups,
+            mut empty_indirect_launches,
+            mut scheduled_point_invocations,
         ) = if layout.color_schedule == GpuColorScheduleV4::CompactIndirect {
             let counts_start = status_offset + 2;
             let offsets_start = counts_start + MAX_COLORS as usize;
             let cursors_start = offsets_start + COLOR_OFFSET_COUNT as usize;
             let indices_start = cursors_start + MAX_COLORS as usize;
-            let compact_words = indices_start + layout.point_count as usize;
-            let expected_topology_words = if layout.scheduling_policy.color_maintenance
-                == GpuColorMaintenanceV1::StablePairIncremental
-            {
-                compact_words + layout.color_identity_capacity as usize * 6 * 2 + 4 + 2
-            } else {
-                compact_words
-            };
+            let expected_topology_words =
+                (layout.topology_layout.element_count - layout.topology_layout.color_base) as usize;
             if topology_words != expected_topology_words {
                 return Err("compact color topology had the wrong word count".to_owned());
             }
@@ -2434,7 +2569,7 @@ pub(crate) fn decode_pass_evidence(
             if compacted != expected_compacted {
                 return Err("compact color point order is not stable".to_owned());
             }
-            let indirect = raw[topology_words..]
+            let indirect = raw[topology_words..topology_words + COLOR_INDIRECT_WORDS as usize]
                 .chunks_exact(3)
                 .map(|words| [words[0], words[1], words[2]])
                 .collect::<Vec<_>>();
@@ -2473,12 +2608,126 @@ pub(crate) fn decode_pass_evidence(
                     * u64::from(MAX_COLORS),
             )
         };
+        let relative = |absolute: u32| (absolute - layout.topology_layout.color_base) as usize;
+        let (island_count, island_body_occupancy, island_manifold_occupancy) = if layout
+            .topology_layout
+            .has_island_dispatch
+        {
+            let island_count = raw[relative(layout.topology_layout.island_count_index)];
+            if island_count > layout.body_count || (overflowed && island_count != 0) {
+                return Err("solver island count is invalid".to_owned());
+            }
+            let island_count_usize = island_count as usize;
+            let body_counts_start = relative(layout.topology_layout.island_body_counts_base);
+            let manifold_counts_start =
+                relative(layout.topology_layout.island_manifold_counts_base);
+            let body_occupancy =
+                raw[body_counts_start..body_counts_start + island_count_usize].to_vec();
+            let manifold_occupancy =
+                raw[manifold_counts_start..manifold_counts_start + island_count_usize].to_vec();
+            if body_occupancy.contains(&0) || manifold_occupancy.contains(&0) {
+                return Err("solver island evidence contains an empty island".to_owned());
+            }
+
+            let body_islands_start = relative(layout.topology_layout.body_island_base);
+            let body_islands =
+                &raw[body_islands_start..body_islands_start + layout.body_count as usize];
+            let mut expected_body_occupancy = vec![0_u32; island_count_usize];
+            for &island in body_islands {
+                if island < island_count {
+                    expected_body_occupancy[island as usize] += 1;
+                } else if island != u32::MAX {
+                    return Err("solver body references an invalid island".to_owned());
+                }
+            }
+            if body_occupancy != expected_body_occupancy {
+                return Err("solver island body occupancy disagrees with assignments".to_owned());
+            }
+
+            let bin_count = island_count_usize * MAX_COLORS as usize;
+            let bin_counts_start = relative(layout.topology_layout.island_bin_counts_base);
+            let bin_offsets_start = relative(layout.topology_layout.island_bin_offsets_base);
+            let bin_cursors_start = relative(layout.topology_layout.island_bin_cursors_base);
+            let point_indices_start = relative(layout.topology_layout.island_point_indices_base);
+            let bin_counts = &raw[bin_counts_start..bin_counts_start + bin_count];
+            let bin_offsets = &raw[bin_offsets_start..bin_offsets_start + bin_count + 1];
+            let bin_cursors = &raw[bin_cursors_start..bin_cursors_start + bin_count];
+            if bin_counts != bin_cursors {
+                return Err("solver island color cursors disagree with counts".to_owned());
+            }
+            let mut running = 0_u32;
+            for (bin, &count) in bin_counts.iter().enumerate() {
+                if bin_offsets[bin] != running {
+                    return Err("solver island color offsets are not an exact prefix".to_owned());
+                }
+                running = running
+                    .checked_add(count)
+                    .ok_or_else(|| "solver island color count overflowed".to_owned())?;
+            }
+            if bin_offsets[bin_count] != running || running > layout.point_count {
+                return Err("solver island color terminal offset is invalid".to_owned());
+            }
+            let island_points = &raw[point_indices_start..point_indices_start + running as usize];
+            let mut expected_points = Vec::with_capacity(running as usize);
+            let mut expected_manifold_occupancy = vec![0_u32; island_count_usize];
+            for island in 0..island_count {
+                for color in 0..MAX_COLORS {
+                    for (point_index, (&assigned, contact)) in raw[..layout.point_count as usize]
+                        .iter()
+                        .zip(&contacts)
+                        .enumerate()
+                    {
+                        if !contact.valid || contact.point_in_manifold != 0 || assigned != color {
+                            continue;
+                        }
+                        let body_a_island = body_islands[contact.body_a as usize];
+                        let body_b_island = body_islands[contact.body_b as usize];
+                        if body_a_island != u32::MAX
+                            && body_b_island != u32::MAX
+                            && body_a_island != body_b_island
+                        {
+                            return Err("dynamic contact spans solver islands".to_owned());
+                        }
+                        let contact_island = if body_a_island != u32::MAX {
+                            body_a_island
+                        } else {
+                            body_b_island
+                        };
+                        if contact_island == island {
+                            expected_points.push(point_index as u32);
+                            expected_manifold_occupancy[island as usize] += 1;
+                        }
+                    }
+                }
+            }
+            if island_points != expected_points || manifold_occupancy != expected_manifold_occupancy
+            {
+                return Err("solver island compacted manifolds are inconsistent".to_owned());
+            }
+
+            let island_indirect = raw
+                [topology_words + COLOR_INDIRECT_WORDS as usize..topology_words + indirect_words]
+                .chunks_exact(3)
+                .map(|words| [words[0], words[1], words[2]])
+                .collect::<Vec<_>>();
+            let expected_x = if overflowed { 0 } else { island_count };
+            if island_indirect != vec![[expected_x, 1, 1]] {
+                return Err("solver island indirect arguments are invalid".to_owned());
+            }
+            indirect_workgroups = island_indirect;
+            empty_indirect_launches = u32::from(expected_x == 0);
+            scheduled_point_invocations = u64::from(expected_x) * u64::from(WORKGROUP_SIZE);
+            (island_count, body_occupancy, manifold_occupancy)
+        } else {
+            (0, Vec::new(), Vec::new())
+        };
         let color_units = color_occupancy.iter().sum();
         let (retained_color_units, new_color_units, recolored_color_units, removed_color_units) =
             if layout.scheduling_policy.color_maintenance
                 == GpuColorMaintenanceV1::StablePairIncremental
             {
-                let maintenance_start = topology_words - 6;
+                let maintenance_start =
+                    relative(layout.topology_layout.color_maintenance_counts_base);
                 (
                     raw[maintenance_start],
                     raw[maintenance_start + 1],
@@ -2498,7 +2747,11 @@ pub(crate) fn decode_pass_evidence(
             color_occupancy,
             compacted_point_indices,
             indirect_workgroups,
-            encoded_color_passes: MAX_COLORS,
+            encoded_color_passes: if layout.topology_layout.has_island_dispatch {
+                1
+            } else {
+                MAX_COLORS
+            },
             active_color_passes,
             empty_indirect_launches,
             scheduled_point_invocations,
@@ -2507,6 +2760,9 @@ pub(crate) fn decode_pass_evidence(
             new_color_units,
             recolored_color_units,
             removed_color_units,
+            island_count,
+            island_body_occupancy,
+            island_manifold_occupancy,
             overflowed,
         })
     };
@@ -3003,6 +3259,43 @@ fn topology_operations(
                 1,
             );
         }
+        if topology.has_island_dispatch {
+            let islands = PassParamsRaw {
+                floats0: [
+                    f32::from_bits(topology.island_roots_base),
+                    f32::from_bits(topology.island_body_counts_base),
+                    f32::from_bits(topology.island_manifold_counts_base),
+                    f32::from_bits(topology.island_bin_cursors_base),
+                ],
+                floats1: [
+                    f32::from_bits(topology.island_point_indices_base),
+                    f32::from_bits(topology.island_count_index),
+                    0.0,
+                    0.0,
+                ],
+                floats2: [0.0; 4],
+                uints0: [
+                    body_count,
+                    point_count,
+                    topology.island_parent_base,
+                    topology.body_island_base,
+                ],
+                uints1: [
+                    topology.color_base,
+                    topology.color_status_index,
+                    topology.island_bin_counts_base,
+                    topology.island_bin_offsets_base,
+                ],
+            };
+            push_operation(
+                parameters,
+                operations,
+                islands,
+                PipelineKind::IslandBuild,
+                MotionDirection::AtoB,
+                1,
+            );
+        }
     }
 }
 
@@ -3055,6 +3348,23 @@ fn solver_stage(
     topology: TopologyLayout,
 ) {
     if execution.uses_colored_in_place() {
+        if topology.has_island_dispatch {
+            let mut island = parameter;
+            island.uints0[0] = topology.island_count_index;
+            island.uints0[2] = topology.island_bin_offsets_base;
+            island.uints0[3] = topology.island_point_indices_base;
+            island.uints1[2] = u32::from(reverse_colors);
+            island.floats2[3] = f32::from_bits(topology.color_count_index);
+            push_indirect_operation(
+                parameters,
+                operations,
+                island,
+                PipelineKind::IslandColored,
+                MotionDirection::AtoB,
+                ISLAND_INDIRECT_OFFSET,
+            );
+            return;
+        }
         for scheduled_color in 0..MAX_COLORS {
             let color = if reverse_colors {
                 MAX_COLORS - 1 - scheduled_color
@@ -3253,7 +3563,7 @@ fn topology_capacities(
             capacity("solver-color-status", 2, size_of::<u32>() as u64),
             capacity(
                 "solver-color-indirect-arguments",
-                MAX_COLORS,
+                MAX_COLORS + u32::from(topology.has_island_dispatch),
                 size_of::<[u32; 3]>() as u64,
             ),
         ]);
@@ -3286,6 +3596,37 @@ fn topology_capacities(
                     size_of::<u32>() as u64,
                 ),
                 capacity("solver-color-maintenance-state", 2, size_of::<u32>() as u64),
+            ]);
+        }
+        if topology.has_island_dispatch {
+            let bins = body_count * MAX_COLORS;
+            capacities.extend([
+                capacity("solver-island-parents", body_count, size_of::<u32>() as u64),
+                capacity("solver-body-islands", body_count, size_of::<u32>() as u64),
+                capacity("solver-island-roots", body_count, size_of::<u32>() as u64),
+                capacity(
+                    "solver-island-body-counts",
+                    body_count,
+                    size_of::<u32>() as u64,
+                ),
+                capacity(
+                    "solver-island-manifold-counts",
+                    body_count,
+                    size_of::<u32>() as u64,
+                ),
+                capacity("solver-island-color-counts", bins, size_of::<u32>() as u64),
+                capacity(
+                    "solver-island-color-offsets",
+                    bins + 1,
+                    size_of::<u32>() as u64,
+                ),
+                capacity("solver-island-color-cursors", bins, size_of::<u32>() as u64),
+                capacity(
+                    "solver-island-compacted-points",
+                    point_count,
+                    size_of::<u32>() as u64,
+                ),
+                capacity("solver-island-count", 1, size_of::<u32>() as u64),
             ]);
         }
     }
@@ -3388,10 +3729,12 @@ fn bind_group(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn color_bind_group(
     device: &wgpu::Device,
     layout: &wgpu::BindGroupLayout,
     label: &'static str,
+    properties: &wgpu::Buffer,
     points: &wgpu::Buffer,
     topology: &wgpu::Buffer,
     parameters: &wgpu::Buffer,
@@ -3401,6 +3744,10 @@ fn color_bind_group(
         label: Some(label),
         layout,
         entries: &[
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: properties.as_entire_binding(),
+            },
             wgpu::BindGroupEntry {
                 binding: 4,
                 resource: points.as_entire_binding(),
@@ -3782,6 +4129,41 @@ mod tests {
         assert_eq!(
             incremental_parameters[0].uints1[3],
             incremental_topology.color_base
+        );
+        let island_topology = TopologyLayout::new(
+            GpuGatherTopology::StableBodyEdge,
+            2,
+            2,
+            false,
+            GpuColorScheduleV4::CompactIndirect,
+            GpuColorUnitV4::Manifold,
+            GpuSolverSchedulingPolicyV1::WORKGROUP_PER_ISLAND,
+        )
+        .unwrap();
+        let (_, island_operations) = operations(
+            &scenario,
+            2,
+            2,
+            island_topology,
+            false,
+            manifold_execution,
+            GpuSolverSchedulingPolicyV1::WORKGROUP_PER_ISLAND,
+        );
+        assert!(island_topology.has_island_dispatch);
+        assert_eq!(
+            island_topology.dispatches(),
+            manifold_topology.dispatches() + 1
+        );
+        assert_eq!(
+            island_operations.len(),
+            manifold_operations.len() - 40 * MAX_COLORS as usize + 40 + 1
+        );
+        assert_eq!(
+            island_operations
+                .iter()
+                .filter_map(|operation| operation.indirect_offset)
+                .collect::<Vec<_>>(),
+            vec![ISLAND_INDIRECT_OFFSET; 40]
         );
         let alternating_execution =
             GpuSolverExecutionV4::alternating_manifold_colored_block_experiment(true, true);

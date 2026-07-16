@@ -776,7 +776,20 @@ timing and diagnostic phase attribution use the same benchmark path as the
 full-rebuild control. Native exactness, replay, first-step allocation, stable
 retention, and atomic color overflow pass. No performance claim is made from
 the implementation check: the renewed 32/256/1K factorial must measure it,
-and the workgroup-per-island factor is still absent.
+and the workgroup-per-island factor is measured separately below.
+
+S5.4b workgroup-island checkpoint, 2026-07-16: the second scheduling factor
+replaces every 32-entry per-color indirect solver-stage sequence with one
+indirect workgroup per dynamic contact island. The GPU also performs one
+deterministic island-construction/`(island,color)` compaction dispatch. Fixed
+bodies do not merge islands. Complete storage accounting includes dynamic
+parent and island maps, roots, body/manifold occupancies, three
+`body_capacity * 32` bin views, compacted manifold indices, and one additional
+indirect triple. Native exactness, independent-island race coverage, combined
+incremental/island replay, benchmark phase attribution, and atomic overflow
+pass. No speedup is claimed from dispatch reduction alone: the renewed
+32/256/1K ordinary and diagnostic timing matrix must include construction,
+memory, and complete-step cost on the same adapter.
 
 ## Regression and claim gates
 

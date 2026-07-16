@@ -1,8 +1,8 @@
 # S5: Interactive rigid quality, construction, and scale
 
 Status: active, 2026-07-16. S5.4b compact-coloring evidence is complete, the
-bounded incremental-color comparator is implemented, and workgroup-per-island
-execution plus the renewed evidence package remain;
+bounded incremental-color and workgroup-per-island comparators are implemented,
+and the renewed evidence package remains;
 product solver promotion, quality-band acceptance, and S5.5 remain blocked on
 the renewed human checkpoint.
 Direction: [one GPU-resident 2D physics world](../topics/physbox5-unified-gpu-physics.md).
@@ -681,7 +681,7 @@ tolerance, pacing rate, broadphase, liquid path, or CPU fallback is authorized.
   and raw ordinary plus diagnostic timing samples.
 - [ ] Run a potential candidate through native/headless/browser and the
   hardware-backed `jstorrent-tablet` AVD; attempt physical Android if attached.
-- [ ] Add incremental coloring only if rebuild cost is material, or a
+- [x] Add incremental coloring only if rebuild cost is material, or a
   workgroup-per-island comparator only if dispatch boundaries remain material.
   Both conditions are measured true. The leading qualified forward-i2 lane is
   `17.685 ms` at 1K; construction plus compaction is `16.740 ms` diagnostic
@@ -690,9 +690,13 @@ tolerance, pacing rate, broadphase, liquid path, or CPU fallback is authorized.
   The first comparator is now a versioned scheduling policy that retains
   generation-safe stable-pair manifold colors and reports retained, new,
   recolored, and removed work. Native forward-i2 exactness/replay and the
-  33-manifold atomic overflow pass. Implement workgroup-per-island execution
-  and run the shared matrix before closing this gate; no cost conclusion is
-  implied by the mechanical checkpoint.
+  33-manifold atomic overflow pass. The second comparator constructs dynamic
+  islands on GPU, compacts representatives by island/color, and uses one
+  indirect workgroup per island with barriers between colors. Fixed bodies do
+  not connect islands or receive raced writes. Connected-stack and two-island
+  shared-floor results match per-color execution byte for byte; the combined
+  incremental/island policy replays exactly and atomic overflow remains
+  zero-work. Run the shared matrix before any cost conclusion.
 - [ ] Publish a renewed review package and stop before solver promotion,
   accepting a residual band, retargeting pacing, or beginning S5.5.
 

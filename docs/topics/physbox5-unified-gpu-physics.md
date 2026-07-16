@@ -832,8 +832,19 @@ experiment may instead retain generation-safe stable-pair manifold colors,
 with deterministic conflict repair and complete maintenance/capacity
 evidence. Native forward-i2 exactness, replay, stable retention, and atomic
 overflow pass without changing solver math or requiring readback. This does
-not select the lane or close S5.4b; workgroup-per-island execution and renewed
-cross-host cost/quality evidence remain required.
+not select the lane or close S5.4b.
+
+S5.4b workgroup-island checkpoint, 2026-07-16: an explicit scheduling policy
+can now build dynamic contact islands on GPU, compact manifold representatives
+by island and color, and execute each physical stage as one indirect
+workgroup per island with barriers between color phases. Fixed bodies neither
+connect islands nor receive raced motion writes. Connected-stack and shared-
+floor independent-island results match the per-color equations byte for byte;
+full and incremental maintenance policies replay exactly and retain atomic
+color overflow. The additional island/bin storage is capacity-accounted.
+Existing hosts and product construction still use the standard selected
+Jacobi/gather path. Renewed cross-host cost and quality evidence remains
+required before the S5.4b human checkpoint.
 
 Circle/circle and circle/rectangle contact are analytic. Rectangle/rectangle
 uses SAT to select a reference and incident edge, clips the incident segment,

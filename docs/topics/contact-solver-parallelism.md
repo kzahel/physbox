@@ -294,8 +294,33 @@ indirect solve work. Body generations are embedded in both generated-contact
 bridge protocols so slot reuse cannot inherit an earlier body's color. This
 checkpoint establishes mechanics only: stable maintenance still scans the
 bounded contact storage and does not remove range compaction or topology work,
-so the clean cost matrix must decide whether it helps. The independently
-triggered workgroup-per-island comparator remains required.
+so the clean cost matrix must decide whether it helps.
+
+Workgroup-island checkpoint, 2026-07-16: the second triggered scheduling
+comparator constructs dynamic-body connected components entirely on GPU after
+coloring. Fixed endpoints neither unite otherwise independent islands nor
+receive solver writes. A deterministic one-invocation construction pass
+assigns dense island ids, compacts manifold representatives by
+`(island, color)`, publishes body/manifold occupancy, and writes one bounded
+indirect workgroup count. Each dispatched island workgroup executes the
+existing manifold block equations in the declared forward or reverse order,
+with storage visibility and a `workgroupBarrier()` between colors. Thus each
+physical solver stage uses one indirect dispatch rather than 32 per-color
+dispatches; equations,
+color assignments, the 32-color atomic rejection, and the selected product
+execution remain unchanged.
+
+A connected four-stack is byte-identical to per-color execution through four
+steps. Two independent rectangles sharing one fixed floor form two islands,
+execute concurrently without a fixed-body race, and remain byte-identical to
+the per-color result. Full-rebuild/island and incremental/island policies both
+replay exactly; 33 manifolds incident on one body still reject with one
+zero-work island argument. Capacity evidence includes parent/body-island
+maps, roots and occupancies, three bounded `body_capacity * 32` color-bin
+views, compacted manifold indices, and the extra indirect triple. This is a
+mechanical comparator checkpoint, not a cost or production-selection result;
+the renewed factorial must measure whether serial island construction and the
+dense bin views cost less than the dispatch work they replace.
 
 ## Fallback and reserve options
 
@@ -304,11 +329,11 @@ triggered workgroup-per-island comparator remains required.
   not dominate every residual-motion metric. Swapping the interactive baseline
   is a physical-default change requiring explicit human acceptance and is not
   authorized by S5.4b.
-- **Workgroup-per-island sequential solve.** Islands small enough for one
-  workgroup (a 16-stack easily fits) can be solved in a single dispatch using
-  `workgroupBarrier()` between color phases — full sequential semantics with
-  zero inter-dispatch cost. Requires GPU island identification (connected
-  components); documented reserve, not scoped into S5.4b.
+- **Workgroup-per-island sequential solve.** The bounded S5.4b comparator now
+  implements this reserve for dynamic contact islands using one workgroup and
+  barriers between color phases. Its current deterministic island builder is
+  intentionally attributable rather than presumed scalable; renewed quality,
+  memory, and timing evidence decides whether the reserve is useful.
 - **Not portable, rejected:** persistent/cooperative kernels with device-wide
   sync and driver-generated command techniques (CUDA graphs, device-generated
   commands) do not exist in portable WebGPU.

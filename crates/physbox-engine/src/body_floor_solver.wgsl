@@ -483,6 +483,144 @@ fn compact_colors(@builtin(global_invocation_id) id: vec3u) {
     }
 }
 
+fn island_dynamic(body_index: u32) -> bool {
+    let property = properties[body_index];
+    return property.z > 0.0 || property.w > 0.0;
+}
+
+fn island_root(parent_base: u32, body_index: u32) -> u32 {
+    var root = body_index;
+    loop {
+        let parent = atomicLoad(&topology[parent_base + root]);
+        if (parent == root || parent == 0xffffffffu) { return parent; }
+        root = parent;
+    }
+    return root;
+}
+
+@compute @workgroup_size(1)
+fn build_solver_islands(@builtin(global_invocation_id) id: vec3u) {
+    if (id.x != 0u) { return; }
+    let body_count = params.uints0.x;
+    let point_count = params.uints0.y;
+    let parent_base = params.uints0.z;
+    let body_island_base = params.uints0.w;
+    let color_base = params.uints1.x;
+    let color_status_index = params.uints1.y;
+    let bin_counts_base = params.uints1.z;
+    let bin_offsets_base = params.uints1.w;
+    let roots_base = bitcast<u32>(params.floats0.x);
+    let body_counts_base = bitcast<u32>(params.floats0.y);
+    let manifold_counts_base = bitcast<u32>(params.floats0.z);
+    let bin_cursors_base = bitcast<u32>(params.floats0.w);
+    let point_indices_base = bitcast<u32>(params.floats1.x);
+    let island_count_index = bitcast<u32>(params.floats1.y);
+    let bin_capacity = body_count * 32u;
+
+    for (var body = 0u; body < body_count; body += 1u) {
+        atomicStore(&topology[parent_base + body], 0xffffffffu);
+        atomicStore(&topology[body_island_base + body], 0xffffffffu);
+        atomicStore(&topology[roots_base + body], 0xffffffffu);
+        atomicStore(&topology[body_counts_base + body], 0u);
+        atomicStore(&topology[manifold_counts_base + body], 0u);
+    }
+    for (var bin = 0u; bin < bin_capacity; bin += 1u) {
+        atomicStore(&topology[bin_counts_base + bin], 0u);
+        atomicStore(&topology[bin_offsets_base + bin], 0u);
+        atomicStore(&topology[bin_cursors_base + bin], 0u);
+    }
+    atomicStore(&topology[bin_offsets_base + bin_capacity], 0u);
+    atomicStore(&topology[island_count_index], 0u);
+    atomicStore(&color_dispatches[96u], 0u);
+    atomicStore(&color_dispatches[97u], 1u);
+    atomicStore(&color_dispatches[98u], 1u);
+    if (atomicLoad(&topology[color_status_index]) != 0u) { return; }
+
+    for (var point_index = 0u; point_index < point_count; point_index += 1u) {
+        let point = point_inputs[point_index];
+        if (!valid_point(point) || point.ids.w != 0u) { continue; }
+        let dynamic_a = island_dynamic(point.ids.x);
+        let dynamic_b = island_dynamic(point.ids.y);
+        if (!dynamic_a && !dynamic_b) { continue; }
+        if (dynamic_a && atomicLoad(&topology[parent_base + point.ids.x]) == 0xffffffffu) {
+            atomicStore(&topology[parent_base + point.ids.x], point.ids.x);
+        }
+        if (dynamic_b && atomicLoad(&topology[parent_base + point.ids.y]) == 0xffffffffu) {
+            atomicStore(&topology[parent_base + point.ids.y], point.ids.y);
+        }
+        if (dynamic_a && dynamic_b) {
+            let root_a = island_root(parent_base, point.ids.x);
+            let root_b = island_root(parent_base, point.ids.y);
+            if (root_a != root_b) {
+                let lower = min(root_a, root_b);
+                let upper = max(root_a, root_b);
+                atomicStore(&topology[parent_base + upper], lower);
+            }
+        }
+    }
+
+    var island_count = 0u;
+    for (var body = 0u; body < body_count; body += 1u) {
+        if (atomicLoad(&topology[parent_base + body]) == 0xffffffffu) { continue; }
+        let root = island_root(parent_base, body);
+        atomicStore(&topology[parent_base + body], root);
+        if (root == body) {
+            atomicStore(&topology[body_island_base + body], island_count);
+            atomicStore(&topology[roots_base + island_count], body);
+            island_count += 1u;
+        }
+    }
+    for (var body = 0u; body < body_count; body += 1u) {
+        let root = atomicLoad(&topology[parent_base + body]);
+        if (root == 0xffffffffu) { continue; }
+        let island = atomicLoad(&topology[body_island_base + root]);
+        atomicStore(&topology[body_island_base + body], island);
+        atomicAdd(&topology[body_counts_base + island], 1u);
+    }
+
+    for (var point_index = 0u; point_index < point_count; point_index += 1u) {
+        let point = point_inputs[point_index];
+        if (!valid_point(point) || point.ids.w != 0u) { continue; }
+        let color = atomicLoad(&topology[color_base + point_index]);
+        if (color >= 32u) { continue; }
+        var island = 0xffffffffu;
+        if (island_dynamic(point.ids.x)) {
+            island = atomicLoad(&topology[body_island_base + point.ids.x]);
+        } else if (island_dynamic(point.ids.y)) {
+            island = atomicLoad(&topology[body_island_base + point.ids.y]);
+        }
+        if (island == 0xffffffffu) { continue; }
+        atomicAdd(&topology[bin_counts_base + island * 32u + color], 1u);
+        atomicAdd(&topology[manifold_counts_base + island], 1u);
+    }
+
+    var running = 0u;
+    for (var bin = 0u; bin < island_count * 32u; bin += 1u) {
+        atomicStore(&topology[bin_offsets_base + bin], running);
+        running += atomicLoad(&topology[bin_counts_base + bin]);
+    }
+    atomicStore(&topology[bin_offsets_base + island_count * 32u], running);
+    for (var point_index = 0u; point_index < point_count; point_index += 1u) {
+        let point = point_inputs[point_index];
+        if (!valid_point(point) || point.ids.w != 0u) { continue; }
+        let color = atomicLoad(&topology[color_base + point_index]);
+        if (color >= 32u) { continue; }
+        var island = 0xffffffffu;
+        if (island_dynamic(point.ids.x)) {
+            island = atomicLoad(&topology[body_island_base + point.ids.x]);
+        } else if (island_dynamic(point.ids.y)) {
+            island = atomicLoad(&topology[body_island_base + point.ids.y]);
+        }
+        if (island == 0xffffffffu) { continue; }
+        let bin = island * 32u + color;
+        let slot = atomicAdd(&topology[bin_cursors_base + bin], 1u);
+        let offset = atomicLoad(&topology[bin_offsets_base + bin]);
+        atomicStore(&topology[point_indices_base + offset + slot], point_index);
+    }
+    atomicStore(&topology[island_count_index], island_count);
+    atomicStore(&color_dispatches[96u], island_count);
+}
+
 @compute @workgroup_size(1)
 fn prefix_edges(@builtin(global_invocation_id) id: vec3u) {
     if (id.x != 0u) { return; }
@@ -962,7 +1100,7 @@ fn gather(@builtin(global_invocation_id) id: vec3u) {
     motions_destination[body_index] = motion;
 }
 
-fn solve_colored_manifold(point_index: u32) {
+fn solve_colored_manifold(point_index: u32, preserve_static_motion: bool) {
     let input0 = point_inputs[point_index];
     if (!valid_point(input0) || input0.ids.w != 0u) { return; }
     var point0 = prepared_points[point_index];
@@ -1093,8 +1231,12 @@ fn solve_colored_manifold(point_index: u32) {
     if (point_count == 2u) {
         prepared_points[point_index + 1u] = point1;
     }
-    motions_source[point0.ids.x] = motion_a;
-    motions_source[point0.ids.y] = motion_b;
+    if (!preserve_static_motion || island_dynamic(point0.ids.x)) {
+        motions_source[point0.ids.x] = motion_a;
+    }
+    if (!preserve_static_motion || island_dynamic(point0.ids.y)) {
+        motions_source[point0.ids.y] = motion_b;
+    }
 }
 
 @compute @workgroup_size(64)
@@ -1110,7 +1252,7 @@ fn colored_stage(@builtin(global_invocation_id) id: vec3u) {
         return;
     }
     if (u32(params.floats2.z) == 1u) {
-        solve_colored_manifold(point_index);
+        solve_colored_manifold(point_index, false);
         return;
     }
     if (!valid_point(point_inputs[point_index])) { return; }
@@ -1166,4 +1308,27 @@ fn colored_stage(@builtin(global_invocation_id) id: vec3u) {
     prepared_points[point_index] = point;
     motions_source[point.ids.x] = motion_a;
     motions_source[point.ids.y] = motion_b;
+}
+
+@compute @workgroup_size(64)
+fn island_colored_stage(@builtin(local_invocation_id) local_id: vec3u,
+                        @builtin(workgroup_id) workgroup_id: vec3u) {
+    let island = workgroup_id.x;
+    let island_count = atomicLoad(&topology[params.uints0.x]);
+    if (island >= island_count) { return; }
+    let color_count = atomicLoad(&topology[bitcast<u32>(params.floats2.w)]);
+    for (var scheduled_color = 0u; scheduled_color < color_count;
+            scheduled_color += 1u) {
+        let color = select(scheduled_color, color_count - 1u - scheduled_color,
+                           params.uints1.z != 0u);
+        let bin = island * 32u + color;
+        let start = atomicLoad(&topology[params.uints0.z + bin]);
+        let end = atomicLoad(&topology[params.uints0.z + bin + 1u]);
+        for (var slot = start + local_id.x; slot < end; slot += 64u) {
+            let point_index = atomicLoad(&topology[params.uints0.w + slot]);
+            solve_colored_manifold(point_index, true);
+        }
+        storageBarrier();
+        workgroupBarrier();
+    }
 }
