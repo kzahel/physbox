@@ -17,9 +17,9 @@ use physbox_engine::{
     GpuColoringEvidenceV4, GpuGeneratedContactBodyHistoryV1, GpuGeneratedContactOutput,
     GpuGeneratedContactRunner, GpuNormalSolverV4, GpuSolverExecutionV4,
     GpuSolverInstrumentedSampleV4, GpuSolverSchedulingPolicyV1, P5_2BucketShape,
-    p5_2_box2d_world_projection, p5_2_bucket_scenario, p5_2_centered_rectangle_stack_scenario,
-    p5_2_coloring_churn_snapshots, p5_2_generated_performance_scenario,
-    p5_2_rectangle_pyramid_scenario,
+    P5_2GeneratedScenarioKind, p5_2_box2d_world_projection, p5_2_bucket_scenario,
+    p5_2_centered_rectangle_stack_scenario, p5_2_coloring_churn_snapshots,
+    p5_2_generated_performance_scenario, p5_2_generated_scenario, p5_2_rectangle_pyramid_scenario,
 };
 use physbox_lab::{
     analytic_narrowphase::generate_scalar_narrowphase,
@@ -202,7 +202,24 @@ struct ChurnEvidence {
     version: u32,
     full_rebuild_each_snapshot: bool,
     incremental_maintenance_included: bool,
+    fresh_graph_snapshots: bool,
+    snapshot_interpretation: &'static str,
     snapshots: Vec<ChurnSnapshotEvidence>,
+    temporal_probes: Vec<TemporalChurnEvidence>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TemporalChurnEvidence {
+    candidate: &'static str,
+    stable_first_step: GpuColoringEvidenceV4,
+    stable_eighth_step: GpuColoringEvidenceV4,
+    removal_third_step: GpuColoringEvidenceV4,
+    exact_replay: bool,
+    capacity_clean: bool,
+    stable_first_result_hash: String,
+    stable_eighth_result_hash: String,
+    removal_result_hash: String,
 }
 
 #[derive(Serialize)]
@@ -287,6 +304,7 @@ struct SchedulingCandidateDecision {
     accepted_structural_passes: u32,
     accepted_exact_and_capacity_clean: bool,
     diagnostic_structural_passes: u32,
+    churn_clean: bool,
     one_k_complete_step_seconds: Option<f64>,
     one_k_below_feasibility_boundary: bool,
     one_k_dispatches_per_step: u32,
@@ -925,6 +943,7 @@ fn run_scheduling_factorial(arguments: Arguments) -> Result<(), String> {
         &candidates,
         &accepted_scenes,
         &diagnostic_scenes,
+        &churn,
         &gpu_performance,
         &optimized_box2d_performance,
     )?;
@@ -1411,6 +1430,7 @@ fn coloring_churn_evidence(
             candidates: candidate_evidence,
         });
     }
+    let temporal_probes = temporal_churn_evidence(runner, candidates)?;
     Ok(ChurnEvidence {
         version: physbox_engine::P5_2_COLORING_CHURN_VERSION,
         full_rebuild_each_snapshot: candidates.iter().all(|candidate| {
@@ -1421,8 +1441,68 @@ fn coloring_churn_evidence(
             candidate.scheduling_policy.color_maintenance
                 == physbox_engine::GpuColorMaintenanceV1::StablePairIncremental
         }),
+        fresh_graph_snapshots: true,
+        snapshot_interpretation: "construction/erase snapshots compare deterministic assignments and surviving stable identities across independent fresh graphs; policy-observed retained/new/recolored/removed counters belong to the single-graph temporal probes",
         snapshots,
+        temporal_probes,
     })
+}
+
+fn temporal_churn_evidence(
+    runner: &GpuGeneratedContactRunner,
+    candidates: &[CandidateDefinition],
+) -> Result<Vec<TemporalChurnEvidence>, String> {
+    let stable_source =
+        p5_2_centered_rectangle_stack_scenario(4, 8).map_err(|error| error.to_string())?;
+    let removal_source = p5_2_generated_scenario(P5_2GeneratedScenarioKind::Restitution, 3)
+        .map_err(|error| error.to_string())?;
+    candidates
+        .iter()
+        .map(|candidate| {
+            let mut stable = stable_source.clone();
+            stable.settings = candidate.settings;
+            let stable_first = run_candidate(runner, &stable, 1, candidate)?;
+            let stable_eighth = run_candidate(runner, &stable, 8, candidate)?;
+            let stable_replay = run_candidate(runner, &stable, 8, candidate)?;
+            let mut removal = removal_source.clone();
+            removal.settings = candidate.settings;
+            let removal_third = run_candidate(runner, &removal, 3, candidate)?;
+            let removal_replay = run_candidate(runner, &removal, 3, candidate)?;
+            let capacity_clean = [&stable_first, &stable_eighth, &removal_third]
+                .into_iter()
+                .all(|output| {
+                    output.failure.is_none()
+                        && output
+                            .capacities
+                            .iter()
+                            .all(|capacity| capacity.accepted && !capacity.overflowed)
+                });
+            Ok(TemporalChurnEvidence {
+                candidate: candidate.id,
+                stable_first_step: stable_first
+                    .pass_evidence
+                    .coloring
+                    .clone()
+                    .ok_or_else(|| format!("{} omitted first-step coloring", candidate.id))?,
+                stable_eighth_step: stable_eighth
+                    .pass_evidence
+                    .coloring
+                    .clone()
+                    .ok_or_else(|| format!("{} omitted steady coloring", candidate.id))?,
+                removal_third_step: removal_third
+                    .pass_evidence
+                    .coloring
+                    .clone()
+                    .ok_or_else(|| format!("{} omitted removal coloring", candidate.id))?,
+                exact_replay: serialized_hash(&stable_eighth)? == serialized_hash(&stable_replay)?
+                    && serialized_hash(&removal_third)? == serialized_hash(&removal_replay)?,
+                capacity_clean,
+                stable_first_result_hash: serialized_hash(&stable_first)?,
+                stable_eighth_result_hash: serialized_hash(&stable_eighth)?,
+                removal_result_hash: serialized_hash(&removal_third)?,
+            })
+        })
+        .collect()
 }
 
 fn phase_p50(
@@ -1569,6 +1649,7 @@ fn scheduling_decision(
     candidates: &[CandidateDefinition],
     accepted_scenes: &[SceneEvidence],
     diagnostic_scenes: &[SceneEvidence],
+    churn: &ChurnEvidence,
     performance: &[GpuPerformanceRow],
     optimized_box2d: &[OptimizedBox2dRow],
 ) -> Result<SchedulingDecision, String> {
@@ -1628,9 +1709,24 @@ fn scheduling_decision(
             .iter()
             .filter(|scene| scene.preserves_structure_through_run)
             .count() as u32;
+        let temporal = churn
+            .temporal_probes
+            .iter()
+            .find(|probe| probe.candidate == candidate.id)
+            .ok_or_else(|| format!("{} omitted temporal churn evidence", candidate.id))?;
+        let churn_clean = temporal.exact_replay
+            && temporal.capacity_clean
+            && churn.snapshots.iter().all(|snapshot| {
+                snapshot
+                    .candidates
+                    .iter()
+                    .find(|evidence| evidence.candidate == candidate.id)
+                    .is_some_and(|evidence| evidence.exact_replay && evidence.capacity_clean)
+            });
         let one_k_complete_step_seconds = one_k.gpu_end_to_end_p50_seconds;
         let qualified = accepted_structural_passes == 7
             && accepted_exact_and_capacity_clean
+            && churn_clean
             && rows.iter().all(|row| row.capacity_clean);
         candidate_decisions.push(SchedulingCandidateDecision {
             candidate: candidate.id,
@@ -1638,6 +1734,7 @@ fn scheduling_decision(
             accepted_structural_passes,
             accepted_exact_and_capacity_clean,
             diagnostic_structural_passes,
+            churn_clean,
             one_k_complete_step_seconds,
             one_k_below_feasibility_boundary: one_k.capacity_clean
                 && one_k_complete_step_seconds
@@ -1677,12 +1774,12 @@ fn scheduling_decision(
         .map(|(_, candidate)| candidate);
     let recommendation_reason = recommended_for_human_review.map_or_else(
         || {
-            "no scheduling lane preserved the governed acceptance corpus with exact replay and clean capacity, so the evidence makes no recommendation"
+            "no scheduling lane preserved the governed acceptance corpus and churn probes with exact replay and clean capacity, so the evidence makes no recommendation"
                 .to_owned()
         },
         |candidate| {
             format!(
-                "{candidate} has the lowest ordinary 1K complete-step median among scheduling lanes that preserve all seven accepted structures with exact replay and clean capacity; production selection and quality-band acceptance remain human decisions"
+                "{candidate} has the lowest ordinary 1K complete-step median among scheduling lanes that preserve all seven accepted structures and churn probes with exact replay and clean capacity; production selection and quality-band acceptance remain human decisions"
             )
         },
     );
