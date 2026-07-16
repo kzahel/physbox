@@ -189,6 +189,18 @@ raw cost matrix, first failures, Box2D comparison, and conditional comparator
 triggers. A clean package run remains next; no evidence result or solver
 promotion is implied by the automation itself.
 
+S5.4b renewed review checkpoint, 2026-07-16: the clean
+[scheduling package](../evidence/p5.2b-s5.4b-scheduling/README.md) crosses both
+conditional scheduling factors around the qualified forward manifold-block i2
+execution. Every policy preserves all seven accepted structures with exact
+replay and clean capacity. Full rebuild plus per-color indirect leads at
+`17.623 ms` for 1K; incremental/per-color costs `30.821 ms`, full/island
+`30.946 ms`, and their combination `45.741 ms`. The recommendation is to
+accept the full/per-color forward manifold-block path as the next integration
+baseline while retaining the other policies as reserves. This is the mandatory
+human checkpoint: point Jacobi/Jacobi-gather remains selected and P5.3 remains
+blocked until review.
+
 The first S3.5a representation checkpoint implements the stable pair-slot
 comparator with full feature verification and deterministic generational slot
 recycling. Its correctness/adversarial gates pass and its combined

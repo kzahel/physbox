@@ -853,8 +853,22 @@ v4 serializes that complete execution and scheduling identity for desktop,
 headless, browser, and Android rather than relying on a host-local label.
 Default product construction still uses `GpuSolverExecutionV4::SELECTED` and
 standard scheduling. The validation scene is a shared adapter test surface,
-not a second engine or a solver promotion; clean cross-host artifacts remain
-part of the final renewed evidence slice.
+not a second engine or a solver promotion. Clean headless, BrowserWebGPU, and
+hardware-backed AVD artifacts are retained in the final renewed evidence slice.
+
+S5.4b renewed human checkpoint, 2026-07-16: the clean
+[scheduling package](../../evidence/p5.2b-s5.4b-scheduling/README.md) finds all
+four full/incremental and per-color/island policies physically equivalent on
+the seven accepted sources, exact in replay, and clean in capacity. Full
+rebuild plus per-color indirect is the clear 1K cost leader at `17.623 ms`.
+The current incremental implementation costs `30.821 ms`, the island
+implementation `30.946 ms`, and their combination `45.741 ms`; each remains a
+measured reserve rather than a product path. Clean headless, BrowserWebGPU,
+and hardware-backed AVD captures prove the recommended laboratory lane through
+the shared host. Human review must decide whether to accept forward
+manifold-block i2/full-per-color as the next product integration baseline.
+`GpuSolverExecutionV4::SELECTED` remains point Jacobi/Jacobi-gather, and no
+broadphase or liquid work is unblocked before that decision.
 
 Circle/circle and circle/rectangle contact are analytic. Rectangle/rectangle
 uses SAT to select a reference and incident edge, clips the incident segment,

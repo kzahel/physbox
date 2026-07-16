@@ -332,7 +332,33 @@ marker carries lossless numeric encodings of those same versioned fields while
 remaining below the log-line bound. This opt-in validation scene does not alter
 `GpuSolverExecutionV4::SELECTED`, the default scenario, or any physical
 setting. Native exact-step and Chrome BrowserWebGPU smokes pass; the clean AVD
-and final evidence captures remain in the renewed package slice.
+and final evidence captures also pass and are retained in the renewed package.
+
+Renewed scheduling-factorial checkpoint, 2026-07-16: the clean
+[review package](../../evidence/p5.2b-s5.4b-scheduling/README.md) holds forward
+manifold-block i2 fixed and crosses full versus stable-pair incremental color
+maintenance with per-color indirect versus workgroup-per-island dispatch. All
+four policies preserve all seven accepted structures with exact replay and
+clean capacity; both bucket diagnostics pass, while every policy retains the
+same step-25/29 failure on the 32/64-stack diagnostics. Scheduling therefore
+does not resolve the remaining deep-chain quality limit.
+
+Full rebuild plus per-color indirect is the measured 1K leader at `17.623 ms`,
+1,337 dispatches, and 31.15 MB. Incremental/per-color costs `30.821 ms` and
+34.29 MB; full/island costs `30.946 ms` and 31.38 MB despite reducing dispatches
+to 98; the combined policy costs `45.741 ms` and 34.52 MB. The temporal probes
+prove real incremental retention and removal accounting, but the current
+serial stable scan raises color construction from `8.741` to `18.999 ms`.
+Likewise island scheduling removes `4.048 ms` of empty-color work but raises
+compaction from `7.993` to `26.221 ms`. Both are rejected as current production
+schedules and retained as reserve implementations.
+
+The recommendation returned to human review is forward manifold-block i2 with
+full rebuild/per-color scheduling. It narrowly misses 16.67 ms and is 107.6x
+slower than the fastest optimized Box2D 1K row, so this is an architecture and
+quality recommendation, not a rigid performance victory or liquid-heavy
+crossover claim. Point Jacobi/Jacobi-gather remains selected until review;
+S5.5 remains blocked.
 
 ## Fallback and reserve options
 

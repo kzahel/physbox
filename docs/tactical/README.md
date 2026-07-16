@@ -1,12 +1,11 @@
 # Tactical workstreams
 
-Status: S1 and S2 complete; the S3 combined representation gate passes while
-S5.4a finds a structurally successful but performance-ineligible colored
-architecture leader. The S5.4b compact scheduling, manifold block,
-incremental maintenance, and workgroup-island comparator slices are complete;
-renewed quality/cost and cross-host evidence are next. S4.3 grab feel and S4.4
-construction mechanics are complete; product
-solver promotion and S5.5 broadphase work remain blocked.
+Status: S1 and S2 complete; the S3 combined representation gate passes. The
+clean S5.4b scheduling package recommends forward manifold-block i2 with full
+rebuild/per-color dispatch after both conditional scheduling optimizations
+regress at 1K. S4.3 grab feel and S4.4 construction mechanics are complete.
+S5 is at the mandatory human checkpoint; product solver promotion and S5.5
+broadphase work remain blocked.
 
 Tactical filenames use a three-digit zero-padded prefix ordered by their first
 Git creation timestamp. This repository starts at `001`. Never renumber an
@@ -21,7 +20,7 @@ This README remains the unnumbered index.
 | S2 | GPU body state and fixed-floor contact | [002-gpu-body-state.md](002-gpu-body-state.md) | complete 2026-07-15; limited body core accepted |
 | S3 | Small-world collision and contact persistence | [003-small-world-collision-persistence.md](003-small-world-collision-persistence.md) | combined representation gate passed; S5.4a quality experiment authorized, 2026-07-16 |
 | S4 | Interactive evaluation workbench | [004-basic-scene-navigation-camera.md](004-basic-scene-navigation-camera.md) | S4.4 complete; S4.5 construction-feel review ready, 2026-07-16 |
-| S5 | Interactive rigid quality, construction, and scale | [005-interactive-rigid-quality-and-scale.md](005-interactive-rigid-quality-and-scale.md) | active; S5.4b conditional scheduling comparators implemented, renewed evidence/review pending, 2026-07-16 |
+| S5 | Interactive rigid quality, construction, and scale | [005-interactive-rigid-quality-and-scale.md](005-interactive-rigid-quality-and-scale.md) | manual checkpoint; S5.4b recommends full-rebuild/per-color forward manifold-block i2, 2026-07-16 |
 
 ## Conventions
 

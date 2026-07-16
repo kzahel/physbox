@@ -1,10 +1,10 @@
 # S5: Interactive rigid quality, construction, and scale
 
-Status: active, 2026-07-16. S5.4b compact-coloring evidence is complete, the
-bounded incremental-color and workgroup-per-island comparators are implemented,
-and the renewed evidence package remains;
-product solver promotion, quality-band acceptance, and S5.5 remain blocked on
-the renewed human checkpoint.
+Status: manual checkpoint, 2026-07-16. The clean S5.4b scheduling package
+recommends forward manifold-block i2 with full rebuild/per-color dispatch; both
+conditional scheduling optimizations are correct but regress at 1K. Product
+solver promotion, quality-band acceptance, and S5.5 remain blocked on human
+review.
 Direction: [one GPU-resident 2D physics world](../topics/physbox5-unified-gpu-physics.md).
 Scale contract: [performance and scale](../topics/performance-and-scale.md).
 Dependencies: [S3 collision/persistence](003-small-world-collision-persistence.md)
@@ -679,13 +679,13 @@ tolerance, pacing rate, broadphase, liquid path, or CPU fallback is authorized.
   The clean S5.4b package retains 24 GPU rows, six optimized Box2D rows, 19
   permanent reproducers, 124 authority runs, all color work/capacity records,
   and raw ordinary plus diagnostic timing samples.
-- [ ] Run a potential candidate through native/headless/browser and the
+- [x] Run a potential candidate through native/headless/browser and the
   hardware-backed `jstorrent-tablet` AVD; attempt physical Android if attached.
   The shared opt-in `solver-manifold-i2` scene and scene-contract-v4 execution
-  identity are implemented. Native exact-eight-step and Chrome BrowserWebGPU
-  smokes pass without changing the selected product execution. Keep this item
-  open until clean-revision headless/browser/AVD artifacts are copied into the
-  renewed package and a physical device is attempted if attached.
+  identity pass on clean-revision native/headless Metal, Chrome BrowserWebGPU,
+  and hardware-backed AVD Vulkan/MoltenVK. All seven artifacts are retained in
+  the renewed package without changing the selected product execution. No
+  physical device was attached, and that availability gap is explicit.
 - [x] Add incremental coloring only if rebuild cost is material, or a
   workgroup-per-island comparator only if dispatch boundaries remain material.
   Both conditions are measured true. The leading qualified forward-i2 lane is
@@ -701,9 +701,20 @@ tolerance, pacing rate, broadphase, liquid path, or CPU fallback is authorized.
   not connect islands or receive raced writes. Connected-stack and two-island
   shared-floor results match per-color execution byte for byte; the combined
   incremental/island policy replays exactly and atomic overflow remains
-  zero-work. Run the shared matrix before any cost conclusion.
-- [ ] Publish a renewed review package and stop before solver promotion,
+  zero-work. The clean factorial finds all four policies exact, capacity-clean,
+  and 7/7 on accepted structure. At 1K, full/per-color costs `17.623 ms`,
+  incremental/per-color `30.821 ms`, full/island `30.946 ms`, and the combined
+  policy `45.741 ms`; dispatch reduction and state retention do not repay their
+  current serial construction/compaction cost.
+- [x] Publish a renewed review package and stop before solver promotion,
   accepting a residual band, retargeting pacing, or beginning S5.5.
+  The clean
+  [scheduling review](../../evidence/p5.2b-s5.4b-scheduling/README.md) retains
+  12 GPU rows, six optimized Box2D rows, eight minimized reproducers, 124 clean
+  authority runs, four temporal churn probes, synchronized playback, and exact
+  candidate captures on headless, browser, and the hardware-backed AVD. It
+  recommends full-rebuild/per-color forward manifold-block i2 for human
+  acceptance while leaving point Jacobi/Jacobi-gather selected.
 
 Commit boundaries:
 

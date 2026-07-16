@@ -791,6 +791,26 @@ pass. No speedup is claimed from dispatch reduction alone: the renewed
 32/256/1K ordinary and diagnostic timing matrix must include construction,
 memory, and complete-step cost on the same adapter.
 
+S5.4b renewed scheduling cost, 2026-07-16: clean Apple M4 Pro Metal evidence
+retains 20 ordinary and 20 diagnostic samples for 12 GPU rows. All four
+forward manifold-block i2 scheduling policies pass the identical seven-scene
+quality gate with exact replay and clean capacity. Full rebuild plus per-color
+indirect is the 1K leader at `17.623 ms`, 1,337 dispatches, and 31.15 MB.
+Incremental/per-color costs `30.821 ms` and 34.29 MB; full/island costs
+`30.946 ms` and 31.38 MB with 98 dispatches; incremental/island costs
+`45.741 ms` and 34.52 MB.
+
+The fastest equivalent optimized Box2D 1K row is `0.164 ms`, making the
+recommended laboratory lane 107.6x slower. It misses the 16.67 ms boundary by
+`0.956 ms` (5.7%). The workgroup-island lane wins at 32 bodies (`1.326` versus
+`5.990 ms`), is already slightly behind at 256 (`8.741` versus `8.527 ms`),
+and loses materially at 1K because its serial island/bin compaction costs
+`26.221 ms` diagnostic P50. Incremental maintenance correctly retains stable
+colors but raises construction from `8.741` to `18.999 ms` while leaving the
+other scheduled work. Neither comparator qualifies as a current production
+optimization. These small-world rigid measurements do not establish a liquid
+crossover and do not weaken the approximately 2x public scale-advantage goal.
+
 ## Regression and claim gates
 
 Before representative hardware is selected, store named measurements and
