@@ -227,6 +227,18 @@ changes. Fresh failure reproducers, Box2D authority, raw 32/256/1K timing,
 platform provenance, and the conditional comparator triggers are mandatory
 outputs. No result is claimed until a clean atomic package completes.
 
+Transient-failure checkpoint, 2026-07-16: the first clean-at-start factorial
+attempt completed all seven accepted sources and the 32-stack diagnostic, then
+found a stack-64 color-capacity rejection at post-step 357. This is the
+declared atomic 32-color boundary, not an accepted-source regression. The
+native diagnostic-history contract now returns versioned `FailureV1` records
+for transient construction or solver-coloring rejection alongside the bounded
+body history. The legacy strict history call still rejects the same run. This
+lets the factorial preserve the exact first failing step and permanent
+reproducer instead of aborting or allowing a later clean checkpoint to hide a
+transient capacity failure. The clean package and its conclusions remain
+pending.
+
 ## Fallback and reserve options
 
 - **Interim baseline swap.** Manifold block i2 improves structural preservation

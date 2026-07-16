@@ -80,13 +80,14 @@ pub use construction_validation::{
 pub use frame::{
     FrameInput, InputEvent, PointerButton, PointerEvent, PointerPhase, StepRequest, WheelEvent,
 };
-pub use generated_contacts::{GpuConstructionGraphEvidence, GpuContactPersistenceTopology};
 #[cfg(not(target_arch = "wasm32"))]
 pub use generated_contacts::{
-    GpuGeneratedContactBenchmarkOutput, GpuGeneratedContactOutput, GpuGeneratedContactRunner,
+    GPU_GENERATED_CONTACT_BODY_HISTORY_VERSION, GpuGeneratedContactBenchmarkOutput,
+    GpuGeneratedContactBodyHistoryV1, GpuGeneratedContactOutput, GpuGeneratedContactRunner,
     benchmark_gpu_generated_contact_experiment, benchmark_gpu_generated_contacts,
     benchmark_gpu_generated_contacts_with_gather_topology,
 };
+pub use generated_contacts::{GpuConstructionGraphEvidence, GpuContactPersistenceTopology};
 pub use gpu_context::{AdapterDiagnostics, create_instance};
 #[cfg(not(target_arch = "wasm32"))]
 pub use gpu_primitives::{GpuPrimitiveBenchmarkOutput, GpuPrimitiveKind, benchmark_gpu_primitive};

@@ -9,7 +9,7 @@ use std::{
 };
 
 use physbox_contracts::{
-    BodyId, BodyStateV1, OracleRequestV1, OracleResultV1, SCHEMA_VERSION, ScenarioV1,
+    BodyId, BodyStateV1, FailureV1, OracleRequestV1, OracleResultV1, SCHEMA_VERSION, ScenarioV1,
     SettlingObservationV1, ShapeV1, SolverSettingsV1, Validate, canonical_hash, canonical_json,
     sha256_bytes,
 };
@@ -298,6 +298,7 @@ struct CandidateSceneEvidence {
     structural_reason: String,
     preserves_structure_through_run: bool,
     first_structural_failure_step: Option<u32>,
+    first_execution_failure: Option<FailureV1>,
     window: AwakeSettlingWindowV1,
     first_authority_divergence: Option<AwakeFirstDivergenceV1>,
     samples: Vec<CandidateSample>,
@@ -938,7 +939,20 @@ fn scene_failure_records(
 ) -> Result<Vec<FailureRecord>, String> {
     let mut failures = Vec::new();
     for candidate in &scene.candidates {
-        let Some(first_failure_step) = candidate.first_structural_failure_step else {
+        let execution_failure_step = candidate
+            .first_execution_failure
+            .as_ref()
+            .and_then(|failure| failure.first_step);
+        let first_failure_step = match (
+            candidate.first_structural_failure_step,
+            execution_failure_step,
+        ) {
+            (Some(structural), Some(execution)) => Some(structural.min(execution)),
+            (Some(structural), None) => Some(structural),
+            (None, Some(execution)) => Some(execution),
+            (None, None) => None,
+        };
+        let Some(first_failure_step) = first_failure_step else {
             continue;
         };
         let definition = candidates
@@ -955,7 +969,12 @@ fn scene_failure_records(
                 .capacities
                 .iter()
                 .any(|capacity| !capacity.accepted || capacity.overflowed);
-        let (_, exact_reason) = structure(kind, &reproducer, &output.bodies, overflowed);
+        let (_, structural_reason) = structure(kind, &reproducer, &output.bodies, overflowed);
+        let exact_reason = candidate
+            .first_execution_failure
+            .as_ref()
+            .filter(|failure| failure.first_step == Some(first_failure_step))
+            .map_or(structural_reason, |failure| failure.reason.clone());
         failures.push(FailureRecord {
             candidate: candidate.candidate,
             scene: scene.label.clone(),
@@ -1568,13 +1587,19 @@ fn evaluate_scene(
             &final_sample.bodies,
             !final_sample.capacity_clean,
         );
-        let pose_history =
-            runner.run_experiment_body_history(&scenario, completed_steps, candidate.execution)?;
+        let pose_history = runner.run_experiment_body_history_diagnostic(
+            &scenario,
+            completed_steps,
+            candidate.execution,
+        )?;
         let first_structural_failure_step = pose_history
+            .bodies
             .iter()
             .position(|bodies| !structure(kind, &scenario, bodies, false).0)
             .map(|step| step as u32 + 1);
-        let preserves_structure_through_run = first_structural_failure_step.is_none();
+        let first_execution_failure = pose_history.failures.first().cloned();
+        let preserves_structure_through_run =
+            first_structural_failure_step.is_none() && first_execution_failure.is_none();
         let replay = runner.run_experiment(&scenario, completed_steps, candidate.execution)?;
         let exact_replay = serialized_hash(&replay)? == final_sample.result_hash;
         candidate_evidence.push(CandidateSceneEvidence {
@@ -1585,6 +1610,7 @@ fn evaluate_scene(
             structural_reason,
             preserves_structure_through_run,
             first_structural_failure_step,
+            first_execution_failure,
             window: summarize_awake_window(&observations, settled_window_start, completed_steps)?,
             first_authority_divergence: first_awake_divergence(&deltas),
             samples,

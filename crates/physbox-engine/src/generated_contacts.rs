@@ -37,6 +37,7 @@ const PERSISTENT_RECORD_BYTES: u32 = PERSISTENT_CONTACT_KEY_BYTES + CACHE_VALUE_
 const COLLISION_DISPATCHES: u32 = 212;
 const PAIR_SLOT_COLLISION_DISPATCHES: u32 = 15 + PAIR_SLOT_DISPATCHES;
 const BRIDGE_DISPATCHES: u32 = 2;
+pub const GPU_GENERATED_CONTACT_BODY_HISTORY_VERSION: u32 = 1;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -1455,6 +1456,14 @@ pub struct GpuGeneratedContactRunner {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
+#[derive(Clone, Debug)]
+pub struct GpuGeneratedContactBodyHistoryV1 {
+    pub version: u32,
+    pub bodies: Vec<Vec<physbox_contracts::BodyStateV1>>,
+    pub failures: Vec<FailureV1>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 impl GpuGeneratedContactRunner {
     pub async fn new() -> Result<Self, String> {
         let instance = crate::gpu_context::create_instance();
@@ -1566,6 +1575,22 @@ impl GpuGeneratedContactRunner {
         completed_steps: u32,
         execution: GpuSolverExecutionV4,
     ) -> Result<Vec<Vec<physbox_contracts::BodyStateV1>>, String> {
+        let history =
+            self.run_experiment_body_history_diagnostic(scenario, completed_steps, execution)?;
+        if let Some(failure) = history.failures.first() {
+            return Err(failure.reason.clone());
+        }
+        Ok(history.bodies)
+    }
+
+    /// Captures the same bounded post-step history while preserving transient
+    /// atomic construction and coloring rejections as diagnosed failures.
+    pub fn run_experiment_body_history_diagnostic(
+        &self,
+        scenario: &ScenarioV1,
+        completed_steps: u32,
+        execution: GpuSolverExecutionV4,
+    ) -> Result<GpuGeneratedContactBodyHistoryV1, String> {
         if completed_steps == 0 {
             return Err("generated contact pose history requires at least one step".to_owned());
         }
@@ -1708,6 +1733,8 @@ impl GpuGeneratedContactRunner {
             })
             .transpose()?;
         let mut history = Vec::with_capacity(completed_steps as usize);
+        let mut first_construction_failure_step = None;
+        let mut first_coloring_failure_step = None;
         for step in 0..completed_steps as usize {
             let step_capacities = &capacities[step * 4..step * 4 + 4];
             if step_capacities[0][3] != 0
@@ -1715,19 +1742,13 @@ impl GpuGeneratedContactRunner {
                 || step_capacities[2][2] != step_capacities[2][1]
                 || step_capacities[3][2] != step_capacities[3][1]
             {
-                return Err(format!(
-                    "generated construction capacity rejected post-step {} pose history",
-                    step + 1
-                ));
+                first_construction_failure_step.get_or_insert(step as u32 + 1);
             }
             if color_statuses
                 .as_ref()
                 .is_some_and(|statuses| statuses[step] != 0)
             {
-                return Err(format!(
-                    "generated solver coloring rejected post-step {} pose history",
-                    step + 1
-                ));
+                first_coloring_failure_step.get_or_insert(step as u32 + 1);
             }
             let mut bodies = scenario.bodies.clone();
             for (body_index, body) in bodies.iter_mut().enumerate() {
@@ -1745,7 +1766,38 @@ impl GpuGeneratedContactRunner {
             }
             history.push(bodies);
         }
-        Ok(history)
+        let mut failures = Vec::with_capacity(2);
+        if let Some(first_step) = first_construction_failure_step {
+            failures.push(FailureV1 {
+                kind: FailureKindV1::CapacityOverflow,
+                reason: format!(
+                    "generated construction capacity rejected post-step {first_step} pose history"
+                ),
+                first_step: Some(first_step),
+                first_stage: Some("generated-construction".to_owned()),
+                reproducer_hash: None,
+            });
+        }
+        if let Some(first_step) = first_coloring_failure_step {
+            failures.push(FailureV1 {
+                kind: FailureKindV1::CapacityOverflow,
+                reason: format!(
+                    "generated solver coloring rejected post-step {first_step} pose history"
+                ),
+                first_step: Some(first_step),
+                first_stage: Some("solver-coloring".to_owned()),
+                reproducer_hash: None,
+            });
+        }
+        failures.sort_by_key(|failure| failure.first_step);
+        for failure in &failures {
+            failure.validate().map_err(|error| error.to_string())?;
+        }
+        Ok(GpuGeneratedContactBodyHistoryV1 {
+            version: GPU_GENERATED_CONTACT_BODY_HISTORY_VERSION,
+            bodies: history,
+            failures,
+        })
     }
 
     #[allow(clippy::too_many_arguments)]

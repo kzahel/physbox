@@ -1,4 +1,4 @@
-use physbox_contracts::Validate;
+use physbox_contracts::{FailureKindV1, Validate};
 use physbox_engine::{
     GpuContactPersistenceTopology, GpuGatherTopology, GpuGeneratedContactRunner,
     GpuNarrowphaseRunner, GpuNormalSolverV4, GpuSolverAccumulationV4, GpuSolverCandidate,
@@ -510,6 +510,36 @@ fn colored_in_place_rejects_more_than_thirty_two_incident_points_atomically() {
     );
     assert!(manifold.cache.is_empty());
     assert!(manifold.failure.is_some());
+
+    let history = runner
+        .run_experiment_body_history_diagnostic(
+            &scenario,
+            1,
+            GpuSolverExecutionV4::manifold_colored_block_experiment(true, true),
+        )
+        .unwrap();
+    assert_eq!(
+        history.version,
+        physbox_engine::GPU_GENERATED_CONTACT_BODY_HISTORY_VERSION
+    );
+    assert_eq!(history.bodies.len(), 1);
+    assert_eq!(history.failures.len(), 1);
+    assert_eq!(history.failures[0].kind, FailureKindV1::CapacityOverflow);
+    assert_eq!(history.failures[0].first_step, Some(1));
+    assert_eq!(
+        history.failures[0].first_stage.as_deref(),
+        Some("solver-coloring")
+    );
+    assert!(
+        runner
+            .run_experiment_body_history(
+                &scenario,
+                1,
+                GpuSolverExecutionV4::manifold_colored_block_experiment(true, true),
+            )
+            .unwrap_err()
+            .contains("post-step 1")
+    );
 }
 
 #[test]

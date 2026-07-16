@@ -663,8 +663,11 @@ tolerance, pacing rate, broadphase, liquid path, or CPU fallback is authorized.
   The atomic runner and shared diagnostic sources are implemented: 32/64 are
   accepted by the stack generator only as named diagnostics, and five churn
   snapshots record construction, erase, generation reuse, full rebuild units,
-  surviving units, and surviving color changes. This checkbox remains open
-  until the clean package completes.
+  surviving units, and surviving color changes. The first full attempt closed
+  all seven accepted sources and stack-32, then exposed the declared 32-color
+  limit at stack-64 post-step 357. Diagnostic histories now preserve that
+  transient `FailureV1` and continue, while strict history callers still
+  reject it. This checkbox remains open until the clean package completes.
 - [ ] Publish complete color occupancy, compaction/recoloring cost, dispatch,
   memory, 32/256/1K timing, exact replay, capacity, and first-failure evidence.
 - [ ] Run a potential candidate through native/headless/browser and the
