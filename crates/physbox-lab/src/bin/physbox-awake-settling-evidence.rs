@@ -14,10 +14,12 @@ use physbox_contracts::{
     sha256_bytes,
 };
 use physbox_engine::{
-    GpuColoringEvidenceV4, GpuGeneratedContactRunner, GpuNormalSolverV4, GpuSolverExecutionV4,
-    GpuSolverInstrumentedSampleV4, P5_2BucketShape, p5_2_box2d_world_projection,
-    p5_2_bucket_scenario, p5_2_centered_rectangle_stack_scenario, p5_2_coloring_churn_snapshots,
-    p5_2_generated_performance_scenario, p5_2_rectangle_pyramid_scenario,
+    GpuColoringEvidenceV4, GpuGeneratedContactBodyHistoryV1, GpuGeneratedContactOutput,
+    GpuGeneratedContactRunner, GpuNormalSolverV4, GpuSolverExecutionV4,
+    GpuSolverInstrumentedSampleV4, GpuSolverSchedulingPolicyV1, P5_2BucketShape,
+    p5_2_box2d_world_projection, p5_2_bucket_scenario, p5_2_centered_rectangle_stack_scenario,
+    p5_2_coloring_churn_snapshots, p5_2_generated_performance_scenario,
+    p5_2_rectangle_pyramid_scenario,
 };
 use physbox_lab::{
     analytic_narrowphase::generate_scalar_narrowphase,
@@ -90,6 +92,7 @@ struct CandidateDefinition {
     iterations: u32,
     settings: SolverSettingsV1,
     execution: GpuSolverExecutionV4,
+    scheduling_policy: GpuSolverSchedulingPolicyV1,
     question: &'static str,
 }
 
@@ -154,6 +157,36 @@ struct ColoredManifest {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+struct SchedulingManifest {
+    schema_version: u32,
+    metrics_version: u32,
+    artifact_kind: &'static str,
+    run_id: String,
+    source_revision: String,
+    source_dirty: bool,
+    source_patch_digest: Option<String>,
+    box2d_revision: &'static str,
+    adapter: physbox_engine::AdapterDiagnostics,
+    candidates: Vec<CandidateDefinition>,
+    accepted_scenes: Vec<SceneEvidence>,
+    diagnostic_scenes: Vec<SceneEvidence>,
+    churn: ChurnEvidence,
+    failures: Vec<FailureRecord>,
+    gpu_performance: Vec<GpuPerformanceRow>,
+    optimized_box2d_performance: Vec<OptimizedBox2dRow>,
+    decision: SchedulingDecision,
+    platform_artifacts: Vec<PlatformArtifact>,
+    physical_device_gap: Option<String>,
+    physical_defaults_changed: bool,
+    numerical_tolerances_changed: bool,
+    oracle_precedence_changed: bool,
+    product_constructor_changed: bool,
+    selected_product_execution: GpuSolverExecutionV4,
+    playback: &'static str,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct SchedulingControlEvidence {
     scenario_hash: String,
     completed_steps: u32,
@@ -168,6 +201,7 @@ struct SchedulingControlEvidence {
 struct ChurnEvidence {
     version: u32,
     full_rebuild_each_snapshot: bool,
+    incremental_maintenance_included: bool,
     snapshots: Vec<ChurnSnapshotEvidence>,
 }
 
@@ -227,6 +261,42 @@ struct ColoredCandidateDecision {
     one_k_active_color_solve_seconds: Option<f64>,
     one_k_empty_color_solve_seconds: Option<f64>,
     potential_candidate: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SchedulingDecision {
+    version: u32,
+    feasibility_boundary_seconds: f64,
+    accepted_scene_count: u32,
+    diagnostic_scene_count: u32,
+    candidates: Vec<SchedulingCandidateDecision>,
+    qualified_candidates: Vec<&'static str>,
+    recommended_for_human_review: Option<&'static str>,
+    recommendation_reason: String,
+    production_selection_deferred: bool,
+    quality_band_acceptance_deferred: bool,
+    reconsideration_triggers: Vec<&'static str>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SchedulingCandidateDecision {
+    candidate: &'static str,
+    scheduling_policy: GpuSolverSchedulingPolicyV1,
+    accepted_structural_passes: u32,
+    accepted_exact_and_capacity_clean: bool,
+    diagnostic_structural_passes: u32,
+    one_k_complete_step_seconds: Option<f64>,
+    one_k_below_feasibility_boundary: bool,
+    one_k_dispatches_per_step: u32,
+    one_k_allocated_bytes: u64,
+    one_k_color_construction_seconds: Option<f64>,
+    one_k_color_compaction_seconds: Option<f64>,
+    one_k_active_color_solve_seconds: Option<f64>,
+    one_k_empty_color_solve_seconds: Option<f64>,
+    fastest_box2d_ratio: Option<f64>,
+    qualified: bool,
 }
 
 #[derive(Serialize)]
@@ -390,6 +460,9 @@ fn main() {
 
 fn run() -> Result<(), String> {
     let arguments = Arguments::parse()?;
+    if arguments.scheduling_factorial {
+        return run_scheduling_factorial(arguments);
+    }
     if arguments.colored_factorial {
         return run_colored_factorial(arguments);
     }
@@ -459,8 +532,7 @@ fn run() -> Result<(), String> {
                 let mut reproducer = scene.source.clone();
                 reproducer.settings = definition.settings;
                 reproducer.requested_steps = first_failure_step;
-                let output =
-                    runner.run_experiment(&reproducer, first_failure_step, definition.execution)?;
+                let output = run_candidate(&runner, &reproducer, first_failure_step, definition)?;
                 let overflowed = output.failure.is_some()
                     || output
                         .capacities
@@ -724,6 +796,185 @@ fn run_colored_factorial(arguments: Arguments) -> Result<(), String> {
     Ok(())
 }
 
+fn run_scheduling_factorial(arguments: Arguments) -> Result<(), String> {
+    let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let (source_revision, source_dirty, source_patch_digest) = repository_state(&repository)?;
+    if arguments.require_clean && source_dirty {
+        return Err("S5.4b scheduling evidence requires a clean source tree".to_owned());
+    }
+    let box2d = verify_clean_git_pin(&arguments.box2d_source, BOX2D_REVISION)
+        .map_err(|error| error.to_string())?;
+    let staging = arguments.output.with_extension("partial");
+    if arguments.output.exists() || staging.exists() {
+        return Err("output or staging evidence directory already exists".to_owned());
+    }
+    fs::create_dir_all(staging.join("oracles")).map_err(|error| error.to_string())?;
+    fs::create_dir_all(staging.join("failures")).map_err(|error| error.to_string())?;
+    fs::create_dir_all(staging.join("performance")).map_err(|error| error.to_string())?;
+    fs::create_dir_all(staging.join("platform")).map_err(|error| error.to_string())?;
+
+    let runner = pollster::block_on(GpuGeneratedContactRunner::new())?;
+    let base = p5_2_centered_rectangle_stack_scenario(2, 1)
+        .map_err(|error| error.to_string())?
+        .settings;
+    let candidates = scheduling_candidate_definitions(base);
+
+    let mut accepted_scenes = Vec::new();
+    let mut accepted_kinds = Vec::new();
+    for count in [2, 4, 8, 16] {
+        let label = format!("rectangle-stack-{count}");
+        eprintln!("S5.4b scheduling accepted scene {label}");
+        accepted_scenes.push(evaluate_scene(
+            &arguments,
+            &staging,
+            &box2d,
+            &runner,
+            &candidates,
+            &label,
+            SceneKind::Stack,
+            p5_2_centered_rectangle_stack_scenario(count, SETTLED_WINDOW_END)
+                .map_err(|error| error.to_string())?,
+            &CHECKPOINTS,
+            SETTLED_WINDOW_START,
+            SETTLED_WINDOW_END,
+        )?);
+        accepted_kinds.push(SceneKind::Stack);
+    }
+    for rows in [2, 3, 4] {
+        let label = format!("rectangle-pyramid-{rows}");
+        eprintln!("S5.4b scheduling accepted scene {label}");
+        accepted_scenes.push(evaluate_scene(
+            &arguments,
+            &staging,
+            &box2d,
+            &runner,
+            &candidates,
+            &label,
+            SceneKind::Pyramid,
+            p5_2_rectangle_pyramid_scenario(rows, SETTLED_WINDOW_END)
+                .map_err(|error| error.to_string())?,
+            &CHECKPOINTS,
+            SETTLED_WINDOW_START,
+            SETTLED_WINDOW_END,
+        )?);
+        accepted_kinds.push(SceneKind::Pyramid);
+    }
+
+    let mut diagnostic_scenes = Vec::new();
+    let mut diagnostic_kinds = Vec::new();
+    for count in [32, 64] {
+        let label = format!("rectangle-stack-{count}-diagnostic");
+        eprintln!("S5.4b scheduling depth diagnostic {label}");
+        diagnostic_scenes.push(evaluate_scene(
+            &arguments,
+            &staging,
+            &box2d,
+            &runner,
+            &candidates,
+            &label,
+            SceneKind::Stack,
+            p5_2_centered_rectangle_stack_scenario(count, SETTLED_WINDOW_END)
+                .map_err(|error| error.to_string())?,
+            &CHECKPOINTS,
+            SETTLED_WINDOW_START,
+            SETTLED_WINDOW_END,
+        )?);
+        diagnostic_kinds.push(SceneKind::Stack);
+    }
+    for shape in P5_2BucketShape::ALL {
+        let label = format!("{}-bucket-100-diagnostic", shape.name());
+        eprintln!("S5.4b scheduling degree diagnostic {label}");
+        diagnostic_scenes.push(evaluate_scene(
+            &arguments,
+            &staging,
+            &box2d,
+            &runner,
+            &candidates,
+            &label,
+            SceneKind::Bucket,
+            p5_2_bucket_scenario(shape, 100, 600).map_err(|error| error.to_string())?,
+            &BUCKET_CHECKPOINTS,
+            300,
+            600,
+        )?);
+        diagnostic_kinds.push(SceneKind::Bucket);
+    }
+
+    let mut failures = Vec::new();
+    for (scene, kind) in accepted_scenes
+        .iter()
+        .zip(&accepted_kinds)
+        .chain(diagnostic_scenes.iter().zip(&diagnostic_kinds))
+    {
+        failures.extend(scene_failure_records(scene, *kind, &runner, &candidates)?);
+    }
+    minimize_failure_scene_aliases(&mut failures);
+    for failure in &failures {
+        atomic_json(
+            &staging
+                .join("failures")
+                .join(format!("{}-{}.json", failure.candidate, failure.scene)),
+            failure,
+        )?;
+    }
+
+    let churn = coloring_churn_evidence(&runner, &candidates)?;
+    let gpu_performance = performance_matrix(&arguments, &candidates)?;
+    let optimized_box2d_performance = optimized_box2d_matrix(&arguments, &staging)?;
+    let decision = scheduling_decision(
+        &candidates,
+        &accepted_scenes,
+        &diagnostic_scenes,
+        &gpu_performance,
+        &optimized_box2d_performance,
+    )?;
+    let platform_artifacts = copy_platform_artifacts(&arguments.platforms, &staging)?;
+    atomic_write(
+        &staging.join("playback.svg"),
+        render_scheduling_playback(&accepted_scenes, &candidates)?.as_bytes(),
+    )?;
+    let manifest = SchedulingManifest {
+        schema_version: SCHEMA_VERSION,
+        metrics_version: AWAKE_SETTLING_METRICS_VERSION,
+        artifact_kind: "p5.2b-s5.4b-scheduling-factorial",
+        run_id: arguments.run_id.clone(),
+        source_revision,
+        source_dirty,
+        source_patch_digest,
+        box2d_revision: BOX2D_REVISION,
+        adapter: runner.diagnostics().clone(),
+        candidates,
+        accepted_scenes,
+        diagnostic_scenes,
+        churn,
+        failures,
+        gpu_performance,
+        optimized_box2d_performance,
+        decision,
+        platform_artifacts,
+        physical_device_gap: arguments.physical_device_gap,
+        physical_defaults_changed: false,
+        numerical_tolerances_changed: false,
+        oracle_precedence_changed: false,
+        product_constructor_changed: false,
+        selected_product_execution: GpuSolverExecutionV4::SELECTED,
+        playback: "playback.svg",
+    };
+    atomic_json(&staging.join("manifest.json"), &manifest)?;
+    sync_directory(&staging)?;
+    fs::rename(&staging, &arguments.output).map_err(|error| error.to_string())?;
+    sync_directory(arguments.output.parent().unwrap_or(Path::new(".")))?;
+    let manifest_bytes =
+        fs::read(arguments.output.join("manifest.json")).map_err(|error| error.to_string())?;
+    println!(
+        "PHYSBOX5_VALIDATION_SUCCESS host=native scenario=s5.4b-scheduling-factorial run_id={} manifest_sha256={} output={}",
+        arguments.run_id,
+        sha256_bytes(&manifest_bytes),
+        arguments.output.display()
+    );
+    Ok(())
+}
+
 fn scheduling_control_evidence(
     runner: &GpuGeneratedContactRunner,
     mut settings: SolverSettingsV1,
@@ -848,6 +1099,7 @@ fn candidate_definitions(base: SolverSettingsV1) -> Vec<CandidateDefinition> {
                 iterations: iteration_count,
                 settings,
                 execution,
+                scheduling_policy: GpuSolverSchedulingPolicyV1::STANDARD,
                 question,
             });
         }
@@ -925,10 +1177,79 @@ fn colored_candidate_definitions(base: SolverSettingsV1) -> Vec<CandidateDefinit
                 iterations,
                 settings,
                 execution,
+                scheduling_policy: GpuSolverSchedulingPolicyV1::STANDARD,
                 question,
             }
         })
         .collect()
+}
+
+fn scheduling_candidate_definitions(base: SolverSettingsV1) -> Vec<CandidateDefinition> {
+    [
+        (
+            "forward-i2-full-per-color",
+            GpuSolverSchedulingPolicyV1::STANDARD,
+            "full color rebuild with one indirect dispatch per possible color",
+        ),
+        (
+            "forward-i2-incremental-per-color",
+            GpuSolverSchedulingPolicyV1::INCREMENTAL,
+            "stable-pair incremental color maintenance with per-color dispatch",
+        ),
+        (
+            "forward-i2-full-island",
+            GpuSolverSchedulingPolicyV1::WORKGROUP_PER_ISLAND,
+            "full color rebuild with one barrier-synchronized workgroup per island",
+        ),
+        (
+            "forward-i2-incremental-island",
+            GpuSolverSchedulingPolicyV1::INCREMENTAL_WORKGROUP_PER_ISLAND,
+            "incremental colors crossed with one barrier-synchronized workgroup per island",
+        ),
+    ]
+    .into_iter()
+    .map(|(id, scheduling_policy, question)| {
+        let mut settings = base;
+        settings.iterations = 2;
+        CandidateDefinition {
+            id,
+            family: CandidateFamilyV3::ManifoldColorForward,
+            iterations: 2,
+            settings,
+            execution: GpuSolverExecutionV4::manifold_colored_block_experiment(true, true),
+            scheduling_policy,
+            question,
+        }
+    })
+    .collect()
+}
+
+fn run_candidate(
+    runner: &GpuGeneratedContactRunner,
+    scenario: &ScenarioV1,
+    completed_steps: u32,
+    candidate: &CandidateDefinition,
+) -> Result<GpuGeneratedContactOutput, String> {
+    runner.run_scheduling_experiment(
+        scenario,
+        completed_steps,
+        candidate.execution,
+        candidate.scheduling_policy,
+    )
+}
+
+fn run_candidate_history(
+    runner: &GpuGeneratedContactRunner,
+    scenario: &ScenarioV1,
+    completed_steps: u32,
+    candidate: &CandidateDefinition,
+) -> Result<GpuGeneratedContactBodyHistoryV1, String> {
+    runner.run_scheduling_experiment_body_history_diagnostic(
+        scenario,
+        completed_steps,
+        candidate.execution,
+        candidate.scheduling_policy,
+    )
 }
 
 fn scene_failure_records(
@@ -962,8 +1283,7 @@ fn scene_failure_records(
         let mut reproducer = scene.source.clone();
         reproducer.settings = definition.settings;
         reproducer.requested_steps = first_failure_step;
-        let output =
-            runner.run_experiment(&reproducer, first_failure_step, definition.execution)?;
+        let output = run_candidate(runner, &reproducer, first_failure_step, definition)?;
         let overflowed = output.failure.is_some()
             || output
                 .capacities
@@ -1046,8 +1366,8 @@ fn coloring_churn_evidence(
         for candidate in candidates {
             let mut scenario = source.scenario.clone();
             scenario.settings = candidate.settings;
-            let output = runner.run_experiment(&scenario, 1, candidate.execution)?;
-            let replay = runner.run_experiment(&scenario, 1, candidate.execution)?;
+            let output = run_candidate(runner, &scenario, 1, candidate)?;
+            let replay = run_candidate(runner, &scenario, 1, candidate)?;
             let result_hash = serialized_hash(&output)?;
             let exact_replay = serialized_hash(&replay)? == result_hash;
             let capacity_clean = output.failure.is_none()
@@ -1093,7 +1413,14 @@ fn coloring_churn_evidence(
     }
     Ok(ChurnEvidence {
         version: physbox_engine::P5_2_COLORING_CHURN_VERSION,
-        full_rebuild_each_snapshot: true,
+        full_rebuild_each_snapshot: candidates.iter().all(|candidate| {
+            candidate.scheduling_policy.color_maintenance
+                == physbox_engine::GpuColorMaintenanceV1::FullRebuild
+        }),
+        incremental_maintenance_included: candidates.iter().any(|candidate| {
+            candidate.scheduling_policy.color_maintenance
+                == physbox_engine::GpuColorMaintenanceV1::StablePairIncremental
+        }),
         snapshots,
     })
 }
@@ -1235,6 +1562,148 @@ fn colored_decision(
         },
         production_selection_deferred: true,
         recommendation_deferred_to_human_review: true,
+    })
+}
+
+fn scheduling_decision(
+    candidates: &[CandidateDefinition],
+    accepted_scenes: &[SceneEvidence],
+    diagnostic_scenes: &[SceneEvidence],
+    performance: &[GpuPerformanceRow],
+    optimized_box2d: &[OptimizedBox2dRow],
+) -> Result<SchedulingDecision, String> {
+    if accepted_scenes.len() != 7 || diagnostic_scenes.len() != 4 {
+        return Err(
+            "S5.4b scheduling evidence has the wrong acceptance or diagnostic scene count"
+                .to_owned(),
+        );
+    }
+    let fastest_box2d = optimized_box2d
+        .iter()
+        .filter(|row| row.bodies == 1_024 && row.success_sentinel && !row.source_dirty)
+        .map(|row| row.p50_seconds)
+        .min_by(f64::total_cmp)
+        .ok_or_else(|| {
+            "S5.4b scheduling evidence omitted a clean successful 1K Box2D row".to_owned()
+        })?;
+    let mut candidate_decisions = Vec::with_capacity(candidates.len());
+    for candidate in candidates {
+        let accepted = accepted_scenes
+            .iter()
+            .map(|scene| candidate_scene(scene, candidate.id))
+            .collect::<Result<Vec<_>, _>>()?;
+        let diagnostics = diagnostic_scenes
+            .iter()
+            .map(|scene| candidate_scene(scene, candidate.id))
+            .collect::<Result<Vec<_>, _>>()?;
+        let rows = performance
+            .iter()
+            .filter(|row| row.candidate == candidate.id)
+            .collect::<Vec<_>>();
+        if rows.len() != 3
+            || [32, 256, 1_024]
+                .into_iter()
+                .any(|bodies| rows.iter().filter(|row| row.bodies == bodies).count() != 1)
+        {
+            return Err(format!(
+                "{} has an incomplete scheduling performance matrix",
+                candidate.id
+            ));
+        }
+        let one_k = rows
+            .iter()
+            .copied()
+            .find(|row| row.bodies == 1_024)
+            .expect("the matrix check established the 1K row");
+        let accepted_structural_passes = accepted
+            .iter()
+            .filter(|scene| scene.preserves_structure_through_run)
+            .count() as u32;
+        let accepted_exact_and_capacity_clean = accepted.iter().all(|scene| {
+            scene.exact_replay
+                && scene.preserves_structure_through_run
+                && scene.samples.iter().all(|sample| sample.capacity_clean)
+        });
+        let diagnostic_structural_passes = diagnostics
+            .iter()
+            .filter(|scene| scene.preserves_structure_through_run)
+            .count() as u32;
+        let one_k_complete_step_seconds = one_k.gpu_end_to_end_p50_seconds;
+        let qualified = accepted_structural_passes == 7
+            && accepted_exact_and_capacity_clean
+            && rows.iter().all(|row| row.capacity_clean);
+        candidate_decisions.push(SchedulingCandidateDecision {
+            candidate: candidate.id,
+            scheduling_policy: candidate.scheduling_policy,
+            accepted_structural_passes,
+            accepted_exact_and_capacity_clean,
+            diagnostic_structural_passes,
+            one_k_complete_step_seconds,
+            one_k_below_feasibility_boundary: one_k.capacity_clean
+                && one_k_complete_step_seconds
+                    .is_some_and(|seconds| seconds < FEASIBILITY_BOUNDARY_SECONDS),
+            one_k_dispatches_per_step: one_k.dispatches_per_step,
+            one_k_allocated_bytes: one_k.allocated_bytes,
+            one_k_color_construction_seconds: phase_p50(one_k, |sample| {
+                sample.color_construction_seconds
+            })?,
+            one_k_color_compaction_seconds: phase_p50(one_k, |sample| {
+                sample.color_compaction_seconds
+            })?,
+            one_k_active_color_solve_seconds: phase_p50(one_k, |sample| {
+                sample.active_color_solve_seconds
+            })?,
+            one_k_empty_color_solve_seconds: phase_p50(one_k, |sample| {
+                sample.empty_color_solve_seconds
+            })?,
+            fastest_box2d_ratio: one_k_complete_step_seconds.map(|seconds| seconds / fastest_box2d),
+            qualified,
+        });
+    }
+    let qualified_candidates = candidate_decisions
+        .iter()
+        .filter(|candidate| candidate.qualified)
+        .map(|candidate| candidate.candidate)
+        .collect::<Vec<_>>();
+    let recommended_for_human_review = candidate_decisions
+        .iter()
+        .filter(|candidate| candidate.qualified)
+        .filter_map(|candidate| {
+            candidate
+                .one_k_complete_step_seconds
+                .map(|seconds| (seconds, candidate.candidate))
+        })
+        .min_by(|left, right| left.0.total_cmp(&right.0))
+        .map(|(_, candidate)| candidate);
+    let recommendation_reason = recommended_for_human_review.map_or_else(
+        || {
+            "no scheduling lane preserved the governed acceptance corpus with exact replay and clean capacity, so the evidence makes no recommendation"
+                .to_owned()
+        },
+        |candidate| {
+            format!(
+                "{candidate} has the lowest ordinary 1K complete-step median among scheduling lanes that preserve all seven accepted structures with exact replay and clean capacity; production selection and quality-band acceptance remain human decisions"
+            )
+        },
+    );
+    Ok(SchedulingDecision {
+        version: 1,
+        feasibility_boundary_seconds: FEASIBILITY_BOUNDARY_SECONDS,
+        accepted_scene_count: accepted_scenes.len() as u32,
+        diagnostic_scene_count: diagnostic_scenes.len() as u32,
+        candidates: candidate_decisions,
+        qualified_candidates,
+        recommended_for_human_review,
+        recommendation_reason,
+        production_selection_deferred: true,
+        quality_band_acceptance_deferred: true,
+        reconsideration_triggers: vec![
+            "a required browser or Android host changes correctness, capacity, or relative scheduling cost",
+            "the recommended lane loses exact replay or governed-corpus structure",
+            "island construction, bin storage, or color maintenance dominates at target scale",
+            "liquid coupling materially changes the scheduling crossover",
+            "a required workload exceeds the 32-color or one-workgroup-per-island boundary",
+        ],
     })
 }
 
@@ -1518,7 +1987,7 @@ fn evaluate_scene(
         let mut previous_manifolds = None;
         let mut previous_cache = None;
         for (&checkpoint, authority_sample) in checkpoints.iter().zip(&authority) {
-            let output = runner.run_experiment(&scenario, checkpoint, candidate.execution)?;
+            let output = run_candidate(runner, &scenario, checkpoint, candidate)?;
             let result_hash = serialized_hash(&output)?;
             let mut final_scenario = scenario.clone();
             final_scenario.bodies.clone_from(&output.bodies);
@@ -1587,11 +2056,7 @@ fn evaluate_scene(
             &final_sample.bodies,
             !final_sample.capacity_clean,
         );
-        let pose_history = runner.run_experiment_body_history_diagnostic(
-            &scenario,
-            completed_steps,
-            candidate.execution,
-        )?;
+        let pose_history = run_candidate_history(runner, &scenario, completed_steps, candidate)?;
         let first_structural_failure_step = pose_history
             .bodies
             .iter()
@@ -1600,7 +2065,7 @@ fn evaluate_scene(
         let first_execution_failure = pose_history.failures.first().cloned();
         let preserves_structure_through_run =
             first_structural_failure_step.is_none() && first_execution_failure.is_none();
-        let replay = runner.run_experiment(&scenario, completed_steps, candidate.execution)?;
+        let replay = run_candidate(runner, &scenario, completed_steps, candidate)?;
         let exact_replay = serialized_hash(&replay)? == final_sample.result_hash;
         candidate_evidence.push(CandidateSceneEvidence {
             candidate: candidate.id,
@@ -1775,17 +2240,19 @@ fn performance_matrix(
     let mut rows = Vec::new();
     for candidate in candidates {
         for bodies in [32_u32, 256, 1_024] {
-            eprintln!("S5.4a performance {} bodies {bodies}", candidate.id);
+            eprintln!("GPU performance {} bodies {bodies}", candidate.id);
             let mut scenario =
                 p5_2_generated_performance_scenario(bodies).map_err(|error| error.to_string())?;
             scenario.settings = candidate.settings;
-            let benchmark =
-                pollster::block_on(physbox_engine::benchmark_gpu_generated_contact_experiment(
+            let benchmark = pollster::block_on(
+                physbox_engine::benchmark_gpu_generated_contact_scheduling_experiment(
                     &scenario,
                     arguments.warmup,
                     arguments.samples,
                     candidate.execution,
-                ))?;
+                    candidate.scheduling_policy,
+                ),
+            )?;
             let capacity_clean = benchmark.correctness.failure.is_none()
                 && benchmark
                     .correctness
@@ -1947,6 +2414,23 @@ fn render_colored_playback(
             "manifold-alternating-i4",
         ],
         "PhysBox 5 S5.4b synchronized compact-coloring factorial",
+    )
+}
+
+fn render_scheduling_playback(
+    scenes: &[SceneEvidence],
+    candidates: &[CandidateDefinition],
+) -> Result<String, String> {
+    render_playback_for(
+        scenes,
+        candidates,
+        &[
+            "forward-i2-full-per-color",
+            "forward-i2-incremental-per-color",
+            "forward-i2-full-island",
+            "forward-i2-incremental-island",
+        ],
+        "PhysBox 5 S5.4b synchronized coloring-scheduling factorial",
     )
 }
 
@@ -2169,6 +2653,7 @@ struct Arguments {
     platforms: Vec<(String, PathBuf)>,
     physical_device_gap: Option<String>,
     colored_factorial: bool,
+    scheduling_factorial: bool,
 }
 
 impl Arguments {
@@ -2184,6 +2669,7 @@ impl Arguments {
         let mut platforms = Vec::new();
         let mut physical_device_gap = None;
         let mut colored_factorial = false;
+        let mut scheduling_factorial = false;
         let mut arguments = std::env::args().skip(1);
         while let Some(argument) = arguments.next() {
             if argument == "--require-clean" {
@@ -2192,6 +2678,10 @@ impl Arguments {
             }
             if argument == "--s5.4b" {
                 colored_factorial = true;
+                continue;
+            }
+            if argument == "--s5.4b-scheduling" {
+                scheduling_factorial = true;
                 continue;
             }
             let value = arguments
@@ -2218,6 +2708,9 @@ impl Arguments {
         if warmup == 0 || samples == 0 {
             return Err("warmup and samples must be positive".to_owned());
         }
+        if colored_factorial && scheduling_factorial {
+            return Err("choose only one S5.4b factorial mode".to_owned());
+        }
         Ok(Self {
             run_id: run_id.ok_or_else(|| "missing --run-id".to_owned())?,
             output: output.ok_or_else(|| "missing --output".to_owned())?,
@@ -2231,6 +2724,7 @@ impl Arguments {
             platforms,
             physical_device_gap,
             colored_factorial,
+            scheduling_factorial,
         })
     }
 }
@@ -2277,6 +2771,7 @@ mod tests {
             candidate.settings.iterations == candidate.iterations
                 && candidate.execution.warm_start
                 && candidate.execution.relaxation
+                && candidate.scheduling_policy == GpuSolverSchedulingPolicyV1::STANDARD
         }));
         assert!(candidates.iter().all(|candidate| {
             (candidate.family == CandidateFamilyV3::ColoredInPlace)
@@ -2331,6 +2826,7 @@ mod tests {
                 && candidate.settings.iterations == candidate.iterations
                 && candidate.execution.warm_start
                 && candidate.execution.relaxation
+                && candidate.scheduling_policy == GpuSolverSchedulingPolicyV1::STANDARD
         }));
         assert_eq!(
             candidates
@@ -2350,6 +2846,45 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![1, 2, 4]
         );
+    }
+
+    #[test]
+    fn scheduling_factorial_crosses_only_the_two_scheduling_dimensions() {
+        let source = p5_2_centered_rectangle_stack_scenario(2, 1).unwrap();
+        let candidates = scheduling_candidate_definitions(source.settings);
+        assert_eq!(
+            candidates
+                .iter()
+                .map(|candidate| candidate.id)
+                .collect::<Vec<_>>(),
+            vec![
+                "forward-i2-full-per-color",
+                "forward-i2-incremental-per-color",
+                "forward-i2-full-island",
+                "forward-i2-incremental-island",
+            ]
+        );
+        assert_eq!(
+            candidates
+                .iter()
+                .map(|candidate| candidate.scheduling_policy)
+                .collect::<Vec<_>>(),
+            vec![
+                GpuSolverSchedulingPolicyV1::STANDARD,
+                GpuSolverSchedulingPolicyV1::INCREMENTAL,
+                GpuSolverSchedulingPolicyV1::WORKGROUP_PER_ISLAND,
+                GpuSolverSchedulingPolicyV1::INCREMENTAL_WORKGROUP_PER_ISLAND,
+            ]
+        );
+        assert!(candidates.iter().all(|candidate| {
+            candidate.family == CandidateFamilyV3::ManifoldColorForward
+                && candidate.iterations == 2
+                && candidate.settings.iterations == 2
+                && candidate.execution
+                    == GpuSolverExecutionV4::manifold_colored_block_experiment(true, true)
+                && candidate.execution != GpuSolverExecutionV4::SELECTED
+                && !candidate.question.is_empty()
+        }));
     }
 
     #[test]
