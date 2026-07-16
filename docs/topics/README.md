@@ -29,6 +29,10 @@ a running log.
 - [Collision and contact persistence](collision-and-contact-persistence.md) —
   analytic shape encoding, canonical pairs/features, persistent keys, GPU
   record bytes, atomic capacity semantics, and P5.2 reconsideration triggers.
+- [Contact solver parallelism and scheduling](contact-solver-parallelism.md) —
+  why independent-parallel (Jacobi) solving fails deep stacks, the measured
+  S5.4/S5.4a alternatives, the selected colored/manifold direction, the
+  portable WebGPU dispatch floor, fallbacks, prior art, and pacing boundaries.
 
 ## Conventions
 
