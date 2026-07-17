@@ -494,13 +494,17 @@ laboratory-only comparator. Candidate depths 14 through 16 and the permanent
 four-body energy reproducer retain the exact shared source hash, two
 iterations, prior-contact identity, 30 Hz softness, damping 10, static
 multiplier 1, forward order, compact indirect dispatch, warm start,
-relaxation, scheduler, capacities, and measurement policy. Only the normal
-solve and its color unit change from manifold-block/manifold to
-point-normal/point, and the raw artifact attests that execution. Product and
-standard constructors remain selected manifold-block. Cross-backend traces
-decide whether the unstable soft feedback is block-specific. If point-normal
-removes it, changing solver family or accumulation architecture remains a
-human checkpoint before any larger matrix or product-default change.
+relaxation, capacities, and measurement policy. The existing point lane
+changes the normal solve and color unit from manifold-block/manifold to
+point-normal/point. It must also use the historical serial full-rebuild
+scheduler because the selected speculative parallel constructor was
+qualified only for manifold units and changes assignment/order. The raw
+artifact attests both dimensions. This is therefore a truthful bundle-level
+attribution control, not a claim that the block solve alone changed. Product
+and standard trace constructors remain selected manifold-block plus the
+selected parallel scheduler. If the point control removes the failure, a
+point-unit parallel constructor or any solver-family change requires human
+review before a larger matrix or product-default change.
 
 Stop early for human direction before a coefficient/identity-band default
 change, tolerance or quality-band revision, scheduler/solver/accumulation

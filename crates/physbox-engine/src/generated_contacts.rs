@@ -2100,21 +2100,23 @@ impl GpuGeneratedContactRunner {
         submission_batch_steps: u32,
         soft_feedback_policy: crate::GpuSoftFeedbackPolicyV1,
     ) -> Result<GpuGeneratedContactSeriesV1, String> {
-        self.run_contact_policy_observation_series_with_execution_and_soft_feedback(
+        self.run_contact_policy_observation_series_with_execution_scheduling_and_soft_feedback(
             scenario,
             observation_interval_steps,
             completed_steps,
             identity_policy,
             submission_batch_steps,
             GpuSolverExecutionV4::SELECTED,
+            GpuSolverSchedulingPolicyV1::SELECTED,
             soft_feedback_policy,
         )
     }
 
-    /// Crosses an existing laboratory solver execution with the bounded
-    /// contact-policy trace. Product and standard series remain selected.
+    /// Crosses existing laboratory solver and scheduling policies with the
+    /// bounded contact-policy trace. Product and standard series remain
+    /// selected.
     #[allow(clippy::too_many_arguments)]
-    pub fn run_contact_policy_observation_series_with_execution_and_soft_feedback(
+    pub fn run_contact_policy_observation_series_with_execution_scheduling_and_soft_feedback(
         &self,
         scenario: &ScenarioV1,
         observation_interval_steps: u32,
@@ -2122,6 +2124,7 @@ impl GpuGeneratedContactRunner {
         identity_policy: ContactIdentityPolicyV1,
         submission_batch_steps: u32,
         execution: GpuSolverExecutionV4,
+        scheduling_policy: GpuSolverSchedulingPolicyV1,
         soft_feedback_policy: crate::GpuSoftFeedbackPolicyV1,
     ) -> Result<GpuGeneratedContactSeriesV1, String> {
         if observation_interval_steps == 0
@@ -2148,7 +2151,6 @@ impl GpuGeneratedContactRunner {
             crate::BODY_COMMAND_CAPACITY,
             &scenario.bodies,
         )?;
-        let scheduling_policy = GpuSolverSchedulingPolicyV1::SELECTED;
         let graph =
             GpuGeneratedContactGraph::new_with_topologies_execution_scheduling_identity_and_soft_feedback(
                 &self.device,

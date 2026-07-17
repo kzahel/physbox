@@ -10,9 +10,10 @@ use physbox_contracts::{
 };
 use physbox_engine::{
     GpuGeneratedContactRunner, GpuGeneratedContactSeriesV1, GpuSoftFeedbackPolicyV1,
-    GpuSolverExecutionV4, P5_2_SETTLING_EVIDENCE_STEPS, P5_2SettlingReviewPolicy,
-    p5_2_minimized_mixed_pile_energy_scenario, p5_2_minimized_mixed_pile_soft_i1_scenario,
-    p5_2_settling_review_scenario, p5_2_settling_soft_i1_comparator_scenario,
+    GpuSolverExecutionV4, GpuSolverSchedulingPolicyV1, P5_2_SETTLING_EVIDENCE_STEPS,
+    P5_2SettlingReviewPolicy, p5_2_minimized_mixed_pile_energy_scenario,
+    p5_2_minimized_mixed_pile_soft_i1_scenario, p5_2_settling_review_scenario,
+    p5_2_settling_soft_i1_comparator_scenario,
 };
 use physbox_lab::settling::{
     awake_settling_measurement_policy_v2, centered_stack_structure,
@@ -124,6 +125,7 @@ impl TraceScenario {
                         policy.identity_policy(),
                         Structure::CenteredStack,
                         GpuSolverExecutionV4::SELECTED,
+                        GpuSolverSchedulingPolicyV1::SELECTED,
                         GpuSoftFeedbackPolicyV1::SELECTED,
                     )
                 })
@@ -141,6 +143,7 @@ impl TraceScenario {
                             ContactIdentityPolicyV1::PriorContactHysteresis,
                             Structure::CenteredStack,
                             GpuSolverExecutionV4::SELECTED,
+                            GpuSolverSchedulingPolicyV1::SELECTED,
                             GpuSoftFeedbackPolicyV1::SELECTED,
                         )
                     })
@@ -170,6 +173,7 @@ impl TraceScenario {
                         ContactIdentityPolicyV1::PriorContactHysteresis,
                         Structure::EnergyOnly,
                         GpuSolverExecutionV4::SELECTED,
+                        GpuSolverSchedulingPolicyV1::SELECTED,
                         GpuSoftFeedbackPolicyV1::SELECTED,
                     )
                 })
@@ -181,6 +185,7 @@ impl TraceScenario {
                         ContactIdentityPolicyV1::PriorContactHysteresis,
                         Structure::EnergyOnly,
                         GpuSolverExecutionV4::SELECTED,
+                        GpuSolverSchedulingPolicyV1::SELECTED,
                         GpuSoftFeedbackPolicyV1::SELECTED,
                     )
                 })
@@ -192,6 +197,7 @@ impl TraceScenario {
                         ContactIdentityPolicyV1::PriorContactHysteresis,
                         Structure::EnergyOnly,
                         GpuSolverExecutionV4::SELECTED,
+                        GpuSolverSchedulingPolicyV1::SELECTED,
                         GpuSoftFeedbackPolicyV1::FirstBiasedIterationOnly,
                     )
                 })
@@ -203,6 +209,7 @@ impl TraceScenario {
                         ContactIdentityPolicyV1::PriorContactHysteresis,
                         Structure::EnergyOnly,
                         point_i2_execution(),
+                        GpuSolverSchedulingPolicyV1::STANDARD,
                         GpuSoftFeedbackPolicyV1::SELECTED,
                     )
                 })
@@ -216,6 +223,7 @@ type TraceSource = (
     ContactIdentityPolicyV1,
     Structure,
     GpuSolverExecutionV4,
+    GpuSolverSchedulingPolicyV1,
     GpuSoftFeedbackPolicyV1,
 );
 
@@ -224,9 +232,17 @@ const fn tagged_source(
     identity: ContactIdentityPolicyV1,
     structure: Structure,
     execution: GpuSolverExecutionV4,
+    scheduling_policy: GpuSolverSchedulingPolicyV1,
     soft_feedback: GpuSoftFeedbackPolicyV1,
 ) -> TraceSource {
-    (source, identity, structure, execution, soft_feedback)
+    (
+        source,
+        identity,
+        structure,
+        execution,
+        scheduling_policy,
+        soft_feedback,
+    )
 }
 
 const fn point_i2_execution() -> GpuSolverExecutionV4 {
@@ -241,6 +257,7 @@ fn candidate_stack(rectangle_count: u32) -> Result<TraceSource, String> {
                 ContactIdentityPolicyV1::PriorContactHysteresis,
                 Structure::CenteredStack,
                 GpuSolverExecutionV4::SELECTED,
+                GpuSolverSchedulingPolicyV1::SELECTED,
                 GpuSoftFeedbackPolicyV1::SELECTED,
             )
         })
@@ -255,6 +272,7 @@ fn soft_i1_stack(rectangle_count: u32) -> Result<TraceSource, String> {
                 ContactIdentityPolicyV1::PriorContactHysteresis,
                 Structure::CenteredStack,
                 GpuSolverExecutionV4::SELECTED,
+                GpuSolverSchedulingPolicyV1::SELECTED,
                 GpuSoftFeedbackPolicyV1::SELECTED,
             )
         })
@@ -269,6 +287,7 @@ fn soft_first_stack(rectangle_count: u32) -> Result<TraceSource, String> {
                 ContactIdentityPolicyV1::PriorContactHysteresis,
                 Structure::CenteredStack,
                 GpuSolverExecutionV4::SELECTED,
+                GpuSolverSchedulingPolicyV1::SELECTED,
                 GpuSoftFeedbackPolicyV1::FirstBiasedIterationOnly,
             )
         })
@@ -283,6 +302,7 @@ fn point_i2_stack(rectangle_count: u32) -> Result<TraceSource, String> {
                 ContactIdentityPolicyV1::PriorContactHysteresis,
                 Structure::CenteredStack,
                 point_i2_execution(),
+                GpuSolverSchedulingPolicyV1::STANDARD,
                 GpuSoftFeedbackPolicyV1::SELECTED,
             )
         })
@@ -333,18 +353,20 @@ fn main() {
 
 fn run() -> Result<(), String> {
     let arguments = Arguments::parse(std::env::args().skip(1))?;
-    let (source, identity_policy, structure, execution, soft_feedback_policy) =
+    let (source, identity_policy, structure, execution, scheduling_policy, soft_feedback_policy) =
         arguments.scenario.source()?;
     let runner = pollster::block_on(GpuGeneratedContactRunner::new())?;
-    let raw = runner.run_contact_policy_observation_series_with_execution_and_soft_feedback(
-        &source,
-        1,
-        P5_2_SETTLING_EVIDENCE_STEPS,
-        identity_policy,
-        SUBMISSION_BATCH_STEPS,
-        execution,
-        soft_feedback_policy,
-    )?;
+    let raw = runner
+        .run_contact_policy_observation_series_with_execution_scheduling_and_soft_feedback(
+            &source,
+            1,
+            P5_2_SETTLING_EVIDENCE_STEPS,
+            identity_policy,
+            SUBMISSION_BATCH_STEPS,
+            execution,
+            scheduling_policy,
+            soft_feedback_policy,
+        )?;
     let structural_observations = raw
         .snapshots
         .iter()
@@ -508,7 +530,7 @@ mod tests {
 
     #[test]
     fn minimized_source_matches_permanent_reproducer() {
-        let (source, identity, structure, execution, soft_feedback) =
+        let (source, identity, structure, execution, scheduling, soft_feedback) =
             TraceScenario::MinimizedMixedCandidate.source().unwrap();
         assert_eq!(
             canonical_hash(&source).unwrap(),
@@ -517,6 +539,7 @@ mod tests {
         assert_eq!(identity, ContactIdentityPolicyV1::PriorContactHysteresis);
         assert!(matches!(structure, Structure::EnergyOnly));
         assert_eq!(execution, GpuSolverExecutionV4::SELECTED);
+        assert_eq!(scheduling, GpuSolverSchedulingPolicyV1::SELECTED);
         assert_eq!(soft_feedback, GpuSoftFeedbackPolicyV1::SELECTED);
     }
 
@@ -547,12 +570,14 @@ mod tests {
     fn candidate_depth_aliases_share_the_frozen_policy() {
         for count in 8..=16 {
             let alias = TraceScenario::parse(&format!("settling-candidate-{count}")).unwrap();
-            let (source, identity, structure, execution, soft_feedback) = alias.source().unwrap();
+            let (source, identity, structure, execution, scheduling, soft_feedback) =
+                alias.source().unwrap();
             assert_eq!(source.bodies.len(), count as usize + 1);
             assert_eq!(identity, ContactIdentityPolicyV1::PriorContactHysteresis);
             assert!(source.settings.contact_softness.is_some());
             assert!(matches!(structure, Structure::CenteredStack));
             assert_eq!(execution, GpuSolverExecutionV4::SELECTED);
+            assert_eq!(scheduling, GpuSolverSchedulingPolicyV1::SELECTED);
             assert_eq!(soft_feedback, GpuSoftFeedbackPolicyV1::SELECTED);
         }
     }
@@ -564,12 +589,13 @@ mod tests {
                 p5_2_settling_review_scenario(count, P5_2SettlingReviewPolicy::SoftCandidate)
                     .unwrap();
             let alias = TraceScenario::parse(&format!("settling-candidate-i1-{count}")).unwrap();
-            let (mut source, identity, structure, execution, soft_feedback) =
+            let (mut source, identity, structure, execution, scheduling, soft_feedback) =
                 alias.source().unwrap();
             assert_eq!(source.settings.iterations, 1);
             assert_eq!(identity, ContactIdentityPolicyV1::PriorContactHysteresis);
             assert!(matches!(structure, Structure::CenteredStack));
             assert_eq!(execution, GpuSolverExecutionV4::SELECTED);
+            assert_eq!(scheduling, GpuSolverSchedulingPolicyV1::SELECTED);
             assert_eq!(soft_feedback, GpuSoftFeedbackPolicyV1::SELECTED);
             source.id = baseline.id.clone();
             source.settings.iterations = baseline.settings.iterations;
@@ -580,12 +606,13 @@ mod tests {
         }
 
         let baseline = p5_2_minimized_mixed_pile_energy_scenario().unwrap();
-        let (mut source, identity, structure, execution, soft_feedback) =
+        let (mut source, identity, structure, execution, scheduling, soft_feedback) =
             TraceScenario::MinimizedMixedCandidateI1.source().unwrap();
         assert_eq!(source.settings.iterations, 1);
         assert_eq!(identity, ContactIdentityPolicyV1::PriorContactHysteresis);
         assert!(matches!(structure, Structure::EnergyOnly));
         assert_eq!(execution, GpuSolverExecutionV4::SELECTED);
+        assert_eq!(scheduling, GpuSolverSchedulingPolicyV1::SELECTED);
         assert_eq!(soft_feedback, GpuSoftFeedbackPolicyV1::SELECTED);
         source.id = baseline.id.clone();
         source.settings.iterations = baseline.settings.iterations;
@@ -603,7 +630,8 @@ mod tests {
                     .unwrap();
             let alias =
                 TraceScenario::parse(&format!("settling-candidate-soft-first-{count}")).unwrap();
-            let (source, identity, structure, execution, soft_feedback) = alias.source().unwrap();
+            let (source, identity, structure, execution, scheduling, soft_feedback) =
+                alias.source().unwrap();
             assert_eq!(
                 canonical_hash(&source).unwrap(),
                 canonical_hash(&baseline).unwrap()
@@ -612,6 +640,7 @@ mod tests {
             assert_eq!(identity, ContactIdentityPolicyV1::PriorContactHysteresis);
             assert!(matches!(structure, Structure::CenteredStack));
             assert_eq!(execution, GpuSolverExecutionV4::SELECTED);
+            assert_eq!(scheduling, GpuSolverSchedulingPolicyV1::SELECTED);
             assert_eq!(
                 soft_feedback,
                 GpuSoftFeedbackPolicyV1::FirstBiasedIterationOnly
@@ -619,7 +648,7 @@ mod tests {
         }
 
         let baseline = p5_2_minimized_mixed_pile_energy_scenario().unwrap();
-        let (source, identity, structure, execution, soft_feedback) =
+        let (source, identity, structure, execution, scheduling, soft_feedback) =
             TraceScenario::MinimizedMixedCandidateSoftFirst
                 .source()
                 .unwrap();
@@ -631,6 +660,7 @@ mod tests {
         assert_eq!(identity, ContactIdentityPolicyV1::PriorContactHysteresis);
         assert!(matches!(structure, Structure::EnergyOnly));
         assert_eq!(execution, GpuSolverExecutionV4::SELECTED);
+        assert_eq!(scheduling, GpuSolverSchedulingPolicyV1::SELECTED);
         assert_eq!(
             soft_feedback,
             GpuSoftFeedbackPolicyV1::FirstBiasedIterationOnly
@@ -645,7 +675,8 @@ mod tests {
                     .unwrap();
             let alias =
                 TraceScenario::parse(&format!("settling-candidate-point-i2-{count}")).unwrap();
-            let (source, identity, structure, execution, soft_feedback) = alias.source().unwrap();
+            let (source, identity, structure, execution, scheduling, soft_feedback) =
+                alias.source().unwrap();
             assert_eq!(
                 canonical_hash(&source).unwrap(),
                 canonical_hash(&baseline).unwrap()
@@ -654,11 +685,12 @@ mod tests {
             assert_eq!(identity, ContactIdentityPolicyV1::PriorContactHysteresis);
             assert!(matches!(structure, Structure::CenteredStack));
             assert_eq!(execution, point_i2_execution());
+            assert_eq!(scheduling, GpuSolverSchedulingPolicyV1::STANDARD);
             assert_eq!(soft_feedback, GpuSoftFeedbackPolicyV1::SELECTED);
         }
 
         let baseline = p5_2_minimized_mixed_pile_energy_scenario().unwrap();
-        let (source, identity, structure, execution, soft_feedback) =
+        let (source, identity, structure, execution, scheduling, soft_feedback) =
             TraceScenario::MinimizedMixedCandidatePointI2
                 .source()
                 .unwrap();
@@ -670,6 +702,7 @@ mod tests {
         assert_eq!(identity, ContactIdentityPolicyV1::PriorContactHysteresis);
         assert!(matches!(structure, Structure::EnergyOnly));
         assert_eq!(execution, point_i2_execution());
+        assert_eq!(scheduling, GpuSolverSchedulingPolicyV1::STANDARD);
         assert_eq!(soft_feedback, GpuSoftFeedbackPolicyV1::SELECTED);
     }
 }
