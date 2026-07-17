@@ -135,6 +135,17 @@ exact replay, and capacity. The
 permanent reconsideration inputs. This evidence does not weaken the energy
 gate merely because part of its boundary is small-signal.
 
+S6.4 authority and cost, 2026-07-17: fresh isolated runs against clean pinned
+Box2D replay exactly on all 11 frozen sources. Box2D's final 16-stack speed is
+`0.000158 m/s`; the leader's `0.02324 m/s` meets the hard product band but is
+not authority-level stillness and retains its rising-energy mode. Matched
+complete-step Metal timing at 1,024 bodies is 7.917 ms for the leader versus
+7.875 ms for hard/direct, with one added dispatch and identical allocation.
+Optimized four-worker Box2D is 0.132 ms, leaving a roughly 60× gap. The
+[raw authority/cost package](../../evidence/p5.2b-s6.4-soft-contact/authority-performance/README.md)
+therefore supports a quality recommendation only, not a CPU crossover or
+liquid-headroom claim.
+
 ## Authority corrections
 
 Two plausible techniques must not be mislabeled as direct Box2D v3 parity:

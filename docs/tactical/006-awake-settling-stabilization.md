@@ -276,6 +276,17 @@ exact, capacity-clean 1,200-step reproducer. All governed response probes,
 penetration/height records, structures, capacity, and replay are now retained;
 fresh authority and cross-host review evidence remain before S6.5.
 
+Authority/cost checkpoint, 2026-07-17: the clean
+[authority package](../../evidence/p5.2b-s6.4-soft-contact/authority-performance/README.md)
+runs unmodified pinned Box2D twice at step 1200 on all 11 sources and retains
+600/900 checkpoints for four review scenes. Every payload replays exactly.
+The leader is quality-qualified inside the `0.025 m/s` speed band but remains
+far above Box2D on the 16-stack (`0.02324` versus `0.000158 m/s`). At 1,024
+bodies it records a complete 7.917 ms Metal P50, essentially neutral against
+hard/direct's 7.875 ms and inside 60 Hz, but optimized four-worker Box2D is
+0.132 ms. The roughly 60× CPU gap is explicit; cross-host launch/capture and
+the compact S6.5 review package remain.
+
 Commit boundary: scalar contract, GPU comparator, factorial automation, and
 clean evidence are independently reviewable commits.
 
