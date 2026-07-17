@@ -8,7 +8,9 @@ use physbox_contracts::{
     SettlingObservationV2, SettlingSeriesV2, SettlingSummaryV2, ShapeV1, Validate, Vec2,
     WarmCacheStatusV2, canonical_hash,
 };
-use physbox_engine::{GpuFixedFloorPassEvidence, P5_2SettlingFixtureKind};
+use physbox_engine::{
+    GpuFixedFloorPassEvidence, GpuGeneratedContactSeriesV1, P5_2SettlingFixtureKind,
+};
 use serde::Serialize;
 
 pub const AWAKE_SETTLING_METRICS_VERSION: u32 = 1;
@@ -32,6 +34,35 @@ pub fn awake_settling_measurement_policy_v2() -> SettlingMeasurementPolicyV2 {
         energy_relative_epsilon: finite(1.0e-5),
         positive_energy_run_limit: 5,
     }
+}
+
+pub fn observe_generated_settling_series_v2(
+    source: &ScenarioV1,
+    raw: &GpuGeneratedContactSeriesV1,
+) -> Result<Vec<SettlingObservationV2>, String> {
+    let policy = awake_settling_measurement_policy_v2();
+    if raw.observation_interval_steps != policy.observation_interval_steps
+        || raw.completed_steps != policy.settled_end_step
+    {
+        return Err("generated settling series does not cover the frozen S6.2 cadence".to_owned());
+    }
+    let mut observer = SettlingObserverV2::new(policy)?;
+    raw.snapshots
+        .iter()
+        .map(|snapshot| {
+            observer.observe(
+                source,
+                SettlingObservationInputV2 {
+                    completed_steps: snapshot.completed_steps,
+                    bodies: &snapshot.bodies,
+                    manifolds: &snapshot.manifolds,
+                    cache: &snapshot.cache,
+                    capacities: &snapshot.capacities,
+                    support_height: 0.0,
+                },
+            )
+        })
+        .collect()
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]

@@ -3257,6 +3257,25 @@ pub async fn benchmark_gpu_generated_contact_scheduling_experiment(
 }
 
 #[cfg(not(target_arch = "wasm32"))]
+pub async fn benchmark_gpu_generated_contact_identity_experiment(
+    scenario: &ScenarioV1,
+    warmup_steps: u32,
+    samples: u32,
+    identity_policy: ContactIdentityPolicyV1,
+) -> Result<GpuGeneratedContactBenchmarkOutput, String> {
+    benchmark_gpu_generated_contacts_with_execution_scheduling_and_identity_policy(
+        scenario,
+        warmup_steps,
+        samples,
+        GpuGatherTopology::StableBodyEdge,
+        GpuSolverExecutionV4::SELECTED,
+        GpuSolverSchedulingPolicyV1::SELECTED,
+        identity_policy,
+    )
+    .await
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 async fn benchmark_gpu_generated_contacts_with_execution(
     scenario: &ScenarioV1,
     warmup_steps: u32,
@@ -3284,6 +3303,28 @@ async fn benchmark_gpu_generated_contacts_with_execution_and_scheduling(
     execution: GpuSolverExecutionV4,
     scheduling_policy: GpuSolverSchedulingPolicyV1,
 ) -> Result<GpuGeneratedContactBenchmarkOutput, String> {
+    benchmark_gpu_generated_contacts_with_execution_scheduling_and_identity_policy(
+        scenario,
+        warmup_steps,
+        samples,
+        gather_topology,
+        execution,
+        scheduling_policy,
+        ContactIdentityPolicyV1::SELECTED,
+    )
+    .await
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+async fn benchmark_gpu_generated_contacts_with_execution_scheduling_and_identity_policy(
+    scenario: &ScenarioV1,
+    warmup_steps: u32,
+    samples: u32,
+    gather_topology: GpuGatherTopology,
+    execution: GpuSolverExecutionV4,
+    scheduling_policy: GpuSolverSchedulingPolicyV1,
+    identity_policy: ContactIdentityPolicyV1,
+) -> Result<GpuGeneratedContactBenchmarkOutput, String> {
     if warmup_steps == 0 || samples == 0 {
         return Err("generated-contact benchmark requires non-zero warmup and samples".to_owned());
     }
@@ -3293,7 +3334,7 @@ async fn benchmark_gpu_generated_contacts_with_execution_and_scheduling(
     let (correctness, replay) = {
         let runner = GpuGeneratedContactRunner::new().await?;
         let run = || {
-            runner.run_with_topologies_execution_and_scheduling(
+            runner.run_with_topologies_execution_scheduling_and_identity_policy(
                 scenario,
                 1,
                 GpuContactPersistenceTopology::StablePairSlot,
@@ -3303,6 +3344,7 @@ async fn benchmark_gpu_generated_contacts_with_execution_and_scheduling(
                 u32::MAX,
                 execution,
                 scheduling_policy,
+                identity_policy,
             )
         };
         (run()?, run()?)
@@ -3349,18 +3391,20 @@ async fn benchmark_gpu_generated_contacts_with_execution_and_scheduling(
         &scenario.bodies,
     )?;
     let reset = crate::body_state::GpuBodyResetData::new(body_count, &scenario.bodies)?;
-    let graph = GpuGeneratedContactGraph::new_with_topologies_execution_and_scheduling(
-        &device,
-        &storage,
-        scenario,
-        GpuContactPersistenceTopology::StablePairSlot,
-        gather_topology,
-        false,
-        false,
-        u32::MAX,
-        execution,
-        scheduling_policy,
-    )?;
+    let graph =
+        GpuGeneratedContactGraph::new_with_topologies_execution_scheduling_and_identity_policy(
+            &device,
+            &storage,
+            scenario,
+            GpuContactPersistenceTopology::StablePairSlot,
+            gather_topology,
+            false,
+            false,
+            u32::MAX,
+            execution,
+            scheduling_policy,
+            identity_policy,
+        )?;
     let query_resources = timestamps_available.then(|| {
         let query_set = device.create_query_set(&wgpu::QuerySetDescriptor {
             label: Some("generated_contact_benchmark_timestamps"),

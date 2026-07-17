@@ -89,6 +89,7 @@ pub use generated_contacts::{
     GpuGeneratedContactBodyHistoryV1, GpuGeneratedContactOutput, GpuGeneratedContactRunner,
     GpuGeneratedContactSeriesV1, GpuGeneratedContactSnapshotV1,
     benchmark_gpu_generated_contact_experiment,
+    benchmark_gpu_generated_contact_identity_experiment,
     benchmark_gpu_generated_contact_scheduling_experiment, benchmark_gpu_generated_contacts,
     benchmark_gpu_generated_contacts_with_gather_topology,
 };
