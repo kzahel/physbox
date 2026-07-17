@@ -44,10 +44,11 @@ pub use body_floor_solver::{
 pub use body_floor_solver::{
     GPU_SOLVER_EXECUTION_VERSION, GPU_SOLVER_SCHEDULING_POLICY_VERSION, GpuBlockActiveSetV2,
     GpuColorMaintenanceV1, GpuColorOrderV4, GpuColorScheduleV4, GpuColorUnitV4,
-    GpuColoredDispatchV1, GpuColoringEvidenceV4, GpuFixedFloorContactEvidence,
-    GpuFixedFloorPassEvidence, GpuGatherTopology, GpuGatherTopologyEvidence,
-    GpuManifoldBlockEvidenceV2, GpuNormalSolverV4, GpuSolverAccumulationV4, GpuSolverExecutionV4,
-    GpuSolverSchedulingPolicyV1,
+    GpuColoredDispatchV1, GpuColoringEvidenceV4, GpuContactSoftnessCoefficientsV1,
+    GpuFixedFloorContactEvidence, GpuFixedFloorPassEvidence, GpuGatherTopology,
+    GpuGatherTopologyEvidence, GpuManifoldBlockEvidenceV2, GpuNormalSolverV4,
+    GpuSolverAccumulationV4, GpuSolverExecutionV4, GpuSolverSchedulingPolicyV1,
+    gpu_contact_softness_coefficients,
 };
 pub use body_state::{
     BODY_BYTES_PER_SLOT, BODY_COMMAND_BYTES, BODY_COMMAND_CAPACITY, BodySlotRegistry,

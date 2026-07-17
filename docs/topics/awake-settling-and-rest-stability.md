@@ -92,6 +92,18 @@ uses Box2D's `massScale·biasRate·separation` velocity bias. This is provenance
 for a reversible comparator only; absent policy data still serializes and
 executes the selected `0.2/1/0` hard formulation byte-for-byte.
 
+S6.4 GPU comparator checkpoint, 2026-07-17: the engine derives the same three
+coefficients independently from the versioned scenario policy and projects
+the soft bias through the existing solver parameter surface. Both the
+traceable authored solver shader and the product generated-contact
+manifold-block shader select dynamic versus static coefficients from the
+authoritative inverse-mass data. No new state, dispatch, allocation, readback,
+solver family, or frame path is introduced. Scalar/GPU traces agree across the
+bounded hertz/damping/static grid; generated execution replays exactly,
+attests the candidate policy, remains capacity-clean, and is rejected by the
+selected product constructor. The policy is therefore ready for factorial
+measurement but is not a product default.
+
 ## Authority corrections
 
 Two plausible techniques must not be mislabeled as direct Box2D v3 parity:

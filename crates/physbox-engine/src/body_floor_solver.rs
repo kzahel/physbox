@@ -4,9 +4,11 @@ use std::mem::size_of;
 use std::time::Instant;
 
 use bytemuck::{Pod, Zeroable};
-use physbox_contracts::{CapacityRecordV1, ScenarioV1, SolverSettingsV1};
+use physbox_contracts::{
+    CapacityRecordV1, ContactSoftnessPolicyV1, ScenarioV1, SolverSettingsV1, Validate,
+};
 #[cfg(not(target_arch = "wasm32"))]
-use physbox_contracts::{Validate, canonical_hash, sha256_bytes};
+use physbox_contracts::{canonical_hash, sha256_bytes};
 use serde::Serialize;
 use wgpu::util::DeviceExt;
 
@@ -29,6 +31,54 @@ pub const GPU_SOLVER_EXECUTION_VERSION: u32 = 4;
 pub const GPU_SOLVER_SCHEDULING_POLICY_VERSION: u32 = 1;
 #[cfg(not(target_arch = "wasm32"))]
 pub const GPU_SCHEDULER_WORK_VECTOR_VERSION: u32 = 2;
+
+/// Independently derived engine-side coefficients for the portable GPU
+/// comparator. The scalar authority specification lives in `physbox-lab` and
+/// is intentionally not called from this path.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct GpuContactSoftnessCoefficientsV1 {
+    pub bias_rate: f32,
+    pub mass_scale: f32,
+    pub impulse_scale: f32,
+}
+
+pub fn gpu_contact_softness_coefficients(
+    policy: ContactSoftnessPolicyV1,
+    substep_dt: f32,
+    static_contact: bool,
+) -> Result<GpuContactSoftnessCoefficientsV1, String> {
+    policy.validate().map_err(|error| error.to_string())?;
+    if !substep_dt.is_finite() || substep_dt <= 0.0 {
+        return Err("GPU contact softness requires a finite positive substep dt".to_owned());
+    }
+    Ok(gpu_contact_softness_coefficients_validated(
+        policy,
+        substep_dt,
+        static_contact,
+    ))
+}
+
+fn gpu_contact_softness_coefficients_validated(
+    policy: ContactSoftnessPolicyV1,
+    substep_dt: f32,
+    static_contact: bool,
+) -> GpuContactSoftnessCoefficientsV1 {
+    let contact_hertz = policy.contact_hertz.get().min(0.125 / substep_dt);
+    let hertz = if static_contact {
+        contact_hertz * policy.static_contact_hertz_multiplier.get()
+    } else {
+        contact_hertz
+    };
+    let omega = 2.0 * std::f32::consts::PI * hertz;
+    let a1 = 2.0 * policy.damping_ratio.get() + substep_dt * omega;
+    let a2 = substep_dt * omega * a1;
+    let impulse_scale = 1.0 / (1.0 + a2);
+    GpuContactSoftnessCoefficientsV1 {
+        bias_rate: omega / a1,
+        mass_scale: a2 * impulse_scale,
+        impulse_scale,
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -818,6 +868,7 @@ struct PassParamsRaw {
     floats0: [f32; 4],
     floats1: [f32; 4],
     floats2: [f32; 4],
+    floats3: [f32; 4],
     uints0: [u32; 4],
     uints1: [u32; 4],
 }
@@ -3316,6 +3367,7 @@ pub(crate) fn validate_selected_settings(scenario: &ScenarioV1) -> Result<(), St
         && settings.bias_rate.get().to_bits() == 0.2_f32.to_bits()
         && settings.mass_coefficient.get().to_bits() == 1.0_f32.to_bits()
         && settings.impulse_coefficient.get().to_bits() == 0.0_f32.to_bits()
+        && settings.contact_softness.is_none()
         && settings.restitution_threshold.get().to_bits() == 1.0_f32.to_bits();
     if !selected {
         return Err("solver settings differ from the accepted S5.4 baseline".to_owned());
@@ -3331,6 +3383,7 @@ fn validate_authored_settings(scenario: &ScenarioV1) -> Result<(), String> {
         && settings.bias_rate.get().to_bits() == 0.2_f32.to_bits()
         && settings.mass_coefficient.get().to_bits() == 1.0_f32.to_bits()
         && settings.impulse_coefficient.get().to_bits() == 0.0_f32.to_bits()
+        && settings.contact_softness.is_none()
         && settings.restitution_threshold.get().to_bits() == 1.0_f32.to_bits();
     if !accepted {
         return Err("authored fixed-floor settings differ from the S1.6 control".to_owned());
@@ -3656,6 +3709,7 @@ fn topology_operations(
         floats0: [0.0; 4],
         floats1: [0.0; 4],
         floats2: [0.0; 4],
+        floats3: [0.0; 4],
         uints0: [body_count, point_count, 0, 0],
         uints1: [0, 0, 0, clear_words],
     };
@@ -3710,6 +3764,7 @@ fn topology_operations(
                     floats0: [0.0; 4],
                     floats1: [0.0; 4],
                     floats2: [0.0; 4],
+                    floats3: [0.0; 4],
                     uints0: [
                         topology.edge_count,
                         topology.block_count,
@@ -3737,6 +3792,7 @@ fn topology_operations(
                 floats0: [0.0; 4],
                 floats1: [0.0; 4],
                 floats2: [0.0; 4],
+                floats3: [0.0; 4],
                 uints0: [
                     topology.edge_count,
                     body_count,
@@ -3777,6 +3833,7 @@ fn topology_operations(
             ],
             floats1: [0.0; 4],
             floats2: [0.0; 4],
+            floats3: [0.0; 4],
             uints0: [
                 body_count,
                 point_count,
@@ -3855,6 +3912,7 @@ fn topology_operations(
                     ],
                     floats1: [0.0; 4],
                     floats2: [0.0; 4],
+                    floats3: [0.0; 4],
                     uints0: [
                         point_count,
                         topology.color_base,
@@ -3909,6 +3967,7 @@ fn topology_operations(
                     0.0,
                 ],
                 floats2: [0.0; 4],
+                floats3: [0.0; 4],
                 uints0: [
                     body_count,
                     point_count,
@@ -3942,13 +4001,29 @@ fn pass_params(
     iteration: u32,
     use_bias: u32,
 ) -> PassParamsRaw {
-    PassParamsRaw {
-        floats0: [
-            scenario.settings.fixed_dt.get() / scenario.settings.substeps as f32,
+    let substep_dt = scenario.settings.fixed_dt.get() / scenario.settings.substeps as f32;
+    let softness = scenario.settings.contact_softness.map(|policy| {
+        (
+            gpu_contact_softness_coefficients_validated(policy, substep_dt, false),
+            gpu_contact_softness_coefficients_validated(policy, substep_dt, true),
+        )
+    });
+    let dynamic = softness.map_or(
+        [
             scenario.settings.bias_rate.get(),
             scenario.settings.mass_coefficient.get(),
             scenario.settings.impulse_coefficient.get(),
         ],
+        |(dynamic, _)| {
+            [
+                dynamic.mass_scale * dynamic.bias_rate * substep_dt,
+                dynamic.mass_scale,
+                dynamic.impulse_scale,
+            ]
+        },
+    );
+    PassParamsRaw {
+        floats0: [substep_dt, dynamic[0], dynamic[1], dynamic[2]],
         floats1: [
             scenario.settings.restitution_threshold.get(),
             scenario.settings.gravity.x,
@@ -3964,6 +4039,14 @@ fn pass_params(
             0.0,
             0.0,
         ],
+        floats3: softness.map_or([0.0; 4], |(_, static_contact)| {
+            [
+                static_contact.mass_scale * static_contact.bias_rate * substep_dt,
+                static_contact.mass_scale,
+                static_contact.impulse_scale,
+                1.0,
+            ]
+        }),
         uints0: [body_count, point_count, 0, 0],
         uints1: [iteration, stage, 0, use_bias],
     }

@@ -49,6 +49,7 @@ struct PassParams {
     floats0: vec4f,
     floats1: vec4f,
     floats2: vec4f,
+    floats3: vec4f,
     uints0: vec4u,
     uints1: vec4u,
 };
@@ -80,6 +81,12 @@ fn point_velocity(body: Body, anchor: vec2f) -> vec2f {
 fn relative_velocity(body_a: Body, body_b: Body, point: PreparedPoint, axis: vec2f) -> f32 {
     return dot(point_velocity(body_b, point.anchor_b) -
                point_velocity(body_a, point.anchor_a), axis);
+}
+
+fn contact_coefficients(body_a: Body, body_b: Body) -> vec3f {
+    let static_contact = body_a.inverse_mass == 0.0 || body_b.inverse_mass == 0.0;
+    return select(params.floats0.yzw, params.floats3.xyz,
+                  params.floats3.w != 0.0 && static_contact);
 }
 
 fn effective_mass(body_a: Body, body_b: Body, anchor_a: vec2f,
@@ -296,15 +303,16 @@ fn emit_normal(@builtin(global_invocation_id) id: vec3u) {
     var velocity_bias = 0.0;
     var mass_scale = 1.0;
     var impulse_scale = 0.0;
+    let coefficients = contact_coefficients(body_a, body_b);
     if (point.data0.w > 0.0) {
         velocity_bias = point.data0.w / params.floats0.x;
     } else if (params.uints1.w != 0u) {
-        velocity_bias = params.floats0.y * point.data0.w / params.floats0.x;
+        velocity_bias = coefficients.x * point.data0.w / params.floats0.x;
         if (params.floats2.x > 0.0) {
             velocity_bias = max(velocity_bias, -params.floats2.x);
         }
-        mass_scale = params.floats0.z;
-        impulse_scale = params.floats0.w;
+        mass_scale = coefficients.y;
+        impulse_scale = coefficients.z;
     }
     let old_impulse = point.data1.z;
     let candidate = -point.data0.y * (mass_scale * normal_velocity + velocity_bias) -
@@ -394,15 +402,16 @@ fn colored_stage(@builtin(global_invocation_id) id: vec3u) {
         var velocity_bias = 0.0;
         var mass_scale = 1.0;
         var impulse_scale = 0.0;
+        let coefficients = contact_coefficients(body_a, body_b);
         if (point.data0.w > 0.0) {
             velocity_bias = point.data0.w / params.floats0.x;
         } else if (params.uints1.w != 0u) {
-            velocity_bias = params.floats0.y * point.data0.w / params.floats0.x;
+            velocity_bias = coefficients.x * point.data0.w / params.floats0.x;
             if (params.floats2.x > 0.0) {
                 velocity_bias = max(velocity_bias, -params.floats2.x);
             }
-            mass_scale = params.floats0.z;
-            impulse_scale = params.floats0.w;
+            mass_scale = coefficients.y;
+            impulse_scale = coefficients.z;
         }
         let old_impulse = point.data1.z;
         let candidate = -point.data0.y * (mass_scale * normal_velocity + velocity_bias) -

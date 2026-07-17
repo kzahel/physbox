@@ -2,8 +2,8 @@
 
 Status: active, 2026-07-17. Human review accepted the S5.4c scheduler
 recommendation and authorized autonomous execution through S6.4. S6.1 is
-complete; S6.1–S6.3 are complete. The S6.4 scalar coefficient contract is
-implemented and the independent portable GPU comparator is next.
+complete; S6.1–S6.3 are complete. The S6.4 scalar and portable GPU coefficient
+comparators are implemented; the bounded factorial is next.
 
 Governing topic:
 [awake settling and rest stability](../topics/awake-settling-and-rest-stability.md).
@@ -221,7 +221,7 @@ rejected because no remaining identity failure justifies an unproven transfer.
 
 ### S6.4 — soft-contact factorial and combined candidate
 
-- [ ] Reproduce the pinned Box2D hertz/damping-to-coefficient equations in the
+- [x] Reproduce the pinned Box2D hertz/damping-to-coefficient equations in the
   scalar specification with explicit provenance, then implement the portable
   GPU comparator independently against that contract.
 - [ ] Measure bounded contact-hertz, damping-ratio, and static-contact variants

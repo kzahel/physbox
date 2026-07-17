@@ -2007,6 +2007,25 @@ impl GpuGeneratedContactRunner {
         completed_steps: u32,
         identity_policy: ContactIdentityPolicyV1,
     ) -> Result<GpuGeneratedContactSeriesV1, String> {
+        validate_selected_settings(scenario)?;
+        self.run_contact_policy_observation_series(
+            scenario,
+            observation_interval_steps,
+            completed_steps,
+            identity_policy,
+        )
+    }
+
+    /// Runs the same bounded GPU-resident observation contract with an
+    /// explicitly authored laboratory contact policy. Product callers remain
+    /// on `run_selected_observation_series` and reject such settings.
+    pub fn run_contact_policy_observation_series(
+        &self,
+        scenario: &ScenarioV1,
+        observation_interval_steps: u32,
+        completed_steps: u32,
+        identity_policy: ContactIdentityPolicyV1,
+    ) -> Result<GpuGeneratedContactSeriesV1, String> {
         if observation_interval_steps == 0
             || completed_steps == 0
             || !completed_steps.is_multiple_of(observation_interval_steps)
@@ -2017,7 +2036,6 @@ impl GpuGeneratedContactRunner {
                     .to_owned(),
             );
         }
-        validate_selected_settings(scenario)?;
         scenario.validate().map_err(|error| error.to_string())?;
         let body_count = u32::try_from(scenario.bodies.len())
             .map_err(|_| "generated settling body count exceeds u32".to_owned())?;

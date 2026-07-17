@@ -1,4 +1,7 @@
-use physbox_contracts::{ContactIdentityPolicyV1, FailureKindV1, Validate};
+use physbox_contracts::{
+    CONTACT_SOFTNESS_POLICY_VERSION, ContactIdentityPolicyV1, ContactSoftnessPolicyV1,
+    FailureKindV1, FiniteF32, Validate,
+};
 use physbox_engine::{
     GpuContactPersistenceTopology, GpuGatherTopology, GpuGeneratedContactRunner,
     GpuNarrowphaseRunner, GpuNormalSolverV4, GpuSolverAccumulationV4, GpuSolverCandidate,
@@ -19,6 +22,48 @@ use physbox_lab::settling::{
 };
 
 const PASS_TOLERANCE: f32 = 2.0e-5;
+
+fn contact_softness(hertz: f32, damping: f32, static_multiplier: f32) -> ContactSoftnessPolicyV1 {
+    ContactSoftnessPolicyV1 {
+        version: CONTACT_SOFTNESS_POLICY_VERSION,
+        contact_hertz: FiniteF32::new(hertz).unwrap(),
+        damping_ratio: FiniteF32::new(damping).unwrap(),
+        static_contact_hertz_multiplier: FiniteF32::new(static_multiplier).unwrap(),
+    }
+}
+
+#[test]
+fn generated_soft_contact_comparator_is_replayable_attested_and_not_selected() {
+    let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
+    let mut scenario = p5_2_centered_rectangle_stack_scenario(4, 60).unwrap();
+    scenario.settings.contact_softness = Some(contact_softness(30.0, 10.0, 2.0));
+    assert!(runner.run(&scenario, 60).is_err());
+
+    let first = runner
+        .run_identity_experiment(&scenario, 60, ContactIdentityPolicyV1::SELECTED)
+        .unwrap();
+    let replay = runner
+        .run_identity_experiment(&scenario, 60, ContactIdentityPolicyV1::SELECTED)
+        .unwrap();
+    assert_eq!(first.bodies, replay.bodies);
+    assert_eq!(first.manifolds, replay.manifolds);
+    assert_eq!(first.cache, replay.cache);
+    assert_eq!(
+        first.solver_settings.contact_softness,
+        scenario.settings.contact_softness
+    );
+    assert_eq!(
+        first.contact_identity_policy,
+        ContactIdentityPolicyV1::SELECTED
+    );
+    assert!(first.failure.is_none());
+    assert!(
+        first
+            .capacities
+            .iter()
+            .all(|capacity| capacity.accepted && !capacity.overflowed)
+    );
+}
 
 #[test]
 fn identity_candidates_replay_and_preserve_settling_capacity() {

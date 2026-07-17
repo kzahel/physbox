@@ -15,10 +15,12 @@ use physbox_contracts::{
 use serde::Serialize;
 use wgpu::util::DeviceExt;
 
-use crate::gpu_context::AdapterDiagnostics;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::gpu_context::{
     create_instance, request_adapter, request_device, request_device_with_features,
+};
+use crate::{
+    body_floor_solver::gpu_contact_softness_coefficients, gpu_context::AdapterDiagnostics,
 };
 
 const WORKGROUP_SIZE: u32 = 64;
@@ -149,6 +151,7 @@ struct PassParamsRaw {
     floats0: [f32; 4],
     floats1: [f32; 4],
     floats2: [f32; 4],
+    floats3: [f32; 4],
     uints0: [u32; 4],
     uints1: [u32; 4],
 }
@@ -962,6 +965,7 @@ fn operations(
         floats0: [0.0; 4],
         floats1: [0.0; 4],
         floats2: [0.0; 4],
+        floats3: [0.0; 4],
         uints0: [
             body_count as u32,
             point_count as u32,
@@ -1245,13 +1249,31 @@ fn pass_params(
     use_bias: u32,
     trace_substep: f32,
 ) -> PassParamsRaw {
-    PassParamsRaw {
-        floats0: [
-            scenario.settings.fixed_dt.get() / scenario.settings.substeps as f32,
+    let substep_dt = scenario.settings.fixed_dt.get() / scenario.settings.substeps as f32;
+    let softness = scenario.settings.contact_softness.map(|policy| {
+        (
+            gpu_contact_softness_coefficients(policy, substep_dt, false)
+                .expect("validated GPU contact softness"),
+            gpu_contact_softness_coefficients(policy, substep_dt, true)
+                .expect("validated GPU static contact softness"),
+        )
+    });
+    let dynamic = softness.map_or(
+        [
             scenario.settings.bias_rate.get(),
             scenario.settings.mass_coefficient.get(),
             scenario.settings.impulse_coefficient.get(),
         ],
+        |(dynamic, _)| {
+            [
+                dynamic.mass_scale * dynamic.bias_rate * substep_dt,
+                dynamic.mass_scale,
+                dynamic.impulse_scale,
+            ]
+        },
+    );
+    PassParamsRaw {
+        floats0: [substep_dt, dynamic[0], dynamic[1], dynamic[2]],
         floats1: [
             scenario.settings.restitution_threshold.get(),
             scenario.settings.gravity.x,
@@ -1267,6 +1289,14 @@ fn pass_params(
             0.0,
             0.0,
         ],
+        floats3: softness.map_or([0.0; 4], |(_, static_contact)| {
+            [
+                static_contact.mass_scale * static_contact.bias_rate * substep_dt,
+                static_contact.mass_scale,
+                static_contact.impulse_scale,
+                1.0,
+            ]
+        }),
         uints0: [body_count as u32, point_count as u32, 0, 0],
         uints1: [iteration, stage, trace_base, use_bias],
     }

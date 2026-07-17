@@ -1,14 +1,26 @@
-use physbox_contracts::{FiniteF32, TraceStageV1, Vec2};
+use physbox_contracts::{
+    CONTACT_SOFTNESS_POLICY_VERSION, ContactSoftnessPolicyV1, FiniteF32, TraceStageV1, Vec2,
+};
 use physbox_engine::{
     EngineConfig, FrameInput, GpuSolverCandidate, OffscreenRenderer, authored_chain_scenario,
-    authored_one_contact_scenario, benchmark_gpu_soft_step_case, p5_2_contact_policy_candidate,
-    run_gpu_soft_step_case, run_gpu_soft_step_stress_case, run_gpu_solver_case,
+    authored_one_contact_scenario, benchmark_gpu_soft_step_case, gpu_contact_softness_coefficients,
+    p5_2_contact_policy_candidate, run_gpu_soft_step_case, run_gpu_soft_step_stress_case,
+    run_gpu_solver_case,
 };
 use physbox_lab::{
     capacity_is_valid, equal_and_opposite, projected_impulses,
-    scalar::{first_trace_divergence, solve_authored_contact_pass},
+    scalar::{box2d_softness_coefficients, first_trace_divergence, solve_authored_contact_pass},
 };
 use physbox_launch::ValidationScenario;
+
+fn softness(hertz: f32, damping: f32, static_multiplier: f32) -> ContactSoftnessPolicyV1 {
+    ContactSoftnessPolicyV1 {
+        version: CONTACT_SOFTNESS_POLICY_VERSION,
+        contact_hertz: FiniteF32::new(hertz).unwrap(),
+        damping_ratio: FiniteF32::new(damping).unwrap(),
+        static_contact_hertz_multiplier: FiniteF32::new(static_multiplier).unwrap(),
+    }
+}
 
 #[test]
 fn isolated_contact_passes_match_scalar_and_emit_paired_contributions() {
@@ -73,6 +85,56 @@ fn both_gpu_accumulation_paths_match_the_bounded_depenetration_specification() {
                 .get(),
             -3.0
         );
+    }
+}
+
+#[test]
+fn independent_gpu_softness_derivation_and_shader_match_the_scalar_specification() {
+    let substep_dt = 1.0 / 240.0;
+    for hertz in [15.0, 30.0, 60.0] {
+        for damping in [5.0, 10.0] {
+            for static_multiplier in [1.0, 2.0] {
+                let policy = softness(hertz, damping, static_multiplier);
+                for static_contact in [false, true] {
+                    let gpu = gpu_contact_softness_coefficients(policy, substep_dt, static_contact)
+                        .unwrap();
+                    let capped = hertz.min(0.125 / substep_dt);
+                    let effective_hertz = if static_contact {
+                        capped * static_multiplier
+                    } else {
+                        capped
+                    };
+                    let scalar =
+                        box2d_softness_coefficients(effective_hertz, damping, substep_dt).unwrap();
+                    assert_close(gpu.bias_rate, scalar.bias_rate);
+                    assert_close(gpu.mass_scale, scalar.mass_scale);
+                    assert_close(gpu.impulse_scale, scalar.impulse_scale);
+                }
+            }
+        }
+    }
+
+    let mut scenario = authored_one_contact_scenario(7);
+    scenario.settings.contact_softness = Some(softness(30.0, 10.0, 2.0));
+    scenario.manifolds[0].points[0].separation = FiniteF32::new(-0.01).unwrap();
+    scenario.manifolds[0].material.restitution = FiniteF32::new(0.0).unwrap();
+    scenario.bodies[0].linear_velocity = Vec2::ZERO;
+    let scalar = solve_authored_contact_pass(&scenario).unwrap();
+    for candidate in [
+        GpuSolverCandidate::JacobiGather,
+        GpuSolverCandidate::ColoredSoftTgs,
+    ] {
+        let gpu = pollster::block_on(run_gpu_solver_case(&scenario, candidate)).unwrap();
+        let divergence = first_trace_divergence(&scalar.traces, &gpu.traces, 2.0e-5, 2.0e-5);
+        assert!(divergence.is_none(), "{candidate:?}: {divergence:?}");
+        for (expected, actual) in scalar.bodies.iter().zip(&gpu.bodies) {
+            assert_close(expected.linear_velocity.x, actual.linear_velocity.x);
+            assert_close(expected.linear_velocity.y, actual.linear_velocity.y);
+            assert_close(
+                expected.angular_velocity.get(),
+                actual.angular_velocity.get(),
+            );
+        }
     }
 }
 
