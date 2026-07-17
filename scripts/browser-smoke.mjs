@@ -89,6 +89,8 @@ try {
     "settling-hard-8",
     "settling-candidate-8",
     "settling-hard-16",
+    "settling-identity-16",
+    "settling-softness-16",
     "settling-candidate-16",
   ]);
   const scenarioIndex = menuScenarios.indexOf(scenario);

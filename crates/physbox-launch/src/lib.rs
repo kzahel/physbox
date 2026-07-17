@@ -58,11 +58,13 @@ pub enum ValidationScenario {
     SettlingHard8,
     SettlingCandidate8,
     SettlingHard16,
+    SettlingIdentity16,
+    SettlingSoftness16,
     SettlingCandidate16,
 }
 
 impl ValidationScenario {
-    pub const ALL: [Self; 16] = [
+    pub const ALL: [Self; 18] = [
         Self::Bootstrap,
         Self::RigidFloor,
         Self::RigidStack,
@@ -78,6 +80,8 @@ impl ValidationScenario {
         Self::SettlingHard8,
         Self::SettlingCandidate8,
         Self::SettlingHard16,
+        Self::SettlingIdentity16,
+        Self::SettlingSoftness16,
         Self::SettlingCandidate16,
     ];
 
@@ -112,6 +116,8 @@ impl ValidationScenario {
             Self::SettlingHard8 => "settling-hard-8",
             Self::SettlingCandidate8 => "settling-candidate-8",
             Self::SettlingHard16 => "settling-hard-16",
+            Self::SettlingIdentity16 => "settling-identity-16",
+            Self::SettlingSoftness16 => "settling-softness-16",
             Self::SettlingCandidate16 => "settling-candidate-16",
         }
     }
@@ -235,7 +241,7 @@ pub fn usage(program: &str, host: LaunchHost) -> String {
         ""
     };
     format!(
-        "Usage: {program} [options]\n\n  --width PX       viewport width (default 960)\n  --height PX      viewport height (default 600)\n  --scenario NAME  bootstrap, body-free-flight, rigid-floor, rigid-stack, rectangle-stack, circle-bucket-100, rectangle-bucket-100, reset-grab, solver-jacobi, solver-colored, solver-manifold-i2, solver-parallel-coloring, settling-hard-8, settling-candidate-8, settling-hard-16, or settling-candidate-16{frame_markers}{capture}\n  -h, --help       print this help"
+        "Usage: {program} [options]\n\n  --width PX       viewport width (default 960)\n  --height PX      viewport height (default 600)\n  --scenario NAME  bootstrap, body-free-flight, rigid-floor, rigid-stack, rectangle-stack, circle-bucket-100, rectangle-bucket-100, reset-grab, solver-jacobi, solver-colored, solver-manifold-i2, solver-parallel-coloring, settling-hard-8, settling-candidate-8, settling-hard-16, settling-identity-16, settling-softness-16, or settling-candidate-16{frame_markers}{capture}\n  -h, --help       print this help"
     )
 }
 
@@ -265,6 +271,8 @@ fn apply_option(
                 "settling-hard-8" => ValidationScenario::SettlingHard8,
                 "settling-candidate-8" => ValidationScenario::SettlingCandidate8,
                 "settling-hard-16" => ValidationScenario::SettlingHard16,
+                "settling-identity-16" => ValidationScenario::SettlingIdentity16,
+                "settling-softness-16" => ValidationScenario::SettlingSoftness16,
                 "settling-candidate-16" => ValidationScenario::SettlingCandidate16,
                 _ => return Err(LaunchError(format!("unknown scenario: {value}"))),
             }
@@ -445,10 +453,22 @@ mod tests {
             settling_control.options.scenario,
             ValidationScenario::SettlingHard16
         );
+        let identity = parse_web_query("?scenario=settling-identity-16").unwrap();
+        assert_eq!(
+            identity.options.scenario,
+            ValidationScenario::SettlingIdentity16
+        );
+        let softness = parse_android_json(r#"["--scenario","settling-softness-16"]"#).unwrap();
+        assert_eq!(
+            softness.options.scenario,
+            ValidationScenario::SettlingSoftness16
+        );
         for scenario in [
             ValidationScenario::SettlingHard8,
             ValidationScenario::SettlingCandidate8,
             ValidationScenario::SettlingHard16,
+            ValidationScenario::SettlingIdentity16,
+            ValidationScenario::SettlingSoftness16,
             ValidationScenario::SettlingCandidate16,
         ] {
             assert!(!ValidationScenario::MENU.contains(&scenario));

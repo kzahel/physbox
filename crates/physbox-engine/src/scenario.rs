@@ -83,6 +83,8 @@ pub enum P5_2SettlingFixtureKind {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum P5_2SettlingReviewPolicy {
     HardControl,
+    IdentityOnly,
+    SoftnessOnly,
     SoftCandidate,
 }
 
@@ -90,14 +92,20 @@ impl P5_2SettlingReviewPolicy {
     pub(crate) const fn name(self) -> &'static str {
         match self {
             Self::HardControl => "hard",
+            Self::IdentityOnly => "identity-only",
+            Self::SoftnessOnly => "softness-only",
             Self::SoftCandidate => "candidate",
         }
     }
 
     pub(crate) const fn identity_policy(self) -> ContactIdentityPolicyV1 {
         match self {
-            Self::HardControl => ContactIdentityPolicyV1::DirectMaximumSeparation,
-            Self::SoftCandidate => ContactIdentityPolicyV1::PriorContactHysteresis,
+            Self::HardControl | Self::SoftnessOnly => {
+                ContactIdentityPolicyV1::DirectMaximumSeparation
+            }
+            Self::IdentityOnly | Self::SoftCandidate => {
+                ContactIdentityPolicyV1::PriorContactHysteresis
+            }
         }
     }
 }
@@ -510,13 +518,15 @@ pub(crate) fn p5_2_settling_review_scenario(
     )?;
     scenario.id = format!("p5.2-settling-review-{}-{rectangle_count}", policy.name());
     scenario.settings.contact_softness = match policy {
-        P5_2SettlingReviewPolicy::HardControl => None,
-        P5_2SettlingReviewPolicy::SoftCandidate => Some(ContactSoftnessPolicyV1 {
-            version: CONTACT_SOFTNESS_POLICY_VERSION,
-            contact_hertz: finite(30.0),
-            damping_ratio: finite(10.0),
-            static_contact_hertz_multiplier: finite(1.0),
-        }),
+        P5_2SettlingReviewPolicy::HardControl | P5_2SettlingReviewPolicy::IdentityOnly => None,
+        P5_2SettlingReviewPolicy::SoftnessOnly | P5_2SettlingReviewPolicy::SoftCandidate => {
+            Some(ContactSoftnessPolicyV1 {
+                version: CONTACT_SOFTNESS_POLICY_VERSION,
+                contact_hertz: finite(30.0),
+                damping_ratio: finite(10.0),
+                static_contact_hertz_multiplier: finite(1.0),
+            })
+        }
     };
     scenario
         .validate()
@@ -2123,26 +2133,65 @@ mod tests {
         for count in [8, 16] {
             let hard = p5_2_settling_review_scenario(count, P5_2SettlingReviewPolicy::HardControl)
                 .unwrap();
+            let identity =
+                p5_2_settling_review_scenario(count, P5_2SettlingReviewPolicy::IdentityOnly)
+                    .unwrap();
+            let softness =
+                p5_2_settling_review_scenario(count, P5_2SettlingReviewPolicy::SoftnessOnly)
+                    .unwrap();
             let candidate =
                 p5_2_settling_review_scenario(count, P5_2SettlingReviewPolicy::SoftCandidate)
                     .unwrap();
             hard.validate().unwrap();
+            identity.validate().unwrap();
+            softness.validate().unwrap();
             candidate.validate().unwrap();
             assert_eq!(hard.requested_steps, P5_2_CENTERED_STACK_EVIDENCE_STEPS);
             assert_eq!(candidate.requested_steps, hard.requested_steps);
+            assert_eq!(identity.bodies, hard.bodies);
+            assert_eq!(softness.bodies, hard.bodies);
             assert_eq!(candidate.bodies, hard.bodies);
             assert!(hard.settings.contact_softness.is_none());
-            let softness = candidate.settings.contact_softness.unwrap();
-            assert_eq!(softness.contact_hertz.get(), 30.0);
-            assert_eq!(softness.damping_ratio.get(), 10.0);
-            assert_eq!(softness.static_contact_hertz_multiplier.get(), 1.0);
+            assert!(identity.settings.contact_softness.is_none());
+            assert_eq!(
+                softness.settings.contact_softness,
+                candidate.settings.contact_softness
+            );
+            let soft_policy = candidate.settings.contact_softness.unwrap();
+            assert_eq!(soft_policy.contact_hertz.get(), 30.0);
+            assert_eq!(soft_policy.damping_ratio.get(), 10.0);
+            assert_eq!(soft_policy.static_contact_hertz_multiplier.get(), 1.0);
             assert_eq!(
                 P5_2SettlingReviewPolicy::HardControl.identity_policy(),
                 ContactIdentityPolicyV1::DirectMaximumSeparation
             );
             assert_eq!(
+                P5_2SettlingReviewPolicy::IdentityOnly.identity_policy(),
+                ContactIdentityPolicyV1::PriorContactHysteresis
+            );
+            assert_eq!(
+                P5_2SettlingReviewPolicy::SoftnessOnly.identity_policy(),
+                ContactIdentityPolicyV1::DirectMaximumSeparation
+            );
+            assert_eq!(
                 P5_2SettlingReviewPolicy::SoftCandidate.identity_policy(),
                 ContactIdentityPolicyV1::PriorContactHysteresis
+            );
+            assert_ne!(
+                canonical_json(&hard).unwrap(),
+                canonical_json(&identity).unwrap()
+            );
+            assert_ne!(
+                canonical_json(&hard).unwrap(),
+                canonical_json(&softness).unwrap()
+            );
+            assert_ne!(
+                canonical_json(&identity).unwrap(),
+                canonical_json(&candidate).unwrap()
+            );
+            assert_ne!(
+                canonical_json(&softness).unwrap(),
+                canonical_json(&candidate).unwrap()
             );
             assert_ne!(
                 canonical_json(&hard).unwrap(),

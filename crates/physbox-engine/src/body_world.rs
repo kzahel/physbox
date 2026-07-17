@@ -137,6 +137,7 @@ impl GpuBodyWorld {
             scenario,
             None,
             ContactIdentityPolicyV1::SELECTED,
+            false,
         )
     }
 
@@ -154,6 +155,7 @@ impl GpuBodyWorld {
                 GpuSolverSchedulingPolicyV1::SELECTED,
             )),
             ContactIdentityPolicyV1::SELECTED,
+            false,
         )
     }
 
@@ -169,6 +171,7 @@ impl GpuBodyWorld {
             scenario,
             Some((GpuSolverExecutionV4::SELECTED, scheduling_policy)),
             ContactIdentityPolicyV1::SELECTED,
+            false,
         )
     }
 
@@ -187,6 +190,7 @@ impl GpuBodyWorld {
                 GpuSolverSchedulingPolicyV1::SELECTED,
             )),
             identity_policy,
+            true,
         )
     }
 
@@ -196,6 +200,7 @@ impl GpuBodyWorld {
         scenario: &ScenarioV1,
         generated_solver_configuration: Option<(GpuSolverExecutionV4, GpuSolverSchedulingPolicyV1)>,
         identity_policy: ContactIdentityPolicyV1,
+        use_contact_policy_comparator: bool,
     ) -> Result<Self, String> {
         scenario.validate().map_err(|error| error.to_string())?;
         let initial_live_count = u32::try_from(scenario.bodies.len())
@@ -221,6 +226,7 @@ impl GpuBodyWorld {
                 if execution == GpuSolverExecutionV4::SELECTED
                     && scheduling_policy == GpuSolverSchedulingPolicyV1::SELECTED
                     && identity_policy == ContactIdentityPolicyV1::SELECTED
+                    && !use_contact_policy_comparator
                 {
                     GpuGeneratedContactGraph::new(device, &storage, scenario)
                 } else {
@@ -1554,6 +1560,7 @@ mod tests {
     use crate::{
         BoundedConstructionIntents, construction_state_from_bytes,
         grab::{GRAB_INTENT_CAPACITY, GRAB_STATE_BYTES, decode_grab_state},
+        scenario::{P5_2SettlingReviewPolicy, p5_2_settling_review_scenario},
     };
 
     fn empty_commands() -> BodyCommandBatchV1 {
@@ -1820,5 +1827,31 @@ mod tests {
         assert_eq!(interactive_body_capacity(64).unwrap(), 128);
         assert_eq!(interactive_body_capacity(103).unwrap(), 128);
         assert!(interactive_body_capacity(u32::MAX).is_err());
+    }
+
+    #[test]
+    fn contact_policy_comparator_does_not_relax_the_product_constructor() {
+        let instance = crate::create_instance();
+        let adapter = pollster::block_on(crate::gpu_context::request_adapter(&instance, None))
+            .expect("test GPU adapter");
+        let (device, _) = pollster::block_on(crate::gpu_context::request_device(&adapter)).unwrap();
+        let scenario =
+            p5_2_settling_review_scenario(16, P5_2SettlingReviewPolicy::SoftnessOnly).unwrap();
+
+        let product =
+            GpuBodyWorld::new_generated(&device, wgpu::TextureFormat::Rgba8Unorm, &scenario);
+        assert!(
+            product.as_ref().is_err_and(
+                |error| error == "solver settings differ from the accepted S5.4 baseline"
+            )
+        );
+
+        GpuBodyWorld::new_generated_with_contact_policy(
+            &device,
+            wgpu::TextureFormat::Rgba8Unorm,
+            &scenario,
+            ContactIdentityPolicyV1::DirectMaximumSeparation,
+        )
+        .expect("explicit contact-policy comparator accepts laboratory softness");
     }
 }

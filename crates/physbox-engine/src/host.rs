@@ -47,6 +47,12 @@ fn settling_review_lane(scenario: ValidationScenario) -> Option<(u32, P5_2Settli
             Some((8, P5_2SettlingReviewPolicy::SoftCandidate))
         }
         ValidationScenario::SettlingHard16 => Some((16, P5_2SettlingReviewPolicy::HardControl)),
+        ValidationScenario::SettlingIdentity16 => {
+            Some((16, P5_2SettlingReviewPolicy::IdentityOnly))
+        }
+        ValidationScenario::SettlingSoftness16 => {
+            Some((16, P5_2SettlingReviewPolicy::SoftnessOnly))
+        }
         ValidationScenario::SettlingCandidate16 => {
             Some((16, P5_2SettlingReviewPolicy::SoftCandidate))
         }
@@ -532,6 +538,8 @@ impl EngineHost {
             | ValidationScenario::SettlingHard8
             | ValidationScenario::SettlingCandidate8
             | ValidationScenario::SettlingHard16
+            | ValidationScenario::SettlingIdentity16
+            | ValidationScenario::SettlingSoftness16
             | ValidationScenario::SettlingCandidate16 => None,
             ValidationScenario::SolverJacobi => Some(GpuSolverCandidate::JacobiGather),
             ValidationScenario::SolverColored => Some(GpuSolverCandidate::ColoredSoftTgs),
@@ -639,6 +647,8 @@ impl EngineHost {
             ValidationScenario::SettlingHard8
             | ValidationScenario::SettlingCandidate8
             | ValidationScenario::SettlingHard16
+            | ValidationScenario::SettlingIdentity16
+            | ValidationScenario::SettlingSoftness16
             | ValidationScenario::SettlingCandidate16 => {
                 let (rectangle_count, policy) = settling_review_lane(config.scenario)
                     .expect("settling review launch scenario maps to a shared policy");
@@ -701,6 +711,8 @@ impl EngineHost {
             ValidationScenario::SettlingHard8
             | ValidationScenario::SettlingCandidate8
             | ValidationScenario::SettlingHard16
+            | ValidationScenario::SettlingIdentity16
+            | ValidationScenario::SettlingSoftness16
             | ValidationScenario::SettlingCandidate16 => {
                 let (rectangle_count, policy) = settling_review_lane(config.scenario)
                     .expect("settling review launch scenario maps to a shared policy");
@@ -730,6 +742,8 @@ impl EngineHost {
             | ValidationScenario::SettlingHard8
             | ValidationScenario::SettlingCandidate8
             | ValidationScenario::SettlingHard16
+            | ValidationScenario::SettlingIdentity16
+            | ValidationScenario::SettlingSoftness16
             | ValidationScenario::SettlingCandidate16 => {
                 Some(BodyInteractionState::new(Vec::new(), true))
             }
@@ -1114,6 +1128,8 @@ impl EngineHost {
             ValidationScenario::SettlingHard8
             | ValidationScenario::SettlingCandidate8
             | ValidationScenario::SettlingHard16
+            | ValidationScenario::SettlingIdentity16
+            | ValidationScenario::SettlingSoftness16
             | ValidationScenario::SettlingCandidate16 => {
                 let complete =
                     self.fixed_steps_total >= u64::from(P5_2_CENTERED_STACK_EVIDENCE_STEPS);
@@ -1128,6 +1144,12 @@ impl EngineHost {
                         match policy {
                             P5_2SettlingReviewPolicy::HardControl => {
                                 "hard settling control completed its exact step contract"
+                            }
+                            P5_2SettlingReviewPolicy::IdentityOnly => {
+                                "identity-only settling control completed its exact step contract"
+                            }
+                            P5_2SettlingReviewPolicy::SoftnessOnly => {
+                                "softness-only settling control completed its exact step contract"
                             }
                             P5_2SettlingReviewPolicy::SoftCandidate => {
                                 "soft settling candidate completed its exact step contract"
