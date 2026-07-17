@@ -248,6 +248,17 @@ soft recurrence causes the failure. The next bounded correction must preserve
 the selected `i2` constraint work while isolating its soft-feedback term; this
 result does not authorize a formulation or product-default change.
 
+That isolation comparator is also rejected. Retaining `i2` but applying the
+soft tuple only on biased iteration one produces new Metal structure loss at
+depths 15/16 (steps 696/604) and AVD loss at depths 14/15/16 (377/280/247).
+The four-body mode remains identity-clean and energy-unstable on both backends,
+including all 300 settled increases on AVD. The
+[checked soft-first package](../../evidence/p5.2b-s6.5a-soft-first/README.md)
+rules out a staged soft/hard iteration as a correction. The remaining bounded
+formulation question is whether soft feedback interacts specifically with the
+coupled manifold-block normal solve; evaluating an existing point-normal lab
+lane does not authorize changing the selected solver family.
+
 ## Authority corrections
 
 Two plausible techniques must not be mislabeled as direct Box2D v3 parity:

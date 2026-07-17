@@ -477,6 +477,17 @@ scenario setting, coefficient, shader, tolerance, allocation, dispatch,
 readback, or product default changed. Cross-backend evidence decides whether
 this comparator is rejected or earns the full frozen matrix.
 
+Soft-feedback isolation rejection checkpoint, 2026-07-17: the clean
+[cross-backend package](../../evidence/p5.2b-s6.5a-soft-first/README.md) rejects
+the staged `i2` comparator. It creates new Metal depth-15/16 and AVD depth-14
+structure failures, advances the existing deeper AVD failures by hundreds of
+steps, and retains the identity-clean four-body energy mode. All eight runs are
+capacity-clean and hardware-backed; representative full traces and every raw
+hash are retained. No product or accepted-quality setting changed. The next
+bounded diagnostic may compare the existing point-normal and manifold-block
+lab lanes under the same frozen soft policy, but any solver-family change or
+promotion remains a human checkpoint.
+
 Stop early for human direction before a coefficient/identity-band default
 change, tolerance or quality-band revision, scheduler/solver/accumulation
 change, portability exception, simulation-dependent readback, CPU fallback,
