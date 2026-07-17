@@ -153,7 +153,7 @@ fn run() -> Result<(), String> {
     }
     let mut evaluation_error = None;
     let minimized = minimize_dense_generated_failure(mixed, |candidate| {
-        if candidate.requested_steps < 900 {
+        if candidate.requested_steps < P5_2_SETTLING_EVIDENCE_STEPS {
             return false;
         }
         eprintln!(
