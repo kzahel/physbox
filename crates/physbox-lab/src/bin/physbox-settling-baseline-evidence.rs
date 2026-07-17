@@ -722,7 +722,7 @@ fn body_speeds(bodies: &[BodyStateV1]) -> (f32, f32) {
 }
 
 fn render_playback(scenes: &[PlaybackScene]) -> Result<String, String> {
-    let row_height = 185;
+    let row_height = 205;
     let height = 70 + scenes.len() * row_height;
     let mut svg = format!(
         "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1200\" height=\"{height}\" viewBox=\"0 0 1200 {height}\"><rect width=\"100%\" height=\"100%\" fill=\"#0b1823\"/><style>text{{font-family:ui-monospace,SFMono-Regular,monospace;fill:#dce8f2}}.title{{font:700 18px system-ui}}.meta{{font-size:11px;fill:#91a8ba}}.body{{fill:#54d6db;stroke:#d8ffff;stroke-width:1}}.oracle{{fill:#f0b45c;stroke:#fff0ca;stroke-width:1}}</style><text class=\"title\" x=\"18\" y=\"28\">S6.2 awake settling baseline / pinned Box2D</text><text class=\"meta\" x=\"18\" y=\"48\">same neutral source · sleeping off · selected GPU cyan · Box2D orange · steps 1 / 600 / 900 / 1200</text>"
@@ -739,9 +739,9 @@ fn render_playback(scenes: &[PlaybackScene]) -> Result<String, String> {
             svg.push_str(&format!(
                 "<text class=\"meta\" x=\"{}\" y=\"{}\">step {step}</text><rect x=\"{}\" y=\"{}\" width=\"235\" height=\"145\" fill=\"#122739\" stroke=\"#29465b\"/>",
                 x,
-                top + 16,
+                top + 36,
                 x,
-                top + 24
+                top + 44
             ));
             let gpu = scene
                 .gpu
@@ -753,13 +753,13 @@ fn render_playback(scenes: &[PlaybackScene]) -> Result<String, String> {
                 .iter()
                 .find(|sample| sample.0 == step)
                 .ok_or_else(|| "authority playback omitted a requested step".to_owned())?;
-            draw_bodies(&mut svg, &scene.source, &gpu.1, x + 58, top + 138, "body")?;
+            draw_bodies(&mut svg, &scene.source, &gpu.1, x + 58, top + 184, "body")?;
             draw_bodies(
                 &mut svg,
                 &scene.source,
                 &authority.1,
                 x + 176,
-                top + 138,
+                top + 184,
                 "oracle",
             )?;
         }
@@ -782,19 +782,19 @@ fn draw_bodies(
             .iter()
             .find(|source| source.id == body.id)
             .ok_or_else(|| "playback body is absent from source".to_owned())?;
-        let x = origin_x as f32 + body.position.x * 38.0;
-        let y = origin_y as f32 - body.position.y * 38.0;
+        let x = origin_x as f32 + body.position.x * 24.0;
+        let y = origin_y as f32 - body.position.y * 24.0;
         match source_body.shape {
             ShapeV1::Circle { radius } => svg.push_str(&format!(
                 "<circle class=\"{class}\" cx=\"{x:.2}\" cy=\"{y:.2}\" r=\"{:.2}\"/>",
-                radius.get() * 38.0
+                radius.get() * 24.0
             )),
             ShapeV1::Rectangle { half_extents } => svg.push_str(&format!(
                 "<rect class=\"{class}\" x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" transform=\"rotate({:.3} {x:.2} {y:.2})\"/>",
-                x - half_extents.x * 38.0,
-                y - half_extents.y * 38.0,
-                half_extents.x * 76.0,
-                half_extents.y * 76.0,
+                x - half_extents.x * 24.0,
+                y - half_extents.y * 24.0,
+                half_extents.x * 48.0,
+                half_extents.y * 48.0,
                 -body.angle.get().to_degrees()
             )),
         }
