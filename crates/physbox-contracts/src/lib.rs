@@ -14,6 +14,7 @@ pub const CONSTRUCTION_INTENT_CONTRACT_VERSION: u32 = 1;
 pub const SETTLING_OBSERVATION_VERSION: u32 = 1;
 pub const SETTLING_OBSERVATION_V2_VERSION: u32 = 2;
 pub const CONTACT_IDENTITY_POLICY_VERSION: u32 = 1;
+pub const CONTACT_SOFTNESS_POLICY_VERSION: u32 = 1;
 pub const ORACLE_SUCCESS_SENTINEL: &str = "PHYSBOX5_ORACLE_SUCCESS";
 
 pub use collision::*;
@@ -49,6 +50,40 @@ impl ContactIdentityPolicyV1 {
             Self::CanonicalAbsoluteBand => "canonical-absolute-band",
             Self::PriorContactHysteresis => "prior-contact-hysteresis",
         }
+    }
+}
+
+/// Reversible laboratory policy for deriving soft-contact coefficients.
+///
+/// The selected product leaves this absent and continues to use the explicit
+/// hard coefficients in `SolverSettingsV1`. The hertz/damping candidate is a
+/// source setting so scalar, GPU, native, browser, and Android lanes all
+/// execute the same declared experiment.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContactSoftnessPolicyV1 {
+    pub version: u32,
+    pub contact_hertz: FiniteF32,
+    pub damping_ratio: FiniteF32,
+    pub static_contact_hertz_multiplier: FiniteF32,
+}
+
+impl Validate for ContactSoftnessPolicyV1 {
+    fn validate(&self) -> Result<(), ContractError> {
+        self.contact_hertz.validate()?;
+        self.damping_ratio.validate()?;
+        self.static_contact_hertz_multiplier.validate()?;
+        if self.version != CONTACT_SOFTNESS_POLICY_VERSION
+            || self.contact_hertz.get() <= 0.0
+            || self.damping_ratio.get() < 0.0
+            || self.static_contact_hertz_multiplier.get() <= 0.0
+        {
+            return Err(ContractError(
+                "contact softness requires version 1, positive hertz/static multiplier, and nonnegative damping"
+                    .to_owned(),
+            ));
+        }
+        Ok(())
     }
 }
 
@@ -851,6 +886,8 @@ pub struct SolverSettingsV1 {
     pub bias_rate: FiniteF32,
     pub mass_coefficient: FiniteF32,
     pub impulse_coefficient: FiniteF32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contact_softness: Option<ContactSoftnessPolicyV1>,
     pub restitution_threshold: FiniteF32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub contact_policy: Option<ContactPolicyV1>,
@@ -895,6 +932,9 @@ impl Validate for SolverSettingsV1 {
         self.bias_rate.validate()?;
         self.mass_coefficient.validate()?;
         self.impulse_coefficient.validate()?;
+        if let Some(policy) = self.contact_softness {
+            policy.validate()?;
+        }
         self.restitution_threshold.validate()?;
         if let Some(policy) = self.contact_policy {
             policy.validate()?;
@@ -2153,6 +2193,7 @@ mod tests {
                 bias_rate: finite(0.2),
                 mass_coefficient: finite(1.0),
                 impulse_coefficient: finite(0.0),
+                contact_softness: None,
                 restitution_threshold: finite(1.0),
                 contact_policy: None,
             },
@@ -2187,6 +2228,7 @@ mod tests {
         let scenario = scenario();
         let bytes = canonical_json(&scenario).unwrap();
         assert!(!String::from_utf8_lossy(&bytes).contains("contactPolicy"));
+        assert!(!String::from_utf8_lossy(&bytes).contains("contactSoftness"));
         let decoded: ScenarioV1 = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(decoded, scenario);
         assert_eq!(canonical_json(&decoded).unwrap(), bytes);
@@ -2229,6 +2271,64 @@ mod tests {
             .as_mut()
             .unwrap()
             .max_depenetration_velocity = finite(0.0);
+        assert!(scenario.validate().is_err());
+    }
+
+    #[test]
+    fn contact_softness_is_versioned_optional_and_validated() {
+        let mut scenario = scenario();
+        scenario.settings.contact_softness = Some(ContactSoftnessPolicyV1 {
+            version: CONTACT_SOFTNESS_POLICY_VERSION,
+            contact_hertz: finite(30.0),
+            damping_ratio: finite(10.0),
+            static_contact_hertz_multiplier: finite(2.0),
+        });
+        scenario.validate().unwrap();
+        let bytes = canonical_json(&scenario).unwrap();
+        assert!(String::from_utf8_lossy(&bytes).contains(
+            "\"contactSoftness\":{\"version\":1,\"contactHertz\":30.0,\"dampingRatio\":10.0,\"staticContactHertzMultiplier\":2.0}"
+        ));
+        assert_eq!(
+            serde_json::from_slice::<ScenarioV1>(&bytes).unwrap(),
+            scenario
+        );
+
+        scenario.settings.contact_softness.as_mut().unwrap().version = 99;
+        assert!(scenario.validate().is_err());
+        scenario.settings.contact_softness.as_mut().unwrap().version =
+            CONTACT_SOFTNESS_POLICY_VERSION;
+        scenario
+            .settings
+            .contact_softness
+            .as_mut()
+            .unwrap()
+            .contact_hertz = finite(0.0);
+        assert!(scenario.validate().is_err());
+        scenario
+            .settings
+            .contact_softness
+            .as_mut()
+            .unwrap()
+            .contact_hertz = finite(30.0);
+        scenario
+            .settings
+            .contact_softness
+            .as_mut()
+            .unwrap()
+            .damping_ratio = finite(-1.0);
+        assert!(scenario.validate().is_err());
+        scenario
+            .settings
+            .contact_softness
+            .as_mut()
+            .unwrap()
+            .damping_ratio = finite(10.0);
+        scenario
+            .settings
+            .contact_softness
+            .as_mut()
+            .unwrap()
+            .static_contact_hertz_multiplier = finite(0.0);
         assert!(scenario.validate().is_err());
     }
 

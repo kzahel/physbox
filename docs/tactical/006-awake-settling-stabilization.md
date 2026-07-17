@@ -2,7 +2,8 @@
 
 Status: active, 2026-07-17. Human review accepted the S5.4c scheduler
 recommendation and authorized autonomous execution through S6.4. S6.1 is
-complete; S6.1–S6.3 are complete and S6.4 soft-contact evaluation is next.
+complete; S6.1–S6.3 are complete. The S6.4 scalar coefficient contract is
+implemented and the independent portable GPU comparator is next.
 
 Governing topic:
 [awake settling and rest stability](../topics/awake-settling-and-rest-stability.md).

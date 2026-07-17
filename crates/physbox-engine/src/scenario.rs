@@ -1743,6 +1743,7 @@ fn default_settings() -> SolverSettingsV1 {
         bias_rate: finite(0.2),
         mass_coefficient: finite(1.0),
         impulse_coefficient: finite(0.0),
+        contact_softness: None,
         restitution_threshold: finite(1.0),
         contact_policy: None,
     }

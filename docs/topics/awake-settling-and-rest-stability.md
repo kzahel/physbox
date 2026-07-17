@@ -79,6 +79,19 @@ coefficients derived from contact hertz and damping ratio; its defaults are 30
 Hz and damping ratio 10, with a stiffer static-contact path. That is a verified
 model difference and a required comparator.
 
+S6.4 scalar coefficient contract, 2026-07-17: the independent Rust
+specification now reproduces the pinned `src/solver.h` `b2MakeSoft` equations.
+For substep duration `h`, angular frequency `w = 2πf`, and damping ratio `z`, it
+computes `a1 = 2z + hw`, `a2 = hw·a1`, then `biasRate = w/a1`,
+`massScale = a2/(1+a2)`, and `impulseScale = 1/(1+a2)`. Analytic tests preserve
+the zero-hertz result, finite-domain rejection, the
+`massScale + impulseScale = 1` invariant, and monotonic stiffness response.
+Following pinned `src/physics_world.c`, requested contact hertz is capped at
+`0.125/h` before the static-contact multiplier is applied. The scalar solve
+uses Box2D's `massScale·biasRate·separation` velocity bias. This is provenance
+for a reversible comparator only; absent policy data still serializes and
+executes the selected `0.2/1/0` hard formulation byte-for-byte.
+
 ## Authority corrections
 
 Two plausible techniques must not be mislabeled as direct Box2D v3 parity:

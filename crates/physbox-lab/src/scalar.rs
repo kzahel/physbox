@@ -1,8 +1,8 @@
 use std::fmt::{Display, Formatter};
 
 use physbox_contracts::{
-    AuthoredManifoldV1, BodyId, BodyStateV1, ContactCachePointV1, FiniteF32, ScenarioV1,
-    TraceRecordV1, TraceStageV1, TraceValueV1, Validate, Vec2,
+    AuthoredManifoldV1, BodyId, BodyStateV1, ContactCachePointV1, ContactSoftnessPolicyV1,
+    FiniteF32, ScenarioV1, TraceRecordV1, TraceStageV1, TraceValueV1, Validate, Vec2,
 };
 
 use crate::fixture_contacts::generate_fixture_contacts;
@@ -32,6 +32,63 @@ pub struct TraceDivergence {
     pub expected: Option<f32>,
     pub actual: Option<f32>,
     pub reason: String,
+}
+
+/// Scalar result of the pinned Box2D v3 `b2MakeSoft` equation.
+///
+/// Provenance: clean Box2D revision `3a4f0da8374af61293a03021c9a0b3ebcfe67948`,
+/// `src/solver.h`, plus the contact/static selection and hertz cap in
+/// `src/physics_world.c`. This is an independent Rust specification, not
+/// linked or copied product code.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ContactSoftnessCoefficients {
+    pub bias_rate: f32,
+    pub mass_scale: f32,
+    pub impulse_scale: f32,
+}
+
+pub fn box2d_softness_coefficients(
+    hertz: f32,
+    damping_ratio: f32,
+    substep_dt: f32,
+) -> Result<ContactSoftnessCoefficients, ScalarError> {
+    if !hertz.is_finite()
+        || !damping_ratio.is_finite()
+        || !substep_dt.is_finite()
+        || hertz < 0.0
+        || damping_ratio < 0.0
+        || substep_dt <= 0.0
+    {
+        return Err(ScalarError(
+            "softness coefficients require finite nonnegative hertz/damping and positive dt"
+                .to_owned(),
+        ));
+    }
+    if hertz == 0.0 {
+        return Ok(ContactSoftnessCoefficients {
+            bias_rate: 0.0,
+            mass_scale: 0.0,
+            impulse_scale: 0.0,
+        });
+    }
+    let omega = 2.0 * std::f32::consts::PI * hertz;
+    let a1 = 2.0 * damping_ratio + substep_dt * omega;
+    let a2 = substep_dt * omega * a1;
+    let impulse_scale = 1.0 / (1.0 + a2);
+    let coefficients = ContactSoftnessCoefficients {
+        bias_rate: omega / a1,
+        mass_scale: a2 * impulse_scale,
+        impulse_scale,
+    };
+    if !coefficients.bias_rate.is_finite()
+        || !coefficients.mass_scale.is_finite()
+        || !coefficients.impulse_scale.is_finite()
+    {
+        return Err(ScalarError(
+            "softness coefficient derivation produced a non-finite value".to_owned(),
+        ));
+    }
+    Ok(coefficients)
 }
 
 #[derive(Clone, Debug)]
@@ -94,6 +151,7 @@ pub fn solve_authored_contact_pass(
                 maximum_depenetration_velocity(scenario),
                 scenario.settings.mass_coefficient.get(),
                 scenario.settings.impulse_coefficient.get(),
+                scenario.settings.contact_softness,
                 true,
                 iteration,
                 TraceStageV1::NormalSolve,
@@ -117,6 +175,7 @@ pub fn solve_authored_contact_pass(
             maximum_depenetration_velocity(scenario),
             scenario.settings.mass_coefficient.get(),
             scenario.settings.impulse_coefficient.get(),
+            scenario.settings.contact_softness,
             false,
             0,
             TraceStageV1::Relaxation,
@@ -197,6 +256,7 @@ pub fn solve_analytic_fixture_steps(
                         maximum_depenetration_velocity(scenario),
                         scenario.settings.mass_coefficient.get(),
                         scenario.settings.impulse_coefficient.get(),
+                        scenario.settings.contact_softness,
                         true,
                         iteration,
                         TraceStageV1::NormalSolve,
@@ -223,6 +283,7 @@ pub fn solve_analytic_fixture_steps(
                     maximum_depenetration_velocity(scenario),
                     scenario.settings.mass_coefficient.get(),
                     scenario.settings.impulse_coefficient.get(),
+                    scenario.settings.contact_softness,
                     false,
                     0,
                     TraceStageV1::Relaxation,
@@ -444,11 +505,22 @@ fn solve_normal(
     max_depenetration_velocity: f32,
     configured_mass_scale: f32,
     configured_impulse_scale: f32,
+    contact_softness: Option<ContactSoftnessPolicyV1>,
     use_bias: bool,
     iteration: u32,
     stage: TraceStageV1,
     traces: &mut Vec<TraceRecordV1>,
 ) -> Result<(), ScalarError> {
+    let (configured_bias_rate, configured_mass_scale, configured_impulse_scale) =
+        configured_contact_coefficients(
+            bodies,
+            contact,
+            substep_dt,
+            bias_rate,
+            configured_mass_scale,
+            configured_impulse_scale,
+            contact_softness,
+        )?;
     for (point_index, point) in contact.points.iter_mut().enumerate() {
         let normal_velocity = relative_velocity(
             bodies,
@@ -463,7 +535,7 @@ fn solve_normal(
         } else if use_bias {
             (
                 clamp_depenetration_bias(
-                    bias_rate * point.separation / substep_dt,
+                    configured_bias_rate * point.separation / substep_dt,
                     max_depenetration_velocity,
                 ),
                 configured_mass_scale,
@@ -502,6 +574,42 @@ fn solve_normal(
         )?);
     }
     Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn configured_contact_coefficients(
+    bodies: &[BodyStateV1],
+    contact: &PreparedContact,
+    substep_dt: f32,
+    hard_bias_rate: f32,
+    hard_mass_scale: f32,
+    hard_impulse_scale: f32,
+    policy: Option<ContactSoftnessPolicyV1>,
+) -> Result<(f32, f32, f32), ScalarError> {
+    let Some(policy) = policy else {
+        return Ok((hard_bias_rate, hard_mass_scale, hard_impulse_scale));
+    };
+    policy
+        .validate()
+        .map_err(|error| ScalarError(error.to_string()))?;
+    let capped_contact_hertz = policy.contact_hertz.get().min(0.125 / substep_dt);
+    let static_contact = bodies[contact.body_a].inverse_mass.get() == 0.0
+        || bodies[contact.body_b].inverse_mass.get() == 0.0;
+    let hertz = if static_contact {
+        capped_contact_hertz * policy.static_contact_hertz_multiplier.get()
+    } else {
+        capped_contact_hertz
+    };
+    let coefficients = box2d_softness_coefficients(hertz, policy.damping_ratio.get(), substep_dt)?;
+    // The existing solver surface stores the hard Baumgarte factor as a
+    // dimensionless rate divided by h. Box2D's soft bias is
+    // massScale * biasRate * separation, so project that exact velocity term
+    // through the same surface without changing the selected hard path.
+    Ok((
+        coefficients.mass_scale * coefficients.bias_rate * substep_dt,
+        coefficients.mass_scale,
+        coefficients.impulse_scale,
+    ))
 }
 
 fn maximum_depenetration_velocity(scenario: &ScenarioV1) -> f32 {
@@ -891,7 +999,10 @@ fn rotate(vector: Vec2, angle: f32) -> Vec2 {
 
 #[cfg(test)]
 mod tests {
-    use physbox_contracts::{AuthoredContactPointV1, FeatureIdV1, MaterialV1, ShapeV1};
+    use physbox_contracts::{
+        AuthoredContactPointV1, CONTACT_SOFTNESS_POLICY_VERSION, ContactSoftnessPolicyV1,
+        FeatureIdV1, MaterialV1, ShapeV1,
+    };
     use physbox_engine::{
         AnalyticFixtureKind, analytic_fixture_scenario, authored_one_contact_scenario,
         p5_2_contact_policy_candidate,
@@ -901,6 +1012,62 @@ mod tests {
 
     fn finite(value: f32) -> FiniteF32 {
         FiniteF32::new(value).unwrap()
+    }
+
+    fn softness(hertz: f32, damping: f32, static_multiplier: f32) -> ContactSoftnessPolicyV1 {
+        ContactSoftnessPolicyV1 {
+            version: CONTACT_SOFTNESS_POLICY_VERSION,
+            contact_hertz: finite(hertz),
+            damping_ratio: finite(damping),
+            static_contact_hertz_multiplier: finite(static_multiplier),
+        }
+    }
+
+    #[test]
+    fn pinned_softness_equation_has_analytic_limits_and_complements() {
+        let zero = box2d_softness_coefficients(0.0, 10.0, 1.0 / 240.0).unwrap();
+        assert_eq!(zero.bias_rate, 0.0);
+        assert_eq!(zero.mass_scale, 0.0);
+        assert_eq!(zero.impulse_scale, 0.0);
+
+        let soft = box2d_softness_coefficients(30.0, 10.0, 1.0 / 240.0).unwrap();
+        assert!(soft.bias_rate > 0.0);
+        assert!(soft.mass_scale > 0.0 && soft.mass_scale < 1.0);
+        assert!(soft.impulse_scale > 0.0 && soft.impulse_scale < 1.0);
+        assert_close(soft.mass_scale + soft.impulse_scale, 1.0);
+
+        let stiff = box2d_softness_coefficients(60.0, 10.0, 1.0 / 240.0).unwrap();
+        assert!(stiff.mass_scale > soft.mass_scale);
+        assert!(stiff.impulse_scale < soft.impulse_scale);
+        assert!(box2d_softness_coefficients(-1.0, 10.0, 1.0 / 240.0).is_err());
+        assert!(box2d_softness_coefficients(30.0, -1.0, 1.0 / 240.0).is_err());
+        assert!(box2d_softness_coefficients(30.0, 10.0, 0.0).is_err());
+    }
+
+    #[test]
+    fn scalar_soft_contact_uses_capped_static_coefficients() {
+        let mut scenario = authored_one_contact_scenario(7);
+        scenario.settings.contact_softness = Some(softness(60.0, 10.0, 2.0));
+        scenario.manifolds[0].material.restitution = finite(0.0);
+        scenario.manifolds[0].points[0].separation = finite(-0.01);
+        scenario.bodies[0].linear_velocity = Vec2::ZERO;
+
+        let result = solve_authored_contact_pass(&scenario).unwrap();
+        let substep_dt = scenario.settings.fixed_dt.get() / scenario.settings.substeps as f32;
+        // The requested 60 Hz is capped to 30 Hz before the static 2x path.
+        let expected = box2d_softness_coefficients(60.0, 10.0, substep_dt).unwrap();
+        assert_close(
+            trace_value(&result.traces[2], "massScale"),
+            expected.mass_scale,
+        );
+        assert_close(
+            trace_value(&result.traces[2], "impulseScale"),
+            expected.impulse_scale,
+        );
+        assert_close(
+            trace_value(&result.traces[2], "velocityBias"),
+            expected.mass_scale * expected.bias_rate * -0.01,
+        );
     }
 
     #[test]
