@@ -50,6 +50,25 @@ for (const [index, policy] of manifest.policies.entries()) {
     fail("policy summary ordering/count is invalid");
   }
 }
+const direct = manifest.policies[0];
+const relative = manifest.policies[1];
+const canonical = manifest.policies[2];
+const temporal = manifest.policies[3];
+if (
+  direct.settledOwnerChanges !== 3068 ||
+  direct.settledFeatureChanges !== 3068 ||
+  direct.settledCacheMisses !== 6136 ||
+  relative.hardGatePasses !== 7 ||
+  canonical.hardGatePasses !== 7 ||
+  temporal.hardGatePasses !== 7 ||
+  temporal.settledOwnerChanges !== 0 ||
+  temporal.settledFeatureChanges !== 0 ||
+  temporal.settledCacheMisses !== 0 ||
+  temporal.settledPointCountChanges !== 0 ||
+  temporal.settledNormalChanges !== 0
+) {
+  fail("contact identity conclusion matrix changed");
+}
 for (const scene of manifest.scenes) {
   await verifyArtifact(scene.source);
   if (scene.candidates.length !== 4) fail(`${scene.label} omitted a candidate`);
@@ -93,8 +112,29 @@ for (const [index, timing] of manifest.timing.entries()) {
   await verifyArtifact(timing.raw);
 }
 if (
+  manifest.timing[3].dispatchesPerStep !== manifest.timing[0].dispatchesPerStep + 1 ||
+  manifest.timing[3].allocatedBytes !== manifest.timing[0].allocatedBytes
+) {
+  fail("temporal identity cost declaration changed");
+}
+const stack16 = manifest.scenes.find((scene) => scene.label === "centered-stack-16");
+if (
+  !stack16 ||
+  stack16.candidates[0].structuralPass !== true ||
+  stack16.candidates[1].structuralPass !== false ||
+  stack16.candidates[2].structuralPass !== false ||
+  stack16.candidates[3].structuralPass !== false ||
+  stack16.candidates[3].summary.settledLinearSpeedMax >= 0.05
+) {
+  fail("deep-stack rejection/temporal diagnostic changed");
+}
+if (
   manifest.comparatorDecisions.truePriorContactHysteresis !==
     "forward-for-s6.4-combination" ||
+  manifest.comparatorDecisions.relativeCoherenceBias !==
+    "rejected-deep-stack-instability" ||
+  manifest.comparatorDecisions.canonicalAbsoluteBand !==
+    "rejected-deep-stack-instability" ||
   manifest.comparatorDecisions.canonicalImpulseCorrespondence !==
     "rejected-without-safe-geometry-proof"
 ) {

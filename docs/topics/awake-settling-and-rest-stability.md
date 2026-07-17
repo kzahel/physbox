@@ -186,6 +186,32 @@ the sequential-five family exceed the final rest-speed band; one reduces in
 34 real GPU attempts to the checked permanent reproducer. No candidate result
 was run or inferred during this baseline slice.
 
+S6.3 identity result, 2026-07-17: the clean
+[contact-identity package](../../evidence/p5.2b-s6.3-contact-identity/README.md)
+proves both the causal contribution and the limit of feature coherence. The
+selected direct lane has 3,068 settled reference-owner changes and exactly
+6,136 resulting cache misses across the frozen corpus. A stateless relative
+bias and canonical 1 mm band repair shallow stacks but lock an unsafe answer in
+deep chains: the 16-stack loses order at 10.38 and 8.42 m/s. They are rejected.
+
+True prior-contact hysteresis is implemented only as an isolated candidate. It
+binary-searches the already-authoritative sorted generational pair records and
+retains the prior owner only within a 1 mm separation band, with identical
+point count and a compatible normal. It adds no contact state, transfers no
+impulse across feature frames, adds one dispatch, and adds no allocation. It
+records zero settled owner/feature changes and zero cache misses, brings the
+4-stack to `4.59e-6 m/s`, and passes 7/11 hard gates. But the 8-stack remains
+at `0.4005 m/s`, the 16-stack narrowly loses order at `0.0256 m/s`, and the
+random final-rest score is 12/14 versus direct's 13/14. Identity is therefore
+causal but not independently acceptable. Prior-contact hysteresis advances
+only into the S6.4 combined factorial; the product policy remains direct.
+
+Canonical impulse correspondence is rejected at this point. The temporal lane
+already eliminates the identity misses, so cross-feature impulse transfer has
+no residual question to answer and lacks the normal/geometry proof required to
+be safe. Reconsider it only for a future polygon clipping case that cannot
+maintain coherent identity through the bounded prior-owner rule.
+
 ## Ordered hypotheses
 
 Experiments change one mechanism at a time before a combined candidate is

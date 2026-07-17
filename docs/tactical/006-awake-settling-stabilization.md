@@ -2,7 +2,7 @@
 
 Status: active, 2026-07-17. Human review accepted the S5.4c scheduler
 recommendation and authorized autonomous execution through S6.4. S6.1 is
-complete; S6.2 is complete and S6.3 contact-identity comparators are next.
+complete; S6.1–S6.3 are complete and S6.4 soft-contact evaluation is next.
 
 Governing topic:
 [awake settling and rest stability](../topics/awake-settling-and-rest-stability.md).
@@ -166,13 +166,13 @@ Commit boundary: contracts and fixtures only, with no physical-default change.
 
 ### S6.3 — contact-identity attribution and comparators
 
-- [ ] Record the exact chain from reference-owner or clipped-feature change to
+- [x] Record the exact chain from reference-owner or clipped-feature change to
   cache hit/miss, accumulated impulse, velocity response, and later topology.
-- [ ] Implement isolated deterministic near-tie ownership, true prior-contact
+- [x] Implement isolated deterministic near-tie ownership, true prior-contact
   hysteresis, and safe canonical-correspondence comparators where justified.
-- [ ] Preserve normal/topology safety, pair generations, point uniqueness,
+- [x] Preserve normal/topology safety, pair generations, point uniqueness,
   exact replay, and atomic capacity behavior.
-- [ ] Reject or minimize every comparator that transfers an impulse across an
+- [x] Reject or minimize every comparator that transfers an impulse across an
   incompatible normal, destabilizes a seed, or merely trades churn for drift.
 
 Outcome: contact-identity churn is either proven causal and reduced, or ruled
@@ -199,6 +199,24 @@ promoted; geometry tolerances and authority precedence remain unchanged.
 Commit boundary: identity instrumentation and each materially distinct
 comparator may be separate commits; the clean comparison/recommendation is its
 own commit.
+
+Completed 2026-07-17. The clean
+[S6.3 package](../../evidence/p5.2b-s6.3-contact-identity/README.md) records 44
+exact per-step traces, 112 fresh randomized final executions, matched timing,
+and synchronized playback. The selected direct policy records 3,068 settled
+owner/feature changes and 6,136 cache misses. Stateless relative and canonical
+coherence reduce churn but catastrophically lose the 16-stack at 10.38 and
+8.42 m/s, so both are rejected. The bounded prior-contact lane uses the
+existing sorted generational pair records, changes geometry only within a 1 mm
+band with identical point count and compatible normal, and records zero
+settled owner changes or cache misses. It adds one dispatch and no allocation.
+
+Identity is causal but insufficient: prior-contact hysteresis brings the
+4-stack into the `4.59e-6 m/s` band and passes 7/11 sources, while the 8-stack
+still rings at `0.4005 m/s` and the 16-stack remains just outside structure and
+speed bands. Prior-contact hysteresis is forwarded only into the S6.4 combined
+candidate. It is not selected. Cross-feature impulse correspondence is
+rejected because no remaining identity failure justifies an unproven transfer.
 
 ### S6.4 — soft-contact factorial and combined candidate
 
