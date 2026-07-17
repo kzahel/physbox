@@ -1,12 +1,13 @@
 # S6: Awake settling stabilization
 
-Status: active diagnostic, 2026-07-17. Human review accepted the S5.4c scheduler
+Status: awaiting human formulation review, 2026-07-17. Human review accepted the S5.4c scheduler
 recommendation and authorized autonomous execution through S6.4. S6.1–S6.3
 are complete. S6.4 is complete with scalar/GPU comparators, factorial, failure
 minima, authority/cost, and cross-host evidence. Human review accepted the
 S6.5 recommendation to hold promotion and authorized S6.5a cross-backend
-diagnosis/minimization. The AVD 16-stack collapse and retained energy failures
-continue to block default promotion.
+diagnosis/minimization. S6.5a is complete with no forwarded correction. The
+AVD structure loss and cross-host energy failures continue to block default
+promotion.
 
 Governing topic:
 [awake settling and rest stability](../topics/awake-settling-and-rest-stability.md).
@@ -363,10 +364,11 @@ portability exception.
   success sentinel.
 - [x] Implement only reversible laboratory corrections justified by the
   traces; do not retune coefficients or promote a policy speculatively.
-- [ ] Re-run the frozen quality, energy, response, capacity, performance,
+- [x] Re-run the frozen quality, energy, response, capacity, performance,
   authority, browser, AVD, and available physical-device matrix for every
-  forwarded correction.
-- [ ] Publish a compact diagnosis and recommendation, then stop before any
+  forwarded correction. No correction was forwarded, so the full matrix was
+  not triggered; each rejected comparator has its bounded clean matrix.
+- [x] Publish a compact diagnosis and recommendation, then stop before any
   product-default change.
 
 Outcome: determine whether the AVD collapse is the retained energy instability
@@ -505,6 +507,27 @@ and standard trace constructors remain selected manifold-block plus the
 selected parallel scheduler. If the point control removes the failure, a
 point-unit parallel constructor or any solver-family change requires human
 review before a larger matrix or product-default change.
+
+Point-control rejection and S6.5a completion checkpoint, 2026-07-17: the clean
+[ten-row package](../../evidence/p5.2b-s6.5a-point-control/README.md) rejects
+the last bounded existing solver bundle. Point-normal/point coloring with its
+required serial full-rebuild control creates a Metal depth-16 structure loss
+at step 399 and advances AVD depth-15/16 loss to steps 290/130. The permanent
+four-body energy envelope still rises on Metal, AVD, and a physical Pixel 7a;
+Metal and Pixel do so with zero cache misses. The physical depth-14 control is
+quiet like Metal, while the AVD retains 300 consecutive increases, isolating
+the severe amplification to MoltenVK without resolving the common formulation
+failure. All retained runs are exact-step, final-flush, hardware-backed, and
+capacity-clean. No correction advances to the full frozen matrix, and no
+product policy changes.
+
+Recommendation: keep the soft candidate unpromoted and stop for human review.
+If continued, instrument per-pass energy transfer on the permanent four-body
+source and compare GPU point/block recurrence with the scalar specification
+and pinned Box2D authority. Fix an attributable implementation divergence
+inside the selected family. If all three agree but violate the awake gate under
+colored order, choose any new formulation/accumulation or physical policy only
+through a new human-reviewed decision.
 
 Stop early for human direction before a coefficient/identity-band default
 change, tolerance or quality-band revision, scheduler/solver/accumulation

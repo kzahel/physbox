@@ -1,10 +1,11 @@
 # Awake settling and rest stability
 
-Status: S6.5a cross-backend diagnosis active, 2026-07-17. Human review accepted
-the recommendation to hold promotion and authorized diagnosis/minimization of
-the AVD 16-stack collapse. The exact combined candidate remains an unpromoted
-laboratory lane. Its AVD structure loss and retained rising-energy failures
-block contact-policy promotion.
+Status: S6.5a cross-backend diagnosis complete, awaiting human formulation
+review, 2026-07-17. Human review accepted the recommendation to hold promotion
+and authorized diagnosis/minimization of the AVD 16-stack collapse. No tested
+reversible correction advanced. The exact combined candidate remains an
+unpromoted laboratory lane; its portability and retained energy failures block
+contact-policy promotion.
 Awake settling is a prerequisite for broadphase selection and sleeping
 acceptance. No contact-identity policy, soft-contact coefficients, penetration
 deadband, friction anchor, residual band, or sleep threshold is a product
@@ -258,6 +259,26 @@ rules out a staged soft/hard iteration as a correction. The remaining bounded
 formulation question is whether soft feedback interacts specifically with the
 coupled manifold-block normal solve; evaluating an existing point-normal lab
 lane does not authorize changing the selected solver family.
+
+The existing point-control bundle is rejected too. It retains the exact frozen
+soft source and `i2`, but necessarily crosses both normal/color unit and the
+historical serial scheduler because speculative parallel coloring is qualified
+only for manifold units. The
+[checked point package](../../evidence/p5.2b-s6.5a-point-control/README.md)
+attests that limitation. It creates a Metal depth-16 structure loss at step
+399 and advances AVD depth-15/16 losses to steps 290/130. The permanent
+four-body energy envelope rises on Metal, AVD, and a physical Pixel 7a; Metal
+and Pixel retain zero warm-cache misses. The Pixel depth-14 stack follows
+Metal's quiet result rather than the AVD's 300-increase amplification, making
+the worst amplification MoltenVK-specific without making the formulation safe.
+
+S6.5a has therefore exhausted its bounded existing corrections without a
+forwarded candidate. Promotion remains held. The recommended next diagnostic
+is per-pass energy accounting for the permanent four-body source across the
+scalar recurrence, GPU point/block executions, and pinned Box2D authority. A
+GPU/scalar implementation divergence can be corrected inside the selected
+family; agreement that conflicts with the awake energy gate requires human
+review before changing accumulation/formulation, physical policy, or scope.
 
 ## Authority corrections
 
