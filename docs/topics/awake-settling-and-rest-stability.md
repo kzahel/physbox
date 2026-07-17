@@ -223,6 +223,19 @@ transition may amplify the collapse but does not initiate it. This result does
 not authorize coefficient retuning or promotion; the next gate is the stack-
 depth threshold and smallest structural reproducer.
 
+The exact depth sweep establishes that threshold. On Metal the combined
+candidate retains centered-stack structure at every depth from 8 through 16.
+On AVD Vulkan, depths 8 through 14 retain structure through step 1,200, depth
+15 first loses it at step 1,057, and depth 16 first loses it at step 892. The
+[checked minimum](../../evidence/p5.2b-s6.5a-depth-minimum/README.md) retains
+depth 15 and an exact replay as the smallest governed structural reproducer,
+with depth 14 as the immediate control. The control is already energy-unstable:
+359 consecutive increases precede its first feature transition. Depth 15 has
+311 such increases before its first feature transition, then loses structure
+108 steps later. This reinforces the causal order—small-signal feedback,
+identity transition, structural loss—and prevents a correction from claiming
+success merely because depth 14 remains upright for 1,200 steps.
+
 ## Authority corrections
 
 Two plausible techniques must not be mislabeled as direct Box2D v3 parity:

@@ -349,7 +349,7 @@ portability exception.
 
 ### S6.5a — authorized portability and energy diagnosis
 
-- [ ] Reproduce candidate 16 on Metal and the hardware-backed AVD at exact
+- [x] Reproduce candidate 16 on Metal and the hardware-backed AVD at exact
   checkpoints; sweep stack depth and first structural divergence without
   changing the frozen source, solver, scheduler, or gate.
 - [x] Run hard/direct, identity-only, softness-only, and combined controls to
@@ -358,7 +358,7 @@ portability exception.
 - [x] Compare the 16-stack and minimized four-body energy reproducer using
   bounded final-flush body, energy, contact, cache, and identity traces. No
   interactive frame may require readback.
-- [ ] Minimize any backend divergence into a permanent shared scenario and
+- [x] Minimize any backend divergence into a permanent shared scenario and
   first-divergence artifact with exact replay, capacity, provenance, and
   success sentinel.
 - [ ] Implement only reversible laboratory corrections justified by the
@@ -428,6 +428,19 @@ every candidate stack depth from 8 through 16, all built by the same shared
 centered-stack and frozen review-policy functions. This extends diagnostic
 source coverage only; product launch aliases, defaults, coefficients, and
 accepted quality bands are unchanged.
+
+Depth-minimum checkpoint, 2026-07-17: the clean
+[depth package](../../evidence/p5.2b-s6.5a-depth-minimum/README.md) sweeps every
+candidate depth from 8 through 16 on Metal and the hardware-backed AVD. Metal
+retains structure at every depth. AVD depths 8 through 14 retain structure,
+depth 15 first fails at step 1,057, and depth 16 first fails at step 892. Depth
+15 is therefore the smallest governed structural reproducer and depth 14 its
+immediate structural control. Both retained depth-15 traces replay exactly and
+all retained samples remain capacity-clean. Depth 14 is not a quality pass: it
+has 359 consecutive frozen-epsilon energy increases before its first feature
+transition. Depth 15 similarly has 311 increases before its feature transition
+and loses structure 108 steps later. The backend minimization and first-
+divergence gates are complete; reversible laboratory correction remains next.
 
 Stop early for human direction before a coefficient/identity-band default
 change, tolerance or quality-band revision, scheduler/solver/accumulation
