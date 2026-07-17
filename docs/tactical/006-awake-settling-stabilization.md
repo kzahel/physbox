@@ -2,8 +2,7 @@
 
 Status: active, 2026-07-17. Human review accepted the S5.4c scheduler
 recommendation and authorized autonomous execution through S6.4. S6.1 is
-complete; the S6.2 observation/fixture contract is frozen and its clean
-baseline evidence capture is next.
+complete; S6.2 is complete and S6.3 contact-identity comparators are next.
 
 Governing topic:
 [awake settling and rest stability](../topics/awake-settling-and-rest-stability.md).
@@ -114,7 +113,7 @@ Commit boundary: scheduler promotion and controls only.
   windows, and gate arithmetic before running candidates.
 - [x] Add shared seeded near-flat floor drops, box-on-resting-box drops,
   sequential 3–5 rectangle construction, slide-to-rest, and a small mixed pile.
-- [ ] Project the same sources to Box2D and add exact deterministic replay,
+- [x] Project the same sources to Box2D and add exact deterministic replay,
   random generation, minimization, and permanent reproducers.
 
 Contract checkpoint, 2026-07-17: schema version 2, the exact step/window
@@ -126,6 +125,18 @@ after the final step. Short replay, cadence rejection, classification,
 projection, and minimization tests pass. The final checkbox remains open until
 the clean baseline/authority artifacts and permanent observed reproducers are
 published.
+
+Completion checkpoint, 2026-07-17: the clean
+[S6.2 package](../../evidence/p5.2b-s6.2-settling-baseline/README.md) retains 11
+canonical one-step-cadence GPU traces, 88 fresh isolated Box2D runs, 14 random
+sources, one minimized unique failure family plus its distinct second seed,
+and synchronized playback. All selected-GPU runs are exact, uninstrumented-
+equivalent, capacity-clean, and structurally valid; all authority finals replay
+exactly. Three sources pass the full gate and eight preserve a measured
+baseline failure. Every unexplained settled feature change exactly coincides
+with a reference-owner change and two cache misses, with zero point-count or
+material-normal changes. No candidate or product default exists in the
+package. S6.3 may now test that attributed mechanism in isolation.
 
 Outcome: the existing perfect-stack evidence is complemented by repeatable
 human-realistic motion, and every proposed cause can be measured directly.

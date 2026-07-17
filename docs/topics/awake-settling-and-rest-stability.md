@@ -159,6 +159,33 @@ host-owned spawn path. The random corpus selects from the same catalog; its
 minimizer preserves neutral dense slots while reducing bodies, initial
 perturbations, and the failure window.
 
+S6.2 baseline result, 2026-07-17: the clean
+[baseline package](../../evidence/p5.2b-s6.2-settling-baseline/README.md)
+records 11 canonical per-step GPU traces, 88 isolated pinned-Box2D runs, a
+14-seed random corpus, minimized failure evidence, and synchronized playback.
+Every GPU source replays exactly, matches its final-only execution, remains
+capacity-clean, and preserves structure; every final authority checkpoint
+also replays exactly. The 2-stack, near-flat floor drop, and slide-to-rest meet
+the full gate. The other eight canonical sources preserve structure but fail
+identity churn, speed, energy, or a combination.
+
+The contact-identity attribution is now direct rather than conjectural. In
+every settled-window failure, every unexplained feature-set change is also a
+reference-owner change. There are no point-count changes and no material
+normal changes in those intervals. Each owner flip causes two exact-feature
+cache misses on the affected two-point rectangle manifold: the 4-, 8-, and
+16-stacks respectively record 148/296, 351/702, and 1,127/2,254 owner
+flips/cache misses. Realistic box-on-box, sequential construction, and mixed
+pile sources show the same exact relationship. This establishes stable
+reference ownership as the first S6.3 comparator question without claiming it
+is sufficient: the 8- and 16-stacks and two sequential fixtures also fail the
+energy-envelope gate, preserving an independent S6.4 damping question.
+
+The random corpus is 14/14 exact and capacity-clean. Two distinct seeds in
+the sequential-five family exceed the final rest-speed band; one reduces in
+34 real GPU attempts to the checked permanent reproducer. No candidate result
+was run or inferred during this baseline slice.
+
 ## Ordered hypotheses
 
 Experiments change one mechanism at a time before a combined candidate is
