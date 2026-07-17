@@ -161,13 +161,20 @@ fn prior_contact_hysteresis_diagnoses_the_independent_deep_stack_limit() {
         );
         if count == 8 {
             assert!(structure, "stack {count}: {reason}");
+            assert!(
+                !summary.energy_envelope_nonincreasing,
+                "stack {count} must retain the recorded rising-energy mode"
+            );
         } else {
             assert_eq!(reason, "rectangle stack order changed");
             assert!(summary.settled_linear_speed_max.get() < 0.05);
+            assert!(
+                summary.energy_envelope_nonincreasing,
+                "stack {count} must retain the recorded structure-only mode"
+            );
         }
         assert_eq!(summary.stable_support_unexplained_churn, 0);
         assert_eq!(summary.warm_cache_misses, 0);
-        assert!(!summary.energy_envelope_nonincreasing);
         assert!(
             series
                 .snapshots
