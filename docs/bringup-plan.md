@@ -243,6 +243,14 @@ settings are unchanged. Clean native, browser, hardware-backed AVD, and
 available-device qualification remains before S6.1 closes, after which S6.2
 freezes realistic settling observations and fixtures.
 
+S6.1 completion, 2026-07-17: the clean
+[promotion package](../evidence/p5.2b-s6.1-scheduler-promotion/README.md)
+qualifies selected bounded parallel scheduling and the serial direct control on
+native Metal, BrowserWebGPU, and the hardware-backed AVD with one scene hash
+and one solver execution. The attached physical Pixel 9 was locked and remains
+an explicit availability gap. S6.2 now owns observation schemas and seeded
+realistic settling fixtures; it may not change contact policy.
+
 The first S3.5a representation checkpoint implements the stable pair-slot
 comparator with full feature verification and deterministic generational slot
 recycling. Its correctness/adversarial gates pass and its combined

@@ -17,6 +17,13 @@ by [collision and contact persistence](collision-and-contact-persistence.md),
 and equivalent-quality timing by
 [performance and scale](performance-and-scale.md).
 
+Scheduler prerequisite, 2026-07-17: the clean
+[S6.1 promotion package](../../evidence/p5.2b-s6.1-scheduler-promotion/README.md)
+qualifies bounded parallel scheduling as the product baseline and preserves
+the serial direct control. Settling attribution therefore begins on the
+intended product order; policy experiments may still compare the serial lane
+but may not silently substitute it.
+
 ## The concern
 
 The selected colored manifold-block solver preserves the governed 2-, 4-,

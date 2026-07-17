@@ -913,6 +913,13 @@ Box2D crossover, 2x scale claim, liquid projection, or representative-hardware
 band. The serial schedule remains a direct control, and equivalent-quality
 timing must be remeasured after any settling-policy change.
 
+S6.1 qualification, 2026-07-17: clean product/control reports account for
+1,434 dispatches and 1,573,916 bytes for selected bounded parallel scheduling,
+versus 1,334 and 1,523,728 for the serial control on the shared validation
+source. Native, browser, and hardware-AVD paths agree. These work-vector values
+qualify integration only; the S5.4c timing and unresolved scale contract remain
+controlling until equivalent-quality settling is remeasured.
+
 ## Regression and claim gates
 
 Before representative hardware is selected, store named measurements and

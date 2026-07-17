@@ -1,9 +1,8 @@
 # S6: Awake settling stabilization
 
 Status: active, 2026-07-17. Human review accepted the S5.4c scheduler
-recommendation and authorized autonomous execution through S6.4. S6.1 product
-integration is implemented; clean cross-host qualification remains before the
-slice is complete.
+recommendation and authorized autonomous execution through S6.4. S6.1 is
+complete; S6.2 settling observations and realistic fixtures are next.
 
 Governing topic:
 [awake settling and rest stability](../topics/awake-settling-and-rest-stability.md).
@@ -58,7 +57,7 @@ trajectory or low-microvelocity residual as a hard gate.
   parallel scheduler without changing manifold-block i2 or physical settings.
 - [x] Retain the accepted serial full-rebuild/per-color execution as an
   explicit validation and direct-launch control.
-- [ ] Prove scenario, policy, assignment/order, replay, capacity, and query
+- [x] Prove scenario, policy, assignment/order, replay, capacity, and query
   ownership through `physbox-launch`; do not create a second engine path.
 
 Integration checkpoint, 2026-07-17: product constructors now select bounded
@@ -70,6 +69,16 @@ control so promotion cannot silently relabel old evidence. Physical
 coefficients, manifold-block i2, substeps, iterations, tolerances, and oracle
 precedence are unchanged. Clean host evidence and the compact promotion
 manifest remain the final S6.1 gate.
+
+Completion checkpoint, 2026-07-17: the clean
+[promotion package](../../evidence/p5.2b-s6.1-scheduler-promotion/README.md)
+pins both policy digests and the immutable S5.4c 7/7 quality, exact-replay, and
+capacity result. Native Metal, Chrome BrowserWebGPU, and the hardware-backed
+`jstorrent-tablet` AVD pass selected and serial scenes with identical source
+and solver execution. All retained frames are visually complete. An attached
+Pixel 9 was locked, so the physical lane stopped before install and is an
+explicit availability gap. Bounded parallel scheduling is now the product
+standard; serial remains the named direct control.
 
 Outcome: settling experiments run on the intended product schedule and can
 attribute any behavior difference against the preserved serial control.

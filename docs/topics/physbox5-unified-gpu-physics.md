@@ -929,6 +929,15 @@ i2 equations, frame graph, renderer, and host boundary. No physical setting,
 tolerance, capacity rule, oracle, or scale claim changes with this promotion;
 fresh clean cross-host qualification remains pending.
 
+S6.1 completion, 2026-07-17: the clean
+[scheduler-promotion package](../../evidence/p5.2b-s6.1-scheduler-promotion/README.md)
+qualifies selected and serial-control paths on native Metal, Chrome
+BrowserWebGPU, and the hardware-backed AVD. It pins the unchanged solver
+execution, policy digests, scene hash, clean capacity, and the immutable S5.4c
+7/7 quality result. The locked attached Pixel 9 remains an explicit host gap.
+Settling observation work can now measure against the intended product
+schedule without reopening scheduler architecture.
+
 Circle/circle and circle/rectangle contact are analytic. Rectangle/rectangle
 uses SAT to select a reference and incident edge, clips the incident segment,
 and produces stable vertex/edge feature pairs. Test feature stability around

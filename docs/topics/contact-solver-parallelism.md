@@ -1,6 +1,6 @@
 # Contact solver parallelism and scheduling
 
-Status: bounded parallel scheduler accepted and integrating, 2026-07-17.
+Status: bounded parallel scheduler selected and qualified, 2026-07-17.
 Forward manifold-block i2 remains the selected shared solver. Product
 constructors select bounded speculative parallel coloring with per-color
 indirect dispatch; serial full rebuild/per-color remains an explicit control.
@@ -492,6 +492,15 @@ creating alternate engine state or host-owned configuration. This changes
 construction/order only: manifold-block i2, physical coefficients, substeps,
 iterations, tolerances, capacity rejection, and oracle precedence are held
 fixed. Clean cross-host promotion evidence remains the completion gate.
+
+S6.1 completion, 2026-07-17: the clean
+[promotion package](../../evidence/p5.2b-s6.1-scheduler-promotion/README.md)
+pins both policy digests and the prior S5.4c qualification digest. Native
+Metal, BrowserWebGPU, and hardware-backed AVD product/control scenes share the
+same scenario hash and manifold-block i2 execution, remain capacity-clean, and
+emit success sentinels. The attached Pixel 9 was locked and is recorded as an
+availability gap. Product selection is now bounded parallel; serial is the
+explicit direct control rather than an implicit former default.
 
 ## Fallback and reserve options
 
