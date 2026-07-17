@@ -84,6 +84,13 @@ try {
     "solver-colored",
     "solver-manifold-i2",
   ];
+  const launchOnlyScenarios = new Set([
+    "solver-parallel-coloring",
+    "settling-hard-8",
+    "settling-candidate-8",
+    "settling-hard-16",
+    "settling-candidate-16",
+  ]);
   const scenarioIndex = menuScenarios.indexOf(scenario);
   if (scenarioIndex >= 0) {
     const compactLandscape = viewportHeight < 520 && viewportWidth > viewportHeight;
@@ -103,7 +110,7 @@ try {
       { name: scenario, activations: before.frame.ui.scenarioActivationsTotal },
       { timeout: 10_000 },
     );
-  } else if (scenario === "solver-parallel-coloring") {
+  } else if (launchOnlyScenarios.has(scenario)) {
     await page.mouse.click(62 * uiScale, 50 * uiScale);
     await page.waitForFunction(
       (name) => globalThis.__physbox5?.frame?.sceneContract?.scenario === name
