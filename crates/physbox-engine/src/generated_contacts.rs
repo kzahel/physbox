@@ -2026,6 +2026,26 @@ impl GpuGeneratedContactRunner {
         completed_steps: u32,
         identity_policy: ContactIdentityPolicyV1,
     ) -> Result<GpuGeneratedContactSeriesV1, String> {
+        self.run_contact_policy_observation_series_with_submission_batch(
+            scenario,
+            observation_interval_steps,
+            completed_steps,
+            identity_policy,
+            VALIDATION_STEPS_PER_SUBMISSION,
+        )
+    }
+
+    /// Varies only command-submission grouping for bounded cross-backend
+    /// diagnosis. A batch of one mirrors the interactive outer-step cadence,
+    /// while all state remains GPU ordered and maps only after the final step.
+    pub fn run_contact_policy_observation_series_with_submission_batch(
+        &self,
+        scenario: &ScenarioV1,
+        observation_interval_steps: u32,
+        completed_steps: u32,
+        identity_policy: ContactIdentityPolicyV1,
+        submission_batch_steps: u32,
+    ) -> Result<GpuGeneratedContactSeriesV1, String> {
         if observation_interval_steps == 0
             || completed_steps == 0
             || !completed_steps.is_multiple_of(observation_interval_steps)
@@ -2035,6 +2055,11 @@ impl GpuGeneratedContactRunner {
                 "generated settling series requires an exact positive cadence within the scenario"
                     .to_owned(),
             );
+        }
+        if submission_batch_steps == 0 || submission_batch_steps > VALIDATION_STEPS_PER_SUBMISSION {
+            return Err(format!(
+                "generated settling submission batch must be between 1 and {VALIDATION_STEPS_PER_SUBMISSION} steps"
+            ));
         }
         scenario.validate().map_err(|error| error.to_string())?;
         let body_count = u32::try_from(scenario.bodies.len())
@@ -2068,7 +2093,7 @@ impl GpuGeneratedContactRunner {
         let mut encoded_steps = 0;
         let mut snapshot_index = 0;
         while encoded_steps < completed_steps {
-            let chunk = (completed_steps - encoded_steps).min(VALIDATION_STEPS_PER_SUBMISSION);
+            let chunk = (completed_steps - encoded_steps).min(submission_batch_steps);
             let mut encoder = self
                 .device
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor {

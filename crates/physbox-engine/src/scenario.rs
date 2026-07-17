@@ -80,8 +80,9 @@ pub enum P5_2SettlingFixtureKind {
     SmallMixedPile,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum P5_2SettlingReviewPolicy {
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum P5_2SettlingReviewPolicy {
     HardControl,
     IdentityOnly,
     SoftnessOnly,
@@ -89,7 +90,7 @@ pub(crate) enum P5_2SettlingReviewPolicy {
 }
 
 impl P5_2SettlingReviewPolicy {
-    pub(crate) const fn name(self) -> &'static str {
+    pub const fn name(self) -> &'static str {
         match self {
             Self::HardControl => "hard",
             Self::IdentityOnly => "identity-only",
@@ -98,7 +99,7 @@ impl P5_2SettlingReviewPolicy {
         }
     }
 
-    pub(crate) const fn identity_policy(self) -> ContactIdentityPolicyV1 {
+    pub const fn identity_policy(self) -> ContactIdentityPolicyV1 {
         match self {
             Self::HardControl | Self::SoftnessOnly => {
                 ContactIdentityPolicyV1::DirectMaximumSeparation
@@ -503,7 +504,7 @@ pub fn p5_2_centered_rectangle_stack_scenario(
     Ok(scenario)
 }
 
-pub(crate) fn p5_2_settling_review_scenario(
+pub fn p5_2_settling_review_scenario(
     rectangle_count: u32,
     policy: P5_2SettlingReviewPolicy,
 ) -> Result<ScenarioV1, ScenarioBuildError> {
@@ -528,6 +529,41 @@ pub(crate) fn p5_2_settling_review_scenario(
             })
         }
     };
+    scenario
+        .validate()
+        .map_err(|error| ScenarioBuildError(error.to_string()))?;
+    Ok(scenario)
+}
+
+/// Returns the permanent four-dynamic-body rising-energy reproducer retained
+/// by the S6.4 failure minimizer. The source is rebuilt from the shared seeded
+/// fixture so native and Android diagnostics cannot fork the scenario.
+pub fn p5_2_minimized_mixed_pile_energy_scenario() -> Result<ScenarioV1, ScenarioBuildError> {
+    let mut scenario = p5_2_settling_fixture_scenario(
+        P5_2SettlingFixtureKind::SmallMixedPile,
+        0x6002,
+        P5_2_SETTLING_EVIDENCE_STEPS,
+    )?;
+    scenario
+        .bodies
+        .retain(|body| matches!(body.id.slot, 0 | 1 | 2 | 4 | 7 | 9 | 10));
+    for (slot, body) in scenario.bodies.iter_mut().enumerate() {
+        body.id.slot = slot as u32;
+    }
+    scenario.bodies[3].angle = finite(0.0);
+    scenario.bodies[3].angular_velocity = finite(0.0);
+    scenario.bodies[4].position.x = 0.0;
+    scenario.bodies[4].angular_velocity = finite(0.0);
+    scenario.bodies[5].position.x = 0.0;
+    scenario.bodies[6].position.x = 0.0;
+    scenario.bodies[6].angle = finite(0.0);
+    scenario.bodies[6].angular_velocity = finite(0.0);
+    scenario.settings.contact_softness = Some(ContactSoftnessPolicyV1 {
+        version: CONTACT_SOFTNESS_POLICY_VERSION,
+        contact_hertz: finite(30.0),
+        damping_ratio: finite(10.0),
+        static_contact_hertz_multiplier: finite(1.0),
+    });
     scenario
         .validate()
         .map_err(|error| ScenarioBuildError(error.to_string()))?;

@@ -199,6 +199,16 @@ and cache traces are still required to locate the first numerical divergence
 and distinguish an earlier loss of the same cancellation from a separate AVD
 transition.
 
+The bounded S6.5a trace contract uses the same generated-contact body storage,
+construction graph, selected solver/scheduler, and shared scenario builders as
+the product world. It records every exact step with a one-outer-step command
+submission cadence matching interactive execution, but performs no CPU mapping
+until step 1,200 completes. A native adapter runs that contract on Metal and a
+native Android adapter runs it on Vulkan; both consume the engine-owned four
+factorial policies and the permanent minimized mixed-pile source. This is
+diagnostic instrumentation rather than another engine or an interactive
+readback dependency.
+
 ## Authority corrections
 
 Two plausible techniques must not be mislabeled as direct Box2D v3 parity:

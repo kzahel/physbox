@@ -398,6 +398,18 @@ maintained physical-device lane was attempted and found no connected device.
 Product defaults, coefficients, tolerances, solver, scheduler, capacity, and
 oracle precedence remain unchanged.
 
+Trace-contract checkpoint, 2026-07-17: the shared generated-contact runner now
+supports an explicit one-outer-step-per-submission diagnostic cadence while
+retaining GPU ordering and mapping only after the final requested step. The
+native `physbox-settling-backend-trace` adapter and
+`android/trace-settling.sh` run the same shared 16-stack policies and permanent
+four-dynamic-body energy reproducer on Metal or Android Vulkan. The minimized
+source is reconstructed by the engine-owned scenario builder and locked to its
+published canonical hash; neither adapter authors a fixture or advances an
+interactive frame from readback. This establishes the bounded trace mechanism,
+not a cross-backend conclusion; the comparison checkbox remains open until
+clean artifacts are captured and verified.
+
 Stop early for human direction before a coefficient/identity-band default
 change, tolerance or quality-band revision, scheduler/solver/accumulation
 change, portability exception, simulation-dependent readback, CPU fallback,
