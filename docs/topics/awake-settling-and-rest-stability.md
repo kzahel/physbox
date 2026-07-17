@@ -104,6 +104,26 @@ attests the candidate policy, remains capacity-clean, and is rejected by the
 selected product constructor. The policy is therefore ready for factorial
 measurement but is not a product default.
 
+S6.4 factorial checkpoint, 2026-07-17: the clean
+[GPU matrix](../../evidence/p5.2b-s6.4-soft-contact/README.md) measures the hard
+control and eight `15/30 Hz × 5/10 damping × static×1/2` settings, then expands
+both top softness settings through direct and prior-contact identity over all
+11 frozen sources. Retaining both is essential: static×2 wins softness-only,
+but composes poorly with temporal identity on the 16-stack. The combined
+`30 Hz / damping 10 / static×1 / prior-contact` lane is the objective leader:
+9/11 full gates, 11/11 structures, zero settled churn, `0.02324 m/s` worst
+linear speed, and `0.00315 m/s` worst angular-edge speed. Every one of 14 fresh
+random sources replays, preserves structure/capacity, and meets the final rest
+band; impact, friction, restitution, and short-stack probes also pass.
+
+This is a strong but incomplete result. The leader still has a rising-energy
+failure on the 16-stack and small mixed pile, with `0.00882 m` worst measured
+penetration versus `0.01150 m` for the hard control. It adds one dispatch, no
+allocation, and records a 6.538 ms versus 5.984 ms 256-body Metal P50 in this
+run. Those failures must be minimized and the candidate must receive fresh
+authority/cross-host evidence before S6.5. No product default, physical band,
+or oracle interpretation changes here.
+
 ## Authority corrections
 
 Two plausible techniques must not be mislabeled as direct Box2D v3 parity:

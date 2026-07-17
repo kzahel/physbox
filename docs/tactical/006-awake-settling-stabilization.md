@@ -1,9 +1,10 @@
 # S6: Awake settling stabilization
 
 Status: active, 2026-07-17. Human review accepted the S5.4c scheduler
-recommendation and authorized autonomous execution through S6.4. S6.1 is
-complete; S6.1–S6.3 are complete. The S6.4 scalar and portable GPU coefficient
-comparators are implemented; the bounded factorial is next.
+recommendation and authorized autonomous execution through S6.4. S6.1–S6.3
+are complete. The S6.4 scalar/GPU coefficient comparators and clean bounded
+factorial are complete; failure minimization, authority, and cross-host review
+evidence remain before S6.5.
 
 Governing topic:
 [awake settling and rest stability](../topics/awake-settling-and-rest-stability.md).
@@ -224,9 +225,9 @@ rejected because no remaining identity failure justifies an unproven transfer.
 - [x] Reproduce the pinned Box2D hertz/damping-to-coefficient equations in the
   scalar specification with explicit provenance, then implement the portable
   GPU comparator independently against that contract.
-- [ ] Measure bounded contact-hertz, damping-ratio, and static-contact variants
+- [x] Measure bounded contact-hertz, damping-ratio, and static-contact variants
   against the unchanged `0.2/1/0` control.
-- [ ] Compare identity-only, softness-only, and combined candidates over all
+- [x] Compare identity-only, softness-only, and combined candidates over all
   accepted and realistic sources at complete-step cost.
 - [ ] Preserve impact, friction, restitution, penetration, stack height,
   structure, capacity, and deterministic replay; minimize sag, ringing, or
@@ -254,6 +255,16 @@ alternatives, evidence package, topic conclusion, and this checkbox.
 Gate: candidates are correctness- and capacity-qualified; the report names
 every physical response and performance tradeoff; no default or quality band
 is accepted automatically.
+
+Factorial checkpoint, 2026-07-17: the clean
+[S6.4 GPU package](../../evidence/p5.2b-s6.4-soft-contact/README.md) screens eight
+bounded coefficient triples and retains both top static-multiplier variants
+after a development run exposed a material identity interaction. The combined
+`30 Hz / damping 10 / static×1 / prior-contact` lane ranks first at 9/11 gates,
+preserves 11/11 structures, records zero settled churn, and stays below the
+`0.025 m/s` speed bands. It adds one dispatch and no allocation. Its 16-stack
+and small mixed pile still fail the frozen rising-energy gate, so promotion is
+not authorized and failure reduction/authority/cross-host evidence remain.
 
 Commit boundary: scalar contract, GPU comparator, factorial automation, and
 clean evidence are independently reviewable commits.
