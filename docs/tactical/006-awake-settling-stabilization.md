@@ -488,6 +488,20 @@ bounded diagnostic may compare the existing point-normal and manifold-block
 lab lanes under the same frozen soft policy, but any solver-family change or
 promotion remains a human checkpoint.
 
+Point/block attribution contract checkpoint, 2026-07-17: the bounded trace
+runner now accepts the existing compact colored point-normal execution as a
+laboratory-only comparator. Candidate depths 14 through 16 and the permanent
+four-body energy reproducer retain the exact shared source hash, two
+iterations, prior-contact identity, 30 Hz softness, damping 10, static
+multiplier 1, forward order, compact indirect dispatch, warm start,
+relaxation, scheduler, capacities, and measurement policy. Only the normal
+solve and its color unit change from manifold-block/manifold to
+point-normal/point, and the raw artifact attests that execution. Product and
+standard constructors remain selected manifold-block. Cross-backend traces
+decide whether the unstable soft feedback is block-specific. If point-normal
+removes it, changing solver family or accumulation architecture remains a
+human checkpoint before any larger matrix or product-default change.
+
 Stop early for human direction before a coefficient/identity-band default
 change, tolerance or quality-band revision, scheduler/solver/accumulation
 change, portability exception, simulation-dependent readback, CPU fallback,
