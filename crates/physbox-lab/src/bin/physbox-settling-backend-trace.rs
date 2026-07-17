@@ -28,6 +28,14 @@ enum TraceScenario {
     Hard16,
     Identity16,
     Softness16,
+    Candidate8,
+    Candidate9,
+    Candidate10,
+    Candidate11,
+    Candidate12,
+    Candidate13,
+    Candidate14,
+    Candidate15,
     Candidate16,
     MinimizedMixedCandidate,
 }
@@ -38,6 +46,14 @@ impl TraceScenario {
             "settling-hard-16" => Ok(Self::Hard16),
             "settling-identity-16" => Ok(Self::Identity16),
             "settling-softness-16" => Ok(Self::Softness16),
+            "settling-candidate-8" => Ok(Self::Candidate8),
+            "settling-candidate-9" => Ok(Self::Candidate9),
+            "settling-candidate-10" => Ok(Self::Candidate10),
+            "settling-candidate-11" => Ok(Self::Candidate11),
+            "settling-candidate-12" => Ok(Self::Candidate12),
+            "settling-candidate-13" => Ok(Self::Candidate13),
+            "settling-candidate-14" => Ok(Self::Candidate14),
+            "settling-candidate-15" => Ok(Self::Candidate15),
             "settling-candidate-16" => Ok(Self::Candidate16),
             "minimized-mixed-candidate" => Ok(Self::MinimizedMixedCandidate),
             _ => Err(format!("unknown settling trace scenario {value}")),
@@ -49,6 +65,14 @@ impl TraceScenario {
             Self::Hard16 => "settling-hard-16",
             Self::Identity16 => "settling-identity-16",
             Self::Softness16 => "settling-softness-16",
+            Self::Candidate8 => "settling-candidate-8",
+            Self::Candidate9 => "settling-candidate-9",
+            Self::Candidate10 => "settling-candidate-10",
+            Self::Candidate11 => "settling-candidate-11",
+            Self::Candidate12 => "settling-candidate-12",
+            Self::Candidate13 => "settling-candidate-13",
+            Self::Candidate14 => "settling-candidate-14",
+            Self::Candidate15 => "settling-candidate-15",
             Self::Candidate16 => "settling-candidate-16",
             Self::MinimizedMixedCandidate => "minimized-mixed-candidate",
         }
@@ -64,6 +88,24 @@ impl TraceScenario {
             Self::Hard16 => review(P5_2SettlingReviewPolicy::HardControl),
             Self::Identity16 => review(P5_2SettlingReviewPolicy::IdentityOnly),
             Self::Softness16 => review(P5_2SettlingReviewPolicy::SoftnessOnly),
+            Self::Candidate8 => {
+                p5_2_settling_review_scenario(8, P5_2SettlingReviewPolicy::SoftCandidate)
+                    .map(|source| {
+                        (
+                            source,
+                            ContactIdentityPolicyV1::PriorContactHysteresis,
+                            Structure::CenteredStack,
+                        )
+                    })
+                    .map_err(|error| error.to_string())
+            }
+            Self::Candidate9 => candidate_stack(9),
+            Self::Candidate10 => candidate_stack(10),
+            Self::Candidate11 => candidate_stack(11),
+            Self::Candidate12 => candidate_stack(12),
+            Self::Candidate13 => candidate_stack(13),
+            Self::Candidate14 => candidate_stack(14),
+            Self::Candidate15 => candidate_stack(15),
             Self::Candidate16 => review(P5_2SettlingReviewPolicy::SoftCandidate),
             Self::MinimizedMixedCandidate => p5_2_minimized_mixed_pile_energy_scenario()
                 .map(|source| {
@@ -76,6 +118,20 @@ impl TraceScenario {
                 .map_err(|error| error.to_string()),
         }
     }
+}
+
+fn candidate_stack(
+    rectangle_count: u32,
+) -> Result<(ScenarioV1, ContactIdentityPolicyV1, Structure), String> {
+    p5_2_settling_review_scenario(rectangle_count, P5_2SettlingReviewPolicy::SoftCandidate)
+        .map(|source| {
+            (
+                source,
+                ContactIdentityPolicyV1::PriorContactHysteresis,
+                Structure::CenteredStack,
+            )
+        })
+        .map_err(|error| error.to_string())
 }
 
 #[derive(Clone, Copy)]
@@ -323,5 +379,17 @@ mod tests {
         )
         .unwrap();
         assert_eq!(arguments.scenario, TraceScenario::Candidate16);
+    }
+
+    #[test]
+    fn candidate_depth_aliases_share_the_frozen_policy() {
+        for count in 8..=16 {
+            let alias = TraceScenario::parse(&format!("settling-candidate-{count}")).unwrap();
+            let (source, identity, structure) = alias.source().unwrap();
+            assert_eq!(source.bodies.len(), count as usize + 1);
+            assert_eq!(identity, ContactIdentityPolicyV1::PriorContactHysteresis);
+            assert!(source.settings.contact_softness.is_some());
+            assert!(matches!(structure, Structure::CenteredStack));
+        }
     }
 }

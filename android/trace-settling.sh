@@ -27,7 +27,7 @@ while (($#)); do
 done
 [[ -n "$MODE" ]] || { echo "error: choose --avd or --device" >&2; exit 2; }
 case "$SCENARIO" in
-    settling-hard-16|settling-identity-16|settling-softness-16|settling-candidate-16|minimized-mixed-candidate) ;;
+    settling-hard-16|settling-identity-16|settling-softness-16|settling-candidate-8|settling-candidate-9|settling-candidate-10|settling-candidate-11|settling-candidate-12|settling-candidate-13|settling-candidate-14|settling-candidate-15|settling-candidate-16|minimized-mixed-candidate) ;;
     *) echo "error: unsupported settling trace scenario: $SCENARIO" >&2; exit 2 ;;
 esac
 if [[ -z "$OUTPUT" ]]; then OUTPUT="/tmp/physbox5-settling-$MODE-$SCENARIO.json.gz"; fi

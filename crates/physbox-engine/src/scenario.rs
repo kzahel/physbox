@@ -468,10 +468,9 @@ pub fn p5_2_centered_rectangle_stack_scenario(
     rectangle_count: u32,
     requested_steps: u32,
 ) -> Result<ScenarioV1, ScenarioBuildError> {
-    if !matches!(rectangle_count, 2 | 4 | 8 | 16 | 32 | 64) {
+    if !matches!(rectangle_count, 2 | 4 | 32 | 64) && !(8..=16).contains(&rectangle_count) {
         return Err(ScenarioBuildError(
-            "centered rectangle stack requires exactly 2, 4, 8, 16, 32, or 64 rectangles"
-                .to_owned(),
+            "centered rectangle stack requires 2, 4, 8 through 16, 32, or 64 rectangles".to_owned(),
         ));
     }
     let mut scenario = p5_2_generated_floor_scenario(requested_steps)?;
@@ -508,9 +507,9 @@ pub fn p5_2_settling_review_scenario(
     rectangle_count: u32,
     policy: P5_2SettlingReviewPolicy,
 ) -> Result<ScenarioV1, ScenarioBuildError> {
-    if !matches!(rectangle_count, 8 | 16) {
+    if !(8..=16).contains(&rectangle_count) {
         return Err(ScenarioBuildError(
-            "settling review requires exactly 8 or 16 rectangles".to_owned(),
+            "settling review requires between 8 and 16 rectangles".to_owned(),
         ));
     }
     let mut scenario = p5_2_centered_rectangle_stack_scenario(
@@ -2166,7 +2165,7 @@ mod tests {
 
     #[test]
     fn p5_2_settling_review_lanes_are_direct_exact_and_policy_separated() {
-        for count in [8, 16] {
+        for count in 8..=16 {
             let hard = p5_2_settling_review_scenario(count, P5_2SettlingReviewPolicy::HardControl)
                 .unwrap();
             let identity =

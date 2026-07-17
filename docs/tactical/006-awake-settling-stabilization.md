@@ -423,6 +423,12 @@ secondary identity transition after the unstable run is established—not a
 discrete identity flip initiating a separate failure. Promotion remains
 blocked. A depth sweep and smallest AVD structural reproducer remain open.
 
+Depth-sweep contract checkpoint, 2026-07-17: the bounded trace adapter accepts
+every candidate stack depth from 8 through 16, all built by the same shared
+centered-stack and frozen review-policy functions. This extends diagnostic
+source coverage only; product launch aliases, defaults, coefficients, and
+accepted quality bands are unchanged.
+
 Stop early for human direction before a coefficient/identity-band default
 change, tolerance or quality-band revision, scheduler/solver/accumulation
 change, portability exception, simulation-dependent readback, CPU fallback,
