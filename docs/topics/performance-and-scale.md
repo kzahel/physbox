@@ -905,6 +905,14 @@ a credible CPU crossover, predict liquid-heavy behavior, or satisfy the
 approximately 2x public scale-advantage contract. Promotion remains a
 changed-order human decision, not a performance-band acceptance.
 
+Scheduler acceptance checkpoint, 2026-07-17: human review accepted bounded
+parallel construction as the product scheduling architecture. This promotes
+the measured `8.781 ms` generated-1K and `7.535 ms` authored-10K leader only as
+the next implementation baseline. It does not accept a regression threshold,
+Box2D crossover, 2x scale claim, liquid projection, or representative-hardware
+band. The serial schedule remains a direct control, and equivalent-quality
+timing must be remeasured after any settling-policy change.
+
 ## Regression and claim gates
 
 Before representative hardware is selected, store named measurements and

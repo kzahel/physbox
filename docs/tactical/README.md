@@ -2,9 +2,9 @@
 
 Status: S1 and S2 complete; the S3 combined representation gate passes.
 Forward manifold-block i2 with full rebuild/per-color dispatch is integrated
-as the selected product baseline. The clean S5.4c package recommends bounded
-parallel coloring but stops at the required changed-order human checkpoint;
-S6 awake-settling stabilization is proposed and paused before implementation.
+as the selected solver baseline. Human review accepted the clean S5.4c bounded
+parallel-coloring recommendation, and S6 is actively integrating it before
+measuring awake settling.
 Broadphase contract/correctness work remains authorized, while product-scene
 ranking and selection wait for the S6 awake gate. S4.3 grab feel and S4.4
 construction mechanics are complete.
@@ -22,8 +22,8 @@ This README remains the unnumbered index.
 | S2 | GPU body state and fixed-floor contact | [002-gpu-body-state.md](002-gpu-body-state.md) | complete 2026-07-15; limited body core accepted |
 | S3 | Small-world collision and contact persistence | [003-small-world-collision-persistence.md](003-small-world-collision-persistence.md) | combined representation gate passed; S5.4a quality experiment authorized, 2026-07-16 |
 | S4 | Interactive evaluation workbench | [004-basic-scene-navigation-camera.md](004-basic-scene-navigation-camera.md) | S4.4 complete; S4.5 construction-feel review ready, 2026-07-16 |
-| S5 | Interactive rigid quality, construction, and scale | [005-interactive-rigid-quality-and-scale.md](005-interactive-rigid-quality-and-scale.md) | manual checkpoint; S5.4c parallel scheduler recommendation ready, S5.5 authorized, 2026-07-16 |
-| S6 | Awake settling stabilization | [006-awake-settling-stabilization.md](006-awake-settling-stabilization.md) | proposed; execution paused for review, 2026-07-17 |
+| S5 | Interactive rigid quality, construction, and scale | [005-interactive-rigid-quality-and-scale.md](005-interactive-rigid-quality-and-scale.md) | S5.4c scheduler accepted; S5.5 waits for S6 awake gate, 2026-07-17 |
+| S6 | Awake settling stabilization | [006-awake-settling-stabilization.md](006-awake-settling-stabilization.md) | active; S6.1 clean host qualification pending, 2026-07-17 |
 
 ## Conventions
 

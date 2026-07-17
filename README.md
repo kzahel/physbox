@@ -6,16 +6,16 @@ GPU-resident 2D physics world. It begins deliberately small: a shared Rust,
 Android adapters.
 
 The shared-host bootstrap and oracle-driven rigid solver laboratory are
-complete. Human review selected contact-centric Jacobi with GPU per-body gather
-as the initial rigid foundation. P5.1 minimal rigid state and fixed-floor
-contact is complete. P5.2 now has selected stable generational pair slots and
-stable body-edge views, a qualified combined product graph, shared camera/menu/
-grab tools, and bounded GPU circle/rectangle construction. The clean S5.4
-awake bakeoff finds that none of nine reversible executions preserves the
-8-body rectangle stack even though awake Box2D does; no new solver default or
-quality band has been accepted. Human review authorized a laboratory-only
-mass-splitting/manifold-block factorial follow-up, with colored/in-place work
-conditional on its measured outcome. P5.3 broadphase remains blocked.
+complete. P5.1 minimal rigid state and fixed-floor contact is complete. P5.2
+now has selected stable generational pair slots and stable body-edge views, a
+qualified combined product graph, shared camera/menu/grab and construction
+tools, and the human-accepted colored in-place manifold-block solver. Human
+review also accepted bounded parallel scheduler construction as the product
+schedule; its serial predecessor remains an explicit validation control. S6
+is now stabilizing awake settling before broadphase selection or sleeping can
+proceed. The scheduler promotion is an architecture and latency improvement,
+not acceptance of the current CPU comparison, residual-motion band, or liquid
+performance.
 The repository still contains no Rapier or CPU product physics backend, fluid
 solver, legacy settings UI, or PhysBox 4 scene compatibility.
 

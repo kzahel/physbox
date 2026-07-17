@@ -163,31 +163,6 @@ impl GpuGeneratedContactGraph {
         fingerprint_mask: u32,
     ) -> Result<Self, String> {
         validate_selected_settings(scenario)?;
-        Self::new_with_topologies_and_execution(
-            device,
-            storage,
-            scenario,
-            persistence_topology,
-            gather_topology,
-            permute_edge_build,
-            permute_pair_build,
-            fingerprint_mask,
-            GpuSolverExecutionV4::SELECTED,
-        )
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn new_with_topologies_and_execution(
-        device: &wgpu::Device,
-        storage: &GpuBodyStorage,
-        scenario: &ScenarioV1,
-        persistence_topology: GpuContactPersistenceTopology,
-        gather_topology: GpuGatherTopology,
-        permute_edge_build: bool,
-        permute_pair_build: bool,
-        fingerprint_mask: u32,
-        execution: GpuSolverExecutionV4,
-    ) -> Result<Self, String> {
         Self::new_with_topologies_execution_and_scheduling(
             device,
             storage,
@@ -197,8 +172,8 @@ impl GpuGeneratedContactGraph {
             permute_edge_build,
             permute_pair_build,
             fingerprint_mask,
-            execution,
-            GpuSolverSchedulingPolicyV1::STANDARD,
+            GpuSolverExecutionV4::SELECTED,
+            GpuSolverSchedulingPolicyV1::SELECTED,
         )
     }
 
@@ -1967,7 +1942,7 @@ impl GpuGeneratedContactRunner {
         fingerprint_mask: u32,
     ) -> Result<GpuGeneratedContactOutput, String> {
         validate_selected_settings(scenario)?;
-        self.run_with_topologies_and_execution(
+        self.run_with_topologies_execution_and_scheduling(
             scenario,
             completed_steps,
             persistence_topology,
@@ -1976,6 +1951,7 @@ impl GpuGeneratedContactRunner {
             permute_pair_build,
             fingerprint_mask,
             GpuSolverExecutionV4::SELECTED,
+            GpuSolverSchedulingPolicyV1::SELECTED,
         )
     }
 
@@ -2468,12 +2444,13 @@ pub async fn benchmark_gpu_generated_contacts_with_gather_topology(
     gather_topology: GpuGatherTopology,
 ) -> Result<GpuGeneratedContactBenchmarkOutput, String> {
     validate_selected_settings(scenario)?;
-    benchmark_gpu_generated_contacts_with_execution(
+    benchmark_gpu_generated_contacts_with_execution_and_scheduling(
         scenario,
         warmup_steps,
         samples,
         gather_topology,
         GpuSolverExecutionV4::SELECTED,
+        GpuSolverSchedulingPolicyV1::SELECTED,
     )
     .await
 }

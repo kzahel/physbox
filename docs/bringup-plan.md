@@ -235,6 +235,14 @@ marginal curve, so it is a scheduler recommendation rather than a crossover.
 The serial product policy remains selected pending the required human review;
 no broadphase, residual band, or liquid claim is accepted.
 
+S6.1 scheduler integration checkpoint, 2026-07-17: human review accepted the
+bounded parallel recommendation. Product generated-contact constructors now
+select that schedule explicitly; the named manifold-i2 validation scene keeps
+the serial full-rebuild/per-color control. Solver equations and physical
+settings are unchanged. Clean native, browser, hardware-backed AVD, and
+available-device qualification remains before S6.1 closes, after which S6.2
+freezes realistic settling observations and fixtures.
+
 The first S3.5a representation checkpoint implements the stable pair-slot
 comparator with full feature verification and deterministic generational slot
 recycling. Its correctness/adversarial gates pass and its combined

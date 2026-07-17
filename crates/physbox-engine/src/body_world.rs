@@ -145,7 +145,7 @@ impl GpuBodyWorld {
             scenario,
             Some((
                 GpuSolverExecutionV4::SELECTED,
-                GpuSolverSchedulingPolicyV1::STANDARD,
+                GpuSolverSchedulingPolicyV1::SELECTED,
             )),
         )
     }
@@ -192,7 +192,7 @@ impl GpuBodyWorld {
         let generated_contacts = generated_solver_configuration
             .map(|(execution, scheduling_policy)| {
                 if execution == GpuSolverExecutionV4::SELECTED
-                    && scheduling_policy == GpuSolverSchedulingPolicyV1::STANDARD
+                    && scheduling_policy == GpuSolverSchedulingPolicyV1::SELECTED
                 {
                     GpuGeneratedContactGraph::new(device, &storage, scenario)
                 } else {

@@ -1,11 +1,11 @@
 # Awake settling and rest stability
 
-Status: sequencing direction recorded, 2026-07-17; the quantitative gate and
-execution plan are proposed for review, and implementation is paused for human
-approval. Awake settling is a prerequisite for broadphase selection and
-sleeping acceptance. No contact-identity policy, soft-contact coefficients,
-penetration deadband, friction anchor, residual band, or sleep threshold is a
-product default by virtue of this document.
+Status: active measurement workstream, 2026-07-17. Human review authorized S6.1
+through S6.4 and accepted the bounded parallel scheduler as the baseline.
+Awake settling is a prerequisite for broadphase selection and sleeping
+acceptance. No contact-identity policy, soft-contact coefficients, penetration
+deadband, friction anchor, residual band, or sleep threshold is a product
+default by virtue of this document.
 
 Governing direction:
 [one GPU-resident 2D physics world](physbox5-unified-gpu-physics.md).

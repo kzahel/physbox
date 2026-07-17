@@ -604,16 +604,18 @@ impl EngineHost {
             ValidationScenario::SolverManifoldI2 | ValidationScenario::SolverParallelColoring => {
                 let scenario = p5_2_manifold_color_validation_scenario()
                     .expect("engine-owned manifold-color validation scenario is valid");
-                let world = if config.scenario == ValidationScenario::SolverParallelColoring {
-                    GpuBodyWorld::new_generated_with_scheduling(
-                        device,
-                        color_format,
-                        &scenario,
-                        GpuSolverSchedulingPolicyV1::PARALLEL_COLORING,
-                    )
-                } else {
-                    GpuBodyWorld::new_generated(device, color_format, &scenario)
-                };
+                let scheduling_policy =
+                    if config.scenario == ValidationScenario::SolverParallelColoring {
+                        GpuSolverSchedulingPolicyV1::SELECTED
+                    } else {
+                        GpuSolverSchedulingPolicyV1::SERIAL_CONTROL
+                    };
+                let world = GpuBodyWorld::new_generated_with_scheduling(
+                    device,
+                    color_format,
+                    &scenario,
+                    scheduling_policy,
+                );
                 Some(world.expect("engine-owned manifold-color validation world is valid"))
             }
             _ => None,
@@ -1034,9 +1036,9 @@ impl EngineHost {
                     self.fixed_steps_total >= u64::from(P5_2_MANIFOLD_COLOR_VALIDATION_STEPS);
                 let expected_scheduling =
                     if self.config.scenario == ValidationScenario::SolverParallelColoring {
-                        GpuSolverSchedulingPolicyV1::PARALLEL_COLORING
+                        GpuSolverSchedulingPolicyV1::SELECTED
                     } else {
-                        GpuSolverSchedulingPolicyV1::STANDARD
+                        GpuSolverSchedulingPolicyV1::SERIAL_CONTROL
                     };
                 let passed = complete
                     && !contract.capacity_overflowed
@@ -1047,9 +1049,9 @@ impl EngineHost {
                     passed,
                     reason: if passed {
                         if self.config.scenario == ValidationScenario::SolverParallelColoring {
-                            "shared generated parallel-coloring comparator completed"
+                            "shared generated selected parallel scheduler completed"
                         } else {
-                            "shared generated forward manifold-block i2 candidate completed"
+                            "shared generated serial scheduler control completed"
                         }
                     } else if complete {
                         "manifold-color execution reported the wrong policy or capacity overflow"

@@ -1,10 +1,10 @@
 # S5: Interactive rigid quality, construction, and scale
 
-Status: manual checkpoint, 2026-07-16. Forward manifold-block i2 with full
-rebuild and per-color dispatch remains the selected product baseline. S5.4c
-recommends the quality-qualified parallel-coloring scheduler, but its changed
-assignment/order is awaiting human review. No residual band, performance
-claim, parallel-scheduler promotion, or broadphase selection is accepted.
+Status: S5.4c accepted, 2026-07-17. Human review accepted the
+quality-qualified bounded parallel-coloring scheduler as the product schedule;
+S6.1 owns integration and clean host qualification. No residual band,
+performance claim, broadphase selection, or settling-policy default is
+accepted.
 Direction: [one GPU-resident 2D physics world](../topics/physbox5-unified-gpu-physics.md).
 Scale contract: [performance and scale](../topics/performance-and-scale.md).
 Dependencies: [S3 collision/persistence](003-small-world-collision-persistence.md)

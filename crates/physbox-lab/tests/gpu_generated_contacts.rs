@@ -21,7 +21,7 @@ fn generated_contact_benchmark_uses_qualified_split_scopes() {
     let scenario = p5_2_generated_performance_scenario(32).unwrap();
     let benchmark = pollster::block_on(benchmark_gpu_generated_contacts(&scenario, 1, 2)).unwrap();
     assert!(benchmark.correctness.failure.is_none());
-    assert_eq!(benchmark.dispatches_per_step, 1_334);
+    assert_eq!(benchmark.dispatches_per_step, 1_434);
     assert_eq!(benchmark.host_completion_seconds.len(), 2);
     assert_eq!(benchmark.cpu_encode_submit_seconds.len(), 2);
     let scheduler_work = benchmark.scheduler_work.as_ref().unwrap();
@@ -389,7 +389,7 @@ fn selected_solver_and_point_experiments_are_explicit_and_replayable() {
     assert_eq!(selected.solver_execution, GpuSolverExecutionV4::SELECTED);
     assert_eq!(
         selected.solver_scheduling_policy,
-        GpuSolverSchedulingPolicyV1::STANDARD
+        GpuSolverSchedulingPolicyV1::SELECTED
     );
 
     let execution = GpuSolverExecutionV4::experiment(true, true);
@@ -1490,7 +1490,7 @@ fn generated_floor_contacts_settle_and_replay_exactly() {
         assert_eq!(first.cache, replay.cache);
         assert_eq!(first.work, replay.work);
         assert!(first.failure.is_none());
-        assert_eq!(first.dispatches_per_step, 1_331);
+        assert_eq!(first.dispatches_per_step, 1_431);
         assert!(
             (first.bodies[0].position.y - expected_height).abs() <= 2.0e-2,
             "{kind:?}: {:?}",

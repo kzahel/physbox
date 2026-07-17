@@ -84,12 +84,12 @@ fn stable_body_edge_benchmark_retains_qualified_completion() {
     ))
     .unwrap();
     assert_eq!(benchmark.correctness.gather_topology.radix_passes, 2);
-    assert_eq!(benchmark.correctness.gather_topology.dispatches, 11);
+    assert_eq!(benchmark.correctness.gather_topology.dispatches, 111);
     assert_eq!(benchmark.correctness.gather_topology.point_capacity, 992);
     assert_eq!(benchmark.correctness.gather_topology.edge_capacity, 1_984);
     assert_eq!(
         benchmark.correctness.gather_topology.allocated_bytes,
-        41_356
+        53_528
     );
     assert_eq!(
         benchmark
@@ -99,9 +99,12 @@ fn stable_body_edge_benchmark_retains_qualified_completion() {
             .iter()
             .map(|capacity| capacity.allocated_bytes)
             .collect::<Vec<_>>(),
-        vec![31_744, 512, 256, 3_968, 128, 3_968, 128, 128, 384, 132, 8]
+        vec![
+            31_744, 512, 256, 3_968, 2_048, 2_048, 128, 3_968, 4_096, 128, 128, 384, 3_968, 132,
+            12, 8,
+        ]
     );
-    assert_eq!(benchmark.dispatches_per_step, 1_334);
+    assert_eq!(benchmark.dispatches_per_step, 1_434);
     assert_eq!(benchmark.host_completion_seconds.len(), 2);
     assert!(benchmark.correctness.failure.is_none());
 }

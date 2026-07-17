@@ -1,8 +1,9 @@
 # S6: Awake settling stabilization
 
-Status: proposed, 2026-07-17; execution paused by human direction. No runtime,
-shader, fixture, product-default, or evidence implementation is authorized by
-this planning commit.
+Status: active, 2026-07-17. Human review accepted the S5.4c scheduler
+recommendation and authorized autonomous execution through S6.4. S6.1 product
+integration is implemented; clean cross-host qualification remains before the
+slice is complete.
 
 Governing topic:
 [awake settling and rest stability](../topics/awake-settling-and-rest-stability.md).
@@ -53,12 +54,22 @@ trajectory or low-microvelocity residual as a hard gate.
 
 ### S6.1 — scheduler baseline and comparison control
 
-- [ ] After explicit approval, promote the separately reviewed S5.4c bounded
+- [x] After explicit approval, promote the separately reviewed S5.4c bounded
   parallel scheduler without changing manifold-block i2 or physical settings.
-- [ ] Retain the accepted serial full-rebuild/per-color execution as an
+- [x] Retain the accepted serial full-rebuild/per-color execution as an
   explicit validation and direct-launch control.
 - [ ] Prove scenario, policy, assignment/order, replay, capacity, and query
   ownership through `physbox-launch`; do not create a second engine path.
+
+Integration checkpoint, 2026-07-17: product constructors now select bounded
+full-rebuild parallel speculative coloring with per-color indirect dispatch.
+`solver-parallel-coloring` exercises that selected policy explicitly, while
+`solver-manifold-i2` names the preserved serial full-rebuild/per-color control.
+Historical arbitrary-policy factorial helpers continue to use the serial
+control so promotion cannot silently relabel old evidence. Physical
+coefficients, manifold-block i2, substeps, iterations, tolerances, and oracle
+precedence are unchanged. Clean host evidence and the compact promotion
+manifest remain the final S6.1 gate.
 
 Outcome: settling experiments run on the intended product schedule and can
 attribute any behavior difference against the preserved serial control.

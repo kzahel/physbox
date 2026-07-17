@@ -55,36 +55,42 @@ pub struct GpuSolverSchedulingPolicyV1 {
 }
 
 impl GpuSolverSchedulingPolicyV1 {
-    pub const STANDARD: Self = Self {
+    pub const SERIAL_CONTROL: Self = Self {
         version: GPU_SOLVER_SCHEDULING_POLICY_VERSION,
         color_maintenance: GpuColorMaintenanceV1::FullRebuild,
         colored_dispatch: GpuColoredDispatchV1::PerColorIndirect,
     };
 
+    // Retained for the historical S5 factorials. Product construction uses
+    // SELECTED so an old control cannot silently follow a later promotion.
+    pub const STANDARD: Self = Self::SERIAL_CONTROL;
+
+    pub const SELECTED: Self = Self {
+        color_maintenance: GpuColorMaintenanceV1::FullRebuildParallelSpeculative,
+        ..Self::SERIAL_CONTROL
+    };
+
     pub const INCREMENTAL: Self = Self {
         color_maintenance: GpuColorMaintenanceV1::StablePairIncremental,
-        ..Self::STANDARD
+        ..Self::SERIAL_CONTROL
     };
 
     pub const PARALLEL_COMPACTION: Self = Self {
         color_maintenance: GpuColorMaintenanceV1::FullRebuildParallelCompaction,
-        ..Self::STANDARD
+        ..Self::SERIAL_CONTROL
     };
 
-    pub const PARALLEL_COLORING: Self = Self {
-        color_maintenance: GpuColorMaintenanceV1::FullRebuildParallelSpeculative,
-        ..Self::STANDARD
-    };
+    pub const PARALLEL_COLORING: Self = Self::SELECTED;
 
     pub const WORKGROUP_PER_ISLAND: Self = Self {
         colored_dispatch: GpuColoredDispatchV1::WorkgroupPerIsland,
-        ..Self::STANDARD
+        ..Self::SERIAL_CONTROL
     };
 
     pub const INCREMENTAL_WORKGROUP_PER_ISLAND: Self = Self {
         color_maintenance: GpuColorMaintenanceV1::StablePairIncremental,
         colored_dispatch: GpuColoredDispatchV1::WorkgroupPerIsland,
-        ..Self::STANDARD
+        ..Self::SERIAL_CONTROL
     };
 
     const fn uses_parallel_compaction(self) -> bool {
@@ -109,7 +115,7 @@ impl GpuSolverSchedulingPolicyV1 {
                 self.version, GPU_SOLVER_SCHEDULING_POLICY_VERSION
             ));
         }
-        if self != Self::STANDARD
+        if self != Self::SERIAL_CONTROL
             && (execution.accumulation != GpuSolverAccumulationV4::ColoredInPlace
                 || execution.color_schedule != GpuColorScheduleV4::CompactIndirect
                 || execution.color_unit != GpuColorUnitV4::Manifold)

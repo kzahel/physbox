@@ -453,7 +453,7 @@ mod tests {
                 solver_capacity_bytes: 512,
                 capacity_overflowed: false,
                 generated_solver_execution: Some(GpuSolverExecutionV4::SELECTED),
-                generated_solver_scheduling_policy: Some(GpuSolverSchedulingPolicyV1::STANDARD),
+                generated_solver_scheduling_policy: Some(GpuSolverSchedulingPolicyV1::SELECTED),
                 fixed_step_hz: 60,
                 scenario: "bootstrap",
                 scenario_hash: "f".repeat(64),

@@ -919,6 +919,16 @@ scheduler promotion only. `GpuSolverSchedulingPolicyV1::STANDARD` remains
 serial until human review, and the 50.8x 1K Box2D gap, deep-stack diagnostics,
 liquid coupling, broadphase, and final scale advantage remain unresolved.
 
+S6.1 scheduler integration checkpoint, 2026-07-17: human review accepted the
+bounded parallel scheduler recommendation. The one product generated-contact
+constructor now selects full-rebuild parallel speculative coloring with
+per-color indirect dispatch. The accepted serial full-rebuild/per-color
+schedule remains an explicit validation scene and historical factorial
+control. Both schedules use the same generated-contact state, manifold-block
+i2 equations, frame graph, renderer, and host boundary. No physical setting,
+tolerance, capacity rule, oracle, or scale claim changes with this promotion;
+fresh clean cross-host qualification remains pending.
+
 Circle/circle and circle/rectangle contact are analytic. Rectangle/rectangle
 uses SAT to select a reference and incident edge, clips the incident segment,
 and produces stable vertex/edge feature pairs. Test feature stability around

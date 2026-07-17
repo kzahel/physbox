@@ -685,8 +685,8 @@ mod tests {
             let report = renderer.render(FrameInput::exact(120));
             assert!(report.scenario.complete);
             assert_eq!(report.scene_contract.contact_point_count, 2_048);
-            assert_eq!(report.scene_contract.solver_dispatches_per_step, 1_334);
-            assert_eq!(report.scene_contract.solver_capacity_bytes, 1_523_728);
+            assert_eq!(report.scene_contract.solver_dispatches_per_step, 1_434);
+            assert_eq!(report.scene_contract.solver_capacity_bytes, 1_573_916);
             assert!(!report.scene_contract.capacity_overflowed);
             renderer.read_capture_state().unwrap()
         };
@@ -1369,7 +1369,7 @@ mod tests {
         );
         assert_eq!(
             report.scene_contract.generated_solver_scheduling_policy,
-            Some(crate::GpuSolverSchedulingPolicyV1::STANDARD)
+            Some(crate::GpuSolverSchedulingPolicyV1::SERIAL_CONTROL)
         );
         assert_eq!(
             crate::GpuSolverExecutionV4::SELECTED.normal_solver,
@@ -1380,7 +1380,7 @@ mod tests {
     }
 
     #[test]
-    fn parallel_coloring_validation_reports_the_unselected_comparator() {
+    fn parallel_coloring_validation_reports_the_selected_product_schedule() {
         let mut renderer = pollster::block_on(OffscreenRenderer::new(
             320,
             200,
@@ -1399,13 +1399,13 @@ mod tests {
         );
         assert_eq!(
             report.scene_contract.generated_solver_scheduling_policy,
-            Some(crate::GpuSolverSchedulingPolicyV1::PARALLEL_COLORING)
+            Some(crate::GpuSolverSchedulingPolicyV1::SELECTED)
         );
         assert_eq!(report.fixed_steps_total, 8);
         assert!(!report.scene_contract.capacity_overflowed);
         assert_eq!(
-            crate::GpuSolverSchedulingPolicyV1::STANDARD.color_maintenance,
-            crate::GpuColorMaintenanceV1::FullRebuild
+            crate::GpuSolverSchedulingPolicyV1::SELECTED.color_maintenance,
+            crate::GpuColorMaintenanceV1::FullRebuildParallelSpeculative
         );
     }
 

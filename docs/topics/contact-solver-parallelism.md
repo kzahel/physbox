@@ -1,9 +1,9 @@
 # Contact solver parallelism and scheduling
 
-Status: changed-order scheduler human checkpoint, 2026-07-16. Forward
-manifold-block i2 with full rebuild/per-color indirect dispatch remains the
-selected shared product execution. S5.4c qualifies and recommends bounded
-parallel coloring, but the product scheduler is unchanged pending review.
+Status: bounded parallel scheduler accepted and integrating, 2026-07-17.
+Forward manifold-block i2 remains the selected shared solver. Product
+constructors select bounded speculative parallel coloring with per-color
+indirect dispatch; serial full rebuild/per-color remains an explicit control.
 
 Governing direction:
 [one GPU-resident 2D physics world](physbox5-unified-gpu-physics.md).
@@ -482,6 +482,16 @@ runner records `8.781 ms`, versus `16.794 ms` serial. The recommendation is to
 make the bounded parallel scheduler the next product scheduling baseline while
 retaining the same solver family and physical settings. Because assignment and
 order change, `STANDARD` remains serial until human acceptance.
+
+Human acceptance and S6.1 integration checkpoint, 2026-07-17: review accepted
+the S5.4c recommendation. Product generated-contact constructors now choose the
+bounded parallel policy explicitly, while the historical `STANDARD` constant
+continues to name the byte-equivalent serial control used by earlier
+factorials. The named shared scenes expose selected and serial policies without
+creating alternate engine state or host-owned configuration. This changes
+construction/order only: manifold-block i2, physical coefficients, substeps,
+iterations, tolerances, capacity rejection, and oracle precedence are held
+fixed. Clean cross-host promotion evidence remains the completion gate.
 
 ## Fallback and reserve options
 
