@@ -185,6 +185,20 @@ coefficient retune, wider identity band, changed solver/scheduler, tolerance
 or gate change, portability exception, or product promotion still requires
 human review.
 
+S6.5a factorial attribution, 2026-07-17: clean direct shared controls show the
+16-stack hard/direct policy centered on Metal, Chrome, and AVD. Prior-contact
+identity alone collapses on all three; softness alone collapses on Metal/AVD
+and is strongly leaning on Chrome. The combined candidate restores the stack
+on Metal/Chrome but still collapses on AVD. This rules out either component as
+an independently safe fix and rules out a simple interaction-only failure:
+the apparent desktop win is a backend-sensitive cancellation between two
+individually unstable changes. The
+[checked package](../../evidence/p5.2b-s6.5a-contact-attribution/README.md)
+keeps promotion blocked. Comparable bounded energy, body, contact, feature,
+and cache traces are still required to locate the first numerical divergence
+and distinguish an earlier loss of the same cancellation from a separate AVD
+transition.
+
 ## Authority corrections
 
 Two plausible techniques must not be mislabeled as direct Box2D v3 parity:

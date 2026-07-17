@@ -352,7 +352,7 @@ portability exception.
 - [ ] Reproduce candidate 16 on Metal and the hardware-backed AVD at exact
   checkpoints; sweep stack depth and first structural divergence without
   changing the frozen source, solver, scheduler, or gate.
-- [ ] Run hard/direct, identity-only, softness-only, and combined controls to
+- [x] Run hard/direct, identity-only, softness-only, and combined controls to
   attribute the failure to identity state, soft-contact feedback, their
   interaction, or backend execution.
 - [ ] Compare the 16-stack and minimized four-body energy reproducer using
@@ -382,6 +382,21 @@ reported as a gap, never inferred as a pass.
 Commit boundary: decision record; diagnostic contract; each distinct
 minimizer or correction; clean cross-host evidence; and final recommendation
 are separate reviewable commits.
+
+Factorial-attribution checkpoint, 2026-07-17: the clean
+[S6.5a package](../../evidence/p5.2b-s6.5a-contact-attribution/README.md)
+crosses direct/prior identity with hard/soft contact on the same 16-stack at
+or after step 1,200 on native Metal, Chrome WebGPU, and the hardware-backed
+`jstorrent-tablet` AVD. Hard/direct remains centered everywhere. Identity-only
+collapses everywhere; softness-only collapses on Metal/AVD and is strongly
+leaning on Chrome. Combining them restores the stack on Metal/Chrome but not
+on AVD Vulkan. The desktop success is therefore a non-additive,
+backend-sensitive cancellation between two individually unstable changes,
+not robust promotion evidence. The package does not yet name the numerical
+first divergence; bounded four-policy traces remain the next gate. The
+maintained physical-device lane was attempted and found no connected device.
+Product defaults, coefficients, tolerances, solver, scheduler, capacity, and
+oracle precedence remain unchanged.
 
 Stop early for human direction before a coefficient/identity-band default
 change, tolerance or quality-band revision, scheduler/solver/accumulation
