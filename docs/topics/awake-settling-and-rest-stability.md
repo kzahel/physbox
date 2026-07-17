@@ -236,6 +236,18 @@ with depth 14 as the immediate control. The control is already energy-unstable:
 identity transition, structural loss—and prevents a correction from claiming
 success merely because depth 14 remains upright for 1,200 steps.
 
+The first reversible correction is rejected. Reducing the combined candidate
+from two contact iterations per substep to one changes no coefficient or
+solver/scheduler architecture, but it introduces a Metal depth-16 structure
+loss at step 1,150 and an AVD depth-14 loss at 1,047. Existing AVD depth-15 and
+depth-16 failures advance from 1,057/892 to 874/779. The permanent four-body
+case still rises for all 300 settled observations on both backends with zero
+cache misses. The [checked `i1` package](../../evidence/p5.2b-s6.5a-soft-i1/README.md)
+therefore rejects the hypothesis that merely repeating an otherwise stable
+soft recurrence causes the failure. The next bounded correction must preserve
+the selected `i2` constraint work while isolating its soft-feedback term; this
+result does not authorize a formulation or product-default change.
+
 ## Authority corrections
 
 Two plausible techniques must not be mislabeled as direct Box2D v3 parity:

@@ -453,6 +453,17 @@ the soft update amplifies a backend-sensitive small-signal mode. It is not an
 accepted quality policy: a favorable result still requires the frozen matrix
 and human review before any product or accepted-quality change.
 
+Single-iteration rejection checkpoint, 2026-07-17: clean Metal and
+hardware-backed AVD traces reject the first reversible correction. `i1`
+introduces structure loss on Metal depth 16 and AVD depth 14, and advances the
+existing AVD depth-15/16 failures. The four-body case retains 300 settled
+energy increases with zero cache misses on both backends. The
+[checked package](../../evidence/p5.2b-s6.5a-soft-i1/README.md) preserves all
+eight traces and the exact `i2` comparisons. No coefficients, solver family,
+scheduler, tolerances, capacity, oracle precedence, or product defaults
+changed. This comparator is rejected, not forwarded; isolating the second
+pass's soft-feedback term while retaining `i2` is the next reversible question.
+
 Stop early for human direction before a coefficient/identity-band default
 change, tolerance or quality-band revision, scheduler/solver/accumulation
 change, portability exception, simulation-dependent readback, CPU fallback,
