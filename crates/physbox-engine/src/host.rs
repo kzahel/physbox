@@ -25,10 +25,10 @@ use crate::{
     scenario::{
         P5_2_BUCKET_EVIDENCE_STEPS, P5_2_CENTERED_STACK_EVIDENCE_STEPS,
         P5_2_MANIFOLD_COLOR_VALIDATION_STEPS, P5_2BucketShape, P5_2GeneratedScenarioKind,
-        authored_chain_scenario, p5_1_direct_render_scenario, p5_2_bucket_scenario,
-        p5_2_centered_rectangle_stack_scenario, p5_2_generated_floor_scenario,
-        p5_2_generated_reset_grab_scenario, p5_2_generated_scenario,
-        p5_2_manifold_color_validation_scenario,
+        P5_2SettlingReviewPolicy, authored_chain_scenario, p5_1_direct_render_scenario,
+        p5_2_bucket_scenario, p5_2_centered_rectangle_stack_scenario,
+        p5_2_generated_floor_scenario, p5_2_generated_reset_grab_scenario, p5_2_generated_scenario,
+        p5_2_manifold_color_validation_scenario, p5_2_settling_review_scenario,
     },
     ui::{UiAction, UiFrameModel, WorkbenchTool, WorkbenchUi},
 };
@@ -38,6 +38,20 @@ use crate::{
 struct FrameParams {
     dt_frame: [f32; 4],
     camera: [f32; 4],
+}
+
+fn settling_review_lane(scenario: ValidationScenario) -> Option<(u32, P5_2SettlingReviewPolicy)> {
+    match scenario {
+        ValidationScenario::SettlingHard8 => Some((8, P5_2SettlingReviewPolicy::HardControl)),
+        ValidationScenario::SettlingCandidate8 => {
+            Some((8, P5_2SettlingReviewPolicy::SoftCandidate))
+        }
+        ValidationScenario::SettlingHard16 => Some((16, P5_2SettlingReviewPolicy::HardControl)),
+        ValidationScenario::SettlingCandidate16 => {
+            Some((16, P5_2SettlingReviewPolicy::SoftCandidate))
+        }
+        _ => None,
+    }
 }
 
 struct PreparedBodyCommands {
@@ -514,7 +528,11 @@ impl EngineHost {
             | ValidationScenario::RectangleBucket100
             | ValidationScenario::ResetGrab
             | ValidationScenario::SolverManifoldI2
-            | ValidationScenario::SolverParallelColoring => None,
+            | ValidationScenario::SolverParallelColoring
+            | ValidationScenario::SettlingHard8
+            | ValidationScenario::SettlingCandidate8
+            | ValidationScenario::SettlingHard16
+            | ValidationScenario::SettlingCandidate16 => None,
             ValidationScenario::SolverJacobi => Some(GpuSolverCandidate::JacobiGather),
             ValidationScenario::SolverColored => Some(GpuSolverCandidate::ColoredSoftTgs),
         };
@@ -618,6 +636,24 @@ impl EngineHost {
                 );
                 Some(world.expect("engine-owned manifold-color validation world is valid"))
             }
+            ValidationScenario::SettlingHard8
+            | ValidationScenario::SettlingCandidate8
+            | ValidationScenario::SettlingHard16
+            | ValidationScenario::SettlingCandidate16 => {
+                let (rectangle_count, policy) = settling_review_lane(config.scenario)
+                    .expect("settling review launch scenario maps to a shared policy");
+                let scenario = p5_2_settling_review_scenario(rectangle_count, policy)
+                    .expect("engine-owned settling review scenario is valid");
+                Some(
+                    GpuBodyWorld::new_generated_with_contact_policy(
+                        device,
+                        color_format,
+                        &scenario,
+                        policy.identity_policy(),
+                    )
+                    .expect("engine-owned settling review GPU world is valid"),
+                )
+            }
             _ => None,
         };
         let scenario_hash = match config.scenario {
@@ -662,6 +698,17 @@ impl EngineHost {
                         .expect("engine-owned manifold-color validation scenario is valid"),
                 )
             }
+            ValidationScenario::SettlingHard8
+            | ValidationScenario::SettlingCandidate8
+            | ValidationScenario::SettlingHard16
+            | ValidationScenario::SettlingCandidate16 => {
+                let (rectangle_count, policy) = settling_review_lane(config.scenario)
+                    .expect("settling review launch scenario maps to a shared policy");
+                canonical_hash(
+                    &p5_2_settling_review_scenario(rectangle_count, policy)
+                        .expect("engine-owned settling review scenario is valid"),
+                )
+            }
             ValidationScenario::SolverJacobi | ValidationScenario::SolverColored => {
                 let mut scenario = authored_chain_scenario(64, 91)
                     .expect("engine-owned solver validation scenario is valid");
@@ -679,7 +726,11 @@ impl EngineHost {
             | ValidationScenario::CircleBucket100
             | ValidationScenario::RectangleBucket100
             | ValidationScenario::SolverManifoldI2
-            | ValidationScenario::SolverParallelColoring => {
+            | ValidationScenario::SolverParallelColoring
+            | ValidationScenario::SettlingHard8
+            | ValidationScenario::SettlingCandidate8
+            | ValidationScenario::SettlingHard16
+            | ValidationScenario::SettlingCandidate16 => {
                 Some(BodyInteractionState::new(Vec::new(), true))
             }
             ValidationScenario::ResetGrab => {
@@ -1057,6 +1108,35 @@ impl EngineHost {
                         "manifold-color execution reported the wrong policy or capacity overflow"
                     } else {
                         "waiting for eight shared manifold-color candidate steps"
+                    },
+                }
+            }
+            ValidationScenario::SettlingHard8
+            | ValidationScenario::SettlingCandidate8
+            | ValidationScenario::SettlingHard16
+            | ValidationScenario::SettlingCandidate16 => {
+                let complete =
+                    self.fixed_steps_total >= u64::from(P5_2_CENTERED_STACK_EVIDENCE_STEPS);
+                let passed = complete && !contract.capacity_overflowed;
+                let (_, policy) = settling_review_lane(self.config.scenario)
+                    .expect("settling review launch scenario maps to a shared policy");
+                ScenarioResult {
+                    name: self.config.scenario.name(),
+                    complete,
+                    passed,
+                    reason: if passed {
+                        match policy {
+                            P5_2SettlingReviewPolicy::HardControl => {
+                                "hard settling control completed its exact step contract"
+                            }
+                            P5_2SettlingReviewPolicy::SoftCandidate => {
+                                "soft settling candidate completed its exact step contract"
+                            }
+                        }
+                    } else if complete {
+                        "settling review lane reported capacity overflow"
+                    } else {
+                        "waiting for 1200 settling review steps"
                     },
                 }
             }

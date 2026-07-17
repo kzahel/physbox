@@ -2,7 +2,8 @@ use std::fmt::{Display, Formatter};
 
 use physbox_contracts::{
     AuthoredContactPointV1, AuthoredManifoldV1, BodyCommandScenarioV1, BodyCommandV1, BodyId,
-    BodyStateV1, ContactPolicyV1, FeatureIdV1, FiniteF32, MaterialV1, SCHEMA_VERSION, ScenarioV1,
+    BodyStateV1, CONTACT_SOFTNESS_POLICY_VERSION, ContactIdentityPolicyV1, ContactPolicyV1,
+    ContactSoftnessPolicyV1, FeatureIdV1, FiniteF32, MaterialV1, SCHEMA_VERSION, ScenarioV1,
     ScheduledBodyCommandV1, ShapeV1, SolverSettingsV1, Validate, Vec2,
 };
 
@@ -77,6 +78,28 @@ pub enum P5_2SettlingFixtureKind {
     SequentialRectangles5,
     SlideToRest,
     SmallMixedPile,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum P5_2SettlingReviewPolicy {
+    HardControl,
+    SoftCandidate,
+}
+
+impl P5_2SettlingReviewPolicy {
+    pub(crate) const fn name(self) -> &'static str {
+        match self {
+            Self::HardControl => "hard",
+            Self::SoftCandidate => "candidate",
+        }
+    }
+
+    pub(crate) const fn identity_policy(self) -> ContactIdentityPolicyV1 {
+        match self {
+            Self::HardControl => ContactIdentityPolicyV1::DirectMaximumSeparation,
+            Self::SoftCandidate => ContactIdentityPolicyV1::PriorContactHysteresis,
+        }
+    }
 }
 
 impl P5_2SettlingFixtureKind {
@@ -466,6 +489,35 @@ pub fn p5_2_centered_rectangle_stack_scenario(
     scenario.id = format!("p5.2-centered-rectangle-stack-{rectangle_count}");
     scenario.seed = 0;
     scenario.bodies = bodies;
+    scenario
+        .validate()
+        .map_err(|error| ScenarioBuildError(error.to_string()))?;
+    Ok(scenario)
+}
+
+pub(crate) fn p5_2_settling_review_scenario(
+    rectangle_count: u32,
+    policy: P5_2SettlingReviewPolicy,
+) -> Result<ScenarioV1, ScenarioBuildError> {
+    if !matches!(rectangle_count, 8 | 16) {
+        return Err(ScenarioBuildError(
+            "settling review requires exactly 8 or 16 rectangles".to_owned(),
+        ));
+    }
+    let mut scenario = p5_2_centered_rectangle_stack_scenario(
+        rectangle_count,
+        P5_2_CENTERED_STACK_EVIDENCE_STEPS,
+    )?;
+    scenario.id = format!("p5.2-settling-review-{}-{rectangle_count}", policy.name());
+    scenario.settings.contact_softness = match policy {
+        P5_2SettlingReviewPolicy::HardControl => None,
+        P5_2SettlingReviewPolicy::SoftCandidate => Some(ContactSoftnessPolicyV1 {
+            version: CONTACT_SOFTNESS_POLICY_VERSION,
+            contact_hertz: finite(30.0),
+            damping_ratio: finite(10.0),
+            static_contact_hertz_multiplier: finite(1.0),
+        }),
+    };
     scenario
         .validate()
         .map_err(|error| ScenarioBuildError(error.to_string()))?;
@@ -2064,6 +2116,48 @@ mod tests {
             p5_2_centered_rectangle_stack_scenario(3, P5_2_CENTERED_STACK_EVIDENCE_STEPS).is_err()
         );
         assert!(p5_2_centered_rectangle_stack_scenario(4, 0).is_err());
+    }
+
+    #[test]
+    fn p5_2_settling_review_lanes_are_direct_exact_and_policy_separated() {
+        for count in [8, 16] {
+            let hard = p5_2_settling_review_scenario(count, P5_2SettlingReviewPolicy::HardControl)
+                .unwrap();
+            let candidate =
+                p5_2_settling_review_scenario(count, P5_2SettlingReviewPolicy::SoftCandidate)
+                    .unwrap();
+            hard.validate().unwrap();
+            candidate.validate().unwrap();
+            assert_eq!(hard.requested_steps, P5_2_CENTERED_STACK_EVIDENCE_STEPS);
+            assert_eq!(candidate.requested_steps, hard.requested_steps);
+            assert_eq!(candidate.bodies, hard.bodies);
+            assert!(hard.settings.contact_softness.is_none());
+            let softness = candidate.settings.contact_softness.unwrap();
+            assert_eq!(softness.contact_hertz.get(), 30.0);
+            assert_eq!(softness.damping_ratio.get(), 10.0);
+            assert_eq!(softness.static_contact_hertz_multiplier.get(), 1.0);
+            assert_eq!(
+                P5_2SettlingReviewPolicy::HardControl.identity_policy(),
+                ContactIdentityPolicyV1::DirectMaximumSeparation
+            );
+            assert_eq!(
+                P5_2SettlingReviewPolicy::SoftCandidate.identity_policy(),
+                ContactIdentityPolicyV1::PriorContactHysteresis
+            );
+            assert_ne!(
+                canonical_json(&hard).unwrap(),
+                canonical_json(&candidate).unwrap()
+            );
+            assert_eq!(
+                canonical_json(&candidate).unwrap(),
+                canonical_json(
+                    &p5_2_settling_review_scenario(count, P5_2SettlingReviewPolicy::SoftCandidate,)
+                        .unwrap(),
+                )
+                .unwrap()
+            );
+        }
+        assert!(p5_2_settling_review_scenario(4, P5_2SettlingReviewPolicy::HardControl).is_err());
     }
 
     #[test]

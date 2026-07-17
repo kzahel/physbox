@@ -3,7 +3,7 @@ use std::mem::size_of;
 use bytemuck::{Pod, Zeroable};
 use physbox_contracts::{
     BodyCommandBatchV1, BodyLayoutV1, CapacityRecordV1, ConstructionIntentBatchV1,
-    GrabIntentBatchV1, ScenarioV1, Validate,
+    ContactIdentityPolicyV1, GrabIntentBatchV1, ScenarioV1, Validate,
 };
 use wgpu::util::DeviceExt;
 
@@ -131,7 +131,13 @@ impl GpuBodyWorld {
         color_format: wgpu::TextureFormat,
         scenario: &ScenarioV1,
     ) -> Result<Self, String> {
-        Self::new_with_generated_contacts(device, color_format, scenario, None)
+        Self::new_with_generated_contacts(
+            device,
+            color_format,
+            scenario,
+            None,
+            ContactIdentityPolicyV1::SELECTED,
+        )
     }
 
     pub(crate) fn new_generated(
@@ -147,6 +153,7 @@ impl GpuBodyWorld {
                 GpuSolverExecutionV4::SELECTED,
                 GpuSolverSchedulingPolicyV1::SELECTED,
             )),
+            ContactIdentityPolicyV1::SELECTED,
         )
     }
 
@@ -161,6 +168,25 @@ impl GpuBodyWorld {
             color_format,
             scenario,
             Some((GpuSolverExecutionV4::SELECTED, scheduling_policy)),
+            ContactIdentityPolicyV1::SELECTED,
+        )
+    }
+
+    pub(crate) fn new_generated_with_contact_policy(
+        device: &wgpu::Device,
+        color_format: wgpu::TextureFormat,
+        scenario: &ScenarioV1,
+        identity_policy: ContactIdentityPolicyV1,
+    ) -> Result<Self, String> {
+        Self::new_with_generated_contacts(
+            device,
+            color_format,
+            scenario,
+            Some((
+                GpuSolverExecutionV4::SELECTED,
+                GpuSolverSchedulingPolicyV1::SELECTED,
+            )),
+            identity_policy,
         )
     }
 
@@ -169,6 +195,7 @@ impl GpuBodyWorld {
         color_format: wgpu::TextureFormat,
         scenario: &ScenarioV1,
         generated_solver_configuration: Option<(GpuSolverExecutionV4, GpuSolverSchedulingPolicyV1)>,
+        identity_policy: ContactIdentityPolicyV1,
     ) -> Result<Self, String> {
         scenario.validate().map_err(|error| error.to_string())?;
         let initial_live_count = u32::try_from(scenario.bodies.len())
@@ -193,10 +220,11 @@ impl GpuBodyWorld {
             .map(|(execution, scheduling_policy)| {
                 if execution == GpuSolverExecutionV4::SELECTED
                     && scheduling_policy == GpuSolverSchedulingPolicyV1::SELECTED
+                    && identity_policy == ContactIdentityPolicyV1::SELECTED
                 {
                     GpuGeneratedContactGraph::new(device, &storage, scenario)
                 } else {
-                    GpuGeneratedContactGraph::new_with_topologies_execution_and_scheduling(
+                    GpuGeneratedContactGraph::new_with_topologies_execution_scheduling_and_identity_policy(
                         device,
                         &storage,
                         scenario,
@@ -207,6 +235,7 @@ impl GpuBodyWorld {
                         u32::MAX,
                         execution,
                         scheduling_policy,
+                        identity_policy,
                     )
                 }
             })
