@@ -3,8 +3,9 @@
 Status: active, 2026-07-17. Human review accepted the S5.4c scheduler
 recommendation and authorized autonomous execution through S6.4. S6.1–S6.3
 are complete. S6.4 is complete with scalar/GPU comparators, factorial, failure
-minima, authority/cost, and cross-host evidence. Work is stopped at mandatory
-S6.5 review; the AVD 16-stack collapse blocks default promotion.
+minima, authority/cost, and cross-host evidence. The compact S6.5 decision
+package is ready for mandatory human review; the AVD 16-stack collapse blocks
+default promotion.
 
 Governing topic:
 [awake settling and rest stability](../topics/awake-settling-and-rest-stability.md).
@@ -304,7 +305,7 @@ and clean evidence are independently reviewable commits.
 
 ### S6.5 — mandatory visible-quality review
 
-- [ ] Stop and present the S6.4 package before changing product contact
+- [x] Stop and present the S6.4 package before changing product contact
   identity or physical coefficients.
 - [ ] Ask the reviewer to judge synchronized playback and, after they choose
   to deploy the named commit, the direct web candidate against the current
@@ -323,6 +324,17 @@ Gate: explicit human selection or direction. This is the normal unattended
 stopping point.
 
 Commit boundary: decision record only after human response.
+
+Review checkpoint, 2026-07-17: the clean
+[S6.5 package](../../evidence/p5.2b-s6.5-settling-review/README.md) composes the
+frozen factorial, Box2D authority, optimized CPU timing, minimized failures,
+and native/browser/AVD evidence without rerunning or changing them. Its
+three-way exact-step playback shows the candidate's large 8-stack improvement
+beside Box2D and the promotion-blocking AVD 16-stack collapse. The package
+recommends holding promotion and authorizing a targeted cross-backend
+diagnosis/minimization before another review. Product defaults, physical
+coefficients, tolerances, and oracle precedence remain unchanged. The next two
+checkboxes require explicit human response and therefore remain open.
 
 ### S6.6 — accepted policy integration
 

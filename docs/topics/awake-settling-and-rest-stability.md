@@ -160,6 +160,18 @@ marks this promotion-blocking and leaves the product defaults unchanged. AVD
 pacing is not interpreted as cost because unrelated emulator load produced
 variable permanent slip; no physical Android device was connected.
 
+S6.5 review package, 2026-07-17: the clean
+[decision report](../../evidence/p5.2b-s6.5-settling-review/README.md) pins every
+S6.4 input and presents current hard/direct, the combined candidate, and clean
+Box2D at synchronized steps 600, 900, and 1,200. It records the candidate's
+9/11 Metal hard gates, zero settled churn, `0.02324 m/s` worst accepted-window
+speed, 7.917 ms 1K Metal P50, severe 16-stack rising-energy mode, minimized
+four-body mixed-pile energy failure, and 5/6 candidate cross-host structure
+captures. The recommendation is to keep the candidate as the laboratory
+leader but hold promotion while the AVD candidate-16 collapse is minimized
+and explained. This is the mandatory human checkpoint; it does not authorize
+a coefficient, identity, quality-band, or product-default change.
+
 ## Authority corrections
 
 Two plausible techniques must not be mislabeled as direct Box2D v3 parity:
