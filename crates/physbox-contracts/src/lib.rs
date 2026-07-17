@@ -29,15 +29,17 @@ pub enum ContactIdentityPolicyV1 {
     DirectMaximumSeparation,
     RelativeCoherenceBias,
     CanonicalAbsoluteBand,
+    PriorContactHysteresis,
 }
 
 impl ContactIdentityPolicyV1 {
     pub const SELECTED: Self = Self::DirectMaximumSeparation;
 
-    pub const ALL: [Self; 3] = [
+    pub const ALL: [Self; 4] = [
         Self::DirectMaximumSeparation,
         Self::RelativeCoherenceBias,
         Self::CanonicalAbsoluteBand,
+        Self::PriorContactHysteresis,
     ];
 
     pub const fn name(self) -> &'static str {
@@ -45,6 +47,7 @@ impl ContactIdentityPolicyV1 {
             Self::DirectMaximumSeparation => "direct-maximum-separation",
             Self::RelativeCoherenceBias => "relative-coherence-bias",
             Self::CanonicalAbsoluteBand => "canonical-absolute-band",
+            Self::PriorContactHysteresis => "prior-contact-hysteresis",
         }
     }
 }

@@ -271,12 +271,12 @@ fn run() -> Result<(), String> {
         timing,
         playback,
         comparator_decisions: ComparatorDecisions {
-            relative_coherence_bias: "forward-for-s6.4-combination",
-            canonical_absolute_band: "equivalent-on-frozen-corpus-reserve",
-            true_prior_contact_hysteresis: "not-justified",
+            relative_coherence_bias: "rejected-deep-stack-instability",
+            canonical_absolute_band: "rejected-deep-stack-instability",
+            true_prior_contact_hysteresis: "forward-for-s6.4-combination",
             canonical_impulse_correspondence: "rejected-without-safe-geometry-proof",
-            rationale: "The stateless coherence candidates remove the attributed owner-flip/cache-miss chain without adding temporal state or transferring impulses between feature frames.",
-            reconsideration_trigger: "A capacity-clean rectangle source with settled owner churn under the forwarded stateless policy, or future polygon clipping whose valid reference choice cannot be made coherent by a bounded stateless comparator.",
+            rationale: "The stateless coherence candidates remove churn but preserve the wrong near-tie owner long enough to destabilize deep stacks. Generational prior-owner hysteresis preserves the first direct answer and changes geometry only within a bounded band, identical point count, and compatible normal. It removes churn but deliberately leaves the independent damping failure for S6.4.",
+            reconsideration_trigger: "A capacity-clean source that churns under temporal hysteresis, a normal/point-count gate that prevents needed coherence, or S6.4 evidence showing that temporal identity does not compose safely with contact softness.",
         },
         physical_defaults_changed: false,
         numerical_tolerances_changed: false,
@@ -709,7 +709,7 @@ fn render_playback(scenes: &[PlaybackScene]) -> Result<String, String> {
         .iter()
         .filter(|scene| selected.contains(&scene.label.as_str()))
         .collect::<Vec<_>>();
-    let width = 1_300;
+    let width = 1_650;
     let row_height = 210;
     let height = 70 + scenes.len() * row_height;
     let mut svg = format!(
@@ -723,7 +723,7 @@ fn render_playback(scenes: &[PlaybackScene]) -> Result<String, String> {
             scene.label
         ));
         for (column, (policy, samples)) in scene.lanes.iter().enumerate() {
-            let x = 280 + column * 330;
+            let x = 260 + column * 340;
             svg.push_str(&format!(
                 "<text class=\"meta\" x=\"{x}\" y=\"{}\">{}</text>",
                 top + 16,

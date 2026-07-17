@@ -28,6 +28,15 @@ struct ManifoldRecord {
     point_range: vec4u,
 }
 
+struct PairRecord {
+    key: vec4u,
+    state: vec4u,
+    features0: vec4u,
+    cache0: vec4u,
+    features1: vec4u,
+    cache1: vec4u,
+}
+
 struct ClipSegment {
     point0: vec2f,
     point1: vec2f,
@@ -51,6 +60,8 @@ struct ClipSegment {
 @group(0) @binding(12) var<storage, read_write> point_capacity: array<atomic<u32>>;
 @group(0) @binding(13) var<storage, read_write> work: array<atomic<u32>>;
 @group(0) @binding(14) var<uniform> params: NarrowParams;
+@group(0) @binding(15) var<storage, read> previous_pairs: array<PairRecord>;
+@group(0) @binding(16) var<storage, read_write> previous_pair_capacity: array<atomic<u32>>;
 
 const FLAG_RECTANGLE: u32 = 1u << 8u;
 const FLAG_CIRCLE: u32 = 1u << 9u;
@@ -123,6 +134,35 @@ fn point_key_greater(a: ContactPoint, b: ContactPoint) -> bool {
     if (a.features.y != b.features.y) { return a.features.y > b.features.y; }
     if (a.features.z != b.features.z) { return a.features.z > b.features.z; }
     return a.features.w > b.features.w;
+}
+
+fn pair_key_less(left: vec4u, right: vec4u) -> bool {
+    for (var index = 0u; index < 4u; index++) {
+        if (left[index] != right[index]) { return left[index] < right[index]; }
+    }
+    return false;
+}
+
+// 0 = no compatible prior, 1 = body A owned the reference, 2 = body B.
+fn previous_reference_owner(key: vec4u) -> u32 {
+    let previous_count = atomicLoad(&previous_pair_capacity[2]);
+    var lower = 0u;
+    var upper = previous_count;
+    loop {
+        if (lower >= upper) { break; }
+        let middle = lower + (upper - lower) / 2u;
+        if (pair_key_less(previous_pairs[middle].key, key)) {
+            lower = middle + 1u;
+        } else {
+            upper = middle;
+        }
+    }
+    if (lower >= previous_count || !all(previous_pairs[lower].key == key)) { return 0u; }
+    let previous = previous_pairs[lower];
+    if (previous.state.z == 0u) { return 0u; }
+    if (previous.features0.x == FEATURE_FACE && previous.features0.z != FEATURE_FACE) { return 1u; }
+    if (previous.features0.z == FEATURE_FACE && previous.features0.x != FEATURE_FACE) { return 2u; }
+    return 0u;
 }
 
 fn collide_circles(pair: CandidatePair) -> NarrowScratch {
@@ -314,7 +354,7 @@ fn clip_segment(segment: ClipSegment, tangent: vec2f,
     return output;
 }
 
-fn collide_rectangles(pair: CandidatePair) -> NarrowScratch {
+fn collide_rectangles_with_prior(pair: CandidatePair, prior_owner: u32) -> NarrowScratch {
     let body_a = pair.identities.x;
     let body_b = pair.identities.z;
     var separation_a = -1.0e30;
@@ -367,6 +407,14 @@ fn collide_rectangles(pair: CandidatePair) -> NarrowScratch {
     var reference_is_a = direct;
     if (policy == 1u || deeply_coincident_identical) { reference_is_a = relative_bias; }
     if (policy == 2u && !deeply_coincident_identical) { reference_is_a = absolute_band; }
+    if (policy == 3u && !deeply_coincident_identical) {
+        if (prior_owner == 1u && separation_b <= separation_a + params.policy.w) {
+            reference_is_a = true;
+        }
+        if (prior_owner == 2u && separation_a <= separation_b + params.policy.w) {
+            reference_is_a = false;
+        }
+    }
     let reference = select(body_b, body_a, reference_is_a);
     let incident = select(body_a, body_b, reference_is_a);
     let reference_face = select(face_b, face_a, reference_is_a);
@@ -416,6 +464,36 @@ fn collide_rectangles(pair: CandidatePair) -> NarrowScratch {
     if (point_count == 0u) { return empty_scratch(pair); }
     if (point_count == 1u) { point1 = point0; }
     return finish_scratch(pair, selected_axis, point0, point1, point_count);
+}
+
+fn collide_rectangles(pair: CandidatePair) -> NarrowScratch {
+    return collide_rectangles_with_prior(pair, 0u);
+}
+
+@compute @workgroup_size(64)
+fn stabilize_narrowphase_identity(@builtin(global_invocation_id) invocation: vec3u) {
+    let manifold_index = invocation.x;
+    if (u32(params.policy.y) != 3u ||
+        manifold_index >= atomicLoad(&manifold_capacity[2])) { return; }
+    let current = manifolds[manifold_index];
+    let body_a = current.identities.x;
+    let body_b = current.identities.z;
+    if ((metadata[body_a].y & FLAG_RECTANGLE) == 0u ||
+        (metadata[body_b].y & FLAG_RECTANGLE) == 0u) { return; }
+    let prior_owner = previous_reference_owner(current.identities);
+    if (prior_owner == 0u) { return; }
+    var pair: CandidatePair;
+    pair.identities = current.identities;
+    let stabilized = collide_rectangles_with_prior(pair, prior_owner);
+    let point_count = stabilized.point_count.x;
+    if (point_count != current.point_range.y || point_count == 0u) { return; }
+    // Never preserve a prior feature frame across a materially different normal.
+    if (dot(stabilized.normal_material.xy, current.normal_material.xy) < 0.9999) { return; }
+    var output = current;
+    output.normal_material = stabilized.normal_material;
+    manifolds[manifold_index] = output;
+    points[current.point_range.x] = stabilized.point0;
+    if (point_count == 2u) { points[current.point_range.x + 1u] = stabilized.point1; }
 }
 
 @compute @workgroup_size(64)

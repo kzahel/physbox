@@ -15,6 +15,7 @@ use physbox_lab::analytic_narrowphase::authored_solver_projection;
 use physbox_lab::settling::centered_stack_structure;
 use physbox_lab::settling::{
     SettlingObservationInputV2, SettlingObserverV2, awake_settling_measurement_policy_v2,
+    observe_generated_settling_series_v2, summarize_settling_v2,
 };
 
 const PASS_TOLERANCE: f32 = 2.0e-5;
@@ -89,6 +90,81 @@ fn identity_candidates_replay_and_preserve_settling_capacity() {
         );
     }
     assert_eq!(outcomes[1].4, outcomes[2].4);
+}
+
+#[test]
+fn prior_contact_hysteresis_diagnoses_the_independent_deep_stack_limit() {
+    let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
+    for count in [8, 16] {
+        let scenario = p5_2_centered_rectangle_stack_scenario(count, 1_200).unwrap();
+        let series = runner
+            .run_observation_series_with_identity_policy(
+                &scenario,
+                1,
+                1_200,
+                ContactIdentityPolicyV1::PriorContactHysteresis,
+            )
+            .unwrap();
+        let observations = observe_generated_settling_series_v2(&scenario, &series).unwrap();
+        let summary =
+            summarize_settling_v2(&observations, awake_settling_measurement_policy_v2()).unwrap();
+        let (structure, reason) = centered_stack_structure(
+            &scenario,
+            &series.snapshots.last().unwrap().bodies,
+            false,
+            0.0,
+        );
+        if count == 8 {
+            assert!(structure, "stack {count}: {reason}");
+        } else {
+            assert_eq!(reason, "rectangle stack order changed");
+            assert!(summary.settled_linear_speed_max.get() < 0.05);
+        }
+        assert_eq!(summary.stable_support_unexplained_churn, 0);
+        assert_eq!(summary.warm_cache_misses, 0);
+        assert!(!summary.energy_envelope_nonincreasing);
+        assert!(
+            series
+                .snapshots
+                .iter()
+                .all(|snapshot| snapshot.failure.is_none())
+        );
+    }
+}
+
+#[test]
+fn prior_contact_hysteresis_preserves_pair_generation_safety_through_churn() {
+    let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
+    let scenario = p5_2_generated_scenario(P5_2GeneratedScenarioKind::PairChurn, 30).unwrap();
+    let first = runner
+        .run_identity_experiment(
+            &scenario,
+            30,
+            ContactIdentityPolicyV1::PriorContactHysteresis,
+        )
+        .unwrap();
+    let replay = runner
+        .run_identity_experiment(
+            &scenario,
+            30,
+            ContactIdentityPolicyV1::PriorContactHysteresis,
+        )
+        .unwrap();
+    assert_eq!(first.bodies, replay.bodies);
+    assert_eq!(first.manifolds, replay.manifolds);
+    assert_eq!(first.cache, replay.cache);
+    assert!(first.failure.is_none());
+    assert!(first.cache.iter().all(|contact| {
+        first
+            .bodies
+            .iter()
+            .any(|body| body.id == contact.key.pair.body_a)
+            && first
+                .bodies
+                .iter()
+                .any(|body| body.id == contact.key.pair.body_b)
+            && contact.value.last_seen_step == 30
+    }));
 }
 
 #[test]

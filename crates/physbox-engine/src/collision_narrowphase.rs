@@ -529,7 +529,7 @@ pub(crate) struct NarrowphaseCase {
     points: wgpu::Buffer,
     manifold_capacity_buffer: wgpu::Buffer,
     point_capacity_buffer: wgpu::Buffer,
-    _params: wgpu::Buffer,
+    params: wgpu::Buffer,
     clear_group: wgpu::BindGroup,
     generate_group: wgpu::BindGroup,
     scan_group: wgpu::BindGroup,
@@ -626,6 +626,7 @@ impl NarrowphaseCase {
                         ContactIdentityPolicyV1::DirectMaximumSeparation => 0.0,
                         ContactIdentityPolicyV1::RelativeCoherenceBias => 1.0,
                         ContactIdentityPolicyV1::CanonicalAbsoluteBand => 2.0,
+                        ContactIdentityPolicyV1::PriorContactHysteresis => 3.0,
                     },
                     0.98,
                     1.0e-3,
@@ -701,7 +702,7 @@ impl NarrowphaseCase {
             points,
             manifold_capacity_buffer,
             point_capacity_buffer,
-            _params: params,
+            params,
             clear_group,
             generate_group,
             scan_group,
@@ -837,7 +838,90 @@ impl NarrowphaseCase {
             + self.points.size()
             + self.manifold_capacity_buffer.size()
             + self.point_capacity_buffer.size()
-            + self._params.size()
+            + self.params.size()
+    }
+}
+
+pub(crate) struct TemporalIdentityStage {
+    pipeline: wgpu::ComputePipeline,
+    groups: [wgpu::BindGroup; 2],
+    manifold_capacity: u32,
+}
+
+impl TemporalIdentityStage {
+    pub(crate) fn new(
+        device: &wgpu::Device,
+        body_storage: &crate::GpuBodyStorage,
+        narrowphase: &NarrowphaseCase,
+        previous_pairs: [&wgpu::Buffer; 2],
+        previous_capacities: [&wgpu::Buffer; 2],
+    ) -> Self {
+        let stage_layout = layout(
+            device,
+            "narrowphase_temporal_identity_layout",
+            &[
+                (0, true),
+                (1, true),
+                (2, true),
+                (9, false),
+                (10, false),
+                (11, false),
+                (15, true),
+                (16, false),
+            ],
+        );
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("narrowphase_temporal_identity_pipeline_layout"),
+            bind_group_layouts: &[&stage_layout],
+            push_constant_ranges: &[],
+        });
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("narrowphase_temporal_identity_shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("collision_narrowphase.wgsl").into()),
+        });
+        let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("narrowphase_temporal_identity_pipeline"),
+            layout: Some(&pipeline_layout),
+            module: &shader,
+            entry_point: Some("stabilize_narrowphase_identity"),
+            compilation_options: wgpu::PipelineCompilationOptions {
+                constants: &[],
+                zero_initialize_workgroup_memory: false,
+            },
+            cache: None,
+        });
+        let groups = [0_usize, 1_usize].map(|parity| {
+            group(
+                device,
+                &stage_layout,
+                &[
+                    (0, body_storage.pose_buffer()),
+                    (1, body_storage.properties_buffer()),
+                    (2, body_storage.metadata_buffer()),
+                    (9, narrowphase.manifolds()),
+                    (10, narrowphase.points()),
+                    (11, narrowphase.manifold_capacity_buffer()),
+                    (15, previous_pairs[parity]),
+                    (16, previous_capacities[parity]),
+                ],
+                &narrowphase.params,
+            )
+        });
+        Self {
+            pipeline,
+            groups,
+            manifold_capacity: narrowphase.manifold_capacity(),
+        }
+    }
+
+    pub(crate) fn encode(&self, encoder: &mut wgpu::CommandEncoder, parity: usize) {
+        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("physbox5_temporal_contact_identity"),
+            timestamp_writes: None,
+        });
+        pass.set_pipeline(&self.pipeline);
+        pass.set_bind_group(0, &self.groups[parity], &[]);
+        pass.dispatch_workgroups(self.manifold_capacity.div_ceil(WORKGROUP_SIZE), 1, 1);
     }
 }
 

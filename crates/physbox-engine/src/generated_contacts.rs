@@ -19,7 +19,7 @@ use crate::{
         GpuSolverSchedulingPolicyV1, PointInputRaw, PreparedPointRaw, validate_selected_settings,
     },
     collision_candidates::{CandidateCase, CandidatePipelines},
-    collision_narrowphase::{NarrowphaseCase, NarrowphasePipelines},
+    collision_narrowphase::{NarrowphaseCase, NarrowphasePipelines, TemporalIdentityStage},
     collision_persistence::{PersistenceCase, PersistencePipelines},
     pair_slot_persistence::{
         PAIR_RECORD_BYTES, PAIR_SLOT_DISPATCHES, PairRecordRaw, PairSlotCase, PairSlotPipelines,
@@ -104,6 +104,7 @@ struct PairSlotPersistenceGraph {
     bridge_pipeline_store: wgpu::ComputePipeline,
     bridge: [PairBridgeCase; 2],
     pair_capacity: u32,
+    temporal_identity: Option<TemporalIdentityStage>,
 }
 
 enum GeneratedPersistenceGraph {
@@ -278,6 +279,8 @@ impl GpuGeneratedContactGraph {
         let persistence = GeneratedPersistenceGraph::new(
             device,
             persistence_topology,
+            storage,
+            identity_policy,
             &candidate,
             &narrowphase,
             &solver_points,
@@ -484,6 +487,8 @@ impl GeneratedPersistenceGraph {
     fn new(
         device: &wgpu::Device,
         topology: GpuContactPersistenceTopology,
+        body_storage: &GpuBodyStorage,
+        identity_policy: ContactIdentityPolicyV1,
         candidate: &CandidateCase,
         narrowphase: &NarrowphaseCase,
         solver_points: &wgpu::Buffer,
@@ -506,6 +511,8 @@ impl GeneratedPersistenceGraph {
             GpuContactPersistenceTopology::StablePairSlot => {
                 Ok(Self::PairSlot(Box::new(PairSlotPersistenceGraph::new(
                     device,
+                    body_storage,
+                    identity_policy,
                     candidate,
                     narrowphase,
                     solver_points,
@@ -546,6 +553,9 @@ impl GeneratedPersistenceGraph {
             }
             Self::PairSlot(graph) => {
                 graph.invalidate_previous(encoder, parity, invalidate_previous_cache);
+                if let Some(stage) = &graph.temporal_identity {
+                    stage.encode(encoder, parity);
+                }
                 graph.cases[parity].encode_with_timestamps(
                     encoder,
                     &graph.pipelines,
@@ -598,10 +608,12 @@ impl GeneratedPersistenceGraph {
         }
     }
 
-    const fn dispatches(&self) -> u32 {
+    fn dispatches(&self) -> u32 {
         match self {
             Self::FullKey(_) => COLLISION_DISPATCHES,
-            Self::PairSlot(_) => PAIR_SLOT_COLLISION_DISPATCHES,
+            Self::PairSlot(graph) => {
+                PAIR_SLOT_COLLISION_DISPATCHES + u32::from(graph.temporal_identity.is_some())
+            }
         }
     }
 
@@ -835,6 +847,8 @@ impl PairSlotPersistenceGraph {
     #[allow(clippy::too_many_arguments)]
     fn new(
         device: &wgpu::Device,
+        body_storage: &GpuBodyStorage,
+        identity_policy: ContactIdentityPolicyV1,
         candidate: &CandidateCase,
         narrowphase: &NarrowphaseCase,
         solver_points: &wgpu::Buffer,
@@ -875,6 +889,16 @@ impl PairSlotPersistenceGraph {
             "physbox5_generated_pair_generations_and_step",
             &vec![0_u32; pair_capacity as usize + 1],
         );
+        let temporal_identity =
+            (identity_policy == ContactIdentityPolicyV1::PriorContactHysteresis).then(|| {
+                TemporalIdentityStage::new(
+                    device,
+                    body_storage,
+                    narrowphase,
+                    [&pairs[0], &pairs[1]],
+                    [&capacities[0], &capacities[1]],
+                )
+            });
         let cases = [
             PairSlotCase::new(
                 device,
@@ -973,6 +997,7 @@ impl PairSlotPersistenceGraph {
             bridge_pipeline_store,
             bridge,
             pair_capacity,
+            temporal_identity,
         })
     }
 

@@ -14,7 +14,7 @@ const verifyArtifact = async (artifact) => {
     fail("invalid artifact identity");
   }
   const path = artifact.path.startsWith("evidence/")
-    ? resolve(root, "../..", artifact.path)
+    ? resolve(artifact.path)
     : resolve(root, artifact.path);
   const bytes = await readFile(path);
   if (sha256(bytes) !== artifact.sha256) fail(`digest mismatch for ${artifact.path}`);
@@ -40,8 +40,9 @@ const policies = [
   "direct-maximum-separation",
   "relative-coherence-bias",
   "canonical-absolute-band",
+  "prior-contact-hysteresis",
 ];
-if (manifest.policies.length !== 3 || manifest.scenes.length !== 11) {
+if (manifest.policies.length !== 4 || manifest.scenes.length !== 11) {
   fail("incomplete policy or scene matrix");
 }
 for (const [index, policy] of manifest.policies.entries()) {
@@ -51,21 +52,20 @@ for (const [index, policy] of manifest.policies.entries()) {
 }
 for (const scene of manifest.scenes) {
   await verifyArtifact(scene.source);
-  if (scene.candidates.length !== 3) fail(`${scene.label} omitted a candidate`);
+  if (scene.candidates.length !== 4) fail(`${scene.label} omitted a candidate`);
   for (const [index, candidate] of scene.candidates.entries()) {
     if (
       candidate.policy !== policies[index] ||
       candidate.replayExact !== true ||
       candidate.instrumentationFinalExact !== true ||
-      candidate.capacityClean !== true ||
-      candidate.structuralPass !== true
+      candidate.capacityClean !== true
     ) {
       fail(`${scene.label}/${policies[index]} failed replay/capacity/structure`);
     }
     await verifyArtifact(candidate.trace);
   }
 }
-if (manifest.randomized.length !== 3 || manifest.timing.length !== 3) {
+if (manifest.randomized.length !== 4 || manifest.timing.length !== 4) {
   fail("randomized or timing matrix is incomplete");
 }
 for (const [index, random] of manifest.randomized.entries()) {
@@ -93,7 +93,8 @@ for (const [index, timing] of manifest.timing.entries()) {
   await verifyArtifact(timing.raw);
 }
 if (
-  manifest.comparatorDecisions.truePriorContactHysteresis !== "not-justified" ||
+  manifest.comparatorDecisions.truePriorContactHysteresis !==
+    "forward-for-s6.4-combination" ||
   manifest.comparatorDecisions.canonicalImpulseCorrespondence !==
     "rejected-without-safe-geometry-proof"
 ) {

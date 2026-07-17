@@ -10,6 +10,29 @@ const REFERENCE_AXIS_RELATIVE_BIAS: f32 = 0.98;
 const REFERENCE_AXIS_ABSOLUTE_BIAS: f32 = 1.0e-3;
 pub const NARROWPHASE_ABSOLUTE_TOLERANCE: f32 = 2.0e-5;
 
+pub fn select_rectangle_reference_is_a(
+    separation_a: f32,
+    separation_b: f32,
+    policy: ContactIdentityPolicyV1,
+    previous_reference_is_a: Option<bool>,
+) -> bool {
+    let direct = separation_a >= separation_b;
+    let relative_bias =
+        separation_b <= REFERENCE_AXIS_RELATIVE_BIAS * separation_a + REFERENCE_AXIS_ABSOLUTE_BIAS;
+    let absolute_band =
+        direct || (separation_a - separation_b).abs() <= REFERENCE_AXIS_ABSOLUTE_BIAS;
+    match policy {
+        ContactIdentityPolicyV1::DirectMaximumSeparation => direct,
+        ContactIdentityPolicyV1::RelativeCoherenceBias => relative_bias,
+        ContactIdentityPolicyV1::CanonicalAbsoluteBand => absolute_band,
+        ContactIdentityPolicyV1::PriorContactHysteresis => match previous_reference_is_a {
+            Some(true) if separation_b <= separation_a + REFERENCE_AXIS_ABSOLUTE_BIAS => true,
+            Some(false) if separation_a <= separation_b + REFERENCE_AXIS_ABSOLUTE_BIAS => false,
+            _ => direct,
+        },
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NarrowphaseDifference {
@@ -655,20 +678,18 @@ fn collide_rectangles(
         && separation_b.separation <= -0.05;
     // Deeply coincident identical rectangles have no unique physical reference axis.
     // Keep those adversarial initial states coherent; use direct selection elsewhere.
-    let direct = separation_a.separation >= separation_b.separation;
-    let relative_bias = separation_b.separation
-        <= REFERENCE_AXIS_RELATIVE_BIAS * separation_a.separation + REFERENCE_AXIS_ABSOLUTE_BIAS;
-    let absolute_band = direct
-        || (separation_a.separation - separation_b.separation).abs()
-            <= REFERENCE_AXIS_ABSOLUTE_BIAS;
     let reference_a = if deeply_coincident_identical {
-        relative_bias
+        separation_b.separation
+            <= REFERENCE_AXIS_RELATIVE_BIAS * separation_a.separation + REFERENCE_AXIS_ABSOLUTE_BIAS
     } else {
-        match identity_policy {
-            ContactIdentityPolicyV1::DirectMaximumSeparation => direct,
-            ContactIdentityPolicyV1::RelativeCoherenceBias => relative_bias,
-            ContactIdentityPolicyV1::CanonicalAbsoluteBand => absolute_band,
-        }
+        // A single-frame projection has no generational prior pair, so the
+        // temporal candidate begins from the same direct answer as the GPU.
+        select_rectangle_reference_is_a(
+            separation_a.separation,
+            separation_b.separation,
+            identity_policy,
+            None,
+        )
     };
     let (reference, incident, reference_normal, reference_face, normal_a_to_b) = if reference_a {
         let normal = rectangle_a.face_normal(separation_a.face);
@@ -1125,6 +1146,41 @@ mod tests {
         assert_eq!(manifolds[1].normal, Vec2::new(0.0, -1.0));
         assert_eq!(manifolds[0].points.len(), 2);
         assert_eq!(manifolds[1].points.len(), 2);
+    }
+
+    #[test]
+    fn prior_reference_hysteresis_is_symmetric_bounded_and_history_free_on_start() {
+        let policy = ContactIdentityPolicyV1::PriorContactHysteresis;
+        assert!(select_rectangle_reference_is_a(
+            -0.001,
+            -0.0005,
+            policy,
+            Some(true)
+        ));
+        assert!(!select_rectangle_reference_is_a(
+            -0.0005,
+            -0.001,
+            policy,
+            Some(false)
+        ));
+        assert!(!select_rectangle_reference_is_a(
+            -0.002,
+            0.0,
+            policy,
+            Some(true)
+        ));
+        assert!(select_rectangle_reference_is_a(
+            0.0,
+            -0.002,
+            policy,
+            Some(false)
+        ));
+        assert!(!select_rectangle_reference_is_a(
+            -0.001, -0.0005, policy, None
+        ));
+        assert!(select_rectangle_reference_is_a(
+            -0.0005, -0.001, policy, None
+        ));
     }
 
     #[test]
