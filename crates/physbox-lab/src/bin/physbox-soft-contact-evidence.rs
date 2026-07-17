@@ -69,6 +69,7 @@ struct Manifest {
     screen_results: Vec<SceneEvidence>,
     screen_ranking: Vec<CandidateRanking>,
     selected_screen_winner: Candidate,
+    retained_screen_runner_up: Candidate,
     finalists: Vec<Candidate>,
     full_results: Vec<SceneEvidence>,
     finalist_summaries: Vec<CandidateRanking>,
@@ -268,7 +269,14 @@ fn run() -> Result<(), String> {
         .ok_or_else(|| "soft-contact screen produced no ranking".to_owned())?
         .candidate
         .clone();
-    let finalists = finalists(&selected_screen_winner);
+    let retained_screen_runner_up = screen_ranking
+        .iter()
+        .skip(1)
+        .find(|row| row.candidate.softness.is_some())
+        .ok_or_else(|| "soft-contact screen omitted a second softness candidate".to_owned())?
+        .candidate
+        .clone();
+    let finalists = finalists(&selected_screen_winner, &retained_screen_runner_up);
 
     let mut full_results = Vec::new();
     let mut playback = Vec::new();
@@ -313,6 +321,7 @@ fn run() -> Result<(), String> {
         screen_results,
         screen_ranking,
         selected_screen_winner,
+        retained_screen_runner_up,
         finalists,
         full_results,
         finalist_summaries,
@@ -363,7 +372,7 @@ fn screen_candidates() -> Vec<Candidate> {
     candidates
 }
 
-fn finalists(winner: &Candidate) -> Vec<Candidate> {
+fn finalists(winner: &Candidate, runner_up: &Candidate) -> Vec<Candidate> {
     vec![
         hard_candidate(
             "hard-direct-control",
@@ -379,13 +388,25 @@ fn finalists(winner: &Candidate) -> Vec<Candidate> {
             id: format!("{}-direct", winner.id),
             identity_policy: ContactIdentityPolicyV1::DirectMaximumSeparation,
             softness: winner.softness,
-            role: "softness-only".to_owned(),
+            role: "primary-softness-only".to_owned(),
         },
         Candidate {
             id: format!("{}-prior", winner.id),
             identity_policy: ContactIdentityPolicyV1::PriorContactHysteresis,
             softness: winner.softness,
-            role: "combined-identity-and-softness".to_owned(),
+            role: "primary-combined-identity-and-softness".to_owned(),
+        },
+        Candidate {
+            id: format!("{}-direct", runner_up.id),
+            identity_policy: ContactIdentityPolicyV1::DirectMaximumSeparation,
+            softness: runner_up.softness,
+            role: "secondary-softness-only".to_owned(),
+        },
+        Candidate {
+            id: format!("{}-prior", runner_up.id),
+            identity_policy: ContactIdentityPolicyV1::PriorContactHysteresis,
+            softness: runner_up.softness,
+            role: "secondary-combined-identity-and-softness".to_owned(),
         },
     ]
 }
@@ -913,11 +934,11 @@ fn render_playback(scenes: &[PlaybackScene]) -> Result<String, String> {
         .iter()
         .filter(|scene| selected.contains(&scene.label.as_str()))
         .collect::<Vec<_>>();
-    let width = 2_030;
+    let width = 2_900;
     let row_height = 210;
     let height = 70 + scenes.len() * row_height;
     let mut svg = format!(
-        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width}\" height=\"{height}\" viewBox=\"0 0 {width} {height}\"><rect width=\"100%\" height=\"100%\" fill=\"#0b1823\"/><style>text{{font-family:ui-monospace,SFMono-Regular,monospace;fill:#dce8f2}}.title{{font:700 18px system-ui}}.meta{{font-size:10px;fill:#91a8ba}}.body{{fill:#54d6db;stroke:#d8ffff;stroke-width:1}}</style><text class=\"title\" x=\"18\" y=\"28\">S6.4 soft-contact synchronized playback</text><text class=\"meta\" x=\"18\" y=\"48\">rows: shared neutral source · columns: hard / identity-only / softness-only / combined · snapshots: 600, 900, 1200</text>"
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width}\" height=\"{height}\" viewBox=\"0 0 {width} {height}\"><rect width=\"100%\" height=\"100%\" fill=\"#0b1823\"/><style>text{{font-family:ui-monospace,SFMono-Regular,monospace;fill:#dce8f2}}.title{{font:700 18px system-ui}}.meta{{font-size:10px;fill:#91a8ba}}.body{{fill:#54d6db;stroke:#d8ffff;stroke-width:1}}</style><text class=\"title\" x=\"18\" y=\"28\">S6.4 soft-contact synchronized playback</text><text class=\"meta\" x=\"18\" y=\"48\">rows: shared neutral source · columns: hard / identity-only / primary and secondary softness-only / combined · snapshots: 600, 900, 1200</text>"
     );
     for (row, scene) in scenes.iter().enumerate() {
         let top = 65 + row * row_height;
@@ -1161,12 +1182,17 @@ mod tests {
         );
         assert_eq!(screen_scene_inputs().unwrap().len(), 5);
         assert_eq!(scene_inputs().unwrap().len(), 11);
-        let finalists = finalists(&candidates[1]);
-        assert_eq!(finalists.len(), 4);
+        let finalists = finalists(&candidates[1], &candidates[2]);
+        assert_eq!(finalists.len(), 6);
         assert_eq!(finalists[0].role, "unchanged-hard-control");
         assert_eq!(finalists[1].role, "identity-only");
-        assert_eq!(finalists[2].role, "softness-only");
-        assert_eq!(finalists[3].role, "combined-identity-and-softness");
+        assert_eq!(finalists[2].role, "primary-softness-only");
+        assert_eq!(finalists[3].role, "primary-combined-identity-and-softness");
+        assert_eq!(finalists[4].role, "secondary-softness-only");
+        assert_eq!(
+            finalists[5].role,
+            "secondary-combined-identity-and-softness"
+        );
     }
 
     #[test]
