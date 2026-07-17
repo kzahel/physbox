@@ -124,6 +124,17 @@ run. Those failures must be minimized and the candidate must receive fresh
 authority/cross-host evidence before S6.5. No product default, physical band,
 or oracle interpretation changes here.
 
+S6.4 failure minima, 2026-07-17: deterministic depth sweeping shows that the
+leader's rising-energy gate edge begins at 9 bodies but is non-monotonic at 10.
+The 9-body difference is in the `7e-10` energy range; the governed 16-stack is
+a materially stronger mode, with all 300 settled intervals rising and energy
+growing from `4.73e-7` to `1.18e-3`. The small mixed pile reduces in 37 real GPU
+attempts from 8 to 4 dynamic bodies while preserving a 300-interval rising run,
+exact replay, and capacity. The
+[checked minima](../../evidence/p5.2b-s6.4-soft-contact/failures/README.md) are
+permanent reconsideration inputs. This evidence does not weaken the energy
+gate merely because part of its boundary is small-signal.
+
 ## Authority corrections
 
 Two plausible techniques must not be mislabeled as direct Box2D v3 parity:

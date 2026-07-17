@@ -229,7 +229,7 @@ rejected because no remaining identity failure justifies an unproven transfer.
   against the unchanged `0.2/1/0` control.
 - [x] Compare identity-only, softness-only, and combined candidates over all
   accepted and realistic sources at complete-step cost.
-- [ ] Preserve impact, friction, restitution, penetration, stack height,
+- [x] Preserve impact, friction, restitution, penetration, stack height,
   structure, capacity, and deterministic replay; minimize sag, ringing, or
   slow-response failures rather than hiding them in aggregate scores.
 
@@ -265,6 +265,16 @@ preserves 11/11 structures, records zero settled churn, and stays below the
 `0.025 m/s` speed bands. It adds one dispatch and no allocation. Its 16-stack
 and small mixed pile still fail the frozen rising-energy gate, so promotion is
 not authorized and failure reduction/authority/cross-host evidence remain.
+
+Failure-minimization checkpoint, 2026-07-17: the clean
+[minima](../../evidence/p5.2b-s6.4-soft-contact/failures/README.md) preserve the
+leader's two energy families without changing the frozen cadence or gate. A
+depth sweep finds a non-monotonic small-signal boundary at 9 bodies, while the
+16-stack is the severe mode with 300 rising intervals. Dense reduction shrinks
+the mixed pile from 8 to 4 dynamic bodies in 37 GPU attempts and retains an
+exact, capacity-clean 1,200-step reproducer. All governed response probes,
+penetration/height records, structures, capacity, and replay are now retained;
+fresh authority and cross-host review evidence remain before S6.5.
 
 Commit boundary: scalar contract, GPU comparator, factorial automation, and
 clean evidence are independently reviewable commits.
