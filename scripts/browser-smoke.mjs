@@ -12,6 +12,7 @@ const captureSuffix = process.env.PHYSBOX5_CAPTURE_SUFFIX
   : "";
 const captureDirectory = resolve(process.env.PHYSBOX5_CAPTURE_DIRECTORY ?? "/tmp");
 const screenshot = join(captureDirectory, `physbox5-web${captureSuffix}.png`);
+const initialScreenshot = join(captureDirectory, `physbox5-web-initial${captureSuffix}.png`);
 const menuScreenshot = join(captureDirectory, `physbox5-web-menu${captureSuffix}.png`);
 const grabScreenshot = join(captureDirectory, `physbox5-web-grab${captureSuffix}.png`);
 const constructionScreenshot = join(captureDirectory, `physbox5-web-construction${captureSuffix}.png`);
@@ -22,6 +23,7 @@ const viewportHeight = Number.parseInt(process.env.PHYSBOX5_VIEWPORT_HEIGHT ?? "
 if (!(viewportWidth > 0 && viewportHeight > 0)) throw new Error("browser viewport must be positive");
 await mkdir(captureDirectory, { recursive: true });
 await rm(screenshot, { force: true });
+await rm(initialScreenshot, { force: true });
 await rm(menuScreenshot, { force: true });
 await rm(grabScreenshot, { force: true });
 await rm(constructionScreenshot, { force: true });
@@ -55,6 +57,9 @@ try {
   const before = await page.evaluate(() => globalThis.__physbox5);
   if (!before.ok || !before.frame?.scenario?.passed) throw new Error(`shared scenario failed: ${JSON.stringify(before)}`);
   if (before.frame.scenario.name !== scenario) throw new Error(`wrong shared scenario: ${JSON.stringify(before.frame.scenario)}`);
+  if (before.frame.fixedStepsTotal < 1) throw new Error(`browser scenario passed without a fixed step: ${JSON.stringify(before.frame.pacing)}`);
+  requireNoGpuValidationErrors(consoleErrors, "browser initial fixed-step presentation");
+  await captureCompleteScreenshot(page, initialScreenshot, "browser initial no-input", consoleErrors);
   const bounds = await page.locator("#physbox-canvas").boundingBox();
   if (!bounds || bounds.x !== 0 || bounds.y !== 0 || bounds.width !== viewportWidth || bounds.height !== viewportHeight) {
     throw new Error(`canvas does not fill viewport: ${JSON.stringify(bounds)}`);
@@ -229,6 +234,7 @@ try {
     throw new Error(`wheel did not zoom shared camera: ${JSON.stringify(after.frame.camera)}`);
   }
   if (errors.length) throw new Error(`browser errors: ${errors.join("; ")}`);
+  requireNoGpuValidationErrors(consoleErrors, "browser final presentation");
   await page.waitForFunction(
     (name) => globalThis.__physbox5?.frame?.scenario?.name === name
       && globalThis.__physbox5?.frame?.scenario?.passed,
@@ -247,6 +253,7 @@ try {
     capturePhase: `${scenario}-pointer-transport`,
     adapter: final.diagnostics,
     viewport: final.viewport,
+    initialScreenshot,
     menuScreenshot,
     grabScreenshot: capturedGrab ? grabScreenshot : null,
     grabFrame: capturedGrab,
@@ -255,7 +262,7 @@ try {
     report: final.frame,
   };
   await writeFile(provenancePath, `${JSON.stringify(provenance, null, 2)}\n`);
-  console.log(JSON.stringify({ screenshot, menuScreenshot, grabScreenshot: capturedGrab ? grabScreenshot : null, constructionScreenshot: capturedConstruction ? constructionScreenshot : null, provenancePath, frame: final.frame }, null, 2));
+  console.log(JSON.stringify({ initialScreenshot, screenshot, menuScreenshot, grabScreenshot: capturedGrab ? grabScreenshot : null, constructionScreenshot: capturedConstruction ? constructionScreenshot : null, provenancePath, frame: final.frame }, null, 2));
   console.log(`PHYSBOX5_VALIDATION_SUCCESS host=web run_id=${provenance.runId}`);
 } finally {
   await browser?.close();
@@ -274,23 +281,35 @@ function git(args) {
 
 async function captureCompleteScreenshot(page, path, label, consoleErrors = []) {
   let blackPixels = 0;
+  let foregroundPixels = 0;
   let pixelCount = 0;
   for (let attempt = 0; attempt < 5; attempt += 1) {
     await page.screenshot({ path });
     const pixels = PNG.sync.read(await readFile(path));
     blackPixels = 0;
+    foregroundPixels = 0;
     pixelCount = pixels.width * pixels.height;
     for (let offset = 0; offset < pixels.data.length; offset += 4) {
       if (pixels.data[offset] <= 3 && pixels.data[offset + 1] <= 3 && pixels.data[offset + 2] <= 3) {
         blackPixels += 1;
       }
+      if (Math.max(pixels.data[offset], pixels.data[offset + 1], pixels.data[offset + 2]) >= 48) {
+        foregroundPixels += 1;
+      }
     }
-    if (blackPixels <= pixelCount * 0.01) return;
+    if (blackPixels <= pixelCount * 0.01 && foregroundPixels >= pixelCount * 0.05) return;
     await page.waitForTimeout(100);
   }
   throw new Error(
-    `${label} contains ${blackPixels}/${pixelCount} unexpected black pixels after five captures; console=${consoleErrors.join("; ")}`,
+    `${label} is incomplete after five captures: black=${blackPixels}/${pixelCount} foreground=${foregroundPixels}/${pixelCount}; console=${consoleErrors.join("; ")}`,
   );
+}
+
+function requireNoGpuValidationErrors(messages, label) {
+  const failures = messages.filter((message) =>
+    /invalid (?:shader|compute|render|command)|while (?:calling|encoding).*create(?:shader|compute|render)|must only be called from uniform control flow|queue\].submit/i.test(message)
+  );
+  if (failures.length) throw new Error(`${label} reported WebGPU validation errors: ${failures.join("; ")}`);
 }
 
 function requireGrabEndpoint(image, targetX, targetY) {

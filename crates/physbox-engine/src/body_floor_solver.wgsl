@@ -745,7 +745,10 @@ fn island_root(parent_base: u32, body_index: u32) -> u32 {
     var root = body_index;
     loop {
         let parent = atomicLoad(&topology[parent_base + root]);
-        if (parent == root || parent == 0xffffffffu) { return parent; }
+        if (parent == root || parent == 0xffffffffu) {
+            root = parent;
+            break;
+        }
         root = parent;
     }
     return root;
@@ -1568,18 +1571,19 @@ fn island_colored_stage(@builtin(local_invocation_id) local_id: vec3u,
                         @builtin(workgroup_id) workgroup_id: vec3u) {
     let island = workgroup_id.x;
     let island_count = atomicLoad(&topology[params.uints0.x]);
-    if (island >= island_count) { return; }
     let color_count = atomicLoad(&topology[bitcast<u32>(params.floats2.w)]);
-    for (var scheduled_color = 0u; scheduled_color < color_count;
+    for (var scheduled_color = 0u; scheduled_color < 32u;
             scheduled_color += 1u) {
-        let color = select(scheduled_color, color_count - 1u - scheduled_color,
-                           params.uints1.z != 0u);
-        let bin = island * 32u + color;
-        let start = atomicLoad(&topology[params.uints0.z + bin]);
-        let end = atomicLoad(&topology[params.uints0.z + bin + 1u]);
-        for (var slot = start + local_id.x; slot < end; slot += 64u) {
-            let point_index = atomicLoad(&topology[params.uints0.w + slot]);
-            solve_colored_manifold(point_index, true);
+        if (island < island_count && scheduled_color < color_count) {
+            let color = select(scheduled_color, color_count - 1u - scheduled_color,
+                               params.uints1.z != 0u);
+            let bin = island * 32u + color;
+            let start = atomicLoad(&topology[params.uints0.z + bin]);
+            let end = atomicLoad(&topology[params.uints0.z + bin + 1u]);
+            for (var slot = start + local_id.x; slot < end; slot += 64u) {
+                let point_index = atomicLoad(&topology[params.uints0.w + slot]);
+                solve_colored_manifold(point_index, true);
+            }
         }
         storageBarrier();
         workgroupBarrier();
