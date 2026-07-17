@@ -4,8 +4,10 @@ Status: S1 and S2 complete; the S3 combined representation gate passes.
 Forward manifold-block i2 with full rebuild/per-color dispatch is integrated
 as the selected product baseline. The clean S5.4c package recommends bounded
 parallel coloring but stops at the required changed-order human checkpoint;
-S5.5 remains authorized. S4.3 grab feel and S4.4 construction mechanics are
-complete.
+S6 awake-settling stabilization is proposed and paused before implementation.
+Broadphase contract/correctness work remains authorized, while product-scene
+ranking and selection wait for the S6 awake gate. S4.3 grab feel and S4.4
+construction mechanics are complete.
 
 Tactical filenames use a three-digit zero-padded prefix ordered by their first
 Git creation timestamp. This repository starts at `001`. Never renumber an
@@ -21,6 +23,7 @@ This README remains the unnumbered index.
 | S3 | Small-world collision and contact persistence | [003-small-world-collision-persistence.md](003-small-world-collision-persistence.md) | combined representation gate passed; S5.4a quality experiment authorized, 2026-07-16 |
 | S4 | Interactive evaluation workbench | [004-basic-scene-navigation-camera.md](004-basic-scene-navigation-camera.md) | S4.4 complete; S4.5 construction-feel review ready, 2026-07-16 |
 | S5 | Interactive rigid quality, construction, and scale | [005-interactive-rigid-quality-and-scale.md](005-interactive-rigid-quality-and-scale.md) | manual checkpoint; S5.4c parallel scheduler recommendation ready, S5.5 authorized, 2026-07-16 |
+| S6 | Awake settling stabilization | [006-awake-settling-stabilization.md](006-awake-settling-stabilization.md) | proposed; execution paused for review, 2026-07-17 |
 
 ## Conventions
 

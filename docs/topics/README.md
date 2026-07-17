@@ -33,6 +33,10 @@ a running log.
   why independent-parallel (Jacobi) solving fails deep stacks, the measured
   S5.4/S5.4a alternatives, the selected colored/manifold direction, the
   portable WebGPU dispatch floor, fallbacks, prior art, and pacing boundaries.
+- [Awake settling and rest stability](awake-settling-and-rest-stability.md) —
+  resting-contact identity, warm-start continuity, soft-contact damping,
+  realistic drop fixtures, awake quality gates, and the required visible
+  review before physical-default promotion, broadphase selection, or sleeping.
 
 ## Conventions
 

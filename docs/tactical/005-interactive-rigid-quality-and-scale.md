@@ -9,6 +9,8 @@ Direction: [one GPU-resident 2D physics world](../topics/physbox5-unified-gpu-ph
 Scale contract: [performance and scale](../topics/performance-and-scale.md).
 Dependencies: [S3 collision/persistence](003-small-world-collision-persistence.md)
 and [S4 evaluation workbench](004-basic-scene-navigation-camera.md).
+Awake-quality follow-up:
+[S6 settling stabilization](006-awake-settling-stabilization.md).
 Bring-up stages: [P5.2 through P5.4](../bringup-plan.md#p52--small-world-collision-and-persistence-active).
 
 ## Goal
@@ -899,6 +901,13 @@ combined representation gate passes, and the S4 construction checkpoint is
 adequate for continued evaluation. S5.5 candidates may proceed alongside
 S5.4c; neither lane may silently select or promote the other's result.
 
+Sequencing revision, 2026-07-17: S6 makes awake settling the primary
+workstream. Broadphase contracts, pair-completeness corpora, and
+trajectory-independent candidate mechanics may proceed, but product-scene
+churn/performance rankings, final selection, and integration wait for the
+[S6 awake gate](006-awake-settling-stabilization.md). This prevents persistent
+solver motion from contaminating the workload used to choose a broadphase.
+
 - [ ] Keep brute force as the complete pair oracle and implement portable
   sorted sweep-and-prune plus multi-cell grid candidates over the same shape
   AABBs and canonical output contract.
@@ -957,6 +966,11 @@ visible evidence and does not justify silent quality reduction.
 
 ### S5.7 — sleeping, waking, and P5.4 rigid review
 
+Dependency revision, 2026-07-17: sleeping implementation and threshold
+selection wait for the [S6 awake gate](006-awake-settling-stabilization.md).
+Sleeping may preserve a qualified rest state; it may not create the appearance
+of one while accepted structures remain above the awake residual band.
+
 - [ ] Define a versioned GPU sleeping/island-wake contract with measurable
   awake compaction, thresholds, timers, and generation-safe state.
 - [ ] Wake on grab, construction, explicit action, material impact, relevant
@@ -998,6 +1012,14 @@ parallel coloring implementation that changes assignment/order and before
 broadphase selection. After explicit selection, it may integrate the winner
 and execute S5.6 plus sleep/wake candidate evidence in S5.7, then stops before
 accepting sleep thresholds, rigid quality bands, or final crossover claims.
+
+Sequencing revision, 2026-07-17: the proposed
+[S6 tactical](006-awake-settling-stabilization.md) supersedes only the order of
+unfinished work. After explicit approval it owns scheduler promotion,
+realistic settling fixtures, contact-identity attribution, and soft-contact
+candidate evidence. It stops before promoting a physical contact default.
+Broadphase selection and sleeping remain blocked until S6 closes its awake
+gate; the already completed S5 evidence and decisions remain historical.
 
 Human direction is required earlier if evidence demands any of the following:
 
