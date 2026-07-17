@@ -8,7 +8,7 @@ use std::{
 use flate2::{Compression, GzBuilder};
 use physbox_contracts::{
     CONTACT_SOFTNESS_POLICY_VERSION, ContactIdentityPolicyV1, ContactSoftnessPolicyV1, FiniteF32,
-    SCHEMA_VERSION, ScenarioV1, SettlingSeriesV2, canonical_hash, sha256_bytes,
+    SCHEMA_VERSION, ScenarioV1, SettlingSeriesV2, Validate, canonical_hash, sha256_bytes,
 };
 use physbox_engine::{
     GpuGeneratedContactRunner, P5_2_SETTLING_EVIDENCE_STEPS, P5_2SettlingFixtureKind,
@@ -116,9 +116,7 @@ fn run() -> Result<(), String> {
     let mut stack_sweep = Vec::new();
     for count in 8..=16 {
         eprintln!("S6.4 minimize stack {count}");
-        let mut scenario =
-            p5_2_centered_rectangle_stack_scenario(count, P5_2_SETTLING_EVIDENCE_STEPS)
-                .map_err(display_error)?;
+        let mut scenario = minimized_stack_source(count)?;
         scenario.settings.contact_softness = Some(softness());
         stack_sweep.push(
             evaluate(
@@ -233,6 +231,28 @@ fn run() -> Result<(), String> {
         arguments.output.display()
     );
     Ok(())
+}
+
+fn minimized_stack_source(count: u32) -> Result<ScenarioV1, String> {
+    if !(8..=16).contains(&count) {
+        return Err("S6.4 stack minimization is bounded to depths 8 through 16".to_owned());
+    }
+    let mut scenario = p5_2_centered_rectangle_stack_scenario(16, P5_2_SETTLING_EVIDENCE_STEPS)
+        .map_err(display_error)?;
+    scenario
+        .bodies
+        .retain(|body| body.inverse_mass.get() == 0.0 || body.id.slot <= count);
+    if scenario.bodies.len() != count as usize + 1
+        || scenario
+            .bodies
+            .iter()
+            .enumerate()
+            .any(|(slot, body)| body.id.slot != slot as u32)
+    {
+        return Err("truncated stack did not preserve dense floor/body slots".to_owned());
+    }
+    scenario.validate().map_err(display_error)?;
+    Ok(scenario)
 }
 
 #[derive(Clone, Copy)]
@@ -497,5 +517,7 @@ mod tests {
             IDENTITY_POLICY,
             ContactIdentityPolicyV1::PriorContactHysteresis
         );
+        assert_eq!(minimized_stack_source(9).unwrap().bodies.len(), 10);
+        assert!(minimized_stack_source(7).is_err());
     }
 }
