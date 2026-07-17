@@ -361,7 +361,7 @@ portability exception.
 - [x] Minimize any backend divergence into a permanent shared scenario and
   first-divergence artifact with exact replay, capacity, provenance, and
   success sentinel.
-- [ ] Implement only reversible laboratory corrections justified by the
+- [x] Implement only reversible laboratory corrections justified by the
   traces; do not retune coefficients or promote a policy speculatively.
 - [ ] Re-run the frozen quality, energy, response, capacity, performance,
   authority, browser, AVD, and available physical-device matrix for every
@@ -441,6 +441,17 @@ has 359 consecutive frozen-epsilon energy increases before its first feature
 transition. Depth 15 similarly has 311 increases before its feature transition
 and loses structure 108 steps later. The backend minimization and first-
 divergence gates are complete; reversible laboratory correction remains next.
+
+Single-iteration diagnostic contract checkpoint, 2026-07-17: the engine-owned
+settling sources now expose a bounded `i1` comparator for candidate stack
+depths 14 through 16 and the permanent four-body energy reproducer. It changes
+only the laboratory source identity and contact iteration count from two to
+one; prior-contact identity, 30 Hz softness, damping 10, static multiplier 1,
+authored bodies, solver family, scheduler, capacity, tolerances, and product
+defaults remain fixed. This tests the trace-supported hypothesis that repeating
+the soft update amplifies a backend-sensitive small-signal mode. It is not an
+accepted quality policy: a favorable result still requires the frozen matrix
+and human review before any product or accepted-quality change.
 
 Stop early for human direction before a coefficient/identity-band default
 change, tolerance or quality-band revision, scheduler/solver/accumulation

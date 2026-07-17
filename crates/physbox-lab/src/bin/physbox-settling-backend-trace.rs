@@ -11,7 +11,8 @@ use physbox_contracts::{
 use physbox_engine::{
     GpuGeneratedContactRunner, GpuGeneratedContactSeriesV1, P5_2_SETTLING_EVIDENCE_STEPS,
     P5_2SettlingReviewPolicy, p5_2_minimized_mixed_pile_energy_scenario,
-    p5_2_settling_review_scenario,
+    p5_2_minimized_mixed_pile_soft_i1_scenario, p5_2_settling_review_scenario,
+    p5_2_settling_soft_i1_comparator_scenario,
 };
 use physbox_lab::settling::{
     awake_settling_measurement_policy_v2, centered_stack_structure,
@@ -37,7 +38,11 @@ enum TraceScenario {
     Candidate14,
     Candidate15,
     Candidate16,
+    CandidateI1Depth14,
+    CandidateI1Depth15,
+    CandidateI1Depth16,
     MinimizedMixedCandidate,
+    MinimizedMixedCandidateI1,
 }
 
 impl TraceScenario {
@@ -55,7 +60,11 @@ impl TraceScenario {
             "settling-candidate-14" => Ok(Self::Candidate14),
             "settling-candidate-15" => Ok(Self::Candidate15),
             "settling-candidate-16" => Ok(Self::Candidate16),
+            "settling-candidate-i1-14" => Ok(Self::CandidateI1Depth14),
+            "settling-candidate-i1-15" => Ok(Self::CandidateI1Depth15),
+            "settling-candidate-i1-16" => Ok(Self::CandidateI1Depth16),
             "minimized-mixed-candidate" => Ok(Self::MinimizedMixedCandidate),
+            "minimized-mixed-candidate-i1" => Ok(Self::MinimizedMixedCandidateI1),
             _ => Err(format!("unknown settling trace scenario {value}")),
         }
     }
@@ -74,7 +83,11 @@ impl TraceScenario {
             Self::Candidate14 => "settling-candidate-14",
             Self::Candidate15 => "settling-candidate-15",
             Self::Candidate16 => "settling-candidate-16",
+            Self::CandidateI1Depth14 => "settling-candidate-i1-14",
+            Self::CandidateI1Depth15 => "settling-candidate-i1-15",
+            Self::CandidateI1Depth16 => "settling-candidate-i1-16",
             Self::MinimizedMixedCandidate => "minimized-mixed-candidate",
+            Self::MinimizedMixedCandidateI1 => "minimized-mixed-candidate-i1",
         }
     }
 
@@ -107,7 +120,19 @@ impl TraceScenario {
             Self::Candidate14 => candidate_stack(14),
             Self::Candidate15 => candidate_stack(15),
             Self::Candidate16 => review(P5_2SettlingReviewPolicy::SoftCandidate),
+            Self::CandidateI1Depth14 => soft_i1_stack(14),
+            Self::CandidateI1Depth15 => soft_i1_stack(15),
+            Self::CandidateI1Depth16 => soft_i1_stack(16),
             Self::MinimizedMixedCandidate => p5_2_minimized_mixed_pile_energy_scenario()
+                .map(|source| {
+                    (
+                        source,
+                        ContactIdentityPolicyV1::PriorContactHysteresis,
+                        Structure::EnergyOnly,
+                    )
+                })
+                .map_err(|error| error.to_string()),
+            Self::MinimizedMixedCandidateI1 => p5_2_minimized_mixed_pile_soft_i1_scenario()
                 .map(|source| {
                     (
                         source,
@@ -124,6 +149,20 @@ fn candidate_stack(
     rectangle_count: u32,
 ) -> Result<(ScenarioV1, ContactIdentityPolicyV1, Structure), String> {
     p5_2_settling_review_scenario(rectangle_count, P5_2SettlingReviewPolicy::SoftCandidate)
+        .map(|source| {
+            (
+                source,
+                ContactIdentityPolicyV1::PriorContactHysteresis,
+                Structure::CenteredStack,
+            )
+        })
+        .map_err(|error| error.to_string())
+}
+
+fn soft_i1_stack(
+    rectangle_count: u32,
+) -> Result<(ScenarioV1, ContactIdentityPolicyV1, Structure), String> {
+    p5_2_settling_soft_i1_comparator_scenario(rectangle_count)
         .map(|source| {
             (
                 source,
@@ -391,5 +430,38 @@ mod tests {
             assert!(source.settings.contact_softness.is_some());
             assert!(matches!(structure, Structure::CenteredStack));
         }
+    }
+
+    #[test]
+    fn single_iteration_aliases_change_only_the_diagnostic_identity_and_iterations() {
+        for count in 14..=16 {
+            let baseline =
+                p5_2_settling_review_scenario(count, P5_2SettlingReviewPolicy::SoftCandidate)
+                    .unwrap();
+            let alias = TraceScenario::parse(&format!("settling-candidate-i1-{count}")).unwrap();
+            let (mut source, identity, structure) = alias.source().unwrap();
+            assert_eq!(source.settings.iterations, 1);
+            assert_eq!(identity, ContactIdentityPolicyV1::PriorContactHysteresis);
+            assert!(matches!(structure, Structure::CenteredStack));
+            source.id = baseline.id.clone();
+            source.settings.iterations = baseline.settings.iterations;
+            assert_eq!(
+                canonical_hash(&source).unwrap(),
+                canonical_hash(&baseline).unwrap()
+            );
+        }
+
+        let baseline = p5_2_minimized_mixed_pile_energy_scenario().unwrap();
+        let (mut source, identity, structure) =
+            TraceScenario::MinimizedMixedCandidateI1.source().unwrap();
+        assert_eq!(source.settings.iterations, 1);
+        assert_eq!(identity, ContactIdentityPolicyV1::PriorContactHysteresis);
+        assert!(matches!(structure, Structure::EnergyOnly));
+        source.id = baseline.id.clone();
+        source.settings.iterations = baseline.settings.iterations;
+        assert_eq!(
+            canonical_hash(&source).unwrap(),
+            canonical_hash(&baseline).unwrap()
+        );
     }
 }

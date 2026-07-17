@@ -569,6 +569,34 @@ pub fn p5_2_minimized_mixed_pile_energy_scenario() -> Result<ScenarioV1, Scenari
     Ok(scenario)
 }
 
+/// Returns a reversible single-iteration comparator for diagnosing whether
+/// repeating the selected soft-contact update amplifies its small-signal mode.
+/// The accepted centered-stack source remains the two-iteration policy.
+pub fn p5_2_settling_soft_i1_comparator_scenario(
+    rectangle_count: u32,
+) -> Result<ScenarioV1, ScenarioBuildError> {
+    let mut scenario =
+        p5_2_settling_review_scenario(rectangle_count, P5_2SettlingReviewPolicy::SoftCandidate)?;
+    scenario.id = format!("p5.2-settling-review-candidate-i1-{rectangle_count}");
+    scenario.settings.iterations = 1;
+    scenario
+        .validate()
+        .map_err(|error| ScenarioBuildError(error.to_string()))?;
+    Ok(scenario)
+}
+
+/// Applies the same bounded diagnostic to the permanent four-body energy
+/// reproducer without changing its authored bodies or physical coefficients.
+pub fn p5_2_minimized_mixed_pile_soft_i1_scenario() -> Result<ScenarioV1, ScenarioBuildError> {
+    let mut scenario = p5_2_minimized_mixed_pile_energy_scenario()?;
+    scenario.id = "p5.2-minimized-mixed-pile-energy-i1".to_owned();
+    scenario.settings.iterations = 1;
+    scenario
+        .validate()
+        .map_err(|error| ScenarioBuildError(error.to_string()))?;
+    Ok(scenario)
+}
+
 pub fn p5_2_coloring_churn_snapshots(
     requested_steps: u32,
 ) -> Result<Vec<P5_2ColoringChurnSnapshotV1>, ScenarioBuildError> {

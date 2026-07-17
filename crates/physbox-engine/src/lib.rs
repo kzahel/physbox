@@ -133,6 +133,8 @@ pub use scenario::{
     p5_2_generated_floor_scenario, p5_2_generated_performance_scenario,
     p5_2_generated_reset_grab_scenario, p5_2_generated_scenario,
     p5_2_manifold_color_validation_scenario, p5_2_minimized_mixed_pile_energy_scenario,
-    p5_2_narrowphase_pair_scenario, p5_2_random_settling_fixture_scenario,
-    p5_2_rectangle_pyramid_scenario, p5_2_settling_fixture_scenario, p5_2_settling_review_scenario,
+    p5_2_minimized_mixed_pile_soft_i1_scenario, p5_2_narrowphase_pair_scenario,
+    p5_2_random_settling_fixture_scenario, p5_2_rectangle_pyramid_scenario,
+    p5_2_settling_fixture_scenario, p5_2_settling_review_scenario,
+    p5_2_settling_soft_i1_comparator_scenario,
 };
