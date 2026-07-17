@@ -2,9 +2,9 @@
 
 Status: active, 2026-07-17. Human review accepted the S5.4c scheduler
 recommendation and authorized autonomous execution through S6.4. S6.1–S6.3
-are complete. The S6.4 scalar/GPU coefficient comparators and clean bounded
-factorial are complete; failure minimization, authority, and cross-host review
-evidence remain before S6.5.
+are complete. S6.4 is complete with scalar/GPU comparators, factorial, failure
+minima, authority/cost, and cross-host evidence. Work is stopped at mandatory
+S6.5 review; the AVD 16-stack collapse blocks default promotion.
 
 Governing topic:
 [awake settling and rest stability](../topics/awake-settling-and-rest-stability.md).
@@ -287,8 +287,20 @@ hard/direct's 7.875 ms and inside 60 Hz, but optimized four-worker Box2D is
 0.132 ms. The roughly 60× CPU gap is explicit; cross-host launch/capture and
 the compact S6.5 review package remain.
 
-Commit boundary: scalar contract, GPU comparator, factorial automation, and
-clean evidence are independently reviewable commits.
+Cross-host checkpoint, 2026-07-17: all four direct hard/candidate 8- and
+16-stack lanes reach at least 1,200 steps with clean capacity on native Metal,
+Chrome WebGPU, and the hardware-backed `jstorrent-tablet` AVD. Visual review
+finds the candidate 8-stack centered everywhere and both 16-stack lanes
+centered on Metal/Chrome, but the candidate 16-stack is collapsed on AVD
+Vulkan by captured step 1,203 while the AVD hard control remains centered. The
+[checked platform package](../../evidence/p5.2b-s6.4-settling-cross-host/README.md)
+therefore fails the portability structure gate and blocks promotion. No
+physical Android device was connected. The AVD pacing samples are explicitly
+not a cost comparison because unrelated emulator load caused variable slip.
+
+Commit boundary: scalar contract, GPU comparator, factorial automation,
+failure minima, authority/cost, direct shared lanes, cross-host automation,
+and clean evidence are independently reviewable commits.
 
 ### S6.5 — mandatory visible-quality review
 

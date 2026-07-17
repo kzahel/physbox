@@ -23,7 +23,7 @@ This README remains the unnumbered index.
 | S3 | Small-world collision and contact persistence | [003-small-world-collision-persistence.md](003-small-world-collision-persistence.md) | combined representation gate passed; S5.4a quality experiment authorized, 2026-07-16 |
 | S4 | Interactive evaluation workbench | [004-basic-scene-navigation-camera.md](004-basic-scene-navigation-camera.md) | S4.4 complete; S4.5 construction-feel review ready, 2026-07-16 |
 | S5 | Interactive rigid quality, construction, and scale | [005-interactive-rigid-quality-and-scale.md](005-interactive-rigid-quality-and-scale.md) | S5.4c scheduler integrated; S5.5 waits for S6 awake gate, 2026-07-17 |
-| S6 | Awake settling stabilization | [006-awake-settling-stabilization.md](006-awake-settling-stabilization.md) | active; S6.1–S6.3 complete, S6.4 factorial complete, failure/authority evidence next, 2026-07-17 |
+| S6 | Awake settling stabilization | [006-awake-settling-stabilization.md](006-awake-settling-stabilization.md) | mandatory S6.5 review; S6.4 complete, AVD candidate-16 collapse blocks promotion, 2026-07-17 |
 
 ## Conventions
 

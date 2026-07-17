@@ -1,7 +1,8 @@
 # Awake settling and rest stability
 
-Status: active measurement workstream, 2026-07-17. Human review authorized S6.1
-through S6.4 and accepted the bounded parallel scheduler as the baseline.
+Status: mandatory S6.5 review, 2026-07-17. Human review authorized S6.1 through
+S6.4 and accepted the bounded parallel scheduler as the baseline. S6.4 is
+complete, but its AVD 16-stack result blocks contact-policy promotion.
 Awake settling is a prerequisite for broadphase selection and sleeping
 acceptance. No contact-identity policy, soft-contact coefficients, penetration
 deadband, friction anchor, residual band, or sleep threshold is a product
@@ -145,6 +146,19 @@ Optimized four-worker Box2D is 0.132 ms, leaving a roughly 60× gap. The
 [raw authority/cost package](../../evidence/p5.2b-s6.4-soft-contact/authority-performance/README.md)
 therefore supports a quality recommendation only, not a CPU crossover or
 liquid-headroom claim.
+
+S6.4 cross-host result, 2026-07-17: the shared launch-only hard/candidate 8-
+and 16-stack lanes complete on native Metal, Chrome WebGPU, and hardware-backed
+AVD Vulkan with clean capacity and the selected scheduler. The candidate adds
+one dispatch and no allocation. Visual inspection preserves a portability
+failure that the transport sentinel intentionally does not hide: candidate 8
+remains centered on every host, Metal/Chrome candidate 16 remains centered,
+but the AVD candidate 16-stack is collapsed by captured step 1,203 while its
+hard control remains centered. The
+[cross-host package](../../evidence/p5.2b-s6.4-settling-cross-host/README.md)
+marks this promotion-blocking and leaves the product defaults unchanged. AVD
+pacing is not interpreted as cost because unrelated emulator load produced
+variable permanent slip; no physical Android device was connected.
 
 ## Authority corrections
 
