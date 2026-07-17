@@ -357,12 +357,16 @@ fn collide_rectangles(pair: CandidatePair) -> NarrowScratch {
     let center_delta = poses[body_b].xy - poses[body_a].xy;
     let deeply_coincident_identical = same_half && dot(center_delta, center_delta) <= 0.01 &&
         separation_a <= -0.05 && separation_b <= -0.05;
-    // Deep identical overlap has no unique axis; use coherence there and direct selection elsewhere.
-    let reference_is_a = select(
-        separation_a >= separation_b,
-        separation_b <= REFERENCE_AXIS_RELATIVE_BIAS * separation_a +
-            REFERENCE_AXIS_ABSOLUTE_BIAS,
-        deeply_coincident_identical);
+    // Policy 0 is the selected direct answer. Policy 1 applies the established
+    // relative/absolute coherence bias to every rectangle pair. Policy 2 uses
+    // a symmetric absolute near-tie band and canonical body-A ownership.
+    let direct = separation_a >= separation_b;
+    let relative_bias = separation_b <= params.policy.z * separation_a + params.policy.w;
+    let absolute_band = select(direct, true, abs(separation_a - separation_b) <= params.policy.w);
+    let policy = u32(params.policy.y);
+    var reference_is_a = direct;
+    if (policy == 1u || deeply_coincident_identical) { reference_is_a = relative_bias; }
+    if (policy == 2u && !deeply_coincident_identical) { reference_is_a = absolute_band; }
     let reference = select(body_b, body_a, reference_is_a);
     let incident = select(body_a, body_b, reference_is_a);
     let reference_face = select(face_b, face_a, reference_is_a);

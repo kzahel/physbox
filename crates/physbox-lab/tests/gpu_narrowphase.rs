@@ -1,10 +1,13 @@
-use physbox_contracts::Vec2;
+use physbox_contracts::{ContactIdentityPolicyV1, Vec2};
 use physbox_engine::{
     GpuNarrowphaseRunner, P5_2CandidatePattern, P5_2CollisionScenarioKind, p5_2_candidate_scenario,
     p5_2_collision_scenario, p5_2_contact_policy_candidate, p5_2_narrowphase_pair_scenario,
 };
 use physbox_lab::{
-    analytic_narrowphase::{compare_narrowphase, generate_scalar_narrowphase},
+    analytic_narrowphase::{
+        compare_narrowphase, generate_scalar_narrowphase,
+        generate_scalar_narrowphase_with_identity_policy,
+    },
     collision_candidates::enumerate_scalar_candidates,
 };
 
@@ -30,6 +33,36 @@ fn gpu_narrowphase_matches_scalar_for_all_governed_pairs() {
         assert_eq!(actual.manifolds, replay.manifolds);
         assert_eq!(actual.work, replay.work);
         assert_eq!(actual.capacities, replay.capacities);
+    }
+}
+
+#[test]
+fn gpu_identity_policies_match_the_scalar_rectangle_specification() {
+    let runner = pollster::block_on(GpuNarrowphaseRunner::new()).unwrap();
+    for seed in 0..32_u64 {
+        let scenario =
+            p5_2_narrowphase_pair_scenario(P5_2CollisionScenarioKind::RectangleRectangle, seed)
+                .unwrap();
+        let candidates = enumerate_scalar_candidates(&scenario).unwrap();
+        for identity_policy in ContactIdentityPolicyV1::ALL {
+            let expected = generate_scalar_narrowphase_with_identity_policy(
+                &scenario,
+                &candidates.candidates,
+                identity_policy,
+            )
+            .unwrap();
+            let actual = runner
+                .run_with_identity_policy(&scenario, None, None, identity_policy)
+                .unwrap();
+            compare_narrowphase(&expected, &actual.manifolds).unwrap_or_else(|difference| {
+                panic!(
+                    "{} seed {seed}: {}: {}",
+                    identity_policy.name(),
+                    difference.signature,
+                    difference.reason
+                )
+            });
+        }
     }
 }
 

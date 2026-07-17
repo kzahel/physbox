@@ -7,8 +7,8 @@ use bytemuck::{Pod, Zeroable};
 use physbox_contracts::{
     CANDIDATE_PAIR_BYTES, COLLISION_CAPACITY_COUNTER_BYTES, COLLISION_CONTACT_POINT_BYTES,
     COLLISION_MANIFOLD_BYTES, COLLISION_WORK_COUNTER_BYTES, CollisionCapacityV1, CollisionWorkV1,
-    FailureKindV1, FailureV1, PERSISTENT_CONTACT_KEY_BYTES, PersistentContactV1, ScenarioV1,
-    Validate, canonical_hash,
+    ContactIdentityPolicyV1, FailureKindV1, FailureV1, PERSISTENT_CONTACT_KEY_BYTES,
+    PersistentContactV1, ScenarioV1, Validate, canonical_hash,
 };
 use wgpu::util::DeviceExt;
 
@@ -121,6 +121,7 @@ pub(crate) struct GpuGeneratedContactGraph {
     solver: GpuFixedFloorSolver,
     parity: Cell<usize>,
     point_capacity: u32,
+    identity_policy: ContactIdentityPolicyV1,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
@@ -190,6 +191,35 @@ impl GpuGeneratedContactGraph {
         execution: GpuSolverExecutionV4,
         scheduling_policy: GpuSolverSchedulingPolicyV1,
     ) -> Result<Self, String> {
+        Self::new_with_topologies_execution_scheduling_and_identity_policy(
+            device,
+            storage,
+            scenario,
+            persistence_topology,
+            gather_topology,
+            permute_edge_build,
+            permute_pair_build,
+            fingerprint_mask,
+            execution,
+            scheduling_policy,
+            ContactIdentityPolicyV1::SELECTED,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn new_with_topologies_execution_scheduling_and_identity_policy(
+        device: &wgpu::Device,
+        storage: &GpuBodyStorage,
+        scenario: &ScenarioV1,
+        persistence_topology: GpuContactPersistenceTopology,
+        gather_topology: GpuGatherTopology,
+        permute_edge_build: bool,
+        permute_pair_build: bool,
+        fingerprint_mask: u32,
+        execution: GpuSolverExecutionV4,
+        scheduling_policy: GpuSolverSchedulingPolicyV1,
+        identity_policy: ContactIdentityPolicyV1,
+    ) -> Result<Self, String> {
         if !scenario.manifolds.is_empty()
             || !scenario.contact_cache.is_empty()
             || !scenario.actions.is_empty()
@@ -219,12 +249,13 @@ impl GpuGeneratedContactGraph {
             storage,
         )?;
         let narrowphase_pipelines = NarrowphasePipelines::new(device);
-        let narrowphase = NarrowphaseCase::new_with_storage(
+        let narrowphase = NarrowphaseCase::new_with_storage_and_identity_policy(
             device,
             &narrowphase_pipelines,
             &candidate,
             Some(candidate_capacity),
             storage,
+            identity_policy,
         )?;
         let point_capacity = narrowphase.point_capacity();
         let solver_points = storage_buffer(
@@ -265,6 +296,7 @@ impl GpuGeneratedContactGraph {
             solver,
             parity: Cell::new(0),
             point_capacity,
+            identity_policy,
         })
     }
 
@@ -1219,6 +1251,7 @@ pub struct GpuGeneratedContactOutput {
     pub solver_settings: physbox_contracts::SolverSettingsV1,
     pub solver_execution: GpuSolverExecutionV4,
     pub solver_scheduling_policy: GpuSolverSchedulingPolicyV1,
+    pub contact_identity_policy: ContactIdentityPolicyV1,
     pub bodies: Vec<physbox_contracts::BodyStateV1>,
     pub manifolds: Vec<physbox_contracts::CollisionManifoldV1>,
     pub cache: Vec<PersistentContactV1>,
@@ -1306,6 +1339,7 @@ pub struct GpuGeneratedContactSeriesV1 {
     pub solver_settings: physbox_contracts::SolverSettingsV1,
     pub solver_execution: GpuSolverExecutionV4,
     pub solver_scheduling_policy: GpuSolverSchedulingPolicyV1,
+    pub contact_identity_policy: ContactIdentityPolicyV1,
     pub dispatches_per_step: u32,
     pub allocated_bytes: u64,
     pub snapshots: Vec<GpuGeneratedContactSnapshotV1>,
@@ -1933,6 +1967,21 @@ impl GpuGeneratedContactRunner {
         observation_interval_steps: u32,
         completed_steps: u32,
     ) -> Result<GpuGeneratedContactSeriesV1, String> {
+        self.run_observation_series_with_identity_policy(
+            scenario,
+            observation_interval_steps,
+            completed_steps,
+            ContactIdentityPolicyV1::SELECTED,
+        )
+    }
+
+    pub fn run_observation_series_with_identity_policy(
+        &self,
+        scenario: &ScenarioV1,
+        observation_interval_steps: u32,
+        completed_steps: u32,
+        identity_policy: ContactIdentityPolicyV1,
+    ) -> Result<GpuGeneratedContactSeriesV1, String> {
         if observation_interval_steps == 0
             || completed_steps == 0
             || !completed_steps.is_multiple_of(observation_interval_steps)
@@ -1955,18 +2004,20 @@ impl GpuGeneratedContactRunner {
         )?;
         let execution = GpuSolverExecutionV4::SELECTED;
         let scheduling_policy = GpuSolverSchedulingPolicyV1::SELECTED;
-        let graph = GpuGeneratedContactGraph::new_with_topologies_execution_and_scheduling(
-            &self.device,
-            &storage,
-            scenario,
-            GpuContactPersistenceTopology::StablePairSlot,
-            GpuGatherTopology::StableBodyEdge,
-            false,
-            false,
-            u32::MAX,
-            execution,
-            scheduling_policy,
-        )?;
+        let graph =
+            GpuGeneratedContactGraph::new_with_topologies_execution_scheduling_and_identity_policy(
+                &self.device,
+                &storage,
+                scenario,
+                GpuContactPersistenceTopology::StablePairSlot,
+                GpuGatherTopology::StableBodyEdge,
+                false,
+                false,
+                u32::MAX,
+                execution,
+                scheduling_policy,
+                identity_policy,
+            )?;
         let snapshot_count = completed_steps / observation_interval_steps;
         let readbacks =
             GeneratedSettlingReadbacks::new(&self.device, &graph, body_count, snapshot_count);
@@ -2202,6 +2253,7 @@ impl GpuGeneratedContactRunner {
             solver_settings: scenario.settings,
             solver_execution: execution,
             solver_scheduling_policy: scheduling_policy,
+            contact_identity_policy: identity_policy,
             dispatches_per_step: graph.dispatches_per_step(),
             allocated_bytes: graph.allocated_bytes(),
             snapshots,
@@ -2309,6 +2361,26 @@ impl GpuGeneratedContactRunner {
             u32::MAX,
             execution,
             scheduling_policy,
+        )
+    }
+
+    pub fn run_identity_experiment(
+        &self,
+        scenario: &ScenarioV1,
+        completed_steps: u32,
+        identity_policy: ContactIdentityPolicyV1,
+    ) -> Result<GpuGeneratedContactOutput, String> {
+        self.run_with_topologies_execution_scheduling_and_identity_policy(
+            scenario,
+            completed_steps,
+            GpuContactPersistenceTopology::StablePairSlot,
+            GpuGatherTopology::StableBodyEdge,
+            false,
+            false,
+            u32::MAX,
+            GpuSolverExecutionV4::SELECTED,
+            GpuSolverSchedulingPolicyV1::SELECTED,
+            identity_policy,
         )
     }
 
@@ -2648,6 +2720,34 @@ impl GpuGeneratedContactRunner {
         execution: GpuSolverExecutionV4,
         scheduling_policy: GpuSolverSchedulingPolicyV1,
     ) -> Result<GpuGeneratedContactOutput, String> {
+        self.run_with_topologies_execution_scheduling_and_identity_policy(
+            scenario,
+            completed_steps,
+            persistence_topology,
+            gather_topology,
+            permute_edge_build,
+            permute_pair_build,
+            fingerprint_mask,
+            execution,
+            scheduling_policy,
+            ContactIdentityPolicyV1::SELECTED,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn run_with_topologies_execution_scheduling_and_identity_policy(
+        &self,
+        scenario: &ScenarioV1,
+        completed_steps: u32,
+        persistence_topology: GpuContactPersistenceTopology,
+        gather_topology: GpuGatherTopology,
+        permute_edge_build: bool,
+        permute_pair_build: bool,
+        fingerprint_mask: u32,
+        execution: GpuSolverExecutionV4,
+        scheduling_policy: GpuSolverSchedulingPolicyV1,
+        identity_policy: ContactIdentityPolicyV1,
+    ) -> Result<GpuGeneratedContactOutput, String> {
         if completed_steps == 0 {
             return Err("generated contact validation requires at least one step".to_owned());
         }
@@ -2660,18 +2760,20 @@ impl GpuGeneratedContactRunner {
             crate::BODY_COMMAND_CAPACITY,
             &scenario.bodies,
         )?;
-        let graph = GpuGeneratedContactGraph::new_with_topologies_execution_and_scheduling(
-            &self.device,
-            &storage,
-            scenario,
-            persistence_topology,
-            gather_topology,
-            permute_edge_build,
-            permute_pair_build,
-            fingerprint_mask,
-            execution,
-            scheduling_policy,
-        )?;
+        let graph =
+            GpuGeneratedContactGraph::new_with_topologies_execution_scheduling_and_identity_policy(
+                &self.device,
+                &storage,
+                scenario,
+                persistence_topology,
+                gather_topology,
+                permute_edge_build,
+                permute_pair_build,
+                fingerprint_mask,
+                execution,
+                scheduling_policy,
+                identity_policy,
+            )?;
         let lane_bytes = u64::from(body_count) * size_of::<[u32; 4]>() as u64;
         let state_readback = readback(&self.device, "generated_state_readback", lane_bytes * 3);
         let cache_readback = readback(
@@ -3042,6 +3144,7 @@ impl GpuGeneratedContactRunner {
             solver_settings: scenario.settings,
             solver_execution: execution,
             solver_scheduling_policy: scheduling_policy,
+            contact_identity_policy: graph.identity_policy,
             bodies,
             manifolds,
             cache,

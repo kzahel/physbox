@@ -1,7 +1,7 @@
 use physbox_contracts::{
     AuthoredManifoldV1, BodyStateV1, CandidatePairV1, CollisionContactPointV1, CollisionManifoldV1,
-    FeatureIdV1, FiniteF32, GeometricFeatureKindV1, GeometricFeatureV1, MaterialV1, ScenarioV1,
-    ShapeV1, Validate, Vec2,
+    ContactIdentityPolicyV1, FeatureIdV1, FiniteF32, GeometricFeatureKindV1, GeometricFeatureV1,
+    MaterialV1, ScenarioV1, ShapeV1, Validate, Vec2,
 };
 use serde::Serialize;
 
@@ -289,6 +289,18 @@ pub fn generate_scalar_narrowphase(
     scenario: &ScenarioV1,
     candidates: &[CandidatePairV1],
 ) -> Result<Vec<CollisionManifoldV1>, String> {
+    generate_scalar_narrowphase_with_identity_policy(
+        scenario,
+        candidates,
+        ContactIdentityPolicyV1::SELECTED,
+    )
+}
+
+pub fn generate_scalar_narrowphase_with_identity_policy(
+    scenario: &ScenarioV1,
+    candidates: &[CandidatePairV1],
+    identity_policy: ContactIdentityPolicyV1,
+) -> Result<Vec<CollisionManifoldV1>, String> {
     scenario.validate().map_err(|error| error.to_string())?;
     let speculative_distance = scenario
         .settings
@@ -337,7 +349,15 @@ pub fn generate_scalar_narrowphase(
                 ShapeV1::Rectangle {
                     half_extents: half_b,
                 },
-            ) => collide_rectangles(*pair, body_a, half_a, body_b, half_b, speculative_distance)?,
+            ) => collide_rectangles(
+                *pair,
+                body_a,
+                half_a,
+                body_b,
+                half_b,
+                speculative_distance,
+                identity_policy,
+            )?,
         };
         if let Some(mut manifold) = manifold {
             manifold
@@ -617,6 +637,7 @@ fn collide_rectangles(
     body_b: &BodyStateV1,
     half_b: Vec2,
     speculative_distance: f32,
+    identity_policy: ContactIdentityPolicyV1,
 ) -> Result<Option<CollisionManifoldV1>, String> {
     let rectangle_a = Rectangle::new(body_a, half_a);
     let rectangle_b = Rectangle::new(body_b, half_b);
@@ -634,11 +655,20 @@ fn collide_rectangles(
         && separation_b.separation <= -0.05;
     // Deeply coincident identical rectangles have no unique physical reference axis.
     // Keep those adversarial initial states coherent; use direct selection elsewhere.
+    let direct = separation_a.separation >= separation_b.separation;
+    let relative_bias = separation_b.separation
+        <= REFERENCE_AXIS_RELATIVE_BIAS * separation_a.separation + REFERENCE_AXIS_ABSOLUTE_BIAS;
+    let absolute_band = direct
+        || (separation_a.separation - separation_b.separation).abs()
+            <= REFERENCE_AXIS_ABSOLUTE_BIAS;
     let reference_a = if deeply_coincident_identical {
-        separation_b.separation
-            <= REFERENCE_AXIS_RELATIVE_BIAS * separation_a.separation + REFERENCE_AXIS_ABSOLUTE_BIAS
+        relative_bias
     } else {
-        separation_a.separation >= separation_b.separation
+        match identity_policy {
+            ContactIdentityPolicyV1::DirectMaximumSeparation => direct,
+            ContactIdentityPolicyV1::RelativeCoherenceBias => relative_bias,
+            ContactIdentityPolicyV1::CanonicalAbsoluteBand => absolute_band,
+        }
     };
     let (reference, incident, reference_normal, reference_face, normal_a_to_b) = if reference_a {
         let normal = rectangle_a.face_normal(separation_a.face);

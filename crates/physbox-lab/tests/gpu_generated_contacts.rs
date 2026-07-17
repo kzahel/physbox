@@ -1,4 +1,4 @@
-use physbox_contracts::{FailureKindV1, Validate};
+use physbox_contracts::{ContactIdentityPolicyV1, FailureKindV1, Validate};
 use physbox_engine::{
     GpuContactPersistenceTopology, GpuGatherTopology, GpuGeneratedContactRunner,
     GpuNarrowphaseRunner, GpuNormalSolverV4, GpuSolverAccumulationV4, GpuSolverCandidate,
@@ -13,8 +13,83 @@ use physbox_engine::{
 };
 use physbox_lab::analytic_narrowphase::authored_solver_projection;
 use physbox_lab::settling::centered_stack_structure;
+use physbox_lab::settling::{
+    SettlingObservationInputV2, SettlingObserverV2, awake_settling_measurement_policy_v2,
+};
 
 const PASS_TOLERANCE: f32 = 2.0e-5;
+
+#[test]
+fn identity_candidates_replay_and_preserve_settling_capacity() {
+    let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
+    let scenario = p5_2_centered_rectangle_stack_scenario(4, 300).unwrap();
+    let mut outcomes = Vec::new();
+    for identity_policy in ContactIdentityPolicyV1::ALL {
+        let first = runner
+            .run_observation_series_with_identity_policy(&scenario, 1, 300, identity_policy)
+            .unwrap();
+        let replay = runner
+            .run_observation_series_with_identity_policy(&scenario, 1, 300, identity_policy)
+            .unwrap();
+        assert_eq!(
+            serde_json::to_vec(&first).unwrap(),
+            serde_json::to_vec(&replay).unwrap(),
+            "{}",
+            identity_policy.name()
+        );
+        assert_eq!(first.contact_identity_policy, identity_policy);
+        assert!(first.snapshots.iter().all(|snapshot| {
+            snapshot.failure.is_none()
+                && snapshot
+                    .capacities
+                    .iter()
+                    .all(|capacity| capacity.accepted && !capacity.overflowed)
+        }));
+        let mut observer = SettlingObserverV2::new(awake_settling_measurement_policy_v2()).unwrap();
+        let mut last = None;
+        let mut owner_changes = 0;
+        let mut cache_misses = 0;
+        for snapshot in &first.snapshots {
+            let observation = observer
+                .observe(
+                    &scenario,
+                    SettlingObservationInputV2 {
+                        completed_steps: snapshot.completed_steps,
+                        bodies: &snapshot.bodies,
+                        manifolds: &snapshot.manifolds,
+                        cache: &snapshot.cache,
+                        capacities: &snapshot.capacities,
+                        support_height: 0.0,
+                    },
+                )
+                .unwrap();
+            owner_changes += observation.reference_owner_changes;
+            cache_misses += observation.warm_cache_misses;
+            last = Some(observation);
+        }
+        let last = last.unwrap();
+        outcomes.push((
+            identity_policy,
+            last.base.residual_linear_speed_max.get(),
+            owner_changes,
+            cache_misses,
+            first.snapshots.last().unwrap().bodies.clone(),
+        ));
+    }
+    assert!(outcomes[0].2 > 0);
+    assert_eq!(outcomes[0].3, outcomes[0].2 * 2 + 8);
+    for candidate in &outcomes[1..] {
+        assert_eq!(candidate.2, 0, "{}", candidate.0.name());
+        assert_eq!(candidate.3, 8, "{}", candidate.0.name());
+        assert!(
+            candidate.1 < 1.0e-4,
+            "{}: {}",
+            candidate.0.name(),
+            candidate.1
+        );
+    }
+    assert_eq!(outcomes[1].4, outcomes[2].4);
+}
 
 #[test]
 fn generated_contact_benchmark_uses_qualified_split_scopes() {

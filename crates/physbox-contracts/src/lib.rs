@@ -13,9 +13,41 @@ pub const GRAB_INTENT_CONTRACT_VERSION: u32 = 1;
 pub const CONSTRUCTION_INTENT_CONTRACT_VERSION: u32 = 1;
 pub const SETTLING_OBSERVATION_VERSION: u32 = 1;
 pub const SETTLING_OBSERVATION_V2_VERSION: u32 = 2;
+pub const CONTACT_IDENTITY_POLICY_VERSION: u32 = 1;
 pub const ORACLE_SUCCESS_SENTINEL: &str = "PHYSBOX5_ORACLE_SUCCESS";
 
 pub use collision::*;
+
+/// Laboratory policy for choosing the reference face of a rectangle contact.
+///
+/// This is deliberately separate from `SolverSettingsV1`: changing contact
+/// identity is an evaluated narrowphase candidate, not an accepted physical
+/// default.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ContactIdentityPolicyV1 {
+    DirectMaximumSeparation,
+    RelativeCoherenceBias,
+    CanonicalAbsoluteBand,
+}
+
+impl ContactIdentityPolicyV1 {
+    pub const SELECTED: Self = Self::DirectMaximumSeparation;
+
+    pub const ALL: [Self; 3] = [
+        Self::DirectMaximumSeparation,
+        Self::RelativeCoherenceBias,
+        Self::CanonicalAbsoluteBand,
+    ];
+
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::DirectMaximumSeparation => "direct-maximum-separation",
+            Self::RelativeCoherenceBias => "relative-coherence-bias",
+            Self::CanonicalAbsoluteBand => "canonical-absolute-band",
+        }
+    }
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ContractError(pub String);

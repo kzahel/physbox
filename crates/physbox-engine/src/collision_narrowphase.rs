@@ -4,9 +4,9 @@ use bytemuck::{Pod, Zeroable};
 use physbox_contracts::{
     CANDIDATE_PAIR_BYTES, COLLISION_CAPACITY_COUNTER_BYTES, COLLISION_CONTACT_POINT_BYTES,
     COLLISION_MANIFOLD_BYTES, COLLISION_WORK_COUNTER_BYTES, CandidatePairV1, CollisionCapacityV1,
-    CollisionContactPointV1, CollisionManifoldV1, CollisionWorkV1, FailureKindV1, FailureV1,
-    FiniteF32, GeometricFeatureKindV1, GeometricFeatureV1, MaterialV1, ScenarioV1, Validate, Vec2,
-    canonical_hash,
+    CollisionContactPointV1, CollisionManifoldV1, CollisionWorkV1, ContactIdentityPolicyV1,
+    FailureKindV1, FailureV1, FiniteF32, GeometricFeatureKindV1, GeometricFeatureV1, MaterialV1,
+    ScenarioV1, Validate, Vec2, canonical_hash,
 };
 
 use crate::{
@@ -174,17 +174,33 @@ impl GpuNarrowphaseRunner {
         candidate_capacity: Option<u32>,
         manifold_capacity: Option<u32>,
     ) -> Result<GpuNarrowphaseOutput, String> {
+        self.run_with_identity_policy(
+            scenario,
+            candidate_capacity,
+            manifold_capacity,
+            ContactIdentityPolicyV1::SELECTED,
+        )
+    }
+
+    pub fn run_with_identity_policy(
+        &self,
+        scenario: &ScenarioV1,
+        candidate_capacity: Option<u32>,
+        manifold_capacity: Option<u32>,
+        identity_policy: ContactIdentityPolicyV1,
+    ) -> Result<GpuNarrowphaseOutput, String> {
         let candidate_case = CandidateCase::new(
             &self.device,
             &self.candidate_pipelines,
             scenario,
             candidate_capacity,
         )?;
-        let narrowphase_case = NarrowphaseCase::new(
+        let narrowphase_case = NarrowphaseCase::new_with_identity_policy(
             &self.device,
             &self.narrowphase_pipelines,
             &candidate_case,
             manifold_capacity,
+            identity_policy,
         )?;
         let manifold_readback = readback(
             &self.device,
@@ -532,21 +548,40 @@ impl NarrowphaseCase {
         candidate: &CandidateCase,
         requested_manifold_capacity: Option<u32>,
     ) -> Result<Self, String> {
-        Self::new_with_storage(
+        Self::new_with_storage_and_identity_policy(
             device,
             pipelines,
             candidate,
             requested_manifold_capacity,
             candidate.storage(),
+            ContactIdentityPolicyV1::SELECTED,
         )
     }
 
-    pub(crate) fn new_with_storage(
+    pub(crate) fn new_with_identity_policy(
+        device: &wgpu::Device,
+        pipelines: &NarrowphasePipelines,
+        candidate: &CandidateCase,
+        requested_manifold_capacity: Option<u32>,
+        identity_policy: ContactIdentityPolicyV1,
+    ) -> Result<Self, String> {
+        Self::new_with_storage_and_identity_policy(
+            device,
+            pipelines,
+            candidate,
+            requested_manifold_capacity,
+            candidate.storage(),
+            identity_policy,
+        )
+    }
+
+    pub(crate) fn new_with_storage_and_identity_policy(
         device: &wgpu::Device,
         pipelines: &NarrowphasePipelines,
         candidate: &CandidateCase,
         requested_manifold_capacity: Option<u32>,
         body_storage: &crate::GpuBodyStorage,
+        identity_policy: ContactIdentityPolicyV1,
     ) -> Result<Self, String> {
         let candidate_capacity = candidate.candidate_capacity();
         let manifold_capacity = requested_manifold_capacity.unwrap_or(candidate_capacity);
@@ -585,7 +620,16 @@ impl NarrowphaseCase {
                     block_count,
                 ],
                 execution: [TOTAL_DISPATCHES, 0, 0, 0],
-                policy: [candidate.speculative_distance(), 0.0, 0.0, 0.0],
+                policy: [
+                    candidate.speculative_distance(),
+                    match identity_policy {
+                        ContactIdentityPolicyV1::DirectMaximumSeparation => 0.0,
+                        ContactIdentityPolicyV1::RelativeCoherenceBias => 1.0,
+                        ContactIdentityPolicyV1::CanonicalAbsoluteBand => 2.0,
+                    },
+                    0.98,
+                    1.0e-3,
+                ],
             }));
         }
         params.unmap();
