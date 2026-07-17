@@ -26,6 +26,7 @@ bindgen = "0.72.1"
 bytemuck = { version = "1", features = ["derive"] }
 console_error_panic_hook = "0.1"
 form_urlencoded = "1"
+flate2 = "1"
 jni = "0.22"
 js-sys = "0.3.102"
 log = "0.4"

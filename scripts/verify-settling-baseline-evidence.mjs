@@ -1,10 +1,14 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { resolve, join } from "node:path";
+import { gunzipSync } from "node:zlib";
 
 const root = resolve(process.argv[2] ?? "evidence/p5.2b-s6.2-settling-baseline");
 const read = async (path) => readFile(join(root, path));
-const json = async (path) => JSON.parse(await readFile(join(root, path), "utf8"));
+const json = async (path) => {
+  const bytes = await readFile(join(root, path));
+  return JSON.parse(path.endsWith(".gz") ? gunzipSync(bytes).toString("utf8") : bytes.toString("utf8"));
+};
 const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const fail = (message) => { throw new Error(message); };
 const sha = /^[0-9a-f]{64}$/;

@@ -8,6 +8,7 @@ use std::{
     time::Duration,
 };
 
+use flate2::{Compression, GzBuilder};
 use physbox_contracts::{
     BodyStateV1, OracleRequestV1, SCHEMA_VERSION, ScenarioV1, SettlingSeriesV2, ShapeV1,
     canonical_hash, sha256_bytes,
@@ -318,8 +319,11 @@ fn evaluate_scene(
     let raw_hash = serialized_hash(&raw)?;
     let gpu_replay_exact = raw_hash == serialized_hash(&replay)?;
     let trace = measure_series(&input, &projection_hash, &raw)?;
-    let trace_identity =
-        write_json_artifact(staging, &format!("traces/{}-gpu.json", input.label), &trace)?;
+    let trace_identity = write_gzip_json_artifact(
+        staging,
+        &format!("traces/{}-gpu.json.gz", input.label),
+        &trace,
+    )?;
     let final_only = runner.run(&input.source, P5_2_SETTLING_EVIDENCE_STEPS)?;
     let final_snapshot = raw
         .snapshots
@@ -812,6 +816,22 @@ fn write_json_artifact(
     let mut bytes = serde_json::to_vec_pretty(value).map_err(|error| error.to_string())?;
     bytes.push(b'\n');
     write_artifact(root, relative, &bytes)
+}
+
+fn write_gzip_json_artifact(
+    root: &Path,
+    relative: &str,
+    value: &impl Serialize,
+) -> Result<ArtifactIdentity, String> {
+    let bytes = serde_json::to_vec(value).map_err(|error| error.to_string())?;
+    let mut encoder = GzBuilder::new()
+        .mtime(0)
+        .write(Vec::new(), Compression::best());
+    encoder
+        .write_all(&bytes)
+        .map_err(|error| error.to_string())?;
+    let compressed = encoder.finish().map_err(|error| error.to_string())?;
+    write_artifact(root, relative, &compressed)
 }
 
 fn write_artifact(root: &Path, relative: &str, bytes: &[u8]) -> Result<ArtifactIdentity, String> {
