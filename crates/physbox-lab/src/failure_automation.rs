@@ -1,4 +1,6 @@
-use physbox_contracts::{FailureKindV1, FailureV1, ScenarioV1, Validate, canonical_hash};
+use physbox_contracts::{
+    FailureKindV1, FailureV1, FiniteF32, ScenarioV1, Validate, canonical_hash,
+};
 use physbox_engine::{
     GpuSolverCandidate, authored_chain_scenario, authored_one_contact_scenario, run_gpu_solver_case,
 };
@@ -96,6 +98,104 @@ pub fn run_randomized_gpu_corpus(first_seed: u64, seed_count: u32) -> Result<Cor
 pub struct MinimizedScenario {
     pub scenario: ScenarioV1,
     pub attempts: u32,
+}
+
+/// Minimizes a neutral dense-body generated-contact reproducer while
+/// preserving the slot/index invariant required by the product graph.
+pub fn minimize_dense_generated_failure<F>(
+    scenario: ScenarioV1,
+    mut fails: F,
+) -> Result<Option<MinimizedScenario>, String>
+where
+    F: FnMut(&ScenarioV1) -> bool,
+{
+    scenario.validate().map_err(|error| error.to_string())?;
+    if !scenario.manifolds.is_empty()
+        || !scenario.contact_cache.is_empty()
+        || !scenario.actions.is_empty()
+        || scenario
+            .bodies
+            .iter()
+            .enumerate()
+            .any(|(index, body)| body.id.slot != index as u32)
+    {
+        return Err("dense generated minimization requires a neutral dense-body source".to_owned());
+    }
+    if !fails(&scenario) {
+        return Ok(None);
+    }
+    let mut minimized = scenario;
+    let mut attempts = 1_u32;
+
+    let mut index = 0;
+    while index < minimized.bodies.len() {
+        if minimized.bodies[index].inverse_mass.get() == 0.0
+            || minimized
+                .bodies
+                .iter()
+                .filter(|body| body.inverse_mass.get() > 0.0)
+                .count()
+                <= 1
+        {
+            index += 1;
+            continue;
+        }
+        let mut candidate = minimized.clone();
+        candidate.bodies.remove(index);
+        renumber_dense_bodies(&mut candidate);
+        attempts += 1;
+        if valid_failure(&candidate, &mut fails)? {
+            minimized = candidate;
+        } else {
+            index += 1;
+        }
+    }
+
+    for body_index in 0..minimized.bodies.len() {
+        if minimized.bodies[body_index].inverse_mass.get() == 0.0 {
+            continue;
+        }
+        for component in 0..5 {
+            let mut candidate = minimized.clone();
+            let body = &mut candidate.bodies[body_index];
+            match component {
+                0 => body.position.x = 0.0,
+                1 => body.angle = FiniteF32::new(0.0).unwrap(),
+                2 => body.linear_velocity.x = 0.0,
+                3 => body.linear_velocity.y = 0.0,
+                4 => body.angular_velocity = FiniteF32::new(0.0).unwrap(),
+                _ => unreachable!(),
+            }
+            attempts += 1;
+            if valid_failure(&candidate, &mut fails)? {
+                minimized = candidate;
+            }
+        }
+    }
+
+    for requested_steps in [1, 30, 60, 120, 240, 480, 600, 900] {
+        if requested_steps >= minimized.requested_steps {
+            break;
+        }
+        let mut candidate = minimized.clone();
+        candidate.requested_steps = requested_steps;
+        attempts += 1;
+        if valid_failure(&candidate, &mut fails)? {
+            minimized = candidate;
+            break;
+        }
+    }
+    minimized.validate().map_err(|error| error.to_string())?;
+    Ok(Some(MinimizedScenario {
+        scenario: minimized,
+        attempts,
+    }))
+}
+
+fn renumber_dense_bodies(scenario: &mut ScenarioV1) {
+    for (slot, body) in scenario.bodies.iter_mut().enumerate() {
+        body.id.slot = slot as u32;
+    }
 }
 
 pub fn minimize_failure<F>(
@@ -356,6 +456,7 @@ where
 #[cfg(test)]
 mod tests {
     use physbox_contracts::{NeutralActionV1, Vec2, canonical_json};
+    use physbox_engine::{P5_2SettlingFixtureKind, p5_2_settling_fixture_scenario};
 
     use super::*;
 
@@ -398,5 +499,52 @@ mod tests {
     fn non_failure_is_not_published_as_a_reproducer() {
         let scenario = authored_one_contact_scenario(1);
         assert!(minimize_failure(scenario, |_| false).unwrap().is_none());
+    }
+
+    #[test]
+    fn dense_generated_minimization_is_deterministic_and_keeps_slots_dense() {
+        let scenario = p5_2_settling_fixture_scenario(
+            P5_2SettlingFixtureKind::SequentialRectangles5,
+            0x6002,
+            1_200,
+        )
+        .unwrap();
+        let predicate = |candidate: &ScenarioV1| {
+            candidate
+                .bodies
+                .iter()
+                .filter(|body| body.inverse_mass.get() > 0.0)
+                .count()
+                >= 2
+                && candidate.requested_steps >= 60
+        };
+        let first = minimize_dense_generated_failure(scenario.clone(), predicate)
+            .unwrap()
+            .unwrap();
+        let replay = minimize_dense_generated_failure(scenario, predicate)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            canonical_json(&first.scenario).unwrap(),
+            canonical_json(&replay.scenario).unwrap()
+        );
+        assert_eq!(first.scenario.requested_steps, 60);
+        assert!(
+            first
+                .scenario
+                .bodies
+                .iter()
+                .enumerate()
+                .all(|(index, body)| { body.id.slot == index as u32 })
+        );
+        assert_eq!(
+            first
+                .scenario
+                .bodies
+                .iter()
+                .filter(|body| body.inverse_mass.get() > 0.0)
+                .count(),
+            2
+        );
     }
 }

@@ -12,6 +12,7 @@ pub const BODY_LAYOUT_VERSION: u32 = 1;
 pub const GRAB_INTENT_CONTRACT_VERSION: u32 = 1;
 pub const CONSTRUCTION_INTENT_CONTRACT_VERSION: u32 = 1;
 pub const SETTLING_OBSERVATION_VERSION: u32 = 1;
+pub const SETTLING_OBSERVATION_V2_VERSION: u32 = 2;
 pub const ORACLE_SUCCESS_SENTINEL: &str = "PHYSBOX5_ORACLE_SUCCESS";
 
 pub use collision::*;
@@ -1280,6 +1281,455 @@ pub struct SettlingSeriesV1 {
     pub observations: Vec<SettlingObservationV1>,
     pub structural_pass: bool,
     pub structural_reason: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ContactReferenceOwnerV2 {
+    None,
+    BodyA,
+    BodyB,
+    Ambiguous,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum WarmCacheStatusV2 {
+    Hit,
+    PairStarted,
+    Recontact,
+    NormalChanged,
+    PointCountChanged,
+    ReferenceOwnerChanged,
+    FeatureChanged,
+    CurrentEntryMissing,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContactPointCacheObservationV2 {
+    pub key: PersistentContactKeyV1,
+    pub status: WarmCacheStatusV2,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub previous_normal_impulse: Option<FiniteF32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub previous_tangent_impulse: Option<FiniteF32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_normal_impulse: Option<FiniteF32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_tangent_impulse: Option<FiniteF32>,
+}
+
+impl Validate for ContactPointCacheObservationV2 {
+    fn validate(&self) -> Result<(), ContractError> {
+        self.key.validate()?;
+        for value in [
+            self.previous_normal_impulse,
+            self.previous_tangent_impulse,
+            self.current_normal_impulse,
+            self.current_tangent_impulse,
+        ]
+        .into_iter()
+        .flatten()
+        {
+            value.validate()?;
+        }
+        if self
+            .previous_normal_impulse
+            .is_some_and(|value| value.get() < 0.0)
+            || self
+                .current_normal_impulse
+                .is_some_and(|value| value.get() < 0.0)
+        {
+            return Err(ContractError(
+                "settling cache normal impulses must be nonnegative".to_owned(),
+            ));
+        }
+        if matches!(self.status, WarmCacheStatusV2::Hit)
+            && (self.previous_normal_impulse.is_none() || self.current_normal_impulse.is_none())
+        {
+            return Err(ContractError(
+                "a settling cache hit requires previous and current impulses".to_owned(),
+            ));
+        }
+        if matches!(self.status, WarmCacheStatusV2::CurrentEntryMissing)
+            != self.current_normal_impulse.is_none()
+        {
+            return Err(ContractError(
+                "current-entry-missing must match the current cache payload".to_owned(),
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SettlingContactObservationV2 {
+    pub pair: CandidatePairV1,
+    pub reference_owner: ContactReferenceOwnerV2,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reference_face_index: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub previous_reference_owner: Option<ContactReferenceOwnerV2>,
+    pub point_count: u32,
+    pub previous_point_count: u32,
+    pub normal: Vec2,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub previous_normal: Option<Vec2>,
+    pub normal_delta_radians: FiniteF32,
+    pub relative_tangent_speed_max: FiniteF32,
+    pub stable_support: bool,
+    pub stable_support_age_steps: u32,
+    pub reference_owner_changed: bool,
+    pub point_count_changed: bool,
+    pub feature_set_changed: bool,
+    pub normal_changed: bool,
+    pub unexplained_stable_churn: bool,
+    pub previous_features: Vec<PersistentContactKeyV1>,
+    pub current_features: Vec<PersistentContactKeyV1>,
+    pub cache: Vec<ContactPointCacheObservationV2>,
+}
+
+impl Validate for SettlingContactObservationV2 {
+    fn validate(&self) -> Result<(), ContractError> {
+        self.pair.validate()?;
+        if self.point_count == 0
+            || self.point_count > 2
+            || self.current_features.len() != self.point_count as usize
+            || self.previous_features.len() != self.previous_point_count as usize
+            || self.cache.len() != self.point_count as usize
+            || self.reference_face_index.is_some_and(|index| index >= 4)
+        {
+            return Err(ContractError(
+                "invalid settling contact point/reference counts".to_owned(),
+            ));
+        }
+        if matches!(
+            self.reference_owner,
+            ContactReferenceOwnerV2::BodyA | ContactReferenceOwnerV2::BodyB
+        ) != self.reference_face_index.is_some()
+        {
+            return Err(ContractError(
+                "a body-owned settling reference requires one face index".to_owned(),
+            ));
+        }
+        self.normal.validate()?;
+        if let Some(previous) = self.previous_normal {
+            previous.validate()?;
+        }
+        self.normal_delta_radians.validate()?;
+        self.relative_tangent_speed_max.validate()?;
+        if self.normal_delta_radians.get() < 0.0
+            || self.normal_delta_radians.get() > std::f32::consts::PI
+            || self.relative_tangent_speed_max.get() < 0.0
+            || self.stable_support != (self.stable_support_age_steps > 0)
+        {
+            return Err(ContractError(
+                "invalid settling contact motion/support state".to_owned(),
+            ));
+        }
+        validate_sorted_unique(self.previous_features.iter(), "previous settling features")?;
+        validate_sorted_unique(self.current_features.iter(), "current settling features")?;
+        validate_sorted_unique(
+            self.cache.iter().map(|value| &value.key),
+            "settling cache observations",
+        )?;
+        if self
+            .previous_features
+            .iter()
+            .chain(&self.current_features)
+            .chain(self.cache.iter().map(|value| &value.key))
+            .any(|key| key.pair != self.pair)
+        {
+            return Err(ContractError(
+                "settling contact features must belong to their declared pair".to_owned(),
+            ));
+        }
+        for cache in &self.cache {
+            cache.validate()?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SettlingObservationV2 {
+    pub observation_version: u32,
+    pub base: SettlingObservationV1,
+    pub angular_edge_speed_max: FiniteF32,
+    pub angular_edge_speed_rms: FiniteF32,
+    pub stable_support_pairs: u32,
+    pub reference_owner_changes: u32,
+    pub point_count_changes: u32,
+    pub feature_set_changes: u32,
+    pub contact_normal_changes: u32,
+    pub warm_cache_hits: u32,
+    pub warm_cache_misses: u32,
+    pub unexplained_stable_churn: u32,
+    pub contacts: Vec<SettlingContactObservationV2>,
+}
+
+impl Validate for SettlingObservationV2 {
+    fn validate(&self) -> Result<(), ContractError> {
+        if self.observation_version != SETTLING_OBSERVATION_V2_VERSION {
+            return Err(ContractError(format!(
+                "unsupported settling observation v2 version {}",
+                self.observation_version
+            )));
+        }
+        self.base.validate()?;
+        self.angular_edge_speed_max.validate()?;
+        self.angular_edge_speed_rms.validate()?;
+        if self.angular_edge_speed_max.get() < 0.0 || self.angular_edge_speed_rms.get() < 0.0 {
+            return Err(ContractError(
+                "settling angular edge speeds must be nonnegative".to_owned(),
+            ));
+        }
+        validate_sorted_unique(
+            self.contacts.iter().map(|value| value.pair),
+            "settling contact pairs",
+        )?;
+        for contact in &self.contacts {
+            contact.validate()?;
+        }
+        let cache_points = self
+            .contacts
+            .iter()
+            .map(|value| value.cache.len() as u32)
+            .sum::<u32>();
+        if self.base.contact_points
+            != self
+                .contacts
+                .iter()
+                .map(|value| value.point_count)
+                .sum::<u32>()
+            || self.stable_support_pairs
+                != self
+                    .contacts
+                    .iter()
+                    .filter(|value| value.stable_support)
+                    .count() as u32
+            || self.reference_owner_changes
+                != self
+                    .contacts
+                    .iter()
+                    .filter(|value| value.reference_owner_changed)
+                    .count() as u32
+            || self.point_count_changes
+                != self
+                    .contacts
+                    .iter()
+                    .filter(|value| value.point_count_changed)
+                    .count() as u32
+            || self.feature_set_changes
+                != self
+                    .contacts
+                    .iter()
+                    .filter(|value| value.feature_set_changed)
+                    .count() as u32
+            || self.contact_normal_changes
+                != self
+                    .contacts
+                    .iter()
+                    .filter(|value| value.normal_changed)
+                    .count() as u32
+            || self.unexplained_stable_churn
+                != self
+                    .contacts
+                    .iter()
+                    .filter(|value| value.unexplained_stable_churn)
+                    .count() as u32
+            || self.warm_cache_hits + self.warm_cache_misses != cache_points
+        {
+            return Err(ContractError(
+                "settling observation aggregates do not match contact details".to_owned(),
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SettlingMeasurementPolicyV2 {
+    pub version: u32,
+    pub observation_interval_steps: u32,
+    pub transient_end_step: u32,
+    pub settled_start_step: u32,
+    pub settled_end_step: u32,
+    pub rest_linear_speed_limit: FiniteF32,
+    pub rest_angular_edge_speed_limit: FiniteF32,
+    pub rest_required_consecutive_observations: u32,
+    pub stable_support_required_consecutive_observations: u32,
+    pub stable_normal_delta_limit_radians: FiniteF32,
+    pub stable_relative_tangent_speed_limit: FiniteF32,
+    pub stable_support_gravity_alignment_min: FiniteF32,
+    pub energy_absolute_epsilon: FiniteF32,
+    pub energy_relative_epsilon: FiniteF32,
+    pub positive_energy_run_limit: u32,
+}
+
+impl Validate for SettlingMeasurementPolicyV2 {
+    fn validate(&self) -> Result<(), ContractError> {
+        if self.version != SETTLING_OBSERVATION_V2_VERSION
+            || self.observation_interval_steps == 0
+            || self.transient_end_step == 0
+            || self.settled_start_step <= self.transient_end_step
+            || self.settled_end_step < self.settled_start_step
+            || self.rest_required_consecutive_observations == 0
+            || self.stable_support_required_consecutive_observations == 0
+            || self.positive_energy_run_limit == 0
+        {
+            return Err(ContractError(
+                "invalid settling measurement cadence/window".to_owned(),
+            ));
+        }
+        for value in [
+            self.rest_linear_speed_limit,
+            self.rest_angular_edge_speed_limit,
+            self.stable_normal_delta_limit_radians,
+            self.stable_relative_tangent_speed_limit,
+            self.stable_support_gravity_alignment_min,
+            self.energy_absolute_epsilon,
+            self.energy_relative_epsilon,
+        ] {
+            value.validate()?;
+            if value.get() < 0.0 {
+                return Err(ContractError(
+                    "settling measurement limits must be nonnegative".to_owned(),
+                ));
+            }
+        }
+        if self.rest_linear_speed_limit.get() == 0.0
+            || self.rest_angular_edge_speed_limit.get() == 0.0
+            || self.stable_normal_delta_limit_radians.get() > std::f32::consts::PI
+            || self.stable_relative_tangent_speed_limit.get() == 0.0
+            || self.stable_support_gravity_alignment_min.get() > 1.0
+        {
+            return Err(ContractError(
+                "invalid settling measurement thresholds".to_owned(),
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SettlingSummaryV2 {
+    pub version: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub time_to_rest_step: Option<u32>,
+    pub settled_linear_speed_max: FiniteF32,
+    pub settled_angular_edge_speed_max: FiniteF32,
+    pub stable_support_unexplained_churn: u64,
+    pub warm_cache_misses: u64,
+    pub first_energy_quartile_max: FiniteF32,
+    pub last_energy_quartile_max: FiniteF32,
+    pub positive_energy_run_max: u32,
+    pub energy_envelope_nonincreasing: bool,
+}
+
+impl Validate for SettlingSummaryV2 {
+    fn validate(&self) -> Result<(), ContractError> {
+        if self.version != SETTLING_OBSERVATION_V2_VERSION {
+            return Err(ContractError("invalid settling summary version".to_owned()));
+        }
+        for value in [
+            self.settled_linear_speed_max,
+            self.settled_angular_edge_speed_max,
+            self.first_energy_quartile_max,
+            self.last_energy_quartile_max,
+        ] {
+            value.validate()?;
+            if value.get() < 0.0 {
+                return Err(ContractError(
+                    "settling summary magnitudes must be nonnegative".to_owned(),
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SettlingSeriesV2 {
+    pub schema_version: u32,
+    pub observation_version: u32,
+    pub source_scenario_hash: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub projection_hash: Option<String>,
+    pub lane: String,
+    pub sleeping_enabled: bool,
+    pub policy: SettlingMeasurementPolicyV2,
+    pub observations: Vec<SettlingObservationV2>,
+    pub summary: SettlingSummaryV2,
+    pub structural_pass: bool,
+    pub structural_reason: String,
+}
+
+impl Validate for SettlingSeriesV2 {
+    fn validate(&self) -> Result<(), ContractError> {
+        version(self.schema_version)?;
+        self.policy.validate()?;
+        self.summary.validate()?;
+        if self.observation_version != SETTLING_OBSERVATION_V2_VERSION
+            || !is_sha256(&self.source_scenario_hash)
+            || self
+                .projection_hash
+                .as_deref()
+                .is_some_and(|hash| !is_sha256(hash))
+            || self.lane.is_empty()
+            || self.structural_reason.is_empty()
+            || self.observations.is_empty()
+            || self.sleeping_enabled
+        {
+            return Err(ContractError(
+                "invalid settling series v2 identity".to_owned(),
+            ));
+        }
+        let first = self
+            .observations
+            .first()
+            .expect("nonempty checked")
+            .base
+            .completed_steps;
+        let last = self
+            .observations
+            .last()
+            .expect("nonempty checked")
+            .base
+            .completed_steps;
+        if first != self.policy.observation_interval_steps || last != self.policy.settled_end_step {
+            return Err(ContractError(
+                "settling observations do not span the frozen cadence".to_owned(),
+            ));
+        }
+        for (index, observation) in self.observations.iter().enumerate() {
+            observation.validate()?;
+            let expected = (index as u32 + 1)
+                .checked_mul(self.policy.observation_interval_steps)
+                .ok_or_else(|| ContractError("settling cadence overflowed".to_owned()))?;
+            if observation.base.completed_steps != expected {
+                return Err(ContractError(
+                    "settling observations violate frozen cadence".to_owned(),
+                ));
+            }
+        }
+        if self
+            .summary
+            .time_to_rest_step
+            .is_some_and(|step| step > last)
+        {
+            return Err(ContractError(
+                "settling time to rest exceeds the series".to_owned(),
+            ));
+        }
+        Ok(())
+    }
 }
 
 impl Validate for SettlingSeriesV1 {

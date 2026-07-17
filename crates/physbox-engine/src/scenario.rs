@@ -11,6 +11,7 @@ pub const P5_2_BUCKET_EVIDENCE_STEPS: u32 = 600;
 pub const P5_2_COLORING_CHURN_VERSION: u32 = 1;
 pub const P5_2_MANIFOLD_COLOR_VALIDATION_STEPS: u32 = 8;
 pub const P5_2_SELECTED_SOLVER_ITERATIONS: u32 = 2;
+pub const P5_2_SETTLING_EVIDENCE_STEPS: u32 = 1_200;
 
 #[derive(Clone, Debug, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -64,6 +65,51 @@ pub enum P5_2GeneratedScenarioKind {
 pub enum P5_2BucketShape {
     Circle,
     Rectangle,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum P5_2SettlingFixtureKind {
+    NearFlatFloorDrop,
+    BoxOnRestingBoxDrop,
+    SequentialRectangles3,
+    SequentialRectangles4,
+    SequentialRectangles5,
+    SlideToRest,
+    SmallMixedPile,
+}
+
+impl P5_2SettlingFixtureKind {
+    pub const ALL: [Self; 7] = [
+        Self::NearFlatFloorDrop,
+        Self::BoxOnRestingBoxDrop,
+        Self::SequentialRectangles3,
+        Self::SequentialRectangles4,
+        Self::SequentialRectangles5,
+        Self::SlideToRest,
+        Self::SmallMixedPile,
+    ];
+
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::NearFlatFloorDrop => "near-flat-floor-drop",
+            Self::BoxOnRestingBoxDrop => "box-on-resting-box-drop",
+            Self::SequentialRectangles3 => "sequential-rectangles-3",
+            Self::SequentialRectangles4 => "sequential-rectangles-4",
+            Self::SequentialRectangles5 => "sequential-rectangles-5",
+            Self::SlideToRest => "slide-to-rest",
+            Self::SmallMixedPile => "small-mixed-pile",
+        }
+    }
+
+    const fn sequential_count(self) -> Option<u32> {
+        match self {
+            Self::SequentialRectangles3 => Some(3),
+            Self::SequentialRectangles4 => Some(4),
+            Self::SequentialRectangles5 => Some(5),
+            _ => None,
+        }
+    }
 }
 
 impl P5_2BucketShape {
@@ -702,6 +748,196 @@ pub fn p5_2_bucket_scenario(
         .validate()
         .map_err(|error| ScenarioBuildError(error.to_string()))?;
     Ok(scenario)
+}
+
+pub fn p5_2_settling_fixture_scenario(
+    kind: P5_2SettlingFixtureKind,
+    seed: u64,
+    requested_steps: u32,
+) -> Result<ScenarioV1, ScenarioBuildError> {
+    if requested_steps == 0 {
+        return Err(ScenarioBuildError(
+            "P5.2 settling fixtures require at least one requested step".to_owned(),
+        ));
+    }
+    let base = p5_2_generated_floor_scenario(requested_steps)?;
+    let template = base.bodies[0].clone();
+    let mut floor = base.bodies[1].clone();
+    floor.id = BodyId {
+        slot: 0,
+        generation: 1,
+    };
+    floor.position = Vec2::new(0.0, -0.1);
+    floor.shape = ShapeV1::Rectangle {
+        half_extents: Vec2::new(2.0, 0.1),
+    };
+    let material = template.material;
+    let rectangle = |slot: u32,
+                     position: Vec2,
+                     angle: f32,
+                     half_extents: Vec2,
+                     linear_velocity: Vec2,
+                     angular_velocity: f32| {
+        let width = half_extents.x * 2.0;
+        let height = half_extents.y * 2.0;
+        BodyStateV1 {
+            id: BodyId {
+                slot,
+                generation: 1,
+            },
+            shape: ShapeV1::Rectangle { half_extents },
+            position,
+            angle: finite(angle),
+            linear_velocity,
+            angular_velocity: finite(angular_velocity),
+            inverse_mass: finite(1.0),
+            inverse_inertia: finite(12.0 / (width * width + height * height)),
+            material,
+            sleeping: false,
+        }
+    };
+    let circle = |slot: u32, position: Vec2, radius: f32| BodyStateV1 {
+        id: BodyId {
+            slot,
+            generation: 1,
+        },
+        shape: ShapeV1::Circle {
+            radius: finite(radius),
+        },
+        position,
+        angle: finite(0.0),
+        linear_velocity: Vec2::ZERO,
+        angular_velocity: finite(0.0),
+        inverse_mass: finite(1.0),
+        inverse_inertia: finite(2.0 / (radius * radius)),
+        material,
+        sleeping: false,
+    };
+    let mut random = StableRandom::new(seed);
+    let half_extents = Vec2::new(0.35, 0.125);
+    let mut bodies = vec![floor];
+    match kind {
+        P5_2SettlingFixtureKind::NearFlatFloorDrop => {
+            bodies.push(rectangle(
+                1,
+                Vec2::new(random.signed(0.12), 0.85 + random.signed(0.04)),
+                random.signed(0.035),
+                half_extents,
+                Vec2::new(random.signed(0.05), 0.0),
+                random.signed(0.15),
+            ));
+        }
+        P5_2SettlingFixtureKind::BoxOnRestingBoxDrop => {
+            bodies.push(rectangle(
+                1,
+                Vec2::new(0.0, half_extents.y),
+                0.0,
+                half_extents,
+                Vec2::ZERO,
+                0.0,
+            ));
+            bodies.push(rectangle(
+                2,
+                Vec2::new(random.signed(0.055), 0.95 + random.signed(0.05)),
+                random.signed(0.03),
+                half_extents,
+                Vec2::new(random.signed(0.04), 0.0),
+                random.signed(0.12),
+            ));
+        }
+        P5_2SettlingFixtureKind::SequentialRectangles3
+        | P5_2SettlingFixtureKind::SequentialRectangles4
+        | P5_2SettlingFixtureKind::SequentialRectangles5 => {
+            let count = kind
+                .sequential_count()
+                .expect("sequential settling fixture has a count");
+            for level in 0..count {
+                let y = if level == 0 {
+                    half_extents.y
+                } else {
+                    0.55 + 0.42 * level as f32 + 0.16 * (level * level) as f32
+                };
+                bodies.push(rectangle(
+                    level + 1,
+                    Vec2::new(random.signed(0.035), y),
+                    if level == 0 {
+                        0.0
+                    } else {
+                        random.signed(0.025)
+                    },
+                    half_extents,
+                    Vec2::ZERO,
+                    if level == 0 { 0.0 } else { random.signed(0.08) },
+                ));
+            }
+        }
+        P5_2SettlingFixtureKind::SlideToRest => {
+            bodies.push(rectangle(
+                1,
+                Vec2::new(-0.9, half_extents.y + 0.002),
+                random.signed(0.01),
+                half_extents,
+                Vec2::new(2.0, 0.0),
+                random.signed(0.05),
+            ));
+        }
+        P5_2SettlingFixtureKind::SmallMixedPile => {
+            let mut left = bodies[0].clone();
+            left.id.slot = 1;
+            left.position = Vec2::new(-1.05, 0.65);
+            left.shape = ShapeV1::Rectangle {
+                half_extents: Vec2::new(0.08, 0.75),
+            };
+            let mut right = left.clone();
+            right.id.slot = 2;
+            right.position.x = 1.05;
+            bodies.extend([left, right]);
+            for index in 0..8_u32 {
+                let column = index % 3;
+                let row = index / 3;
+                let position = Vec2::new(
+                    -0.45 + column as f32 * 0.45 + random.signed(0.04),
+                    0.45 + row as f32 * 0.42 + random.signed(0.04),
+                );
+                if index.is_multiple_of(3) {
+                    bodies.push(circle(index + 3, position, 0.15 + random.unit() * 0.03));
+                } else {
+                    bodies.push(rectangle(
+                        index + 3,
+                        position,
+                        random.signed(0.12),
+                        Vec2::new(0.18, 0.12),
+                        Vec2::ZERO,
+                        random.signed(0.08),
+                    ));
+                }
+            }
+        }
+    }
+    bodies.sort_by_key(|body| body.id);
+    let mut scenario = base;
+    scenario.id = format!("p5.2-settling-{}-seed-{seed}", kind.name());
+    scenario.seed = seed;
+    scenario.requested_steps = requested_steps;
+    scenario.bodies = bodies;
+    scenario.manifolds.clear();
+    scenario.contact_cache.clear();
+    scenario.actions.clear();
+    scenario
+        .validate()
+        .map_err(|error| ScenarioBuildError(error.to_string()))?;
+    Ok(scenario)
+}
+
+pub fn p5_2_random_settling_fixture_scenario(
+    seed: u64,
+    requested_steps: u32,
+) -> Result<(P5_2SettlingFixtureKind, ScenarioV1), ScenarioBuildError> {
+    let kind = P5_2SettlingFixtureKind::ALL[(seed as usize) % P5_2SettlingFixtureKind::ALL.len()];
+    Ok((
+        kind,
+        p5_2_settling_fixture_scenario(kind, seed, requested_steps)?,
+    ))
 }
 
 pub fn p5_2_generated_scenario(
@@ -1934,6 +2170,36 @@ mod tests {
         }
         assert!(p5_2_bucket_scenario(P5_2BucketShape::Circle, 99, 1).is_err());
         assert!(p5_2_bucket_scenario(P5_2BucketShape::Circle, 100, 0).is_err());
+    }
+
+    #[test]
+    fn p5_2_settling_fixtures_are_seeded_neutral_and_replayable() {
+        for kind in P5_2SettlingFixtureKind::ALL {
+            let scenario =
+                p5_2_settling_fixture_scenario(kind, 0x6002, P5_2_SETTLING_EVIDENCE_STEPS).unwrap();
+            scenario.validate().unwrap();
+            assert!(scenario.manifolds.is_empty());
+            assert!(scenario.contact_cache.is_empty());
+            assert!(scenario.actions.is_empty());
+            assert_eq!(scenario.bodies[0].inverse_mass.get(), 0.0);
+            assert_eq!(scenario.requested_steps, P5_2_SETTLING_EVIDENCE_STEPS);
+            assert_eq!(
+                canonical_json(&scenario).unwrap(),
+                canonical_json(
+                    &p5_2_settling_fixture_scenario(kind, 0x6002, P5_2_SETTLING_EVIDENCE_STEPS,)
+                        .unwrap(),
+                )
+                .unwrap()
+            );
+            p5_2_box2d_world_projection(&scenario).unwrap();
+        }
+        let (kind, generated) = p5_2_random_settling_fixture_scenario(9, 120).unwrap();
+        assert_eq!(kind, P5_2SettlingFixtureKind::SequentialRectangles3);
+        assert_eq!(generated.seed, 9);
+        assert!(
+            p5_2_settling_fixture_scenario(P5_2SettlingFixtureKind::NearFlatFloorDrop, 1, 0)
+                .is_err()
+        );
     }
 
     #[test]

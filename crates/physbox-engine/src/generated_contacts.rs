@@ -1220,6 +1220,7 @@ pub struct GpuGeneratedContactOutput {
     pub solver_execution: GpuSolverExecutionV4,
     pub solver_scheduling_policy: GpuSolverSchedulingPolicyV1,
     pub bodies: Vec<physbox_contracts::BodyStateV1>,
+    pub manifolds: Vec<physbox_contracts::CollisionManifoldV1>,
     pub cache: Vec<PersistentContactV1>,
     pub pass_evidence: crate::GpuFixedFloorPassEvidence,
     pub work: CollisionWorkV1,
@@ -1229,6 +1230,115 @@ pub struct GpuGeneratedContactOutput {
     pub allocated_bytes: u64,
     pub persistence_topology: GpuContactPersistenceTopology,
     pub gather_topology: GpuGatherTopologyEvidence,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GpuGeneratedContactSnapshotV1 {
+    pub version: u32,
+    pub completed_steps: u32,
+    pub bodies: Vec<physbox_contracts::BodyStateV1>,
+    pub manifolds: Vec<physbox_contracts::CollisionManifoldV1>,
+    pub cache: Vec<PersistentContactV1>,
+    pub work: CollisionWorkV1,
+    pub capacities: Vec<CollisionCapacityV1>,
+    pub failure: Option<FailureV1>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl GpuGeneratedContactSnapshotV1 {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.version != 1 || self.completed_steps == 0 {
+            return Err("generated settling snapshot has an invalid version/step".to_owned());
+        }
+        for body in &self.bodies {
+            body.validate().map_err(|error| error.to_string())?;
+        }
+        for pair in self.manifolds.windows(2) {
+            if pair[0].pair >= pair[1].pair {
+                return Err("generated settling manifolds are not sorted and unique".to_owned());
+            }
+        }
+        for manifold in &self.manifolds {
+            manifold.validate().map_err(|error| error.to_string())?;
+        }
+        for pair in self.cache.windows(2) {
+            if pair[0].key >= pair[1].key {
+                return Err("generated settling cache is not sorted and unique".to_owned());
+            }
+        }
+        for value in &self.cache {
+            value.validate().map_err(|error| error.to_string())?;
+        }
+        self.work.validate().map_err(|error| error.to_string())?;
+        for capacity in &self.capacities {
+            capacity.validate().map_err(|error| error.to_string())?;
+        }
+        if let Some(failure) = &self.failure {
+            failure.validate().map_err(|error| error.to_string())?;
+        }
+        let points = self
+            .manifolds
+            .iter()
+            .map(|manifold| manifold.points.len() as u64)
+            .sum::<u64>();
+        if (self.failure.is_some() && (!self.manifolds.is_empty() || !self.cache.is_empty()))
+            || (self.failure.is_none()
+                && (self.manifolds.len() as u64 != self.work.manifolds
+                    || points != self.work.contact_points))
+        {
+            return Err("generated settling snapshot counts are inconsistent".to_owned());
+        }
+        Ok(())
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GpuGeneratedContactSeriesV1 {
+    pub version: u32,
+    pub adapter: crate::AdapterDiagnostics,
+    pub source_scenario_hash: String,
+    pub observation_interval_steps: u32,
+    pub completed_steps: u32,
+    pub solver_settings: physbox_contracts::SolverSettingsV1,
+    pub solver_execution: GpuSolverExecutionV4,
+    pub solver_scheduling_policy: GpuSolverSchedulingPolicyV1,
+    pub dispatches_per_step: u32,
+    pub allocated_bytes: u64,
+    pub snapshots: Vec<GpuGeneratedContactSnapshotV1>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl GpuGeneratedContactSeriesV1 {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.version != 1
+            || self.source_scenario_hash.len() != 64
+            || self.observation_interval_steps == 0
+            || self.completed_steps == 0
+            || self.snapshots.is_empty()
+        {
+            return Err("generated settling series has invalid identity/cadence".to_owned());
+        }
+        self.solver_settings
+            .validate()
+            .map_err(|error| error.to_string())?;
+        self.solver_execution.validate()?;
+        self.solver_scheduling_policy
+            .validate(self.solver_execution)?;
+        for (index, snapshot) in self.snapshots.iter().enumerate() {
+            snapshot.validate()?;
+            if snapshot.completed_steps != (index as u32 + 1) * self.observation_interval_steps {
+                return Err("generated settling snapshots violate declared cadence".to_owned());
+            }
+        }
+        if self.snapshots.last().unwrap().completed_steps != self.completed_steps {
+            return Err("generated settling series omitted its final step".to_owned());
+        }
+        Ok(())
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -1245,6 +1355,14 @@ impl GpuGeneratedContactOutput {
             .validate(self.solver_execution)?;
         for body in &self.bodies {
             body.validate().map_err(|error| error.to_string())?;
+        }
+        for pair in self.manifolds.windows(2) {
+            if pair[0].pair >= pair[1].pair {
+                return Err("generated contact manifolds are not sorted and unique".to_owned());
+            }
+        }
+        for manifold in &self.manifolds {
+            manifold.validate().map_err(|error| error.to_string())?;
         }
         for pair in self.cache.windows(2) {
             if pair[0].key >= pair[1].key {
@@ -1533,6 +1651,18 @@ impl GpuGeneratedContactOutput {
         if let Some(failure) = &self.failure {
             failure.validate().map_err(|error| error.to_string())?;
         }
+        let manifold_points = self
+            .manifolds
+            .iter()
+            .map(|manifold| manifold.points.len() as u64)
+            .sum::<u64>();
+        if (self.failure.is_some() && !self.manifolds.is_empty())
+            || (self.failure.is_none()
+                && (self.manifolds.len() as u64 != self.work.manifolds
+                    || manifold_points != self.work.contact_points))
+        {
+            return Err("generated contact manifold counts are inconsistent".to_owned());
+        }
         self.gather_topology.validate()?;
         let rejected = self.capacities.iter().any(|capacity| !capacity.accepted);
         if rejected != self.failure.is_some() || (rejected && !self.cache.is_empty()) {
@@ -1547,6 +1677,221 @@ pub struct GpuGeneratedContactRunner {
     device: wgpu::Device,
     queue: wgpu::Queue,
     diagnostics: crate::AdapterDiagnostics,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+struct GeneratedSettlingReadbacks {
+    snapshot_count: u32,
+    lane_bytes: u64,
+    state_step_bytes: u64,
+    cache_step_bytes: u64,
+    manifold_step_bytes: u64,
+    point_step_bytes: u64,
+    state: wgpu::Buffer,
+    cache: wgpu::Buffer,
+    candidate_capacity: wgpu::Buffer,
+    manifold_capacity: wgpu::Buffer,
+    point_capacity: wgpu::Buffer,
+    persistence_capacity: wgpu::Buffer,
+    manifold_records: wgpu::Buffer,
+    point_records: wgpu::Buffer,
+    work: wgpu::Buffer,
+    step: wgpu::Buffer,
+    color_status: Option<wgpu::Buffer>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl GeneratedSettlingReadbacks {
+    fn new(
+        device: &wgpu::Device,
+        graph: &GpuGeneratedContactGraph,
+        body_count: u32,
+        snapshot_count: u32,
+    ) -> Self {
+        let lane_bytes = u64::from(body_count) * size_of::<[u32; 4]>() as u64;
+        let state_step_bytes = lane_bytes * 3;
+        let cache_step_bytes = u64::from(graph.persistence.record_capacity(graph.point_capacity))
+            * u64::from(graph.persistence.record_stride());
+        let manifold_step_bytes =
+            u64::from(graph.narrowphase.manifold_capacity()) * u64::from(COLLISION_MANIFOLD_BYTES);
+        let point_step_bytes = u64::from(graph.narrowphase.point_capacity())
+            * u64::from(COLLISION_CONTACT_POINT_BYTES);
+        Self {
+            snapshot_count,
+            lane_bytes,
+            state_step_bytes,
+            cache_step_bytes,
+            manifold_step_bytes,
+            point_step_bytes,
+            state: readback(
+                device,
+                "generated_settling_state",
+                state_step_bytes * u64::from(snapshot_count),
+            ),
+            cache: readback(
+                device,
+                "generated_settling_cache",
+                cache_step_bytes * u64::from(snapshot_count),
+            ),
+            candidate_capacity: readback(
+                device,
+                "generated_settling_candidate_capacity",
+                u64::from(COLLISION_CAPACITY_COUNTER_BYTES) * u64::from(snapshot_count),
+            ),
+            manifold_capacity: readback(
+                device,
+                "generated_settling_manifold_capacity",
+                u64::from(COLLISION_CAPACITY_COUNTER_BYTES) * u64::from(snapshot_count),
+            ),
+            point_capacity: readback(
+                device,
+                "generated_settling_point_capacity",
+                u64::from(COLLISION_CAPACITY_COUNTER_BYTES) * u64::from(snapshot_count),
+            ),
+            persistence_capacity: readback(
+                device,
+                "generated_settling_persistence_capacity",
+                u64::from(COLLISION_CAPACITY_COUNTER_BYTES) * u64::from(snapshot_count),
+            ),
+            manifold_records: readback(
+                device,
+                "generated_settling_manifolds",
+                manifold_step_bytes * u64::from(snapshot_count),
+            ),
+            point_records: readback(
+                device,
+                "generated_settling_points",
+                point_step_bytes * u64::from(snapshot_count),
+            ),
+            work: readback(
+                device,
+                "generated_settling_work",
+                u64::from(COLLISION_WORK_COUNTER_BYTES) * u64::from(snapshot_count),
+            ),
+            step: readback(
+                device,
+                "generated_settling_step",
+                4 * u64::from(snapshot_count),
+            ),
+            color_status: graph.color_status_source().map(|_| {
+                readback(
+                    device,
+                    "generated_settling_color_status",
+                    4 * u64::from(snapshot_count),
+                )
+            }),
+        }
+    }
+
+    fn encode_copy(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        storage: &GpuBodyStorage,
+        graph: &GpuGeneratedContactGraph,
+        snapshot_index: u32,
+    ) {
+        debug_assert!(snapshot_index < self.snapshot_count);
+        let state_offset = u64::from(snapshot_index) * self.state_step_bytes;
+        encoder.copy_buffer_to_buffer(
+            storage.pose_buffer(),
+            0,
+            &self.state,
+            state_offset,
+            self.lane_bytes,
+        );
+        encoder.copy_buffer_to_buffer(
+            storage.motion_buffer(),
+            0,
+            &self.state,
+            state_offset + self.lane_bytes,
+            self.lane_bytes,
+        );
+        encoder.copy_buffer_to_buffer(
+            storage.metadata_buffer(),
+            0,
+            &self.state,
+            state_offset + self.lane_bytes * 2,
+            self.lane_bytes,
+        );
+        let current = graph.parity.get();
+        encoder.copy_buffer_to_buffer(
+            graph.persistence.current_records(current),
+            0,
+            &self.cache,
+            u64::from(snapshot_index) * self.cache_step_bytes,
+            self.cache_step_bytes,
+        );
+        let capacity_offset =
+            u64::from(snapshot_index) * u64::from(COLLISION_CAPACITY_COUNTER_BYTES);
+        encoder.copy_buffer_to_buffer(
+            graph.candidate.candidate_capacity_buffer(),
+            0,
+            &self.candidate_capacity,
+            capacity_offset,
+            u64::from(COLLISION_CAPACITY_COUNTER_BYTES),
+        );
+        encoder.copy_buffer_to_buffer(
+            graph.narrowphase.manifold_capacity_buffer(),
+            0,
+            &self.manifold_capacity,
+            capacity_offset,
+            u64::from(COLLISION_CAPACITY_COUNTER_BYTES),
+        );
+        encoder.copy_buffer_to_buffer(
+            graph.narrowphase.point_capacity_buffer(),
+            0,
+            &self.point_capacity,
+            capacity_offset,
+            u64::from(COLLISION_CAPACITY_COUNTER_BYTES),
+        );
+        encoder.copy_buffer_to_buffer(
+            graph.persistence.current_capacity(current),
+            0,
+            &self.persistence_capacity,
+            capacity_offset,
+            u64::from(COLLISION_CAPACITY_COUNTER_BYTES),
+        );
+        encoder.copy_buffer_to_buffer(
+            graph.narrowphase.manifolds(),
+            0,
+            &self.manifold_records,
+            u64::from(snapshot_index) * self.manifold_step_bytes,
+            self.manifold_step_bytes,
+        );
+        encoder.copy_buffer_to_buffer(
+            graph.narrowphase.points(),
+            0,
+            &self.point_records,
+            u64::from(snapshot_index) * self.point_step_bytes,
+            self.point_step_bytes,
+        );
+        encoder.copy_buffer_to_buffer(
+            graph.candidate.work_buffer(),
+            0,
+            &self.work,
+            u64::from(snapshot_index) * u64::from(COLLISION_WORK_COUNTER_BYTES),
+            u64::from(COLLISION_WORK_COUNTER_BYTES),
+        );
+        let (step_source, step_offset) = graph.persistence.step_counter_source();
+        encoder.copy_buffer_to_buffer(
+            step_source,
+            step_offset,
+            &self.step,
+            u64::from(snapshot_index) * 4,
+            4,
+        );
+        if let (Some((source, offset)), Some(destination)) =
+            (graph.color_status_source(), &self.color_status)
+        {
+            encoder.copy_buffer_to_buffer(
+                source,
+                offset,
+                destination,
+                u64::from(snapshot_index) * 4,
+                4,
+            );
+        }
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -1577,6 +1922,292 @@ impl GpuGeneratedContactRunner {
 
     pub fn adapter(&self) -> &crate::AdapterDiagnostics {
         &self.diagnostics
+    }
+
+    /// Records exact post-step state, narrowphase output, and warm-start state
+    /// for bounded native settling validation. The copies stay GPU ordered and
+    /// are mapped only after the final requested step.
+    pub fn run_selected_observation_series(
+        &self,
+        scenario: &ScenarioV1,
+        observation_interval_steps: u32,
+        completed_steps: u32,
+    ) -> Result<GpuGeneratedContactSeriesV1, String> {
+        if observation_interval_steps == 0
+            || completed_steps == 0
+            || !completed_steps.is_multiple_of(observation_interval_steps)
+            || completed_steps > scenario.requested_steps
+        {
+            return Err(
+                "generated settling series requires an exact positive cadence within the scenario"
+                    .to_owned(),
+            );
+        }
+        validate_selected_settings(scenario)?;
+        scenario.validate().map_err(|error| error.to_string())?;
+        let body_count = u32::try_from(scenario.bodies.len())
+            .map_err(|_| "generated settling body count exceeds u32".to_owned())?;
+        let storage = GpuBodyStorage::new(
+            &self.device,
+            body_count,
+            crate::BODY_COMMAND_CAPACITY,
+            &scenario.bodies,
+        )?;
+        let execution = GpuSolverExecutionV4::SELECTED;
+        let scheduling_policy = GpuSolverSchedulingPolicyV1::SELECTED;
+        let graph = GpuGeneratedContactGraph::new_with_topologies_execution_and_scheduling(
+            &self.device,
+            &storage,
+            scenario,
+            GpuContactPersistenceTopology::StablePairSlot,
+            GpuGatherTopology::StableBodyEdge,
+            false,
+            false,
+            u32::MAX,
+            execution,
+            scheduling_policy,
+        )?;
+        let snapshot_count = completed_steps / observation_interval_steps;
+        let readbacks =
+            GeneratedSettlingReadbacks::new(&self.device, &graph, body_count, snapshot_count);
+
+        let mut encoded_steps = 0;
+        let mut snapshot_index = 0;
+        while encoded_steps < completed_steps {
+            let chunk = (completed_steps - encoded_steps).min(VALIDATION_STEPS_PER_SUBMISSION);
+            let mut encoder = self
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("physbox5_generated_settling_series"),
+                });
+            for local_step in 0..chunk {
+                graph.encode_step(&mut encoder, false);
+                let step = encoded_steps + local_step + 1;
+                if step.is_multiple_of(observation_interval_steps) {
+                    readbacks.encode_copy(&mut encoder, &storage, &graph, snapshot_index);
+                    snapshot_index += 1;
+                }
+            }
+            self.queue.submit([encoder.finish()]);
+            encoded_steps += chunk;
+        }
+        if snapshot_index != snapshot_count {
+            return Err("generated settling series encoded the wrong sample count".to_owned());
+        }
+        self.device
+            .poll(wgpu::PollType::Wait)
+            .map_err(|error| format!("generated settling series poll failed: {error}"))?;
+
+        let snapshot_count_usize = snapshot_count as usize;
+        let body_count_usize = body_count as usize;
+        let state = crate::collision_candidates::map_values::<[u32; 4]>(
+            &self.device,
+            &readbacks.state,
+            snapshot_count_usize * body_count_usize * 3,
+        )?;
+        let candidate_raw = crate::collision_candidates::map_values::<[u32; 4]>(
+            &self.device,
+            &readbacks.candidate_capacity,
+            snapshot_count_usize,
+        )?;
+        let manifold_raw = crate::collision_candidates::map_values::<[u32; 4]>(
+            &self.device,
+            &readbacks.manifold_capacity,
+            snapshot_count_usize,
+        )?;
+        let point_raw = crate::collision_candidates::map_values::<[u32; 4]>(
+            &self.device,
+            &readbacks.point_capacity,
+            snapshot_count_usize,
+        )?;
+        let persistence_raw =
+            crate::collision_candidates::map_values::<crate::collision_persistence::CapacityRaw>(
+                &self.device,
+                &readbacks.persistence_capacity,
+                snapshot_count_usize,
+            )?;
+        let work_raw = crate::collision_candidates::map_values::<
+            crate::collision_persistence::WorkRaw,
+        >(&self.device, &readbacks.work, snapshot_count_usize)?;
+        let gpu_steps = crate::collision_candidates::map_values::<u32>(
+            &self.device,
+            &readbacks.step,
+            snapshot_count_usize,
+        )?;
+        let color_status = readbacks
+            .color_status
+            .as_ref()
+            .map(|buffer| {
+                crate::collision_candidates::map_values::<u32>(
+                    &self.device,
+                    buffer,
+                    snapshot_count_usize,
+                )
+            })
+            .transpose()?
+            .unwrap_or_else(|| vec![0; snapshot_count_usize]);
+        let rejected = (0..snapshot_count_usize)
+            .map(|index| {
+                candidate_raw[index][3] != 0
+                    || manifold_raw[index][2] != manifold_raw[index][1]
+                    || point_raw[index][2] != point_raw[index][1]
+                    || persistence_raw[index].values[2] != persistence_raw[index].values[1]
+                    || color_status[index] != 0
+            })
+            .collect::<Vec<_>>();
+        let manifold_series = crate::collision_narrowphase::map_manifold_series_from_readbacks(
+            &self.device,
+            &readbacks.manifold_records,
+            &readbacks.point_records,
+            graph.narrowphase.manifold_capacity(),
+            graph.narrowphase.point_capacity(),
+            &manifold_raw
+                .iter()
+                .map(|values| values[2])
+                .collect::<Vec<_>>(),
+            &rejected,
+        )?;
+        let pair_graph = match &graph.persistence {
+            GeneratedPersistenceGraph::PairSlot(graph) => graph,
+            GeneratedPersistenceGraph::FullKey(_) => {
+                return Err("selected settling series did not use pair-slot persistence".to_owned());
+            }
+        };
+        let cache_records = crate::collision_candidates::map_values::<PairRecordRaw>(
+            &self.device,
+            &readbacks.cache,
+            pair_graph.pair_capacity as usize * snapshot_count_usize,
+        )?;
+        let source_scenario_hash = canonical_hash(scenario).map_err(|error| error.to_string())?;
+        let mut snapshots = Vec::with_capacity(snapshot_count_usize);
+        for index in 0..snapshot_count_usize {
+            let expected_step = (index as u32 + 1) * observation_interval_steps;
+            if gpu_steps[index] != expected_step {
+                return Err(format!(
+                    "GPU settling completed-step counter {} differed from {expected_step}",
+                    gpu_steps[index]
+                ));
+            }
+            let state_start = index * body_count_usize * 3;
+            let pose_start = state_start;
+            let motion_start = state_start + body_count_usize;
+            let metadata_start = state_start + body_count_usize * 2;
+            let mut bodies = scenario.bodies.clone();
+            for (body_index, body) in bodies.iter_mut().enumerate() {
+                let pose = state[pose_start + body_index].map(f32::from_bits);
+                let motion = state[motion_start + body_index].map(f32::from_bits);
+                let metadata = state[metadata_start + body_index];
+                if metadata[0] != body.id.generation {
+                    return Err(format!(
+                        "body {body_index} generation changed at settling step {expected_step}"
+                    ));
+                }
+                body.position.x = pose[0];
+                body.position.y = pose[1];
+                body.angle = physbox_contracts::FiniteF32::new(pose[2])
+                    .map_err(|error| error.to_string())?;
+                body.linear_velocity.x = motion[0];
+                body.linear_velocity.y = motion[1];
+                body.angular_velocity = physbox_contracts::FiniteF32::new(motion[2])
+                    .map_err(|error| error.to_string())?;
+            }
+            let work = crate::collision_persistence::work_record(work_raw[index]);
+            let mut capacities = vec![
+                raw_capacity(
+                    "candidate-pairs",
+                    CANDIDATE_PAIR_BYTES,
+                    candidate_raw[index],
+                ),
+                raw_capacity(
+                    "contact-manifolds",
+                    COLLISION_MANIFOLD_BYTES,
+                    manifold_raw[index],
+                ),
+                raw_capacity(
+                    "contact-points",
+                    COLLISION_CONTACT_POINT_BYTES,
+                    point_raw[index],
+                ),
+                crate::collision_persistence::capacity_record(
+                    "pair-slot-cache",
+                    PAIR_RECORD_BYTES,
+                    persistence_raw[index],
+                ),
+            ];
+            capacities.push(CollisionCapacityV1 {
+                class: "solver-colors".to_owned(),
+                stride_bytes: 4,
+                capacity_elements: 32,
+                attempted_elements: if color_status[index] == 0 { 0 } else { 33 },
+                committed_elements: 0,
+                allocated_bytes: 128,
+                high_water_bytes: if color_status[index] == 0 { 0 } else { 128 },
+                overflowed: color_status[index] != 0,
+                accepted: color_status[index] == 0,
+            });
+            capacities.sort_by(|left, right| left.class.cmp(&right.class));
+            let failure = capacities
+                .iter()
+                .find(|capacity| !capacity.accepted)
+                .map(|capacity| FailureV1 {
+                    kind: FailureKindV1::CapacityOverflow,
+                    reason: format!(
+                        "{} capacity {} rejected {} attempted records",
+                        capacity.class, capacity.capacity_elements, capacity.attempted_elements
+                    ),
+                    first_step: Some(expected_step),
+                    first_stage: Some(if capacity.class == "candidate-pairs" {
+                        "candidate".to_owned()
+                    } else if capacity.class == "solver-colors" {
+                        "solver-coloring".to_owned()
+                    } else if capacity.class == "pair-slot-cache" {
+                        "persistence".to_owned()
+                    } else {
+                        "narrowphase".to_owned()
+                    }),
+                    reproducer_hash: Some(source_scenario_hash.clone()),
+                });
+            let cache = if rejected[index] {
+                Vec::new()
+            } else {
+                let cache_start = index * pair_graph.pair_capacity as usize;
+                let mut cache = Vec::with_capacity(point_raw[index][2] as usize);
+                for record in cache_records
+                    [cache_start..cache_start + persistence_raw[index].values[2] as usize]
+                    .iter()
+                    .copied()
+                {
+                    let (_, mut points) = pair_output(record)?;
+                    cache.append(&mut points);
+                }
+                cache
+            };
+            snapshots.push(GpuGeneratedContactSnapshotV1 {
+                version: 1,
+                completed_steps: expected_step,
+                bodies,
+                manifolds: manifold_series[index].clone(),
+                cache,
+                work,
+                capacities,
+                failure,
+            });
+        }
+        let series = GpuGeneratedContactSeriesV1 {
+            version: 1,
+            adapter: self.diagnostics.clone(),
+            source_scenario_hash,
+            observation_interval_steps,
+            completed_steps,
+            solver_settings: scenario.settings,
+            solver_execution: execution,
+            solver_scheduling_policy: scheduling_policy,
+            dispatches_per_step: graph.dispatches_per_step(),
+            allocated_bytes: graph.allocated_bytes(),
+            snapshots,
+        };
+        series.validate()?;
+        Ok(series)
     }
 
     pub fn run(
@@ -2064,6 +2695,17 @@ impl GpuGeneratedContactRunner {
             "generated_point_capacity_readback",
             u64::from(COLLISION_CAPACITY_COUNTER_BYTES),
         );
+        let manifold_records_readback = readback(
+            &self.device,
+            "generated_manifold_records_readback",
+            u64::from(graph.narrowphase.manifold_capacity()) * u64::from(COLLISION_MANIFOLD_BYTES),
+        );
+        let point_records_readback = readback(
+            &self.device,
+            "generated_point_records_readback",
+            u64::from(graph.narrowphase.point_capacity())
+                * u64::from(COLLISION_CONTACT_POINT_BYTES),
+        );
         let persistence_capacity_readback = readback(
             &self.device,
             "generated_persistence_capacity_readback",
@@ -2135,6 +2777,16 @@ impl GpuGeneratedContactRunner {
             &mut encoder,
             graph.narrowphase.point_capacity_buffer(),
             &point_capacity_readback,
+        );
+        copy_full(
+            &mut encoder,
+            graph.narrowphase.manifolds(),
+            &manifold_records_readback,
+        );
+        copy_full(
+            &mut encoder,
+            graph.narrowphase.points(),
+            &point_records_readback,
         );
         copy_full(
             &mut encoder,
@@ -2232,6 +2884,15 @@ impl GpuGeneratedContactRunner {
             .coloring
             .as_ref()
             .is_some_and(|coloring| coloring.overflowed);
+        let manifolds = crate::collision_narrowphase::map_manifolds_from_readbacks(
+            &self.device,
+            &manifold_records_readback,
+            &point_records_readback,
+            graph.narrowphase.manifold_capacity(),
+            graph.narrowphase.point_capacity(),
+            manifold_raw[2],
+            any_rejected,
+        )?;
         let cache = if any_rejected {
             Vec::new()
         } else {
@@ -2382,6 +3043,7 @@ impl GpuGeneratedContactRunner {
             solver_execution: execution,
             solver_scheduling_policy: scheduling_policy,
             bodies,
+            manifolds,
             cache,
             pass_evidence,
             work,
@@ -2875,4 +3537,51 @@ fn map_range<T: Pod + Copy>(
     drop(mapped);
     buffer.unmap();
     Ok(values)
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests {
+    use super::GpuGeneratedContactRunner;
+    use crate::{P5_2SettlingFixtureKind, p5_2_settling_fixture_scenario};
+
+    #[test]
+    fn selected_settling_series_replays_exact_gpu_manifolds_and_cache() {
+        let scenario =
+            p5_2_settling_fixture_scenario(P5_2SettlingFixtureKind::BoxOnRestingBoxDrop, 0x6002, 4)
+                .unwrap();
+        let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
+        let first = runner
+            .run_selected_observation_series(&scenario, 1, 4)
+            .unwrap();
+        let replay = runner
+            .run_selected_observation_series(&scenario, 1, 4)
+            .unwrap();
+        let final_only = runner.run(&scenario, 4).unwrap();
+        assert_eq!(
+            serde_json::to_vec(&first).unwrap(),
+            serde_json::to_vec(&replay).unwrap()
+        );
+        assert_eq!(first.snapshots.len(), 4);
+        assert_eq!(first.snapshots[3].completed_steps, 4);
+        assert_eq!(first.snapshots[3].bodies, final_only.bodies);
+        assert_eq!(first.snapshots[3].manifolds, final_only.manifolds);
+        assert_eq!(first.snapshots[3].cache, final_only.cache);
+        assert!(first.snapshots.iter().all(|snapshot| {
+            snapshot.failure.is_none()
+                && snapshot.capacities.iter().all(|capacity| capacity.accepted)
+        }));
+    }
+
+    #[test]
+    fn selected_settling_series_rejects_inexact_cadence() {
+        let scenario =
+            p5_2_settling_fixture_scenario(P5_2SettlingFixtureKind::NearFlatFloorDrop, 0x6002, 4)
+                .unwrap();
+        let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
+        assert!(
+            runner
+                .run_selected_observation_series(&scenario, 3, 4)
+                .is_err()
+        );
+    }
 }

@@ -2,7 +2,8 @@
 
 Status: active, 2026-07-17. Human review accepted the S5.4c scheduler
 recommendation and authorized autonomous execution through S6.4. S6.1 is
-complete; S6.2 settling observations and realistic fixtures are next.
+complete; the S6.2 observation/fixture contract is frozen and its clean
+baseline evidence capture is next.
 
 Governing topic:
 [awake settling and rest stability](../topics/awake-settling-and-rest-stability.md).
@@ -106,15 +107,25 @@ Commit boundary: scheduler promotion and controls only.
 
 ### S6.2 — settling observations and realistic shared fixtures
 
-- [ ] Add versioned reference-owner, feature transition, point-count,
+- [x] Add versioned reference-owner, feature transition, point-count,
   contact-normal, cache miss-reason, time-to-rest, angular-edge-speed, and
   kinetic-energy-envelope observations.
-- [ ] Freeze observation cadence, stable-support classification, settled
+- [x] Freeze observation cadence, stable-support classification, settled
   windows, and gate arithmetic before running candidates.
-- [ ] Add shared seeded near-flat floor drops, box-on-resting-box drops,
+- [x] Add shared seeded near-flat floor drops, box-on-resting-box drops,
   sequential 3–5 rectangle construction, slide-to-rest, and a small mixed pile.
 - [ ] Project the same sources to Box2D and add exact deterministic replay,
   random generation, minimization, and permanent reproducers.
+
+Contract checkpoint, 2026-07-17: schema version 2, the exact step/window
+arithmetic, actual GPU manifold/cache observation, seven shared neutral
+fixtures, Box2D projection, deterministic random-source selection, and a
+dense-slot-preserving minimizer are implemented without changing a solver
+setting. The bounded recorder retains GPU-ordered per-step copies and maps only
+after the final step. Short replay, cadence rejection, classification,
+projection, and minimization tests pass. The final checkbox remains open until
+the clean baseline/authority artifacts and permanent observed reproducers are
+published.
 
 Outcome: the existing perfect-stack evidence is complemented by repeatable
 human-realistic motion, and every proposed cause can be measured directly.

@@ -125,6 +125,40 @@ contact without input or material normal rotation. Only unexplained identity
 changes inside such an interval count against the zero-churn gate; legitimate
 impact, rolling, sliding topology, separation, and recontact do not.
 
+S6.2 contract freeze, 2026-07-17: observation version 2 samples every outer
+step through step 1200. Steps 1–600 are transient; the accepted settled window
+is the inclusive 900–1200 interval. Time to rest requires 60 consecutive
+samples at or below both `0.025 m/s` maximum center speed and `0.025 m/s`
+maximum angular edge speed. A continuously present gravity-aligned support is
+eligible for identity attribution only while its normal changes by at most
+`0.5°`, its maximum relative tangent speed is at most `0.025 m/s`, and no
+action occurs. It becomes a stable-support interval after 30 consecutive
+eligible observations. The energy envelope uses an absolute epsilon of
+`1e-12`, a relative epsilon of `1e-5`, compares the maximum of the first and
+last settled-window quartiles, and rejects five consecutive positive-energy
+intervals. These values are measurement policy, not new solver tolerances or
+physical defaults.
+
+The version-2 trace embeds the readable version-1 settling observation and
+adds actual GPU manifold and pair-slot-cache state: generational pair,
+reference owner and face, prior/current point count, prior/current normal and
+feature keys, cache impulses, classified cache status, continuous-support age,
+angular edge speed, and aggregate time-to-rest/energy results. Bounded native
+validation copies this history in GPU command order and maps it only after the
+last requested step. It is not part of the interactive frame path and no CPU
+result advances simulation.
+
+The shared S6.2 fixture catalog is frozen as `near-flat-floor-drop`,
+`box-on-resting-box-drop`, `sequential-rectangles-3`,
+`sequential-rectangles-4`, `sequential-rectangles-5`, `slide-to-rest`, and
+`small-mixed-pile`. Each is a seeded neutral `ScenarioV1`, has dense body slots,
+contains no authored manifold or cache, uses the selected sleep-off settings,
+and projects through the existing Box2D world projection. Sequential sources
+encode staggered arrival through deterministic initial height rather than a
+host-owned spawn path. The random corpus selects from the same catalog; its
+minimizer preserves neutral dense slots while reducing bodies, initial
+perturbations, and the failure window.
+
 ## Ordered hypotheses
 
 Experiments change one mechanism at a time before a combined candidate is

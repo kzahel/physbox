@@ -810,6 +810,107 @@ fn contact_point(raw: ContactPointRaw) -> Result<CollisionContactPointV1, String
 }
 
 #[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn map_manifolds_from_readbacks(
+    device: &wgpu::Device,
+    manifold_readback: &wgpu::Buffer,
+    point_readback: &wgpu::Buffer,
+    manifold_capacity: u32,
+    point_capacity: u32,
+    manifold_count: u32,
+    rejected: bool,
+) -> Result<Vec<CollisionManifoldV1>, String> {
+    let manifold_records =
+        map_values::<ManifoldRaw>(device, manifold_readback, manifold_capacity as usize)?;
+    let point_records =
+        map_values::<ContactPointRaw>(device, point_readback, point_capacity as usize)?;
+    manifolds_from_records(&manifold_records, &point_records, manifold_count, rejected)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn map_manifold_series_from_readbacks(
+    device: &wgpu::Device,
+    manifold_readback: &wgpu::Buffer,
+    point_readback: &wgpu::Buffer,
+    manifold_capacity: u32,
+    point_capacity: u32,
+    manifold_counts: &[u32],
+    rejected: &[bool],
+) -> Result<Vec<Vec<CollisionManifoldV1>>, String> {
+    if manifold_counts.len() != rejected.len() {
+        return Err("GPU narrowphase series count/status lengths differ".to_owned());
+    }
+    let manifold_records = map_values::<ManifoldRaw>(
+        device,
+        manifold_readback,
+        manifold_capacity as usize * manifold_counts.len(),
+    )?;
+    let point_records = map_values::<ContactPointRaw>(
+        device,
+        point_readback,
+        point_capacity as usize * manifold_counts.len(),
+    )?;
+    manifold_counts
+        .iter()
+        .zip(rejected)
+        .enumerate()
+        .map(|(index, (&count, &rejected))| {
+            let manifold_start = index * manifold_capacity as usize;
+            let point_start = index * point_capacity as usize;
+            manifolds_from_records(
+                &manifold_records[manifold_start..manifold_start + manifold_capacity as usize],
+                &point_records[point_start..point_start + point_capacity as usize],
+                count,
+                rejected,
+            )
+        })
+        .collect()
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn manifolds_from_records(
+    manifold_records: &[ManifoldRaw],
+    point_records: &[ContactPointRaw],
+    manifold_count: u32,
+    rejected: bool,
+) -> Result<Vec<CollisionManifoldV1>, String> {
+    if rejected {
+        return Ok(Vec::new());
+    }
+    let mut manifolds = Vec::with_capacity(manifold_count as usize);
+    for raw in manifold_records.iter().take(manifold_count as usize) {
+        let start = raw.point_range[0] as usize;
+        let count = raw.point_range[1] as usize;
+        if count == 0 || count > 2 || start + count > point_records.len() {
+            return Err("GPU narrowphase emitted an invalid point range".to_owned());
+        }
+        let points = point_records[start..start + count]
+            .iter()
+            .copied()
+            .map(contact_point)
+            .collect::<Result<Vec<_>, _>>()?;
+        manifolds.push(CollisionManifoldV1 {
+            pair: CandidatePairV1 {
+                body_a: physbox_contracts::BodyId {
+                    slot: raw.identities[0],
+                    generation: raw.identities[1],
+                },
+                body_b: physbox_contracts::BodyId {
+                    slot: raw.identities[2],
+                    generation: raw.identities[3],
+                },
+            },
+            normal: Vec2::new(raw.normal_material[0], raw.normal_material[1]),
+            material: MaterialV1 {
+                friction: finite(raw.normal_material[2])?,
+                restitution: finite(raw.normal_material[3])?,
+            },
+            points,
+        });
+    }
+    Ok(manifolds)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 fn feature(kind: u32, index: u32) -> Result<GeometricFeatureV1, String> {
     let kind = match kind {
         0 => GeometricFeatureKindV1::Circle,

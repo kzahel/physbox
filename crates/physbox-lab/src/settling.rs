@@ -1,13 +1,38 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use physbox_contracts::{
-    BodyStateV1, CapacityRecordV1, CollisionCapacityV1, CollisionManifoldV1, FiniteF32,
-    PersistentContactKeyV1, PersistentContactV1, ScenarioV1, SettlingObservationV1, ShapeV1,
+    BodyStateV1, CandidatePairV1, CapacityRecordV1, CollisionCapacityV1, CollisionManifoldV1,
+    ContactPointCacheObservationV2, ContactReferenceOwnerV2, FiniteF32, GeometricFeatureKindV1,
+    PersistentContactKeyV1, PersistentContactV1, SCHEMA_VERSION, SETTLING_OBSERVATION_V2_VERSION,
+    ScenarioV1, SettlingContactObservationV2, SettlingMeasurementPolicyV2, SettlingObservationV1,
+    SettlingObservationV2, SettlingSeriesV2, SettlingSummaryV2, ShapeV1, Validate, Vec2,
+    WarmCacheStatusV2, canonical_hash,
 };
-use physbox_engine::GpuFixedFloorPassEvidence;
+use physbox_engine::{GpuFixedFloorPassEvidence, P5_2SettlingFixtureKind};
 use serde::Serialize;
 
 pub const AWAKE_SETTLING_METRICS_VERSION: u32 = 1;
+pub const AWAKE_SETTLING_TRACE_VERSION: u32 = SETTLING_OBSERVATION_V2_VERSION;
+
+pub fn awake_settling_measurement_policy_v2() -> SettlingMeasurementPolicyV2 {
+    SettlingMeasurementPolicyV2 {
+        version: AWAKE_SETTLING_TRACE_VERSION,
+        observation_interval_steps: 1,
+        transient_end_step: 600,
+        settled_start_step: 900,
+        settled_end_step: 1_200,
+        rest_linear_speed_limit: finite(0.025),
+        rest_angular_edge_speed_limit: finite(0.025),
+        rest_required_consecutive_observations: 60,
+        stable_support_required_consecutive_observations: 30,
+        stable_normal_delta_limit_radians: finite(0.5_f32.to_radians()),
+        stable_relative_tangent_speed_limit: finite(0.025),
+        stable_support_gravity_alignment_min: finite(15.0_f32.to_radians().cos()),
+        energy_absolute_epsilon: finite(1.0e-12),
+        energy_relative_epsilon: finite(1.0e-5),
+        positive_energy_run_limit: 5,
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -448,6 +473,495 @@ pub fn observe_settling(
     })
 }
 
+pub struct SettlingObserverV2 {
+    policy: SettlingMeasurementPolicyV2,
+    seen_pairs: BTreeSet<CandidatePairV1>,
+    stable_support_ages: BTreeMap<CandidatePairV1, u32>,
+    previous_completed_steps: u32,
+    previous_manifolds: Option<Vec<CollisionManifoldV1>>,
+    previous_cache: Option<Vec<PersistentContactV1>>,
+}
+
+pub struct SettlingObservationInputV2<'a> {
+    pub completed_steps: u32,
+    pub bodies: &'a [BodyStateV1],
+    pub manifolds: &'a [CollisionManifoldV1],
+    pub cache: &'a [PersistentContactV1],
+    pub capacities: &'a [CollisionCapacityV1],
+    pub support_height: f32,
+}
+
+impl SettlingObserverV2 {
+    pub fn new(policy: SettlingMeasurementPolicyV2) -> Result<Self, String> {
+        policy.validate().map_err(|error| error.to_string())?;
+        Ok(Self {
+            policy,
+            seen_pairs: BTreeSet::new(),
+            stable_support_ages: BTreeMap::new(),
+            previous_completed_steps: 0,
+            previous_manifolds: None,
+            previous_cache: None,
+        })
+    }
+
+    pub const fn policy(&self) -> SettlingMeasurementPolicyV2 {
+        self.policy
+    }
+
+    pub fn observe(
+        &mut self,
+        source: &ScenarioV1,
+        input: SettlingObservationInputV2<'_>,
+    ) -> Result<SettlingObservationV2, String> {
+        let SettlingObservationInputV2 {
+            completed_steps,
+            bodies,
+            manifolds,
+            cache,
+            capacities,
+            support_height,
+        } = input;
+        let expected_step = self
+            .previous_completed_steps
+            .saturating_add(self.policy.observation_interval_steps);
+        if completed_steps != expected_step {
+            return Err(format!(
+                "settling observer expected completed step {expected_step}, received {completed_steps}"
+            ));
+        }
+        let base = observe_settling(
+            source,
+            SettlingSnapshotInput {
+                completed_steps,
+                bodies,
+                manifolds,
+                cache,
+                capacities,
+                previous_manifolds: self.previous_manifolds.as_deref(),
+                previous_cache: self.previous_cache.as_deref(),
+                support_height,
+            },
+        )?;
+        let body_map = bodies
+            .iter()
+            .map(|body| (body.id, body))
+            .collect::<BTreeMap<_, _>>();
+        let previous_manifold_map = self
+            .previous_manifolds
+            .as_deref()
+            .unwrap_or_default()
+            .iter()
+            .map(|manifold| (manifold.pair, manifold))
+            .collect::<BTreeMap<_, _>>();
+        let previous_cache_map = cache_map(self.previous_cache.as_deref().unwrap_or_default());
+        let current_cache_map = cache_map(cache);
+        let action_on_interval = source.actions.iter().any(|action| {
+            let step = action.step().saturating_add(1);
+            step > completed_steps.saturating_sub(self.policy.observation_interval_steps)
+                && step <= completed_steps
+        });
+
+        let mut contacts = Vec::with_capacity(manifolds.len());
+        for manifold in manifolds {
+            let previous = previous_manifold_map.get(&manifold.pair).copied();
+            let (current_reference_owner, reference_face_index) = reference_owner(manifold);
+            let previous_reference = previous.map(reference_owner);
+            let previous_reference_owner = previous_reference.map(|value| value.0);
+            let previous_features = previous.map_or_else(Vec::new, manifold_features);
+            let current_features = manifold_features(manifold);
+            let previous_point_count = previous.map_or(0, |value| value.points.len() as u32);
+            let reference_owner_changed =
+                previous_reference_owner.is_some_and(|owner| owner != current_reference_owner);
+            let point_count_changed =
+                previous.is_some() && previous_point_count != manifold.points.len() as u32;
+            let feature_set_changed = previous.is_some() && previous_features != current_features;
+            let normal_delta_radians =
+                previous.map_or(0.0, |value| normal_delta(value.normal, manifold.normal));
+            let normal_changed = previous.is_some()
+                && normal_delta_radians > self.policy.stable_normal_delta_limit_radians.get();
+            let relative_tangent_speed_max = relative_tangent_speed_max(manifold, &body_map)?;
+            let gravity_length = (source.settings.gravity.x * source.settings.gravity.x
+                + source.settings.gravity.y * source.settings.gravity.y)
+                .sqrt();
+            let gravity_alignment = if gravity_length > 0.0 {
+                (manifold.normal.x * source.settings.gravity.x
+                    + manifold.normal.y * source.settings.gravity.y)
+                    .abs()
+                    / gravity_length
+            } else {
+                0.0
+            };
+            let stable_candidate = previous.is_some()
+                && !action_on_interval
+                && !normal_changed
+                && relative_tangent_speed_max
+                    <= self.policy.stable_relative_tangent_speed_limit.get()
+                && gravity_alignment >= self.policy.stable_support_gravity_alignment_min.get();
+            let stable_support_age_steps = if stable_candidate {
+                self.stable_support_ages
+                    .get(&manifold.pair)
+                    .copied()
+                    .unwrap_or(0)
+                    .saturating_add(self.policy.observation_interval_steps)
+            } else {
+                0
+            };
+            if stable_support_age_steps == 0 {
+                self.stable_support_ages.remove(&manifold.pair);
+            } else {
+                self.stable_support_ages
+                    .insert(manifold.pair, stable_support_age_steps);
+            }
+
+            let pair_seen_before = self.seen_pairs.contains(&manifold.pair);
+            let mut cache_observations = Vec::with_capacity(manifold.points.len());
+            for key in &current_features {
+                let previous_value = previous_cache_map.get(key).copied();
+                let current_value = current_cache_map.get(key).copied();
+                let status = if current_value.is_none() {
+                    WarmCacheStatusV2::CurrentEntryMissing
+                } else if previous_value.is_some() {
+                    WarmCacheStatusV2::Hit
+                } else if previous.is_none() {
+                    if pair_seen_before {
+                        WarmCacheStatusV2::Recontact
+                    } else {
+                        WarmCacheStatusV2::PairStarted
+                    }
+                } else if normal_changed {
+                    WarmCacheStatusV2::NormalChanged
+                } else if point_count_changed {
+                    WarmCacheStatusV2::PointCountChanged
+                } else if reference_owner_changed {
+                    WarmCacheStatusV2::ReferenceOwnerChanged
+                } else {
+                    WarmCacheStatusV2::FeatureChanged
+                };
+                cache_observations.push(ContactPointCacheObservationV2 {
+                    key: *key,
+                    status,
+                    previous_normal_impulse: previous_value.map(|value| value.normal_impulse),
+                    previous_tangent_impulse: previous_value.map(|value| value.tangent_impulse),
+                    current_normal_impulse: current_value.map(|value| value.normal_impulse),
+                    current_tangent_impulse: current_value.map(|value| value.tangent_impulse),
+                });
+            }
+            let has_cache_miss = cache_observations
+                .iter()
+                .any(|value| value.status != WarmCacheStatusV2::Hit);
+            let unexplained_stable_churn = stable_support_age_steps
+                >= self
+                    .policy
+                    .stable_support_required_consecutive_observations
+                    .saturating_mul(self.policy.observation_interval_steps)
+                && (reference_owner_changed
+                    || point_count_changed
+                    || feature_set_changed
+                    || has_cache_miss);
+            contacts.push(SettlingContactObservationV2 {
+                pair: manifold.pair,
+                reference_owner: current_reference_owner,
+                reference_face_index,
+                previous_reference_owner,
+                point_count: manifold.points.len() as u32,
+                previous_point_count,
+                normal: manifold.normal,
+                previous_normal: previous.map(|value| value.normal),
+                normal_delta_radians: finite(normal_delta_radians),
+                relative_tangent_speed_max: finite(relative_tangent_speed_max),
+                stable_support: stable_support_age_steps > 0,
+                stable_support_age_steps,
+                reference_owner_changed,
+                point_count_changed,
+                feature_set_changed,
+                normal_changed,
+                unexplained_stable_churn,
+                previous_features,
+                current_features,
+                cache: cache_observations,
+            });
+        }
+        contacts.sort_by_key(|value| value.pair);
+
+        let dynamic = bodies
+            .iter()
+            .filter(|body| body.inverse_mass.get() > 0.0)
+            .collect::<Vec<_>>();
+        let mut angular_edge_speed_max = 0.0_f32;
+        let mut angular_edge_speed_squared = 0.0_f32;
+        for body in &dynamic {
+            let speed = body.angular_velocity.get().abs() * shape_support_radius(body);
+            angular_edge_speed_max = angular_edge_speed_max.max(speed);
+            angular_edge_speed_squared += speed * speed;
+        }
+        let warm_cache_hits = contacts
+            .iter()
+            .flat_map(|value| &value.cache)
+            .filter(|value| value.status == WarmCacheStatusV2::Hit)
+            .count() as u32;
+        let warm_cache_misses = contacts
+            .iter()
+            .map(|value| value.cache.len() as u32)
+            .sum::<u32>()
+            - warm_cache_hits;
+        let observation = SettlingObservationV2 {
+            observation_version: AWAKE_SETTLING_TRACE_VERSION,
+            base,
+            angular_edge_speed_max: finite(angular_edge_speed_max),
+            angular_edge_speed_rms: finite(
+                (angular_edge_speed_squared / dynamic.len() as f32).sqrt(),
+            ),
+            stable_support_pairs: contacts.iter().filter(|value| value.stable_support).count()
+                as u32,
+            reference_owner_changes: contacts
+                .iter()
+                .filter(|value| value.reference_owner_changed)
+                .count() as u32,
+            point_count_changes: contacts
+                .iter()
+                .filter(|value| value.point_count_changed)
+                .count() as u32,
+            feature_set_changes: contacts
+                .iter()
+                .filter(|value| value.feature_set_changed)
+                .count() as u32,
+            contact_normal_changes: contacts.iter().filter(|value| value.normal_changed).count()
+                as u32,
+            warm_cache_hits,
+            warm_cache_misses,
+            unexplained_stable_churn: contacts
+                .iter()
+                .filter(|value| value.unexplained_stable_churn)
+                .count() as u32,
+            contacts,
+        };
+        observation.validate().map_err(|error| error.to_string())?;
+        self.seen_pairs
+            .extend(manifolds.iter().map(|value| value.pair));
+        self.previous_completed_steps = completed_steps;
+        self.previous_manifolds = Some(manifolds.to_vec());
+        self.previous_cache = Some(cache.to_vec());
+        Ok(observation)
+    }
+}
+
+pub fn summarize_settling_v2(
+    observations: &[SettlingObservationV2],
+    policy: SettlingMeasurementPolicyV2,
+) -> Result<SettlingSummaryV2, String> {
+    policy.validate().map_err(|error| error.to_string())?;
+    let settled = observations
+        .iter()
+        .filter(|value| {
+            (policy.settled_start_step..=policy.settled_end_step)
+                .contains(&value.base.completed_steps)
+        })
+        .collect::<Vec<_>>();
+    if settled.len() < 4
+        || settled.first().unwrap().base.completed_steps != policy.settled_start_step
+        || settled.last().unwrap().base.completed_steps != policy.settled_end_step
+    {
+        return Err("settling v2 summary does not cover the frozen settled window".to_owned());
+    }
+    let mut consecutive_rest = 0_u32;
+    let mut time_to_rest_step = None;
+    for observation in observations
+        .iter()
+        .filter(|value| value.base.completed_steps > policy.transient_end_step)
+    {
+        if observation.base.residual_linear_speed_max.get() <= policy.rest_linear_speed_limit.get()
+            && observation.angular_edge_speed_max.get()
+                <= policy.rest_angular_edge_speed_limit.get()
+        {
+            consecutive_rest += 1;
+            if consecutive_rest >= policy.rest_required_consecutive_observations
+                && time_to_rest_step.is_none()
+            {
+                time_to_rest_step = Some(observation.base.completed_steps.saturating_sub(
+                    (policy.rest_required_consecutive_observations - 1)
+                        * policy.observation_interval_steps,
+                ));
+            }
+        } else {
+            consecutive_rest = 0;
+        }
+    }
+    let quartile = settled.len() / 4;
+    let first_energy_quartile_max = settled[..quartile]
+        .iter()
+        .map(|value| value.base.kinetic_energy.get())
+        .fold(0.0_f32, f32::max);
+    let last_energy_quartile_max = settled[settled.len() - quartile..]
+        .iter()
+        .map(|value| value.base.kinetic_energy.get())
+        .fold(0.0_f32, f32::max);
+    let mut positive_energy_run = 0_u32;
+    let mut positive_energy_run_max = 0_u32;
+    for pair in settled.windows(2) {
+        let previous = pair[0].base.kinetic_energy.get();
+        let current = pair[1].base.kinetic_energy.get();
+        let epsilon = policy.energy_absolute_epsilon.get()
+            + policy.energy_relative_epsilon.get() * previous.abs();
+        if current > previous + epsilon {
+            positive_energy_run += 1;
+            positive_energy_run_max = positive_energy_run_max.max(positive_energy_run);
+        } else {
+            positive_energy_run = 0;
+        }
+    }
+    let energy_envelope_nonincreasing = last_energy_quartile_max
+        <= first_energy_quartile_max
+            + policy.energy_absolute_epsilon.get()
+            + policy.energy_relative_epsilon.get() * first_energy_quartile_max.abs()
+        && positive_energy_run_max < policy.positive_energy_run_limit;
+    let summary = SettlingSummaryV2 {
+        version: AWAKE_SETTLING_TRACE_VERSION,
+        time_to_rest_step,
+        settled_linear_speed_max: finite(
+            settled
+                .iter()
+                .map(|value| value.base.residual_linear_speed_max.get())
+                .fold(0.0_f32, f32::max),
+        ),
+        settled_angular_edge_speed_max: finite(
+            settled
+                .iter()
+                .map(|value| value.angular_edge_speed_max.get())
+                .fold(0.0_f32, f32::max),
+        ),
+        stable_support_unexplained_churn: settled
+            .iter()
+            .map(|value| u64::from(value.unexplained_stable_churn))
+            .sum(),
+        warm_cache_misses: settled
+            .iter()
+            .map(|value| u64::from(value.warm_cache_misses))
+            .sum(),
+        first_energy_quartile_max: finite(first_energy_quartile_max),
+        last_energy_quartile_max: finite(last_energy_quartile_max),
+        positive_energy_run_max,
+        energy_envelope_nonincreasing,
+    };
+    summary.validate().map_err(|error| error.to_string())?;
+    Ok(summary)
+}
+
+pub fn settling_series_v2(
+    source: &ScenarioV1,
+    projection_hash: Option<String>,
+    lane: impl Into<String>,
+    policy: SettlingMeasurementPolicyV2,
+    observations: Vec<SettlingObservationV2>,
+    structural_pass: bool,
+    structural_reason: impl Into<String>,
+) -> Result<SettlingSeriesV2, String> {
+    let summary = summarize_settling_v2(&observations, policy)?;
+    let series = SettlingSeriesV2 {
+        schema_version: SCHEMA_VERSION,
+        observation_version: AWAKE_SETTLING_TRACE_VERSION,
+        source_scenario_hash: canonical_hash(source).map_err(|error| error.to_string())?,
+        projection_hash,
+        lane: lane.into(),
+        sleeping_enabled: false,
+        policy,
+        observations,
+        summary,
+        structural_pass,
+        structural_reason: structural_reason.into(),
+    };
+    series.validate().map_err(|error| error.to_string())?;
+    Ok(series)
+}
+
+fn cache_map(
+    cache: &[PersistentContactV1],
+) -> BTreeMap<PersistentContactKeyV1, physbox_contracts::ContactCacheValueV1> {
+    cache.iter().map(|value| (value.key, value.value)).collect()
+}
+
+fn manifold_features(manifold: &CollisionManifoldV1) -> Vec<PersistentContactKeyV1> {
+    manifold
+        .points
+        .iter()
+        .map(|point| point.key(manifold.pair))
+        .collect()
+}
+
+fn reference_owner(manifold: &CollisionManifoldV1) -> (ContactReferenceOwnerV2, Option<u32>) {
+    let faces_a = manifold
+        .points
+        .iter()
+        .filter(|point| point.feature_a.kind == GeometricFeatureKindV1::Face)
+        .map(|point| point.feature_a.index)
+        .collect::<BTreeSet<_>>();
+    let faces_b = manifold
+        .points
+        .iter()
+        .filter(|point| point.feature_b.kind == GeometricFeatureKindV1::Face)
+        .map(|point| point.feature_b.index)
+        .collect::<BTreeSet<_>>();
+    if faces_a.len() == 1 && faces_b.is_empty() {
+        (
+            ContactReferenceOwnerV2::BodyA,
+            faces_a.iter().next().copied(),
+        )
+    } else if faces_b.len() == 1 && faces_a.is_empty() {
+        (
+            ContactReferenceOwnerV2::BodyB,
+            faces_b.iter().next().copied(),
+        )
+    } else if faces_a.is_empty() && faces_b.is_empty() {
+        (ContactReferenceOwnerV2::None, None)
+    } else {
+        (ContactReferenceOwnerV2::Ambiguous, None)
+    }
+}
+
+fn normal_delta(previous: Vec2, current: Vec2) -> f32 {
+    (previous.x * current.x + previous.y * current.y)
+        .clamp(-1.0, 1.0)
+        .acos()
+}
+
+fn relative_tangent_speed_max(
+    manifold: &CollisionManifoldV1,
+    bodies: &BTreeMap<physbox_contracts::BodyId, &BodyStateV1>,
+) -> Result<f32, String> {
+    let body_a = bodies
+        .get(&manifold.pair.body_a)
+        .ok_or_else(|| "settling manifold body A is missing".to_owned())?;
+    let body_b = bodies
+        .get(&manifold.pair.body_b)
+        .ok_or_else(|| "settling manifold body B is missing".to_owned())?;
+    let tangent = Vec2::new(manifold.normal.y, -manifold.normal.x);
+    let mut maximum = 0.0_f32;
+    for point in &manifold.points {
+        let velocity = |body: &BodyStateV1| {
+            let radius = Vec2::new(
+                point.world_point.x - body.position.x,
+                point.world_point.y - body.position.y,
+            );
+            Vec2::new(
+                body.linear_velocity.x - body.angular_velocity.get() * radius.y,
+                body.linear_velocity.y + body.angular_velocity.get() * radius.x,
+            )
+        };
+        let a = velocity(body_a);
+        let b = velocity(body_b);
+        maximum = maximum.max(((b.x - a.x) * tangent.x + (b.y - a.y) * tangent.y).abs());
+    }
+    Ok(maximum)
+}
+
+fn shape_support_radius(body: &BodyStateV1) -> f32 {
+    match body.shape {
+        ShapeV1::Circle { radius } => radius.get(),
+        ShapeV1::Rectangle { half_extents } => {
+            (half_extents.x * half_extents.x + half_extents.y * half_extents.y).sqrt()
+        }
+    }
+}
+
 pub fn centered_stack_structure(
     source: &ScenarioV1,
     bodies: &[BodyStateV1],
@@ -520,6 +1034,59 @@ pub fn centered_stack_structure(
     )
 }
 
+pub fn settling_fixture_structure(
+    kind: P5_2SettlingFixtureKind,
+    source: &ScenarioV1,
+    bodies: &[BodyStateV1],
+    capacity_overflowed: bool,
+    support_height: f32,
+) -> (bool, String) {
+    if capacity_overflowed {
+        return (false, "collision capacity overflowed".to_owned());
+    }
+    if source.bodies.len() != bodies.len() {
+        return (false, "body count changed".to_owned());
+    }
+    let dynamic = bodies
+        .iter()
+        .filter(|body| body.inverse_mass.get() > 0.0)
+        .collect::<Vec<_>>();
+    if dynamic.is_empty()
+        || dynamic.iter().any(|body| {
+            !body.position.x.is_finite()
+                || !body.position.y.is_finite()
+                || !body.angle.get().is_finite()
+                || !body.linear_velocity.x.is_finite()
+                || !body.linear_velocity.y.is_finite()
+                || !body.angular_velocity.get().is_finite()
+                || shape_upper_y(body) <= support_height - 0.02
+                || body.position.x.abs() > 2.5
+                || body.position.y > 8.0
+        })
+    {
+        return (
+            false,
+            "a dynamic body became invalid or escaped the fixture".to_owned(),
+        );
+    }
+    if matches!(
+        kind,
+        P5_2SettlingFixtureKind::BoxOnRestingBoxDrop
+            | P5_2SettlingFixtureKind::SequentialRectangles3
+            | P5_2SettlingFixtureKind::SequentialRectangles4
+            | P5_2SettlingFixtureKind::SequentialRectangles5
+    ) && dynamic
+        .windows(2)
+        .any(|pair| pair[0].id >= pair[1].id || pair[0].position.y >= pair[1].position.y)
+    {
+        return (false, "declared rectangle order changed".to_owned());
+    }
+    (
+        true,
+        "all declared bodies remained finite and inside the fixture".to_owned(),
+    )
+}
+
 fn feature_keys(manifolds: &[CollisionManifoldV1]) -> BTreeSet<PersistentContactKeyV1> {
     manifolds
         .iter()
@@ -586,7 +1153,7 @@ fn finite(value: f32) -> FiniteF32 {
 
 #[cfg(test)]
 mod tests {
-    use physbox_contracts::Validate;
+    use physbox_contracts::{ContactCacheValueV1, GeometricFeatureKindV1, Validate};
     use physbox_engine::{GpuFixedFloorContactEvidence, p5_2_centered_rectangle_stack_scenario};
 
     use super::*;
@@ -709,5 +1276,157 @@ mod tests {
         let first = first_awake_divergence(&[delta]).unwrap();
         assert_eq!(first.first_step, 1);
         assert!(first.reason.contains("kinematics"));
+    }
+
+    #[test]
+    fn settling_v2_attributes_reference_flip_to_a_warm_cache_miss() {
+        let scenario = p5_2_centered_rectangle_stack_scenario(2, 2).unwrap();
+        let candidates = enumerate_scalar_candidates(&scenario).unwrap();
+        let first_manifolds =
+            generate_scalar_narrowphase(&scenario, &candidates.candidates).unwrap();
+        let cache_for = |manifolds: &[CollisionManifoldV1], step| {
+            manifolds
+                .iter()
+                .flat_map(|manifold| {
+                    manifold
+                        .points
+                        .iter()
+                        .map(move |point| PersistentContactV1 {
+                            key: point.key(manifold.pair),
+                            value: ContactCacheValueV1 {
+                                normal_impulse: finite(0.25),
+                                tangent_impulse: finite(0.0),
+                                last_seen_step: step,
+                            },
+                        })
+                })
+                .collect::<Vec<_>>()
+        };
+        let first_cache = cache_for(&first_manifolds, 1);
+        let mut policy = awake_settling_measurement_policy_v2();
+        policy.stable_support_required_consecutive_observations = 1;
+        policy.settled_end_step = 2;
+        policy.settled_start_step = 2;
+        policy.transient_end_step = 1;
+        let mut observer = SettlingObserverV2::new(policy).unwrap();
+        let first = observer
+            .observe(
+                &scenario,
+                SettlingObservationInputV2 {
+                    completed_steps: 1,
+                    bodies: &scenario.bodies,
+                    manifolds: &first_manifolds,
+                    cache: &first_cache,
+                    capacities: &[],
+                    support_height: 0.0,
+                },
+            )
+            .unwrap();
+        assert_eq!(first.warm_cache_hits, 0);
+        assert!(first.warm_cache_misses > 0);
+
+        let mut flipped = first_manifolds.clone();
+        for point in &mut flipped[0].points {
+            std::mem::swap(&mut point.feature_a, &mut point.feature_b);
+        }
+        let flipped_pair = flipped[0].pair;
+        flipped[0]
+            .points
+            .sort_by_key(|point| point.key(flipped_pair));
+        let flipped_cache = cache_for(&flipped, 2);
+        let second = observer
+            .observe(
+                &scenario,
+                SettlingObservationInputV2 {
+                    completed_steps: 2,
+                    bodies: &scenario.bodies,
+                    manifolds: &flipped,
+                    cache: &flipped_cache,
+                    capacities: &[],
+                    support_height: 0.0,
+                },
+            )
+            .unwrap();
+        let transition = &second.contacts[0];
+        assert!(transition.reference_owner_changed);
+        assert!(transition.feature_set_changed);
+        assert!(transition.unexplained_stable_churn);
+        assert!(transition.cache.iter().all(|value| {
+            value.status == WarmCacheStatusV2::ReferenceOwnerChanged
+                || value.status == WarmCacheStatusV2::FeatureChanged
+        }));
+        assert_eq!(transition.reference_owner, ContactReferenceOwnerV2::BodyB);
+        assert_eq!(
+            transition.current_features[0].feature_b.kind,
+            GeometricFeatureKindV1::Face
+        );
+    }
+
+    #[test]
+    fn settling_v2_policy_and_summary_freeze_awake_gate_arithmetic() {
+        let policy = awake_settling_measurement_policy_v2();
+        policy.validate().unwrap();
+        assert_eq!(policy.observation_interval_steps, 1);
+        assert_eq!(policy.settled_start_step, 900);
+        assert_eq!(policy.settled_end_step, 1_200);
+        assert_eq!(policy.rest_linear_speed_limit.get(), 0.025);
+        assert_eq!(policy.rest_angular_edge_speed_limit.get(), 0.025);
+        assert_eq!(policy.positive_energy_run_limit, 5);
+
+        let scenario = p5_2_centered_rectangle_stack_scenario(2, 1_200).unwrap();
+        let mut observations = Vec::with_capacity(1_200);
+        for step in 1..=1_200 {
+            let mut base = observe_settling(
+                &scenario,
+                SettlingSnapshotInput {
+                    completed_steps: step,
+                    bodies: &scenario.bodies,
+                    manifolds: &[],
+                    cache: &[],
+                    capacities: &[],
+                    previous_manifolds: Some(&[]),
+                    previous_cache: Some(&[]),
+                    support_height: 0.0,
+                },
+            )
+            .unwrap();
+            base.kinetic_energy = finite((1_201 - step) as f32 * 1.0e-6);
+            observations.push(SettlingObservationV2 {
+                observation_version: AWAKE_SETTLING_TRACE_VERSION,
+                base,
+                angular_edge_speed_max: finite(0.0),
+                angular_edge_speed_rms: finite(0.0),
+                stable_support_pairs: 0,
+                reference_owner_changes: 0,
+                point_count_changes: 0,
+                feature_set_changes: 0,
+                contact_normal_changes: 0,
+                warm_cache_hits: 0,
+                warm_cache_misses: 0,
+                unexplained_stable_churn: 0,
+                contacts: Vec::new(),
+            });
+        }
+        let series = settling_series_v2(
+            &scenario,
+            None,
+            "unit-awake",
+            policy,
+            observations,
+            true,
+            "unit structure remained present",
+        )
+        .unwrap();
+        assert_eq!(series.summary.time_to_rest_step, Some(601));
+        assert!(series.summary.energy_envelope_nonincreasing);
+        assert_eq!(series.summary.positive_energy_run_max, 0);
+        series.validate().unwrap();
+        let round_trip: SettlingSeriesV2 =
+            serde_json::from_slice(&serde_json::to_vec(&series).unwrap()).unwrap();
+        assert_eq!(round_trip, series);
+
+        let mut invalid = series;
+        invalid.observations[10].base.completed_steps += 1;
+        assert!(invalid.validate().is_err());
     }
 }
