@@ -42,6 +42,45 @@ pub struct GpuContactSoftnessCoefficientsV1 {
     pub impulse_scale: f32,
 }
 
+/// Laboratory-only control over how often the soft-contact feedback tuple is
+/// applied inside the biased solve loop. Product construction always uses
+/// `EveryBiasedIteration`; the alternate value is diagnostic evidence only.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum GpuSoftFeedbackPolicyV1 {
+    EveryBiasedIteration,
+    FirstBiasedIterationOnly,
+}
+
+impl GpuSoftFeedbackPolicyV1 {
+    pub const SELECTED: Self = Self::EveryBiasedIteration;
+
+    const fn use_bias(self, iteration: u32) -> u32 {
+        match self {
+            Self::EveryBiasedIteration => 1,
+            Self::FirstBiasedIterationOnly => {
+                if iteration == 0 {
+                    1
+                } else {
+                    0
+                }
+            }
+        }
+    }
+
+    fn validate(self, settings: &SolverSettingsV1) -> Result<(), String> {
+        if self == Self::FirstBiasedIterationOnly
+            && (settings.contact_softness.is_none() || settings.iterations < 2)
+        {
+            return Err(
+                "first-biased-iteration softness requires soft contact and at least two iterations"
+                    .to_owned(),
+            );
+        }
+        Ok(())
+    }
+}
+
 pub fn gpu_contact_softness_coefficients(
     policy: ContactSoftnessPolicyV1,
     substep_dt: f32,
@@ -1545,7 +1584,7 @@ impl GpuFixedFloorSolver {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn new_generated_experiment_with_topology_and_scheduling(
+    pub(crate) fn new_generated_experiment_with_topology_scheduling_and_soft_feedback(
         device: &wgpu::Device,
         storage: &GpuBodyStorage,
         scenario: &ScenarioV1,
@@ -1555,16 +1594,18 @@ impl GpuFixedFloorSolver {
         permute_edge_build: bool,
         execution: GpuSolverExecutionV4,
         scheduling_policy: GpuSolverSchedulingPolicyV1,
+        soft_feedback_policy: GpuSoftFeedbackPolicyV1,
     ) -> Result<Self, String> {
         validate_experiment_settings(&scenario.settings, execution)?;
         scheduling_policy.validate(execution)?;
+        soft_feedback_policy.validate(&scenario.settings)?;
         if !scenario.manifolds.is_empty() || point_capacity == 0 {
             return Err(
                 "generated contact solver requires a neutral scenario and nonzero point capacity"
                     .to_owned(),
             );
         }
-        Self::new_with_point_buffer(
+        Self::new_with_point_buffer_and_soft_feedback(
             device,
             storage,
             scenario,
@@ -1574,6 +1615,7 @@ impl GpuFixedFloorSolver {
             permute_edge_build,
             execution,
             scheduling_policy,
+            soft_feedback_policy,
         )
     }
 
@@ -1589,7 +1631,35 @@ impl GpuFixedFloorSolver {
         execution: GpuSolverExecutionV4,
         scheduling_policy: GpuSolverSchedulingPolicyV1,
     ) -> Result<Self, String> {
+        Self::new_with_point_buffer_and_soft_feedback(
+            device,
+            storage,
+            scenario,
+            point_buffer,
+            point_count,
+            topology,
+            permute_edge_build,
+            execution,
+            scheduling_policy,
+            GpuSoftFeedbackPolicyV1::SELECTED,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn new_with_point_buffer_and_soft_feedback(
+        device: &wgpu::Device,
+        storage: &GpuBodyStorage,
+        scenario: &ScenarioV1,
+        point_buffer: &wgpu::Buffer,
+        point_count: u32,
+        topology: GpuGatherTopology,
+        permute_edge_build: bool,
+        execution: GpuSolverExecutionV4,
+        scheduling_policy: GpuSolverSchedulingPolicyV1,
+        soft_feedback_policy: GpuSoftFeedbackPolicyV1,
+    ) -> Result<Self, String> {
         scheduling_policy.validate(execution)?;
+        soft_feedback_policy.validate(&scenario.settings)?;
         let body_count = storage.layout().capacity_elements;
         let topology_layout = TopologyLayout::new(
             topology,
@@ -1606,15 +1676,29 @@ impl GpuFixedFloorSolver {
                     .to_owned(),
             );
         }
-        let (parameters, operations) = operations(
-            scenario,
-            body_count,
-            point_count,
-            topology_layout,
-            permute_edge_build,
-            execution,
-            scheduling_policy,
-        );
+        let (parameters, operations) = if soft_feedback_policy == GpuSoftFeedbackPolicyV1::SELECTED
+        {
+            operations(
+                scenario,
+                body_count,
+                point_count,
+                topology_layout,
+                permute_edge_build,
+                execution,
+                scheduling_policy,
+            )
+        } else {
+            operations_with_soft_feedback(
+                scenario,
+                body_count,
+                point_count,
+                topology_layout,
+                permute_edge_build,
+                execution,
+                scheduling_policy,
+                soft_feedback_policy,
+            )
+        };
         let mut initial_motion = vec![[0.0; 4]; body_count as usize];
         for body in &scenario.bodies {
             initial_motion[body.id.slot as usize] = [
@@ -3455,6 +3539,29 @@ fn operations(
     execution: GpuSolverExecutionV4,
     scheduling_policy: GpuSolverSchedulingPolicyV1,
 ) -> (Vec<PassParamsRaw>, Vec<Operation>) {
+    operations_with_soft_feedback(
+        scenario,
+        body_count,
+        point_count,
+        topology,
+        permute_edge_build,
+        execution,
+        scheduling_policy,
+        GpuSoftFeedbackPolicyV1::SELECTED,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn operations_with_soft_feedback(
+    scenario: &ScenarioV1,
+    body_count: u32,
+    point_count: u32,
+    topology: TopologyLayout,
+    permute_edge_build: bool,
+    execution: GpuSolverExecutionV4,
+    scheduling_policy: GpuSolverSchedulingPolicyV1,
+    soft_feedback_policy: GpuSoftFeedbackPolicyV1,
+) -> (Vec<PassParamsRaw>, Vec<Operation>) {
     let mut parameters = Vec::new();
     let mut operations = Vec::new();
     let body_workgroups = workgroups(body_count);
@@ -3527,7 +3634,7 @@ fn operations(
                     point_count,
                     2,
                     iteration,
-                    1,
+                    soft_feedback_policy.use_bias(iteration),
                     topology,
                     execution.normal_solver,
                 ),
@@ -4578,6 +4685,64 @@ mod tests {
         assert_eq!(topology.incident_base, 4);
         assert_eq!(topology.cursor_base, 8);
         assert_eq!(topology.element_count, 10);
+    }
+
+    #[test]
+    fn soft_feedback_diagnostic_changes_only_second_biased_iteration_parameters() {
+        let scenario = crate::p5_2_settling_review_scenario(
+            16,
+            crate::P5_2SettlingReviewPolicy::SoftCandidate,
+        )
+        .unwrap();
+        let topology = TopologyLayout::new(
+            GpuGatherTopology::StableBodyEdge,
+            17,
+            32,
+            false,
+            GpuColorScheduleV4::CompactIndirect,
+            GpuColorUnitV4::Manifold,
+            GpuSolverSchedulingPolicyV1::SELECTED,
+        )
+        .unwrap();
+        let (selected_parameters, selected_operations) = operations_with_soft_feedback(
+            &scenario,
+            17,
+            32,
+            topology,
+            false,
+            GpuSolverExecutionV4::SELECTED,
+            GpuSolverSchedulingPolicyV1::SELECTED,
+            GpuSoftFeedbackPolicyV1::SELECTED,
+        );
+        let (diagnostic_parameters, diagnostic_operations) = operations_with_soft_feedback(
+            &scenario,
+            17,
+            32,
+            topology,
+            false,
+            GpuSolverExecutionV4::SELECTED,
+            GpuSolverSchedulingPolicyV1::SELECTED,
+            GpuSoftFeedbackPolicyV1::FirstBiasedIterationOnly,
+        );
+        assert_eq!(selected_operations.len(), diagnostic_operations.len());
+        assert_eq!(selected_parameters.len(), diagnostic_parameters.len());
+        let mut differences = 0;
+        for (selected, diagnostic) in selected_parameters.iter().zip(diagnostic_parameters.iter()) {
+            assert_eq!(selected.floats0, diagnostic.floats0);
+            assert_eq!(selected.floats1, diagnostic.floats1);
+            assert_eq!(selected.floats2, diagnostic.floats2);
+            assert_eq!(selected.floats3, diagnostic.floats3);
+            assert_eq!(selected.uints0, diagnostic.uints0);
+            assert_eq!(selected.uints1[..3], diagnostic.uints1[..3]);
+            if selected.uints1[3] != diagnostic.uints1[3] {
+                differences += 1;
+                assert_eq!(selected.uints1[1], 2);
+                assert_eq!(selected.uints1[0], 1);
+                assert_eq!(selected.uints1[3], 1);
+                assert_eq!(diagnostic.uints1[3], 0);
+            }
+        }
+        assert!(differences > 0);
     }
 
     #[test]

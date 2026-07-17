@@ -464,6 +464,19 @@ scheduler, tolerances, capacity, oracle precedence, or product defaults
 changed. This comparator is rejected, not forwarded; isolating the second
 pass's soft-feedback term while retaining `i2` is the next reversible question.
 
+Soft-feedback isolation contract checkpoint, 2026-07-17: a laboratory-only
+execution policy now keeps both selected colored manifold-block iterations but
+applies the softness bias, mass scale, and accumulated-impulse decay only in
+the first biased iteration. The second iteration remains an unbiased normal
+constraint solve; the later selected relaxation passes are unchanged. Tests
+prove the operation count, solver/scheduler, and every parameter except the
+second biased iteration's existing `use_bias` word are identical. Standard and
+product constructors are pinned to `every-biased-iteration`, while native and
+Android trace aliases explicitly attest `first-biased-iteration-only`. No
+scenario setting, coefficient, shader, tolerance, allocation, dispatch,
+readback, or product default changed. Cross-backend evidence decides whether
+this comparator is rejected or earns the full frozen matrix.
+
 Stop early for human direction before a coefficient/identity-band default
 change, tolerance or quality-band revision, scheduler/solver/accumulation
 change, portability exception, simulation-dependent readback, CPU fallback,

@@ -221,6 +221,37 @@ impl GpuGeneratedContactGraph {
         scheduling_policy: GpuSolverSchedulingPolicyV1,
         identity_policy: ContactIdentityPolicyV1,
     ) -> Result<Self, String> {
+        Self::new_with_topologies_execution_scheduling_identity_and_soft_feedback(
+            device,
+            storage,
+            scenario,
+            persistence_topology,
+            gather_topology,
+            permute_edge_build,
+            permute_pair_build,
+            fingerprint_mask,
+            execution,
+            scheduling_policy,
+            identity_policy,
+            crate::GpuSoftFeedbackPolicyV1::SELECTED,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn new_with_topologies_execution_scheduling_identity_and_soft_feedback(
+        device: &wgpu::Device,
+        storage: &GpuBodyStorage,
+        scenario: &ScenarioV1,
+        persistence_topology: GpuContactPersistenceTopology,
+        gather_topology: GpuGatherTopology,
+        permute_edge_build: bool,
+        permute_pair_build: bool,
+        fingerprint_mask: u32,
+        execution: GpuSolverExecutionV4,
+        scheduling_policy: GpuSolverSchedulingPolicyV1,
+        identity_policy: ContactIdentityPolicyV1,
+        soft_feedback_policy: crate::GpuSoftFeedbackPolicyV1,
+    ) -> Result<Self, String> {
         if !scenario.manifolds.is_empty()
             || !scenario.contact_cache.is_empty()
             || !scenario.actions.is_empty()
@@ -265,17 +296,18 @@ impl GpuGeneratedContactGraph {
             point_capacity,
             size_of::<PointInputRaw>() as u32,
         )?;
-        let solver = GpuFixedFloorSolver::new_generated_experiment_with_topology_and_scheduling(
-            device,
-            storage,
-            scenario,
-            &solver_points,
-            point_capacity,
-            gather_topology,
-            permute_edge_build,
-            execution,
-            scheduling_policy,
-        )?;
+        let solver = GpuFixedFloorSolver::new_generated_experiment_with_topology_scheduling_and_soft_feedback(
+                device,
+                storage,
+                scenario,
+                &solver_points,
+                point_capacity,
+                gather_topology,
+                permute_edge_build,
+                execution,
+                scheduling_policy,
+                soft_feedback_policy,
+            )?;
         let persistence = GeneratedPersistenceGraph::new(
             device,
             persistence_topology,
@@ -2046,6 +2078,28 @@ impl GpuGeneratedContactRunner {
         identity_policy: ContactIdentityPolicyV1,
         submission_batch_steps: u32,
     ) -> Result<GpuGeneratedContactSeriesV1, String> {
+        self.run_contact_policy_observation_series_with_submission_batch_and_soft_feedback(
+            scenario,
+            observation_interval_steps,
+            completed_steps,
+            identity_policy,
+            submission_batch_steps,
+            crate::GpuSoftFeedbackPolicyV1::SELECTED,
+        )
+    }
+
+    /// Runs a laboratory-only soft-feedback formulation comparator. The
+    /// selected and product-facing series methods always pass the selected
+    /// every-biased-iteration policy.
+    pub fn run_contact_policy_observation_series_with_submission_batch_and_soft_feedback(
+        &self,
+        scenario: &ScenarioV1,
+        observation_interval_steps: u32,
+        completed_steps: u32,
+        identity_policy: ContactIdentityPolicyV1,
+        submission_batch_steps: u32,
+        soft_feedback_policy: crate::GpuSoftFeedbackPolicyV1,
+    ) -> Result<GpuGeneratedContactSeriesV1, String> {
         if observation_interval_steps == 0
             || completed_steps == 0
             || !completed_steps.is_multiple_of(observation_interval_steps)
@@ -2073,7 +2127,7 @@ impl GpuGeneratedContactRunner {
         let execution = GpuSolverExecutionV4::SELECTED;
         let scheduling_policy = GpuSolverSchedulingPolicyV1::SELECTED;
         let graph =
-            GpuGeneratedContactGraph::new_with_topologies_execution_scheduling_and_identity_policy(
+            GpuGeneratedContactGraph::new_with_topologies_execution_scheduling_identity_and_soft_feedback(
                 &self.device,
                 &storage,
                 scenario,
@@ -2085,6 +2139,7 @@ impl GpuGeneratedContactRunner {
                 execution,
                 scheduling_policy,
                 identity_policy,
+                soft_feedback_policy,
             )?;
         let snapshot_count = completed_steps / observation_interval_steps;
         let readbacks =
