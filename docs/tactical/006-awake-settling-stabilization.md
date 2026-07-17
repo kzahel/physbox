@@ -355,7 +355,7 @@ portability exception.
 - [x] Run hard/direct, identity-only, softness-only, and combined controls to
   attribute the failure to identity state, soft-contact feedback, their
   interaction, or backend execution.
-- [ ] Compare the 16-stack and minimized four-body energy reproducer using
+- [x] Compare the 16-stack and minimized four-body energy reproducer using
   bounded final-flush body, energy, contact, cache, and identity traces. No
   interactive frame may require readback.
 - [ ] Minimize any backend divergence into a permanent shared scenario and
@@ -406,9 +406,22 @@ native `physbox-settling-backend-trace` adapter and
 four-dynamic-body energy reproducer on Metal or Android Vulkan. The minimized
 source is reconstructed by the engine-owned scenario builder and locked to its
 published canonical hash; neither adapter authors a fixture or advances an
-interactive frame from readback. This establishes the bounded trace mechanism,
-not a cross-backend conclusion; the comparison checkbox remains open until
-clean artifacts are captured and verified.
+interactive frame from readback.
+
+Cross-backend trace checkpoint, 2026-07-17: the clean
+[trace package](../../evidence/p5.2b-s6.5a-backend-traces/README.md) preserves
+all four 16-stack controls plus the minimized four-body reproducer on Metal and
+the hardware-backed AVD at exact per-step cadence. Candidate body values differ
+at step 1, but feature topology and cache keys remain identical through step
+796. Vulkan has already accumulated 298 consecutive frozen-epsilon energy
+increases from steps 499 through 796; its first identity transition occurs at
+797 and structural loss follows at 892. The minimized case has 300 settled
+energy increases and zero settled churn/cache misses on both backends, with
+Vulkan reaching 168.59× Metal's last-quartile peak energy. Therefore the AVD
+collapse is the shared contact-feedback instability amplified earlier, with a
+secondary identity transition after the unstable run is established—not a
+discrete identity flip initiating a separate failure. Promotion remains
+blocked. A depth sweep and smallest AVD structural reproducer remain open.
 
 Stop early for human direction before a coefficient/identity-band default
 change, tolerance or quality-band revision, scheduler/solver/accumulation

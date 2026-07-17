@@ -194,10 +194,7 @@ an independently safe fix and rules out a simple interaction-only failure:
 the apparent desktop win is a backend-sensitive cancellation between two
 individually unstable changes. The
 [checked package](../../evidence/p5.2b-s6.5a-contact-attribution/README.md)
-keeps promotion blocked. Comparable bounded energy, body, contact, feature,
-and cache traces are still required to locate the first numerical divergence
-and distinguish an earlier loss of the same cancellation from a separate AVD
-transition.
+keeps promotion blocked.
 
 The bounded S6.5a trace contract uses the same generated-contact body storage,
 construction graph, selected solver/scheduler, and shared scenario builders as
@@ -208,6 +205,23 @@ native Android adapter runs it on Vulkan; both consume the engine-owned four
 factorial policies and the permanent minimized mixed-pile source. This is
 diagnostic instrumentation rather than another engine or an interactive
 readback dependency.
+
+The clean bounded traces resolve the first S6.5a causal question. Candidate
+body values differ across Metal and Vulkan from step 1, but their contact
+feature topology and cache-key sets remain identical through step 796. By then
+the AVD has already completed 298 consecutive energy increases under the
+frozen S6.2 epsilon, beginning at step 499; its first identity transition is
+step 797 and structural loss follows at step 892. The permanent four-dynamic-
+body reproducer independently rises for all 300 settled intervals on both
+backends with zero settled feature churn and zero warm-cache misses, while the
+AVD reaches 168.59× Metal's last-quartile peak energy and 12.97× its residual
+speed. The
+[checked trace package](../../evidence/p5.2b-s6.5a-backend-traces/README.md)
+therefore attributes the AVD collapse to the shared contact-feedback
+instability crossing its threshold much earlier on Vulkan. The later identity
+transition may amplify the collapse but does not initiate it. This result does
+not authorize coefficient retuning or promotion; the next gate is the stack-
+depth threshold and smallest structural reproducer.
 
 ## Authority corrections
 
