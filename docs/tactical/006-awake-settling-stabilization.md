@@ -1,11 +1,12 @@
 # S6: Awake settling stabilization
 
-Status: active, 2026-07-17. Human review accepted the S5.4c scheduler
+Status: active diagnostic, 2026-07-17. Human review accepted the S5.4c scheduler
 recommendation and authorized autonomous execution through S6.4. S6.1–S6.3
 are complete. S6.4 is complete with scalar/GPU comparators, factorial, failure
-minima, authority/cost, and cross-host evidence. The compact S6.5 decision
-package is ready for mandatory human review; the AVD 16-stack collapse blocks
-default promotion.
+minima, authority/cost, and cross-host evidence. Human review accepted the
+S6.5 recommendation to hold promotion and authorized S6.5a cross-backend
+diagnosis/minimization. The AVD 16-stack collapse and retained energy failures
+continue to block default promotion.
 
 Governing topic:
 [awake settling and rest stability](../topics/awake-settling-and-rest-stability.md).
@@ -310,7 +311,7 @@ and clean evidence are independently reviewable commits.
 - [ ] Ask the reviewer to judge synchronized playback and, after they choose
   to deploy the named commit, the direct web candidate against the current
   baseline on touch and desktop.
-- [ ] Record acceptance, rejection, requested follow-up, and the exact chosen
+- [x] Record acceptance, rejection, requested follow-up, and the exact chosen
   settings without promoting them in the review-record commit.
 
 Outcome: human judgment resolves the visible feel/quality tradeoff with the
@@ -334,7 +335,58 @@ beside Box2D and the promotion-blocking AVD 16-stack collapse. The package
 recommends holding promotion and authorizing a targeted cross-backend
 diagnosis/minimization before another review. Product defaults, physical
 coefficients, tolerances, and oracle precedence remain unchanged. The next two
-checkboxes require explicit human response and therefore remain open.
+web/deployed-feel checkbox remains open because no comparison commit has been
+pushed or deployed.
+
+Decision record, 2026-07-17: human review accepted the package recommendation.
+The exact `prior-contact-hysteresis / 30 Hz / damping 10 / static×1` candidate
+remains the unpromoted laboratory leader. Review explicitly authorized a
+targeted AVD diagnosis and minimization, with the first question being whether
+the Vulkan collapse and the already-minimized rising-energy modes share one
+feedback root cause. This acceptance does not authorize coefficient retuning,
+a widened identity band, a changed quality gate, a production default, or a
+portability exception.
+
+### S6.5a — authorized portability and energy diagnosis
+
+- [ ] Reproduce candidate 16 on Metal and the hardware-backed AVD at exact
+  checkpoints; sweep stack depth and first structural divergence without
+  changing the frozen source, solver, scheduler, or gate.
+- [ ] Run hard/direct, identity-only, softness-only, and combined controls to
+  attribute the failure to identity state, soft-contact feedback, their
+  interaction, or backend execution.
+- [ ] Compare the 16-stack and minimized four-body energy reproducer using
+  bounded final-flush body, energy, contact, cache, and identity traces. No
+  interactive frame may require readback.
+- [ ] Minimize any backend divergence into a permanent shared scenario and
+  first-divergence artifact with exact replay, capacity, provenance, and
+  success sentinel.
+- [ ] Implement only reversible laboratory corrections justified by the
+  traces; do not retune coefficients or promote a policy speculatively.
+- [ ] Re-run the frozen quality, energy, response, capacity, performance,
+  authority, browser, AVD, and available physical-device matrix for every
+  forwarded correction.
+- [ ] Publish a compact diagnosis and recommendation, then stop before any
+  product-default change.
+
+Outcome: determine whether the AVD collapse is the retained energy instability
+crossing a backend-dependent threshold or a distinct identity/backend defect,
+and preserve the smallest reproducer for either conclusion.
+
+Gate: a conclusion must be supported by comparable exact-step traces on Metal
+and AVD. A correction advances only if it removes the backend structure loss
+and the attributable energy failure without weakening structure, response,
+capacity, portability, or complete-step cost. Missing physical hardware is
+reported as a gap, never inferred as a pass.
+
+Commit boundary: decision record; diagnostic contract; each distinct
+minimizer or correction; clean cross-host evidence; and final recommendation
+are separate reviewable commits.
+
+Stop early for human direction before a coefficient/identity-band default
+change, tolerance or quality-band revision, scheduler/solver/accumulation
+change, portability exception, simulation-dependent readback, CPU fallback,
+or another difficult-to-reverse architecture fork.
 
 ### S6.6 — accepted policy integration
 

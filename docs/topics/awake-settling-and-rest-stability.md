@@ -1,8 +1,10 @@
 # Awake settling and rest stability
 
-Status: mandatory S6.5 review, 2026-07-17. Human review authorized S6.1 through
-S6.4 and accepted the bounded parallel scheduler as the baseline. S6.4 is
-complete, but its AVD 16-stack result blocks contact-policy promotion.
+Status: S6.5a cross-backend diagnosis active, 2026-07-17. Human review accepted
+the recommendation to hold promotion and authorized diagnosis/minimization of
+the AVD 16-stack collapse. The exact combined candidate remains an unpromoted
+laboratory lane. Its AVD structure loss and retained rising-energy failures
+block contact-policy promotion.
 Awake settling is a prerequisite for broadphase selection and sleeping
 acceptance. No contact-identity policy, soft-contact coefficients, penetration
 deadband, friction anchor, residual band, or sleep threshold is a product
@@ -171,6 +173,17 @@ captures. The recommendation is to keep the candidate as the laboratory
 leader but hold promotion while the AVD candidate-16 collapse is minimized
 and explained. This is the mandatory human checkpoint; it does not authorize
 a coefficient, identity, quality-band, or product-default change.
+
+S6.5 human decision, 2026-07-17: accept the recommendation. Keep
+`prior-contact-hysteresis / 30 Hz / damping 10 / static×1` as the laboratory
+leader, hold promotion, and diagnose/minimize the AVD divergence. The first
+diagnostic compares the AVD collapse with the retained 16-stack and four-body
+rising-energy modes to determine whether Vulkan merely crosses the same
+feedback threshold earlier or exposes a distinct stateful-identity defect.
+Reversible laboratory instrumentation and corrections are authorized. A
+coefficient retune, wider identity band, changed solver/scheduler, tolerance
+or gate change, portability exception, or product promotion still requires
+human review.
 
 ## Authority corrections
 
