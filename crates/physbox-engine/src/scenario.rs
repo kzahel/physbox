@@ -534,6 +534,34 @@ pub fn p5_2_settling_review_scenario(
     Ok(scenario)
 }
 
+/// Shared soft-contact stack source for the frozen S6.5d 4/8/16 structural
+/// matrix. The relaxation recurrence remains an execution policy and is not
+/// authored into the scenario.
+pub fn p5_2_settling_soft_stack_matrix_scenario(
+    rectangle_count: u32,
+) -> Result<ScenarioV1, ScenarioBuildError> {
+    if !matches!(rectangle_count, 4 | 8 | 16) {
+        return Err(ScenarioBuildError(
+            "settling soft-stack matrix requires 4, 8, or 16 rectangles".to_owned(),
+        ));
+    }
+    let mut scenario = p5_2_centered_rectangle_stack_scenario(
+        rectangle_count,
+        P5_2_CENTERED_STACK_EVIDENCE_STEPS,
+    )?;
+    scenario.id = format!("p5.2-settling-soft-stack-matrix-{rectangle_count}");
+    scenario.settings.contact_softness = Some(ContactSoftnessPolicyV1 {
+        version: CONTACT_SOFTNESS_POLICY_VERSION,
+        contact_hertz: finite(30.0),
+        damping_ratio: finite(10.0),
+        static_contact_hertz_multiplier: finite(1.0),
+    });
+    scenario
+        .validate()
+        .map_err(|error| ScenarioBuildError(error.to_string()))?;
+    Ok(scenario)
+}
+
 /// Returns the permanent four-dynamic-body rising-energy reproducer retained
 /// by the S6.4 failure minimizer. The source is rebuilt from the shared seeded
 /// fixture so native and Android diagnostics cannot fork the scenario.
@@ -2270,6 +2298,26 @@ mod tests {
             );
         }
         assert!(p5_2_settling_review_scenario(4, P5_2SettlingReviewPolicy::HardControl).is_err());
+    }
+
+    #[test]
+    fn p5_2_soft_stack_matrix_is_shared_exact_and_frozen_to_three_depths() {
+        for count in [4, 8, 16] {
+            let source = p5_2_settling_soft_stack_matrix_scenario(count).unwrap();
+            source.validate().unwrap();
+            assert_eq!(source.bodies.len(), count as usize + 1);
+            assert_eq!(source.requested_steps, P5_2_CENTERED_STACK_EVIDENCE_STEPS);
+            let softness = source.settings.contact_softness.unwrap();
+            assert_eq!(softness.contact_hertz.get(), 30.0);
+            assert_eq!(softness.damping_ratio.get(), 10.0);
+            assert_eq!(softness.static_contact_hertz_multiplier.get(), 1.0);
+            assert_eq!(
+                canonical_json(&source).unwrap(),
+                canonical_json(&p5_2_settling_soft_stack_matrix_scenario(count).unwrap()).unwrap()
+            );
+        }
+        assert!(p5_2_settling_soft_stack_matrix_scenario(2).is_err());
+        assert!(p5_2_settling_soft_stack_matrix_scenario(32).is_err());
     }
 
     #[test]

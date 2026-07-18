@@ -14,6 +14,7 @@ use physbox_engine::{
     P5_2_SETTLING_EVIDENCE_STEPS, P5_2SettlingReviewPolicy,
     p5_2_minimized_mixed_pile_energy_scenario, p5_2_minimized_mixed_pile_soft_i1_scenario,
     p5_2_settling_review_scenario, p5_2_settling_soft_i1_comparator_scenario,
+    p5_2_settling_soft_stack_matrix_scenario,
 };
 use physbox_lab::settling::{
     awake_settling_measurement_policy_v2, centered_stack_structure,
@@ -382,7 +383,7 @@ fn point_i2_stack(rectangle_count: u32) -> Result<TraceSource, String> {
 }
 
 fn energy_projection_stack(rectangle_count: u32) -> Result<TraceSource, String> {
-    p5_2_settling_review_scenario(rectangle_count, P5_2SettlingReviewPolicy::SoftCandidate)
+    p5_2_settling_soft_stack_matrix_scenario(rectangle_count)
         .map(|source| {
             (
                 source,
