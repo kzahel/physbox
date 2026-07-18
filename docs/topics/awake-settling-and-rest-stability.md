@@ -1,12 +1,12 @@
 # Awake settling and rest stability
 
-Status: S6.5c no-survivor manual checkpoint, 2026-07-18. All three predeclared
-relaxation policies fail the permanent four-body Metal kill, and the verified
-comparative package is ready for human formulation-policy review. There is no
-survivor for stack, drop, or cross-host forwarding. The exact combined
+Status: S6.5d scalar-first recurrence derivation authorized, 2026-07-18. The
+S6.5c no-survivor result is accepted. Exactly one analytically justified,
+scalar-qualified coupled candidate may reach the GPU; otherwise this phase
+returns to manual review without a GPU experiment. The exact combined
 candidate remains a laboratory lane; hard/direct manifold-block i2 remains
-the product, and no factorial result may promote a settling policy without a
-fresh human decision.
+the product, and no result may promote a settling policy without a fresh human
+decision.
 Awake settling is a prerequisite for broadphase selection and sleeping
 acceptance. No contact-identity policy, soft-contact coefficients, penetration
 deadband, friction anchor, residual band, or sleep threshold is a product
@@ -442,6 +442,38 @@ discrete-energy justification that makes each normal-relaxation boundary
 neutral or dissipative; endpoint cancellation alone is insufficient. It must
 then pass the existing four-body energy and rest bands before reaching Metal
 stacks, AVD, physical hardware, or playback.
+
+S6.5d authorization, 2026-07-18: derive from the clean pinned Box2D v3
+`3a4f0da...` soft-step recurrence rather than from a free-form empirical
+toggle. The authority control is an independent transcription of the public
+equation and records the pin and MIT provenance; copied source is neither
+needed nor permitted. Box2D already executes contact constraints sequentially
+by graph color, with disjoint contacts parallel inside one color. The scalar
+study must therefore preserve the captured compacted PhysBox color order and
+separately identify any effect from PhysBox's coupled two-point block update,
+normal/tangent stage separation, or other schedule difference. A sequential-
+only energy argument is insufficient.
+
+Before any GPU port, a scalar candidate must have a discrete-energy argument
+at every colored normal-relaxation boundary. It must also preserve support
+transfer and penetration resolution on both the permanent four-body
+reproducer and the existing two-step contract fixture. Neutrality obtained by
+removing correction, zeroing impulses, excessive damping, or allowing sag is
+a rejection rather than survival. The frozen S6.2 energy/rest bands and the
+existing structural, penetration, and replay contracts do not change.
+
+The phase is bounded to one derived candidate. First replay the authority
+recurrence as a control under the captured order; derive a coupled term only
+where that comparison proves it necessary. If no recurrence is both stable
+under colored order and scalar-predicts quality retention, stop for the
+physical-policy decision without editing the GPU path. If one scalar candidate
+survives, port that candidate alone as an explicitly named laboratory policy.
+It must pass the permanent four-body energy/rest gate and matched pass trace,
+then introduce no new loss in the Metal 4/8/16 stack matrix. Only then run the
+realistic drops, one AVD matched-pass overlay, and available physical hardware.
+The AVD overlay must show the MoltenVK amplification collapsing with the common
+defect. Every result returns to human review; S6.6 promotion remains
+unauthorized.
 
 ## Authority corrections
 

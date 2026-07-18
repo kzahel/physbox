@@ -1,11 +1,10 @@
 # S6: Awake settling stabilization
 
-Status: S6.5c no-survivor manual checkpoint, 2026-07-18. S6.1–S6.4 are
-complete. All three predeclared relaxation arms are rejected by the four-body
-Metal kill; the verified comparative package is ready for human formulation-
-policy review. There is no survivor for stack, drop, or cross-host forwarding.
-Hard/direct manifold-block i2 remains the product; every settling candidate
-remains unpromoted.
+Status: S6.5d scalar-first recurrence derivation active, 2026-07-18. S6.1–S6.4
+are complete and the S6.5c no-survivor result is accepted. One analytically
+justified, scalar-qualified coupled candidate may reach the GPU. Hard/direct
+manifold-block i2 remains the product; every settling candidate remains
+unpromoted.
 
 Governing topic:
 [awake settling and rest stability](../topics/awake-settling-and-rest-stability.md).
@@ -737,6 +736,62 @@ accounts. No promotion candidate exists. The recommendation is to retain the
 hard/direct manifold-block i2 product and, only with human authorization,
 derive an energy-stable coupled soft-contact recurrence in scalar Rust before
 another bounded GPU factorial. S6.6 is not authorized by this result.
+
+### S6.5d — authorized scalar-first coupled recurrence
+
+- [x] Freeze the authority source, scalar gates, one-candidate limit, forwarding
+  order, and stop branches before deriving or measuring a candidate.
+- [ ] Independently transcribe pinned unmodified Box2D v3 `3a4f0da...`
+  softness and contact updates into the scalar laboratory. Record its MIT
+  provenance and validate the transcription against analytic single-point
+  cases without copying reference implementation code.
+- [ ] Replay the authority recurrence over the captured compacted PhysBox color
+  order. Box2D already runs sequential graph colors with disjoint work inside
+  each color, so attribute coupled-block, normal/tangent stage, and any other
+  schedule differences separately rather than calling coloring itself novel.
+- [ ] Derive at most one coupled candidate with a discrete-energy argument that
+  holds at every colored normal-relaxation boundary. A proof that assumes a
+  different sequential order does not qualify.
+- [ ] Before a GPU port, require neutral-or-dissipative scalar relaxation plus
+  penetration resolution and support transfer on the permanent four-body
+  reproducer and the existing two-step contract fixture. Reject zero-correction,
+  excessive-damping, sagging, or endpoint-cancellation solutions.
+- [ ] If and only if the scalar gate passes, port that one candidate as a named
+  laboratory policy while leaving every product constructor on hard/direct
+  manifold-block i2. Reuse matched-precision per-pass accounting.
+- [ ] Apply the permanent Metal four-body energy/rest kill first, then require
+  no new structural loss on the governed 4/8/16 Metal stacks. Run realistic
+  drops only after both gates pass.
+- [ ] Forward a survivor to one matched-boundary `jstorrent-tablet` AVD overlay
+  and available physical hardware. Require the MoltenVK amplification to
+  collapse with the common defect; record unavailable hardware as a gap.
+- [ ] Publish a verified review package with the authority control, derivation,
+  scalar quality evidence, the one GPU candidate or scalar-stop disposition,
+  minimized failures, provenance, and a recommendation. Do not promote or
+  push.
+
+Outcome: determine whether one authority-derived coupled recurrence can make
+soft settling energy-stable under the selected compact colored schedule while
+retaining the quality benefit that motivated softness.
+
+Gate: energy stability is necessary but insufficient. Scalar support transfer,
+penetration resolution, replay, and frozen quality bands must pass before GPU
+work. The GPU candidate limit is one. Product defaults, authority precedence,
+tolerances, scheduler/solver family, pacing, and capacity policy remain
+unchanged.
+
+Stop branches: if the authority control exposes no derivable coupled recurrence
+with a colored-order energy argument and scalar quality retention, stop before
+GPU work. If the one GPU port diverges from its scalar recurrence, fix only an
+attributable implementation defect inside that candidate and rerun the cheap
+gate. If scalar and GPU agree but a governed gate fails, preserve the minimized
+failure and return for the choice between deferring softness and accepting a
+different physical policy. No second recurrence is tried autonomously.
+
+Commit boundaries: this authorization contract; authority transcription and
+analytic controls; scalar derivation and quality decision; the single GPU port
+if authorized by scalar results; Metal kill/matrix; cross-host forwarding; and
+the final verified checkpoint are separately reviewable commits.
 
 ### S6.6 — accepted policy integration
 
