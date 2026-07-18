@@ -636,6 +636,18 @@ static-stiff E4 mandatory under the authorized program, and does not activate
 fixed-anchor E5 or require a formulation stop. Product settings remain
 unchanged.
 
+S9 E2 disposition, 2026-07-18: the clean
+[static-late full-corpus package](../../evidence/p5.2b-s9.4-arm-static-late/README.md)
+discards the first routed arm. Shallow behavior is materially quieter, but
+16-stack last-quartile energy regresses `62.11%`, its settled quartile
+envelope rises, and only the 4-stack clears the paired 25% speed-and-energy
+threshold. The 32-stack first loss also moves from step 29 to 23. The arm is
+structurally disqualified when its declared four-color static partition
+atomically exhausts the unchanged solver-color capacity on the accepted
+mixed-pile fixture and both 100-body buckets. Exact replay and minimized
+prefixes establish a measured arm failure, not a product regression. E2 is
+not eligible for combinations; mandatory E3 and E4 continue independently.
+
 ## Authority corrections
 
 Two plausible techniques must not be mislabeled as direct Box2D v3 parity:

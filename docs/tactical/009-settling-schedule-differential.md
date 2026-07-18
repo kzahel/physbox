@@ -398,6 +398,21 @@ time prefix and any atomic execution failure, so a discarded arm cannot leave
 its reproducer only in a trace. The runner changes no product constructor or
 solver policy.
 
+E2 quality checkpoint, 2026-07-18: the
+[verified static-late package](../../evidence/p5.2b-s9.4-arm-static-late/README.md)
+discards E2. It improves 4-stack speed/energy by `99.36% / ~100%` and 8-stack
+by `13.79% / 56.72%`, but 16-stack speed improves only `22.05%` while last-
+quartile energy regresses `62.11%` to `0.5456647` and its quartile envelope
+rises. Only one stack meets the paired 25% threshold. The 32-stack first loss
+regresses from step 29 to 23. More decisively, the disjoint four-color static
+partition atomically exhausts the unchanged 32-color capacity on the accepted
+small-mixed-pile fixture at step 52 and on the two 100-body buckets at steps
+2/5. Exact structural-loss and execution-failure prefixes are preserved; the
+existing fifth-conflicting-static-contact test is the body/contact-minimal
+capacity reproducer. All series replay exactly and match final-only state.
+E2 is not a material survivor and therefore cannot participate in any of the
+three combinations, all of which require E2.
+
 ### S9.5 — survivor cost, cross-host, winner determination
 
 - [ ] For the best at most two material survivors by 16-stack settled energy:

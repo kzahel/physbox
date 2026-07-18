@@ -553,6 +553,17 @@ hardware-backed AVD, boundary, and smoke gates pass. The
 [implementation note](../../evidence/p5.2b-s9.4-arm-fused-normal-tangent/IMPLEMENTATION.md)
 records the controls; S9.4 still owns the arm's quality disposition.
 
+S9 E2 quality disposition, 2026-07-18: the clean
+[full-corpus package](../../evidence/p5.2b-s9.4-arm-static-late/README.md)
+discards static-late. It nearly eliminates 4-stack residuals, but 16-stack
+last-quartile energy rises `62.11%`, the 32-stack first loss moves from step
+29 to 23, and the four-color static partition atomically exhausts
+`solver-colors` on the accepted mixed-pile fixture and both 100-body buckets.
+The fixed 32-color capacity rule is preserved; E2 is rejected rather than
+expanded or partially committed. Exact earliest-loss and execution-failure
+prefixes plus the existing fifth-static-conflict minimal test preserve the
+failure. E2 is not eligible for a combination or product selection.
+
 S9 E4 implementation checkpoint, 2026-07-18: the unpromoted
 `static-stiff-hard` coefficient policy gives contacts with a static endpoint
 the single declared hard tuple `[0.4, 1, 0]`, while dynamic contacts retain
