@@ -1,10 +1,11 @@
 # S6: Awake settling stabilization
 
-Status: S6.5b per-pass energy diagnosis active, 2026-07-18. S6.1–S6.4 are
+Status: S6.5b formulation/policy manual checkpoint, 2026-07-18. S6.1–S6.4 are
 complete. Human review accepted the S6.5 recommendation to hold promotion and
-the S6.5a rejection of every bounded correction. The AVD structure loss and
-cross-host energy failures continue to block default promotion. S6.5b now
-localizes the first energy-producing pass before any formulation decision.
+the S6.5a rejection of every bounded correction. Matched-precision Metal and
+scalar evidence localizes the retained energy injection to normal relaxation
+and agrees on its recurrence, so the predeclared branch now requires human
+review. Every settling candidate remains unpromoted.
 
 Governing topic:
 [awake settling and rest stability](../topics/awake-settling-and-rest-stability.md).
@@ -542,18 +543,18 @@ or another difficult-to-reverse architecture fork.
   state and rounding at the same operation boundaries. Report both strict
   ordered-`f32` kinetic energy and compensated wider accumulation over the
   identical captured `f32` values.
-- [ ] Compare Metal with the scalar trace first. Attribute the first material
+- [x] Compare Metal with the scalar trace first. Attribute the first material
   body/impulse divergence independently of energy-summation precision and
   retain the exact input, operation index, ULP/absolute delta, and surrounding
   contact state.
-- [ ] Keep clean pinned Box2D as the world-behavior authority. Use its public
+- [x] Keep clean pinned Box2D as the world-behavior authority. Use its public
   process-isolated trace first; create a separate patch-digested microscope
   only if the localized question cannot be answered from public state.
 - [ ] After the common energy-producing pass is known, run the same final-flush
   trace on the hardware-backed `jstorrent-tablet` AVD to localize where
   MoltenVK amplifies it. Attempt the physical-device lane when available and
   report absence or lock state as a gap.
-- [ ] If GPU state diverges from the scalar recurrence, fix only the
+- [x] If GPU state diverges from the scalar recurrence, fix only the
   attributable implementation defect inside the selected manifold-block
   family and re-run the frozen quality/energy/response/capacity/performance/
   authority/platform matrix. If they agree while violating the energy gate,
@@ -601,6 +602,21 @@ reports strict ordered-`f32` and compensated-`f64` kinetic energy plus raw
 exact-bit, maximum absolute, and ULP state differences. A two-step Metal
 fixture first differs at pass 33 by one ULP; no pass/fail bound, physical
 tolerance, or product coefficient changes with this diagnostic contract.
+
+Metal/authority decision checkpoint, 2026-07-18: the clean
+[S6.5b package](../../evidence/p5.2b-s6.5b-pass-energy/README.md) brackets step
+900 of the permanent reproducer. GPU kinetic energy rises
+`1.9601904193100975e-8`; independent scalar pass deltas sum to
+`1.9598340244749856e-8`, only `3.563948351118385e-12` apart. All eight normal-
+relaxation passes inject energy in both recurrences, totaling
+`2.7251938749029784e-6` on GPU and `2.7251939285323583e-6` in scalar Rust.
+Pinned unmodified awake Box2D remains near `8.4e-13` kinetic energy and changes
+by only `3.6376413761573665e-15` across steps 899–900. The evidence therefore
+does not support an attributable GPU implementation fix; it triggers the
+predeclared formulation/policy stop. The AVD per-pass trace remains unchecked
+because that stop occurs before the optional amplification-localization lane,
+not because AVD behavior is inferred. Hard/direct manifold-block i2 remains
+selected and every candidate remains unpromoted.
 
 ### S6.6 — accepted policy integration
 

@@ -1,10 +1,11 @@
 # Awake settling and rest stability
 
-Status: S6.5b per-pass energy diagnosis authorized, 2026-07-18. Human review
+Status: S6.5b formulation/policy review required, 2026-07-18. Human review
 accepted the S6.5a rejection and kept every settling candidate unpromoted. The
-exact combined candidate remains a laboratory lane; its portability and
-retained energy failures block contact-policy promotion while matched-precision
-scalar/GPU pass accounting localizes the first injected-energy signal.
+exact combined candidate remains a laboratory lane; clean matched-precision
+Metal/scalar evidence agrees that normal relaxation injects the retained
+energy, while pinned Box2D stays quiet. The predeclared stop branch now blocks
+any formulation or physical-policy change pending human review.
 Awake settling is a prerequisite for broadphase selection and sleeping
 acceptance. No contact-identity policy, soft-contact coefficients, penetration
 deadband, friction anchor, residual band, or sleep threshold is a product
@@ -327,8 +328,33 @@ divergence from CPU-versus-GPU trigonometry. The report retains strict
 ordered-`f32` and compensated wider kinetic-energy accounts together with raw
 bit, absolute, and ULP state differences. The small two-step contract fixture
 has only a one-ULP first difference; this observation is not a newly accepted
-numerical tolerance. The permanent settled-window Metal attribution remains
-open, and all candidates remain unpromoted.
+numerical tolerance. At that checkpoint the permanent settled-window Metal
+attribution was still open, and all candidates remained unpromoted.
+
+S6.5b decision, 2026-07-18: the clean
+[matched-precision package](../../evidence/p5.2b-s6.5b-pass-energy/README.md)
+captures step 900 of the permanent four-dynamic-body reproducer at all 56
+logical pass boundaries. GPU kinetic energy rises `1.9601904193100975e-8` and
+the scalar pass sum predicts `1.9598340244749856e-8`; their difference is
+`3.563948351118385e-12`, or `0.01818%` of the GPU rise. Every one of the eight
+normal-relaxation passes injects energy in both recurrences. Their totals are
+`2.7251938749029784e-6` on Metal and `2.7251939285323583e-6` in scalar Rust.
+The largest absolute state-component difference is `1.2677629e-7`; large ULP
+counts belong to near-zero tangent impulses and are retained rather than
+misused as a physical tolerance.
+
+Fresh process-isolated unmodified Box2D `3a4f0da...`, with sleeping disabled,
+stays near `8.4e-13` kinetic energy and changes only
+`3.6376413761573665e-15` from step 899 to 900. The candidate recurrence is
+therefore millions of times more active than the declared rigid behavior
+target, while GPU and scalar agree on the energy-producing update. This does
+not support an autonomous GPU implementation fix. Per the frozen branch, work
+stops for review before changing relaxation formulation, accumulation order,
+coefficients, identity, solver/scheduler architecture, or the awake energy
+gate. The AVD per-pass overlay was not run because it follows, rather than
+precedes, that stop branch. No AVD pass is inferred. Hard/direct manifold-block
+i2 remains the selected product; the soft/prior candidate and every S6.5a
+correction remain unpromoted.
 
 ## Authority corrections
 
