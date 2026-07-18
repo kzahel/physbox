@@ -382,6 +382,19 @@ checkpoint in this tactical.
 
 Commit boundaries: one evidence commit per arm/combination.
 
+S9.4 runner checkpoint, 2026-07-18: the S9 evidence runner now admits exactly
+E2, E3, E4, and the three predeclared compositions. It selects the already-
+proved island dispatch form through 64 bodies and the scalable per-color form
+above that boundary, while retaining the arm's scheduling and coefficient
+identity. Each clean run covers all 15 frozen scenes, captures a per-step
+series and exact replay, checks the final-only body/manifold/cache state, and
+computes every material-gate clause directly against the hashed clean S9.1
+manifest. For the previously prose-only 16-stack trend clause,
+"nonregressing positive run" means no longer than S9.1 and "nonrising
+quartile envelope" uses the existing S6.2 absolute/relative epsilon on the
+candidate's first-to-last settled quartiles. Partial-corpus evidence fails
+closed, and the runner changes no product constructor or solver policy.
+
 ### S9.5 — survivor cost, cross-host, winner determination
 
 - [ ] For the best at most two material survivors by 16-stack settled energy:

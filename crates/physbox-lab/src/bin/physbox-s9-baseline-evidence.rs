@@ -13,9 +13,10 @@ use physbox_contracts::{
     SettlingSummaryV2, ShapeV1, Validate, canonical_hash, sha256_bytes,
 };
 use physbox_engine::{
-    GpuGeneratedContactRunner, GpuNormalRelaxationPolicyV1, GpuSoftFeedbackPolicyV1,
-    GpuSolverExecutionV4, GpuSolverSchedulingPolicyV1, P5_2_SETTLING_EVIDENCE_STEPS,
-    P5_2BucketShape, P5_2SettlingFixtureKind, p5_2_box2d_world_projection, p5_2_bucket_scenario,
+    GpuColoredDispatchV1, GpuContactCoefficientPolicyV1, GpuGeneratedContactRunner,
+    GpuNormalRelaxationPolicyV1, GpuSoftFeedbackPolicyV1, GpuSolverExecutionV4,
+    GpuSolverSchedulingPolicyV1, P5_2_SETTLING_EVIDENCE_STEPS, P5_2BucketShape,
+    P5_2SettlingFixtureKind, p5_2_box2d_world_projection, p5_2_bucket_scenario,
     p5_2_centered_rectangle_stack_scenario, p5_2_minimized_mixed_pile_hard_scenario,
     p5_2_settling_fixture_scenario,
 };
@@ -29,7 +30,7 @@ use physbox_lab::{
         settling_series_v2,
     },
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 const BOX2D_REVISION: &str = "3a4f0da8374af61293a03021c9a0b3ebcfe67948";
 const FULL_CHECKPOINTS: [u32; 7] = [1, 60, 180, 600, 900, 1_050, 1_200];
@@ -81,6 +82,191 @@ struct Manifest {
     oracle_precedence_changed: bool,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ArmDefinition {
+    id: &'static str,
+    components: &'static [&'static str],
+    scheduling_policy: GpuSolverSchedulingPolicyV1,
+    contact_coefficient_policy: GpuContactCoefficientPolicyV1,
+}
+
+impl ArmDefinition {
+    fn named(id: &str) -> Result<Self, String> {
+        let selected = GpuSolverSchedulingPolicyV1::SELECTED;
+        let static_late = GpuSolverSchedulingPolicyV1::STATIC_LATE;
+        let fused = GpuSolverSchedulingPolicyV1::FUSED_NORMAL_TANGENT;
+        let fused_static_late = GpuSolverSchedulingPolicyV1 {
+            colored_dispatch: GpuColoredDispatchV1::PerColorIndirectFusedNormalTangent,
+            ..static_late
+        };
+        match id {
+            "static-late" => Ok(Self {
+                id: "static-late",
+                components: &["E2"],
+                scheduling_policy: static_late,
+                contact_coefficient_policy: GpuContactCoefficientPolicyV1::SELECTED,
+            }),
+            "fused-normal-tangent" => Ok(Self {
+                id: "fused-normal-tangent",
+                components: &["E3"],
+                scheduling_policy: fused,
+                contact_coefficient_policy: GpuContactCoefficientPolicyV1::SELECTED,
+            }),
+            "static-stiff-hard" => Ok(Self {
+                id: "static-stiff-hard",
+                components: &["E4"],
+                scheduling_policy: selected,
+                contact_coefficient_policy: GpuContactCoefficientPolicyV1::StaticStiffHard,
+            }),
+            "static-late-static-stiff-hard" => Ok(Self {
+                id: "static-late-static-stiff-hard",
+                components: &["E2", "E4"],
+                scheduling_policy: static_late,
+                contact_coefficient_policy: GpuContactCoefficientPolicyV1::StaticStiffHard,
+            }),
+            "fused-normal-tangent-static-late" => Ok(Self {
+                id: "fused-normal-tangent-static-late",
+                components: &["E3", "E2"],
+                scheduling_policy: fused_static_late,
+                contact_coefficient_policy: GpuContactCoefficientPolicyV1::SELECTED,
+            }),
+            "fused-normal-tangent-static-late-static-stiff-hard" => Ok(Self {
+                id: "fused-normal-tangent-static-late-static-stiff-hard",
+                components: &["E3", "E2", "E4"],
+                scheduling_policy: fused_static_late,
+                contact_coefficient_policy: GpuContactCoefficientPolicyV1::StaticStiffHard,
+            }),
+            _ => Err(format!("unknown S9 arm {id}")),
+        }
+    }
+
+    fn scheduling_for_body_capacity(self, body_capacity: u32) -> GpuSolverSchedulingPolicyV1 {
+        let mut policy = self.scheduling_policy;
+        if body_capacity <= GpuSolverSchedulingPolicyV1::SMALL_WORLD_BODY_CAPACITY_MAX {
+            policy.colored_dispatch = if policy.colored_dispatch.fuses_normal_tangent() {
+                GpuColoredDispatchV1::WorkgroupPerIslandFusedNormalTangent
+            } else {
+                GpuColoredDispatchV1::WorkgroupPerIsland
+            };
+        }
+        policy
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ArmManifest {
+    schema_version: u32,
+    observation_version: u32,
+    artifact_kind: &'static str,
+    run_id: String,
+    source_revision: String,
+    source_dirty: bool,
+    source_patch_digest: Option<String>,
+    adapter: physbox_engine::AdapterDiagnostics,
+    policy: physbox_contracts::SettlingMeasurementPolicyV2,
+    arm: ArmDefinition,
+    baseline: BaselineIdentity,
+    scenes: Vec<ArmSceneEvidence>,
+    material_gate: MaterialGateEvidence,
+    product_constructor_changed: bool,
+    physical_defaults_changed: bool,
+    numerical_tolerances_changed: bool,
+    oracle_precedence_changed: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BaselineIdentity {
+    artifact_kind: String,
+    source_revision: String,
+    manifest_path: String,
+    manifest_sha256: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ArmSceneEvidence {
+    label: String,
+    kind: String,
+    accepted: bool,
+    requested_steps: u32,
+    source_scenario_hash: String,
+    projection_hash: String,
+    source: ArtifactIdentity,
+    candidate: LaneEvidence,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MaterialGateEvidence {
+    version: u32,
+    accepted_structure_clean: bool,
+    replay_and_capacity_clean: bool,
+    diagnostic_first_loss_nonregressing: bool,
+    two_stack_material_improvements_including_16: bool,
+    remaining_stack_regression_within_five_percent: bool,
+    sixteen_stack_positive_run_nonregressing: bool,
+    sixteen_stack_quartile_envelope_nonrising: bool,
+    passed: bool,
+    disposition: &'static str,
+    stack_comparisons: Vec<StackComparison>,
+    diagnostic_comparisons: Vec<DiagnosticComparison>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct StackComparison {
+    label: String,
+    baseline_settled_linear_speed_max: f32,
+    candidate_settled_linear_speed_max: f32,
+    linear_improvement_fraction: f32,
+    baseline_last_energy_quartile_max: f32,
+    candidate_last_energy_quartile_max: f32,
+    energy_improvement_fraction: f32,
+    improves_both_by_twenty_five_percent: bool,
+    speed_regression_within_five_percent: bool,
+    energy_regression_within_five_percent: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DiagnosticComparison {
+    label: String,
+    baseline_first_structural_loss_step: Option<u32>,
+    candidate_first_structural_loss_step: Option<u32>,
+    nonregressing: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BaselineManifest {
+    artifact_kind: String,
+    source_revision: String,
+    source_dirty: bool,
+    observation_version: u32,
+    policy: physbox_contracts::SettlingMeasurementPolicyV2,
+    scenes: Vec<BaselineScene>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BaselineScene {
+    label: String,
+    accepted: bool,
+    requested_steps: u32,
+    selected_product: BaselineLane,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BaselineLane {
+    structural_pass: bool,
+    first_structural_loss_step: Option<u32>,
+    summary: Option<SettlingSummaryV2>,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SceneEvidence {
@@ -103,6 +289,7 @@ struct SceneEvidence {
 struct LaneEvidence {
     lane: &'static str,
     scheduling_policy: GpuSolverSchedulingPolicyV1,
+    contact_coefficient_policy: GpuContactCoefficientPolicyV1,
     scheduling_policy_digest: String,
     work_vector_digest: String,
     dispatches_per_step: u32,
@@ -155,6 +342,9 @@ fn main() {
 
 fn run() -> Result<(), String> {
     let arguments = Arguments::parse()?;
+    if arguments.arm.is_some() {
+        return run_arm(arguments);
+    }
     let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let (source_revision, source_dirty, source_patch_digest) = repository_state(&repository)?;
     if arguments.require_clean && source_dirty {
@@ -213,6 +403,298 @@ fn run() -> Result<(), String> {
         arguments.output.display()
     );
     Ok(())
+}
+
+fn run_arm(arguments: Arguments) -> Result<(), String> {
+    if arguments.only_scene.is_some() {
+        return Err("S9.4 arm evidence requires the complete frozen corpus".to_owned());
+    }
+    let arm = ArmDefinition::named(arguments.arm.as_deref().expect("arm branch"))?;
+    let baseline_path = arguments
+        .baseline
+        .as_ref()
+        .ok_or_else(|| "S9.4 arm evidence requires --baseline".to_owned())?;
+    let baseline_bytes = fs::read(baseline_path).map_err(|error| error.to_string())?;
+    let baseline: BaselineManifest =
+        serde_json::from_slice(&baseline_bytes).map_err(|error| error.to_string())?;
+    validate_baseline(&baseline)?;
+
+    let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let (source_revision, source_dirty, source_patch_digest) = repository_state(&repository)?;
+    if arguments.require_clean && source_dirty {
+        return Err("S9.4 arm evidence requires a clean source tree".to_owned());
+    }
+    let staging = arguments.output.with_extension("partial");
+    if arguments.output.exists() || staging.exists() {
+        return Err("S9.4 arm output or staging directory already exists".to_owned());
+    }
+    for directory in ["sources", "traces"] {
+        fs::create_dir_all(staging.join(directory)).map_err(|error| error.to_string())?;
+    }
+
+    let runner = pollster::block_on(GpuGeneratedContactRunner::new())?;
+    let mut scenes = Vec::new();
+    for input in scene_inputs()? {
+        eprintln!("S9.4 {} {}", arm.id, input.label);
+        scenes.push(evaluate_arm_scene(&staging, &runner, input, arm)?);
+    }
+    let material_gate = material_gate(&baseline, &scenes)?;
+    let manifest = ArmManifest {
+        schema_version: SCHEMA_VERSION,
+        observation_version: AWAKE_SETTLING_TRACE_VERSION,
+        artifact_kind: "p5.2b-s9.4-arm",
+        run_id: arguments.run_id.clone(),
+        source_revision,
+        source_dirty,
+        source_patch_digest,
+        adapter: runner.diagnostics().clone(),
+        policy: awake_settling_measurement_policy_v2(),
+        arm,
+        baseline: BaselineIdentity {
+            artifact_kind: baseline.artifact_kind,
+            source_revision: baseline.source_revision,
+            manifest_path: baseline_path.to_string_lossy().replace('\\', "/"),
+            manifest_sha256: sha256_bytes(&baseline_bytes),
+        },
+        scenes,
+        material_gate,
+        product_constructor_changed: false,
+        physical_defaults_changed: false,
+        numerical_tolerances_changed: false,
+        oracle_precedence_changed: false,
+    };
+    atomic_json(&staging.join("manifest.json"), &manifest)?;
+    sync_directory(&staging)?;
+    fs::rename(&staging, &arguments.output).map_err(|error| error.to_string())?;
+    sync_directory(arguments.output.parent().unwrap_or(Path::new(".")))?;
+    let manifest_bytes =
+        fs::read(arguments.output.join("manifest.json")).map_err(|error| error.to_string())?;
+    println!(
+        "PHYSBOX5_VALIDATION_SUCCESS host=native scenario=s9.4-{} run_id={} manifest_sha256={} output={}",
+        arm.id,
+        arguments.run_id,
+        sha256_bytes(&manifest_bytes),
+        arguments.output.display()
+    );
+    Ok(())
+}
+
+fn validate_baseline(baseline: &BaselineManifest) -> Result<(), String> {
+    if baseline.artifact_kind != "p5.2b-s9.1-baseline-repin"
+        || baseline.source_dirty
+        || baseline.observation_version != AWAKE_SETTLING_TRACE_VERSION
+        || serialized_hash(&baseline.policy)?
+            != serialized_hash(&awake_settling_measurement_policy_v2())?
+        || baseline.scenes.len() != 15
+        || baseline
+            .scenes
+            .iter()
+            .filter(|scene| scene.accepted)
+            .count()
+            != 13
+    {
+        return Err("S9.4 input is not the frozen clean S9.1 baseline".to_owned());
+    }
+    if baseline.scenes.iter().any(|scene| {
+        scene.requested_steps == P5_2_SETTLING_EVIDENCE_STEPS
+            && scene.accepted
+            && (!scene.selected_product.structural_pass || scene.selected_product.summary.is_none())
+    }) {
+        return Err("S9.1 baseline omits an accepted structure or summary".to_owned());
+    }
+    Ok(())
+}
+
+fn evaluate_arm_scene(
+    staging: &Path,
+    runner: &GpuGeneratedContactRunner,
+    input: SceneInput,
+    arm: ArmDefinition,
+) -> Result<ArmSceneEvidence, String> {
+    let source_scenario_hash = canonical_hash(&input.source).map_err(|error| error.to_string())?;
+    let projection =
+        p5_2_box2d_world_projection(&input.source).map_err(|error| error.to_string())?;
+    let projection_hash = canonical_hash(&projection).map_err(|error| error.to_string())?;
+    let source = write_json_artifact(
+        staging,
+        &format!("sources/{}.json", input.label),
+        &input.source,
+    )?;
+    let scheduling_policy = arm.scheduling_for_body_capacity(input.source.bodies.len() as u32);
+    let candidate = evaluate_lane_with_policy(
+        staging,
+        runner,
+        &input,
+        &projection_hash,
+        arm.id,
+        Some(scheduling_policy),
+        arm.contact_coefficient_policy,
+    )?;
+    Ok(ArmSceneEvidence {
+        label: input.label,
+        kind: input.kind.name().to_owned(),
+        accepted: input.accepted,
+        requested_steps: input.source.requested_steps,
+        source_scenario_hash,
+        projection_hash,
+        source,
+        candidate,
+    })
+}
+
+fn material_gate(
+    baseline: &BaselineManifest,
+    candidates: &[ArmSceneEvidence],
+) -> Result<MaterialGateEvidence, String> {
+    if candidates.len() != baseline.scenes.len() {
+        return Err("S9.4 candidate corpus differs from baseline".to_owned());
+    }
+    let baseline_scene = |label: &str| {
+        baseline
+            .scenes
+            .iter()
+            .find(|scene| scene.label == label)
+            .ok_or_else(|| format!("baseline omits {label}"))
+    };
+    let candidate_scene = |label: &str| {
+        candidates
+            .iter()
+            .find(|scene| scene.label == label)
+            .ok_or_else(|| format!("candidate omits {label}"))
+    };
+    for scene in candidates {
+        let pinned = baseline_scene(&scene.label)?;
+        if scene.accepted != pinned.accepted || scene.requested_steps != pinned.requested_steps {
+            return Err(format!(
+                "candidate scene contract differs for {}",
+                scene.label
+            ));
+        }
+    }
+
+    let accepted_structure_clean = candidates
+        .iter()
+        .filter(|scene| scene.accepted)
+        .all(|scene| scene.candidate.structural_pass);
+    let replay_and_capacity_clean = candidates.iter().all(|scene| {
+        scene.candidate.exact_replay
+            && scene.candidate.instrumentation_final_exact
+            && scene.candidate.capacity_clean
+    });
+    let mut diagnostic_comparisons = Vec::new();
+    for label in [
+        "centered-stack-32-diagnostic",
+        "centered-stack-64-diagnostic",
+    ] {
+        let pinned = baseline_scene(label)?
+            .selected_product
+            .first_structural_loss_step;
+        let candidate = candidate_scene(label)?.candidate.first_structural_loss_step;
+        let nonregressing = match (pinned, candidate) {
+            (None, None) => true,
+            (None, Some(_)) => false,
+            (Some(_), None) => true,
+            (Some(baseline_step), Some(candidate_step)) => candidate_step >= baseline_step,
+        };
+        diagnostic_comparisons.push(DiagnosticComparison {
+            label: label.to_owned(),
+            baseline_first_structural_loss_step: pinned,
+            candidate_first_structural_loss_step: candidate,
+            nonregressing,
+        });
+    }
+    let diagnostic_first_loss_nonregressing = diagnostic_comparisons
+        .iter()
+        .all(|comparison| comparison.nonregressing);
+
+    let mut stack_comparisons = Vec::new();
+    for label in ["centered-stack-4", "centered-stack-8", "centered-stack-16"] {
+        let pinned = baseline_scene(label)?
+            .selected_product
+            .summary
+            .as_ref()
+            .ok_or_else(|| format!("baseline summary omitted for {label}"))?;
+        let candidate = candidate_scene(label)?
+            .candidate
+            .summary
+            .as_ref()
+            .ok_or_else(|| format!("candidate summary omitted for {label}"))?;
+        let baseline_speed = pinned.settled_linear_speed_max.get();
+        let candidate_speed = candidate.settled_linear_speed_max.get();
+        let baseline_energy = pinned.last_energy_quartile_max.get();
+        let candidate_energy = candidate.last_energy_quartile_max.get();
+        let linear_improvement_fraction = (baseline_speed - candidate_speed) / baseline_speed;
+        let energy_improvement_fraction = (baseline_energy - candidate_energy) / baseline_energy;
+        stack_comparisons.push(StackComparison {
+            label: label.to_owned(),
+            baseline_settled_linear_speed_max: baseline_speed,
+            candidate_settled_linear_speed_max: candidate_speed,
+            linear_improvement_fraction,
+            baseline_last_energy_quartile_max: baseline_energy,
+            candidate_last_energy_quartile_max: candidate_energy,
+            energy_improvement_fraction,
+            improves_both_by_twenty_five_percent: linear_improvement_fraction >= 0.25
+                && energy_improvement_fraction >= 0.25,
+            speed_regression_within_five_percent: candidate_speed <= baseline_speed * 1.05,
+            energy_regression_within_five_percent: candidate_energy <= baseline_energy * 1.05,
+        });
+    }
+    let two_stack_material_improvements_including_16 = stack_comparisons
+        .iter()
+        .filter(|comparison| comparison.improves_both_by_twenty_five_percent)
+        .count()
+        >= 2
+        && stack_comparisons.iter().any(|comparison| {
+            comparison.label == "centered-stack-16"
+                && comparison.improves_both_by_twenty_five_percent
+        });
+    let remaining_stack_regression_within_five_percent = stack_comparisons
+        .iter()
+        .filter(|comparison| !comparison.improves_both_by_twenty_five_percent)
+        .all(|comparison| {
+            comparison.speed_regression_within_five_percent
+                && comparison.energy_regression_within_five_percent
+        });
+    let pinned_sixteen = baseline_scene("centered-stack-16")?
+        .selected_product
+        .summary
+        .as_ref()
+        .ok_or_else(|| "baseline 16-stack summary omitted".to_owned())?;
+    let candidate_sixteen = candidate_scene("centered-stack-16")?
+        .candidate
+        .summary
+        .as_ref()
+        .ok_or_else(|| "candidate 16-stack summary omitted".to_owned())?;
+    let sixteen_stack_positive_run_nonregressing =
+        candidate_sixteen.positive_energy_run_max <= pinned_sixteen.positive_energy_run_max;
+    let policy = awake_settling_measurement_policy_v2();
+    let first_energy = candidate_sixteen.first_energy_quartile_max.get();
+    let sixteen_stack_quartile_envelope_nonrising =
+        candidate_sixteen.last_energy_quartile_max.get()
+            <= first_energy
+                + policy.energy_absolute_epsilon.get()
+                + policy.energy_relative_epsilon.get() * first_energy.abs();
+    let passed = accepted_structure_clean
+        && replay_and_capacity_clean
+        && diagnostic_first_loss_nonregressing
+        && two_stack_material_improvements_including_16
+        && remaining_stack_regression_within_five_percent
+        && sixteen_stack_positive_run_nonregressing
+        && sixteen_stack_quartile_envelope_nonrising;
+    Ok(MaterialGateEvidence {
+        version: 1,
+        accepted_structure_clean,
+        replay_and_capacity_clean,
+        diagnostic_first_loss_nonregressing,
+        two_stack_material_improvements_including_16,
+        remaining_stack_regression_within_five_percent,
+        sixteen_stack_positive_run_nonregressing,
+        sixteen_stack_quartile_envelope_nonrising,
+        passed,
+        disposition: if passed { "survive" } else { "discard" },
+        stack_comparisons,
+        diagnostic_comparisons,
+    })
 }
 
 fn scene_inputs() -> Result<Vec<SceneInput>, String> {
@@ -350,22 +832,43 @@ fn evaluate_lane(
     lane: &'static str,
     scheduling_policy: Option<GpuSolverSchedulingPolicyV1>,
 ) -> Result<LaneEvidence, String> {
+    evaluate_lane_with_policy(
+        staging,
+        runner,
+        input,
+        projection_hash,
+        lane,
+        scheduling_policy,
+        GpuContactCoefficientPolicyV1::SELECTED,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn evaluate_lane_with_policy(
+    staging: &Path,
+    runner: &GpuGeneratedContactRunner,
+    input: &SceneInput,
+    projection_hash: &str,
+    lane: &'static str,
+    scheduling_policy: Option<GpuSolverSchedulingPolicyV1>,
+    contact_coefficient_policy: GpuContactCoefficientPolicyV1,
+) -> Result<LaneEvidence, String> {
     let run_series = || match scheduling_policy {
         None => {
             runner.run_selected_observation_series(&input.source, 1, input.source.requested_steps)
         }
-        Some(policy) => runner
-            .run_contact_policy_observation_series_with_execution_scheduling_and_contact_feedback(
-                &input.source,
-                1,
-                input.source.requested_steps,
-                ContactIdentityPolicyV1::SELECTED,
-                SUBMISSION_BATCH_STEPS,
-                GpuSolverExecutionV4::SELECTED,
-                policy,
-                GpuSoftFeedbackPolicyV1::SELECTED,
-                GpuNormalRelaxationPolicyV1::SELECTED,
-            ),
+        Some(policy) => runner.run_contact_policy_observation_series_with_solver_policies(
+            &input.source,
+            1,
+            input.source.requested_steps,
+            ContactIdentityPolicyV1::SELECTED,
+            SUBMISSION_BATCH_STEPS,
+            GpuSolverExecutionV4::SELECTED,
+            policy,
+            GpuSoftFeedbackPolicyV1::SELECTED,
+            GpuNormalRelaxationPolicyV1::SELECTED,
+            contact_coefficient_policy,
+        ),
     };
     let raw = run_series()?;
     let replay = run_series()?;
@@ -373,11 +876,12 @@ fn evaluate_lane(
     let exact_replay = raw_series_hash == serialized_hash(&replay)?;
     let final_only = match scheduling_policy {
         None => runner.run(&input.source, input.source.requested_steps)?,
-        Some(policy) => runner.run_scheduling_experiment(
+        Some(policy) => runner.run_coefficient_policy_experiment(
             &input.source,
             input.source.requested_steps,
             GpuSolverExecutionV4::SELECTED,
             policy,
+            contact_coefficient_policy,
         )?,
     };
     let final_snapshot = raw
@@ -461,6 +965,7 @@ fn evaluate_lane(
     Ok(LaneEvidence {
         lane,
         scheduling_policy,
+        contact_coefficient_policy: raw.contact_coefficient_policy,
         scheduling_policy_digest: serialized_hash(&scheduling_policy)?,
         work_vector_digest,
         dispatches_per_step: raw.dispatches_per_step,
@@ -718,6 +1223,8 @@ struct Arguments {
     box2d_source: PathBuf,
     require_clean: bool,
     only_scene: Option<String>,
+    arm: Option<String>,
+    baseline: Option<PathBuf>,
 }
 
 impl Arguments {
@@ -728,6 +1235,8 @@ impl Arguments {
         let mut box2d_source = None;
         let mut require_clean = false;
         let mut only_scene = None;
+        let mut arm = None;
+        let mut baseline = None;
         let mut arguments = std::env::args().skip(1);
         while let Some(argument) = arguments.next() {
             if argument == "--require-clean" {
@@ -743,16 +1252,27 @@ impl Arguments {
                 "--oracle" => oracle = Some(PathBuf::from(value)),
                 "--box2d-source" => box2d_source = Some(PathBuf::from(value)),
                 "--only-scene" => only_scene = Some(value),
+                "--arm" => arm = Some(value),
+                "--baseline" => baseline = Some(PathBuf::from(value)),
                 _ => return Err(format!("unknown argument {argument}")),
             }
         }
+        let arm_mode = arm.is_some();
         Ok(Self {
             run_id: run_id.ok_or_else(|| "missing --run-id".to_owned())?,
             output: output.ok_or_else(|| "missing --output".to_owned())?,
-            oracle: oracle.ok_or_else(|| "missing --oracle".to_owned())?,
-            box2d_source: box2d_source.ok_or_else(|| "missing --box2d-source".to_owned())?,
+            oracle: oracle
+                .filter(|_| !arm_mode)
+                .or_else(|| arm_mode.then(PathBuf::new))
+                .ok_or_else(|| "missing --oracle".to_owned())?,
+            box2d_source: box2d_source
+                .filter(|_| !arm_mode)
+                .or_else(|| arm_mode.then(PathBuf::new))
+                .ok_or_else(|| "missing --box2d-source".to_owned())?,
             require_clean,
             only_scene,
+            arm,
+            baseline,
         })
     }
 }
@@ -777,5 +1297,36 @@ mod tests {
                 .contact_softness
                 .is_none()
         );
+    }
+
+    #[test]
+    fn s9_arm_catalog_is_frozen_and_capacity_selects_only_dispatch_form() {
+        let ids = [
+            "static-late",
+            "fused-normal-tangent",
+            "static-stiff-hard",
+            "static-late-static-stiff-hard",
+            "fused-normal-tangent-static-late",
+            "fused-normal-tangent-static-late-static-stiff-hard",
+        ];
+        let arms = ids
+            .map(ArmDefinition::named)
+            .into_iter()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(arms.len(), 6);
+        for arm in arms {
+            let small = arm.scheduling_for_body_capacity(64);
+            let scalable = arm.scheduling_for_body_capacity(65);
+            assert!(small.colored_dispatch.uses_workgroup_per_island());
+            assert!(!scalable.colored_dispatch.uses_workgroup_per_island());
+            assert_eq!(small.color_maintenance, scalable.color_maintenance);
+            assert_eq!(small.version, scalable.version);
+            assert_eq!(
+                small.colored_dispatch.fuses_normal_tangent(),
+                scalable.colored_dispatch.fuses_normal_tangent()
+            );
+        }
+        assert!(ArmDefinition::named("undeclared").is_err());
     }
 }
