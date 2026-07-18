@@ -1,10 +1,11 @@
 # S6: Awake settling stabilization
 
-Status: S6.5c factorial arms complete and review packaging active, 2026-07-18.
-S6.1–S6.4 are complete. All three predeclared relaxation arms are rejected by
-the four-body Metal kill; there is no survivor for stack, drop, or cross-host
-forwarding. Hard/direct manifold-block i2 remains the product; every settling
-candidate remains unpromoted.
+Status: S6.5c no-survivor manual checkpoint, 2026-07-18. S6.1–S6.4 are
+complete. All three predeclared relaxation arms are rejected by the four-body
+Metal kill; the verified comparative package is ready for human formulation-
+policy review. There is no survivor for stack, drop, or cross-host forwarding.
+Hard/direct manifold-block i2 remains the product; every settling candidate
+remains unpromoted.
 
 Governing topic:
 [awake settling and rest stability](../topics/awake-settling-and-rest-stability.md).
@@ -661,7 +662,7 @@ selected and every candidate remains unpromoted.
   Run one AVD matched-boundary overlay for that survivor and require the
   MoltenVK amplification to collapse with the common defect. Declare a locked
   or absent physical device as a gap.
-- [ ] Publish a fresh verified package and return to human review before any
+- [x] Publish a fresh verified package and return to human review before any
   promotion. The package must retain both rejected arms, the conditional-arm
   disposition, per-pass attribution, full survivor matrix, synchronized
   captures, provenance, and reconsideration triggers.
@@ -726,6 +727,16 @@ not remove the injector, so every authorized arm is rejected. With no
 survivor, the realistic drops, governed stacks, AVD pass overlay, and physical
 device forwarding are correctly not run; their conditional checklist items
 are closed by no-survivor disposition rather than inferred as passes.
+
+S6.5c review checkpoint, 2026-07-18: the
+[verified comparative package](../../evidence/p5.2b-s6.5c-relaxation-factorial-review/README.md)
+indexes all three independently verified arm packages and emits a no-survivor
+success sentinel. No arm satisfies the frozen energy gate; both retained-
+normal arms inject during all eight normal-relaxation passes in GPU and scalar
+accounts. No promotion candidate exists. The recommendation is to retain the
+hard/direct manifold-block i2 product and, only with human authorization,
+derive an energy-stable coupled soft-contact recurrence in scalar Rust before
+another bounded GPU factorial. S6.6 is not authorized by this result.
 
 ### S6.6 — accepted policy integration
 

@@ -1,11 +1,12 @@
 # Awake settling and rest stability
 
-Status: S6.5c factorial arms complete and review packaging active, 2026-07-18.
-All three predeclared relaxation policies fail the permanent four-body Metal
-kill, leaving no survivor for stack, drop, or cross-host forwarding. The exact
-combined candidate remains a laboratory lane; hard/direct manifold-block i2
-remains the product, and no factorial result may promote a settling policy
-without a fresh human decision.
+Status: S6.5c no-survivor manual checkpoint, 2026-07-18. All three predeclared
+relaxation policies fail the permanent four-body Metal kill, and the verified
+comparative package is ready for human formulation-policy review. There is no
+survivor for stack, drop, or cross-host forwarding. The exact combined
+candidate remains a laboratory lane; hard/direct manifold-block i2 remains
+the product, and no factorial result may promote a settling policy without a
+fresh human decision.
 Awake settling is a prerequisite for broadphase selection and sleeping
 acceptance. No contact-identity policy, soft-contact coefficients, penetration
 deadband, friction anchor, residual band, or sleep threshold is a product
@@ -430,6 +431,17 @@ inferred platform pass or an omitted gap. The authorized hypothesis space is
 exhausted; work now packages the comparative record and returns to human
 review before any new relaxation equation, accumulation change, coefficient
 change, tolerance change, or promotion.
+
+S6.5c checkpoint, 2026-07-18: the
+[comparative review package](../../evidence/p5.2b-s6.5c-relaxation-factorial-review/README.md)
+verifies every arm package and records no survivor. Its recommendation is not
+to promote the quietest failing arm. Continue to select hard/direct manifold-
+block i2, and require a human decision before deriving a new coupled soft-
+contact recurrence. A useful successor must first have a scalar analytic or
+discrete-energy justification that makes each normal-relaxation boundary
+neutral or dissipative; endpoint cancellation alone is insufficient. It must
+then pass the existing four-body energy and rest bands before reaching Metal
+stacks, AVD, physical hardware, or playback.
 
 ## Authority corrections
 
