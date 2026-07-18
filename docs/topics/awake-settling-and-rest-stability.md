@@ -623,6 +623,19 @@ stays inside the hard/direct manifold-block family, does not reopen the
 deferred soft direction, changes no product default, and returns any winner
 to human review under this topic's existing completion gate.
 
+S9.2 attribution, 2026-07-18: the clean
+[matched per-pass package](../../evidence/p5.2b-s9.2-pass-attribution/README.md)
+localizes the hard/direct 16-stack injector across settled steps 900, 1000,
+and 1100. Warm start is the only material non-gravity injecting pass family at
+all three phases; biased normal and relaxation are net sinks, while tangent
+and refresh/non-gravity-integration positive energy are zero. Exact scalar
+replay stays within `4.66598e-7` maximum absolute difference against the
+frozen `2e-5` contract. This routes static-late E2 first because it changes
+colored support-transfer order including warm start, leaves fused E3 and
+static-stiff E4 mandatory under the authorized program, and does not activate
+fixed-anchor E5 or require a formulation stop. Product settings remain
+unchanged.
+
 ## Authority corrections
 
 Two plausible techniques must not be mislabeled as direct Box2D v3 parity:

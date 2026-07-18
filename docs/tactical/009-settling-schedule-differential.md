@@ -244,17 +244,17 @@ than weakening a gate or accepting a new regression.
 
 ### S9.2 — E1 matched per-pass energy attribution at depth
 
-- [ ] Extend the S6.5b/S6.5d version-3 matched-precision instrument from the
+- [x] Extend the S6.5b/S6.5d version-3 matched-precision instrument from the
   four-body reproducer to the governed 16-stack under the product hard/direct
   policy, with the 8-stack as a control lane.
-- [ ] Capture a settled step (step 900; add 1000/1100 if one step is
+- [x] Capture a settled step (step 900; add 1000/1100 if one step is
   ambiguous) at every logical boundary: integrate-velocity, prepare/refresh,
   warm start, each biased normal sweep, each biased tangent sweep,
   integrate-position, post-integration refresh, each relaxation normal and
   tangent sweep, restitution. Strict ordered-`f32` and compensated energy
   accounts, scalar-mirror agreement within the S6.5b comparison contract, GPU
   command order preserved, one map after the target step.
-- [ ] Publish the ranked injector table and the routing decision.
+- [x] Publish the ranked injector table and the routing decision.
 
 Routing rules (predeclared; routing orders the arms and activates
 conditionals, it does not veto E2/E3, which run regardless):
@@ -275,6 +275,25 @@ Completion gate: GPU/scalar boundary agreement within the declared bounds; a
 signed routing decision recorded here and in the package.
 
 Commit boundaries: instrument extension; clean attribution evidence.
+
+Attribution checkpoint, 2026-07-18: the
+[verified S9.2 package](../../evidence/p5.2b-s9.2-pass-attribution/README.md)
+extends the version-3 direct-over-compacted-color-capacity trace to clean
+hard/direct centered 8- and 16-stacks at settled steps 900, 1000, and 1100.
+All six traces preserve the 56-boundary/57-state GPU command order and map
+once after the target step. GPU/scalar maximum absolute state difference is
+at most `4.66598e-7` against the frozen `2e-5` contract, and compensated
+static/dynamic support accounting closes within `9.29471e-9`.
+
+Warm start is the only material non-gravity injecting family at all three
+16-stack phases: `+3.02338 / +0.148891 / +0.708266` compensated kinetic-energy
+units at steps 900/1000/1100. Biased normal and relaxation are net sinks;
+tangent positive energy and refresh/non-gravity-integration positive energy
+are zero. The signed route is E2 static-late first because it changes colored
+support-transfer order including warm start, then mandatory E3 fused
+normal+tangent, then E4 static-stiff-hard. E5 is not activated, and the
+localized scheduled warm-start transfer does not require a formulation-level
+stop. No product/default/tolerance/capacity/oracle contract changed.
 
 ### S9.3 — arm implementations as named unpromoted policies
 
