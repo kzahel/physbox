@@ -392,6 +392,16 @@ common mode. All arms, including a conditional arm not run, remain named in
 the evidence. Promotion returns to human review with the full matrix and does
 not follow automatically from factorial ranking.
 
+Arm 1 result, 2026-07-18: omitting soft normal relaxation is rejected by the
+permanent four-body gate. The settled energy envelope rises 5.84× with a full
+300-observation positive run, and residual linear speed reaches
+`0.09048607 m/s`. The policy-attested trace has 48 logical boundaries, no
+normal-relaxation pass, and all eight tangent-relaxation passes. This proves
+that normal-relaxation omission alone cannot remove the feedback mode; it does
+not exonerate or condemn block coupling in a retained relaxation equation.
+Arm 2 therefore proceeds, while Arm 1 stops before stack and drop gates. See
+the [verified package](../../evidence/p5.2b-s6.5c-arm1-no-normal-relax/README.md).
+
 ## Authority corrections
 
 Two plausible techniques must not be mislabeled as direct Box2D v3 parity:

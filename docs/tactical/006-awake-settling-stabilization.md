@@ -626,7 +626,7 @@ selected and every candidate remains unpromoted.
   product-facing constructor on hard/direct relaxation.
 - [x] Add exact-count backend-trace aliases for both four-body energy arms;
   attest the relaxation policy separately from the unchanged source hash.
-- [ ] Arm 1, `soft-no-normal-relax`: omit normal-relaxation passes when contact
+- [x] Arm 1, `soft-no-normal-relax`: omit normal-relaxation passes when contact
   softness is enabled. Retain biased manifold-block normals, tangent
   relaxation, restitution, `i2`, coloring, coefficients, and every other pass.
 - [ ] Arm 2, `soft-coefficient-normal-relax`: retain normal relaxation, but for
@@ -691,6 +691,16 @@ the independent matched-`f32` scalar recurrence within the existing diagnostic
 comparison. Hard/direct remains selected in every wrapper and product
 constructor. These are mechanics checks, not factorial measurements or arm
 survival results.
+
+Arm 1 checkpoint, 2026-07-18: the clean
+[omit-normal package](../../evidence/p5.2b-s6.5c-arm1-no-normal-relax/README.md)
+is rejected at the first gate. Its settled energy envelope rises from
+`0.0010513754` to `0.0061409203` (5.84×), all 300 settled intervals form a
+positive run, and maximum linear speed reaches `0.09048607 m/s`. The matched
+step-900 trace contains zero normal-relaxation passes and all eight tangent-
+relaxation passes, so omission is direct evidence rather than an endpoint
+inference. Capacity, structure, contact identity, and warm cache remain clean.
+Arm 1 does not reach stacks or drops; product construction remains unchanged.
 
 ### S6.6 — accepted policy integration
 
