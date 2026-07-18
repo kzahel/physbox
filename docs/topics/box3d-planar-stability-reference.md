@@ -154,6 +154,25 @@ held fixed. It is not authorized here because it changes in-place
 Gauss-Seidel order and scheduler architecture. Four-point support, 3D friction,
 sleeping, relaxation-only friction, and a new soft recurrence are not forwarded.
 
+S7.5 contact-recycling checkpoint, 2026-07-18: the
+[verified public ablation](../../evidence/p5.2b-s7.5-box3d-recycling-ablation/README.md)
+shows that recycling is not load-bearing for the awake structure. With it
+disabled, the motion-locked 12-row pyramid remains upright and below the
+`0.05 m/s` near-rest bar for all 4,101 settled observations. Maximum settled
+linear speed rises from `6.46e-5` to `1.15e-4 m/s` and maximum energy from
+`1.99e-4` to `3.88e-4`, while 52 fresh points appear across 26 observations.
+The structural height and footprint remain effectively unchanged.
+
+The optimization's work effect is dramatic: summed settled SAT calls rise from
+one to 861,210 when recycling is disabled. That establishes contact recycling
+as a valuable Box3D narrowphase work and small-noise optimization, but pinned
+Box2D's behavior plus the successful off arm reject it as the leading missing
+PhysBox settling mechanism. No recycled-manifold PhysBox comparator is
+forwarded. The unlocked 4,095-body source is not run in this ablation because
+it cannot reverse the controlled planar stability result and would add scale
+and dimensional confounders. Static-late support ordering remains the sole
+product-facing question for review.
+
 ## Initial hypotheses
 
 The investigation ranks these hypotheses before measurement:

@@ -184,14 +184,15 @@ human review.
 
 ### S7.5 — conditional neutral adapter or microscope
 
-- [ ] Proceed only if S7.4 forwards a specific unresolved hypothesis.
-- [ ] Prefer a public-API, process-isolated neutral rectangle projection with
-  explicit XY mass/inertia/material mapping and unsupported-feature rejection.
-- [ ] Use a separate patch-digested microscope only if public observations
+- [x] Proceed only if S7.4 forwards a specific unresolved hypothesis.
+- [x] Prefer the clean process-isolated public API and use a stock-source
+  recycling ablation instead of a neutral projection because the question is
+  whether Box3D's own result depends on that public body policy.
+- [x] Use a separate patch-digested microscope only if public observations
   cannot distinguish retained color order or per-pass energy.
-- [ ] Reuse the shared PhysBox scenario source and hashes; do not author a
-  competing validation fixture inside an adapter.
-- [ ] Stop before implementing any Box3D-derived PhysBox solver comparator.
+- [x] Avoid a neutral adapter after the public ablation resolves the question;
+  any future adapter must reuse the shared PhysBox scenario source and hashes.
+- [x] Stop before implementing any Box3D-derived PhysBox solver comparator.
 
 Outcome: one narrowly scoped diagnostic answers the surviving question without
 changing authority or product code.
@@ -201,6 +202,17 @@ separation, and a result that resolves the predeclared question.
 
 Commit boundaries: adapter contract; optional microscope patch/digest and
 automation; clean evidence; never mixed with product integration.
+
+Completion checkpoint, 2026-07-18: the
+[verified 5,000-step ablation](../../evidence/p5.2b-s7.5-box3d-recycling-ablation/README.md)
+changes only public contact recycling and repeats both arms byte-identically.
+The off arm remains upright and near rest for every settled observation, while
+its peak speed and energy rise by 77.4% and 94.4% and its settled SAT work rises
+from one call to 861,210. Recycling is a strong work/noise optimization, not a
+requirement for the measured awake stability. The expensive unlocked 3D source
+and an internal microscope are skipped by the predeclared cheapest-falsifier
+branch. No PhysBox recycling comparator is forwarded; the human-reviewed
+static-late ordering question remains.
 
 ### S7.6 — human review package
 
