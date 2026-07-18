@@ -1,8 +1,9 @@
 # S7: Box3D planar stability investigation
 
-Status: active, 2026-07-18. The clean v0.1.0 source reference is pinned and the
-source-only investigation is authorized. No Box3D-derived PhysBox comparator,
-physical-default change, or authority change is authorized.
+Status: manual checkpoint, 2026-07-18. The clean v0.1.0 source study is
+complete and recommends one static-late PhysBox order factorial. No
+Box3D-derived PhysBox comparator, physical-default change, or authority change
+is authorized until human review.
 
 Governing topic:
 [Box3D planar stability reference](../topics/box3d-planar-stability-reference.md).
@@ -216,11 +217,11 @@ static-late ordering question remains.
 
 ### S7.6 — human review package
 
-- [ ] Assemble the compact source, runtime, energy, contact, structural, and
+- [x] Assemble the compact source, runtime, energy, contact, structural, and
   provenance evidence with a specific recommendation.
-- [ ] State whether Box3D changed the explanation of PhysBox's settling gap,
+- [x] State whether Box3D changed the explanation of PhysBox's settling gap,
   what was rejected, and what remains unknown.
-- [ ] Return for human review before any change to manifold accumulation,
+- [x] Return for human review before any change to manifold accumulation,
   coloring lifetime/priority, friction staging, or physical policy.
 
 Outcome: the reviewer can accept closure or authorize a named comparator
@@ -230,6 +231,16 @@ Completion gate: the package verifies from a clean tree, every claim links to
 raw evidence, and no product or authority setting changed.
 
 Commit boundary: review package and tactical/topic status only.
+
+Completion checkpoint, 2026-07-18: the
+[verified compact package](../../evidence/p5.2b-s7.6-box3d-review/README.md)
+links and re-verifies every S7 evidence slice. The study rejects sleeping,
+direct 3D support transfer, normal-block attribution, recycling as a stability
+requirement, retained color lifetime alone, Box3D-only friction staging, and a
+soft-policy reopening. It recommends one unpromoted static-late order factorial
+with hard/direct manifold-block i2 fixed and a predeclared material-effect
+gate. The workstream stops at this manual checkpoint for authorization or
+closure.
 
 ## Autonomous boundary and stop conditions
 

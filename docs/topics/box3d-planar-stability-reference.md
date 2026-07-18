@@ -1,6 +1,6 @@
 # Box3D planar stability reference
 
-Status: exploratory source-reference investigation active, 2026-07-18.
+Status: source-reference investigation at human checkpoint, 2026-07-18.
 Box3D v0.1.0 is pinned as a clean local reference. It may generate bounded
 solver, contact-persistence, and scheduling hypotheses, but it is not a rigid
 authority, product dependency, or alternative engine. Box2D remains the rigid
@@ -172,6 +172,17 @@ forwarded. The unlocked 4,095-body source is not run in this ablation because
 it cannot reverse the controlled planar stability result and would add scale
 and dimensional confounders. Static-late support ordering remains the sole
 product-facing question for review.
+
+S7.6 human checkpoint, 2026-07-18: the
+[compact review package](../../evidence/p5.2b-s7.6-box3d-review/README.md)
+recommends one unpromoted PhysBox static-late ordering factorial, or closure of
+the Box3D-derived direction. The candidate would hold hard/direct
+manifold-block i2 and all physical settings fixed while assigning static
+contacts to a disjoint late-executing color partition. It must show a
+predeclared material improvement on the existing 4/8/16 stack and S6 energy
+evidence without structural, capacity, diagnostic first-loss, performance, or
+portability regression. Even a survivor returns to human review before product
+integration. Nothing further in this source workstream is autonomous.
 
 ## Initial hypotheses
 

@@ -38,8 +38,8 @@ a running log.
   realistic drop fixtures, awake quality gates, and the required visible
   review before physical-default promotion, broadphase selection, or sleeping.
 - [Box3D planar stability reference](box3d-planar-stability-reference.md) —
-  bounded sleep-off study of Box3D's planar locks, persistent contacts and
-  graph order, stable-pile behavior, 3D transfer limits, and forwarding gates.
+  completed bounded sleep-off study of Box3D's planar locks, persistent
+  contacts, and graph order; static-late PhysBox factorial at human review.
 
 ## Conventions
 
