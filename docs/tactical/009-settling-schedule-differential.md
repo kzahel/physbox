@@ -304,7 +304,9 @@ stop. No product/default/tolerance/capacity/oracle contract changed.
   positive control; dispatch-count delta recorded).
 - [x] E4 static-stiff-hard `bias_rate = 0.4` for static contacts (policy
   attested in scene contract; no other coefficient touched).
-- [ ] Conditional E5/E6 implemented only when their triggers fire.
+- [x] Conditional E5 implemented only after its primary-arm-exhaustion trigger
+  fired.
+- [ ] Conditional E6 implemented only after its hygiene trigger fired.
 - [x] Each active arm passes the implementation gate before entering S9.4; both
   dispatch forms (per-color indirect, workgroup-per-island) remain exact per
   the existing equality tests.
@@ -363,6 +365,19 @@ product constructors attest only `settings-derived`. The full repository gate
 and visually inspected Metal/WebGPU/AVD smokes pass. E4 has not entered the
 product or the S9.4 quality matrix yet.
 
+E5 implementation checkpoint, 2026-07-18: the
+[implementation note](../../evidence/p5.2b-s9.4-arm-fixed-anchor-substep-refresh/IMPLEMENTATION.md)
+records the named `fixed-anchor-analytical-separation` policy. It prepares once
+per outer step, freezes anchors and effective masses, and refreshes only
+separation from current poses and rotated local anchors after each position
+integration. This removes the three inter-substep refresh dispatches without
+adding storage or changing capacity. The centered hard/direct 8-stack changes
+body state, replays exactly, preserves selected scheduler digests, and matches
+between per-color and island dispatch. Product constructors and output attest
+only `refresh-anchors-and-mass`; soft or non-direct construction fails closed.
+The full repository gate and visually inspected Metal/WebGPU/AVD smokes pass.
+E5 has not entered the S9.4 quality matrix yet.
+
 ### S9.4 — Metal quality matrix and combinations
 
 - [ ] Run each active arm over the full corpus; apply the material-effect
@@ -383,11 +398,13 @@ checkpoint in this tactical.
 Commit boundaries: one evidence commit per arm/combination.
 
 S9.4 runner checkpoint, 2026-07-18: the S9 evidence runner now admits exactly
-E2, E3, E4, and the three predeclared compositions. It selects the already-
-proved island dispatch form through 64 bodies and the scalable per-color form
-above that boundary, while retaining the arm's scheduling and coefficient
-identity. Each clean run covers all 15 frozen scenes, captures a per-step
-series and exact replay, checks the final-only body/manifold/cache state, and
+E2, E3, E4, triggered E5, and the three predeclared compositions. It selects
+the already-proved island dispatch form through 64 bodies and the scalable
+per-color form
+above that boundary, while retaining the arm's scheduling, coefficient, and
+substep-contact identity. Each clean run covers all 15 frozen scenes, captures
+a per-step series and exact replay, checks the final-only
+body/manifold/cache state, and
 computes every material-gate clause directly against the hashed clean S9.1
 manifest. For the previously prose-only 16-stack trend clause,
 "nonregressing positive run" means no longer than S9.1 and "nonrising

@@ -1105,6 +1105,18 @@ fn refresh_contacts(@builtin(global_invocation_id) id: vec3u) {
         prepared_points[id.x] = invalid_prepared_point();
         return;
     }
+    if (params.uints0.w == 2u) {
+        let input = point_inputs[id.x];
+        let pose_a = poses[input.ids.x];
+        let pose_b = poses[input.ids.y];
+        let moving_anchor_a = rotate(input.local_anchor_a, pose_a.z);
+        let moving_anchor_b = rotate(input.local_anchor_b, pose_b.z);
+        var fixed = prepared_points[id.x];
+        fixed.data0.w = dot((pose_b.xy + moving_anchor_b) -
+                            (pose_a.xy + moving_anchor_a), fixed.normal);
+        prepared_points[id.x] = fixed;
+        return;
+    }
     var point = refreshed_point(
         point_inputs[id.x], prepared_points[id.x], params.uints0.w != 0u);
     if (params.uints0.w != 0u && params.uints1.x == 0u) {

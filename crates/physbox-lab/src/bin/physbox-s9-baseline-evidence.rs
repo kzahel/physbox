@@ -15,8 +15,8 @@ use physbox_contracts::{
 use physbox_engine::{
     GpuColoredDispatchV1, GpuContactCoefficientPolicyV1, GpuGeneratedContactRunner,
     GpuNormalRelaxationPolicyV1, GpuSoftFeedbackPolicyV1, GpuSolverExecutionV4,
-    GpuSolverSchedulingPolicyV1, P5_2_SETTLING_EVIDENCE_STEPS, P5_2BucketShape,
-    P5_2SettlingFixtureKind, p5_2_box2d_world_projection, p5_2_bucket_scenario,
+    GpuSolverSchedulingPolicyV1, GpuSubstepContactPolicyV1, P5_2_SETTLING_EVIDENCE_STEPS,
+    P5_2BucketShape, P5_2SettlingFixtureKind, p5_2_box2d_world_projection, p5_2_bucket_scenario,
     p5_2_centered_rectangle_stack_scenario, p5_2_minimized_mixed_pile_hard_scenario,
     p5_2_settling_fixture_scenario,
 };
@@ -89,6 +89,7 @@ struct ArmDefinition {
     components: &'static [&'static str],
     scheduling_policy: GpuSolverSchedulingPolicyV1,
     contact_coefficient_policy: GpuContactCoefficientPolicyV1,
+    substep_contact_policy: GpuSubstepContactPolicyV1,
 }
 
 impl ArmDefinition {
@@ -106,36 +107,49 @@ impl ArmDefinition {
                 components: &["E2"],
                 scheduling_policy: static_late,
                 contact_coefficient_policy: GpuContactCoefficientPolicyV1::SELECTED,
+                substep_contact_policy: GpuSubstepContactPolicyV1::SELECTED,
             }),
             "fused-normal-tangent" => Ok(Self {
                 id: "fused-normal-tangent",
                 components: &["E3"],
                 scheduling_policy: fused,
                 contact_coefficient_policy: GpuContactCoefficientPolicyV1::SELECTED,
+                substep_contact_policy: GpuSubstepContactPolicyV1::SELECTED,
             }),
             "static-stiff-hard" => Ok(Self {
                 id: "static-stiff-hard",
                 components: &["E4"],
                 scheduling_policy: selected,
                 contact_coefficient_policy: GpuContactCoefficientPolicyV1::StaticStiffHard,
+                substep_contact_policy: GpuSubstepContactPolicyV1::SELECTED,
+            }),
+            "fixed-anchor-substep-refresh" => Ok(Self {
+                id: "fixed-anchor-substep-refresh",
+                components: &["E5"],
+                scheduling_policy: selected,
+                contact_coefficient_policy: GpuContactCoefficientPolicyV1::SELECTED,
+                substep_contact_policy: GpuSubstepContactPolicyV1::FixedAnchorAnalyticalSeparation,
             }),
             "static-late-static-stiff-hard" => Ok(Self {
                 id: "static-late-static-stiff-hard",
                 components: &["E2", "E4"],
                 scheduling_policy: static_late,
                 contact_coefficient_policy: GpuContactCoefficientPolicyV1::StaticStiffHard,
+                substep_contact_policy: GpuSubstepContactPolicyV1::SELECTED,
             }),
             "fused-normal-tangent-static-late" => Ok(Self {
                 id: "fused-normal-tangent-static-late",
                 components: &["E3", "E2"],
                 scheduling_policy: fused_static_late,
                 contact_coefficient_policy: GpuContactCoefficientPolicyV1::SELECTED,
+                substep_contact_policy: GpuSubstepContactPolicyV1::SELECTED,
             }),
             "fused-normal-tangent-static-late-static-stiff-hard" => Ok(Self {
                 id: "fused-normal-tangent-static-late-static-stiff-hard",
                 components: &["E3", "E2", "E4"],
                 scheduling_policy: fused_static_late,
                 contact_coefficient_policy: GpuContactCoefficientPolicyV1::StaticStiffHard,
+                substep_contact_policy: GpuSubstepContactPolicyV1::SELECTED,
             }),
             _ => Err(format!("unknown S9 arm {id}")),
         }
@@ -309,6 +323,7 @@ struct LaneEvidence {
     lane: &'static str,
     scheduling_policy: GpuSolverSchedulingPolicyV1,
     contact_coefficient_policy: GpuContactCoefficientPolicyV1,
+    substep_contact_policy: GpuSubstepContactPolicyV1,
     scheduling_policy_digest: String,
     work_vector_digest: String,
     dispatches_per_step: u32,
@@ -549,6 +564,7 @@ fn evaluate_arm_scene(
         arm.id,
         Some(scheduling_policy),
         arm.contact_coefficient_policy,
+        arm.substep_contact_policy,
     )?;
     let first_loss_reproducer = candidate
         .first_structural_loss_step
@@ -903,6 +919,7 @@ fn evaluate_lane(
         lane,
         scheduling_policy,
         GpuContactCoefficientPolicyV1::SELECTED,
+        GpuSubstepContactPolicyV1::SELECTED,
     )
 }
 
@@ -915,12 +932,13 @@ fn evaluate_lane_with_policy(
     lane: &'static str,
     scheduling_policy: Option<GpuSolverSchedulingPolicyV1>,
     contact_coefficient_policy: GpuContactCoefficientPolicyV1,
+    substep_contact_policy: GpuSubstepContactPolicyV1,
 ) -> Result<LaneEvidence, String> {
     let run_series = || match scheduling_policy {
         None => {
             runner.run_selected_observation_series(&input.source, 1, input.source.requested_steps)
         }
-        Some(policy) => runner.run_contact_policy_observation_series_with_solver_policies(
+        Some(policy) => runner.run_contact_policy_observation_series_with_extended_solver_policies(
             &input.source,
             1,
             input.source.requested_steps,
@@ -931,6 +949,7 @@ fn evaluate_lane_with_policy(
             GpuSoftFeedbackPolicyV1::SELECTED,
             GpuNormalRelaxationPolicyV1::SELECTED,
             contact_coefficient_policy,
+            substep_contact_policy,
         ),
     };
     let raw = run_series()?;
@@ -943,12 +962,13 @@ fn evaluate_lane_with_policy(
         .find_map(|snapshot| snapshot.failure.clone());
     let final_only = match scheduling_policy {
         None => runner.run(&input.source, input.source.requested_steps)?,
-        Some(policy) => runner.run_coefficient_policy_experiment(
+        Some(policy) => runner.run_solver_policy_experiment(
             &input.source,
             input.source.requested_steps,
             GpuSolverExecutionV4::SELECTED,
             policy,
             contact_coefficient_policy,
+            substep_contact_policy,
         )?,
     };
     let final_snapshot = raw
@@ -1033,6 +1053,7 @@ fn evaluate_lane_with_policy(
         lane,
         scheduling_policy,
         contact_coefficient_policy: raw.contact_coefficient_policy,
+        substep_contact_policy: raw.substep_contact_policy,
         scheduling_policy_digest: serialized_hash(&scheduling_policy)?,
         work_vector_digest,
         dispatches_per_step: raw.dispatches_per_step,
@@ -1373,6 +1394,7 @@ mod tests {
             "static-late",
             "fused-normal-tangent",
             "static-stiff-hard",
+            "fixed-anchor-substep-refresh",
             "static-late-static-stiff-hard",
             "fused-normal-tangent-static-late",
             "fused-normal-tangent-static-late-static-stiff-hard",
@@ -1382,7 +1404,7 @@ mod tests {
             .into_iter()
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
-        assert_eq!(arms.len(), 6);
+        assert_eq!(arms.len(), 7);
         for arm in arms {
             let small = arm.scheduling_for_body_capacity(64);
             let scalable = arm.scheduling_for_body_capacity(65);
