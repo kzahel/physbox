@@ -388,16 +388,17 @@ scheduler identity; both dispatch forms match exactly and replay. A synthetic
 restitution-eligible drop provides the positive control, while soft or
 composed construction fails closed. Product constructors and generated output
 attest only `after-each-substep`. The full repository gate and visually
-inspected Metal/WebGPU/AVD smokes pass. E6 has not entered its fresh-authority
-hygiene matrix yet.
+inspected Metal/WebGPU/AVD smokes pass. The fresh-authority hygiene matrix runs
+in S9.4.
 
 ### S9.4 — Metal quality matrix and combinations
 
-- [ ] Run each active arm over the full corpus; apply the material-effect
+- [x] Run each active arm over the full corpus; apply the material-effect
   gate; record survive/discard with numbers, win or lose.
-- [ ] Run at most three predeclared combinations among material survivors;
-  apply the combination rule.
-- [ ] Minimize and preserve any new failure the way S6 did (permanent
+- [x] Run at most three predeclared combinations among material survivors;
+  apply the combination rule. None were eligible because every declared
+  combination required discarded E2 and no independent arm survived.
+- [x] Minimize and preserve any new failure the way S6 did (permanent
   reproducers, exact first-loss steps).
 
 Outcome: a ranked table of arms with dispositions; discarded arms are
@@ -479,6 +480,21 @@ improves from 29 to 36. Both exact prefixes are preserved, with no execution
 failure. E5 is not a material survivor. S9 now has no survivor and no eligible
 combination; mandatory E6 timing hygiene runs next but cannot rescue or gate a
 discarded arm.
+
+E6 hygiene checkpoint, 2026-07-18: the
+[verified restitution package](../../evidence/p5.2b-s9.4-restitution-hygiene/README.md)
+passes its conditional hygiene gate without becoming a material arm. Selected
+`after-each-substep` and experimental `after-substeps` execution are byte-
+identical across all 1,200 snapshots and separate final-only states for the
+4/8/16 centered stacks and both S6.2 drops. The resting-stack speed, energy,
+churn, cache, and trend summaries are consequently unchanged. E6 removes
+three empty/ineligible island dispatches per step on this corpus. Fresh clean
+pinned Box2D `world-awake` rows at steps 1/60/180/600/900/1050/1200 replay
+their final results exactly; final near-flat and box-on-box dynamic speeds are
+`2.666902e-8` and `5.000618e-7`. Product construction remains
+`after-each-substep`. With E2 through E5 discarded, every active arm is now
+disposed, zero combinations are eligible, and S9.4 completes with no material
+survivor.
 
 ### S9.5 — survivor cost, cross-host, winner determination
 
