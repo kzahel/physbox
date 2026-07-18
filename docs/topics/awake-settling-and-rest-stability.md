@@ -658,6 +658,16 @@ energy rises `13.61%` with a rising envelope. The preserved first-loss prefix
 has no execution failure. E3 is discarded independently; E4 remains
 mandatory and no E2-containing combination is eligible.
 
+S9 E4 disposition, 2026-07-18: the clean
+[static-stiff full-corpus package](../../evidence/p5.2b-s9.4-arm-static-stiff-hard/README.md)
+preserves every accepted structure but misses the material gate. The 8-stack
+residual regresses `27.28%`, 16-stack energy regresses `30.59%`, and no stack
+improves both metrics by 25%. The permanent four-body last-quartile energy
+rises more than 13x and its positive run grows to 139. Exact replay, capacity,
+and diagnostic first-loss clauses all pass, so this is a quality rejection of
+the declared coefficient rather than an implementation failure. Primary-arm
+exhaustion activates E5; E6 hygiene follows, with no combination eligible.
+
 ## Authority corrections
 
 Two plausible techniques must not be mislabeled as direct Box2D v3 parity:

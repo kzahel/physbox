@@ -553,6 +553,16 @@ hardware-backed AVD, boundary, and smoke gates pass. The
 [implementation note](../../evidence/p5.2b-s9.4-arm-fused-normal-tangent/IMPLEMENTATION.md)
 records the controls; S9.4 still owns the arm's quality disposition.
 
+S9 E4 quality disposition, 2026-07-18: the clean
+[full-corpus package](../../evidence/p5.2b-s9.4-arm-static-stiff-hard/README.md)
+discards static-stiff-hard. It preserves every accepted structure, remains
+replay- and capacity-clean, and delays both diagnostic losses. It still
+regresses 8-stack residual speed `27.28%` and 16-stack last-quartile energy
+`30.59%`; no stack clears the paired material threshold. The permanent
+four-body positive-energy run grows from two to 139. E4 remains laboratory-
+only. With E2/E3/E4 discarded, no declared combination is eligible and S9's
+conditional fixed-anchor arm is activated.
+
 S9 E2 quality disposition, 2026-07-18: the clean
 [full-corpus package](../../evidence/p5.2b-s9.4-arm-static-late/README.md)
 discards static-late. It nearly eliminates 4-stack residuals, but 16-stack

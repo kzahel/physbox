@@ -424,6 +424,19 @@ speed improves `18.41%` but last-quartile energy regresses `13.61%` to
 execution or capacity failure. E3 is not a material survivor and cannot enter
 either E3 combination. E4 remains the last independent primary arm.
 
+E4 quality checkpoint, 2026-07-18: the
+[verified static-stiff package](../../evidence/p5.2b-s9.4-arm-static-stiff-hard/README.md)
+discards E4. Every accepted structure, replay, capacity, and both diagnostic
+first-loss clauses pass. No stack clears the paired 25% threshold: 4-stack
+speed/energy improve `6.14% / 17.37%`; 8-stack energy improves `41.39%` but
+speed regresses `27.28%`; and 16-stack speed improves `13.30%` while energy
+regresses `30.59%` to `0.43956766`. The 16-stack trend clauses pass but cannot
+override the magnitude failures. The permanent reproducer's last-quartile
+energy also rises from `0.0004200171` to `0.005612511`, with a 139-interval
+positive run. E4 is not a material survivor. All primary arms are now
+discarded; no E2-containing combination is eligible, the conditional E5
+trigger fires, and E6 hygiene must follow primary-arm exhaustion.
+
 ### S9.5 — survivor cost, cross-host, winner determination
 
 - [ ] For the best at most two material survivors by 16-stack settled energy:
