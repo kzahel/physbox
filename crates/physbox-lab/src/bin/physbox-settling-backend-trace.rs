@@ -48,6 +48,9 @@ enum TraceScenario {
     CandidatePointI2Depth14,
     CandidatePointI2Depth15,
     CandidatePointI2Depth16,
+    CandidateEnergyProjection4,
+    CandidateEnergyProjection8,
+    CandidateEnergyProjection16,
     MinimizedMixedCandidate,
     MinimizedMixedCandidateI1,
     MinimizedMixedCandidateSoftFirst,
@@ -55,6 +58,7 @@ enum TraceScenario {
     MinimizedMixedCandidateNoNormalRelax,
     MinimizedMixedCandidateSoftCoefficientRelax,
     MinimizedMixedCandidatePointSequentialRelax,
+    MinimizedMixedCandidateEnergyProjection,
 }
 
 impl TraceScenario {
@@ -81,6 +85,9 @@ impl TraceScenario {
             "settling-candidate-point-i2-14" => Ok(Self::CandidatePointI2Depth14),
             "settling-candidate-point-i2-15" => Ok(Self::CandidatePointI2Depth15),
             "settling-candidate-point-i2-16" => Ok(Self::CandidatePointI2Depth16),
+            "settling-candidate-energy-projection-4" => Ok(Self::CandidateEnergyProjection4),
+            "settling-candidate-energy-projection-8" => Ok(Self::CandidateEnergyProjection8),
+            "settling-candidate-energy-projection-16" => Ok(Self::CandidateEnergyProjection16),
             "minimized-mixed-candidate" => Ok(Self::MinimizedMixedCandidate),
             "minimized-mixed-candidate-i1" => Ok(Self::MinimizedMixedCandidateI1),
             "minimized-mixed-candidate-soft-first" => Ok(Self::MinimizedMixedCandidateSoftFirst),
@@ -93,6 +100,9 @@ impl TraceScenario {
             }
             "minimized-mixed-candidate-point-sequential-relax" => {
                 Ok(Self::MinimizedMixedCandidatePointSequentialRelax)
+            }
+            "minimized-mixed-candidate-energy-projection" => {
+                Ok(Self::MinimizedMixedCandidateEnergyProjection)
             }
             _ => Err(format!("unknown settling trace scenario {value}")),
         }
@@ -121,6 +131,9 @@ impl TraceScenario {
             Self::CandidatePointI2Depth14 => "settling-candidate-point-i2-14",
             Self::CandidatePointI2Depth15 => "settling-candidate-point-i2-15",
             Self::CandidatePointI2Depth16 => "settling-candidate-point-i2-16",
+            Self::CandidateEnergyProjection4 => "settling-candidate-energy-projection-4",
+            Self::CandidateEnergyProjection8 => "settling-candidate-energy-projection-8",
+            Self::CandidateEnergyProjection16 => "settling-candidate-energy-projection-16",
             Self::MinimizedMixedCandidate => "minimized-mixed-candidate",
             Self::MinimizedMixedCandidateI1 => "minimized-mixed-candidate-i1",
             Self::MinimizedMixedCandidateSoftFirst => "minimized-mixed-candidate-soft-first",
@@ -133,6 +146,9 @@ impl TraceScenario {
             }
             Self::MinimizedMixedCandidatePointSequentialRelax => {
                 "minimized-mixed-candidate-point-sequential-relax"
+            }
+            Self::MinimizedMixedCandidateEnergyProjection => {
+                "minimized-mixed-candidate-energy-projection"
             }
         }
     }
@@ -187,6 +203,9 @@ impl TraceScenario {
             Self::CandidatePointI2Depth14 => point_i2_stack(14),
             Self::CandidatePointI2Depth15 => point_i2_stack(15),
             Self::CandidatePointI2Depth16 => point_i2_stack(16),
+            Self::CandidateEnergyProjection4 => energy_projection_stack(4),
+            Self::CandidateEnergyProjection8 => energy_projection_stack(8),
+            Self::CandidateEnergyProjection16 => energy_projection_stack(16),
             Self::MinimizedMixedCandidate => p5_2_minimized_mixed_pile_energy_scenario()
                 .map(|source| {
                     tagged_source(
@@ -243,6 +262,9 @@ impl TraceScenario {
             }
             Self::MinimizedMixedCandidatePointSequentialRelax => {
                 relaxation_energy_source(GpuNormalRelaxationPolicyV1::PointSequential)
+            }
+            Self::MinimizedMixedCandidateEnergyProjection => {
+                relaxation_energy_source(GpuNormalRelaxationPolicyV1::CoupledEnergyProjection)
             }
         }
     }
@@ -354,6 +376,22 @@ fn point_i2_stack(rectangle_count: u32) -> Result<TraceSource, String> {
                 point_i2_execution(),
                 GpuSolverSchedulingPolicyV1::STANDARD,
                 GpuSoftFeedbackPolicyV1::SELECTED,
+            )
+        })
+        .map_err(|error| error.to_string())
+}
+
+fn energy_projection_stack(rectangle_count: u32) -> Result<TraceSource, String> {
+    p5_2_settling_review_scenario(rectangle_count, P5_2SettlingReviewPolicy::SoftCandidate)
+        .map(|source| {
+            (
+                source,
+                ContactIdentityPolicyV1::PriorContactHysteresis,
+                Structure::CenteredStack,
+                GpuSolverExecutionV4::SELECTED,
+                GpuSolverSchedulingPolicyV1::SELECTED,
+                GpuSoftFeedbackPolicyV1::SELECTED,
+                GpuNormalRelaxationPolicyV1::CoupledEnergyProjection,
             )
         })
         .map_err(|error| error.to_string())
@@ -477,7 +515,7 @@ fn run() -> Result<(), String> {
     let report = Report {
         schema_version: SCHEMA_VERSION,
         trace_version: TRACE_VERSION,
-        artifact_kind: "p5.2b-s6.5c-relaxation-factorial-backend-trace",
+        artifact_kind: "p5.2b-s6.5d-relaxation-candidate-backend-trace",
         run_id: arguments.run_id,
         source_revision: arguments.source_revision,
         source_dirty: arguments.source_dirty,
@@ -642,6 +680,10 @@ mod tests {
             (
                 "minimized-mixed-candidate-point-sequential-relax",
                 GpuNormalRelaxationPolicyV1::PointSequential,
+            ),
+            (
+                "minimized-mixed-candidate-energy-projection",
+                GpuNormalRelaxationPolicyV1::CoupledEnergyProjection,
             ),
         ] {
             let alias = TraceScenario::parse(name).unwrap();

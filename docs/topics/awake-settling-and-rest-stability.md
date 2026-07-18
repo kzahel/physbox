@@ -522,6 +522,25 @@ support-transfer gate. It authorizes exactly this candidate for the single GPU
 port; it is not product promotion or evidence that the multi-step Metal gate
 will pass.
 
+S6.5d laboratory-port checkpoint, 2026-07-18: policy code `3` ports exactly the
+scalar-qualified coupled zero-target projection to normal relaxation. The
+shader bypasses speculative and penetration targets only for that named
+laboratory policy; the biased stages and every other pass are unchanged.
+Every product constructor still selects policy code `0`, hard/direct. The
+two-step candidate trace replays through the scalar mirror, including the
+versioned policy attestation.
+
+The first uncommitted-source Metal kill passes. The permanent reproducer
+reaches the rest band by step 601, with settled maximum linear speed
+`1.7262822e-6 m/s`, angular-edge speed `7.3337867e-7 m/s`, zero unexplained
+churn, zero warm-cache misses, a maximum positive-energy run of one, and no
+capacity failure. At step 900 all eight GPU normal-relaxation boundaries are
+sinks totaling `-2.0920214104119448e-11`; the scalar total is
+`-2.0920214088975228e-11`. Per-relaxation component differences are at most
+`1.080025e-12`. This clears the cheap implementation/energy kill and permits a
+fresh clean Metal 4/8/16 structural matrix. It does not yet clear that matrix,
+the realistic drops, cross-host forwarding, or promotion.
+
 ## Authority corrections
 
 Two plausible techniques must not be mislabeled as direct Box2D v3 parity:

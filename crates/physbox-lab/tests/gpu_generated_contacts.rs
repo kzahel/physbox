@@ -137,6 +137,7 @@ fn relaxation_factorial_traces_are_policy_attested_and_scalar_replayable() {
         (GpuNormalRelaxationPolicyV1::OmitForSoftContacts, 48, 0),
         (GpuNormalRelaxationPolicyV1::SoftCoefficients, 56, 8),
         (GpuNormalRelaxationPolicyV1::PointSequential, 56, 8),
+        (GpuNormalRelaxationPolicyV1::CoupledEnergyProjection, 56, 8),
     ] {
         let trace = runner
             .run_contact_policy_pass_trace_with_relaxation(

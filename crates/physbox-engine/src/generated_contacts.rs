@@ -1472,6 +1472,7 @@ impl GpuGeneratedContactPassTraceV2 {
             | crate::GpuNormalRelaxationPolicyV1::OmitForSoftContacts => 0.0,
             crate::GpuNormalRelaxationPolicyV1::SoftCoefficients => 1.0,
             crate::GpuNormalRelaxationPolicyV1::PointSequential => 2.0,
+            crate::GpuNormalRelaxationPolicyV1::CoupledEnergyProjection => 3.0,
         };
         if normal_relaxation.len() != expected_normal_relaxation
             || normal_relaxation

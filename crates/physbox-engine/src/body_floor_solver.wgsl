@@ -1145,6 +1145,10 @@ fn normal_equation_from_velocity(point: PreparedPoint,
     var mass_scale = 1.0;
     var output: NormalEquation;
     output.impulse_scale = 0.0;
+    if (params.floats2.w == 3.0) {
+        output.base = normal_velocity;
+        return output;
+    }
     let coefficients = contact_coefficients(point);
     if (point.data0.w > 0.0) {
         velocity_bias = point.data0.w / params.floats0.x;

@@ -959,6 +959,9 @@ fn normal_equation(
     descriptor: &GpuSolverPassDescriptorV1,
 ) -> [f32; 2] {
     let normal_velocity = relative_velocity(point, point.normal, motion_a, motion_b);
+    if descriptor.parameters.floats2[3] == 3.0 {
+        return [normal_velocity, 0.0];
+    }
     let mut velocity_bias = 0.0_f32;
     let mut mass_scale = 1.0_f32;
     let mut impulse_scale = 0.0_f32;

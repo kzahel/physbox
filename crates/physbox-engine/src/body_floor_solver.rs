@@ -55,7 +55,7 @@ pub enum GpuSoftFeedbackPolicyV1 {
 
 /// Laboratory-only control over the normal relaxation recurrence. Product
 /// construction always uses `HardDirect`; alternate values exist only for the
-/// predeclared S6.5c factorial.
+/// predeclared S6.5c factorial and the single scalar-qualified S6.5d port.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum GpuNormalRelaxationPolicyV1 {
@@ -63,6 +63,7 @@ pub enum GpuNormalRelaxationPolicyV1 {
     OmitForSoftContacts,
     SoftCoefficients,
     PointSequential,
+    CoupledEnergyProjection,
 }
 
 impl GpuNormalRelaxationPolicyV1 {
@@ -77,6 +78,7 @@ impl GpuNormalRelaxationPolicyV1 {
             Self::HardDirect | Self::OmitForSoftContacts => 0,
             Self::SoftCoefficients => 1,
             Self::PointSequential => 2,
+            Self::CoupledEnergyProjection => 3,
         }
     }
 
@@ -90,6 +92,11 @@ impl GpuNormalRelaxationPolicyV1 {
             return Err(
                 "normal-relaxation comparators require soft contact and enabled relaxation"
                     .to_owned(),
+            );
+        }
+        if self == Self::CoupledEnergyProjection && !execution.normal_solver.uses_block() {
+            return Err(
+                "coupled energy projection requires the manifold-block normal solver".to_owned(),
             );
         }
         Ok(())
@@ -5122,6 +5129,19 @@ mod tests {
                 pass.parameters.floats2[3],
                 if pass.kind == GpuSolverPassKindV1::NormalRelaxation {
                     2.0
+                } else {
+                    0.0
+                }
+            );
+        }
+
+        let projection = descriptors(GpuNormalRelaxationPolicyV1::CoupledEnergyProjection);
+        assert_eq!(projection.len(), 56);
+        for pass in projection {
+            assert_eq!(
+                pass.parameters.floats2[3],
+                if pass.kind == GpuSolverPassKindV1::NormalRelaxation {
+                    3.0
                 } else {
                     0.0
                 }

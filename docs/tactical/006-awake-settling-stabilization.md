@@ -756,7 +756,7 @@ another bounded GPU factorial. S6.6 is not authorized by this result.
   penetration resolution and support transfer on the permanent four-body
   reproducer and the existing two-step contract fixture. Reject zero-correction,
   excessive-damping, sagging, or endpoint-cancellation solutions.
-- [ ] If and only if the scalar gate passes, port that one candidate as a named
+- [x] If and only if the scalar gate passes, port that one candidate as a named
   laboratory policy while leaving every product constructor on hard/direct
   manifold-block i2. Reuse matched-precision per-pass accounting.
 - [ ] Apply the permanent Metal four-body energy/rest kill first, then require
@@ -822,6 +822,19 @@ seven supported points, and keeps total support impulse near `0.2927`.
 Penetration and separation extrema are byte-identical because relaxation does
 not alter pose. The scalar gate therefore authorizes the one named GPU port;
 no other recurrence is available within S6.5d.
+
+Laboratory-port checkpoint, 2026-07-18: shader policy code `3` implements only
+the scalar-qualified zero-target coupled normal relaxation. Product code keeps
+hard/direct code `0`; no constructor, launch default, coefficient, scheduler,
+or tolerance changes. The two-step GPU trace matches its scalar mirror. The
+first Metal reproducer kill reaches rest at step 601 with maximum linear speed
+`1.7262822e-6 m/s`, maximum angular-edge speed `7.3337867e-7 m/s`, zero churn,
+zero cache misses, and a maximum positive-energy run of one. All eight step-
+900 normal-relaxation passes are sinks totaling
+`-2.0920214104119448e-11` on GPU versus `-2.0920214088975228e-11` in scalar;
+the largest component difference within those passes is `1.080025e-12`.
+This is the cheap-gate result from an intentionally dirty implementation tree;
+fresh clean evidence follows the implementation commit.
 
 ### S6.6 — accepted policy integration
 
