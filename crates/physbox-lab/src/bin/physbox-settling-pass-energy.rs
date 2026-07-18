@@ -20,12 +20,13 @@ use physbox_lab::oracle_transport::{
     OracleProcess, OracleRunConfig, OracleSourceIdentity, run_oracle, verify_clean_git_pin,
 };
 use physbox_lab::pass_energy::{
-    KineticEnergyAccountingV1, SETTLING_PASS_ENERGY_REPORT_VERSION, SettlingPassEnergyReportV1,
-    analyze_settling_pass_energy, kinetic_energy,
+    KineticEnergyAccountingV1, SETTLING_PASS_ENERGY_REPORT_VERSION,
+    ScalarRelaxationDerivationReportV1, SettlingPassEnergyReportV1,
+    analyze_scalar_relaxation_derivation, analyze_settling_pass_energy, kinetic_energy,
 };
 use serde::Serialize;
 
-const ARTIFACT_VERSION: u32 = 2;
+const ARTIFACT_VERSION: u32 = 3;
 const SUCCESS_SENTINEL: &str = "PHYSBOX5_SETTLING_PASS_ENERGY_SUCCESS";
 const BOX2D_REVISION: &str = "3a4f0da8374af61293a03021c9a0b3ebcfe67948";
 
@@ -52,6 +53,7 @@ struct Artifact {
     source_scenario: ScenarioV1,
     trace: GpuGeneratedContactPassTraceV2,
     energy: SettlingPassEnergyReportV1,
+    scalar_relaxation_derivation: ScalarRelaxationDerivationReportV1,
     box2d: Box2dBehaviorComparison,
 }
 
@@ -114,6 +116,7 @@ fn run() -> Result<(), String> {
     if energy.version != SETTLING_PASS_ENERGY_REPORT_VERSION {
         return Err("pass-energy report version changed unexpectedly".to_owned());
     }
+    let scalar_relaxation_derivation = analyze_scalar_relaxation_derivation(&trace)?;
     let box2d_source = verify_clean_git_pin(&arguments.box2d_source, BOX2D_REVISION)
         .map_err(|error| error.to_string())?;
     let box2d = run_box2d_comparison(&arguments, &source, &box2d_source)?;
@@ -121,7 +124,7 @@ fn run() -> Result<(), String> {
     let artifact = Artifact {
         schema_version: SCHEMA_VERSION,
         artifact_version: ARTIFACT_VERSION,
-        artifact_kind: "p5.2b-s6.5c-relaxation-factorial-pass-energy",
+        artifact_kind: "p5.2b-s6.5d-scalar-relaxation-derivation",
         run_id: arguments.run_id,
         source_revision: arguments.source_revision,
         source_dirty: arguments.source_dirty,
@@ -143,6 +146,7 @@ fn run() -> Result<(), String> {
         source_scenario: source,
         trace,
         energy,
+        scalar_relaxation_derivation,
         box2d,
     };
     let hash = write_gzip_json_atomic(&arguments.output, &artifact)?;

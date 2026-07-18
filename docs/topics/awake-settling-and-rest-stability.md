@@ -495,6 +495,33 @@ not the explanation. The remaining scalar question is whether a coupled
 zero-target kinetic projection retains the biased pass's penetration and
 support work on both frozen fixtures.
 
+S6.5d scalar-candidate checkpoint, 2026-07-18: the one bounded candidate is
+the coupled unilateral zero-target kinetic projection during normal
+relaxation. For a manifold impulse change `delta`, current normal velocity
+`v`, and block inverse effective mass `K`, the exact kinetic-energy change is
+`v^T delta + 1/2 delta^T K delta`. The candidate minimizes this convex
+quadratic subject to `oldImpulse + delta >= 0`. The no-op `delta = 0` is
+feasible, so the selected minimum is non-positive. Manifolds in one color are
+body-disjoint, making their changes additive; colors execute sequentially, so
+each sees the preceding color's state and the non-increase argument composes
+over the captured schedule. The two-point active-set enumeration covers both,
+first-only, second-only, and neither-active solutions. Biased normal passes,
+soft coefficients, friction, and restitution are unchanged.
+
+The typed report replays both the pinned point authority and the candidate
+from the same captured `f32` pre-pass state at all eight normal-relaxation
+boundaries. On the two-step contract trace the candidate has no injecting
+manifold, preserves identical geometry, and discards no supported point that
+the authority would retain. At permanent reproducer step 900, the point
+authority injects `2.094123958471181e-6` total with one injecting manifold in
+every boundary. The candidate injects in zero manifolds and removes
+`1.6434270572867685e-6`; all seven supported points remain supported. Total
+normal impulse stays near `0.2927` at every boundary and separation extrema
+are unchanged. This satisfies the predeclared scalar energy, penetration, and
+support-transfer gate. It authorizes exactly this candidate for the single GPU
+port; it is not product promotion or evidence that the multi-step Metal gate
+will pass.
+
 ## Authority corrections
 
 Two plausible techniques must not be mislabeled as direct Box2D v3 parity:

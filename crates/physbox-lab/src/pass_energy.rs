@@ -5,7 +5,10 @@ use physbox_engine::{
 };
 use serde::Serialize;
 
+use crate::scalar::{Box2dPointNormalInput, box2d_point_normal_update};
+
 pub const SETTLING_PASS_ENERGY_REPORT_VERSION: u32 = 1;
+pub const RELAXATION_DERIVATION_REPORT_VERSION: u32 = 1;
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -67,6 +70,78 @@ pub struct SettlingPassEnergyReportV1 {
     pub first_non_exact_pass: Option<u32>,
     pub maximum_ulp_difference: u32,
     pub maximum_ulp_pass: Option<u32>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScalarRelaxationSummaryV1 {
+    pub energy_before: KineticEnergyAccountingV1,
+    pub energy_after: KineticEnergyAccountingV1,
+    pub energy_delta_compensated_f64: f64,
+    pub maximum_manifold_energy_delta: f64,
+    pub energy_injecting_manifolds: u32,
+    pub positive_separation_points: u32,
+    pub supported_points_before: u32,
+    pub supported_points_after: u32,
+    pub normal_impulse_before: f64,
+    pub normal_impulse_after: f64,
+    pub maximum_penetration: f32,
+    pub maximum_separation: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScalarRelaxationDerivationRowV1 {
+    pub pass_index: u32,
+    pub descriptor: GpuSolverPassDescriptorV1,
+    pub authority_point_sequential: ScalarRelaxationSummaryV1,
+    pub coupled_energy_projection: ScalarRelaxationSummaryV1,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScalarRelaxationDerivationReportV1 {
+    pub version: u32,
+    pub source_scenario_hash: String,
+    pub target_step: u32,
+    pub authority_revision: &'static str,
+    pub authority_contract: &'static str,
+    pub candidate_contract: &'static str,
+    pub rows: Vec<ScalarRelaxationDerivationRowV1>,
+}
+
+impl ScalarRelaxationDerivationReportV1 {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.version != RELAXATION_DERIVATION_REPORT_VERSION
+            || self.source_scenario_hash.len() != 64
+            || self.target_step == 0
+            || self.authority_revision != "3a4f0da8374af61293a03021c9a0b3ebcfe67948"
+            || self.rows.is_empty()
+        {
+            return Err("scalar relaxation-derivation identity is invalid".to_owned());
+        }
+        for row in &self.rows {
+            if row.descriptor.kind != GpuSolverPassKindV1::NormalRelaxation
+                || !row
+                    .authority_point_sequential
+                    .energy_delta_compensated_f64
+                    .is_finite()
+                || !row
+                    .coupled_energy_projection
+                    .energy_delta_compensated_f64
+                    .is_finite()
+                || row.coupled_energy_projection.energy_injecting_manifolds != 0
+                || row.coupled_energy_projection.maximum_manifold_energy_delta > 1.0e-12
+                || row.coupled_energy_projection.maximum_penetration
+                    != row.authority_point_sequential.maximum_penetration
+                || row.coupled_energy_projection.maximum_separation
+                    != row.authority_point_sequential.maximum_separation
+            {
+                return Err("scalar relaxation-derivation row fails its analytic gate".to_owned());
+            }
+        }
+        Ok(())
+    }
 }
 
 impl SettlingPassEnergyReportV1 {
@@ -210,6 +285,169 @@ pub fn analyze_settling_pass_energy(
     Ok(report)
 }
 
+/// Compare the pinned point-sequential relaxation recurrence with the single
+/// S6.5d coupled candidate at every captured colored relaxation boundary.
+///
+/// Both lanes start from the exact captured `f32` pre-pass state and traverse
+/// the same compacted color order. The candidate is the unilateral block
+/// minimizer of `v^T delta + 1/2 delta^T K delta`: it deliberately has no
+/// speculative or penetration target during relaxation. Biased passes retain
+/// responsibility for penetration resolution and support construction.
+pub fn analyze_scalar_relaxation_derivation(
+    trace: &GpuGeneratedContactPassTraceV2,
+) -> Result<ScalarRelaxationDerivationReportV1, String> {
+    trace.validate()?;
+    let mut rows = Vec::new();
+    for (pass_index, descriptor) in trace.descriptors.iter().enumerate() {
+        if descriptor.kind != GpuSolverPassKindV1::NormalRelaxation {
+            continue;
+        }
+        let before = trace
+            .states
+            .get(pass_index)
+            .ok_or_else(|| "relaxation derivation is missing a pre-pass state".to_owned())?;
+        let authority_point_sequential = replay_relaxation_policy(
+            &before.bodies,
+            &before.contacts,
+            descriptor,
+            &trace.coloring,
+            ScalarRelaxationPolicy::Box2dPointSequential,
+        )?;
+        let coupled_energy_projection = replay_relaxation_policy(
+            &before.bodies,
+            &before.contacts,
+            descriptor,
+            &trace.coloring,
+            ScalarRelaxationPolicy::CoupledEnergyProjection,
+        )?;
+        rows.push(ScalarRelaxationDerivationRowV1 {
+            pass_index: pass_index as u32,
+            descriptor: *descriptor,
+            authority_point_sequential,
+            coupled_energy_projection,
+        });
+    }
+    let report = ScalarRelaxationDerivationReportV1 {
+        version: RELAXATION_DERIVATION_REPORT_VERSION,
+        source_scenario_hash: trace.source_scenario_hash.clone(),
+        target_step: trace.target_step,
+        authority_revision: "3a4f0da8374af61293a03021c9a0b3ebcfe67948",
+        authority_contract: "pinned-box2d-v3-point-sequential-use-bias-false-with-speculation",
+        candidate_contract: "colored-coupled-unilateral-zero-target-kinetic-projection",
+        rows,
+    };
+    report.validate()?;
+    Ok(report)
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ScalarRelaxationPolicy {
+    Box2dPointSequential,
+    CoupledEnergyProjection,
+}
+
+fn replay_relaxation_policy(
+    source_bodies: &[BodyStateV1],
+    source_contacts: &[GpuFixedFloorContactEvidence],
+    descriptor: &GpuSolverPassDescriptorV1,
+    coloring: &GpuColoringEvidenceV4,
+    policy: ScalarRelaxationPolicy,
+) -> Result<ScalarRelaxationSummaryV1, String> {
+    if descriptor.kind != GpuSolverPassKindV1::NormalRelaxation {
+        return Err("scalar relaxation policy received a non-relaxation pass".to_owned());
+    }
+    let mut bodies = source_bodies.to_vec();
+    let mut contacts = source_contacts.to_vec();
+    let energy_before = kinetic_energy(&bodies);
+    let positive_separation_points = contacts
+        .iter()
+        .filter(|point| point.valid && point.separation > 0.0)
+        .count() as u32;
+    let supported_points_before = contacts
+        .iter()
+        .filter(|point| point.valid && point.normal_impulse > 0.0)
+        .count() as u32;
+    let normal_impulse_before = contacts
+        .iter()
+        .filter(|point| point.valid)
+        .map(|point| f64::from(point.normal_impulse))
+        .sum();
+    let (maximum_penetration, maximum_separation) = separation_extrema(&contacts);
+
+    if descriptor.first_color != Some(0)
+        || descriptor.color_passes != coloring.max_colors
+        || coloring.compacted_point_indices.len()
+            != coloring
+                .color_occupancy
+                .iter()
+                .map(|&value| value as usize)
+                .sum::<usize>()
+    {
+        return Err(
+            "relaxation derivation requires the complete compact color schedule".to_owned(),
+        );
+    }
+    let mut maximum_manifold_energy_delta = f64::NEG_INFINITY;
+    let mut energy_injecting_manifolds = 0_u32;
+    let mut offset = 0_usize;
+    for &occupancy in &coloring.color_occupancy {
+        let end = offset + occupancy as usize;
+        for &point_index in &coloring.compacted_point_indices[offset..end] {
+            let before = kinetic_energy(&bodies).compensated_f64;
+            solve_relaxation_manifold(
+                &mut bodies,
+                &mut contacts,
+                point_index as usize,
+                descriptor,
+                policy,
+            )?;
+            let delta = kinetic_energy(&bodies).compensated_f64 - before;
+            maximum_manifold_energy_delta = maximum_manifold_energy_delta.max(delta);
+            if delta > 1.0e-12 {
+                energy_injecting_manifolds += 1;
+            }
+        }
+        offset = end;
+    }
+    if maximum_manifold_energy_delta == f64::NEG_INFINITY {
+        maximum_manifold_energy_delta = 0.0;
+    }
+    let energy_after = kinetic_energy(&bodies);
+    let supported_points_after = contacts
+        .iter()
+        .filter(|point| point.valid && point.normal_impulse > 0.0)
+        .count() as u32;
+    let normal_impulse_after = contacts
+        .iter()
+        .filter(|point| point.valid)
+        .map(|point| f64::from(point.normal_impulse))
+        .sum();
+    Ok(ScalarRelaxationSummaryV1 {
+        energy_before,
+        energy_after,
+        energy_delta_compensated_f64: energy_after.compensated_f64 - energy_before.compensated_f64,
+        maximum_manifold_energy_delta,
+        energy_injecting_manifolds,
+        positive_separation_points,
+        supported_points_before,
+        supported_points_after,
+        normal_impulse_before,
+        normal_impulse_after,
+        maximum_penetration,
+        maximum_separation,
+    })
+}
+
+fn separation_extrema(contacts: &[GpuFixedFloorContactEvidence]) -> (f32, f32) {
+    let mut penetration = 0.0_f32;
+    let mut separation = 0.0_f32;
+    for point in contacts.iter().filter(|point| point.valid) {
+        penetration = penetration.max((-point.separation).max(0.0));
+        separation = separation.max(point.separation.max(0.0));
+    }
+    (penetration, separation)
+}
+
 pub fn kinetic_energy(bodies: &[BodyStateV1]) -> KineticEnergyAccountingV1 {
     let mut ordered = 0.0_f32;
     let mut compensated = 0.0_f64;
@@ -324,6 +562,132 @@ fn replay_colored_manifolds(
         offset = end;
     }
     Ok(())
+}
+
+fn solve_relaxation_manifold(
+    bodies: &mut [BodyStateV1],
+    contacts: &mut [GpuFixedFloorContactEvidence],
+    point_index: usize,
+    descriptor: &GpuSolverPassDescriptorV1,
+    policy: ScalarRelaxationPolicy,
+) -> Result<(), String> {
+    let Some(point0) = contacts.get(point_index) else {
+        return Err("relaxation derivation points outside contact capacity".to_owned());
+    };
+    if !point0.valid || point0.point_in_manifold != 0 {
+        return Err("relaxation derivation color unit is not a manifold representative".to_owned());
+    }
+    let has_second = contacts.get(point_index + 1).is_some_and(|point1| {
+        point1.valid
+            && point1.body_a == point0.body_a
+            && point1.body_b == point0.body_b
+            && point1.manifold_index == point0.manifold_index
+            && point1.point_in_manifold == 1
+    });
+    let body_a = point0.body_a as usize;
+    let body_b = point0.body_b as usize;
+    if body_a == body_b || body_a >= bodies.len() || body_b >= bodies.len() {
+        return Err("relaxation derivation contact bodies are invalid".to_owned());
+    }
+    let point0 = contacts[point_index].clone();
+    let point1 = has_second.then(|| contacts[point_index + 1].clone());
+    let mut motion_a = motion(&bodies[body_a]);
+    let mut motion_b = motion(&bodies[body_b]);
+
+    match policy {
+        ScalarRelaxationPolicy::Box2dPointSequential => {
+            for (offset, point) in std::iter::once(&point0).chain(point1.as_ref()).enumerate() {
+                let normal_velocity = relative_velocity(point, point.normal, motion_a, motion_b);
+                let update = box2d_point_normal_update(Box2dPointNormalInput {
+                    separation: point.separation,
+                    substep_dt: descriptor.parameters.floats0[0],
+                    normal_velocity,
+                    normal_mass: point.normal_effective_mass,
+                    old_impulse: point.normal_impulse,
+                    penetration_velocity_bias: 0.0,
+                    penetration_mass_scale: 1.0,
+                    penetration_impulse_scale: 0.0,
+                    use_bias: false,
+                })
+                .map_err(|error| error.to_string())?;
+                let contact = &mut contacts[point_index + offset];
+                contact.normal_impulse = update.impulse;
+                contact.total_normal_impulse += update.applied_impulse.max(0.0);
+                let impulse = scale(point.normal, update.applied_impulse);
+                motion_a = apply_impulse(
+                    &bodies[body_a],
+                    motion_a,
+                    scale(impulse, -1.0),
+                    point.anchor_a,
+                );
+                motion_b = apply_impulse(&bodies[body_b], motion_b, impulse, point.anchor_b);
+            }
+        }
+        ScalarRelaxationPolicy::CoupledEnergyProjection => {
+            let matrix =
+                energy_block_matrix(&bodies[body_a], &bodies[body_b], &point0, point1.as_ref());
+            let old = [
+                point0.normal_impulse,
+                point1.as_ref().map_or(0.0, |point| point.normal_impulse),
+            ];
+            let base = [
+                relative_velocity(&point0, point0.normal, motion_a, motion_b),
+                point1.as_ref().map_or(0.0, |point| {
+                    relative_velocity(point, point.normal, motion_a, motion_b)
+                }),
+            ];
+            let solution = solve_normal_block(matrix, base, old, [0.0, 0.0], has_second);
+            for (offset, point) in std::iter::once(&point0).chain(point1.as_ref()).enumerate() {
+                let applied = solution[offset] - old[offset];
+                let contact = &mut contacts[point_index + offset];
+                contact.normal_impulse = solution[offset];
+                contact.total_normal_impulse += applied.max(0.0);
+                let impulse = scale(point.normal, applied);
+                motion_a = apply_impulse(
+                    &bodies[body_a],
+                    motion_a,
+                    scale(impulse, -1.0),
+                    point.anchor_a,
+                );
+                motion_b = apply_impulse(&bodies[body_b], motion_b, impulse, point.anchor_b);
+            }
+        }
+    }
+    set_motion(&mut bodies[body_a], motion_a)?;
+    set_motion(&mut bodies[body_b], motion_b)?;
+    Ok(())
+}
+
+fn energy_block_matrix(
+    body_a: &BodyStateV1,
+    body_b: &BodyStateV1,
+    point0: &GpuFixedFloorContactEvidence,
+    point1: Option<&GpuFixedFloorContactEvidence>,
+) -> [f32; 4] {
+    let k11 = energy_block_matrix_entry(body_a, body_b, point0, point0);
+    point1.map_or([k11, 0.0, 0.0, 0.0], |point1| {
+        [
+            k11,
+            energy_block_matrix_entry(body_a, body_b, point0, point1),
+            energy_block_matrix_entry(body_a, body_b, point1, point0),
+            energy_block_matrix_entry(body_a, body_b, point1, point1),
+        ]
+    })
+}
+
+fn energy_block_matrix_entry(
+    body_a: &BodyStateV1,
+    body_b: &BodyStateV1,
+    left: &GpuFixedFloorContactEvidence,
+    right: &GpuFixedFloorContactEvidence,
+) -> f32 {
+    (body_a.inverse_mass.get() + body_b.inverse_mass.get()) * dot(left.normal, right.normal)
+        + body_a.inverse_inertia.get()
+            * cross(left.anchor_a, left.normal)
+            * cross(right.anchor_a, right.normal)
+        + body_b.inverse_inertia.get()
+            * cross(left.anchor_b, left.normal)
+            * cross(right.anchor_b, right.normal)
 }
 
 fn solve_manifold(
@@ -959,5 +1323,26 @@ mod tests {
             1
         );
         assert_eq!(ulp_difference(-1.0, -1.0), 0);
+    }
+
+    #[test]
+    fn coupled_zero_target_block_is_a_dissipative_unilateral_projection() {
+        for matrix in [[2.0, 0.5, 0.5, 3.0], [6.0, -1.0, -1.0, 4.0]] {
+            for base in [[-1.0, 0.25], [0.5, 1.0], [-0.1, -0.2]] {
+                for old in [[0.0, 0.0], [0.5, 0.25], [0.01, 1.0]] {
+                    let solution = solve_normal_block(matrix, base, old, [0.0, 0.0], true);
+                    let delta = [solution[0] - old[0], solution[1] - old[1]];
+                    let energy_delta = f64::from(base[0] * delta[0] + base[1] * delta[1])
+                        + 0.5
+                            * f64::from(
+                                matrix[0] * delta[0] * delta[0]
+                                    + (matrix[1] + matrix[2]) * delta[0] * delta[1]
+                                    + matrix[3] * delta[1] * delta[1],
+                            );
+                    assert!(solution[0] >= 0.0 && solution[1] >= 0.0);
+                    assert!(energy_delta <= 1.0e-6, "energy delta {energy_delta}");
+                }
+            }
+        }
     }
 }

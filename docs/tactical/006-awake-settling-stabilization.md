@@ -745,14 +745,14 @@ another bounded GPU factorial. S6.6 is not authorized by this result.
   softness and contact updates into the scalar laboratory. Record its MIT
   provenance and validate the transcription against analytic single-point
   cases without copying reference implementation code.
-- [ ] Replay the authority recurrence over the captured compacted PhysBox color
+- [x] Replay the authority recurrence over the captured compacted PhysBox color
   order. Box2D already runs sequential graph colors with disjoint work inside
   each color, so attribute coupled-block, normal/tangent stage, and any other
   schedule differences separately rather than calling coloring itself novel.
-- [ ] Derive at most one coupled candidate with a discrete-energy argument that
+- [x] Derive at most one coupled candidate with a discrete-energy argument that
   holds at every colored normal-relaxation boundary. A proof that assumes a
   different sequential order does not qualify.
-- [ ] Before a GPU port, require neutral-or-dissipative scalar relaxation plus
+- [x] Before a GPU port, require neutral-or-dissipative scalar relaxation plus
   penetration resolution and support transfer on the permanent four-body
   reproducer and the existing two-step contract fixture. Reject zero-correction,
   excessive-damping, sagging, or endpoint-cancellation solutions.
@@ -803,6 +803,25 @@ also proves the authority's speculative branch can inject kinetic energy with
 point requests about `0.00233 m/s` closing speed and produces the observed
 kick. No product, GPU policy, coefficient, tolerance, or authority precedence
 changes at this checkpoint.
+
+Scalar-candidate checkpoint, 2026-07-18: the single candidate is a coupled
+zero-target unilateral kinetic projection used only for normal relaxation.
+Its active-set solve minimizes `v^T delta + 1/2 delta^T K delta` with the old-
+plus-delta impulse constrained nonnegative. Because zero delta is feasible,
+each selected block is neutral or dissipative. Same-color manifolds are body-
+disjoint and colors are sequential, so the proof holds over the captured
+parallel colored order rather than assuming sequential points.
+
+The version-1 derivation report compares the pinned point authority and the
+candidate from identical captured `f32` pre-pass state. All eight two-step
+boundaries pass with unchanged geometry and no supported-point regression
+against authority. At permanent reproducer step 900, the authority control
+injects `2.094123958471181e-6` across eight injecting manifolds. The candidate
+has zero injecting manifolds, removes `1.6434270572867685e-6`, retains all
+seven supported points, and keeps total support impulse near `0.2927`.
+Penetration and separation extrema are byte-identical because relaxation does
+not alter pose. The scalar gate therefore authorizes the one named GPU port;
+no other recurrence is available within S6.5d.
 
 ### S6.6 — accepted policy integration
 

@@ -17,7 +17,9 @@ use physbox_engine::{
     run_gpu_soft_step_case,
 };
 use physbox_lab::analytic_narrowphase::authored_solver_projection;
-use physbox_lab::pass_energy::{ScalarPassCoverageV1, analyze_settling_pass_energy};
+use physbox_lab::pass_energy::{
+    ScalarPassCoverageV1, analyze_scalar_relaxation_derivation, analyze_settling_pass_energy,
+};
 use physbox_lab::settling::centered_stack_structure;
 use physbox_lab::settling::{
     SettlingObservationInputV2, SettlingObserverV2, awake_settling_measurement_policy_v2,
@@ -99,6 +101,32 @@ fn per_pass_trace_replays_through_the_matched_f32_scalar_recurrence() {
         "matched f32 replay: firstNonExact={:?} maxUlp={} maxPass={:?}",
         report.first_non_exact_pass, report.maximum_ulp_difference, report.maximum_ulp_pass
     );
+}
+
+#[test]
+fn two_step_trace_qualifies_the_scalar_energy_projection_before_gpu_port() {
+    let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
+    let scenario = p5_2_minimized_mixed_pile_energy_scenario().unwrap();
+    let trace = runner
+        .run_contact_policy_pass_trace(
+            &scenario,
+            2,
+            ContactIdentityPolicyV1::PriorContactHysteresis,
+            GpuSoftFeedbackPolicyV1::SELECTED,
+        )
+        .unwrap();
+    let report = analyze_scalar_relaxation_derivation(&trace).unwrap();
+    report.validate().unwrap();
+    assert_eq!(report.rows.len(), 8);
+    assert!(report.rows.iter().all(|row| {
+        row.coupled_energy_projection.energy_delta_compensated_f64 <= 1.0e-12
+            && row.coupled_energy_projection.supported_points_after
+                >= row.authority_point_sequential.supported_points_after
+            && row.coupled_energy_projection.maximum_penetration
+                == row.authority_point_sequential.maximum_penetration
+            && row.coupled_energy_projection.maximum_separation
+                == row.authority_point_sequential.maximum_separation
+    }));
 }
 
 #[test]
