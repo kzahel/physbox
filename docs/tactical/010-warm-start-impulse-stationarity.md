@@ -271,16 +271,16 @@ are in `evidence/p5.2b-s10.1-warm-start-differential/`.
 
 ### S10.2 — stored-impulse stationarity measurement
 
-- [ ] Capture settled-window (900–1200) per-step stored-impulse observables on
+- [x] Capture settled-window (900–1200) per-step stored-impulse observables on
   the 8- and 16-stacks under the selected product policy: per-manifold total
   and per-point accumulated normal impulse, tangent impulse, block active-set
   case, generational pair identity, and body residual speed, using the
   existing version-2 trace surface extended only where an observable is
   missing.
-- [ ] Capture the matched authority lane: the same structures, cadence, and
+- [x] Capture the matched authority lane: the same structures, cadence, and
   window through the public contact-impulse API in the process-isolated
   runner.
-- [ ] Apply the frozen stationarity metrics; publish the per-manifold-class
+- [x] Apply the frozen stationarity metrics; publish the per-manifold-class
   verdict (floor support, interior, top) with authority ratios and the
   correlation between impulse amplitude and local residual speed.
 
@@ -302,6 +302,24 @@ population correlations, and applies the exact-zero authority ratio semantics.
 The runner recaptures the selected PhysBox 8/16 stacks with exact replay and
 reuses both exact public Box2D warm-on traces from S10.1; no product path or
 oracle checkout changes.
+
+Completion checkpoint, 2026-07-18: clean run
+`p5.2b-s10.2-impulse-stationarity-20260718-r1` exactly replays both PhysBox
+captures, reproduces their S10.1 raw-series hashes, and exactly replays both
+public authority inputs. Every class is `oscillating`. Floor-support
+manifold normal amplitude is `1.246864803135395` versus the authority band
+`0.00025260448455810547` (`4936.0359x`); the matching point maximum is
+`0.623433031141758` versus `0.0006193220615386963` (`1006.6379x`). Interior
+manifold/point maxima are `2793.9682x`/`1162.0351x` authority, with `46`
+active-set flips versus exact authority zero and redistribution `1.0` versus
+`0.0020854763602072557`. Top support has the same signature (`50` flips
+versus zero), while all PhysBox tangent maxima remain below authority. The
+local speed/normal-amplitude correlations (PhysBox/authority) are `1.0/1.0`
+for floor, `0.018146322/0.730651603` for interior, and `1.0/1.0` for top.
+Together with S10.1 majority removal, the frozen conjunction signs hypothesis
+1: non-stationary stored impulses. Evidence and its independently
+recalculating verifier are in
+`evidence/p5.2b-s10.2-impulse-stationarity/`.
 
 Commit boundaries: observation tooling; clean measurement evidence.
 

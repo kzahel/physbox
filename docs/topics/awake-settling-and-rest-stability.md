@@ -720,6 +720,24 @@ stored-impulse stationarity against the authority band; it does not promote a
 warm-start-off product lane or yet prove which stored-impulse operator is at
 fault.
 
+S10.2 stored-impulse stationarity, 2026-07-18: clean exact-replay evidence in
+`evidence/p5.2b-s10.2-impulse-stationarity/` signs hypothesis 1. All three
+manifold classes are oscillating against the warm-on authority band. PhysBox
+floor-support manifold normal amplitude is `1.246864803135395` versus
+`0.00025260448455810547` (`4936.0359x`), and point amplitude is
+`0.623433031141758` versus `0.0006193220615386963` (`1006.6379x`). Interior
+support is `2793.9682x`/`1162.0351x` authority at the manifold/point levels,
+records `46` active-set flips against exact authority zero, and reaches full
+redistribution `1.0` against `0.0020854763602072557`. Top support repeats the
+signature with `50` flips against zero. Tangent maxima remain below authority,
+so the dominant mode is accumulated normal-impulse non-stationarity rather
+than excessive tangent impulse. The local speed/amplitude correlation is
+weak across interior tracks (`0.018146322`) despite the large impulse bands,
+whereas authority is `0.730651603`; this warns against treating instantaneous
+speed alone as the operator signature. S10.3 must now identify the first
+single-step composition divergence and preserve the smallest depth at which
+this normal/active-set/redistribution signature appears.
+
 ## Authority corrections
 
 Two plausible techniques must not be mislabeled as direct Box2D v3 parity:
