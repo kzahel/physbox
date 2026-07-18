@@ -224,7 +224,7 @@ session memory.
   constructors unchanged; fail closed for unsupported compositions).
 - [x] Extend the process-isolated authority runner with a warm-start-off world
   option recorded in provenance.
-- [ ] Run the four-lane differential on the 4/8/16 stacks and the permanent
+- [x] Run the four-lane differential on the 4/8/16 stacks and the permanent
   four-body reproducer, sleep off, 1,200 steps, S6.2 policy v2: PhysBox
   warm-on (fresh, must reconcile with the S9.1 pin), PhysBox warm-off,
   authority warm-on, authority warm-off. Record settled speed, energy,
@@ -255,6 +255,19 @@ warm-start-off diagnostic accepts only the exact selected hard/direct graph
 with warm starting disabled. The process-isolated Box2D awake-world lane now
 accepts the same on/off choice, records it in provenance, and can capture its
 public per-step body/contact trace without modifying the pinned checkout.
+
+Completion checkpoint, 2026-07-18: clean run
+`p5.2b-s10.1-warm-start-differential-20260718-r2` passes every S10.1 gate.
+All four PhysBox and authority lanes replay exactly; both PhysBox lanes are
+capacity-clean and instrumentation-exact, every PhysBox structure survives,
+and each fresh warm-on summary equals the S9.1 pin. On the 16-stack, PhysBox
+settled maximum linear speed falls from `0.70852673` to `0.000023823235`
+(`0.9999663` removed) and last-quartile maximum energy falls from `0.3366095`
+to `2.307887e-9` (`1.0` removed) with warm starting off. The strict-majority
+route therefore favors hypothesis 1. Authority warm-on remains bounded at
+`0.0005379421` maximum settled linear speed; authority warm-off is contextual
+and loses the 8- and 16-stack structures. Evidence and its passing verifier
+are in `evidence/p5.2b-s10.1-warm-start-differential/`.
 
 ### S10.2 — stored-impulse stationarity measurement
 

@@ -705,6 +705,21 @@ correction survives the frozen S9 gates, S10 returns the formulation decision
 package against this topic's recorded reopening evidence instead of further
 hard-family arms; that reopening remains a human decision.
 
+S10.1 warm-start differential, 2026-07-18: clean four-lane evidence in
+`evidence/p5.2b-s10.1-warm-start-differential/` favors the predeclared
+non-stationary-stored-impulse route. On the selected 16-stack, disabling warm
+starting reduces settled maximum linear speed from `0.70852673` to
+`0.000023823235` (`0.9999663` removed) and last-quartile maximum energy from
+`0.3366095` to `2.307887e-9` (`1.0` removed), while preserving structure,
+capacity, exact replay, and final instrumentation equality. Fresh warm-on
+summaries equal the S9.1 pins exactly. The authority warm-on lane is also
+exactly replayable and bounded (`0.0005379421` maximum settled speed on the
+16-stack); its warm-start-off lane instead loses the 8- and 16-stack
+structures and remains context only. This routes S10.2 toward measured
+stored-impulse stationarity against the authority band; it does not promote a
+warm-start-off product lane or yet prove which stored-impulse operator is at
+fault.
+
 ## Authority corrections
 
 Two plausible techniques must not be mislabeled as direct Box2D v3 parity:
