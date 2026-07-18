@@ -738,6 +738,34 @@ speed alone as the operator signature. S10.3 must now identify the first
 single-step composition divergence and preserve the smallest depth at which
 this normal/active-set/redistribution signature appears.
 
+S10.3 mechanism and unification, 2026-07-18: clean evidence in
+`evidence/p5.2b-s10.3-mechanism/` names
+`inter-substep-stale-persistence-reseed`. On the exact step-904 operator, all
+three inter-substep reset-mode-1 refreshes overwrite the current solved
+impulse vector with the first prepared outer-step vector, and every warm start
+is followed by non-fixed biased-normal work. The governed sweep replays
+exactly and selects the centered four-body stack as the first harmful
+structure: depth 2 remains at `8.5901223e-7 m/s` with a nonincreasing energy
+envelope, while depth 4 reaches `0.03872548 m/s` and a rising
+`0.0017579256` last-quartile maximum. At that minimum failure the refreshes
+discard `0.00020720600332838917` impulse L1 despite zero active-set flips and
+only `8.945056e-8` redistribution. The derived hard correction must therefore
+retain current within-step impulses while refreshing anchors and effective
+masses; it must preserve unilateral response, penetration correction,
+deterministic colored support transfer, refreshed geometry, and final
+persistence.
+
+The one authorized re-observation of the frozen S6.4 soft 16-stack preserves
+its rising-energy mode and exceeds the floor/interior authority point-normal
+bands by `1.8396131x`/`2.2314258x`, with tangent below authority. It does not
+reproduce the hard lane's manifold-total or active-set/redistribution
+signature: the corresponding manifold amplitudes and redistribution stay
+below authority and active-set flips remain zero. Hypothesis 3 is therefore a
+partial point-normal unification, not evidence that the hard stale-reseed
+operator is the complete soft-failure mechanism. S10.4 is routed to the
+bounded warm-start/bias composition space; a separate active-set/tie rule has
+no root-mechanism support in the minimum reproducer.
+
 ## Authority corrections
 
 Two plausible techniques must not be mislabeled as direct Box2D v3 parity:

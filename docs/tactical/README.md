@@ -21,9 +21,12 @@ combination was eligible, and restitution timing was byte-inert. The selected
 hard/direct product remains unchanged.
 S10 is active: it follows the S9.2 warm-start localization with a
 warm-start on/off differential in both engines, stored-impulse stationarity
-measurement against the authority band, mechanism minimization, and at most
-two scalar-first corrections; with no survivor it returns the deferred-soft
-formulation decision package instead of further hard-family arms.
+measurement against the authority band, and at most two scalar-first
+corrections. S10.3 names inter-substep stale-persistence reseeding with a
+four-body minimum and records only partial point-normal unification with the
+deferred soft failure; S10.4 now tests the routed composition correction.
+With no survivor it returns the deferred-soft formulation decision package
+instead of further hard-family arms.
 
 Tactical filenames use a three-digit zero-padded prefix ordered by their first
 Git creation timestamp. This repository starts at `001`. Never renumber an
@@ -43,7 +46,7 @@ This README remains the unnumbered index.
 | S7 | Box3D planar stability investigation | [007-box3d-planar-stability-investigation.md](007-box3d-planar-stability-investigation.md) | complete; static-late arm later rejected by S9, 2026-07-18 |
 | S8 | Physical mobile frame pacing | [008-physical-mobile-frame-pacing.md](008-physical-mobile-frame-pacing.md) | complete; Pixel 7a bootstrap sustains rendering and physics cadence, 2026-07-18 |
 | S9 | Awake settling schedule differential | [009-settling-schedule-differential.md](009-settling-schedule-differential.md) | complete; no schedule-differential survivor, 2026-07-18 |
-| S10 | Warm-start and stored-impulse stationarity | [010-warm-start-impulse-stationarity.md](010-warm-start-impulse-stationarity.md) | active; S10.2 signs non-stationary stored impulses, S10.3 next, 2026-07-18 |
+| S10 | Warm-start and stored-impulse stationarity | [010-warm-start-impulse-stationarity.md](010-warm-start-impulse-stationarity.md) | active; S10.3 names stale reseeding, S10.4 next, 2026-07-18 |
 
 ## Conventions
 

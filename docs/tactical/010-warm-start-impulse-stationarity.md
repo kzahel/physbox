@@ -377,7 +377,7 @@ Commit boundaries: observation tooling; clean measurement evidence.
   interplay) carries the change.
 - [x] Depth sweep for the smallest structure exhibiting the identified
   signature; preserve it as a permanent reproducer with exact prefixes.
-- [ ] Hypothesis 3 unification: apply the frozen stationarity metrics to
+- [x] Hypothesis 3 unification: apply the frozen stationarity metrics to
   existing frozen soft-candidate captures, plus the single authorized bounded
   re-observation of the unpromoted soft lane on the 16-stack if existing
   captures lack impulse observables. Record whether the soft rising-energy
@@ -417,6 +417,26 @@ and effective-mass refresh while preserving unilateral response, penetration
 correction, deterministic colored support transfer, and final persistence.
 The clean evidence and passing independent verifier are in
 `evidence/p5.2b-s10.3-mechanism/`.
+
+Completion checkpoint, 2026-07-18: the single authorized soft observation
+ran once from clean revision `f4034ab7adc321032b89659c490b045f1afed944`
+and preserved the frozen rising-energy mode (fresh first/last energy maxima
+`1.9504352e-8`/`0.000043430242`, positive run `300`, rising envelope). Floor
+and interior point-normal amplitudes exceed the unchanged authority bands by
+`1.8396131x` and `2.2314258x`, respectively, while top support is stationary
+and every tangent maximum remains below authority. Unlike hard/direct,
+however, soft manifold-normal totals are only `0.0087305x`/`0.0048996x`
+authority for floor/interior, active-set flips stay exact zero, and
+redistribution remains below authority. Hypothesis 3 therefore signs
+`partial-unification-point-normal-only`: the soft failure shares the
+point-normal/tangent disposition, but not the hard manifold-total,
+active-set, or redistribution signature. S10.3 closes with the named
+`inter-substep-stale-persistence-reseed` mechanism and centered four-body
+minimum reproducer; S10.4 is routed to candidate (b), retaining current
+within-step impulses through geometry/effective-mass refresh. Candidate (a)
+has no root-mechanism support because the minimum reproducer has zero
+active-set flips and negligible redistribution. The combined verifier
+reconstructs both phases from `evidence/p5.2b-s10.3-mechanism/` and passes.
 
 ### S10.4 — bounded corrections (at most two, scalar first)
 
