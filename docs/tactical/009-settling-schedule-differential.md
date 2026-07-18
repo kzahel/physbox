@@ -1,12 +1,12 @@
 # S9: awake settling schedule differential
 
-Status: active, 2026-07-18. Authorized by human review of the S7.6 checkpoint.
-The review broadened the recommended standalone static-late factorial into this
-bounded program of schedule-differential experiments against the pinned Box2D
-authority. Every arm is a named unpromoted laboratory policy. The product
-remains hard/direct manifold-block i2 with the selected bounded parallel
-scheduler for the entire workstream; even an unambiguous winner returns to
-human review before promotion.
+Status: complete, 2026-07-18. The bounded program exhausted every predeclared
+arm with no material survivor and no eligible combination. E6 passed its
+conditional byte-inert hygiene gate but is not a promotion candidate. The
+[verified negative-result package](../../evidence/p5.2b-s9.6-schedule-differential-review/README.md)
+closes the schedule-differential direction. Hard/direct manifold-block i2 with
+the selected bounded parallel scheduler remains the product; no default,
+tolerance, capacity rule, or authority interpretation changed.
 
 Governing topics:
 [awake settling and rest stability](../topics/awake-settling-and-rest-stability.md)
@@ -531,12 +531,12 @@ is indexed by an eligible survivor.
 
 ### S9.6 — review package (always runs)
 
-- [ ] Assemble the compact decision package: pinned baseline, attribution
+- [x] Assemble the compact decision package: pinned baseline, attribution
   tables, every arm and combination disposition with links (including
   discarded), costs, cross-host matrix, and a specific recommendation —
   promote-candidate, close the schedule-differential direction, or one named
   follow-up.
-- [ ] Update this tactical, the governing topics, and the tactical index in
+- [x] Update this tactical, the governing topics, and the tactical index in
   the same change.
 
 Outcome: a reviewer can decide promotion or closure without reading the
@@ -548,6 +548,18 @@ Completion gate: package verifies from a clean tree; every claim links to raw
 evidence; no product or authority setting changed.
 
 Commit boundary: review package and status updates only.
+
+S9.6 completion checkpoint, 2026-07-18: the
+[verified review package](../../evidence/p5.2b-s9.6-schedule-differential-review/README.md)
+pins and reruns the seven clean input verifiers, records every arm's decisive
+row, preserves the empty combination/survivor sets, and recommends closure
+with no promotion candidate. S9.5 cost and cross-host winner clauses remain
+explicitly `not-run-ineligible`; implementation portability gates are not
+misreported as survivor qualification. The product continues to select
+hard/direct manifold-block i2, bounded parallel coloring, island dispatch for
+the small tier, per-color dispatch for larger tiers, settings-derived
+coefficients, full substep contact refresh, and per-substep restitution. The
+workstream completes as a governed negative result.
 
 ## Autonomous boundary and stop conditions
 

@@ -1,11 +1,12 @@
 # Contact solver parallelism and scheduling
 
-Status: bounded parallel scheduler selected and qualified, 2026-07-18.
-Forward manifold-block i2 remains the selected shared solver. Product
-constructors select bounded speculative parallel coloring. The 64-body
-interactive capacity tier uses one workgroup-per-island dispatch while larger
-capacities retain per-color indirect dispatch; serial full rebuild/per-color
-remains an explicit control.
+Status: bounded parallel scheduler selected and qualified; the bounded S9
+schedule-differential study closed with no survivor, 2026-07-18. Forward
+manifold-block i2 remains the selected shared solver. Product constructors
+select bounded speculative parallel coloring. The 64-body interactive capacity
+tier uses one workgroup-per-island dispatch while larger capacities retain
+per-color indirect dispatch; serial full rebuild/per-color remains an explicit
+control.
 
 Governing direction:
 [one GPU-resident 2D physics world](physbox5-unified-gpu-physics.md).
@@ -598,6 +599,26 @@ Full native, WebGPU, Android-target, APK, hardware-backed AVD, boundary, and
 smoke gates pass. The
 [implementation note](../../evidence/p5.2b-s9.4-arm-static-stiff-hard/IMPLEMENTATION.md)
 records the controls; S9.4 still owns the arm's quality disposition.
+
+S9 E5 quality disposition, 2026-07-18: the clean
+[fixed-anchor package](../../evidence/p5.2b-s9.4-arm-fixed-anchor-substep-refresh/README.md)
+discards the authority-style substep refresh policy. Removing three
+inter-substep refresh launches materially quiets the 4/8 stacks and lowers
+16-stack residual speed, but raises 16-stack last-quartile energy `85.26%` and
+regresses the 64-stack first structural loss. Selected scheduler assignment,
+order, replay, capacity, and accepted structures remain intact. Product
+construction continues to refresh anchors and mass each substep.
+
+S9 E6 and closure, 2026-07-18: the
+[restitution hygiene package](../../evidence/p5.2b-s9.4-restitution-hygiene/README.md)
+proves that one final restitution stage instead of four per-substep stages is
+byte-inert on the governed zero-restitution stacks and drops, while a positive
+control reaches the changed stage. It removes three island launches in that
+controlled graph but is not a material or performance candidate. The
+[S9.6 review](../../evidence/p5.2b-s9.6-schedule-differential-review/README.md)
+records no material survivor and no eligible E2-containing combination. The
+selected coloring, color order, dispatch split, hard/direct equations, full
+substep refresh, and per-substep restitution remain unchanged.
 
 ## Fallback and reserve options
 

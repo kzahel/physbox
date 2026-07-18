@@ -1,11 +1,12 @@
 # Awake settling and rest stability
 
-Status: S6.5 closed by human review, 2026-07-18. The one S6.5d candidate is
-rejected and the soft settling formulation is deferred. Hard/direct
-manifold-block i2 remains the product. Reopening requires the specific
-deep-stack energy and cross-Android portability evidence recorded below; no
-second recurrence, feedback-composition study, or deep-stack quality trade is
-authorized.
+Status: S6.5 and the bounded S9 schedule-differential study are closed as
+negative results, 2026-07-18. The S6.5d soft candidate and all S9 material
+arms are rejected; restitution timing is byte-inert on the governed controls.
+Hard/direct manifold-block i2 remains the product. Reopening requires the
+specific deep-stack energy and cross-Android portability evidence recorded
+below or a separately authorized new hypothesis; no second recurrence,
+feedback-composition study, or deep-stack quality trade is authorized.
 Awake settling is a prerequisite for broadphase selection and sleeping
 acceptance. No contact-identity policy, soft-contact coefficients, penetration
 deadband, friction anchor, residual band, or sleep threshold is a product
@@ -667,6 +668,26 @@ rises more than 13x and its positive run grows to 139. Exact replay, capacity,
 and diagnostic first-loss clauses all pass, so this is a quality rejection of
 the declared coefficient rather than an implementation failure. Primary-arm
 exhaustion activates E5; E6 hygiene follows, with no combination eligible.
+
+S9 E5 disposition, 2026-07-18: the clean
+[fixed-anchor full-corpus package](../../evidence/p5.2b-s9.4-arm-fixed-anchor-substep-refresh/README.md)
+discards authority-style substep separation refresh. It materially improves
+4/8-stack residual speed and energy and lowers 16-stack speed by `39.58%`, but
+16-stack last-quartile energy rises `85.26%` to `0.6235986` and its quartile
+envelope rises. The 64-stack diagnostic first loss also regresses from step
+31 to 29. Exact replay, final-only state, accepted structure, and capacity all
+pass; the failure belongs to the changed recurrence, not its implementation.
+
+S9 closure, 2026-07-18: the
+[verified decision package](../../evidence/p5.2b-s9.6-schedule-differential-review/README.md)
+records zero material survivors. Conditional E6 moves restitution after all
+substeps but is byte-identical to selected execution on the 4/8/16 stacks and
+both S6.2 drops; fresh clean pinned Box2D rows replay exactly. All combinations
+require discarded E2, so none is eligible. No arm enters survivor cost or
+cross-host qualification and no platform result is inferred. The schedule-
+differential direction is closed with no promotion candidate; the awake
+completion gate remains unmet and sleeping remains unauthorized as a mask for
+the residual.
 
 ## Authority corrections
 

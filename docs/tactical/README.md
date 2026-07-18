@@ -15,10 +15,10 @@ ranking and selection wait for the S6 awake gate. S4.3 grab feel and S4.4
 construction mechanics are complete.
 S8 closed the physical mobile small-world pacing regression with a bounded
 dispatch policy and a maintained presentation/physics cadence gate.
-S9 is active: a bounded settling schedule-differential program (per-pass
-16-stack attribution plus static-late, fused normal/tangent, and
-static-stiff-hard arms) with predeclared gates; all arms are unpromoted and a
-winner still requires human promotion review.
+S9 is complete as a negative result: matched 16-stack attribution localized
+warm-start energy, but every predeclared material arm was discarded, no
+combination was eligible, and restitution timing was byte-inert. The selected
+hard/direct product remains unchanged.
 
 Tactical filenames use a three-digit zero-padded prefix ordered by their first
 Git creation timestamp. This repository starts at `001`. Never renumber an
@@ -35,9 +35,9 @@ This README remains the unnumbered index.
 | S4 | Interactive evaluation workbench | [004-basic-scene-navigation-camera.md](004-basic-scene-navigation-camera.md) | S4.4 complete; S4.5 construction-feel review ready, 2026-07-16 |
 | S5 | Interactive rigid quality, construction, and scale | [005-interactive-rigid-quality-and-scale.md](005-interactive-rigid-quality-and-scale.md) | S5.4c scheduler integrated; S5.5 waits for S6 awake gate, 2026-07-17 |
 | S6 | Awake settling stabilization | [006-awake-settling-stabilization.md](006-awake-settling-stabilization.md) | S6.5 closed; soft settling deferred by human review, 2026-07-18 |
-| S7 | Box3D planar stability investigation | [007-box3d-planar-stability-investigation.md](007-box3d-planar-stability-investigation.md) | complete; static-late question forwarded as S9 arm E2, 2026-07-18 |
+| S7 | Box3D planar stability investigation | [007-box3d-planar-stability-investigation.md](007-box3d-planar-stability-investigation.md) | complete; static-late arm later rejected by S9, 2026-07-18 |
 | S8 | Physical mobile frame pacing | [008-physical-mobile-frame-pacing.md](008-physical-mobile-frame-pacing.md) | complete; Pixel 7a bootstrap sustains rendering and physics cadence, 2026-07-18 |
-| S9 | Awake settling schedule differential | [009-settling-schedule-differential.md](009-settling-schedule-differential.md) | active; attribution and arm program authorized, 2026-07-18 |
+| S9 | Awake settling schedule differential | [009-settling-schedule-differential.md](009-settling-schedule-differential.md) | complete; no schedule-differential survivor, 2026-07-18 |
 
 ## Conventions
 

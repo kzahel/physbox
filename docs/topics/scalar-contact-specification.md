@@ -1,7 +1,8 @@
 # Scalar contact specification
 
 Status: S1.2 executable pass equations, analytic baselines, and scoped
-multi-step fixture contact regeneration implemented, 2026-07-14.
+multi-step fixture contact regeneration implemented; S9 closed without
+changing the selected equations or stage order, 2026-07-18.
 
 Governing direction:
 [one GPU-resident 2D physics world](physbox5-unified-gpu-physics.md).
@@ -160,6 +161,24 @@ linear residual speed. A 60-step sliding fixture reduces horizontal speed from
 exact integration-record count, bounded support/velocity, friction reduction,
 and sleeping no-drift; these observations do not freeze product settings or
 accepted solver quality.
+
+## S9 schedule-differential closure
+
+The [S9.6 decision package](../../evidence/p5.2b-s9.6-schedule-differential-review/README.md)
+closes four material comparators and one timing hygiene control without
+promoting scalar or GPU math. Contact-major normal/tangent staging (E3), the
+single static-contact bias tuple (E4), fixed-anchor analytical separation
+refresh (E5), and restitution after all substeps (E6) remain named laboratory
+policies only. E2 changes color order without changing a scalar equation.
+
+E5 and E6 are especially important boundaries for this specification: the
+selected multi-step execution still refreshes anchors, effective mass, and
+separation each substep and still applies restitution after each substep. E6
+is byte-inert on the governed restitution-ineligible corpus, which is a
+hygiene result rather than authority to reorder the selected trace. E5 reduces
+short-stack residuals but materially worsens 16-stack energy, so its changed
+preparation recurrence is rejected. The equations, coefficient ownership,
+trace identity, and Box2D/invariant precedence above remain authoritative.
 
 ## Reconsideration triggers
 

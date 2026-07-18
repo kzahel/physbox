@@ -32,14 +32,16 @@ a running log.
 - [Contact solver parallelism and scheduling](contact-solver-parallelism.md) —
   why independent-parallel (Jacobi) solving fails deep stacks, the measured
   S5.4/S5.4a alternatives, the selected colored/manifold direction, the
-  portable WebGPU dispatch floor, fallbacks, prior art, and pacing boundaries.
+  portable WebGPU dispatch floor, the closed negative S9 schedule study,
+  fallbacks, prior art, and pacing boundaries.
 - [Awake settling and rest stability](awake-settling-and-rest-stability.md) —
   resting-contact identity, warm-start continuity, soft-contact damping,
   realistic drop fixtures, awake quality gates, and the required visible
   review before physical-default promotion, broadphase selection, or sleeping.
 - [Box3D planar stability reference](box3d-planar-stability-reference.md) —
   completed bounded sleep-off study of Box3D's planar locks, persistent
-  contacts, and graph order; static-late PhysBox factorial at human review.
+  contacts, and graph order; its forwarded static-late PhysBox arm was
+  measured and discarded by S9.
 
 ## Conventions
 

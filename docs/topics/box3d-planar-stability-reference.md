@@ -1,10 +1,11 @@
 # Box3D planar stability reference
 
-Status: study complete, 2026-07-18. The S7.6 human decision authorized the
-recommended static-late ordering question as arm E2 of the S9 settling
-schedule-differential program
-([tactical 009](../tactical/009-settling-schedule-differential.md)); nothing
-else from this study is forwarded and no product change occurred.
+Status: study complete and its sole forwarded hypothesis resolved negatively,
+2026-07-18. The S7.6 human decision authorized static-late ordering as arm E2
+of the S9 settling schedule-differential program
+([tactical 009](../tactical/009-settling-schedule-differential.md)); S9
+discarded it under the frozen material gate. Nothing else from this study is
+forwarded and no product change occurred.
 Box3D v0.1.0 is pinned as a clean local reference. It may generate bounded
 solver, contact-persistence, and scheduling hypotheses, but it is not a rigid
 authority, product dependency, or alternative engine. Box2D remains the rigid
@@ -198,6 +199,19 @@ existing order controls move 16-stack energy about 2x while the residual gap
 to the pinned authority is roughly three orders of magnitude, and both quiet
 references pair static-late order with 2x static-contact stiffening. This
 closes the Box3D source workstream; S9 owns all further execution.
+
+S9 resolution, 2026-07-18: the clean
+[E2 package](../../evidence/p5.2b-s9.4-arm-static-late/README.md) confirms that
+static-late ordering is material but not safe. It nearly eliminates the
+4-stack residual, yet raises 16-stack last-quartile energy `62.11%`, regresses
+the 32-stack first loss from step 29 to 23, and exhausts the declared four-
+color static partition on an accepted fixture and both buckets. The independent
+2x static-stiff-hard arm also fails, so the anticipated pairing does not yield
+an eligible combination. The
+[S9 review](../../evidence/p5.2b-s9.6-schedule-differential-review/README.md)
+closes the forwarded Box3D direction with no promotion candidate. Reopening
+still requires a new measured Box3D mechanism or a new release under this
+topic's existing triggers; the visual reference alone is insufficient.
 
 ## Initial hypotheses
 

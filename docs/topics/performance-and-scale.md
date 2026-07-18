@@ -939,6 +939,16 @@ P95, `59.38` steps/s, `0.990` effective scale, and `0.067 s` slipped during the
 six-second all-marker observation. This is a named-device small-world gate,
 not a 3K-10K mobile scale claim or a heterogeneous-CI threshold.
 
+S9 cost disposition, 2026-07-18: the
+[schedule-differential review](../../evidence/p5.2b-s9.6-schedule-differential-review/README.md)
+has no material survivor, so none enters the declared equivalent-quality
+Metal 256/1K timing or cross-host qualification matrix. E3's 16 island-launch
+reduction and E5/E6's three-launch reductions are implementation work-vector
+facts only: E3 and E5 fail quality, while E6 is byte-inert and cannot rank a
+settling formulation. No S9 timing, browser, AVD, or physical-Android result
+is inferred for a discarded arm. The accepted scheduler rows and unresolved
+CPU-crossover/scale contract remain controlling.
+
 ## Regression and claim gates
 
 Before representative hardware is selected, store named measurements and
