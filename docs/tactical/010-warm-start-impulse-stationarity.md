@@ -369,13 +369,13 @@ Commit boundaries: observation tooling; clean measurement evidence.
 
 ### S10.3 — mechanism localization and minimization
 
-- [ ] Single-step operator study from captured settled `f32` state using the
+- [x] Single-step operator study from captured settled `f32` state using the
   matched scalar mirror: replay one outer step; report how the stored-impulse
   vector maps across each pass boundary — fixed point, contraction, or
   oscillation — and which family (intra-block active-set flips, intra-manifold
   point redistribution, cross-color support transfer, warm-start/bias
   interplay) carries the change.
-- [ ] Depth sweep for the smallest structure exhibiting the identified
+- [x] Depth sweep for the smallest structure exhibiting the identified
   signature; preserve it as a permanent reproducer with exact prefixes.
 - [ ] Hypothesis 3 unification: apply the frozen stationarity metrics to
   existing frozen soft-candidate captures, plus the single authorized bounded
@@ -395,6 +395,28 @@ its reproducer.
 
 Commit boundaries: operator tooling; minimization evidence; unification
 evidence.
+
+Hard-mechanism checkpoint, 2026-07-18: clean run
+`p5.2b-s10.3-hard-operator-and-depth-20260718-r1` exactly replays the full
+series, step-904 pass trace, and operator report at every governed depth
+`2,4,8..=16`; matched scalar color-boundary differences are retained without
+a widened tolerance, and all lanes are capacity-clean and structurally intact.
+Every depth exhibits three exact
+inter-substep reset-mode-1 maps back to the first prepared impulse vector and
+four warm-start/non-fixed-biased-normal compositions. The named mechanism is
+`inter-substep-stale-persistence-reseed`. Depth 2 remains below both quality
+gates (`8.5901223e-7 m/s`, nonincreasing `7.3734763e-13` last energy), while
+depth 4 is the first harmful structure (`0.03872548 m/s`, rising
+`0.0017579256` last energy). Its step-904 refreshes discard
+`0.00020720600332838917` impulse L1 despite zero active-set flips and only
+`8.945056e-8` redistribution, so an intra-block rule cannot explain the
+minimum failure. The permanent exact-prefix reproducer has source hash
+`f9a8e6138ebf9f1539014eda7f62c4b08c213c7ee866a88835ed2c3fbcefe447`.
+The routed correction must retain current within-step impulses across geometry
+and effective-mass refresh while preserving unilateral response, penetration
+correction, deterministic colored support transfer, and final persistence.
+The clean evidence and passing independent verifier are in
+`evidence/p5.2b-s10.3-mechanism/`.
 
 ### S10.4 — bounded corrections (at most two, scalar first)
 
