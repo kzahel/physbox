@@ -689,6 +689,22 @@ differential direction is closed with no promotion candidate; the awake
 completion gate remains unmet and sleeping remains unauthorized as a mask for
 the residual.
 
+S10 authorization, 2026-07-18: human review authorizes the warm-start and
+stored-impulse stationarity workstream tracked by
+[tactical 010](../tactical/010-warm-start-impulse-stationarity.md). It follows
+the S9.2 localization with a sleep-off warm-start on/off differential in both
+PhysBox and the pinned authority, settled-window stored-impulse stationarity
+measurement referenced to the authority's own measured band, single-step
+operator localization, and at most two scalar-first corrections inside the
+selected hard/direct family. Warm-start-off lanes are diagnostics and can
+never become candidates. The authorization permits one bounded stationarity
+re-observation of the existing frozen unpromoted soft-candidate lane solely to
+test whether the deferred soft failure shares the hard mode's mechanism; it
+does not authorize any new soft recurrence, coefficient, or candidate. If no
+correction survives the frozen S9 gates, S10 returns the formulation decision
+package against this topic's recorded reopening evidence instead of further
+hard-family arms; that reopening remains a human decision.
+
 ## Authority corrections
 
 Two plausible techniques must not be mislabeled as direct Box2D v3 parity:

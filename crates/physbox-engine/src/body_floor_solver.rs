@@ -539,6 +539,14 @@ impl GpuSolverExecutionV4 {
         relaxation: true,
     };
 
+    /// S10 diagnostic execution that differs from the selected product only
+    /// by suppressing application of the persisted contact impulse seed.
+    /// Product construction never selects this execution.
+    pub const WARM_START_OFF_DIAGNOSTIC: Self = Self {
+        warm_start: false,
+        ..Self::SELECTED
+    };
+
     pub const fn experiment(warm_start: bool, relaxation: bool) -> Self {
         Self {
             version: GPU_SOLVER_EXECUTION_VERSION,

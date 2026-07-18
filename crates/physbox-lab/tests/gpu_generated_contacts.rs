@@ -825,10 +825,14 @@ fn selected_solver_and_point_experiments_are_explicit_and_replayable() {
     assert_eq!(benchmark.dispatches_per_step, 129);
     assert_eq!(benchmark.correctness.solver_execution, execution);
 
-    let no_warm = runner
-        .run_experiment(&scenario, 30, GpuSolverExecutionV4::experiment(false, true))
-        .unwrap();
-    assert!(!no_warm.solver_execution.warm_start);
+    let no_warm = runner.run_warm_start_off_diagnostic(&scenario, 30).unwrap();
+    assert_eq!(
+        no_warm.solver_execution,
+        GpuSolverExecutionV4::WARM_START_OFF_DIAGNOSTIC
+    );
+    let mut expected = GpuSolverExecutionV4::SELECTED;
+    expected.warm_start = false;
+    assert_eq!(GpuSolverExecutionV4::WARM_START_OFF_DIAGNOSTIC, expected);
     assert!(no_warm.bodies.iter().all(|body| {
         body.position.x.is_finite()
             && body.position.y.is_finite()
@@ -837,6 +841,15 @@ fn selected_solver_and_point_experiments_are_explicit_and_replayable() {
             && body.linear_velocity.y.is_finite()
             && body.angular_velocity.get().is_finite()
     }));
+
+    let mut unsupported = scenario.clone();
+    unsupported.settings.contact_softness = Some(contact_softness(30.0, 10.0, 2.0));
+    assert!(
+        runner
+            .run_warm_start_off_diagnostic(&unsupported, 30)
+            .unwrap_err()
+            .contains("accepted S5.4 baseline")
+    );
 }
 
 #[test]

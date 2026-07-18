@@ -17,6 +17,7 @@ pub mod playback;
 pub mod scalar;
 pub mod scheduler_benchmark;
 pub mod settling;
+pub mod stationarity;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct InvariantViolation {

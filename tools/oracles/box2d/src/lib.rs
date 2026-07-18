@@ -1,9 +1,13 @@
-use std::fmt::{Display, Formatter};
+use std::{
+    collections::BTreeMap,
+    fmt::{Display, Formatter},
+};
 
 use physbox_contracts::{
     AuthoredContactPointV1, AuthoredManifoldV1, BodyStateV1, FailureKindV1, FailureV1, FeatureIdV1,
     FiniteF32, MaterialV1, MetricsV1, NamedValueV1, OracleRequestV1, OracleResultV1, ProvenanceV1,
-    SCHEMA_VERSION, ShapeV1, Validate, Vec2, WorkVectorV1, sha256_bytes,
+    SCHEMA_VERSION, ShapeV1, TraceRecordV1, TraceStageV1, TraceValueV1, Validate, Vec2,
+    WorkVectorV1, sha256_bytes,
 };
 
 #[allow(
@@ -51,6 +55,29 @@ impl OracleLane {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct OracleExecutionOptionsV1 {
+    pub warm_start: bool,
+    pub capture_step_trace: bool,
+}
+
+impl OracleExecutionOptionsV1 {
+    pub const SELECTED: Self = Self {
+        warm_start: true,
+        capture_step_trace: false,
+    };
+
+    fn validate(self, lane: OracleLane) -> Result<(), AdapterError> {
+        if (!self.warm_start || self.capture_step_trace) && lane != OracleLane::WorldAwake {
+            return Err(AdapterError::Unsupported(
+                "warm-start-off and per-step trace options require the sleep-off world-awake lane"
+                    .to_owned(),
+            ));
+        }
+        Ok(())
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AdapterError {
     Invalid(String),
@@ -75,12 +102,29 @@ pub fn execute_request(
     request_bytes: &[u8],
     lane: OracleLane,
 ) -> Result<OracleResultV1, AdapterError> {
+    execute_request_with_options(
+        request,
+        request_bytes,
+        lane,
+        OracleExecutionOptionsV1::SELECTED,
+    )
+}
+
+pub fn execute_request_with_options(
+    request: &OracleRequestV1,
+    request_bytes: &[u8],
+    lane: OracleLane,
+    options: OracleExecutionOptionsV1,
+) -> Result<OracleResultV1, AdapterError> {
     request
         .validate()
         .map_err(|error| AdapterError::Invalid(error.to_string()))?;
     validate_projection(request, lane)?;
+    options.validate(lane)?;
     match lane {
-        OracleLane::World | OracleLane::WorldAwake => execute_world(request, request_bytes, lane),
+        OracleLane::World | OracleLane::WorldAwake => {
+            execute_world(request, request_bytes, lane, options)
+        }
         OracleLane::Narrowphase => execute_narrowphase(request, request_bytes),
     }
 }
@@ -91,12 +135,28 @@ pub fn unsupported_result(
     lane: OracleLane,
     reason: String,
 ) -> OracleResultV1 {
+    unsupported_result_with_options(
+        request,
+        request_bytes,
+        lane,
+        OracleExecutionOptionsV1::SELECTED,
+        reason,
+    )
+}
+
+pub fn unsupported_result_with_options(
+    request: &OracleRequestV1,
+    request_bytes: &[u8],
+    lane: OracleLane,
+    options: OracleExecutionOptionsV1,
+    reason: String,
+) -> OracleResultV1 {
     OracleResultV1 {
         schema_version: SCHEMA_VERSION,
         run_id: request.run_id.clone(),
         source_scenario_hash: request.source_scenario_hash.clone(),
         projection_hash: sha256_bytes(request_bytes),
-        provenance: provenance(request, lane),
+        provenance: provenance(request, lane, options),
         bodies: request.scenario.bodies.clone(),
         manifolds: Vec::new(),
         traces: Vec::new(),
@@ -190,6 +250,7 @@ fn execute_world(
     request: &OracleRequestV1,
     request_bytes: &[u8],
     lane: OracleLane,
+    options: OracleExecutionOptionsV1,
 ) -> Result<OracleResultV1, AdapterError> {
     // SAFETY: all definitions come from Box2D's public constructors, remain alive for each call,
     // and the world is exclusively owned by this process and destroyed by WorldGuard.
@@ -204,7 +265,14 @@ fn execute_world(
         world_def.enableContinuous = true;
         world_def.enableContactSoftening = false;
         let world = WorldGuard(ffi::b2CreateWorld(&raw const world_def));
+        ffi::b2World_EnableWarmStarting(world.0, options.warm_start);
+        if ffi::b2World_IsWarmStartingEnabled(world.0) != options.warm_start {
+            return Err(AdapterError::Invalid(
+                "Box2D warm-start option did not take effect".to_owned(),
+            ));
+        }
         let mut raw_bodies = Vec::with_capacity(request.scenario.bodies.len());
+        let mut raw_shapes = Vec::with_capacity(request.scenario.bodies.len());
         for body in &request.scenario.bodies {
             let mut body_def = ffi::b2DefaultBodyDef();
             body_def.type_ = if body.inverse_mass.get() == 0.0 {
@@ -226,19 +294,19 @@ fn execute_world(
             shape_def.material.rollingResistance = 0.0;
             shape_def.material.tangentSpeed = 0.0;
             shape_def.density = 1.0;
-            match body.shape {
+            let raw_shape = match body.shape {
                 ShapeV1::Circle { radius } => {
                     let circle = ffi::b2Circle {
                         center: ffi::b2Vec2 { x: 0.0, y: 0.0 },
                         radius: radius.get(),
                     };
-                    ffi::b2CreateCircleShape(raw_body, &raw const shape_def, &raw const circle);
+                    ffi::b2CreateCircleShape(raw_body, &raw const shape_def, &raw const circle)
                 }
                 ShapeV1::Rectangle { half_extents } => {
                     let polygon = ffi::b2MakeBox(half_extents.x, half_extents.y);
-                    ffi::b2CreatePolygonShape(raw_body, &raw const shape_def, &raw const polygon);
+                    ffi::b2CreatePolygonShape(raw_body, &raw const shape_def, &raw const polygon)
                 }
-            }
+            };
             if body.inverse_mass.get() > 0.0 {
                 ffi::b2Body_SetMassData(
                     raw_body,
@@ -250,6 +318,7 @@ fn execute_world(
                 );
             }
             raw_bodies.push(raw_body);
+            raw_shapes.push(raw_shape);
         }
 
         struct ActiveGrab {
@@ -258,6 +327,7 @@ fn execute_world(
             target: Vec2,
         }
         let mut active_grab: Option<ActiveGrab> = None;
+        let mut step_traces = Vec::new();
 
         for step in 0..request.scenario.requested_steps {
             for action in &request.scenario.actions {
@@ -367,6 +437,15 @@ fn execute_world(
                 request.scenario.settings.fixed_dt.get(),
                 request.scenario.settings.substeps as i32,
             );
+            if options.capture_step_trace {
+                capture_world_step_trace(
+                    &mut step_traces,
+                    step + 1,
+                    &request.scenario.bodies,
+                    &raw_bodies,
+                    &raw_shapes,
+                )?;
+            }
         }
 
         let mut bodies = request.scenario.bodies.clone();
@@ -396,9 +475,13 @@ fn execute_world(
             request,
             request_bytes,
             lane,
-            bodies,
-            manifolds,
-            work,
+            options,
+            ResultPayload {
+                bodies,
+                manifolds,
+                traces: step_traces,
+                work,
+            },
         ))
     }
 }
@@ -427,10 +510,164 @@ fn execute_narrowphase(
         request,
         request_bytes,
         OracleLane::Narrowphase,
-        request.scenario.bodies.clone(),
-        manifolds,
-        work,
+        OracleExecutionOptionsV1::SELECTED,
+        ResultPayload {
+            bodies: request.scenario.bodies.clone(),
+            manifolds,
+            traces: Vec::new(),
+            work,
+        },
     ))
+}
+
+fn capture_world_step_trace(
+    output: &mut Vec<TraceRecordV1>,
+    completed_step: u32,
+    source_bodies: &[BodyStateV1],
+    raw_bodies: &[ffi::b2BodyId],
+    raw_shapes: &[ffi::b2ShapeId],
+) -> Result<(), AdapterError> {
+    for (source, raw_body) in source_bodies.iter().zip(raw_bodies) {
+        let position = unsafe { ffi::b2Body_GetPosition(*raw_body) };
+        let rotation = unsafe { ffi::b2Body_GetRotation(*raw_body) };
+        let linear_velocity = unsafe { ffi::b2Body_GetLinearVelocity(*raw_body) };
+        let values = vec![
+            trace_value("angle", unsafe { ffi::b2Atan2(rotation.s, rotation.c) })?,
+            trace_value("angular_velocity", unsafe {
+                ffi::b2Body_GetAngularVelocity(*raw_body)
+            })?,
+            trace_value("linear_velocity_x", linear_velocity.x)?,
+            trace_value("linear_velocity_y", linear_velocity.y)?,
+            trace_value("position_x", position.x)?,
+            trace_value("position_y", position.y)?,
+        ];
+        output.push(TraceRecordV1 {
+            step: completed_step,
+            substep: 0,
+            iteration: 0,
+            stage: TraceStageV1::Integrate,
+            manifold_id: source.id.slot,
+            point_index: source.id.generation,
+            values,
+        });
+    }
+
+    if completed_step < 900 {
+        return Ok(());
+    }
+
+    let mut contacts = BTreeMap::<(i32, u16, u32), ffi::b2ContactData>::new();
+    for raw_body in raw_bodies {
+        let capacity = unsafe { ffi::b2Body_GetContactCapacity(*raw_body) }.max(0) as usize;
+        if capacity == 0 {
+            continue;
+        }
+        // SAFETY: Box2D initializes each returned prefix element and the
+        // zeroed tail is never read because `count` bounds the iteration.
+        let mut data = vec![unsafe { std::mem::zeroed::<ffi::b2ContactData>() }; capacity];
+        let count =
+            unsafe { ffi::b2Body_GetContactData(*raw_body, data.as_mut_ptr(), capacity as i32) };
+        if count < 0 || count as usize > capacity {
+            return Err(AdapterError::Invalid(
+                "Box2D public contact count exceeded its declared capacity".to_owned(),
+            ));
+        }
+        for contact in data.into_iter().take(count as usize) {
+            contacts
+                .entry(contact_id_key(contact.contactId))
+                .or_insert(contact);
+        }
+    }
+
+    for contact in contacts.into_values() {
+        let index_a = raw_shapes
+            .iter()
+            .position(|shape| shape_id_key(*shape) == shape_id_key(contact.shapeIdA))
+            .ok_or_else(|| AdapterError::Invalid("Box2D contact shape A is unknown".to_owned()))?;
+        let index_b = raw_shapes
+            .iter()
+            .position(|shape| shape_id_key(*shape) == shape_id_key(contact.shapeIdB))
+            .ok_or_else(|| AdapterError::Invalid("Box2D contact shape B is unknown".to_owned()))?;
+        let source_a = &source_bodies[index_a];
+        let source_b = &source_bodies[index_b];
+        let swapped = source_a.id > source_b.id;
+        let (body_a, body_b) = if swapped {
+            (source_b.id, source_a.id)
+        } else {
+            (source_a.id, source_b.id)
+        };
+        let normal = if swapped {
+            ffi::b2Vec2 {
+                x: -contact.manifold.normal.x,
+                y: -contact.manifold.normal.y,
+            }
+        } else {
+            contact.manifold.normal
+        };
+        if !(1..=2).contains(&contact.manifold.pointCount) {
+            return Err(AdapterError::Invalid(format!(
+                "Box2D public contact trace has invalid point count {}",
+                contact.manifold.pointCount
+            )));
+        }
+        for point in &contact.manifold.points[..contact.manifold.pointCount as usize] {
+            let (anchor_a, anchor_b, point_id) = if swapped {
+                (
+                    point.anchorB,
+                    point.anchorA,
+                    ((point.id & 0xff) << 8) | (point.id >> 8),
+                )
+            } else {
+                (point.anchorA, point.anchorB, point.id)
+            };
+            let values = vec![
+                trace_value("anchor_a_x", anchor_a.x)?,
+                trace_value("anchor_a_y", anchor_a.y)?,
+                trace_value("anchor_b_x", anchor_b.x)?,
+                trace_value("anchor_b_y", anchor_b.y)?,
+                trace_value("body_a_generation", body_a.generation as f32)?,
+                trace_value("body_a_slot", body_a.slot as f32)?,
+                trace_value("body_b_generation", body_b.generation as f32)?,
+                trace_value("body_b_slot", body_b.slot as f32)?,
+                trace_value("normal_impulse", point.normalImpulse)?,
+                trace_value("normal_x", normal.x)?,
+                trace_value("normal_y", normal.y)?,
+                trace_value("point_id", point_id as f32)?,
+                trace_value("point_x", point.point.x)?,
+                trace_value("point_y", point.point.y)?,
+                trace_value("separation", point.separation)?,
+                trace_value("tangent_impulse", point.tangentImpulse)?,
+                trace_value("total_normal_impulse", point.totalNormalImpulse)?,
+            ];
+            output.push(TraceRecordV1 {
+                step: completed_step,
+                substep: 0,
+                iteration: 0,
+                stage: TraceStageV1::Prepare,
+                manifold_id: body_a.slot,
+                point_index: u32::from(point_id),
+                values,
+            });
+        }
+    }
+    Ok(())
+}
+
+fn contact_id_key(id: ffi::b2ContactId) -> (i32, u16, u32) {
+    (id.index1, id.world0, id.generation)
+}
+
+fn shape_id_key(id: ffi::b2ShapeId) -> (i32, u16, u16) {
+    (id.index1, id.world0, id.generation)
+}
+
+fn trace_value(name: &str, value: f32) -> Result<TraceValueV1, AdapterError> {
+    let value = finite(value, name)?;
+    Ok(TraceValueV1 {
+        name: name.to_owned(),
+        bits: value.get().to_bits(),
+        value,
+    })
 }
 
 pub fn public_manifolds(bodies: &[BodyStateV1]) -> Result<Vec<AuthoredManifoldV1>, AdapterError> {
@@ -566,25 +803,31 @@ fn convert_manifold(
     }))
 }
 
+struct ResultPayload {
+    bodies: Vec<BodyStateV1>,
+    manifolds: Vec<AuthoredManifoldV1>,
+    traces: Vec<TraceRecordV1>,
+    work: WorkVectorV1,
+}
+
 fn result(
     request: &OracleRequestV1,
     request_bytes: &[u8],
     lane: OracleLane,
-    bodies: Vec<BodyStateV1>,
-    manifolds: Vec<AuthoredManifoldV1>,
-    work: WorkVectorV1,
+    options: OracleExecutionOptionsV1,
+    payload: ResultPayload,
 ) -> OracleResultV1 {
     OracleResultV1 {
         schema_version: SCHEMA_VERSION,
         run_id: request.run_id.clone(),
         source_scenario_hash: request.source_scenario_hash.clone(),
         projection_hash: sha256_bytes(request_bytes),
-        provenance: provenance(request, lane),
-        bodies,
-        manifolds,
-        traces: Vec::new(),
+        provenance: provenance(request, lane, options),
+        bodies: payload.bodies,
+        manifolds: payload.manifolds,
+        traces: payload.traces,
         metrics: MetricsV1 {
-            work,
+            work: payload.work,
             total_physics: None,
             cpu_encode_submit: None,
             capacities: Vec::new(),
@@ -596,7 +839,11 @@ fn result(
     }
 }
 
-fn provenance(request: &OracleRequestV1, lane: OracleLane) -> ProvenanceV1 {
+fn provenance(
+    request: &OracleRequestV1,
+    lane: OracleLane,
+    options: OracleExecutionOptionsV1,
+) -> ProvenanceV1 {
     ProvenanceV1 {
         run_id: request.run_id.clone(),
         source_revision: BOX2D_REVISION.to_owned(),
@@ -700,7 +947,19 @@ fn provenance(request: &OracleRequestV1, lane: OracleLane) -> ProvenanceV1 {
                     "false"
                 },
             ),
+            named(
+                "step_trace",
+                if options.capture_step_trace {
+                    "settled-contact-impulses-plus-every-step-bodies"
+                } else {
+                    "off"
+                },
+            ),
             named("substeps", &request.scenario.settings.substeps.to_string()),
+            named(
+                "warm_start",
+                if options.warm_start { "true" } else { "false" },
+            ),
             named("worker_count", "1"),
         ],
     }
@@ -1007,6 +1266,68 @@ mod tests {
             Some("false")
         );
         result.validate().unwrap();
+    }
+
+    #[test]
+    fn awake_world_warm_start_off_trace_is_public_replayable_and_attested() {
+        let scenario = p5_2_centered_rectangle_stack_scenario(2, 900).unwrap();
+        let request = request("box2d-world-awake-warm-off-trace", scenario);
+        let bytes = canonical_json(&request).unwrap();
+        let options = OracleExecutionOptionsV1 {
+            warm_start: false,
+            capture_step_trace: true,
+        };
+        let result =
+            execute_request_with_options(&request, &bytes, OracleLane::WorldAwake, options)
+                .unwrap();
+        let replay =
+            execute_request_with_options(&request, &bytes, OracleLane::WorldAwake, options)
+                .unwrap();
+        assert_eq!(result.bodies, replay.bodies);
+        assert_eq!(result.manifolds, replay.manifolds);
+        assert_eq!(result.traces, replay.traces);
+        assert!(
+            result
+                .traces
+                .iter()
+                .any(|trace| trace.stage == TraceStageV1::Integrate && trace.step == 900)
+        );
+        assert!(
+            result
+                .traces
+                .iter()
+                .any(|trace| trace.stage == TraceStageV1::Prepare && trace.step == 900)
+        );
+        assert_eq!(
+            result
+                .provenance
+                .runtime_settings
+                .iter()
+                .find(|setting| setting.name == "warm_start")
+                .map(|setting| setting.value.as_str()),
+            Some("false")
+        );
+        result.validate().unwrap();
+    }
+
+    #[test]
+    fn warm_start_off_rejects_non_awake_world_composition() {
+        let scenario = analytic_fixture_scenario(AnalyticFixtureKind::CircleFloor, 1).unwrap();
+        let request = request("box2d-warm-off-invalid-composition", scenario);
+        let bytes = canonical_json(&request).unwrap();
+        let error = execute_request_with_options(
+            &request,
+            &bytes,
+            OracleLane::World,
+            OracleExecutionOptionsV1 {
+                warm_start: false,
+                capture_step_trace: false,
+            },
+        )
+        .unwrap_err();
+        assert!(
+            matches!(error, AdapterError::Unsupported(reason) if reason.contains("world-awake"))
+        );
     }
 
     #[test]

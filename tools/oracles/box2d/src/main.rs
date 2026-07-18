@@ -4,7 +4,10 @@ use std::{
     path::PathBuf,
 };
 
-use physbox_box2d_oracle::{AdapterError, OracleLane, execute_request, unsupported_result};
+use physbox_box2d_oracle::{
+    AdapterError, OracleExecutionOptionsV1, OracleLane, execute_request_with_options,
+    unsupported_result_with_options,
+};
 use physbox_contracts::{ORACLE_SUCCESS_SENTINEL, OracleRequestV1, Validate, canonical_json};
 
 fn main() {
@@ -20,13 +23,22 @@ fn run() -> Result<(), String> {
     let request: OracleRequestV1 =
         serde_json::from_slice(&request_bytes).map_err(|error| error.to_string())?;
     request.validate().map_err(|error| error.to_string())?;
-    let result = match execute_request(&request, &request_bytes, arguments.lane) {
-        Ok(result) => result,
-        Err(AdapterError::Unsupported(reason)) => {
-            unsupported_result(&request, &request_bytes, arguments.lane, reason)
-        }
-        Err(error) => return Err(error.to_string()),
+    let options = OracleExecutionOptionsV1 {
+        warm_start: arguments.warm_start,
+        capture_step_trace: arguments.capture_step_trace,
     };
+    let result =
+        match execute_request_with_options(&request, &request_bytes, arguments.lane, options) {
+            Ok(result) => result,
+            Err(AdapterError::Unsupported(reason)) => unsupported_result_with_options(
+                &request,
+                &request_bytes,
+                arguments.lane,
+                options,
+                reason,
+            ),
+            Err(error) => return Err(error.to_string()),
+        };
     let result_bytes = canonical_json(&result).map_err(|error| error.to_string())?;
     let mut file = OpenOptions::new()
         .write(true)
@@ -44,6 +56,8 @@ struct Arguments {
     lane: OracleLane,
     request: PathBuf,
     result: PathBuf,
+    warm_start: bool,
+    capture_step_trace: bool,
 }
 
 impl Arguments {
@@ -51,6 +65,8 @@ impl Arguments {
         let mut lane = None;
         let mut request = None;
         let mut result = None;
+        let mut warm_start = true;
+        let mut capture_step_trace = false;
         let mut arguments = std::env::args().skip(1);
         while let Some(argument) = arguments.next() {
             let value = arguments
@@ -62,6 +78,20 @@ impl Arguments {
                 }
                 "--request" => request = Some(PathBuf::from(value)),
                 "--result" => result = Some(PathBuf::from(value)),
+                "--warm-start" => {
+                    warm_start = match value.as_str() {
+                        "on" => true,
+                        "off" => false,
+                        _ => return Err("--warm-start requires on|off".to_owned()),
+                    }
+                }
+                "--capture-step-trace" => {
+                    capture_step_trace = match value.as_str() {
+                        "on" => true,
+                        "off" => false,
+                        _ => return Err("--capture-step-trace requires on|off".to_owned()),
+                    }
+                }
                 _ => return Err(format!("unknown argument {argument}")),
             }
         }
@@ -69,6 +99,8 @@ impl Arguments {
             lane: lane.ok_or_else(|| "missing --lane world|world-awake|narrowphase".to_owned())?,
             request: request.ok_or_else(|| "missing --request".to_owned())?,
             result: result.ok_or_else(|| "missing --result".to_owned())?,
+            warm_start,
+            capture_step_trace,
         })
     }
 }

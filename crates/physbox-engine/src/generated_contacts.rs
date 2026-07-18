@@ -2586,6 +2586,34 @@ impl GpuGeneratedContactRunner {
         )
     }
 
+    /// Runs the named S10 warm-start-off diagnostic over the otherwise exact
+    /// selected hard/direct graph. The fixed construction rejects soft or
+    /// otherwise non-selected solver settings instead of composing this
+    /// diagnostic with another laboratory policy.
+    pub fn run_warm_start_off_diagnostic_observation_series(
+        &self,
+        scenario: &ScenarioV1,
+        observation_interval_steps: u32,
+        completed_steps: u32,
+    ) -> Result<GpuGeneratedContactSeriesV1, String> {
+        validate_selected_settings(scenario)?;
+        let scheduling_policy = selected_scheduling_for_scenario(scenario)?;
+        self.run_contact_policy_observation_series_with_extended_solver_policies(
+            scenario,
+            observation_interval_steps,
+            completed_steps,
+            ContactIdentityPolicyV1::SELECTED,
+            VALIDATION_STEPS_PER_SUBMISSION,
+            GpuSolverExecutionV4::WARM_START_OFF_DIAGNOSTIC,
+            scheduling_policy,
+            crate::GpuSoftFeedbackPolicyV1::SELECTED,
+            crate::GpuNormalRelaxationPolicyV1::SELECTED,
+            crate::GpuContactCoefficientPolicyV1::SELECTED,
+            crate::GpuSubstepContactPolicyV1::SELECTED,
+            crate::GpuRestitutionTimingPolicyV1::SELECTED,
+        )
+    }
+
     pub fn run_observation_series_with_identity_policy(
         &self,
         scenario: &ScenarioV1,
@@ -3068,6 +3096,26 @@ impl GpuGeneratedContactRunner {
             completed_steps,
             GpuGatherTopology::StableBodyEdge,
             false,
+        )
+    }
+
+    /// Final-only companion to the S10 warm-start differential observation
+    /// lane. It is deliberately parameter-free so unsupported policy
+    /// compositions cannot enter through this API.
+    pub fn run_warm_start_off_diagnostic(
+        &self,
+        scenario: &ScenarioV1,
+        completed_steps: u32,
+    ) -> Result<GpuGeneratedContactOutput, String> {
+        validate_selected_settings(scenario)?;
+        self.run_solver_policy_experiment(
+            scenario,
+            completed_steps,
+            GpuSolverExecutionV4::WARM_START_OFF_DIAGNOSTIC,
+            selected_scheduling_for_scenario(scenario)?,
+            crate::GpuContactCoefficientPolicyV1::SELECTED,
+            crate::GpuSubstepContactPolicyV1::SELECTED,
+            crate::GpuRestitutionTimingPolicyV1::SELECTED,
         )
     }
 
