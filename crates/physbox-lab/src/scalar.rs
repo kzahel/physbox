@@ -4,8 +4,13 @@ use physbox_contracts::{
     AuthoredManifoldV1, BodyId, BodyStateV1, ContactCachePointV1, ContactSoftnessPolicyV1,
     FiniteF32, ScenarioV1, TraceRecordV1, TraceStageV1, TraceValueV1, Validate, Vec2,
 };
+use serde::Serialize;
 
-use crate::fixture_contacts::generate_fixture_contacts;
+use crate::{
+    analytic_narrowphase::{authored_solver_projection, generate_scalar_narrowphase},
+    collision_candidates::enumerate_scalar_candidates,
+    fixture_contacts::generate_fixture_contacts,
+};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ScalarError(pub String);
@@ -23,6 +28,35 @@ pub struct ScalarSolveResult {
     pub bodies: Vec<BodyStateV1>,
     pub contact_cache: Vec<ContactCachePointV1>,
     pub traces: Vec<TraceRecordV1>,
+}
+
+/// Scalar-only comparison of how the prepared impulse seed advances between
+/// substeps. The existing analytic stepper retains the just-solved cache; the
+/// alternate value reproduces the selected GPU graph's older outer-step seed
+/// without changing geometry regeneration or effective-mass preparation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ScalarSubstepImpulsePolicyV1 {
+    OuterStepStaleReseed,
+    RetainWithinStepImpulses,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScalarStepObservationV1 {
+    pub completed_steps: u32,
+    pub bodies: Vec<BodyStateV1>,
+    pub contact_cache: Vec<ContactCachePointV1>,
+    pub active_normal_points: u32,
+    pub total_normal_impulse: f64,
+    pub maximum_penetration: f32,
+    pub maximum_separation: f32,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ScalarObservedSolveResultV1 {
+    pub result: ScalarSolveResult,
+    pub observations: Vec<ScalarStepObservationV1>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -317,6 +351,55 @@ pub fn solve_authored_contact_pass(
 pub fn solve_analytic_fixture_steps(
     scenario: &ScenarioV1,
 ) -> Result<ScalarSolveResult, ScalarError> {
+    Ok(solve_analytic_fixture_steps_observed_with_substep_impulses(
+        scenario,
+        ScalarSubstepImpulsePolicyV1::RetainWithinStepImpulses,
+        true,
+    )?
+    .result)
+}
+
+pub fn solve_analytic_fixture_steps_observed_with_substep_impulses(
+    scenario: &ScenarioV1,
+    impulse_policy: ScalarSubstepImpulsePolicyV1,
+    retain_traces: bool,
+) -> Result<ScalarObservedSolveResultV1, ScalarError> {
+    solve_fixture_steps_observed(
+        scenario,
+        impulse_policy,
+        retain_traces,
+        ContactGeneration::AnalyticFixture,
+    )
+}
+
+/// Uses the independent portable scalar broadphase/narrowphase specification
+/// for interaction-shaped sources outside the intentionally small analytic
+/// fixture contact generator.
+pub fn solve_portable_narrowphase_steps_observed_with_substep_impulses(
+    scenario: &ScenarioV1,
+    impulse_policy: ScalarSubstepImpulsePolicyV1,
+    retain_traces: bool,
+) -> Result<ScalarObservedSolveResultV1, ScalarError> {
+    solve_fixture_steps_observed(
+        scenario,
+        impulse_policy,
+        retain_traces,
+        ContactGeneration::PortableNarrowphase,
+    )
+}
+
+#[derive(Clone, Copy)]
+enum ContactGeneration {
+    AnalyticFixture,
+    PortableNarrowphase,
+}
+
+fn solve_fixture_steps_observed(
+    scenario: &ScenarioV1,
+    impulse_policy: ScalarSubstepImpulsePolicyV1,
+    retain_traces: bool,
+    contact_generation: ContactGeneration,
+) -> Result<ScalarObservedSolveResultV1, ScalarError> {
     scenario
         .validate()
         .map_err(|error| ScalarError(error.to_string()))?;
@@ -334,18 +417,23 @@ pub fn solve_analytic_fixture_steps(
     let mut bodies = scenario.bodies.clone();
     let mut contact_cache = scenario.contact_cache.clone();
     let mut traces = Vec::new();
+    let mut observations = Vec::with_capacity(scenario.requested_steps as usize);
     let substep_dt = scenario.settings.fixed_dt.get() / scenario.settings.substeps as f32;
     for step in 0..scenario.requested_steps {
+        let outer_step_cache = contact_cache.clone();
         for substep in 0..scenario.settings.substeps {
-            let manifolds = generate_fixture_contacts(&bodies)
-                .map_err(|error| ScalarError(error.to_string()))?;
+            let manifolds = generate_contacts(scenario, &bodies, contact_generation)?;
             let trace_start = traces.len();
             let mut contacts = Vec::with_capacity(manifolds.len());
+            let preparation_cache = match impulse_policy {
+                ScalarSubstepImpulsePolicyV1::OuterStepStaleReseed => &outer_step_cache,
+                ScalarSubstepImpulsePolicyV1::RetainWithinStepImpulses => &contact_cache,
+            };
             for manifold in &manifolds {
                 contacts.push(prepare_contact(
                     &bodies,
                     manifold,
-                    &contact_cache,
+                    preparation_cache,
                     &mut traces,
                 )?);
             }
@@ -417,12 +505,72 @@ pub fn solve_analytic_fixture_steps(
                 trace.substep = substep;
             }
         }
+        let final_manifolds = generate_contacts(scenario, &bodies, contact_generation)?;
+        let mut maximum_penetration = 0.0_f32;
+        let mut maximum_separation = 0.0_f32;
+        for point in final_manifolds
+            .iter()
+            .flat_map(|manifold| manifold.points.iter())
+        {
+            maximum_penetration = maximum_penetration.max((-point.separation.get()).max(0.0));
+            maximum_separation = maximum_separation.max(point.separation.get().max(0.0));
+        }
+        observations.push(ScalarStepObservationV1 {
+            completed_steps: step + 1,
+            bodies: bodies.clone(),
+            contact_cache: contact_cache.clone(),
+            active_normal_points: contact_cache
+                .iter()
+                .filter(|point| point.normal_impulse.get() > 0.0)
+                .count() as u32,
+            total_normal_impulse: contact_cache
+                .iter()
+                .map(|point| f64::from(point.normal_impulse.get()))
+                .sum(),
+            maximum_penetration,
+            maximum_separation,
+        });
+        if !retain_traces {
+            traces.clear();
+        }
     }
-    Ok(ScalarSolveResult {
-        bodies,
-        contact_cache,
-        traces,
+    Ok(ScalarObservedSolveResultV1 {
+        result: ScalarSolveResult {
+            bodies,
+            contact_cache,
+            traces,
+        },
+        observations,
     })
+}
+
+fn generate_contacts(
+    source: &ScenarioV1,
+    bodies: &[BodyStateV1],
+    generation: ContactGeneration,
+) -> Result<Vec<AuthoredManifoldV1>, ScalarError> {
+    match generation {
+        ContactGeneration::AnalyticFixture => {
+            generate_fixture_contacts(bodies).map_err(|error| ScalarError(error.to_string()))
+        }
+        ContactGeneration::PortableNarrowphase => {
+            let mut current = source.clone();
+            current.bodies = bodies.to_vec();
+            current.manifolds.clear();
+            current.contact_cache.clear();
+            current.actions.clear();
+            current.requested_steps = 1;
+            current
+                .validate()
+                .map_err(|error| ScalarError(error.to_string()))?;
+            let candidates = enumerate_scalar_candidates(&current).map_err(ScalarError)?;
+            let manifolds = generate_scalar_narrowphase(&current, &candidates.candidates)
+                .map_err(ScalarError)?;
+            authored_solver_projection(&current, &manifolds)
+                .map(|projection| projection.manifolds)
+                .map_err(ScalarError)
+        }
+    }
 }
 
 pub fn first_trace_divergence(
@@ -1497,6 +1645,41 @@ mod tests {
             );
             assert_eq!(result, solve_analytic_fixture_steps(&scenario).unwrap());
         }
+    }
+
+    #[test]
+    fn substep_impulse_policy_preserves_existing_retained_stepper_and_exposes_stale_reseed() {
+        let mut scenario =
+            analytic_fixture_scenario(AnalyticFixtureKind::RectangleFloor, 2).unwrap();
+        scenario.bodies[0].position.y = 0.49;
+        let retained = solve_analytic_fixture_steps_observed_with_substep_impulses(
+            &scenario,
+            ScalarSubstepImpulsePolicyV1::RetainWithinStepImpulses,
+            true,
+        )
+        .unwrap();
+        assert_eq!(
+            retained.result,
+            solve_analytic_fixture_steps(&scenario).unwrap()
+        );
+        assert_eq!(retained.observations.len(), 2);
+        assert_eq!(retained.observations[1].completed_steps, 2);
+        assert!(retained.observations[1].active_normal_points > 0);
+
+        let stale = solve_analytic_fixture_steps_observed_with_substep_impulses(
+            &scenario,
+            ScalarSubstepImpulsePolicyV1::OuterStepStaleReseed,
+            false,
+        )
+        .unwrap();
+        assert_ne!(stale.result.bodies, retained.result.bodies);
+        assert!(stale.result.traces.is_empty());
+        assert!(
+            stale
+                .observations
+                .iter()
+                .all(|observation| observation.maximum_penetration.is_finite())
+        );
     }
 
     #[test]
