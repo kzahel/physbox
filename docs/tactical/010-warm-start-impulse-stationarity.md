@@ -446,13 +446,13 @@ reconstructs both phases from `evidence/p5.2b-s10.3-mechanism/` and passes.
   scalar fixed-point or contraction argument; (b) a warm-start/bias
   composition correction with a discrete-energy or stationarity argument at
   every colored boundary. Free-form attenuation knobs are outside the space.
-- [ ] For each candidate, in order and failing closed at each step: the scalar
+- [x] For each candidate, in order and failing closed at each step: the scalar
   argument; scalar quality on the two-step contract fixture, the permanent
   four-body reproducer, and the S10.3 reproducer (support transfer and
   penetration preserved; quiet-by-sag rejected); a single GPU port as a named
   unpromoted policy; the S9 implementation gate; the S9 material-effect gate
   on the full corpus against the S9.1 baseline.
-- [ ] Record every candidate disposition — including a scalar-stage kill —
+- [x] Record every candidate disposition — including a scalar-stage kill —
   as a dated checkpoint with evidence.
 
 Outcome: the mechanism evidence either produces a material survivor inside
@@ -494,6 +494,24 @@ output still attests only `refresh-anchors-and-mass`. The full repository gate,
 APK build, and hardware-backed `jstorrent-tablet` AVD lane pass; fresh Metal,
 BrowserWebGPU, and AVD bootstrap captures are visually intact. The candidate
 now proceeds to the unchanged S9 full-corpus material-effect gate.
+
+Quality disposition checkpoint, 2026-07-18: the clean Apple M4 Pro Metal
+full-corpus run at revision `9f2fbba3bbe90b6e3bffb0efad0dc53d531c53ab`
+discards retained refresh under the frozen S9 material gate. It is exact-
+replay and final-only exact throughout and preserves every accepted structure.
+The 4/8 stacks materially improve, but the governed 16-stack changes from
+baseline speed/energy `0.70852673/0.3366095` to
+`0.42704278/0.43503416`: speed improves 39.73% while energy regresses 29.24%,
+so 16 is not one of the required paired improvements and the remaining-stack
+5% clause fails. Its energy envelope remains rising
+(`0.41483387 -> 0.43503416`). The permanent reproducer remains outside both
+awake bands at `0.04818385`, with positive run 199. The 64-stack changed
+trajectory also reaches the unchanged 32-color limit at step 924, which is
+rejected atomically and preserved as the exact execution-failure prefix. The
+verified package is
+`evidence/p5.2b-s10.4-candidate-retained-refresh/`. Candidate (b) is
+`discard`; candidate (a) is `not-routed`; S10.4 has no survivor and advances
+to the S10.5 formulation decision package.
 
 Completion gate: both candidate slots have dispositions, or one survivor
 advances with the other slot's disposition recorded.
