@@ -12,7 +12,7 @@ use physbox_contracts::{
     canonical_hash, sha256_bytes,
 };
 use physbox_engine::{
-    GpuGeneratedContactPassTraceV2, GpuGeneratedContactRunner, GpuNormalRelaxationPolicyV1,
+    GpuGeneratedContactPassTraceV3, GpuGeneratedContactRunner, GpuNormalRelaxationPolicyV1,
     GpuSoftFeedbackPolicyV1, p5_2_box2d_world_projection,
     p5_2_minimized_mixed_pile_energy_scenario,
 };
@@ -51,7 +51,7 @@ struct Artifact {
     oracle_precedence_changed: bool,
     product_constructor_changed: bool,
     source_scenario: ScenarioV1,
-    trace: GpuGeneratedContactPassTraceV2,
+    trace: GpuGeneratedContactPassTraceV3,
     energy: SettlingPassEnergyReportV1,
     scalar_relaxation_derivation: ScalarRelaxationDerivationReportV1,
     box2d: Option<Box2dBehaviorComparison>,

@@ -2269,7 +2269,7 @@ impl GpuFixedFloorSolver {
             for operation in &self.operations
                 [descriptor.first_operation_index as usize..=descriptor.operation_index as usize]
             {
-                self.encode_operation(&mut pass, operation);
+                self.encode_trace_operation(&mut pass, operation);
             }
             drop(pass);
             self.copy_pass_trace_state(encoder, storage, destination, (index as u64 + 1) * stride);
@@ -2317,6 +2317,24 @@ impl GpuFixedFloorSolver {
     }
 
     fn encode_operation<'a>(&'a self, pass: &mut wgpu::ComputePass<'a>, operation: &Operation) {
+        self.encode_operation_with_dispatch(pass, operation, false);
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn encode_trace_operation<'a>(
+        &'a self,
+        pass: &mut wgpu::ComputePass<'a>,
+        operation: &Operation,
+    ) {
+        self.encode_operation_with_dispatch(pass, operation, true);
+    }
+
+    fn encode_operation_with_dispatch<'a>(
+        &'a self,
+        pass: &mut wgpu::ComputePass<'a>,
+        operation: &Operation,
+        trace_direct_colors: bool,
+    ) {
         pass.set_pipeline(match operation.pipeline {
             PipelineKind::TopologyClear => &self.topology_clear_pipeline,
             PipelineKind::TopologyCount => &self.topology_count_pipeline,
@@ -2425,7 +2443,9 @@ impl GpuFixedFloorSolver {
             bind_group,
             &[operation.parameter_index * PARAMETER_STRIDE as u32],
         );
-        if let Some(offset) = operation.indirect_offset {
+        if trace_direct_colors && operation.indirect_offset.is_some() {
+            pass.dispatch_workgroups(workgroups(self.point_count), 1, 1);
+        } else if let Some(offset) = operation.indirect_offset {
             pass.dispatch_workgroups_indirect(
                 self._color_indirect
                     .as_ref()

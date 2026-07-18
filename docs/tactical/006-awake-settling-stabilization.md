@@ -836,6 +836,22 @@ the largest component difference within those passes is `1.080025e-12`.
 This is the cheap-gate result from an intentionally dirty implementation tree;
 fresh clean evidence follows the implementation commit.
 
+AVD overlay-instrument checkpoint, 2026-07-18: the first Android snapshot
+attempt exposed a diagnostic artifact rather than a candidate divergence.
+When indirect colored launches and per-boundary copies share the instrumented
+target step, MoltenVK drops every colored launch for hard/direct,
+point-sequential, and energy-projection controls while reporting the completed
+indirect argument buffer correctly afterward. Version-3 pass traces therefore
+attest `direct-over-compacted-color-capacity`: they retain the selected
+compacted lists and color order, but use bounded direct launches only for the
+snapshot replay. The AVD hard step-2 control then matches scalar within one
+`f32` ULP. At candidate step 900 all eight normal-relaxation boundaries are
+sinks totaling `-0.0015984423944470935` on GPU versus
+`-0.0015984423985654773` in scalar, with `4.656613e-8` maximum normal-pass
+state difference and no injecting manifold. Ordinary solver, product, and
+performance dispatch remain compact indirect. This validates the matched-pass
+instrument; it does not waive the failed long AVD structure gate.
+
 ### S6.6 — accepted policy integration
 
 - [ ] Promote only the explicitly accepted identity and coefficient policy

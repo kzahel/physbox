@@ -1,6 +1,6 @@
 use physbox_contracts::{BodyStateV1, ScenarioV1, Vec2};
 use physbox_engine::{
-    GpuColoringEvidenceV4, GpuFixedFloorContactEvidence, GpuGeneratedContactPassTraceV2,
+    GpuColoringEvidenceV4, GpuFixedFloorContactEvidence, GpuGeneratedContactPassTraceV3,
     GpuSolverPassDescriptorV1, GpuSolverPassKindV1,
 };
 use serde::Serialize;
@@ -196,7 +196,7 @@ impl SettlingPassEnergyReportV1 {
 
 pub fn analyze_settling_pass_energy(
     scenario: &ScenarioV1,
-    trace: &GpuGeneratedContactPassTraceV2,
+    trace: &GpuGeneratedContactPassTraceV3,
 ) -> Result<SettlingPassEnergyReportV1, String> {
     trace.validate()?;
     if scenario.bodies.len() != trace.states[0].bodies.len()
@@ -294,7 +294,7 @@ pub fn analyze_settling_pass_energy(
 /// speculative or penetration target during relaxation. Biased passes retain
 /// responsibility for penetration resolution and support construction.
 pub fn analyze_scalar_relaxation_derivation(
-    trace: &GpuGeneratedContactPassTraceV2,
+    trace: &GpuGeneratedContactPassTraceV3,
 ) -> Result<ScalarRelaxationDerivationReportV1, String> {
     trace.validate()?;
     let mut rows = Vec::new();

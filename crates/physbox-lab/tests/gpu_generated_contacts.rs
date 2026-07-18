@@ -4,11 +4,11 @@ use physbox_contracts::{
 };
 use physbox_engine::{
     GpuContactPersistenceTopology, GpuGatherTopology, GpuGeneratedContactRunner,
-    GpuNarrowphaseRunner, GpuNormalRelaxationPolicyV1, GpuNormalSolverV4, GpuSoftFeedbackPolicyV1,
-    GpuSolverAccumulationV4, GpuSolverCandidate, GpuSolverExecutionV4, GpuSolverPassKindV1,
-    GpuSolverSchedulingPolicyV1, P5_2_BUCKET_EVIDENCE_STEPS, P5_2_CENTERED_STACK_EVIDENCE_STEPS,
-    P5_2BucketShape, P5_2CandidatePattern, P5_2GeneratedScenarioKind,
-    benchmark_gpu_generated_contact_experiment,
+    GpuNarrowphaseRunner, GpuNormalRelaxationPolicyV1, GpuNormalSolverV4, GpuPassTraceDispatchV1,
+    GpuSoftFeedbackPolicyV1, GpuSolverAccumulationV4, GpuSolverCandidate, GpuSolverExecutionV4,
+    GpuSolverPassKindV1, GpuSolverSchedulingPolicyV1, P5_2_BUCKET_EVIDENCE_STEPS,
+    P5_2_CENTERED_STACK_EVIDENCE_STEPS, P5_2BucketShape, P5_2CandidatePattern,
+    P5_2GeneratedScenarioKind, benchmark_gpu_generated_contact_experiment,
     benchmark_gpu_generated_contact_scheduling_experiment, benchmark_gpu_generated_contacts,
     p5_2_bucket_scenario, p5_2_candidate_scenario, p5_2_centered_rectangle_stack_scenario,
     p5_2_coloring_churn_snapshots, p5_2_contact_policy_candidate,
@@ -150,6 +150,10 @@ fn relaxation_factorial_traces_are_policy_attested_and_scalar_replayable() {
             .unwrap();
         trace.validate().unwrap();
         assert_eq!(trace.normal_relaxation_policy, policy);
+        assert_eq!(
+            trace.pass_trace_dispatch,
+            GpuPassTraceDispatchV1::DirectOverCompactedColorCapacity
+        );
         assert_eq!(trace.descriptors.len(), expected_passes);
         assert_eq!(
             trace

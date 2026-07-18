@@ -475,6 +475,18 @@ The AVD overlay must show the MoltenVK amplification collapsing with the common
 defect. Every result returns to human review; S6.6 promotion remains
 unauthorized.
 
+The matched-pass trace is a recurrence diagnostic, not an indirect-dispatch
+benchmark. Its version-3 contract replays the selected compacted color lists
+and their exact color order with bounded direct launches over color capacity,
+then maps only after the final boundary. This distinction is explicit because
+MoltenVK drops indirect work when snapshot copies split the target solve into
+many compute passes even though the same indirect schedule executes in the
+ordinary one-pass solver. The failure reproduces for hard, point-sequential,
+and projected-relaxation controls, so it is instrumentation-specific rather
+than candidate-specific. A direct-replay hard control matches the scalar
+boundary within one `f32` ULP. Product and performance lanes continue to use
+the selected per-color indirect dispatch unchanged.
+
 S6.5d authority-control checkpoint, 2026-07-18: the existing independent
 `b2MakeSoft` transcription is joined by an explicit scalar point-normal update
 covering the pinned overflow and SIMD colored contact equations. Analytic and
@@ -540,6 +552,15 @@ sinks totaling `-2.0920214104119448e-11`; the scalar total is
 `1.080025e-12`. This clears the cheap implementation/energy kill and permits a
 fresh clean Metal 4/8/16 structural matrix. It does not yet clear that matrix,
 the realistic drops, cross-host forwarding, or promotion.
+
+S6.5d AVD overlay-instrument checkpoint, 2026-07-18: the first Android
+snapshot attempt exposed the instrumentation issue above, not a candidate
+recurrence divergence. With the version-3 direct replay, candidate step 900
+has eight normal-relaxation sinks totaling `-0.0015984423944470935` on GPU
+versus `-0.0015984423985654773` in scalar, `4.656613e-8` maximum normal-pass
+state difference, and no injecting manifold. This validates recurrence
+agreement on the captured AVD state; it does not waive the long AVD structural
+gate or claim that MoltenVK amplification has collapsed.
 
 ## Authority corrections
 

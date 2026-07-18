@@ -42,7 +42,7 @@ const PAIR_SLOT_COLLISION_DISPATCHES: u32 = 15 + PAIR_SLOT_DISPATCHES;
 const BRIDGE_DISPATCHES: u32 = 2;
 pub const GPU_GENERATED_CONTACT_BODY_HISTORY_VERSION: u32 = 1;
 #[cfg(not(target_arch = "wasm32"))]
-pub const GPU_GENERATED_CONTACT_PASS_TRACE_VERSION: u32 = 2;
+pub const GPU_GENERATED_CONTACT_PASS_TRACE_VERSION: u32 = 3;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -1402,9 +1402,16 @@ pub struct GpuGeneratedContactSnapshotV1 {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum GpuPassTraceDispatchV1 {
+    DirectOverCompactedColorCapacity,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Clone, Debug, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct GpuGeneratedContactPassStateV2 {
+pub struct GpuGeneratedContactPassStateV3 {
     pub version: u32,
     pub after_operation_index: Option<u32>,
     pub bodies: Vec<physbox_contracts::BodyStateV1>,
@@ -1414,7 +1421,7 @@ pub struct GpuGeneratedContactPassStateV2 {
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Clone, Debug, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct GpuGeneratedContactPassTraceV2 {
+pub struct GpuGeneratedContactPassTraceV3 {
     pub version: u32,
     pub adapter: crate::AdapterDiagnostics,
     pub source_scenario_hash: String,
@@ -1425,20 +1432,22 @@ pub struct GpuGeneratedContactPassTraceV2 {
     pub contact_identity_policy: ContactIdentityPolicyV1,
     pub soft_feedback_policy: crate::GpuSoftFeedbackPolicyV1,
     pub normal_relaxation_policy: crate::GpuNormalRelaxationPolicyV1,
+    pub pass_trace_dispatch: GpuPassTraceDispatchV1,
     pub mapped_after_final_step_only: bool,
     pub state_stride_bytes: u64,
     pub descriptors: Vec<GpuSolverPassDescriptorV1>,
-    pub states: Vec<GpuGeneratedContactPassStateV2>,
+    pub states: Vec<GpuGeneratedContactPassStateV3>,
     pub coloring: crate::GpuColoringEvidenceV4,
     pub construction: GpuConstructionGraphEvidence,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-impl GpuGeneratedContactPassTraceV2 {
+impl GpuGeneratedContactPassTraceV3 {
     pub fn validate(&self) -> Result<(), String> {
         if self.version != GPU_GENERATED_CONTACT_PASS_TRACE_VERSION
             || self.source_scenario_hash.len() != 64
             || self.target_step == 0
+            || self.pass_trace_dispatch != GpuPassTraceDispatchV1::DirectOverCompactedColorCapacity
             || !self.mapped_after_final_step_only
             || self.state_stride_bytes == 0
             || self.descriptors.is_empty()
@@ -2200,7 +2209,7 @@ impl GpuGeneratedContactRunner {
         target_step: u32,
         identity_policy: ContactIdentityPolicyV1,
         soft_feedback_policy: crate::GpuSoftFeedbackPolicyV1,
-    ) -> Result<GpuGeneratedContactPassTraceV2, String> {
+    ) -> Result<GpuGeneratedContactPassTraceV3, String> {
         self.run_contact_policy_pass_trace_with_relaxation(
             scenario,
             target_step,
@@ -2217,7 +2226,7 @@ impl GpuGeneratedContactRunner {
         identity_policy: ContactIdentityPolicyV1,
         soft_feedback_policy: crate::GpuSoftFeedbackPolicyV1,
         normal_relaxation_policy: crate::GpuNormalRelaxationPolicyV1,
-    ) -> Result<GpuGeneratedContactPassTraceV2, String> {
+    ) -> Result<GpuGeneratedContactPassTraceV3, String> {
         if target_step == 0 || target_step > scenario.requested_steps {
             return Err("generated pass trace target must be inside the scenario".to_owned());
         }
@@ -2334,7 +2343,7 @@ impl GpuGeneratedContactRunner {
                 body.angular_velocity = physbox_contracts::FiniteF32::new(motion[2])
                     .map_err(|error| error.to_string())?;
             }
-            states.push(GpuGeneratedContactPassStateV2 {
+            states.push(GpuGeneratedContactPassStateV3 {
                 version: GPU_GENERATED_CONTACT_PASS_TRACE_VERSION,
                 after_operation_index: state_index
                     .checked_sub(1)
@@ -2367,7 +2376,7 @@ impl GpuGeneratedContactRunner {
                 "generated pass trace completed step {completed_step}, expected {target_step}"
             ));
         }
-        let trace = GpuGeneratedContactPassTraceV2 {
+        let trace = GpuGeneratedContactPassTraceV3 {
             version: GPU_GENERATED_CONTACT_PASS_TRACE_VERSION,
             adapter: self.diagnostics.clone(),
             source_scenario_hash: canonical_hash(scenario).map_err(|error| error.to_string())?,
@@ -2378,6 +2387,7 @@ impl GpuGeneratedContactRunner {
             contact_identity_policy: identity_policy,
             soft_feedback_policy,
             normal_relaxation_policy,
+            pass_trace_dispatch: GpuPassTraceDispatchV1::DirectOverCompactedColorCapacity,
             mapped_after_final_step_only: true,
             state_stride_bytes,
             descriptors,
