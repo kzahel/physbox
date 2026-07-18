@@ -293,6 +293,16 @@ Completion gate: exact replay of both engines' lanes; every frozen metric
 computed; a signed stationary/oscillating verdict per manifold class recorded
 here.
 
+Implementation checkpoint, 2026-07-18: the S6.2 v2 observation surface now
+has a stationarity-only companion capture for the two observables it lacked:
+supported-body center speed and the active-set case derived by the frozen
+exact `normalImpulse > 0` rule. The analyzer retains only steps 900–1200,
+splits discontinuous identities, computes all eight frozen maxima and
+population correlations, and applies the exact-zero authority ratio semantics.
+The runner recaptures the selected PhysBox 8/16 stacks with exact replay and
+reuses both exact public Box2D warm-on traces from S10.1; no product path or
+oracle checkout changes.
+
 Commit boundaries: observation tooling; clean measurement evidence.
 
 ### S10.3 — mechanism localization and minimization
