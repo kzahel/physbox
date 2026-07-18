@@ -199,7 +199,7 @@ session memory.
 
 ### S9.1 — program freeze and baseline re-pin
 
-- [ ] Freeze this contract: arms, gates, routing rules, combination cap, and
+- [x] Freeze this contract: arms, gates, routing rules, combination cap, and
   evidence naming, before any measurement.
 - [ ] Re-run and pin the selected product baseline (hard/direct, selected
   scheduling) over the full corpus with fresh provenance; retain the serial
@@ -216,6 +216,14 @@ Completion gate: baseline replays exactly, matches the frozen-record values
 within measurement policy, and the authority rows are fresh and clean.
 
 Commit boundary: tactical/topic authorization records; baseline evidence.
+
+Program-freeze checkpoint, 2026-07-18: commit `d65c345` records the complete
+arm set, routing rules, combination cap, gates, evidence naming, autonomous
+boundary, and human stop conditions before any S9 measurement. The dedicated
+S9.1 runner keeps the product-selected and serial-control schedules distinct,
+uses the frozen S6.2 v2 observation policy, and runs fresh process-isolated
+Box2D rows over the same governed corpus. No product constructor, physical
+default, tolerance, or authority setting changes in the re-pin.
 
 ### S9.2 — E1 matched per-pass energy attribution at depth
 

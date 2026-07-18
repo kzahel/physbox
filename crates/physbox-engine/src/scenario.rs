@@ -597,6 +597,20 @@ pub fn p5_2_minimized_mixed_pile_energy_scenario() -> Result<ScenarioV1, Scenari
     Ok(scenario)
 }
 
+/// Returns the permanent four-dynamic-body settling reproducer under the
+/// selected hard/direct product policy. The body geometry is shared with the
+/// S6 minimized soft-contact source, but no contact-softness policy is
+/// authored into this S9 baseline lane.
+pub fn p5_2_minimized_mixed_pile_hard_scenario() -> Result<ScenarioV1, ScenarioBuildError> {
+    let mut scenario = p5_2_minimized_mixed_pile_energy_scenario()?;
+    scenario.id = "p5.2-minimized-mixed-pile-hard".to_owned();
+    scenario.settings.contact_softness = None;
+    scenario
+        .validate()
+        .map_err(|error| ScenarioBuildError(error.to_string()))?;
+    Ok(scenario)
+}
+
 /// Returns a reversible single-iteration comparator for diagnosing whether
 /// repeating the selected soft-contact update amplifies its small-signal mode.
 /// The accepted centered-stack source remains the two-iteration policy.
