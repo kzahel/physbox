@@ -278,6 +278,12 @@ fn parallel_color_seed(point: PointInput) -> u32 {
     return value;
 }
 
+fn parallel_contact_is_static(point: PointInput) -> bool {
+    let dynamic_a = properties[point.ids.x].z > 0.0 || properties[point.ids.x].w > 0.0;
+    let dynamic_b = properties[point.ids.y].z > 0.0 || properties[point.ids.y].w > 0.0;
+    return !dynamic_a || !dynamic_b;
+}
+
 @compute @workgroup_size(64)
 fn initialize_parallel_colors(@builtin(global_invocation_id) id: vec3u) {
     let point_index = id.x;
@@ -322,16 +328,23 @@ fn propose_parallel_colors(@builtin(global_invocation_id) id: vec3u) {
     if (atomicLoad(&topology[assignment_index]) != PARALLEL_COLOR_UNCOLORED) { return; }
     let used = atomicLoad(&topology[params.uints0.w + point.ids.x]) |
         atomicLoad(&topology[params.uints0.w + point.ids.y]);
-    let start = parallel_color_seed(point) & 3u;
+    let seed = parallel_color_seed(point);
+    let static_late = (params.uints1.w & 8u) != 0u;
+    let static_contact = static_late && parallel_contact_is_static(point);
+    let dynamic_candidate_count = select(params.uints1.z, 28u, static_late);
+    let candidate_count = select(dynamic_candidate_count, 4u, static_contact);
+    let first_color = select(0u, 28u, static_contact);
+    let start = seed & 3u;
     var selected = PARALLEL_COLOR_INVALID;
-    for (var offset = 0u; offset < params.uints1.z; offset += 1u) {
-        let color = (start + offset) & 31u;
+    for (var offset = 0u; offset < candidate_count; offset += 1u) {
+        let candidate = (start + offset) % candidate_count;
+        let color = select(candidate, 31u - candidate, static_contact);
         if ((used & (1u << color)) == 0u) {
             selected = color;
             break;
         }
     }
-    if (selected >= params.uints1.z) {
+    if (selected < first_color || selected >= first_color + candidate_count) {
         atomicStore(&topology[params.uints1.x], 1u);
         return;
     }
@@ -1567,7 +1580,7 @@ fn colored_stage(@builtin(global_invocation_id) id: vec3u) {
         return;
     }
     if (u32(params.floats2.z) == 1u) {
-        solve_colored_manifold(point_index, false);
+        solve_colored_manifold(point_index, params.floats1.w != 0.0);
         return;
     }
     if (!valid_point(point_inputs[point_index])) { return; }

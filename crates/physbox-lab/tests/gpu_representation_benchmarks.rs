@@ -1,3 +1,4 @@
+use physbox_contracts::FiniteF32;
 use physbox_engine::{
     GpuGatherTopology, GpuSolverExecutionV4, GpuSolverSchedulingPolicyV1,
     P5_2_SELECTED_SOLVER_ITERATIONS, authored_chain_scenario,
@@ -104,6 +105,101 @@ fn authored_selected_solver_records_exact_scheduler_work() {
         parallel_work.compaction_point_slots_visited,
         parallel_work.contact_point_slots * 2
     );
+}
+
+#[test]
+fn static_late_keeps_dynamic_only_order_and_fails_closed_at_partition_capacity() {
+    let mut dynamic = authored_chain_scenario(9, 47).unwrap();
+    dynamic.settings.iterations = P5_2_SELECTED_SOLVER_ITERATIONS;
+    let selected = pollster::block_on(benchmark_gpu_authored_solver_experiment(
+        &dynamic,
+        1,
+        1,
+        GpuGatherTopology::StableBodyEdge,
+        GpuSolverExecutionV4::SELECTED,
+        GpuSolverSchedulingPolicyV1::SELECTED,
+    ))
+    .unwrap();
+    let static_late = pollster::block_on(benchmark_gpu_authored_solver_experiment(
+        &dynamic,
+        1,
+        1,
+        GpuGatherTopology::StableBodyEdge,
+        GpuSolverExecutionV4::SELECTED,
+        GpuSolverSchedulingPolicyV1::STATIC_LATE,
+    ))
+    .unwrap();
+    assert_eq!(selected.result_digest, static_late.result_digest);
+    assert_eq!(
+        selected.scheduler_work.as_ref().unwrap().assignment_digest,
+        static_late
+            .scheduler_work
+            .as_ref()
+            .unwrap()
+            .assignment_digest
+    );
+    assert_eq!(
+        selected
+            .scheduler_work
+            .as_ref()
+            .unwrap()
+            .compacted_order_digest,
+        static_late
+            .scheduler_work
+            .as_ref()
+            .unwrap()
+            .compacted_order_digest
+    );
+
+    let mut dynamic_overflow = authored_chain_scenario(30, 47).unwrap();
+    dynamic_overflow.settings.iterations = P5_2_SELECTED_SOLVER_ITERATIONS;
+    let center = dynamic_overflow.bodies[0].id;
+    for (index, manifold) in dynamic_overflow.manifolds.iter_mut().enumerate() {
+        manifold.body_a = center;
+        manifold.body_b = dynamic_overflow.bodies[index + 1].id;
+    }
+    pollster::block_on(benchmark_gpu_authored_solver_experiment(
+        &dynamic_overflow,
+        1,
+        1,
+        GpuGatherTopology::StableBodyEdge,
+        GpuSolverExecutionV4::SELECTED,
+        GpuSolverSchedulingPolicyV1::SELECTED,
+    ))
+    .unwrap();
+    let error = pollster::block_on(benchmark_gpu_authored_solver_experiment(
+        &dynamic_overflow,
+        1,
+        1,
+        GpuGatherTopology::StableBodyEdge,
+        GpuSolverExecutionV4::SELECTED,
+        GpuSolverSchedulingPolicyV1::STATIC_LATE,
+    ))
+    .unwrap_err();
+    assert!(error.contains("solver-colors"), "{error}");
+
+    let mut static_overflow = authored_chain_scenario(6, 47).unwrap();
+    static_overflow.settings.iterations = P5_2_SELECTED_SOLVER_ITERATIONS;
+    let zero = FiniteF32::new(0.0).unwrap();
+    for body in &mut static_overflow.bodies[1..] {
+        body.inverse_mass = zero;
+        body.inverse_inertia = zero;
+    }
+    let center = static_overflow.bodies[0].id;
+    for (index, manifold) in static_overflow.manifolds.iter_mut().enumerate() {
+        manifold.body_a = center;
+        manifold.body_b = static_overflow.bodies[index + 1].id;
+    }
+    let error = pollster::block_on(benchmark_gpu_authored_solver_experiment(
+        &static_overflow,
+        1,
+        1,
+        GpuGatherTopology::StableBodyEdge,
+        GpuSolverExecutionV4::SELECTED,
+        GpuSolverSchedulingPolicyV1::STATIC_LATE,
+    ))
+    .unwrap_err();
+    assert!(error.contains("solver-colors"), "{error}");
 }
 
 #[test]

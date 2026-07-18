@@ -526,6 +526,19 @@ body, cache, and work equality between the two dispatch forms. Solver
 equations, color assignment/order, fixed `dt`, physical coefficients,
 tolerances, and capacity rejection are unchanged.
 
+S9 E2 implementation checkpoint, 2026-07-18: the unpromoted static-late arm
+now exists as the explicit
+`full-rebuild-parallel-speculative-static-late` policy. It reserves colors
+0–27 for dynamic/dynamic contacts and 28–31 for static contacts, preserves
+shared-body conflict freedom, and rejects either partition atomically on
+exhaustion. A dynamic-only chain retains the selected assignment and compacted
+order exactly; the centered 8-stack is exact across per-color and island
+dispatch forms, and the high static partition changes the intended support
+order. Full native, WebGPU, Android-target, boundary, smoke, and web gates
+pass. The [implementation note](../../evidence/p5.2b-s9.4-arm-static-late/IMPLEMENTATION.md)
+records the controls. Product constructors and the selected policy remain
+unchanged; S9.4 still owns the arm's quality disposition.
+
 ## Fallback and reserve options
 
 - **Accepted baseline.** Manifold block i2 improves structural preservation and

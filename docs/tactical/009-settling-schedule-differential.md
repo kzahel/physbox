@@ -297,7 +297,7 @@ stop. No product/default/tolerance/capacity/oracle contract changed.
 
 ### S9.3 — arm implementations as named unpromoted policies
 
-- [ ] E2 static-late partition (constructor-selected policy; conflict-freedom
+- [x] E2 static-late partition (constructor-selected policy; conflict-freedom
   invariant test; fail-closed capacity test; schedule identity exposed).
 - [ ] E3 contact-major fused normal+tangent for biased and relaxation sweeps
   (single-manifold byte-identity negative control; multi-contact divergence
@@ -317,6 +317,22 @@ Completion gate: implementation gate green per arm; product constructors
 unchanged (negative test).
 
 Commit boundary: one commit per arm.
+
+E2 implementation checkpoint, 2026-07-18: the
+[implementation note](../../evidence/p5.2b-s9.4-arm-static-late/IMPLEMENTATION.md)
+records the named `full-rebuild-parallel-speculative-static-late` laboratory
+policy. Dynamic/dynamic contacts retain the selected candidate order inside
+colors 0–27; static contacts occupy the disjoint late colors 28–31. Both
+partitions preserve shared-body conflict freedom and use the existing atomic
+solver-color rejection on exhaustion. The per-color and island dispatch forms
+produce exact bodies, contacts, manifolds, cache, point-color assignments, and
+committed work on the centered 8-stack; a dynamic-only chain is byte-identical
+to selected scheduling, while the 29th mutually conflicting dynamic constraint
+and fifth mutually conflicting static constraint fail their disjoint
+partitions closed. The full repository gate and visually inspected Metal/WebGPU
+smokes pass. Product constructors still select only `SELECTED` or
+`SELECTED_SMALL_WORLD`; E2 has not entered the product or the S9.4 quality
+matrix yet.
 
 ### S9.4 — Metal quality matrix and combinations
 

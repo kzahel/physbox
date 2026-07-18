@@ -19,6 +19,8 @@ const WORKGROUP_SIZE: u32 = 64;
 const RADIX_WORKGROUP_SIZE: u32 = 256;
 const PARAMETER_STRIDE: usize = 256;
 const MAX_COLORS: u32 = 32;
+pub const GPU_STATIC_LATE_COLOR_COUNT: u32 = 4;
+pub const GPU_STATIC_LATE_FIRST_COLOR: u32 = MAX_COLORS - GPU_STATIC_LATE_COLOR_COUNT;
 const COLOR_OFFSET_COUNT: u32 = MAX_COLORS + 1;
 const COLOR_INDIRECT_WORDS: u32 = MAX_COLORS * 3;
 const PARALLEL_COLOR_ROUNDS: u32 = MAX_COLORS;
@@ -176,6 +178,7 @@ pub enum GpuColorMaintenanceV1 {
     FullRebuild,
     FullRebuildParallelCompaction,
     FullRebuildParallelSpeculative,
+    FullRebuildParallelSpeculativeStaticLate,
     StablePairIncremental,
 }
 
@@ -229,6 +232,19 @@ impl GpuSolverSchedulingPolicyV1 {
 
     pub const PARALLEL_COLORING: Self = Self::SELECTED;
 
+    /// S9 E2 laboratory arm. Product construction never selects this policy.
+    pub const STATIC_LATE: Self = Self {
+        color_maintenance: GpuColorMaintenanceV1::FullRebuildParallelSpeculativeStaticLate,
+        ..Self::SELECTED
+    };
+
+    /// S9 E2 small-world dispatch-form control. Product construction never
+    /// selects this policy.
+    pub const STATIC_LATE_SMALL_WORLD: Self = Self {
+        colored_dispatch: GpuColoredDispatchV1::WorkgroupPerIsland,
+        ..Self::STATIC_LATE
+    };
+
     pub const WORKGROUP_PER_ISLAND: Self = Self {
         colored_dispatch: GpuColoredDispatchV1::WorkgroupPerIsland,
         ..Self::SERIAL_CONTROL
@@ -248,11 +264,20 @@ impl GpuSolverSchedulingPolicyV1 {
         }
     }
 
+    pub const fn static_late_for_body_capacity(body_capacity: u32) -> Self {
+        if body_capacity <= Self::SMALL_WORLD_BODY_CAPACITY_MAX {
+            Self::STATIC_LATE_SMALL_WORLD
+        } else {
+            Self::STATIC_LATE
+        }
+    }
+
     const fn uses_parallel_compaction(self) -> bool {
         matches!(
             self.color_maintenance,
             GpuColorMaintenanceV1::FullRebuildParallelCompaction
                 | GpuColorMaintenanceV1::FullRebuildParallelSpeculative
+                | GpuColorMaintenanceV1::FullRebuildParallelSpeculativeStaticLate
         )
     }
 
@@ -260,6 +285,14 @@ impl GpuSolverSchedulingPolicyV1 {
         matches!(
             self.color_maintenance,
             GpuColorMaintenanceV1::FullRebuildParallelSpeculative
+                | GpuColorMaintenanceV1::FullRebuildParallelSpeculativeStaticLate
+        )
+    }
+
+    pub const fn uses_static_late(self) -> bool {
+        matches!(
+            self.color_maintenance,
+            GpuColorMaintenanceV1::FullRebuildParallelSpeculativeStaticLate
         )
     }
 
@@ -895,8 +928,10 @@ impl GpuFixedFloorPassEvidence {
         } else {
             0
         };
-        if coloring.overflowed
-            || coloring.max_colors == 0
+        if coloring.overflowed {
+            return Err("scheduler work vector rejected solver-colors overflow".to_owned());
+        }
+        if coloring.max_colors == 0
             || coloring.color_count > coloring.max_colors
             || coloring.color_occupancy.len() != coloring.color_count as usize
             || coloring.parallel_uncolored_units != 0
@@ -1191,6 +1226,7 @@ struct TopologyLayout {
     has_parallel_coloring: bool,
     has_incremental_coloring: bool,
     has_island_dispatch: bool,
+    static_late: bool,
     element_count: u32,
 }
 
@@ -1208,6 +1244,7 @@ impl TopologyLayout {
             GpuGatherTopology::CanonicalBodyScan => Self::canonical(body_count, point_count),
             GpuGatherTopology::StableBodyEdge => Self::stable_body_edge(body_count, point_count),
         }?;
+        layout.static_late = scheduling_policy.uses_static_late();
         if include_manifold_counts {
             layout.manifold_counts_base = layout.element_count;
             layout.has_manifold_counts = true;
@@ -1439,6 +1476,7 @@ impl TopologyLayout {
             has_parallel_coloring: false,
             has_incremental_coloring: false,
             has_island_dispatch: false,
+            static_late: false,
             element_count,
         })
     }
@@ -1526,6 +1564,7 @@ impl TopologyLayout {
             has_parallel_coloring: false,
             has_incremental_coloring: false,
             has_island_dispatch: false,
+            static_late: false,
             element_count,
         })
     }
@@ -1997,6 +2036,9 @@ impl GpuFixedFloorSolver {
                                 "color_contacts_incremental"
                             }
                             GpuColorMaintenanceV1::FullRebuildParallelSpeculative => {
+                                "initialize_parallel_colors"
+                            }
+                            GpuColorMaintenanceV1::FullRebuildParallelSpeculativeStaticLate => {
                                 "initialize_parallel_colors"
                             }
                             _ => "color_contacts",
@@ -4216,7 +4258,8 @@ fn topology_operations(
                 MAX_COLORS,
                 u32::from(topology.has_compact_coloring)
                     | (u32::from(topology.color_unit == GpuColorUnitV4::Manifold) << 1)
-                    | (u32::from(topology.has_parallel_compaction) << 2),
+                    | (u32::from(topology.has_parallel_compaction) << 2)
+                    | (u32::from(scheduling_policy.uses_static_late()) << 3),
             ],
         };
         let mut colors = colors;
@@ -4472,6 +4515,7 @@ fn solver_stage(
             };
             colored.uints0[3] = color;
             colored.uints1[2] = topology.color_offsets_base;
+            colored.floats1[3] = u32::from(topology.static_late) as f32;
             colored.floats2[2] = match execution.color_unit {
                 GpuColorUnitV4::Point => 0.0,
                 GpuColorUnitV4::Manifold => 1.0,
@@ -5341,6 +5385,9 @@ mod tests {
         GpuSolverSchedulingPolicyV1::PARALLEL_COLORING
             .validate(execution)
             .unwrap();
+        GpuSolverSchedulingPolicyV1::STATIC_LATE
+            .validate(execution)
+            .unwrap();
         GpuSolverSchedulingPolicyV1::WORKGROUP_PER_ISLAND
             .validate(execution)
             .unwrap();
@@ -5378,6 +5425,21 @@ mod tests {
         assert_eq!(speculative.parallel_color_winner_count, 32_768);
         assert_eq!(speculative.color_construction_dispatches(), 98);
         assert_eq!(speculative.color_compaction_dispatches(), 4);
+        let static_late = TopologyLayout::new(
+            GpuGatherTopology::StableBodyEdge,
+            1_024,
+            2_048,
+            false,
+            execution.color_schedule,
+            execution.color_unit,
+            GpuSolverSchedulingPolicyV1::STATIC_LATE,
+        )
+        .unwrap();
+        assert!(static_late.has_parallel_coloring);
+        assert!(static_late.has_parallel_compaction);
+        assert!(static_late.static_late);
+        assert_eq!(GPU_STATIC_LATE_COLOR_COUNT, 4);
+        assert_eq!(GPU_STATIC_LATE_FIRST_COLOR, 28);
         assert!(
             GpuSolverSchedulingPolicyV1 {
                 version: GPU_SOLVER_SCHEDULING_POLICY_VERSION + 1,
@@ -5385,6 +5447,54 @@ mod tests {
             }
             .validate(GpuSolverExecutionV4::SELECTED)
             .is_err()
+        );
+    }
+
+    #[test]
+    fn static_late_is_named_unpromoted_and_attested_in_colored_passes() {
+        assert!(!GpuSolverSchedulingPolicyV1::SELECTED.uses_static_late());
+        assert!(!GpuSolverSchedulingPolicyV1::SELECTED_SMALL_WORLD.uses_static_late());
+        assert_eq!(
+            GpuSolverSchedulingPolicyV1::selected_for_body_capacity(16),
+            GpuSolverSchedulingPolicyV1::SELECTED_SMALL_WORLD
+        );
+        assert_eq!(
+            GpuSolverSchedulingPolicyV1::static_late_for_body_capacity(16),
+            GpuSolverSchedulingPolicyV1::STATIC_LATE_SMALL_WORLD
+        );
+
+        let scenario =
+            crate::p5_2_settling_review_scenario(8, crate::P5_2SettlingReviewPolicy::HardControl)
+                .unwrap();
+        let body_count = scenario.bodies.len() as u32;
+        let point_capacity = body_count * (body_count - 1);
+        let topology = TopologyLayout::new(
+            GpuGatherTopology::StableBodyEdge,
+            body_count,
+            point_capacity,
+            false,
+            GpuColorScheduleV4::CompactIndirect,
+            GpuColorUnitV4::Manifold,
+            GpuSolverSchedulingPolicyV1::STATIC_LATE,
+        )
+        .unwrap();
+        let (parameters, operations) = operations(
+            &scenario,
+            body_count,
+            point_capacity,
+            topology,
+            false,
+            GpuSolverExecutionV4::SELECTED,
+            GpuSolverSchedulingPolicyV1::STATIC_LATE,
+        );
+        let descriptors = pass_trace_descriptors(&parameters, &operations);
+        assert!(descriptors.iter().all(|descriptor| {
+            descriptor.color_passes == 0 || descriptor.parameters.floats1[3] == 1.0
+        }));
+        assert!(
+            parameters
+                .iter()
+                .any(|parameter| parameter.uints1[3] & 8 != 0)
         );
     }
 

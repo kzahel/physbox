@@ -43,12 +43,12 @@ pub use body_floor_solver::{
 };
 pub use body_floor_solver::{
     GPU_SOLVER_EXECUTION_VERSION, GPU_SOLVER_PASS_TRACE_VERSION,
-    GPU_SOLVER_SCHEDULING_POLICY_VERSION, GpuBlockActiveSetV2, GpuColorMaintenanceV1,
-    GpuColorOrderV4, GpuColorScheduleV4, GpuColorUnitV4, GpuColoredDispatchV1,
-    GpuColoringEvidenceV4, GpuContactSoftnessCoefficientsV1, GpuFixedFloorContactEvidence,
-    GpuFixedFloorPassEvidence, GpuGatherTopology, GpuGatherTopologyEvidence,
-    GpuManifoldBlockEvidenceV2, GpuNormalRelaxationPolicyV1, GpuNormalSolverV4,
-    GpuSoftFeedbackPolicyV1, GpuSolverAccumulationV4, GpuSolverExecutionV4,
+    GPU_SOLVER_SCHEDULING_POLICY_VERSION, GPU_STATIC_LATE_COLOR_COUNT, GPU_STATIC_LATE_FIRST_COLOR,
+    GpuBlockActiveSetV2, GpuColorMaintenanceV1, GpuColorOrderV4, GpuColorScheduleV4,
+    GpuColorUnitV4, GpuColoredDispatchV1, GpuColoringEvidenceV4, GpuContactSoftnessCoefficientsV1,
+    GpuFixedFloorContactEvidence, GpuFixedFloorPassEvidence, GpuGatherTopology,
+    GpuGatherTopologyEvidence, GpuManifoldBlockEvidenceV2, GpuNormalRelaxationPolicyV1,
+    GpuNormalSolverV4, GpuSoftFeedbackPolicyV1, GpuSolverAccumulationV4, GpuSolverExecutionV4,
     GpuSolverPassDescriptorV1, GpuSolverPassKindV1, GpuSolverPassParametersV1,
     GpuSolverSchedulingPolicyV1, gpu_contact_softness_coefficients,
 };

@@ -333,6 +333,7 @@ const fn compact_scheduling(policy: GpuSolverSchedulingPolicyV1) -> [u32; 3] {
             GpuColorMaintenanceV1::StablePairIncremental => 1,
             GpuColorMaintenanceV1::FullRebuildParallelCompaction => 2,
             GpuColorMaintenanceV1::FullRebuildParallelSpeculative => 3,
+            GpuColorMaintenanceV1::FullRebuildParallelSpeculativeStaticLate => 4,
         },
         match policy.colored_dispatch {
             GpuColoredDispatchV1::PerColorIndirect => 0,

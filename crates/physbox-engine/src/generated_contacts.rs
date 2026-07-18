@@ -1797,6 +1797,7 @@ impl GpuGeneratedContactOutput {
                     crate::GpuColorMaintenanceV1::FullRebuild
                     | crate::GpuColorMaintenanceV1::FullRebuildParallelCompaction
                     | crate::GpuColorMaintenanceV1::FullRebuildParallelSpeculative
+                    | crate::GpuColorMaintenanceV1::FullRebuildParallelSpeculativeStaticLate
                         if coloring.retained_color_units != 0
                             || coloring.new_color_units != colored_units
                             || coloring.recolored_color_units != 0
@@ -1807,10 +1808,14 @@ impl GpuGeneratedContactOutput {
                     crate::GpuColorMaintenanceV1::StablePairIncremental => {}
                     crate::GpuColorMaintenanceV1::FullRebuild
                     | crate::GpuColorMaintenanceV1::FullRebuildParallelCompaction
-                    | crate::GpuColorMaintenanceV1::FullRebuildParallelSpeculative => {}
+                    | crate::GpuColorMaintenanceV1::FullRebuildParallelSpeculative
+                    | crate::GpuColorMaintenanceV1::FullRebuildParallelSpeculativeStaticLate => {}
                 }
-                let parallel = coloring.scheduling_policy.color_maintenance
-                    == crate::GpuColorMaintenanceV1::FullRebuildParallelSpeculative;
+                let parallel = matches!(
+                    coloring.scheduling_policy.color_maintenance,
+                    crate::GpuColorMaintenanceV1::FullRebuildParallelSpeculative
+                        | crate::GpuColorMaintenanceV1::FullRebuildParallelSpeculativeStaticLate
+                );
                 if parallel
                     != (coloring.parallel_round_limit != 0
                         || coloring.parallel_rounds_used != 0
@@ -1905,6 +1910,22 @@ impl GpuGeneratedContactOutput {
                                 );
                             }
                             continue;
+                        }
+                        if coloring.scheduling_policy.uses_static_late() {
+                            let dynamic_a = self.bodies[contact.body_a as usize].inverse_mass.get()
+                                > 0.0
+                                || self.bodies[contact.body_a as usize].inverse_inertia.get() > 0.0;
+                            let dynamic_b = self.bodies[contact.body_b as usize].inverse_mass.get()
+                                > 0.0
+                                || self.bodies[contact.body_b as usize].inverse_inertia.get() > 0.0;
+                            let static_contact = !dynamic_a || !dynamic_b;
+                            if (static_contact && color < crate::GPU_STATIC_LATE_FIRST_COLOR)
+                                || (!static_contact && color >= crate::GPU_STATIC_LATE_FIRST_COLOR)
+                            {
+                                return Err(
+                                    "generated static-late color partition is invalid".to_owned()
+                                );
+                            }
                         }
                         if !colored_bodies.insert((color, contact.body_a))
                             || !colored_bodies.insert((color, contact.body_b))
@@ -4270,7 +4291,10 @@ fn map_range<T: Pod + Copy>(
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::GpuGeneratedContactRunner;
-    use crate::{P5_2SettlingFixtureKind, p5_2_settling_fixture_scenario};
+    use crate::{
+        GpuSolverExecutionV4, GpuSolverSchedulingPolicyV1, P5_2SettlingFixtureKind,
+        P5_2SettlingReviewPolicy, p5_2_settling_fixture_scenario, p5_2_settling_review_scenario,
+    };
 
     #[test]
     fn selected_settling_series_replays_exact_gpu_manifolds_and_cache() {
@@ -4310,6 +4334,119 @@ mod tests {
             runner
                 .run_selected_observation_series(&scenario, 3, 4)
                 .is_err()
+        );
+    }
+
+    #[test]
+    fn static_late_partitions_contacts_and_matches_both_dispatch_forms_exactly() {
+        let scenario =
+            p5_2_settling_review_scenario(8, P5_2SettlingReviewPolicy::HardControl).unwrap();
+        let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
+        let selected = runner
+            .run_scheduling_experiment(
+                &scenario,
+                4,
+                GpuSolverExecutionV4::SELECTED,
+                GpuSolverSchedulingPolicyV1::SELECTED,
+            )
+            .unwrap();
+        let per_color = runner
+            .run_scheduling_experiment(
+                &scenario,
+                4,
+                GpuSolverExecutionV4::SELECTED,
+                GpuSolverSchedulingPolicyV1::STATIC_LATE,
+            )
+            .unwrap();
+        let per_color_replay = runner
+            .run_scheduling_experiment(
+                &scenario,
+                4,
+                GpuSolverExecutionV4::SELECTED,
+                GpuSolverSchedulingPolicyV1::STATIC_LATE,
+            )
+            .unwrap();
+        let islands = runner
+            .run_scheduling_experiment(
+                &scenario,
+                4,
+                GpuSolverExecutionV4::SELECTED,
+                GpuSolverSchedulingPolicyV1::STATIC_LATE_SMALL_WORLD,
+            )
+            .unwrap();
+
+        assert_eq!(
+            serde_json::to_vec(&per_color).unwrap(),
+            serde_json::to_vec(&per_color_replay).unwrap()
+        );
+        assert_eq!(per_color.bodies, islands.bodies);
+        assert_eq!(per_color.manifolds, islands.manifolds);
+        assert_eq!(per_color.cache, islands.cache);
+        assert_eq!(
+            per_color.pass_evidence.contacts,
+            islands.pass_evidence.contacts
+        );
+        assert_eq!(
+            per_color
+                .pass_evidence
+                .coloring
+                .as_ref()
+                .unwrap()
+                .point_colors,
+            islands
+                .pass_evidence
+                .coloring
+                .as_ref()
+                .unwrap()
+                .point_colors
+        );
+        assert!(per_color.failure.is_none());
+        assert!(islands.failure.is_none());
+
+        let coloring = per_color.pass_evidence.coloring.as_ref().unwrap();
+        let mut static_contacts = 0;
+        let mut dynamic_contacts = 0;
+        for (contact, &color) in per_color
+            .pass_evidence
+            .contacts
+            .iter()
+            .zip(&coloring.point_colors)
+        {
+            if contact.point_in_manifold != 0 {
+                continue;
+            }
+            let body_a = &per_color.bodies[contact.body_a as usize];
+            let body_b = &per_color.bodies[contact.body_b as usize];
+            let static_contact =
+                body_a.inverse_mass.get() == 0.0 || body_b.inverse_mass.get() == 0.0;
+            if static_contact {
+                static_contacts += 1;
+                assert!(color >= crate::GPU_STATIC_LATE_FIRST_COLOR);
+            } else {
+                dynamic_contacts += 1;
+                assert!(color < crate::GPU_STATIC_LATE_FIRST_COLOR);
+            }
+        }
+        assert!(static_contacts > 0);
+        assert!(dynamic_contacts > 0);
+
+        let selected_work = selected
+            .pass_evidence
+            .scheduler_work_vector(scenario.bodies.len() as u32)
+            .unwrap()
+            .unwrap();
+        let static_late_work = per_color
+            .pass_evidence
+            .scheduler_work_vector(scenario.bodies.len() as u32)
+            .unwrap()
+            .unwrap();
+        assert_ne!(
+            selected_work.assignment_digest,
+            static_late_work.assignment_digest
+        );
+        assert_ne!(
+            selected_work.compacted_order_digest,
+            static_late_work.compacted_order_digest
         );
     }
 }
