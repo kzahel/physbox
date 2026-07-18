@@ -950,6 +950,7 @@ fn evaluate_lane_with_policy(
             GpuNormalRelaxationPolicyV1::SELECTED,
             contact_coefficient_policy,
             substep_contact_policy,
+            physbox_engine::GpuRestitutionTimingPolicyV1::SELECTED,
         ),
     };
     let raw = run_series()?;
@@ -969,6 +970,7 @@ fn evaluate_lane_with_policy(
             policy,
             contact_coefficient_policy,
             substep_contact_policy,
+            physbox_engine::GpuRestitutionTimingPolicyV1::SELECTED,
         )?,
     };
     let final_snapshot = raw

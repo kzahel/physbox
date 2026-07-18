@@ -48,10 +48,10 @@ pub use body_floor_solver::{
     GpuColorUnitV4, GpuColoredDispatchV1, GpuColoringEvidenceV4, GpuContactCoefficientPolicyV1,
     GpuContactSoftnessCoefficientsV1, GpuFixedFloorContactEvidence, GpuFixedFloorPassEvidence,
     GpuGatherTopology, GpuGatherTopologyEvidence, GpuManifoldBlockEvidenceV2,
-    GpuNormalRelaxationPolicyV1, GpuNormalSolverV4, GpuSoftFeedbackPolicyV1,
-    GpuSolverAccumulationV4, GpuSolverExecutionV4, GpuSolverPassDescriptorV1, GpuSolverPassKindV1,
-    GpuSolverPassParametersV1, GpuSolverSchedulingPolicyV1, GpuSubstepContactPolicyV1,
-    gpu_contact_softness_coefficients,
+    GpuNormalRelaxationPolicyV1, GpuNormalSolverV4, GpuRestitutionTimingPolicyV1,
+    GpuSoftFeedbackPolicyV1, GpuSolverAccumulationV4, GpuSolverExecutionV4,
+    GpuSolverPassDescriptorV1, GpuSolverPassKindV1, GpuSolverPassParametersV1,
+    GpuSolverSchedulingPolicyV1, GpuSubstepContactPolicyV1, gpu_contact_softness_coefficients,
 };
 pub use body_state::{
     BODY_BYTES_PER_SLOT, BODY_COMMAND_BYTES, BODY_COMMAND_CAPACITY, BodySlotRegistry,

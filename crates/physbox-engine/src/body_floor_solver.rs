@@ -74,6 +74,44 @@ pub enum GpuSubstepContactPolicyV1 {
     FixedAnchorAnalyticalSeparation,
 }
 
+/// Laboratory-only control over restitution placement relative to substeps.
+/// Product construction keeps the historical per-substep timing; the
+/// authority-style alternative is the conditional S9 E6 hygiene arm.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum GpuRestitutionTimingPolicyV1 {
+    AfterEachSubstep,
+    AfterSubsteps,
+}
+
+impl GpuRestitutionTimingPolicyV1 {
+    pub const SELECTED: Self = Self::AfterEachSubstep;
+
+    pub(crate) fn validate(
+        self,
+        settings: &SolverSettingsV1,
+        execution: GpuSolverExecutionV4,
+        normal_relaxation_policy: GpuNormalRelaxationPolicyV1,
+        contact_coefficient_policy: GpuContactCoefficientPolicyV1,
+        substep_contact_policy: GpuSubstepContactPolicyV1,
+    ) -> Result<(), String> {
+        if self == Self::AfterSubsteps
+            && (settings.contact_softness.is_some()
+                || settings.iterations != 2
+                || execution != GpuSolverExecutionV4::SELECTED
+                || normal_relaxation_policy != GpuNormalRelaxationPolicyV1::SELECTED
+                || contact_coefficient_policy != GpuContactCoefficientPolicyV1::SELECTED
+                || substep_contact_policy != GpuSubstepContactPolicyV1::SELECTED)
+        {
+            return Err(
+                "restitution-after-substeps requires the standalone hard/direct selected i2 policy"
+                    .to_owned(),
+            );
+        }
+        Ok(())
+    }
+}
+
 impl GpuSubstepContactPolicyV1 {
     pub const SELECTED: Self = Self::RefreshAnchorsAndMass;
 
@@ -1857,6 +1895,7 @@ impl GpuFixedFloorSolver {
         normal_relaxation_policy: GpuNormalRelaxationPolicyV1,
         contact_coefficient_policy: GpuContactCoefficientPolicyV1,
         substep_contact_policy: GpuSubstepContactPolicyV1,
+        restitution_timing_policy: GpuRestitutionTimingPolicyV1,
     ) -> Result<Self, String> {
         validate_experiment_settings(&scenario.settings, execution)?;
         scheduling_policy.validate(execution)?;
@@ -1864,6 +1903,13 @@ impl GpuFixedFloorSolver {
         normal_relaxation_policy.validate(&scenario.settings, execution)?;
         contact_coefficient_policy.validate(&scenario.settings)?;
         substep_contact_policy.validate(&scenario.settings, execution, normal_relaxation_policy)?;
+        restitution_timing_policy.validate(
+            &scenario.settings,
+            execution,
+            normal_relaxation_policy,
+            contact_coefficient_policy,
+            substep_contact_policy,
+        )?;
         if !scenario.manifolds.is_empty() || point_capacity == 0 {
             return Err(
                 "generated contact solver requires a neutral scenario and nonzero point capacity"
@@ -1884,6 +1930,7 @@ impl GpuFixedFloorSolver {
             normal_relaxation_policy,
             contact_coefficient_policy,
             substep_contact_policy,
+            restitution_timing_policy,
         )
     }
 
@@ -1973,6 +2020,7 @@ impl GpuFixedFloorSolver {
             normal_relaxation_policy,
             contact_coefficient_policy,
             GpuSubstepContactPolicyV1::SELECTED,
+            GpuRestitutionTimingPolicyV1::SELECTED,
         )
     }
 
@@ -1991,12 +2039,20 @@ impl GpuFixedFloorSolver {
         normal_relaxation_policy: GpuNormalRelaxationPolicyV1,
         contact_coefficient_policy: GpuContactCoefficientPolicyV1,
         substep_contact_policy: GpuSubstepContactPolicyV1,
+        restitution_timing_policy: GpuRestitutionTimingPolicyV1,
     ) -> Result<Self, String> {
         scheduling_policy.validate(execution)?;
         soft_feedback_policy.validate(&scenario.settings)?;
         normal_relaxation_policy.validate(&scenario.settings, execution)?;
         contact_coefficient_policy.validate(&scenario.settings)?;
         substep_contact_policy.validate(&scenario.settings, execution, normal_relaxation_policy)?;
+        restitution_timing_policy.validate(
+            &scenario.settings,
+            execution,
+            normal_relaxation_policy,
+            contact_coefficient_policy,
+            substep_contact_policy,
+        )?;
         if scheduling_policy.colored_dispatch.fuses_normal_tangent()
             && (scenario.settings.contact_softness.is_some()
                 || soft_feedback_policy != GpuSoftFeedbackPolicyV1::SELECTED
@@ -2026,6 +2082,7 @@ impl GpuFixedFloorSolver {
             && normal_relaxation_policy == GpuNormalRelaxationPolicyV1::SELECTED
             && contact_coefficient_policy == GpuContactCoefficientPolicyV1::SELECTED
             && substep_contact_policy == GpuSubstepContactPolicyV1::SELECTED
+            && restitution_timing_policy == GpuRestitutionTimingPolicyV1::SELECTED
         {
             operations(
                 scenario,
@@ -2049,6 +2106,7 @@ impl GpuFixedFloorSolver {
                 normal_relaxation_policy,
                 contact_coefficient_policy,
                 substep_contact_policy,
+                restitution_timing_policy,
             )
         };
         let mut initial_motion = vec![[0.0; 4]; body_count as usize];
@@ -4122,6 +4180,7 @@ fn operations_with_solver_policies(
         normal_relaxation_policy,
         contact_coefficient_policy,
         GpuSubstepContactPolicyV1::SELECTED,
+        GpuRestitutionTimingPolicyV1::SELECTED,
     )
 }
 
@@ -4138,6 +4197,7 @@ fn operations_with_extended_solver_policies(
     normal_relaxation_policy: GpuNormalRelaxationPolicyV1,
     contact_coefficient_policy: GpuContactCoefficientPolicyV1,
     substep_contact_policy: GpuSubstepContactPolicyV1,
+    restitution_timing_policy: GpuRestitutionTimingPolicyV1,
 ) -> (Vec<PassParamsRaw>, Vec<Operation>) {
     let mut parameters = Vec::new();
     let mut operations = Vec::new();
@@ -4376,6 +4436,35 @@ fn operations_with_extended_solver_policies(
                 }
             }
         }
+        if restitution_timing_policy == GpuRestitutionTimingPolicyV1::SELECTED {
+            solver_stage(
+                &mut parameters,
+                &mut operations,
+                execution,
+                pass_params(
+                    scenario,
+                    body_count,
+                    point_count,
+                    6,
+                    0,
+                    0,
+                    contact_coefficient_policy,
+                ),
+                PipelineKind::Restitution,
+                MotionDirection::BtoA,
+                point_workgroups,
+                body_workgroups,
+                color_sweep_reversed(
+                    execution,
+                    substep,
+                    scenario.settings.iterations - 1,
+                    scenario.settings.iterations,
+                ),
+                topology,
+            );
+        }
+    }
+    if restitution_timing_policy == GpuRestitutionTimingPolicyV1::AfterSubsteps {
         solver_stage(
             &mut parameters,
             &mut operations,
@@ -4395,7 +4484,7 @@ fn operations_with_extended_solver_policies(
             body_workgroups,
             color_sweep_reversed(
                 execution,
-                substep,
+                scenario.settings.substeps - 1,
                 scenario.settings.iterations - 1,
                 scenario.settings.iterations,
             ),
@@ -6094,6 +6183,7 @@ mod tests {
                 GpuNormalRelaxationPolicyV1::SELECTED,
                 GpuContactCoefficientPolicyV1::SELECTED,
                 policy,
+                GpuRestitutionTimingPolicyV1::SELECTED,
             )
         };
         let (_, selected_operations) = schedule(GpuSubstepContactPolicyV1::SELECTED);
@@ -6131,6 +6221,84 @@ mod tests {
                     &soft.settings,
                     GpuSolverExecutionV4::SELECTED,
                     GpuNormalRelaxationPolicyV1::SELECTED,
+                )
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn restitution_after_substeps_is_one_standalone_final_stage() {
+        assert_eq!(
+            GpuRestitutionTimingPolicyV1::SELECTED,
+            GpuRestitutionTimingPolicyV1::AfterEachSubstep
+        );
+        let scenario =
+            crate::p5_2_settling_review_scenario(8, crate::P5_2SettlingReviewPolicy::HardControl)
+                .unwrap();
+        let body_count = scenario.bodies.len() as u32;
+        let point_capacity = body_count * (body_count - 1);
+        let topology = TopologyLayout::new(
+            GpuGatherTopology::StableBodyEdge,
+            body_count,
+            point_capacity,
+            false,
+            GpuColorScheduleV4::CompactIndirect,
+            GpuColorUnitV4::Manifold,
+            GpuSolverSchedulingPolicyV1::SELECTED,
+        )
+        .unwrap();
+        let schedule = |policy| {
+            operations_with_extended_solver_policies(
+                &scenario,
+                body_count,
+                point_capacity,
+                topology,
+                false,
+                GpuSolverExecutionV4::SELECTED,
+                GpuSolverSchedulingPolicyV1::SELECTED,
+                GpuSoftFeedbackPolicyV1::SELECTED,
+                GpuNormalRelaxationPolicyV1::SELECTED,
+                GpuContactCoefficientPolicyV1::SELECTED,
+                GpuSubstepContactPolicyV1::SELECTED,
+                policy,
+            )
+        };
+        let (selected_parameters, selected_operations) =
+            schedule(GpuRestitutionTimingPolicyV1::SELECTED);
+        let (final_parameters, final_operations) =
+            schedule(GpuRestitutionTimingPolicyV1::AfterSubsteps);
+        let selected_descriptors =
+            pass_trace_descriptors(&selected_parameters, &selected_operations);
+        let final_descriptors = pass_trace_descriptors(&final_parameters, &final_operations);
+        assert_eq!(
+            selected_descriptors
+                .iter()
+                .filter(|descriptor| descriptor.kind == GpuSolverPassKindV1::Restitution)
+                .count(),
+            scenario.settings.substeps as usize
+        );
+        let final_restitution = final_descriptors
+            .iter()
+            .filter(|descriptor| descriptor.kind == GpuSolverPassKindV1::Restitution)
+            .collect::<Vec<_>>();
+        assert_eq!(final_restitution.len(), 1);
+        assert_eq!(final_restitution[0].substep, scenario.settings.substeps - 1);
+        assert_eq!(
+            selected_operations.len() - final_operations.len(),
+            (scenario.settings.substeps as usize - 1) * MAX_COLORS as usize
+        );
+
+        let soft =
+            crate::p5_2_settling_review_scenario(8, crate::P5_2SettlingReviewPolicy::SoftCandidate)
+                .unwrap();
+        assert!(
+            GpuRestitutionTimingPolicyV1::AfterSubsteps
+                .validate(
+                    &soft.settings,
+                    GpuSolverExecutionV4::SELECTED,
+                    GpuNormalRelaxationPolicyV1::SELECTED,
+                    GpuContactCoefficientPolicyV1::SELECTED,
+                    GpuSubstepContactPolicyV1::SELECTED,
                 )
                 .is_err()
         );

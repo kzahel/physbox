@@ -306,7 +306,7 @@ stop. No product/default/tolerance/capacity/oracle contract changed.
   attested in scene contract; no other coefficient touched).
 - [x] Conditional E5 implemented only after its primary-arm-exhaustion trigger
   fired.
-- [ ] Conditional E6 implemented only after its hygiene trigger fired.
+- [x] Conditional E6 implemented only after its hygiene trigger fired.
 - [x] Each active arm passes the implementation gate before entering S9.4; both
   dispatch forms (per-color indirect, workgroup-per-island) remain exact per
   the existing equality tests.
@@ -377,6 +377,19 @@ between per-color and island dispatch. Product constructors and output attest
 only `refresh-anchors-and-mass`; soft or non-direct construction fails closed.
 The full repository gate and visually inspected Metal/WebGPU/AVD smokes pass.
 E5 has not entered the S9.4 quality matrix yet.
+
+E6 implementation checkpoint, 2026-07-18: the
+[implementation note](../../evidence/p5.2b-s9.4-restitution-hygiene/IMPLEMENTATION.md)
+records the standalone `after-substeps` timing policy and dedicated hygiene
+runner. It changes four restitution stages to one final stage without changing
+the restitution shader or any physical setting. The 4/8/16 centered stacks
+are byte-identical to selected bodies, manifolds, cache, contact evidence, and
+scheduler identity; both dispatch forms match exactly and replay. A synthetic
+restitution-eligible drop provides the positive control, while soft or
+composed construction fails closed. Product constructors and generated output
+attest only `after-each-substep`. The full repository gate and visually
+inspected Metal/WebGPU/AVD smokes pass. E6 has not entered its fresh-authority
+hygiene matrix yet.
 
 ### S9.4 — Metal quality matrix and combinations
 

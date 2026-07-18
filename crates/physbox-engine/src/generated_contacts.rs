@@ -128,6 +128,7 @@ pub(crate) struct GpuGeneratedContactGraph {
     identity_policy: ContactIdentityPolicyV1,
     contact_coefficient_policy: crate::GpuContactCoefficientPolicyV1,
     substep_contact_policy: crate::GpuSubstepContactPolicyV1,
+    restitution_timing_policy: crate::GpuRestitutionTimingPolicyV1,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
@@ -344,6 +345,7 @@ impl GpuGeneratedContactGraph {
             normal_relaxation_policy,
             contact_coefficient_policy,
             crate::GpuSubstepContactPolicyV1::SELECTED,
+            crate::GpuRestitutionTimingPolicyV1::SELECTED,
         )
     }
 
@@ -364,6 +366,7 @@ impl GpuGeneratedContactGraph {
         normal_relaxation_policy: crate::GpuNormalRelaxationPolicyV1,
         contact_coefficient_policy: crate::GpuContactCoefficientPolicyV1,
         substep_contact_policy: crate::GpuSubstepContactPolicyV1,
+        restitution_timing_policy: crate::GpuRestitutionTimingPolicyV1,
     ) -> Result<Self, String> {
         if !scenario.manifolds.is_empty()
             || !scenario.contact_cache.is_empty()
@@ -423,6 +426,7 @@ impl GpuGeneratedContactGraph {
                 normal_relaxation_policy,
                 contact_coefficient_policy,
                 substep_contact_policy,
+                restitution_timing_policy,
             )?;
         let persistence = GeneratedPersistenceGraph::new(
             device,
@@ -450,6 +454,7 @@ impl GpuGeneratedContactGraph {
             identity_policy,
             contact_coefficient_policy,
             substep_contact_policy,
+            restitution_timing_policy,
         })
     }
 
@@ -1456,6 +1461,7 @@ pub struct GpuGeneratedContactOutput {
     pub solver_scheduling_policy: GpuSolverSchedulingPolicyV1,
     pub contact_coefficient_policy: crate::GpuContactCoefficientPolicyV1,
     pub substep_contact_policy: crate::GpuSubstepContactPolicyV1,
+    pub restitution_timing_policy: crate::GpuRestitutionTimingPolicyV1,
     pub contact_identity_policy: ContactIdentityPolicyV1,
     pub bodies: Vec<physbox_contracts::BodyStateV1>,
     pub manifolds: Vec<physbox_contracts::CollisionManifoldV1>,
@@ -1517,6 +1523,7 @@ pub struct GpuGeneratedContactPassTraceV3 {
     pub normal_relaxation_policy: crate::GpuNormalRelaxationPolicyV1,
     pub contact_coefficient_policy: crate::GpuContactCoefficientPolicyV1,
     pub substep_contact_policy: crate::GpuSubstepContactPolicyV1,
+    pub restitution_timing_policy: crate::GpuRestitutionTimingPolicyV1,
     pub pass_trace_dispatch: GpuPassTraceDispatchV1,
     pub mapped_after_final_step_only: bool,
     pub state_stride_bytes: u64,
@@ -1554,6 +1561,13 @@ impl GpuGeneratedContactPassTraceV3 {
             &self.solver_settings,
             self.solver_execution,
             self.normal_relaxation_policy,
+        )?;
+        self.restitution_timing_policy.validate(
+            &self.solver_settings,
+            self.solver_execution,
+            self.normal_relaxation_policy,
+            self.contact_coefficient_policy,
+            self.substep_contact_policy,
         )?;
         let normal_relaxation = self
             .descriptors
@@ -1675,6 +1689,7 @@ pub struct GpuGeneratedContactSeriesV1 {
     pub solver_scheduling_policy: GpuSolverSchedulingPolicyV1,
     pub contact_coefficient_policy: crate::GpuContactCoefficientPolicyV1,
     pub substep_contact_policy: crate::GpuSubstepContactPolicyV1,
+    pub restitution_timing_policy: crate::GpuRestitutionTimingPolicyV1,
     pub contact_identity_policy: ContactIdentityPolicyV1,
     pub dispatches_per_step: u32,
     pub allocated_bytes: u64,
@@ -1704,6 +1719,13 @@ impl GpuGeneratedContactSeriesV1 {
             &self.solver_settings,
             self.solver_execution,
             crate::GpuNormalRelaxationPolicyV1::SELECTED,
+        )?;
+        self.restitution_timing_policy.validate(
+            &self.solver_settings,
+            self.solver_execution,
+            crate::GpuNormalRelaxationPolicyV1::SELECTED,
+            self.contact_coefficient_policy,
+            self.substep_contact_policy,
         )?;
         for (index, snapshot) in self.snapshots.iter().enumerate() {
             snapshot.validate()?;
@@ -1736,6 +1758,13 @@ impl GpuGeneratedContactOutput {
             &self.solver_settings,
             self.solver_execution,
             crate::GpuNormalRelaxationPolicyV1::SELECTED,
+        )?;
+        self.restitution_timing_policy.validate(
+            &self.solver_settings,
+            self.solver_execution,
+            crate::GpuNormalRelaxationPolicyV1::SELECTED,
+            self.contact_coefficient_policy,
+            self.substep_contact_policy,
         )?;
         for body in &self.bodies {
             body.validate().map_err(|error| error.to_string())?;
@@ -2524,6 +2553,7 @@ impl GpuGeneratedContactRunner {
             solver_scheduling_policy: scheduling_policy,
             contact_coefficient_policy: graph.contact_coefficient_policy,
             substep_contact_policy: graph.substep_contact_policy,
+            restitution_timing_policy: graph.restitution_timing_policy,
             contact_identity_policy: identity_policy,
             soft_feedback_policy,
             normal_relaxation_policy,
@@ -2718,6 +2748,7 @@ impl GpuGeneratedContactRunner {
             normal_relaxation_policy,
             contact_coefficient_policy,
             crate::GpuSubstepContactPolicyV1::SELECTED,
+            crate::GpuRestitutionTimingPolicyV1::SELECTED,
         )
     }
 
@@ -2735,6 +2766,7 @@ impl GpuGeneratedContactRunner {
         normal_relaxation_policy: crate::GpuNormalRelaxationPolicyV1,
         contact_coefficient_policy: crate::GpuContactCoefficientPolicyV1,
         substep_contact_policy: crate::GpuSubstepContactPolicyV1,
+        restitution_timing_policy: crate::GpuRestitutionTimingPolicyV1,
     ) -> Result<GpuGeneratedContactSeriesV1, String> {
         if observation_interval_steps == 0
             || completed_steps == 0
@@ -2777,6 +2809,7 @@ impl GpuGeneratedContactRunner {
                 normal_relaxation_policy,
                 contact_coefficient_policy,
                 substep_contact_policy,
+                restitution_timing_policy,
             )?;
         let snapshot_count = completed_steps / observation_interval_steps;
         let readbacks =
@@ -3015,6 +3048,7 @@ impl GpuGeneratedContactRunner {
             solver_scheduling_policy: scheduling_policy,
             contact_coefficient_policy: graph.contact_coefficient_policy,
             substep_contact_policy: graph.substep_contact_policy,
+            restitution_timing_policy: graph.restitution_timing_policy,
             contact_identity_policy: identity_policy,
             dispatches_per_step: graph.dispatches_per_step(),
             allocated_bytes: graph.allocated_bytes(),
@@ -3153,6 +3187,7 @@ impl GpuGeneratedContactRunner {
 
     /// Runs the complete named S9 solver-policy tuple without changing product
     /// construction or scenario-owned settings.
+    #[allow(clippy::too_many_arguments)]
     pub fn run_solver_policy_experiment(
         &self,
         scenario: &ScenarioV1,
@@ -3161,6 +3196,7 @@ impl GpuGeneratedContactRunner {
         scheduling_policy: GpuSolverSchedulingPolicyV1,
         contact_coefficient_policy: crate::GpuContactCoefficientPolicyV1,
         substep_contact_policy: crate::GpuSubstepContactPolicyV1,
+        restitution_timing_policy: crate::GpuRestitutionTimingPolicyV1,
     ) -> Result<GpuGeneratedContactOutput, String> {
         self.run_with_topologies_execution_scheduling_identity_and_extended_solver_policies(
             scenario,
@@ -3175,6 +3211,7 @@ impl GpuGeneratedContactRunner {
             ContactIdentityPolicyV1::SELECTED,
             contact_coefficient_policy,
             substep_contact_policy,
+            restitution_timing_policy,
         )
     }
 
@@ -3607,6 +3644,7 @@ impl GpuGeneratedContactRunner {
             identity_policy,
             contact_coefficient_policy,
             crate::GpuSubstepContactPolicyV1::SELECTED,
+            crate::GpuRestitutionTimingPolicyV1::SELECTED,
         )
     }
 
@@ -3625,6 +3663,7 @@ impl GpuGeneratedContactRunner {
         identity_policy: ContactIdentityPolicyV1,
         contact_coefficient_policy: crate::GpuContactCoefficientPolicyV1,
         substep_contact_policy: crate::GpuSubstepContactPolicyV1,
+        restitution_timing_policy: crate::GpuRestitutionTimingPolicyV1,
     ) -> Result<GpuGeneratedContactOutput, String> {
         if completed_steps == 0 {
             return Err("generated contact validation requires at least one step".to_owned());
@@ -3655,6 +3694,7 @@ impl GpuGeneratedContactRunner {
                 crate::GpuNormalRelaxationPolicyV1::SELECTED,
                 contact_coefficient_policy,
                 substep_contact_policy,
+                restitution_timing_policy,
             )?;
         let lane_bytes = u64::from(body_count) * size_of::<[u32; 4]>() as u64;
         let state_readback = readback(&self.device, "generated_state_readback", lane_bytes * 3);
@@ -4028,6 +4068,7 @@ impl GpuGeneratedContactRunner {
             solver_scheduling_policy: scheduling_policy,
             contact_coefficient_policy: graph.contact_coefficient_policy,
             substep_contact_policy: graph.substep_contact_policy,
+            restitution_timing_policy: graph.restitution_timing_policy,
             contact_identity_policy: graph.identity_policy,
             bodies,
             manifolds,
@@ -4587,8 +4628,9 @@ fn map_range<T: Pod + Copy>(
 mod tests {
     use super::GpuGeneratedContactRunner;
     use crate::{
-        GpuSolverExecutionV4, GpuSolverSchedulingPolicyV1, GpuSubstepContactPolicyV1,
-        P5_2SettlingFixtureKind, P5_2SettlingReviewPolicy, p5_2_settling_fixture_scenario,
+        GpuRestitutionTimingPolicyV1, GpuSolverExecutionV4, GpuSolverSchedulingPolicyV1,
+        GpuSubstepContactPolicyV1, P5_2SettlingFixtureKind, P5_2SettlingReviewPolicy,
+        p5_2_centered_rectangle_stack_scenario, p5_2_settling_fixture_scenario,
         p5_2_settling_review_scenario,
     };
 
@@ -4621,6 +4663,14 @@ mod tests {
         assert_eq!(
             final_only.substep_contact_policy,
             GpuSubstepContactPolicyV1::SELECTED
+        );
+        assert_eq!(
+            first.restitution_timing_policy,
+            GpuRestitutionTimingPolicyV1::SELECTED
+        );
+        assert_eq!(
+            final_only.restitution_timing_policy,
+            GpuRestitutionTimingPolicyV1::SELECTED
         );
         assert!(first.snapshots.iter().all(|snapshot| {
             snapshot.failure.is_none()
@@ -4971,6 +5021,7 @@ mod tests {
                     policy,
                     crate::GpuContactCoefficientPolicyV1::SELECTED,
                     GpuSubstepContactPolicyV1::FixedAnchorAnalyticalSeparation,
+                    GpuRestitutionTimingPolicyV1::SELECTED,
                 )
                 .unwrap()
         };
@@ -5038,8 +5089,122 @@ mod tests {
                 GpuSolverSchedulingPolicyV1::SELECTED,
                 crate::GpuContactCoefficientPolicyV1::SELECTED,
                 GpuSubstepContactPolicyV1::FixedAnchorAnalyticalSeparation,
+                GpuRestitutionTimingPolicyV1::SELECTED,
             )
             .unwrap_err();
         assert!(error.contains("hard/direct manifold-block i2"), "{error}");
+    }
+
+    #[test]
+    fn restitution_after_substeps_is_stack_inert_replayable_and_dispatch_exact() {
+        let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
+        for count in [4, 8, 16] {
+            let scenario = p5_2_centered_rectangle_stack_scenario(count, 4).unwrap();
+            let run = |scheduling_policy, restitution_timing_policy| {
+                runner
+                    .run_solver_policy_experiment(
+                        &scenario,
+                        4,
+                        GpuSolverExecutionV4::SELECTED,
+                        scheduling_policy,
+                        crate::GpuContactCoefficientPolicyV1::SELECTED,
+                        GpuSubstepContactPolicyV1::SELECTED,
+                        restitution_timing_policy,
+                    )
+                    .unwrap()
+            };
+            let selected = run(
+                GpuSolverSchedulingPolicyV1::SELECTED,
+                GpuRestitutionTimingPolicyV1::SELECTED,
+            );
+            let per_color = run(
+                GpuSolverSchedulingPolicyV1::SELECTED,
+                GpuRestitutionTimingPolicyV1::AfterSubsteps,
+            );
+            let replay = run(
+                GpuSolverSchedulingPolicyV1::SELECTED,
+                GpuRestitutionTimingPolicyV1::AfterSubsteps,
+            );
+            let islands = run(
+                GpuSolverSchedulingPolicyV1::SELECTED_SMALL_WORLD,
+                GpuRestitutionTimingPolicyV1::AfterSubsteps,
+            );
+            let selected_islands = run(
+                GpuSolverSchedulingPolicyV1::SELECTED_SMALL_WORLD,
+                GpuRestitutionTimingPolicyV1::SELECTED,
+            );
+
+            assert_eq!(per_color.bodies, selected.bodies);
+            assert_eq!(per_color.manifolds, selected.manifolds);
+            assert_eq!(per_color.cache, selected.cache);
+            assert_eq!(
+                per_color.pass_evidence.contacts,
+                selected.pass_evidence.contacts
+            );
+            assert_eq!(
+                serde_json::to_vec(&per_color).unwrap(),
+                serde_json::to_vec(&replay).unwrap()
+            );
+            assert_eq!(per_color.bodies, islands.bodies);
+            assert_eq!(per_color.manifolds, islands.manifolds);
+            assert_eq!(per_color.cache, islands.cache);
+            assert_eq!(
+                selected.dispatches_per_step - per_color.dispatches_per_step,
+                (scenario.settings.substeps - 1) * 32
+            );
+            assert_eq!(
+                selected_islands.dispatches_per_step - islands.dispatches_per_step,
+                scenario.settings.substeps - 1
+            );
+            assert_eq!(
+                per_color.restitution_timing_policy,
+                GpuRestitutionTimingPolicyV1::AfterSubsteps
+            );
+            assert!(per_color.failure.is_none());
+            assert!(islands.failure.is_none());
+        }
+    }
+
+    #[test]
+    fn restitution_after_substeps_changes_an_eligible_drop_and_rejects_composition() {
+        let mut scenario =
+            p5_2_settling_fixture_scenario(P5_2SettlingFixtureKind::NearFlatFloorDrop, 0x6002, 60)
+                .unwrap();
+        for body in &mut scenario.bodies {
+            body.material.restitution = physbox_contracts::FiniteF32::new(0.5).unwrap();
+        }
+        let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
+        let run = |timing| {
+            runner
+                .run_solver_policy_experiment(
+                    &scenario,
+                    60,
+                    GpuSolverExecutionV4::SELECTED,
+                    GpuSolverSchedulingPolicyV1::SELECTED,
+                    crate::GpuContactCoefficientPolicyV1::SELECTED,
+                    GpuSubstepContactPolicyV1::SELECTED,
+                    timing,
+                )
+                .unwrap()
+        };
+        let selected = run(GpuRestitutionTimingPolicyV1::SELECTED);
+        let final_only = run(GpuRestitutionTimingPolicyV1::AfterSubsteps);
+        assert_ne!(selected.bodies, final_only.bodies);
+
+        let error = runner
+            .run_solver_policy_experiment(
+                &scenario,
+                1,
+                GpuSolverExecutionV4::SELECTED,
+                GpuSolverSchedulingPolicyV1::SELECTED,
+                crate::GpuContactCoefficientPolicyV1::SELECTED,
+                GpuSubstepContactPolicyV1::FixedAnchorAnalyticalSeparation,
+                GpuRestitutionTimingPolicyV1::AfterSubsteps,
+            )
+            .unwrap_err();
+        assert!(
+            error.contains("standalone hard/direct selected i2"),
+            "{error}"
+        );
     }
 }
