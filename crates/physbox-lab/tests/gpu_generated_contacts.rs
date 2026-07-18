@@ -4,14 +4,15 @@ use physbox_contracts::{
 };
 use physbox_engine::{
     GpuContactPersistenceTopology, GpuGatherTopology, GpuGeneratedContactRunner,
-    GpuNarrowphaseRunner, GpuNormalSolverV4, GpuSolverAccumulationV4, GpuSolverCandidate,
-    GpuSolverExecutionV4, GpuSolverSchedulingPolicyV1, P5_2_BUCKET_EVIDENCE_STEPS,
-    P5_2_CENTERED_STACK_EVIDENCE_STEPS, P5_2BucketShape, P5_2CandidatePattern,
-    P5_2GeneratedScenarioKind, benchmark_gpu_generated_contact_experiment,
+    GpuNarrowphaseRunner, GpuNormalSolverV4, GpuSoftFeedbackPolicyV1, GpuSolverAccumulationV4,
+    GpuSolverCandidate, GpuSolverExecutionV4, GpuSolverSchedulingPolicyV1,
+    P5_2_BUCKET_EVIDENCE_STEPS, P5_2_CENTERED_STACK_EVIDENCE_STEPS, P5_2BucketShape,
+    P5_2CandidatePattern, P5_2GeneratedScenarioKind, benchmark_gpu_generated_contact_experiment,
     benchmark_gpu_generated_contact_scheduling_experiment, benchmark_gpu_generated_contacts,
     p5_2_bucket_scenario, p5_2_candidate_scenario, p5_2_centered_rectangle_stack_scenario,
     p5_2_coloring_churn_snapshots, p5_2_contact_policy_candidate,
-    p5_2_generated_performance_scenario, p5_2_generated_scenario, p5_2_rectangle_pyramid_scenario,
+    p5_2_generated_performance_scenario, p5_2_generated_scenario,
+    p5_2_minimized_mixed_pile_energy_scenario, p5_2_rectangle_pyramid_scenario,
     run_gpu_soft_step_case,
 };
 use physbox_lab::analytic_narrowphase::authored_solver_projection;
@@ -30,6 +31,39 @@ fn contact_softness(hertz: f32, damping: f32, static_multiplier: f32) -> Contact
         damping_ratio: FiniteF32::new(damping).unwrap(),
         static_contact_hertz_multiplier: FiniteF32::new(static_multiplier).unwrap(),
     }
+}
+
+#[test]
+fn per_pass_trace_is_final_flush_and_equivalent_to_the_unsplit_graph() {
+    let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
+    let scenario = p5_2_minimized_mixed_pile_energy_scenario().unwrap();
+    let trace = runner
+        .run_contact_policy_pass_trace(
+            &scenario,
+            2,
+            ContactIdentityPolicyV1::PriorContactHysteresis,
+            GpuSoftFeedbackPolicyV1::SELECTED,
+        )
+        .unwrap();
+    trace.validate().unwrap();
+    assert!(trace.mapped_after_final_step_only);
+    assert_eq!(trace.states.len(), trace.descriptors.len() + 1);
+    assert_eq!(trace.descriptors.len(), 56);
+    assert!(!trace.construction.overflowed);
+
+    let control = runner
+        .run_contact_policy_observation_series_with_submission_batch(
+            &scenario,
+            2,
+            2,
+            ContactIdentityPolicyV1::PriorContactHysteresis,
+            1,
+        )
+        .unwrap();
+    assert_eq!(
+        trace.states.last().unwrap().bodies,
+        control.snapshots.last().unwrap().bodies
+    );
 }
 
 #[test]

@@ -42,13 +42,14 @@ pub use body_floor_solver::{
     benchmark_gpu_authored_solver_experiment,
 };
 pub use body_floor_solver::{
-    GPU_SOLVER_EXECUTION_VERSION, GPU_SOLVER_SCHEDULING_POLICY_VERSION, GpuBlockActiveSetV2,
-    GpuColorMaintenanceV1, GpuColorOrderV4, GpuColorScheduleV4, GpuColorUnitV4,
-    GpuColoredDispatchV1, GpuColoringEvidenceV4, GpuContactSoftnessCoefficientsV1,
-    GpuFixedFloorContactEvidence, GpuFixedFloorPassEvidence, GpuGatherTopology,
-    GpuGatherTopologyEvidence, GpuManifoldBlockEvidenceV2, GpuNormalSolverV4,
-    GpuSoftFeedbackPolicyV1, GpuSolverAccumulationV4, GpuSolverExecutionV4,
-    GpuSolverSchedulingPolicyV1, gpu_contact_softness_coefficients,
+    GPU_SOLVER_EXECUTION_VERSION, GPU_SOLVER_PASS_TRACE_VERSION,
+    GPU_SOLVER_SCHEDULING_POLICY_VERSION, GpuBlockActiveSetV2, GpuColorMaintenanceV1,
+    GpuColorOrderV4, GpuColorScheduleV4, GpuColorUnitV4, GpuColoredDispatchV1,
+    GpuColoringEvidenceV4, GpuContactSoftnessCoefficientsV1, GpuFixedFloorContactEvidence,
+    GpuFixedFloorPassEvidence, GpuGatherTopology, GpuGatherTopologyEvidence,
+    GpuManifoldBlockEvidenceV2, GpuNormalSolverV4, GpuSoftFeedbackPolicyV1,
+    GpuSolverAccumulationV4, GpuSolverExecutionV4, GpuSolverPassDescriptorV1, GpuSolverPassKindV1,
+    GpuSolverPassParametersV1, GpuSolverSchedulingPolicyV1, gpu_contact_softness_coefficients,
 };
 pub use body_state::{
     BODY_BYTES_PER_SLOT, BODY_COMMAND_BYTES, BODY_COMMAND_CAPACITY, BodySlotRegistry,
@@ -86,9 +87,10 @@ pub use frame::{
 };
 #[cfg(not(target_arch = "wasm32"))]
 pub use generated_contacts::{
-    GPU_GENERATED_CONTACT_BODY_HISTORY_VERSION, GpuGeneratedContactBenchmarkOutput,
-    GpuGeneratedContactBodyHistoryV1, GpuGeneratedContactOutput, GpuGeneratedContactRunner,
-    GpuGeneratedContactSeriesV1, GpuGeneratedContactSnapshotV1,
+    GPU_GENERATED_CONTACT_BODY_HISTORY_VERSION, GPU_GENERATED_CONTACT_PASS_TRACE_VERSION,
+    GpuGeneratedContactBenchmarkOutput, GpuGeneratedContactBodyHistoryV1,
+    GpuGeneratedContactOutput, GpuGeneratedContactPassStateV1, GpuGeneratedContactPassTraceV1,
+    GpuGeneratedContactRunner, GpuGeneratedContactSeriesV1, GpuGeneratedContactSnapshotV1,
     benchmark_gpu_generated_contact_experiment,
     benchmark_gpu_generated_contact_identity_experiment,
     benchmark_gpu_generated_contact_scheduling_experiment, benchmark_gpu_generated_contacts,

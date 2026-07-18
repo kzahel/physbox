@@ -308,6 +308,16 @@ formulation, accumulation order, coefficients, identity policy, solver or
 scheduler architecture, or the awake energy gate. Sleeping, wider tolerances,
 and refreshed baselines cannot hide either result.
 
+S6.5b pass-trace checkpoint, 2026-07-18: a native-only bounded diagnostic now
+captures the actual generated-contact body and prepared-contact `f32` state at
+56 logical state-changing boundaries in one selected outer step. Every
+colored boundary encloses the complete ordered 32-color dispatch sequence;
+this is pass accounting, not a claim that each color is a separate physical
+stage. All copies remain GPU ordered and one map occurs only after the target
+step and pair-cache store. The split diagnostic target is bit-exact with the
+ordinary unsplit graph in the maintained Metal test. Scalar recurrence and
+measured attribution remain open, and the product remains unchanged.
+
 ## Authority corrections
 
 Two plausible techniques must not be mislabeled as direct Box2D v3 parity:

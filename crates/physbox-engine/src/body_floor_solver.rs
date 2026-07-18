@@ -29,6 +29,7 @@ const MAX_INSTRUMENTED_QUERIES_PER_SET: u32 = 4_096;
 
 pub const GPU_SOLVER_EXECUTION_VERSION: u32 = 4;
 pub const GPU_SOLVER_SCHEDULING_POLICY_VERSION: u32 = 1;
+pub const GPU_SOLVER_PASS_TRACE_VERSION: u32 = 1;
 #[cfg(not(target_arch = "wasm32"))]
 pub const GPU_SCHEDULER_WORK_VECTOR_VERSION: u32 = 2;
 
@@ -912,6 +913,48 @@ struct PassParamsRaw {
     uints1: [u32; 4],
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum GpuSolverPassKindV1 {
+    IntegrateVelocity,
+    PrepareContacts,
+    RefreshContacts,
+    WarmStart,
+    NormalBiased,
+    TangentBiased,
+    IntegratePosition,
+    NormalRelaxation,
+    TangentRelaxation,
+    Restitution,
+    Gather,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GpuSolverPassParametersV1 {
+    pub floats0: [f32; 4],
+    pub floats1: [f32; 4],
+    pub floats2: [f32; 4],
+    pub floats3: [f32; 4],
+    pub uints0: [u32; 4],
+    pub uints1: [u32; 4],
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GpuSolverPassDescriptorV1 {
+    pub version: u32,
+    pub first_operation_index: u32,
+    pub operation_index: u32,
+    pub substep: u32,
+    pub kind: GpuSolverPassKindV1,
+    pub iteration: u32,
+    pub first_color: Option<u32>,
+    pub last_color: Option<u32>,
+    pub color_passes: u32,
+    pub parameters: GpuSolverPassParametersV1,
+}
+
 #[derive(Clone, Copy)]
 enum PipelineKind {
     TopologyClear,
@@ -1458,6 +1501,7 @@ pub(crate) struct GpuFixedFloorSolver {
     _topology: wgpu::Buffer,
     _color_indirect: Option<wgpu::Buffer>,
     _parameter_buffer: wgpu::Buffer,
+    parameters: Vec<PassParamsRaw>,
     bind_ab: wgpu::BindGroup,
     bind_ba: wgpu::BindGroup,
     color_bind_ab: Option<wgpu::BindGroup>,
@@ -2029,6 +2073,7 @@ impl GpuFixedFloorSolver {
             _topology: topology,
             _color_indirect: color_indirect,
             _parameter_buffer: parameter_buffer,
+            parameters,
             bind_ab,
             bind_ba,
             color_bind_ab,
@@ -2119,6 +2164,98 @@ impl GpuFixedFloorSolver {
         for operation in &self.operations {
             self.encode_operation(&mut pass, operation);
         }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn encode_step_with_pass_trace(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        storage: &GpuBodyStorage,
+        destination: &wgpu::Buffer,
+    ) -> Result<Vec<GpuSolverPassDescriptorV1>, String> {
+        let descriptors = self.pass_trace_descriptors();
+        let first_operation = descriptors
+            .first()
+            .map(|descriptor| descriptor.first_operation_index as usize)
+            .ok_or_else(|| "solver pass trace has no state-changing operations".to_owned())?;
+        let mut expected_operation = first_operation;
+        for descriptor in &descriptors {
+            if descriptor.first_operation_index as usize != expected_operation
+                || descriptor.operation_index < descriptor.first_operation_index
+            {
+                return Err(
+                    "solver pass trace requires contiguous logical operation groups".to_owned(),
+                );
+            }
+            expected_operation = descriptor.operation_index as usize + 1;
+        }
+        if expected_operation != self.operations.len() {
+            return Err("solver pass trace omitted a state-changing operation".to_owned());
+        }
+        if first_operation != 0 {
+            let mut preparation = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("physbox5_solver_pass_trace_topology"),
+                timestamp_writes: None,
+            });
+            for operation in &self.operations[..first_operation] {
+                self.encode_operation(&mut preparation, operation);
+            }
+        }
+        self.copy_pass_trace_state(encoder, storage, destination, 0);
+        let stride = self.pass_trace_state_bytes();
+        for (index, descriptor) in descriptors.iter().enumerate() {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("physbox5_solver_pass_trace_operation"),
+                timestamp_writes: None,
+            });
+            for operation in &self.operations
+                [descriptor.first_operation_index as usize..=descriptor.operation_index as usize]
+            {
+                self.encode_operation(&mut pass, operation);
+            }
+            drop(pass);
+            self.copy_pass_trace_state(encoder, storage, destination, (index as u64 + 1) * stride);
+        }
+        Ok(descriptors)
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn pass_trace_state_bytes(&self) -> u64 {
+        u64::from(self.body_count) * size_of::<[f32; 4]>() as u64 * 2
+            + u64::from(self.point_count) * size_of::<PreparedPointRaw>() as u64
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn copy_pass_trace_state(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        storage: &GpuBodyStorage,
+        destination: &wgpu::Buffer,
+        destination_offset: u64,
+    ) {
+        let body_bytes = u64::from(self.body_count) * size_of::<[f32; 4]>() as u64;
+        let prepared_bytes = u64::from(self.point_count) * size_of::<PreparedPointRaw>() as u64;
+        encoder.copy_buffer_to_buffer(
+            storage.pose_buffer(),
+            0,
+            destination,
+            destination_offset,
+            body_bytes,
+        );
+        encoder.copy_buffer_to_buffer(
+            storage.motion_buffer(),
+            0,
+            destination,
+            destination_offset + body_bytes,
+            body_bytes,
+        );
+        encoder.copy_buffer_to_buffer(
+            &self._prepared,
+            0,
+            destination,
+            destination_offset + body_bytes * 2,
+            prepared_bytes,
+        );
     }
 
     fn encode_operation<'a>(&'a self, pass: &mut wgpu::ComputePass<'a>, operation: &Operation) {
@@ -2506,6 +2643,11 @@ impl GpuFixedFloorSolver {
 
     pub(crate) fn dispatches_per_step(&self) -> u32 {
         self.operations.len() as u32
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn pass_trace_descriptors(&self) -> Vec<GpuSolverPassDescriptorV1> {
+        pass_trace_descriptors(&self.parameters, &self.operations)
     }
 
     pub(crate) const fn point_count(&self) -> u32 {
@@ -3034,33 +3176,7 @@ pub(crate) fn decode_pass_evidence(
         &bytes[contribution_start..contribution_end],
     )
     .map_err(|error| format!("decode fixed-floor contributions: {error}"))?;
-    let contacts = prepared
-        .iter()
-        .enumerate()
-        .map(|(index, point)| GpuFixedFloorContactEvidence {
-            point_index: index as u32,
-            valid: point.ids[0] != u32::MAX && point.ids[1] != u32::MAX,
-            body_a: point.ids[0],
-            body_b: point.ids[1],
-            manifold_index: point.ids[2],
-            point_in_manifold: point.ids[3],
-            normal: physbox_contracts::Vec2::new(point.normal[0], point.normal[1]),
-            tangent: physbox_contracts::Vec2::new(point.tangent[0], point.tangent[1]),
-            anchor_a: physbox_contracts::Vec2::new(point.anchor_a[0], point.anchor_a[1]),
-            anchor_b: physbox_contracts::Vec2::new(point.anchor_b[0], point.anchor_b[1]),
-            initial_normal_velocity: point.data0[0],
-            normal_effective_mass: point.data0[1],
-            tangent_effective_mass: point.data0[2],
-            separation: point.data0[3],
-            friction: point.data1[0],
-            restitution: point.data1[1],
-            normal_impulse: point.data1[2],
-            tangent_impulse: point.data1[3],
-            total_normal_impulse: point.data2[0],
-            body_a_normal_mass_incidence: point.data2[1] as u32,
-            body_b_normal_mass_incidence: point.data2[2] as u32,
-        })
-        .collect::<Vec<_>>();
+    let contacts = decode_prepared_contacts(prepared);
     let manifold_blocks = prepared
         .iter()
         .enumerate()
@@ -3441,6 +3557,54 @@ pub(crate) fn decode_pass_evidence(
         manifold_blocks,
         coloring,
     })
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn decode_prepared_contact_bytes(
+    bytes: &[u8],
+    point_count: u32,
+) -> Result<Vec<GpuFixedFloorContactEvidence>, String> {
+    let expected = point_count as usize * size_of::<PreparedPointRaw>();
+    if bytes.len() != expected {
+        return Err(format!(
+            "prepared contact trace requires {expected} bytes, received {}",
+            bytes.len()
+        ));
+    }
+    let prepared = bytemuck::try_cast_slice::<u8, PreparedPointRaw>(bytes)
+        .map_err(|error| format!("decode prepared contact trace: {error}"))?;
+    Ok(decode_prepared_contacts(prepared))
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn decode_prepared_contacts(prepared: &[PreparedPointRaw]) -> Vec<GpuFixedFloorContactEvidence> {
+    prepared
+        .iter()
+        .enumerate()
+        .map(|(index, point)| GpuFixedFloorContactEvidence {
+            point_index: index as u32,
+            valid: point.ids[0] != u32::MAX && point.ids[1] != u32::MAX,
+            body_a: point.ids[0],
+            body_b: point.ids[1],
+            manifold_index: point.ids[2],
+            point_in_manifold: point.ids[3],
+            normal: physbox_contracts::Vec2::new(point.normal[0], point.normal[1]),
+            tangent: physbox_contracts::Vec2::new(point.tangent[0], point.tangent[1]),
+            anchor_a: physbox_contracts::Vec2::new(point.anchor_a[0], point.anchor_a[1]),
+            anchor_b: physbox_contracts::Vec2::new(point.anchor_b[0], point.anchor_b[1]),
+            initial_normal_velocity: point.data0[0],
+            normal_effective_mass: point.data0[1],
+            tangent_effective_mass: point.data0[2],
+            separation: point.data0[3],
+            friction: point.data1[0],
+            restitution: point.data1[1],
+            normal_impulse: point.data1[2],
+            tangent_impulse: point.data1[3],
+            total_normal_impulse: point.data2[0],
+            body_a_normal_mass_incidence: point.data2[1] as u32,
+            body_b_normal_mass_incidence: point.data2[2] as u32,
+        })
+        .collect()
 }
 
 pub(crate) fn validate_selected_settings(scenario: &ScenarioV1) -> Result<(), String> {
@@ -4333,6 +4497,92 @@ fn push_indirect_operation(
     });
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+fn pass_trace_descriptors(
+    parameters: &[PassParamsRaw],
+    operations: &[Operation],
+) -> Vec<GpuSolverPassDescriptorV1> {
+    let mut substep = None::<u32>;
+    let raw = operations
+        .iter()
+        .enumerate()
+        .filter_map(|(operation_index, operation)| {
+            if matches!(operation.pipeline, PipelineKind::IntegrateVelocity) {
+                substep = Some(substep.map_or(0, |value| value + 1));
+            }
+            let substep = substep?;
+            let parameter = parameters[operation.parameter_index as usize];
+            let stage = parameter.uints1[1];
+            let kind = match operation.pipeline {
+                PipelineKind::IntegrateVelocity => GpuSolverPassKindV1::IntegrateVelocity,
+                PipelineKind::Prepare => GpuSolverPassKindV1::PrepareContacts,
+                PipelineKind::Refresh => GpuSolverPassKindV1::RefreshContacts,
+                PipelineKind::Warm => GpuSolverPassKindV1::WarmStart,
+                PipelineKind::Normal | PipelineKind::NormalBlock => match stage {
+                    2 => GpuSolverPassKindV1::NormalBiased,
+                    4 => GpuSolverPassKindV1::NormalRelaxation,
+                    _ => return None,
+                },
+                PipelineKind::Tangent => match stage {
+                    3 => GpuSolverPassKindV1::TangentBiased,
+                    5 => GpuSolverPassKindV1::TangentRelaxation,
+                    _ => return None,
+                },
+                PipelineKind::Restitution => GpuSolverPassKindV1::Restitution,
+                PipelineKind::IntegratePosition => GpuSolverPassKindV1::IntegratePosition,
+                PipelineKind::Gather => GpuSolverPassKindV1::Gather,
+                PipelineKind::Colored | PipelineKind::IslandColored => match stage {
+                    1 => GpuSolverPassKindV1::WarmStart,
+                    2 => GpuSolverPassKindV1::NormalBiased,
+                    3 => GpuSolverPassKindV1::TangentBiased,
+                    4 => GpuSolverPassKindV1::NormalRelaxation,
+                    5 => GpuSolverPassKindV1::TangentRelaxation,
+                    6 => GpuSolverPassKindV1::Restitution,
+                    _ => return None,
+                },
+                _ => return None,
+            };
+            Some(GpuSolverPassDescriptorV1 {
+                version: GPU_SOLVER_PASS_TRACE_VERSION,
+                first_operation_index: operation_index as u32,
+                operation_index: operation_index as u32,
+                substep,
+                kind,
+                iteration: parameter.uints1[0],
+                first_color: operation.color,
+                last_color: operation.color,
+                color_passes: u32::from(operation.color.is_some()),
+                parameters: GpuSolverPassParametersV1 {
+                    floats0: parameter.floats0,
+                    floats1: parameter.floats1,
+                    floats2: parameter.floats2,
+                    floats3: parameter.floats3,
+                    uints0: parameter.uints0,
+                    uints1: parameter.uints1,
+                },
+            })
+        })
+        .collect::<Vec<_>>();
+    let mut grouped = Vec::<GpuSolverPassDescriptorV1>::new();
+    for descriptor in raw {
+        if let Some(previous) = grouped.last_mut()
+            && previous.operation_index + 1 == descriptor.first_operation_index
+            && previous.substep == descriptor.substep
+            && previous.kind == descriptor.kind
+            && previous.iteration == descriptor.iteration
+            && previous.color_passes != 0
+            && descriptor.color_passes != 0
+        {
+            previous.operation_index = descriptor.operation_index;
+            previous.last_color = descriptor.last_color;
+            previous.color_passes += descriptor.color_passes;
+            continue;
+        }
+        grouped.push(descriptor);
+    }
+    grouped
+}
+
 fn workgroups(elements: u32) -> u32 {
     elements.div_ceil(WORKGROUP_SIZE)
 }
@@ -4743,6 +4993,64 @@ mod tests {
             }
         }
         assert!(differences > 0);
+    }
+
+    #[test]
+    fn selected_colored_pass_trace_has_exact_physical_operation_boundaries() {
+        let scenario = crate::p5_2_minimized_mixed_pile_energy_scenario().unwrap();
+        let body_count = scenario.bodies.len() as u32;
+        let point_capacity = body_count * (body_count - 1);
+        let topology = TopologyLayout::new(
+            GpuGatherTopology::StableBodyEdge,
+            body_count,
+            point_capacity,
+            false,
+            GpuColorScheduleV4::CompactIndirect,
+            GpuColorUnitV4::Manifold,
+            GpuSolverSchedulingPolicyV1::SELECTED,
+        )
+        .unwrap();
+        let (parameters, operations) = operations(
+            &scenario,
+            body_count,
+            point_capacity,
+            topology,
+            false,
+            GpuSolverExecutionV4::SELECTED,
+            GpuSolverSchedulingPolicyV1::SELECTED,
+        );
+        let descriptors = pass_trace_descriptors(&parameters, &operations);
+        assert_eq!(descriptors.len(), 56);
+        assert_eq!(descriptors[0].kind, GpuSolverPassKindV1::IntegrateVelocity);
+        assert_eq!(descriptors[0].substep, 0);
+        assert_eq!(
+            descriptors.last().unwrap().kind,
+            GpuSolverPassKindV1::Restitution
+        );
+        assert_eq!(descriptors.last().unwrap().substep, 3);
+        assert_eq!(
+            descriptors
+                .iter()
+                .filter(|pass| pass.kind == GpuSolverPassKindV1::NormalBiased)
+                .count(),
+            8
+        );
+        assert_eq!(
+            descriptors
+                .iter()
+                .filter(|pass| pass.kind == GpuSolverPassKindV1::NormalRelaxation)
+                .count(),
+            8
+        );
+        assert!(
+            descriptors
+                .iter()
+                .filter(|pass| pass.color_passes != 0)
+                .all(|pass| pass.first_color == Some(0)
+                    && pass.last_color == Some(31)
+                    && pass.color_passes == 32)
+        );
+        assert!(descriptors.iter().all(|pass| pass.version == 1));
     }
 
     #[test]

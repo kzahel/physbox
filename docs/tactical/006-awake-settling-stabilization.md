@@ -533,10 +533,11 @@ or another difficult-to-reverse architecture fork.
 
 ### S6.5b — authorized matched-precision per-pass diagnosis
 
-- [ ] Freeze a versioned per-pass trace that brackets every state-changing
-  generated-contact operation for the permanent four-body energy reproducer.
-  Copy bounded body, contact, and accumulated-impulse state in GPU command
-  order and map only after the final requested step.
+- [x] Freeze a versioned per-pass trace that brackets every state-changing
+  logical generated-contact pass for the permanent four-body energy
+  reproducer. Each boundary retains the complete ordered per-color dispatch
+  sequence. Copy bounded body, contact, and accumulated-impulse state in GPU
+  command order and map only after the final requested step.
 - [ ] Mirror the selected manifold-block recurrence in scalar Rust with `f32`
   state and rounding at the same operation boundaries. Report both strict
   ordered-`f32` kinetic energy and compensated wider accumulation over the
@@ -577,6 +578,17 @@ Commit boundaries: this authorization contract; pass-trace schema and scalar
 mirror; GPU final-flush instrumentation; clean Metal attribution; an
 attributable fix if the branch permits it; AVD localization; and the verified
 decision package are independently reviewable commits.
+
+Pass-trace checkpoint, 2026-07-18: schema version 1 names all 56 logical
+state-changing boundaries in the selected four-substep/manifold-block-i2
+schedule. A colored logical pass contains its complete 32-color indirect
+sequence, so the trace preserves Gauss–Seidel order without producing 1,296
+CPU-visible synchronization points. The diagnostic copies actual body and
+prepared-contact `f32` state after every boundary into one bounded buffer and
+maps once after the target step and persistence store. A two-step Metal test
+is bit-exact against the ordinary unsplit graph, retains the selected parallel
+scheduler and soft/prior policy, and reports clean construction/color
+capacity. No product constructor or interactive frame path calls this API.
 
 ### S6.6 — accepted policy integration
 
