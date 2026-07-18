@@ -624,6 +624,8 @@ selected and every candidate remains unpromoted.
 - [x] Add laboratory-only normal-relaxation policy controls, a version-2
   policy-attested pass trace, and a matched scalar recurrence. Keep every
   product-facing constructor on hard/direct relaxation.
+- [x] Add exact-count backend-trace aliases for both four-body energy arms;
+  attest the relaxation policy separately from the unchanged source hash.
 - [ ] Arm 1, `soft-no-normal-relax`: omit normal-relaxation passes when contact
   softness is enabled. Retain biased manifold-block normals, tangent
   relaxation, restitution, `i2`, coloring, coefficients, and every other pass.
