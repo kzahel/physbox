@@ -1,10 +1,9 @@
 # S6: Awake settling stabilization
 
-Status: S6.5d scalar-first recurrence derivation active, 2026-07-18. S6.1–S6.4
-are complete and the S6.5c no-survivor result is accepted. One analytically
-justified, scalar-qualified coupled candidate may reach the GPU. Hard/direct
-manifold-block i2 remains the product; every settling candidate remains
-unpromoted.
+Status: S6.5 closed by human review, 2026-07-18. The one S6.5d candidate is
+rejected, soft settling is deferred, and hard/direct manifold-block i2 remains
+the product. S6.6 is not authorized. The awake-settling completion gate remains
+open despite the completed negative study.
 
 Governing topic:
 [awake settling and rest stability](../topics/awake-settling-and-rest-stability.md).
@@ -306,9 +305,9 @@ and clean evidence are independently reviewable commits.
 
 - [x] Stop and present the S6.4 package before changing product contact
   identity or physical coefficients.
-- [ ] Ask the reviewer to judge synchronized playback and, after they choose
-  to deploy the named commit, the direct web candidate against the current
-  baseline on touch and desktop.
+- [x] Ask the reviewer to judge the synchronized evidence. No deployed
+  candidate comparison was required because the candidate failed portability
+  and deep-stack energy before promotion.
 - [x] Record acceptance, rejection, requested follow-up, and the exact chosen
   settings without promoting them in the review-record commit.
 
@@ -867,6 +866,18 @@ implementation branch. The unchanged hard/direct product control remains
 upright on Metal and AVD. S6.5d therefore stops at the predeclared human
 physical-policy checkpoint: hard/direct remains selected, S6.6 is not
 authorized, no second recurrence is tried, and nothing is pushed.
+
+S6.5 closure decision, 2026-07-18: human review accepts the rejection. Soft
+settling is deferred and the hard/direct manifold-block i2 product remains
+unchanged. This closes S6.5 as a complete negative study, not as an
+awake-settling pass. The dissipative projected relaxation, the S6.5c omission
+arm's `5.84x` rise, and the candidate Metal 16-stack's 300-observation rising
+run relocate the unresolved injector beyond normal relaxation alone. Any
+future reopening must start with matched-precision per-pass energy attribution
+on the governed 16-stack, not only the permanent four-body reproducer, and
+must satisfy the topic's recorded Metal/AVD/physical-Android reconsideration
+gate. No second recurrence, feedback-composition study, or deep-stack quality
+trade is authorized in this workstream state.
 
 ### S6.6 — accepted policy integration
 

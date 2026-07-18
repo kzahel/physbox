@@ -297,6 +297,12 @@ engine HUD visible, exact source revision/dirty state, launch argv, scenario
 and observed step, adapter/backend identity, surface dimensions, and complete
 logcat from before process launch through the occurrence. Do not infer a
 physics failure from the image or mark this closed after another clean run.
+At the next occurrence, first test whether it shares the S6.5d MoltenVK
+diagnostic failure shape: retain the HUD and logcat above, plus indirect
+arguments and evidence that scheduled GPU work actually completed. This is a
+priority hypothesis because the pass-trace instrument silently lost indirect
+launches when snapshot copies split a step; it is not attribution of the black
+frame or closure of the renderer defect.
 
 ### S4.4 — minimal circle/rectangle construction loop
 

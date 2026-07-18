@@ -3,10 +3,10 @@
 Status: S1 and S2 complete; the S3 combined representation gate passes.
 Forward manifold-block i2 with full rebuild/per-color dispatch is integrated
 as the selected solver baseline. Human review accepted the clean S5.4c bounded
-parallel-coloring recommendation. S6.5a rejected every bounded settling
-correction; all three S6.5c relaxation-policy arms are rejected at the Metal
-four-body kill. S6.5d authorizes one authority-derived, scalar-qualified
-coupled candidate to reach the GPU, with all candidates unpromoted.
+parallel-coloring recommendation. S6.5 is closed as a complete negative study:
+human review rejected the one S6.5d candidate, deferred soft settling, and
+retained hard/direct manifold-block i2 as the product. Reopening requires the
+recorded 16-stack energy and cross-Android portability evidence.
 Broadphase contract/correctness work remains authorized, while product-scene
 ranking and selection wait for the S6 awake gate. S4.3 grab feel and S4.4
 construction mechanics are complete.
@@ -25,7 +25,7 @@ This README remains the unnumbered index.
 | S3 | Small-world collision and contact persistence | [003-small-world-collision-persistence.md](003-small-world-collision-persistence.md) | combined representation gate passed; S5.4a quality experiment authorized, 2026-07-16 |
 | S4 | Interactive evaluation workbench | [004-basic-scene-navigation-camera.md](004-basic-scene-navigation-camera.md) | S4.4 complete; S4.5 construction-feel review ready, 2026-07-16 |
 | S5 | Interactive rigid quality, construction, and scale | [005-interactive-rigid-quality-and-scale.md](005-interactive-rigid-quality-and-scale.md) | S5.4c scheduler integrated; S5.5 waits for S6 awake gate, 2026-07-17 |
-| S6 | Awake settling stabilization | [006-awake-settling-stabilization.md](006-awake-settling-stabilization.md) | S6.5d candidate rejected; physical-policy review required, 2026-07-18 |
+| S6 | Awake settling stabilization | [006-awake-settling-stabilization.md](006-awake-settling-stabilization.md) | S6.5 closed; soft settling deferred by human review, 2026-07-18 |
 
 ## Conventions
 

@@ -1,12 +1,11 @@
 # Awake settling and rest stability
 
-Status: S6.5d scalar-first recurrence derivation authorized, 2026-07-18. The
-S6.5c no-survivor result is accepted. Exactly one analytically justified,
-scalar-qualified coupled candidate may reach the GPU; otherwise this phase
-returns to manual review without a GPU experiment. The exact combined
-candidate remains a laboratory lane; hard/direct manifold-block i2 remains
-the product, and no result may promote a settling policy without a fresh human
-decision.
+Status: S6.5 closed by human review, 2026-07-18. The one S6.5d candidate is
+rejected and the soft settling formulation is deferred. Hard/direct
+manifold-block i2 remains the product. Reopening requires the specific
+deep-stack energy and cross-Android portability evidence recorded below; no
+second recurrence, feedback-composition study, or deep-stack quality trade is
+authorized.
 Awake settling is a prerequisite for broadphase selection and sleeping
 acceptance. No contact-identity policy, soft-contact coefficients, penetration
 deadband, friction anchor, residual band, or sleep threshold is a product
@@ -578,6 +577,33 @@ candidate normal-relaxation boundaries are sinks. This is therefore not an
 attributable shader recurrence defect that can be fixed inside the authorized
 branch. No candidate is promoted. Reopening requires human selection of a new
 physical policy or deferral of softness; S6.6 remains unauthorized.
+
+S6.5d human decision, 2026-07-18: review accepts that recommendation. The
+candidate is rejected, soft settling is deferred, and the hard/direct
+manifold-block i2 product remains unchanged. This closes S6.5 as a measured
+negative result rather than satisfying the awake-settling gate. No second
+recurrence, feedback-composition study, or compromise to deep-stack quality is
+authorized.
+
+The failed candidate relocates the unresolved injector. Its projected normal
+relaxation is neutral or dissipative at every measured colored boundary on
+Metal and AVD, while the S6.5c omission arm still rose by `5.84x` without any
+normal-relaxation pass and the candidate Metal 16-stack still rose for all 300
+settled observations. Energy therefore enters through one or more remaining
+pass families or their composition; the soft biased normal/support-transfer
+path is a hypothesis, not an established attribution. Any future soft
+formulation proposal must begin with matched-precision, per-pass energy
+attribution on the governed 16-stack, including the biased-normal, tangent,
+integration, and support-transfer boundaries. The permanent four-body
+reproducer alone is no longer sufficient evidence.
+
+Reopening this deferred direction requires one package that removes the
+16-stack rising-energy mode, holds the candidate 16-stack through step 1,200
+on both the hardware-backed AVD and available physical Android hardware, keeps
+the AVD permanent reproducer below five consecutive positive-energy
+observations, and preserves the same structural outcomes on Metal, AVD, and
+physical Android. It may not widen tolerances, change oracle precedence, drop
+portability, or use sleeping to conceal awake motion.
 
 ## Authority corrections
 
