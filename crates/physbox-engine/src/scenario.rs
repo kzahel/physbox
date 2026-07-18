@@ -503,6 +503,13 @@ pub fn p5_2_centered_rectangle_stack_scenario(
     Ok(scenario)
 }
 
+/// Permanent S10 centered four-body reproducer for the selected hard-contact
+/// inter-substep stale-persistence reseed. The alias intentionally preserves
+/// the governed centered-stack identity and exact 1,200-step source hash.
+pub fn p5_2_stale_reseed_reproducer_scenario() -> Result<ScenarioV1, ScenarioBuildError> {
+    p5_2_centered_rectangle_stack_scenario(4, P5_2_SETTLING_EVIDENCE_STEPS)
+}
+
 pub fn p5_2_settling_review_scenario(
     rectangle_count: u32,
     policy: P5_2SettlingReviewPolicy,
@@ -2252,6 +2259,13 @@ mod tests {
             p5_2_centered_rectangle_stack_scenario(3, P5_2_CENTERED_STACK_EVIDENCE_STEPS).is_err()
         );
         assert!(p5_2_centered_rectangle_stack_scenario(4, 0).is_err());
+        assert_eq!(
+            canonical_json(&p5_2_stale_reseed_reproducer_scenario().unwrap()).unwrap(),
+            canonical_json(
+                &p5_2_centered_rectangle_stack_scenario(4, P5_2_SETTLING_EVIDENCE_STEPS).unwrap()
+            )
+            .unwrap()
+        );
     }
 
     #[test]

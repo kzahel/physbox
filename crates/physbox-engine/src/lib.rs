@@ -141,5 +141,5 @@ pub use scenario::{
     p5_2_narrowphase_pair_scenario, p5_2_random_settling_fixture_scenario,
     p5_2_rectangle_pyramid_scenario, p5_2_settling_fixture_scenario, p5_2_settling_review_scenario,
     p5_2_settling_soft_fixture_scenario, p5_2_settling_soft_i1_comparator_scenario,
-    p5_2_settling_soft_stack_matrix_scenario,
+    p5_2_settling_soft_stack_matrix_scenario, p5_2_stale_reseed_reproducer_scenario,
 };
