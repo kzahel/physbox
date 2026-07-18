@@ -9,7 +9,7 @@ use std::{
 
 use flate2::{Compression, GzBuilder};
 use physbox_contracts::{
-    BodyStateV1, ContactIdentityPolicyV1, OracleRequestV1, SCHEMA_VERSION, ScenarioV1,
+    BodyStateV1, ContactIdentityPolicyV1, FailureV1, OracleRequestV1, SCHEMA_VERSION, ScenarioV1,
     SettlingSummaryV2, ShapeV1, Validate, canonical_hash, sha256_bytes,
 };
 use physbox_engine::{
@@ -196,6 +196,16 @@ struct ArmSceneEvidence {
     projection_hash: String,
     source: ArtifactIdentity,
     candidate: LaneEvidence,
+    first_loss_reproducer: Option<FirstLossReproducer>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FirstLossReproducer {
+    completed_steps: u32,
+    scenario_hash: String,
+    source: ArtifactIdentity,
+    execution_failure: Option<FailureV1>,
 }
 
 #[derive(Serialize)]
@@ -302,6 +312,7 @@ struct LaneEvidence {
     structural_pass: bool,
     structural_reason: String,
     first_structural_loss_step: Option<u32>,
+    first_execution_failure: Option<FailureV1>,
     summary: Option<SettlingSummaryV2>,
     orientation_window: Option<OrientationWindow>,
 }
@@ -428,7 +439,7 @@ fn run_arm(arguments: Arguments) -> Result<(), String> {
     if arguments.output.exists() || staging.exists() {
         return Err("S9.4 arm output or staging directory already exists".to_owned());
     }
-    for directory in ["sources", "traces"] {
+    for directory in ["sources", "traces", "failures"] {
         fs::create_dir_all(staging.join(directory)).map_err(|error| error.to_string())?;
     }
 
@@ -530,6 +541,25 @@ fn evaluate_arm_scene(
         Some(scheduling_policy),
         arm.contact_coefficient_policy,
     )?;
+    let first_loss_reproducer = candidate
+        .first_structural_loss_step
+        .map(|completed_steps| {
+            let mut reproducer = input.source.clone();
+            reproducer.requested_steps = completed_steps;
+            let scenario_hash = canonical_hash(&reproducer).map_err(|error| error.to_string())?;
+            let source = write_json_artifact(
+                staging,
+                &format!("failures/{}-first-loss.json", input.label),
+                &reproducer,
+            )?;
+            Ok::<_, String>(FirstLossReproducer {
+                completed_steps,
+                scenario_hash,
+                source,
+                execution_failure: candidate.first_execution_failure.clone(),
+            })
+        })
+        .transpose()?;
     Ok(ArmSceneEvidence {
         label: input.label,
         kind: input.kind.name().to_owned(),
@@ -539,6 +569,7 @@ fn evaluate_arm_scene(
         projection_hash,
         source,
         candidate,
+        first_loss_reproducer,
     })
 }
 
@@ -874,6 +905,10 @@ fn evaluate_lane_with_policy(
     let replay = run_series()?;
     let raw_series_hash = serialized_hash(&raw)?;
     let exact_replay = raw_series_hash == serialized_hash(&replay)?;
+    let first_execution_failure = raw
+        .snapshots
+        .iter()
+        .find_map(|snapshot| snapshot.failure.clone());
     let final_only = match scheduling_policy {
         None => runner.run(&input.source, input.source.requested_steps)?,
         Some(policy) => runner.run_coefficient_policy_experiment(
@@ -978,6 +1013,7 @@ fn evaluate_lane_with_policy(
         structural_pass: first_structural_loss_step.is_none(),
         structural_reason: final_structure.1,
         first_structural_loss_step,
+        first_execution_failure,
         summary,
         orientation_window,
     })

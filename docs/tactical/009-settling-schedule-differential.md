@@ -393,7 +393,10 @@ manifest. For the previously prose-only 16-stack trend clause,
 "nonregressing positive run" means no longer than S9.1 and "nonrising
 quartile envelope" uses the existing S6.2 absolute/relative epsilon on the
 candidate's first-to-last settled quartiles. Partial-corpus evidence fails
-closed, and the runner changes no product constructor or solver policy.
+closed. Every first structural loss also publishes the exact shortest failing
+time prefix and any atomic execution failure, so a discarded arm cannot leave
+its reproducer only in a trace. The runner changes no product constructor or
+solver policy.
 
 ### S9.5 — survivor cost, cross-host, winner determination
 
