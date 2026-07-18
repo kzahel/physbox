@@ -562,6 +562,23 @@ state difference, and no injecting manifold. This validates recurrence
 agreement on the captured AVD state; it does not waive the long AVD structural
 gate or claim that MoltenVK amplification has collapsed.
 
+S6.5d decision checkpoint, 2026-07-18: the
+[verified review package](../../evidence/p5.2b-s6.5d-energy-projection-review/README.md)
+rejects the single candidate on deep-stack energy and portability. Metal is
+excellent on the permanent four-body source, 4/8 stacks, and all seven
+realistic fixtures. Its 16-stack remains upright and below the awake speed
+band, but energy rises for all 300 settled observations. The AVD 16-stack
+loses structure at step 945 and the physical Pixel 7a loses it at step 1001;
+the same physical Pixel passes the permanent four-body energy gate, separating
+the common depth limit from the AVD's stronger small-pile amplification. The
+unchanged hard/direct product control remains upright on both Metal and AVD.
+
+The AVD matched replay agrees with scalar at every recorded pass, and all
+candidate normal-relaxation boundaries are sinks. This is therefore not an
+attributable shader recurrence defect that can be fixed inside the authorized
+branch. No candidate is promoted. Reopening requires human selection of a new
+physical policy or deferral of softness; S6.6 remains unauthorized.
+
 ## Authority corrections
 
 Two plausible techniques must not be mislabeled as direct Box2D v3 parity:

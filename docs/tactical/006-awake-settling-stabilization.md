@@ -759,13 +759,13 @@ another bounded GPU factorial. S6.6 is not authorized by this result.
 - [x] If and only if the scalar gate passes, port that one candidate as a named
   laboratory policy while leaving every product constructor on hard/direct
   manifold-block i2. Reuse matched-precision per-pass accounting.
-- [ ] Apply the permanent Metal four-body energy/rest kill first, then require
+- [x] Apply the permanent Metal four-body energy/rest kill first, then require
   no new structural loss on the governed 4/8/16 Metal stacks. Run realistic
   drops only after both gates pass.
-- [ ] Forward a survivor to one matched-boundary `jstorrent-tablet` AVD overlay
+- [x] Forward a survivor to one matched-boundary `jstorrent-tablet` AVD overlay
   and available physical hardware. Require the MoltenVK amplification to
   collapse with the common defect; record unavailable hardware as a gap.
-- [ ] Publish a verified review package with the authority control, derivation,
+- [x] Publish a verified review package with the authority control, derivation,
   scalar quality evidence, the one GPU candidate or scalar-stop disposition,
   minimized failures, provenance, and a recommendation. Do not promote or
   push.
@@ -851,6 +851,22 @@ sinks totaling `-0.0015984423944470935` on GPU versus
 state difference and no injecting manifold. Ordinary solver, product, and
 performance dispatch remain compact indirect. This validates the matched-pass
 instrument; it does not waive the failed long AVD structure gate.
+
+S6.5d review checkpoint, 2026-07-18: the verified
+[energy-projection package](../../evidence/p5.2b-s6.5d-energy-projection-review/README.md)
+rejects the one authorized candidate without promotion. Metal passes the
+permanent reproducer, the 4/8 structural and energy matrix, all seven realistic
+fixtures, and 16-stack structure; the 16-stack nevertheless retains a
+300-observation rising-energy mode. The AVD permanent reproducer reaches the
+strict positive-run limit rather than staying below it, and its 16-stack loses
+structure at step 945. The physical Pixel 7a permanent reproducer follows
+Metal and passes, but its 16-stack loses structure at step 1001. Both Android
+failures occur with clean capacity; the matched AVD pass replay agrees with
+scalar and contains only relaxation sinks, exhausting the attributable GPU-
+implementation branch. The unchanged hard/direct product control remains
+upright on Metal and AVD. S6.5d therefore stops at the predeclared human
+physical-policy checkpoint: hard/direct remains selected, S6.6 is not
+authorized, no second recurrence is tried, and nothing is pushed.
 
 ### S6.6 — accepted policy integration
 
