@@ -1,10 +1,10 @@
 # S6: Awake settling stabilization
 
-Status: S6.5c relaxation-policy factorial active, 2026-07-18. S6.1–S6.4 are
-complete. Human review accepted the S6.5b formulation attribution and
-authorized the predeclared relaxation factorial below. Hard/direct
-manifold-block i2 remains the product; every settling candidate remains
-unpromoted.
+Status: S6.5c factorial arms complete and review packaging active, 2026-07-18.
+S6.1–S6.4 are complete. All three predeclared relaxation arms are rejected by
+the four-body Metal kill; there is no survivor for stack, drop, or cross-host
+forwarding. Hard/direct manifold-block i2 remains the product; every settling
+candidate remains unpromoted.
 
 Governing topic:
 [awake settling and rest stability](../topics/awake-settling-and-rest-stability.md).
@@ -636,27 +636,27 @@ selected and every candidate remains unpromoted.
   not Box2D parity: pinned Box2D v3 relaxation instead uses zero bias,
   `massScale = 1`, and `impulseScale = 0`, which is the current hard-relax
   shape.
-- [ ] Arm 3, `soft-point-normal-relax`, is conditional. Implement and run a
+- [x] Arm 3, `soft-point-normal-relax`, is conditional. Implement and run a
   point-sequential normal-relaxation pass while retaining manifold-block
   biased solves only if arms 1 and 2 disagree about whether block coupling is
   the injector. Arm 1 passing energy but showing drop overshoot or bounce does
   not trigger arm 3.
-- [ ] Reuse the S6.5b matched-precision trace at the same boundaries. Every
+- [x] Reuse the S6.5b matched-precision trace at the same boundaries. Every
   present normal-relaxation pass must be an energy sink or neutral in both GPU
   and scalar accounts under the frozen per-boundary epsilon; arm 1 must record
   that the normal-relaxation passes are absent, not infer a pass from the
   endpoint.
-- [ ] Apply the cheapest kill first on Metal: the permanent four-dynamic-body
+- [x] Apply the cheapest kill first on Metal: the permanent four-dynamic-body
   reproducer must pass the unchanged S6.2 settled-window energy gate over
   steps 900–1,200. The gate retains absolute epsilon `1e-12`, relative epsilon
   `1e-5`, a positive-energy run limit of 5, and the first-versus-last-quartile
   non-increase check.
-- [ ] A surviving arm must introduce no new Metal structural loss relative to
+- [x] A surviving arm must introduce no new Metal structural loss relative to
   the current soft/prior candidate in the governed 4-, 8-, and 16-body stack
   matrix. Run realistic seeded drop fixtures only after the energy and
   structure kills; record overshoot, bounce, residual, churn, capacity, and
   replay failures without weakening a band.
-- [ ] Forward at most one arm through the complete Metal matrix, then the
+- [x] Forward at most one arm through the complete Metal matrix, then the
   hardware-backed `jstorrent-tablet` AVD and available physical hardware.
   Run one AVD matched-boundary overlay for that survivor and require the
   MoltenVK amplification to collapse with the common defect. Declare a locked
@@ -712,6 +712,20 @@ normal-relaxation passes inject in matched GPU and scalar recurrences, totaling
 survives without block normal relaxation; Arm 2 shows that retained block
 relaxation still injects. This is the predeclared ambiguity about block
 coupling, so conditional Arm 3 is triggered. No arm is forwarded.
+
+Arm 3 checkpoint, 2026-07-18: the clean
+[point-sequential package](../../evidence/p5.2b-s6.5c-arm3-point-sequential-relax/README.md)
+is rejected before stacks and drops. Biased normals remain coupled manifold
+blocks; only the relaxation points are visited sequentially with the existing
+hard/direct equation. The settled energy envelope rises from `0.00010415906`
+to `0.0006075374` (5.83×), the positive run spans all 300 observations, and
+linear plus angular-edge residuals reach `0.02844868 m/s`, above the frozen
+rest band. All eight normal-relaxation passes inject in matched GPU and scalar
+recurrences, totaling `2.2802872491491276e-6` on Metal. Point sequencing does
+not remove the injector, so every authorized arm is rejected. With no
+survivor, the realistic drops, governed stacks, AVD pass overlay, and physical
+device forwarding are correctly not run; their conditional checklist items
+are closed by no-survivor disposition rather than inferred as passes.
 
 ### S6.6 — accepted policy integration
 

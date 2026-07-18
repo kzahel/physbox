@@ -1,10 +1,11 @@
 # Awake settling and rest stability
 
-Status: S6.5c relaxation-policy factorial authorized, 2026-07-18. Human review
-accepted the S6.5b formulation attribution and authorized the predeclared
-factorial below. The exact combined candidate remains a laboratory lane;
-hard/direct manifold-block i2 remains the product, and no factorial result may
-promote a settling policy without a fresh human decision.
+Status: S6.5c factorial arms complete and review packaging active, 2026-07-18.
+All three predeclared relaxation policies fail the permanent four-body Metal
+kill, leaving no survivor for stack, drop, or cross-host forwarding. The exact
+combined candidate remains a laboratory lane; hard/direct manifold-block i2
+remains the product, and no factorial result may promote a settling policy
+without a fresh human decision.
 Awake settling is a prerequisite for broadphase selection and sleeping
 acceptance. No contact-identity policy, soft-contact coefficients, penetration
 deadband, friction anchor, residual band, or sleep threshold is a product
@@ -412,6 +413,23 @@ overall mode persists without block normal relaxation, while Arm 2 shows a
 retained block relaxation remains an injector. The conditional point-
 sequential Arm 3 is therefore triggered to isolate block coupling. See the
 [verified package](../../evidence/p5.2b-s6.5c-arm2-soft-coefficient-relax/README.md).
+
+Arm 3 result, 2026-07-18: point-sequential normal relaxation is rejected by
+all three cheapest gates. The settled energy envelope rises 5.83× with a full
+300-observation positive run, while the `0.02844868 m/s` linear and
+angular-edge residuals exceed the frozen `0.025 m/s` rest band. All eight
+normal-relaxation passes inject in both matched recurrences, totaling
+`2.2802872491491276e-6` on Metal; maximum GPU/scalar component difference is
+only `4.2957254e-8`. Thus changing the two-point relaxation coupling does not
+remove the common formulation-level injector. See the
+[verified package](../../evidence/p5.2b-s6.5c-arm3-point-sequential-relax/README.md).
+
+No arm survives, so the conditional drop, stack, AVD matched-boundary, and
+physical-device lanes are not run. This is a no-survivor disposition, not an
+inferred platform pass or an omitted gap. The authorized hypothesis space is
+exhausted; work now packages the comparative record and returns to human
+review before any new relaxation equation, accumulation change, coefficient
+change, tolerance change, or promotion.
 
 ## Authority corrections
 
