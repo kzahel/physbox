@@ -65,15 +65,15 @@ Commit boundary: documentation and study contract only.
 
 ### S7.2 — clean build and stock reproduction controls
 
-- [ ] Configure an out-of-tree Release build with explicit SIMD, validation,
+- [x] Configure an out-of-tree Release build with explicit SIMD, validation,
   worker, compiler, and dependency-cache settings; keep the checkout clean.
-- [ ] Build and run the upstream unit-test target.
-- [ ] Run the unmodified `large_pyramid` benchmark with one fixed worker and
+- [x] Build and run the upstream unit-test target.
+- [x] Run the unmodified `large_pyramid` benchmark with one fixed worker and
   its stock 200-step/four-substep contract. Record counters and wall time only
   as a reproduction control.
-- [ ] Attest the stock `Pyramid2D` source, motion locks, dimensions, sleep
+- [x] Attest the stock `Pyramid2D` source, motion locks, dimensions, sleep
   default, and the `CreateLargePyramid` sleep-off setup directly from the pin.
-- [ ] Publish fresh provenance and a success sentinel, then rerun reference
+- [x] Publish fresh provenance and a success sentinel, then rerun reference
   status.
 
 Outcome: the pinned release builds and its relevant stock sources execute
@@ -90,6 +90,16 @@ Completion gate: tests pass, the stock benchmark exits successfully, source
 and build provenance are exact, and the reference checkout remains clean.
 
 Commit boundary: stock evidence and verifier only; no adapter or PhysBox code.
+
+Completion checkpoint, 2026-07-18: the
+[verified stock package](../../evidence/p5.2b-s7.2-box3d-stock/README.md)
+records a clean out-of-tree Apple M4 Pro build with Release, SIMD, validation,
+tests, and benchmark settings explicit. All upstream tests pass. The
+unmodified one-worker 90-row benchmark completes 200 steps with 4,096 bodies,
+12,105 contacts, and an upstream-reported 1,163.77 ms timed run. This is only a
+build/execution control: no body-state observer exists yet, so no settling,
+long-run structure, or cross-engine performance conclusion is drawn. S7.3 is
+forwarded unchanged.
 
 ### S7.3 — public-API sleep-off observer
 

@@ -104,6 +104,15 @@ awake behavior, not proof of indefinite stability. The stock 200-step timing
 run is a build/reproduction control and cannot establish settling, convergence,
 or a performance comparison with PhysBox or Box2D.
 
+S7.2 stock-reproduction checkpoint, 2026-07-18: the clean pinned source builds
+out of tree in Release mode with SIMD and upstream validation enabled, and all
+upstream unit tests pass. The unmodified one-worker 90-row benchmark completes
+its stock 200 steps and reports 4,096 bodies, 12,105 contacts, and 1,163.77 ms
+for its upstream timed run. This proves build/source execution only. It neither
+observes structure nor extends the visual claim beyond 200 steps; the
+[verified package](../../evidence/p5.2b-s7.2-box3d-stock/README.md) forwards the
+sleep-off public observer unchanged.
+
 ## Initial hypotheses
 
 The investigation ranks these hypotheses before measurement:
