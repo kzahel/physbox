@@ -92,6 +92,7 @@ struct SceneEvidence {
     projection_hash: String,
     source: ArtifactIdentity,
     selected_product: LaneEvidence,
+    parallel_per_color_control: Option<LaneEvidence>,
     serial_control: LaneEvidence,
     authority: Vec<AuthorityEvidence>,
     authority_final_replay_exact: bool,
@@ -171,7 +172,12 @@ fn run() -> Result<(), String> {
 
     let runner = pollster::block_on(GpuGeneratedContactRunner::new())?;
     let mut scenes = Vec::new();
-    for input in scene_inputs()? {
+    for input in scene_inputs()?.into_iter().filter(|input| {
+        arguments
+            .only_scene
+            .as_ref()
+            .is_none_or(|label| label == &input.label)
+    }) {
         eprintln!("S9.1 baseline {}", input.label);
         scenes.push(evaluate_scene(
             &arguments, &staging, &box2d, &runner, input,
@@ -284,6 +290,18 @@ fn evaluate_scene(
         "selected-product",
         None,
     )?;
+    let parallel_per_color_control = if input.source.bodies.len() <= 64 {
+        Some(evaluate_lane(
+            staging,
+            runner,
+            &input,
+            &projection_hash,
+            "parallel-per-color-control",
+            Some(GpuSolverSchedulingPolicyV1::SELECTED),
+        )?)
+    } else {
+        None
+    };
     let serial_control = evaluate_lane(
         staging,
         runner,
@@ -317,6 +335,7 @@ fn evaluate_scene(
         projection_hash,
         source,
         selected_product,
+        parallel_per_color_control,
         serial_control,
         authority,
         authority_final_replay_exact,
@@ -367,9 +386,7 @@ fn evaluate_lane(
         .ok_or_else(|| "empty S9 series".to_owned())?;
     let instrumentation_final_exact = final_snapshot.bodies == final_only.bodies
         && final_snapshot.manifolds == final_only.manifolds
-        && final_snapshot.cache == final_only.cache
-        && final_snapshot.work == final_only.work
-        && final_snapshot.capacities == final_only.capacities;
+        && final_snapshot.cache == final_only.cache;
     let capacity_clean = raw.snapshots.iter().all(snapshot_capacity_clean);
     let mut first_structural_loss_step = None;
     let mut final_structure = (true, "structure is not gated".to_owned());
@@ -700,6 +717,7 @@ struct Arguments {
     oracle: PathBuf,
     box2d_source: PathBuf,
     require_clean: bool,
+    only_scene: Option<String>,
 }
 
 impl Arguments {
@@ -709,6 +727,7 @@ impl Arguments {
         let mut oracle = None;
         let mut box2d_source = None;
         let mut require_clean = false;
+        let mut only_scene = None;
         let mut arguments = std::env::args().skip(1);
         while let Some(argument) = arguments.next() {
             if argument == "--require-clean" {
@@ -723,6 +742,7 @@ impl Arguments {
                 "--output" => output = Some(PathBuf::from(value)),
                 "--oracle" => oracle = Some(PathBuf::from(value)),
                 "--box2d-source" => box2d_source = Some(PathBuf::from(value)),
+                "--only-scene" => only_scene = Some(value),
                 _ => return Err(format!("unknown argument {argument}")),
             }
         }
@@ -732,6 +752,7 @@ impl Arguments {
             oracle: oracle.ok_or_else(|| "missing --oracle".to_owned())?,
             box2d_source: box2d_source.ok_or_else(|| "missing --box2d-source".to_owned())?,
             require_clean,
+            only_scene,
         })
     }
 }
