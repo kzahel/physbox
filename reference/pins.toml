@@ -9,6 +9,14 @@ purpose = "Unmodified rigid authority and public narrowphase source"
 required = true
 
 [[checkout]]
+name = "box3d"
+path = "reference/box3d"
+repository = "https://github.com/erincatto/box3d.git"
+revision = "8441b4a06d6d09dcfb0b0f704df4d847d1437b92"
+purpose = "Soft Step, contact persistence, graph ordering, and stable-pile source reference"
+required = true
+
+[[checkout]]
 name = "physx"
 path = "reference/physx"
 repository = "https://github.com/NVIDIA-Omniverse/PhysX.git"

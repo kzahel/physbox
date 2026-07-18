@@ -24,8 +24,15 @@ are reported as a warning.
 | Local path | Pin | Role |
 | --- | --- | --- |
 | `reference/box2d` | `3a4f0da8374af61293a03021c9a0b3ebcfe67948` | Unmodified rigid authority and public narrowphase source |
+| `reference/box3d` | `8441b4a06d6d09dcfb0b0f704df4d847d1437b92` (`v0.1.0`) | Soft Step, contact persistence, graph ordering, and stable-pile source reference |
 | `reference/physx` | `b4b286abff6f2b3debd1d1acb120dc428765cf2e` | GPU-resident organization, batching, capacity, and diagnostics reference |
 | `reference/wgmath` | `ac89dceb8a33778e895303cd606da38afb015192` | Portable WebGPU broadphase, coloring, and solver research reference |
+
+Box3D is a source reference, not a PhysBox rigid authority or product
+dependency. Its three-dimensional manifolds, friction model, and CPU execution
+order may expose useful mechanisms, but they do not overrule the scalar
+invariants or pinned Box2D v3 behavior lane and are not assumed to transfer to
+the portable GPU schedule unchanged.
 
 Keep the Box2D checkout clean: it is the source for the unmodified acceptance
 lane. If internal instrumentation becomes necessary, create a separate clone
@@ -117,6 +124,10 @@ show that browser automation is not a prerequisite for the routine lanes.
 - Box2D rigid behavior: `reference/box2d/src/contact_solver.c`,
   `reference/box2d/src/solver.c`, `reference/box2d/src/manifold.c`, and
   `reference/box2d/include/box2d/collision.h`.
+- Box3D stable-pile organization: `reference/box3d/src/contact_solver.c`,
+  `reference/box3d/src/solver.c`, `reference/box3d/src/constraint_graph.c`,
+  `reference/box3d/src/convex_manifold.c`, and
+  `reference/box3d/shared/benchmarks.c`.
 - Box2D performance evidence: `reference/box2d/benchmark/main.c` owns the
   timing method, `reference/box2d/shared/benchmarks.c` owns its scenes, and
   the named hardware result directories under `reference/box2d/benchmark/`
