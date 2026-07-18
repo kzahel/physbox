@@ -454,6 +454,19 @@ positive run. E4 is not a material survivor. All primary arms are now
 discarded; no E2-containing combination is eligible, the conditional E5
 trigger fires, and E6 hygiene must follow primary-arm exhaustion.
 
+E5 quality checkpoint, 2026-07-18: the
+[verified fixed-anchor package](../../evidence/p5.2b-s9.4-arm-fixed-anchor-substep-refresh/README.md)
+discards E5. Every accepted structure, replay, capacity, and final-only
+equality clause passes. The 4- and 8-stacks clear both 25% thresholds: their
+speed/energy improve `63.49% / ~100%` and `28.04% / 56.35%`. The required
+16-stack speed improves `39.58%`, but last-quartile energy regresses `85.26%`
+to `0.6235986` and rises from its `0.30304623` first quartile. The 64-stack
+diagnostic first loss also regresses from step 31 to 29, while the 32-stack
+improves from 29 to 36. Both exact prefixes are preserved, with no execution
+failure. E5 is not a material survivor. S9 now has no survivor and no eligible
+combination; mandatory E6 timing hygiene runs next but cannot rescue or gate a
+discarded arm.
+
 ### S9.5 — survivor cost, cross-host, winner determination
 
 - [ ] For the best at most two material survivors by 16-stack settled energy:
