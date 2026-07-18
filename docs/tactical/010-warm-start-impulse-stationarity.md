@@ -440,7 +440,7 @@ reconstructs both phases from `evidence/p5.2b-s10.3-mechanism/` and passes.
 
 ### S10.4 — bounded corrections (at most two, scalar first)
 
-- [ ] Select at most two candidates routed by S10.2/S10.3 from the predeclared
+- [x] Select at most two candidates routed by S10.2/S10.3 from the predeclared
   space: (a) a stationarity-preserving intra-block rule — deterministic
   active-set/tie handling or regularized near-rest load distribution with a
   scalar fixed-point or contraction argument; (b) a warm-start/bias
@@ -460,6 +460,24 @@ the selected family or exhausts the derived-correction space with recorded
 proof.
 
 Artifacts: `evidence/p5.2b-s10.4-candidate-<name>/` per candidate.
+
+Selection and scalar checkpoint, 2026-07-18: S10.3 routes exactly candidate
+(b), `retain-within-step-impulses-through-refresh`; candidate (a) is
+`not-routed` because the minimum has zero active-set flips and only
+`8.945056e-8` redistribution. The clean scalar gate at revision
+`2b34abb09435fe9b1a11b30486d410ef5287062e` passes its 180-sample
+stationarity argument. It preserves the exact two-step body response. On the
+permanent mixed pile it reduces settled max linear/angular-edge speed from
+`0.07749471/0.03475067` to `0.00665991/0.00308007`, changes the first/last
+energy maxima from `0.00222324/0.00456408` to
+`0.0000455469/0.0000443481`, and reduces the positive run from 5 to 3. On the
+S10.3 centered four-body reproducer it reaches
+`0.00627111/0.00934313`, a non-rising
+`0.0000733514/0.0000704171` envelope, and positive run 2. Both long cases
+preserve support counts, do not increase penetration, and pass structure and
+anti-sag checks. The verified package in
+`evidence/p5.2b-s10.4-candidate-retained-refresh/` admits one named,
+unpromoted GPU port; it does not change the selected product.
 
 Completion gate: both candidate slots have dispositions, or one survivor
 advances with the other slot's disposition recorded.

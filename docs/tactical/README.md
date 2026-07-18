@@ -24,7 +24,8 @@ warm-start on/off differential in both engines, stored-impulse stationarity
 measurement against the authority band, and at most two scalar-first
 corrections. S10.3 names inter-substep stale-persistence reseeding with a
 four-body minimum and records only partial point-normal unification with the
-deferred soft failure; S10.4 now tests the routed composition correction.
+deferred soft failure. S10.4 routes one composition correction; retained
+refresh passes its scalar gate and advances to one unpromoted GPU port.
 With no survivor it returns the deferred-soft formulation decision package
 instead of further hard-family arms.
 
@@ -46,7 +47,7 @@ This README remains the unnumbered index.
 | S7 | Box3D planar stability investigation | [007-box3d-planar-stability-investigation.md](007-box3d-planar-stability-investigation.md) | complete; static-late arm later rejected by S9, 2026-07-18 |
 | S8 | Physical mobile frame pacing | [008-physical-mobile-frame-pacing.md](008-physical-mobile-frame-pacing.md) | complete; Pixel 7a bootstrap sustains rendering and physics cadence, 2026-07-18 |
 | S9 | Awake settling schedule differential | [009-settling-schedule-differential.md](009-settling-schedule-differential.md) | complete; no schedule-differential survivor, 2026-07-18 |
-| S10 | Warm-start and stored-impulse stationarity | [010-warm-start-impulse-stationarity.md](010-warm-start-impulse-stationarity.md) | active; S10.3 names stale reseeding, S10.4 next, 2026-07-18 |
+| S10 | Warm-start and stored-impulse stationarity | [010-warm-start-impulse-stationarity.md](010-warm-start-impulse-stationarity.md) | active; S10.4 retained-refresh scalar gate passed, GPU port next, 2026-07-18 |
 
 ## Conventions
 
