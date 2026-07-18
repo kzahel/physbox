@@ -365,7 +365,7 @@ fn generated_contact_benchmark_uses_qualified_split_scopes() {
     let scenario = p5_2_generated_performance_scenario(32).unwrap();
     let benchmark = pollster::block_on(benchmark_gpu_generated_contacts(&scenario, 1, 2)).unwrap();
     assert!(benchmark.correctness.failure.is_none());
-    assert_eq!(benchmark.dispatches_per_step, 1_434);
+    assert_eq!(benchmark.dispatches_per_step, 195);
     assert_eq!(benchmark.host_completion_seconds.len(), 2);
     assert_eq!(benchmark.cpu_encode_submit_seconds.len(), 2);
     let scheduler_work = benchmark.scheduler_work.as_ref().unwrap();
@@ -695,6 +695,46 @@ fn speculative_parallel_coloring_replays_and_resolves_every_body_color_conflict(
 }
 
 #[test]
+fn small_world_selected_dispatch_is_exactly_equivalent_to_parallel_color_sweeps() {
+    let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
+    for scenario in [
+        p5_2_centered_rectangle_stack_scenario(8, 8).unwrap(),
+        p5_2_generated_performance_scenario(32).unwrap(),
+    ] {
+        let steps = scenario.requested_steps.min(8);
+        let per_color = runner
+            .run_scheduling_experiment(
+                &scenario,
+                steps,
+                GpuSolverExecutionV4::SELECTED,
+                GpuSolverSchedulingPolicyV1::PARALLEL_COLORING,
+            )
+            .unwrap();
+        let small_world = runner
+            .run_scheduling_experiment(
+                &scenario,
+                steps,
+                GpuSolverExecutionV4::SELECTED,
+                GpuSolverSchedulingPolicyV1::SELECTED_SMALL_WORLD,
+            )
+            .unwrap();
+        assert_eq!(small_world.bodies, per_color.bodies, "{}", scenario.id);
+        assert_eq!(small_world.cache, per_color.cache, "{}", scenario.id);
+        assert_eq!(small_world.work, per_color.work, "{}", scenario.id);
+        assert!(small_world.failure.is_none(), "{}", scenario.id);
+        assert!(
+            small_world.dispatches_per_step < per_color.dispatches_per_step,
+            "{}",
+            scenario.id
+        );
+        assert_eq!(
+            small_world.solver_scheduling_policy,
+            GpuSolverSchedulingPolicyV1::SELECTED_SMALL_WORLD
+        );
+    }
+}
+
+#[test]
 fn colored_diagnostic_sources_cover_deep_stacks_and_construction_erase_churn() {
     let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
     let execution = GpuSolverExecutionV4::alternating_manifold_colored_block_experiment(true, true);
@@ -733,7 +773,7 @@ fn selected_solver_and_point_experiments_are_explicit_and_replayable() {
     assert_eq!(selected.solver_execution, GpuSolverExecutionV4::SELECTED);
     assert_eq!(
         selected.solver_scheduling_policy,
-        GpuSolverSchedulingPolicyV1::SELECTED
+        GpuSolverSchedulingPolicyV1::selected_for_body_capacity(3)
     );
 
     let execution = GpuSolverExecutionV4::experiment(true, true);
@@ -1834,7 +1874,7 @@ fn generated_floor_contacts_settle_and_replay_exactly() {
         assert_eq!(first.cache, replay.cache);
         assert_eq!(first.work, replay.work);
         assert!(first.failure.is_none());
-        assert_eq!(first.dispatches_per_step, 1_431);
+        assert_eq!(first.dispatches_per_step, 192);
         assert!(
             (first.bodies[0].position.y - expected_height).abs() <= 2.0e-2,
             "{kind:?}: {:?}",

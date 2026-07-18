@@ -168,6 +168,9 @@ impl GpuGeneratedContactGraph {
         fingerprint_mask: u32,
     ) -> Result<Self, String> {
         validate_selected_settings(scenario)?;
+        let scheduling_policy = GpuSolverSchedulingPolicyV1::selected_for_body_capacity(
+            storage.layout().capacity_elements,
+        );
         Self::new_with_topologies_execution_and_scheduling(
             device,
             storage,
@@ -178,7 +181,7 @@ impl GpuGeneratedContactGraph {
             permute_pair_build,
             fingerprint_mask,
             GpuSolverExecutionV4::SELECTED,
-            GpuSolverSchedulingPolicyV1::SELECTED,
+            scheduling_policy,
         )
     }
 
@@ -2240,6 +2243,9 @@ impl GpuGeneratedContactRunner {
             &scenario.bodies,
         )?;
         let execution = GpuSolverExecutionV4::SELECTED;
+        // Pass traces expose one logical operation per color and therefore
+        // retain the scalable per-color selected control even when the small
+        // interactive tier dispatches those colors inside one island pass.
         let scheduling_policy = GpuSolverSchedulingPolicyV1::SELECTED;
         let graph = GpuGeneratedContactGraph::new_with_topologies_execution_scheduling_identity_and_contact_feedback(
             &self.device,
@@ -2484,6 +2490,7 @@ impl GpuGeneratedContactRunner {
         submission_batch_steps: u32,
         soft_feedback_policy: crate::GpuSoftFeedbackPolicyV1,
     ) -> Result<GpuGeneratedContactSeriesV1, String> {
+        let scheduling_policy = selected_scheduling_for_scenario(scenario)?;
         self.run_contact_policy_observation_series_with_execution_scheduling_and_soft_feedback(
             scenario,
             observation_interval_steps,
@@ -2491,7 +2498,7 @@ impl GpuGeneratedContactRunner {
             identity_policy,
             submission_batch_steps,
             GpuSolverExecutionV4::SELECTED,
-            GpuSolverSchedulingPolicyV1::SELECTED,
+            scheduling_policy,
             soft_feedback_policy,
         )
     }
@@ -2929,6 +2936,7 @@ impl GpuGeneratedContactRunner {
         completed_steps: u32,
         identity_policy: ContactIdentityPolicyV1,
     ) -> Result<GpuGeneratedContactOutput, String> {
+        let scheduling_policy = selected_scheduling_for_scenario(scenario)?;
         self.run_with_topologies_execution_scheduling_and_identity_policy(
             scenario,
             completed_steps,
@@ -2938,7 +2946,7 @@ impl GpuGeneratedContactRunner {
             false,
             u32::MAX,
             GpuSolverExecutionV4::SELECTED,
-            GpuSolverSchedulingPolicyV1::SELECTED,
+            scheduling_policy,
             identity_policy,
         )
     }
@@ -3204,6 +3212,7 @@ impl GpuGeneratedContactRunner {
         fingerprint_mask: u32,
     ) -> Result<GpuGeneratedContactOutput, String> {
         validate_selected_settings(scenario)?;
+        let scheduling_policy = selected_scheduling_for_scenario(scenario)?;
         self.run_with_topologies_execution_and_scheduling(
             scenario,
             completed_steps,
@@ -3213,7 +3222,7 @@ impl GpuGeneratedContactRunner {
             permute_pair_build,
             fingerprint_mask,
             GpuSolverExecutionV4::SELECTED,
-            GpuSolverSchedulingPolicyV1::SELECTED,
+            scheduling_policy,
         )
     }
 
@@ -3768,13 +3777,14 @@ pub async fn benchmark_gpu_generated_contacts_with_gather_topology(
     gather_topology: GpuGatherTopology,
 ) -> Result<GpuGeneratedContactBenchmarkOutput, String> {
     validate_selected_settings(scenario)?;
+    let scheduling_policy = selected_scheduling_for_scenario(scenario)?;
     benchmark_gpu_generated_contacts_with_execution_and_scheduling(
         scenario,
         warmup_steps,
         samples,
         gather_topology,
         GpuSolverExecutionV4::SELECTED,
-        GpuSolverSchedulingPolicyV1::SELECTED,
+        scheduling_policy,
     )
     .await
 }
@@ -3822,16 +3832,28 @@ pub async fn benchmark_gpu_generated_contact_identity_experiment(
     samples: u32,
     identity_policy: ContactIdentityPolicyV1,
 ) -> Result<GpuGeneratedContactBenchmarkOutput, String> {
+    let scheduling_policy = selected_scheduling_for_scenario(scenario)?;
     benchmark_gpu_generated_contacts_with_execution_scheduling_and_identity_policy(
         scenario,
         warmup_steps,
         samples,
         GpuGatherTopology::StableBodyEdge,
         GpuSolverExecutionV4::SELECTED,
-        GpuSolverSchedulingPolicyV1::SELECTED,
+        scheduling_policy,
         identity_policy,
     )
     .await
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn selected_scheduling_for_scenario(
+    scenario: &ScenarioV1,
+) -> Result<GpuSolverSchedulingPolicyV1, String> {
+    let body_capacity = u32::try_from(scenario.bodies.len())
+        .map_err(|_| "generated scenario body capacity exceeds u32".to_owned())?;
+    Ok(GpuSolverSchedulingPolicyV1::selected_for_body_capacity(
+        body_capacity,
+    ))
 }
 
 #[cfg(not(target_arch = "wasm32"))]

@@ -685,8 +685,8 @@ mod tests {
             let report = renderer.render(FrameInput::exact(120));
             assert!(report.scenario.complete);
             assert_eq!(report.scene_contract.contact_point_count, 2_048);
-            assert_eq!(report.scene_contract.solver_dispatches_per_step, 1_434);
-            assert_eq!(report.scene_contract.solver_capacity_bytes, 1_573_916);
+            assert_eq!(report.scene_contract.solver_dispatches_per_step, 195);
+            assert_eq!(report.scene_contract.solver_capacity_bytes, 1_290_800);
             assert!(!report.scene_contract.capacity_overflowed);
             renderer.read_capture_state().unwrap()
         };

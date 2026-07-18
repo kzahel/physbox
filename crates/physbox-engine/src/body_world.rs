@@ -146,14 +146,12 @@ impl GpuBodyWorld {
         color_format: wgpu::TextureFormat,
         scenario: &ScenarioV1,
     ) -> Result<Self, String> {
+        let scheduling_policy = selected_interactive_scheduling(scenario)?;
         Self::new_with_generated_contacts(
             device,
             color_format,
             scenario,
-            Some((
-                GpuSolverExecutionV4::SELECTED,
-                GpuSolverSchedulingPolicyV1::SELECTED,
-            )),
+            Some((GpuSolverExecutionV4::SELECTED, scheduling_policy)),
             ContactIdentityPolicyV1::SELECTED,
             false,
         )
@@ -181,14 +179,12 @@ impl GpuBodyWorld {
         scenario: &ScenarioV1,
         identity_policy: ContactIdentityPolicyV1,
     ) -> Result<Self, String> {
+        let scheduling_policy = selected_interactive_scheduling(scenario)?;
         Self::new_with_generated_contacts(
             device,
             color_format,
             scenario,
-            Some((
-                GpuSolverExecutionV4::SELECTED,
-                GpuSolverSchedulingPolicyV1::SELECTED,
-            )),
+            Some((GpuSolverExecutionV4::SELECTED, scheduling_policy)),
             identity_policy,
             true,
         )
@@ -224,7 +220,8 @@ impl GpuBodyWorld {
         let generated_contacts = generated_solver_configuration
             .map(|(execution, scheduling_policy)| {
                 if execution == GpuSolverExecutionV4::SELECTED
-                    && scheduling_policy == GpuSolverSchedulingPolicyV1::SELECTED
+                    && scheduling_policy
+                        == GpuSolverSchedulingPolicyV1::selected_for_body_capacity(body_count)
                     && identity_policy == ContactIdentityPolicyV1::SELECTED
                     && !use_contact_policy_comparator
                 {
@@ -1515,6 +1512,17 @@ fn interactive_body_capacity(initial_live_count: u32) -> Result<u32, String> {
         .and_then(u32::checked_next_power_of_two)
         .map(|capacity| capacity.max(64))
         .ok_or_else(|| "interactive body capacity overflowed".to_owned())
+}
+
+fn selected_interactive_scheduling(
+    scenario: &ScenarioV1,
+) -> Result<GpuSolverSchedulingPolicyV1, String> {
+    let initial_live_count = u32::try_from(scenario.bodies.len())
+        .map_err(|_| "GPU body count exceeds u32".to_owned())?;
+    let body_capacity = interactive_body_capacity(initial_live_count)?;
+    Ok(GpuSolverSchedulingPolicyV1::selected_for_body_capacity(
+        body_capacity,
+    ))
 }
 
 fn storage_entry(

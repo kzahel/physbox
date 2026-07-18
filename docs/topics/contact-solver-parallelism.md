@@ -1,9 +1,11 @@
 # Contact solver parallelism and scheduling
 
-Status: bounded parallel scheduler selected and qualified, 2026-07-17.
+Status: bounded parallel scheduler selected and qualified, 2026-07-18.
 Forward manifold-block i2 remains the selected shared solver. Product
-constructors select bounded speculative parallel coloring with per-color
-indirect dispatch; serial full rebuild/per-color remains an explicit control.
+constructors select bounded speculative parallel coloring. The 64-body
+interactive capacity tier uses one workgroup-per-island dispatch while larger
+capacities retain per-color indirect dispatch; serial full rebuild/per-color
+remains an explicit control.
 
 Governing direction:
 [one GPU-resident 2D physics world](physbox5-unified-gpu-physics.md).
@@ -501,6 +503,28 @@ same scenario hash and manifold-block i2 execution, remain capacity-clean, and
 emit success sentinels. The attached Pixel 9 was locked and is recorded as an
 availability gap. Product selection is now bounded parallel; serial is the
 explicit direct control rather than an implicit former default.
+
+Small-world dispatch checkpoint, 2026-07-18: physical Pixel 7a bootstrap
+measurement closed the S6.1 device gap and fired this topic's explicit
+dispatch-bound reconsideration trigger. The selected per-color graph presented
+the two-body bootstrap at only `13.51 FPS` with markers off (`74.03 ms` mean,
+`94.83 ms` P95) while the shared free-flight control held `60.07 FPS`. Turning
+all frame markers on changed the result only to `13.31 FPS`, rejecting
+reporting as the primary cause. The fixed 32-color stage sequences, not live
+contact work, dominated the small scene.
+
+The already qualified workgroup-per-island reserve is now selected only for
+declared body capacities at or below 64. On the same Pixel it reduces bootstrap
+from 1,434 to 195 dispatches and from 1,573,916 to 1,290,800 allocated solver
+bytes; the maintained pacing lane reports `60.06 FPS` presentation, `16.75 ms`
+P95, `59.38` fixed steps/s, and `0.990` effective scale. A same-Metal diagnostic
+moved generated 32-body GPU P50/P95 from the prior clean `6.069/6.627 ms` to
+`1.893/2.073 ms`. The reserve is deliberately not global: a diagnostic 1K run
+regressed from the prior `8.781/8.901 ms` to `21.884/21.901 ms`, so larger
+capacities retain selected per-color indirect dispatch. Direct tests prove
+body, cache, and work equality between the two dispatch forms. Solver
+equations, color assignment/order, fixed `dt`, physical coefficients,
+tolerances, and capacity rejection are unchanged.
 
 ## Fallback and reserve options
 

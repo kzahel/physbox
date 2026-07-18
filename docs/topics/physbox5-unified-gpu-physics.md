@@ -938,6 +938,18 @@ execution, policy digests, scene hash, clean capacity, and the immutable S5.4c
 Settling observation work can now measure against the intended product
 schedule without reopening scheduler architecture.
 
+S6.1a mobile pacing repair, 2026-07-18: an unlocked physical Pixel 7a proved
+that the selected two-body product graph's 1,434-dispatch fixed floor sustained
+only `13.51 FPS`, while the shared free-flight path sustained `60.07 FPS`.
+Continuous marker reporting changed the slow result by less than two percent.
+The one product constructor now selects the already qualified
+workgroup-per-island dispatch form for body capacities through 64 and retains
+per-color indirect dispatch above that tier. Bootstrap falls to 195 dispatches
+and passes the maintained physical lane at `60.06 FPS` presentation and `0.990`
+effective simulation scale. The dispatch forms replay body/cache/work exactly;
+this changes neither color assignment/order nor any physics default,
+physics tolerance, fixed delta, state ownership, or host behavior.
+
 Circle/circle and circle/rectangle contact are analytic. Rectangle/rectangle
 uses SAT to select a reference and incident edge, clips the incident segment,
 and produces stable vertex/edge feature pairs. Test feature stability around

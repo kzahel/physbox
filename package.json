@@ -9,6 +9,7 @@
     "android:benchmark-bodies-avd": "bash android/benchmark-bodies.sh --avd",
     "android:benchmark-bodies-device": "bash android/benchmark-bodies.sh --device",
     "android:benchmark-device": "bash android/benchmark-gpu.sh --device",
+    "android:pacing-device": "bash android/validate-pacing.sh",
     "android:device": "bash android/validate-device.sh",
     "android:env": "bash android/check-env.sh",
     "build:web": "node scripts/build-web.mjs",

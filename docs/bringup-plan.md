@@ -251,6 +251,15 @@ and one solver execution. The attached physical Pixel 9 was locked and remains
 an explicit availability gap. S6.2 now owns observation schemas and seeded
 realistic settling fixtures; it may not change contact policy.
 
+S6.1a pacing checkpoint, 2026-07-18: the unlocked Pixel 7a closed that gap and
+exposed the selected per-color dispatch floor at `13.51 FPS` on the two-body
+bootstrap. Product construction now selects the exact-equivalent
+workgroup-per-island reserve only for the 64-body interactive capacity tier;
+larger capacities retain the scalable per-color path. A maintained physical
+lane gates both rendering cadence and fixed-step scale. Bootstrap passes at
+`60.06 FPS` and `0.990` effective scale with no fixed-delta, quality, or
+physics-tolerance change.
+
 The first S3.5a representation checkpoint implements the stable pair-slot
 comparator with full feature verification and deterministic generational slot
 recycling. Its correctness/adversarial gates pass and its combined

@@ -315,7 +315,7 @@ fn product_generated_floor_landing_stays_bounded_and_preserves_invariants() {
     assert!(report.scenario.complete);
     assert!(report.scenario.passed);
     assert_eq!(report.scene_contract.contact_point_count, 2_048);
-    assert_eq!(report.scene_contract.solver_dispatches_per_step, 1_434);
+    assert_eq!(report.scene_contract.solver_dispatches_per_step, 195);
     assert!(!report.scene_contract.capacity_overflowed);
     let actual = renderer.read_capture_state().unwrap();
     assert!(actual.into_iter().all(f32::is_finite));

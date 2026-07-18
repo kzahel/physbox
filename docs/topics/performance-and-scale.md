@@ -920,6 +920,25 @@ source. Native, browser, and hardware-AVD paths agree. These work-vector values
 qualify integration only; the S5.4c timing and unresolved scale contract remain
 controlling until equivalent-quality settling is remeasured.
 
+Physical mobile pacing repair, 2026-07-18: the first unlocked selected-product
+run on a Pixel 7a exposed a small-scene dispatch regression hidden by Metal and
+the host-backed AVD. With report markers off, the two-body bootstrap presented
+at `13.51 FPS` (`74.03 ms` mean, `94.83 ms` P95); markers on measured `13.31
+FPS`, so serialization/logging was not the controlling cost. The shared
+free-flight control on the same device held `60.07 FPS` and `16.72 ms` P95.
+
+The product now chooses the previously measured workgroup-per-island reserve
+only for the 64-body interactive capacity tier, reducing bootstrap from 1,434
+to 195 dispatches. Larger tiers keep the S6.1 scalable per-color schedule
+because the island implementation regresses the same-Metal generated 1K P50
+from `8.781` to `21.884 ms`. `android/validate-pacing.sh` is the maintained
+physical regression lane: it requires a passing free-flight device control,
+then independently gates marker-off bootstrap presentation and marker-derived
+fixed-step pacing. The Pixel 7a result is `60.06 FPS`, `16.75 ms` presentation
+P95, `59.38` steps/s, `0.990` effective scale, and `0.067 s` slipped during the
+six-second all-marker observation. This is a named-device small-world gate,
+not a 3K-10K mobile scale claim or a heterogeneous-CI threshold.
+
 ## Regression and claim gates
 
 Before representative hardware is selected, store named measurements and

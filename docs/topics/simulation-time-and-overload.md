@@ -1,6 +1,6 @@
 # Simulation time and overload
 
-Status: decided and implemented default contract, 2026-07-14.
+Status: decided and implemented default contract, 2026-07-18.
 
 Governing direction:
 [one GPU-resident 2D physics world](physbox5-unified-gpu-physics.md).
@@ -150,6 +150,14 @@ High-refresh presentation may produce zero-step frames. Low or deliberately
 reduced presentation cadence naturally lowers the maximum interactive
 simulation cadence because the engine will not batch multiple outer steps into
 one presentation frame.
+
+The wall-clock accumulator admits a step up to five percent of one fixed delta
+early and retains that signed phase error. This bounded tolerance prevents a
+nominal 60 Hz callback arriving a few microseconds early from producing a
+zero-step frame followed by a falsely classified whole-step slip. It does not
+change fixed `dt`, create a second step in one frame, or forgive real overload:
+the phase error remains bounded and later wall time repays it, while two or
+more genuinely eligible steps still execute one and slip the excess.
 
 Interpolation may later make high-refresh or fractional-step presentation
 smoother, but it must not extrapolate the world to a state that has not been

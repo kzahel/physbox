@@ -483,8 +483,12 @@ many compute passes even though the same indirect schedule executes in the
 ordinary one-pass solver. The failure reproduces for hard, point-sequential,
 and projected-relaxation controls, so it is instrumentation-specific rather
 than candidate-specific. A direct-replay hard control matches the scalar
-boundary within one `f32` ULP. Product and performance lanes continue to use
-the selected per-color indirect dispatch unchanged.
+boundary within one `f32` ULP. Matched pass traces continue to use the selected
+per-color indirect control so each logical color remains observable. Product
+execution may combine those same colors into the selected small-world island
+dispatch at capacities through 64; larger performance lanes retain per-color
+indirect dispatch. The two forms are exact for body/cache/work and do not alter
+this recurrence evidence.
 
 S6.5d authority-control checkpoint, 2026-07-18: the existing independent
 `b2MakeSoft` transcription is joined by an explicit scalar point-normal update

@@ -195,6 +195,8 @@ pub struct GpuSolverSchedulingPolicyV1 {
 }
 
 impl GpuSolverSchedulingPolicyV1 {
+    pub const SMALL_WORLD_BODY_CAPACITY_MAX: u32 = 64;
+
     pub const SERIAL_CONTROL: Self = Self {
         version: GPU_SOLVER_SCHEDULING_POLICY_VERSION,
         color_maintenance: GpuColorMaintenanceV1::FullRebuild,
@@ -208,6 +210,11 @@ impl GpuSolverSchedulingPolicyV1 {
     pub const SELECTED: Self = Self {
         color_maintenance: GpuColorMaintenanceV1::FullRebuildParallelSpeculative,
         ..Self::SERIAL_CONTROL
+    };
+
+    pub const SELECTED_SMALL_WORLD: Self = Self {
+        colored_dispatch: GpuColoredDispatchV1::WorkgroupPerIsland,
+        ..Self::SELECTED
     };
 
     pub const INCREMENTAL: Self = Self {
@@ -232,6 +239,14 @@ impl GpuSolverSchedulingPolicyV1 {
         colored_dispatch: GpuColoredDispatchV1::WorkgroupPerIsland,
         ..Self::SERIAL_CONTROL
     };
+
+    pub const fn selected_for_body_capacity(body_capacity: u32) -> Self {
+        if body_capacity <= Self::SMALL_WORLD_BODY_CAPACITY_MAX {
+            Self::SELECTED_SMALL_WORLD
+        } else {
+            Self::SELECTED
+        }
+    }
 
     const fn uses_parallel_compaction(self) -> bool {
         matches!(
@@ -5019,6 +5034,23 @@ mod tests {
         assert_eq!(topology.incident_base, 4);
         assert_eq!(topology.cursor_base, 8);
         assert_eq!(topology.element_count, 10);
+    }
+
+    #[test]
+    fn selected_dispatch_policy_keeps_the_scalable_schedule_above_the_small_world_tier() {
+        let small = GpuSolverSchedulingPolicyV1::selected_for_body_capacity(64);
+        let scalable = GpuSolverSchedulingPolicyV1::selected_for_body_capacity(65);
+        assert_eq!(small, GpuSolverSchedulingPolicyV1::SELECTED_SMALL_WORLD);
+        assert_eq!(scalable, GpuSolverSchedulingPolicyV1::SELECTED);
+        assert_eq!(small.color_maintenance, scalable.color_maintenance);
+        assert_eq!(
+            small.colored_dispatch,
+            GpuColoredDispatchV1::WorkgroupPerIsland
+        );
+        assert_eq!(
+            scalable.colored_dispatch,
+            GpuColoredDispatchV1::PerColorIndirect
+        );
     }
 
     #[test]

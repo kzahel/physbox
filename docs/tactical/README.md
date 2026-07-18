@@ -1,9 +1,9 @@
 # Tactical workstreams
 
 Status: S1 and S2 complete; the S3 combined representation gate passes.
-Forward manifold-block i2 with full rebuild/per-color dispatch is integrated
-as the selected solver baseline. Human review accepted the clean S5.4c bounded
-parallel-coloring recommendation. S6.5 is closed as a complete negative study:
+Forward manifold-block i2 with bounded parallel coloring is integrated as the
+selected solver baseline; the small interactive tier uses island dispatch and
+larger tiers retain per-color dispatch. S6.5 is closed as a complete negative study:
 human review rejected the one S6.5d candidate, deferred soft settling, and
 retained hard/direct manifold-block i2 as the product. Reopening requires the
 recorded 16-stack energy and cross-Android portability evidence.
@@ -13,6 +13,8 @@ decision and cannot change product physics or authority precedence by itself.
 Broadphase contract/correctness work remains authorized, while product-scene
 ranking and selection wait for the S6 awake gate. S4.3 grab feel and S4.4
 construction mechanics are complete.
+S8 closed the physical mobile small-world pacing regression with a bounded
+dispatch policy and a maintained presentation/physics cadence gate.
 
 Tactical filenames use a three-digit zero-padded prefix ordered by their first
 Git creation timestamp. This repository starts at `001`. Never renumber an
@@ -30,6 +32,7 @@ This README remains the unnumbered index.
 | S5 | Interactive rigid quality, construction, and scale | [005-interactive-rigid-quality-and-scale.md](005-interactive-rigid-quality-and-scale.md) | S5.4c scheduler integrated; S5.5 waits for S6 awake gate, 2026-07-17 |
 | S6 | Awake settling stabilization | [006-awake-settling-stabilization.md](006-awake-settling-stabilization.md) | S6.5 closed; soft settling deferred by human review, 2026-07-18 |
 | S7 | Box3D planar stability investigation | [007-box3d-planar-stability-investigation.md](007-box3d-planar-stability-investigation.md) | manual checkpoint; static-late factorial recommended, 2026-07-18 |
+| S8 | Physical mobile frame pacing | [008-physical-mobile-frame-pacing.md](008-physical-mobile-frame-pacing.md) | complete; Pixel 7a bootstrap sustains rendering and physics cadence, 2026-07-18 |
 
 ## Conventions
 
