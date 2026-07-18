@@ -104,8 +104,8 @@ forwarded unchanged.
 ### S7.3 — public-API sleep-off observer
 
 - [ ] Add a process-isolated external harness that links the clean pin and
-  independently authors the stock 12-row planar pyramid and 90-row large
-  pyramid without modifying Box3D.
+  independently authors the stock 12-row planar-locked pyramid and 90-row
+  unlocked 3D pyramid without modifying Box3D.
 - [ ] Freeze 60 Hz, four substeps, one worker, sleeping disabled, stock contact
   recycling, initial transforms/materials, and steps 0/200/1,200/5,000.
 - [ ] Record body transforms, residual speeds, mass/inertia kinetic energy,

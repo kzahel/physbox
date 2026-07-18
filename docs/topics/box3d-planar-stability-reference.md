@@ -93,9 +93,10 @@ Two stock sources are the initial controls:
 
 - `Pyramid2D` creates a 12-row planar-locked pyramid in the sample application.
   It uses the ordinary world sleep policy unless the harness overrides it.
-- `CreateLargePyramid` creates a 90-row, 4,095-body planar pyramid and
-  explicitly disables sleeping. The release benchmark advances it for 200
-  outer steps at 60 Hz with four substeps.
+- `CreateLargePyramid` creates a 90-row, 4,095-body pyramid one cube deep and
+  explicitly disables sleeping. Unlike `Pyramid2D`, it has no motion locks:
+  it is a fully 3D sheet whose bodies may leave the authored plane. The release
+  benchmark advances it for 200 outer steps at 60 Hz with four substeps.
 
 The release source also notes that an “80 block version” falls after 1,000
 steps.
@@ -150,8 +151,9 @@ The clean checkout is configured and built out of tree. Build products and
 downloaded dependencies must remain outside `reference/box3d`, and
 `npm run references:status` must pass after every reference run.
 
-The first public-API observer independently authors the stock planar sources
-without modifying Box3D. It records:
+The first public-API observer independently authors the stock planar-locked
+sample and the stock full-3D large-pyramid source without modifying Box3D. It
+records:
 
 - exact source revision, license, build type, compiler, SIMD/validation flags,
   worker count, fixed step, substeps, sleep and recycling settings;
