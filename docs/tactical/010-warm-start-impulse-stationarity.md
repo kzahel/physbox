@@ -188,6 +188,50 @@ S10.1 metric freeze, 2026-07-18, before measurement:
   hypothesis 2; a contradictory oscillation remains named input to the S10.3
   operator study rather than silently changing this rule.
 
+S10.3 operator freeze, 2026-07-18, before the operator/depth measurement:
+
+- The operator source is the exact selected hard/direct `f32` state entering
+  completed step 904. The GPU trace maps only after that outer step and its
+  persistence store. Its matched scalar mirror starts at every captured pass
+  boundary, follows the exact compacted manifold/color order, and records the
+  existing full-state difference at the corresponding GPU boundary. No
+  widened scalar-replay tolerance is a verdict input.
+- The stored-impulse vector is the ordered prepared-point-capacity vector of
+  accumulated normal and tangent impulses, with invalid slots represented by
+  exact zero. For each pass, `fixed` means the vector is bit-exact unchanged;
+  otherwise `contraction` means its Euclidean distance to the exact final
+  persisted vector strictly decreases; every other changed map is
+  `oscillation`. This endpoint-residual label describes the captured operator
+  path and is not a spectral-radius claim.
+- Intra-block active-set flips retain S10.1's exact `normalImpulse > 0` rule.
+  Intra-manifold redistribution retains S10.1's half-L1 two-point share rule.
+  The scalar mirror records every color boundary; cross-color support
+  transfer is reported as opposing signed color energy changes and as the
+  cancellation between absolute per-color normal-load changes and their net.
+  Warm-start/bias interplay is a warm-start kinetic-energy change followed by
+  a non-fixed biased-normal impulse map in the same substep.
+- An inter-substep persistence reseed is named only when a refresh has reset
+  mode `1`, its output impulse vector is bit-exact equal to the first prepared
+  vector of the outer step, and its input differs. The discarded L1 distance
+  is reported. The stale-reseed mechanism requires all three selected
+  inter-substep refreshes to meet that exact condition, plus non-fixed biased
+  normal work after every warm start. A correction therefore must preserve
+  refreshed geometry/effective mass, unilateral impulses, penetration and
+  support transfer while preventing solved within-step impulses from being
+  overwritten by the older persistence seed.
+- The governed depth sweep is `2, 4, 8..=16`, the complete accepted centered
+  stack set below 16. A depth exhibits the harmful signature only if the exact
+  stale-reseed mechanism is present and the frozen S6.2-v2 speed or energy
+  envelope gate fails; mere nonzero roundoff at a reseed is insufficient. The
+  first such depth is preserved by source hash, target step, trace hash, and
+  an exact replay hash. This rule chooses a reproducer; it does not relax the
+  quality bands.
+- Hypothesis 3 applies the unchanged S10.1 stationarity metric implementation
+  to the frozen S6.4 `30 Hz / 10 / static×1 / prior-contact` 16-stack. The
+  existing frozen trace lacks raw impulse/cache observables, so exactly one
+  fresh bounded observation series is authorized. It is measurement-only;
+  there is no soft coefficient, recurrence, baseline, or selection change.
+
 Repository gates for every code slice are the standard block:
 
 ```sh

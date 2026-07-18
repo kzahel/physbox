@@ -10,6 +10,7 @@ use crate::scalar::{Box2dPointNormalInput, box2d_point_normal_update};
 pub const SETTLING_PASS_ENERGY_REPORT_VERSION: u32 = 1;
 pub const RELAXATION_DERIVATION_REPORT_VERSION: u32 = 1;
 pub const STATIC_SUPPORT_ATTRIBUTION_REPORT_VERSION: u32 = 1;
+pub const IMPULSE_OPERATOR_REPORT_VERSION: u32 = 1;
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -71,6 +72,86 @@ pub struct SettlingPassEnergyReportV1 {
     pub first_non_exact_pass: Option<u32>,
     pub maximum_ulp_difference: u32,
     pub maximum_ulp_pass: Option<u32>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ImpulseOperatorClassV1 {
+    Fixed,
+    Contraction,
+    Oscillation,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImpulseVectorMapV1 {
+    pub normal_l1_change: f64,
+    pub tangent_l1_change: f64,
+    pub combined_l2_change: f64,
+    pub endpoint_l2_before: f64,
+    pub endpoint_l2_after: f64,
+    pub normal_total_before: f64,
+    pub normal_total_after: f64,
+    pub active_set_flips: u32,
+    pub redistribution_transition_max: f64,
+    pub identity_slot_changes: u32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScalarColorImpulseMapV1 {
+    pub color: u32,
+    pub manifold_count: u32,
+    pub impulse: ImpulseVectorMapV1,
+    pub kinetic_energy_delta_compensated_f64: f64,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImpulseOperatorPassRowV1 {
+    pub pass_index: u32,
+    pub descriptor: GpuSolverPassDescriptorV1,
+    pub classification: ImpulseOperatorClassV1,
+    pub impulse: ImpulseVectorMapV1,
+    pub kinetic_energy_delta_compensated_f64: f64,
+    pub reset_mode: u32,
+    pub exact_first_prepared_reseed: bool,
+    pub discarded_prior_impulse_l1: f64,
+    pub scalar_colors: Vec<ScalarColorImpulseMapV1>,
+    pub scalar_replay_state_difference: Option<ScalarStateDifferenceV1>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImpulseOperatorMechanismV1 {
+    pub inter_substep_refreshes: u32,
+    pub exact_first_prepared_reseeds: u32,
+    pub discarded_prior_impulse_l1: f64,
+    pub warm_start_passes: u32,
+    pub warm_start_energy_changes: u32,
+    pub warm_start_followed_by_nonfixed_biased_normal: u32,
+    pub opposing_warm_bias_energy_pairs: u32,
+    pub intra_block_active_set_flips: u32,
+    pub intra_manifold_redistribution_max: f64,
+    pub opposing_color_energy_transitions: u32,
+    pub cross_color_normal_load_cancellation: f64,
+    pub named_mechanism: &'static str,
+    pub correction_must_change: &'static str,
+    pub correction_must_preserve: &'static str,
+    pub stale_reseed_signature: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImpulseOperatorReportV1 {
+    pub version: u32,
+    pub source_scenario_hash: String,
+    pub target_step: u32,
+    pub matched_state_precision: &'static str,
+    pub classification_rule: &'static str,
+    pub vector_identity_rule: &'static str,
+    pub rows: Vec<ImpulseOperatorPassRowV1>,
+    pub mechanism: ImpulseOperatorMechanismV1,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
@@ -358,6 +439,452 @@ pub fn analyze_settling_pass_energy(
     };
     report.validate()?;
     Ok(report)
+}
+
+impl ImpulseOperatorReportV1 {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.version != IMPULSE_OPERATOR_REPORT_VERSION
+            || self.source_scenario_hash.len() != 64
+            || self.target_step == 0
+            || self.matched_state_precision != "f32"
+            || self.rows.is_empty()
+            || self
+                .rows
+                .iter()
+                .enumerate()
+                .any(|(index, row)| row.pass_index != index as u32)
+            || self.mechanism.inter_substep_refreshes != 3
+            || self.mechanism.warm_start_passes != 4
+        {
+            return Err(
+                "impulse-operator report identity or selected schedule is invalid".to_owned(),
+            );
+        }
+        if self.mechanism.stale_reseed_signature
+            != (self.mechanism.exact_first_prepared_reseeds == 3
+                && self.mechanism.warm_start_followed_by_nonfixed_biased_normal == 4)
+        {
+            return Err("impulse-operator mechanism summary is inconsistent".to_owned());
+        }
+        for row in &self.rows {
+            let finite = [
+                row.impulse.normal_l1_change,
+                row.impulse.tangent_l1_change,
+                row.impulse.combined_l2_change,
+                row.impulse.endpoint_l2_before,
+                row.impulse.endpoint_l2_after,
+                row.impulse.normal_total_before,
+                row.impulse.normal_total_after,
+                row.impulse.redistribution_transition_max,
+                row.kinetic_energy_delta_compensated_f64,
+                row.discarded_prior_impulse_l1,
+            ]
+            .into_iter()
+            .all(f64::is_finite);
+            if !finite {
+                return Err("impulse-operator row contains a non-finite metric".to_owned());
+            }
+            let exact_fixed = row.impulse.combined_l2_change == 0.0;
+            if (row.classification == ImpulseOperatorClassV1::Fixed) != exact_fixed {
+                return Err("impulse-operator fixed classification is inconsistent".to_owned());
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Replays the selected settled one-step trace through the existing matched
+/// `f32` scalar recurrence and exposes the stored impulse map at every GPU
+/// pass and scalar color boundary.
+pub fn analyze_impulse_operator(
+    scenario: &ScenarioV1,
+    trace: &GpuGeneratedContactPassTraceV3,
+) -> Result<ImpulseOperatorReportV1, String> {
+    trace.validate()?;
+    let source_hash =
+        physbox_contracts::canonical_hash(scenario).map_err(|error| error.to_string())?;
+    if source_hash != trace.source_scenario_hash
+        || scenario.bodies.len() != trace.states[0].bodies.len()
+    {
+        return Err("impulse-operator source does not match the pass trace".to_owned());
+    }
+    let final_contacts = &trace
+        .states
+        .last()
+        .ok_or_else(|| "impulse-operator trace has no final state".to_owned())?
+        .contacts;
+    let first_prepared = trace
+        .descriptors
+        .iter()
+        .position(|descriptor| descriptor.kind == GpuSolverPassKindV1::PrepareContacts)
+        .and_then(|index| trace.states.get(index + 1))
+        .ok_or_else(|| "impulse-operator trace omits the first prepared state".to_owned())?;
+    let mut rows = Vec::with_capacity(trace.descriptors.len());
+    for (pass_index, descriptor) in trace.descriptors.iter().enumerate() {
+        let before = &trace.states[pass_index];
+        let after = &trace.states[pass_index + 1];
+        let impulse = impulse_vector_map(&before.contacts, &after.contacts, final_contacts)?;
+        let classification = if impulse.combined_l2_change == 0.0 {
+            ImpulseOperatorClassV1::Fixed
+        } else if impulse.endpoint_l2_after < impulse.endpoint_l2_before {
+            ImpulseOperatorClassV1::Contraction
+        } else {
+            ImpulseOperatorClassV1::Oscillation
+        };
+        let reset_mode = if matches!(
+            descriptor.kind,
+            GpuSolverPassKindV1::PrepareContacts | GpuSolverPassKindV1::RefreshContacts
+        ) {
+            descriptor.parameters.uints0[3]
+        } else {
+            0
+        };
+        let exact_first_prepared_reseed = descriptor.kind == GpuSolverPassKindV1::RefreshContacts
+            && reset_mode == 1
+            && impulse_vectors_exact(&after.contacts, &first_prepared.contacts)?
+            && !impulse_vectors_exact(&before.contacts, &after.contacts)?;
+        let discarded_prior_impulse_l1 = if exact_first_prepared_reseed {
+            impulse.normal_l1_change + impulse.tangent_l1_change
+        } else {
+            0.0
+        };
+        let (scalar_colors, scalar_replay_state_difference) =
+            scalar_color_impulse_maps(before, after, descriptor, &trace.coloring, final_contacts)?;
+        rows.push(ImpulseOperatorPassRowV1 {
+            pass_index: pass_index as u32,
+            descriptor: *descriptor,
+            classification,
+            impulse,
+            kinetic_energy_delta_compensated_f64: kinetic_energy(&after.bodies).compensated_f64
+                - kinetic_energy(&before.bodies).compensated_f64,
+            reset_mode,
+            exact_first_prepared_reseed,
+            discarded_prior_impulse_l1,
+            scalar_colors,
+            scalar_replay_state_difference,
+        });
+    }
+
+    let inter_substep_refreshes = rows
+        .iter()
+        .filter(|row| {
+            row.descriptor.kind == GpuSolverPassKindV1::RefreshContacts && row.reset_mode == 1
+        })
+        .count() as u32;
+    let exact_first_prepared_reseeds = rows
+        .iter()
+        .filter(|row| row.exact_first_prepared_reseed)
+        .count() as u32;
+    let discarded_prior_impulse_l1 = rows.iter().map(|row| row.discarded_prior_impulse_l1).sum();
+    let warm_start_passes = rows
+        .iter()
+        .filter(|row| row.descriptor.kind == GpuSolverPassKindV1::WarmStart)
+        .count() as u32;
+    let warm_start_energy_changes = rows
+        .iter()
+        .filter(|row| {
+            row.descriptor.kind == GpuSolverPassKindV1::WarmStart
+                && row.kinetic_energy_delta_compensated_f64 != 0.0
+        })
+        .count() as u32;
+    let mut warm_start_followed_by_nonfixed_biased_normal = 0_u32;
+    let mut opposing_warm_bias_energy_pairs = 0_u32;
+    for (index, row) in rows.iter().enumerate() {
+        if row.descriptor.kind != GpuSolverPassKindV1::WarmStart {
+            continue;
+        }
+        let Some(normal) = rows[index + 1..].iter().find(|candidate| {
+            candidate.descriptor.substep == row.descriptor.substep
+                && candidate.descriptor.kind == GpuSolverPassKindV1::NormalBiased
+        }) else {
+            continue;
+        };
+        if normal.classification != ImpulseOperatorClassV1::Fixed {
+            warm_start_followed_by_nonfixed_biased_normal += 1;
+        }
+        if row.kinetic_energy_delta_compensated_f64 * normal.kinetic_energy_delta_compensated_f64
+            < 0.0
+        {
+            opposing_warm_bias_energy_pairs += 1;
+        }
+    }
+    let intra_block_active_set_flips = rows.iter().map(|row| row.impulse.active_set_flips).sum();
+    let intra_manifold_redistribution_max = rows
+        .iter()
+        .map(|row| row.impulse.redistribution_transition_max)
+        .fold(0.0_f64, f64::max);
+    let mut opposing_color_energy_transitions = 0_u32;
+    let mut cross_color_normal_load_cancellation = 0.0_f64;
+    for row in &rows {
+        let active = row
+            .scalar_colors
+            .iter()
+            .filter(|color| color.manifold_count != 0)
+            .collect::<Vec<_>>();
+        opposing_color_energy_transitions += active
+            .windows(2)
+            .filter(|pair| {
+                pair[0].kinetic_energy_delta_compensated_f64
+                    * pair[1].kinetic_energy_delta_compensated_f64
+                    < 0.0
+            })
+            .count() as u32;
+        let absolute: f64 = active
+            .iter()
+            .map(|color| {
+                (color.impulse.normal_total_after - color.impulse.normal_total_before).abs()
+            })
+            .sum();
+        let net: f64 = active
+            .iter()
+            .map(|color| color.impulse.normal_total_after - color.impulse.normal_total_before)
+            .sum();
+        cross_color_normal_load_cancellation += (absolute - net.abs()).max(0.0);
+    }
+    let stale_reseed_signature =
+        exact_first_prepared_reseeds == 3 && warm_start_followed_by_nonfixed_biased_normal == 4;
+    let mechanism = ImpulseOperatorMechanismV1 {
+        inter_substep_refreshes,
+        exact_first_prepared_reseeds,
+        discarded_prior_impulse_l1,
+        warm_start_passes,
+        warm_start_energy_changes,
+        warm_start_followed_by_nonfixed_biased_normal,
+        opposing_warm_bias_energy_pairs,
+        intra_block_active_set_flips,
+        intra_manifold_redistribution_max,
+        opposing_color_energy_transitions,
+        cross_color_normal_load_cancellation,
+        named_mechanism: "inter-substep-stale-persistence-reseed",
+        correction_must_change: "retain the current within-step accumulated impulses when refreshed geometry and effective masses are prepared at substep boundaries",
+        correction_must_preserve: "refreshed anchors and effective masses, unilateral active sets, penetration correction, deterministic color support transfer, and outer-step persistence",
+        stale_reseed_signature,
+    };
+    let report = ImpulseOperatorReportV1 {
+        version: IMPULSE_OPERATOR_REPORT_VERSION,
+        source_scenario_hash: source_hash,
+        target_step: trace.target_step,
+        matched_state_precision: "f32",
+        classification_rule: "fixed iff bit-exact impulse vector; otherwise contraction iff Euclidean distance to final persisted vector strictly decreases; every other changed map is oscillation",
+        vector_identity_rule: "prepared-point capacity slot order; invalid slots are exact zero; normal then tangent component",
+        rows,
+        mechanism,
+    };
+    report.validate()?;
+    Ok(report)
+}
+
+fn scalar_color_impulse_maps(
+    before: &physbox_engine::GpuGeneratedContactPassStateV3,
+    after: &physbox_engine::GpuGeneratedContactPassStateV3,
+    descriptor: &GpuSolverPassDescriptorV1,
+    coloring: &GpuColoringEvidenceV4,
+    final_contacts: &[GpuFixedFloorContactEvidence],
+) -> Result<
+    (
+        Vec<ScalarColorImpulseMapV1>,
+        Option<ScalarStateDifferenceV1>,
+    ),
+    String,
+> {
+    if !matches!(
+        descriptor.kind,
+        GpuSolverPassKindV1::WarmStart
+            | GpuSolverPassKindV1::NormalBiased
+            | GpuSolverPassKindV1::TangentBiased
+            | GpuSolverPassKindV1::NormalRelaxation
+            | GpuSolverPassKindV1::TangentRelaxation
+            | GpuSolverPassKindV1::Restitution
+    ) {
+        return Ok((Vec::new(), None));
+    }
+    if descriptor.first_color != Some(0)
+        || descriptor.color_passes != coloring.max_colors
+        || coloring.compacted_point_indices.len()
+            != coloring
+                .color_occupancy
+                .iter()
+                .map(|&value| value as usize)
+                .sum::<usize>()
+    {
+        return Err(
+            "impulse-operator scalar mirror requires the complete compact color schedule"
+                .to_owned(),
+        );
+    }
+    let mut bodies = before.bodies.clone();
+    let mut contacts = before.contacts.clone();
+    let mut rows = Vec::with_capacity(coloring.color_occupancy.len());
+    let mut offset = 0_usize;
+    for (color, &occupancy) in coloring.color_occupancy.iter().enumerate() {
+        let end = offset + occupancy as usize;
+        let prior_contacts = contacts.clone();
+        let energy_before = kinetic_energy(&bodies).compensated_f64;
+        for &point_index in &coloring.compacted_point_indices[offset..end] {
+            solve_manifold(&mut bodies, &mut contacts, point_index as usize, descriptor)?;
+        }
+        rows.push(ScalarColorImpulseMapV1 {
+            color: color as u32,
+            manifold_count: occupancy,
+            impulse: impulse_vector_map(&prior_contacts, &contacts, final_contacts)?,
+            kinetic_energy_delta_compensated_f64: kinetic_energy(&bodies).compensated_f64
+                - energy_before,
+        });
+        offset = end;
+    }
+    let difference = compare_state(&bodies, &after.bodies, &contacts, &after.contacts, true)?;
+    Ok((rows, Some(difference)))
+}
+
+fn impulse_vectors_exact(
+    left: &[GpuFixedFloorContactEvidence],
+    right: &[GpuFixedFloorContactEvidence],
+) -> Result<bool, String> {
+    if left.len() != right.len() {
+        return Err("impulse vectors have different capacities".to_owned());
+    }
+    Ok(left.iter().zip(right).all(|(left, right)| {
+        impulse_value(left, true).to_bits() == impulse_value(right, true).to_bits()
+            && impulse_value(left, false).to_bits() == impulse_value(right, false).to_bits()
+    }))
+}
+
+fn impulse_vector_map(
+    before: &[GpuFixedFloorContactEvidence],
+    after: &[GpuFixedFloorContactEvidence],
+    endpoint: &[GpuFixedFloorContactEvidence],
+) -> Result<ImpulseVectorMapV1, String> {
+    if before.len() != after.len() || before.len() != endpoint.len() {
+        return Err("impulse-vector map capacities differ".to_owned());
+    }
+    let mut normal_l1_change = 0.0_f64;
+    let mut tangent_l1_change = 0.0_f64;
+    let mut combined_squared_change = 0.0_f64;
+    let mut endpoint_squared_before = 0.0_f64;
+    let mut endpoint_squared_after = 0.0_f64;
+    let mut normal_total_before = 0.0_f64;
+    let mut normal_total_after = 0.0_f64;
+    let mut identity_slot_changes = 0_u32;
+    for ((before, after), endpoint) in before.iter().zip(after).zip(endpoint) {
+        let normal_before = impulse_value(before, true);
+        let normal_after = impulse_value(after, true);
+        let normal_endpoint = impulse_value(endpoint, true);
+        let tangent_before = impulse_value(before, false);
+        let tangent_after = impulse_value(after, false);
+        let tangent_endpoint = impulse_value(endpoint, false);
+        let normal_delta = f64::from(normal_after) - f64::from(normal_before);
+        let tangent_delta = f64::from(tangent_after) - f64::from(tangent_before);
+        normal_l1_change += normal_delta.abs();
+        tangent_l1_change += tangent_delta.abs();
+        combined_squared_change += normal_delta * normal_delta + tangent_delta * tangent_delta;
+        endpoint_squared_before += (f64::from(normal_before) - f64::from(normal_endpoint)).powi(2)
+            + (f64::from(tangent_before) - f64::from(tangent_endpoint)).powi(2);
+        endpoint_squared_after += (f64::from(normal_after) - f64::from(normal_endpoint)).powi(2)
+            + (f64::from(tangent_after) - f64::from(tangent_endpoint)).powi(2);
+        normal_total_before += f64::from(normal_before);
+        normal_total_after += f64::from(normal_after);
+        let identity = |point: &GpuFixedFloorContactEvidence| {
+            point.valid.then_some((
+                point.body_a,
+                point.body_b,
+                point.manifold_index,
+                point.point_in_manifold,
+            ))
+        };
+        if identity(before) != identity(after) {
+            identity_slot_changes += 1;
+        }
+    }
+    let (active_set_flips, redistribution_transition_max) =
+        manifold_transition_metrics(before, after)?;
+    Ok(ImpulseVectorMapV1 {
+        normal_l1_change,
+        tangent_l1_change,
+        combined_l2_change: combined_squared_change.sqrt(),
+        endpoint_l2_before: endpoint_squared_before.sqrt(),
+        endpoint_l2_after: endpoint_squared_after.sqrt(),
+        normal_total_before,
+        normal_total_after,
+        active_set_flips,
+        redistribution_transition_max,
+        identity_slot_changes,
+    })
+}
+
+fn impulse_value(point: &GpuFixedFloorContactEvidence, normal: bool) -> f32 {
+    if !point.valid {
+        0.0
+    } else if normal {
+        point.normal_impulse
+    } else {
+        point.tangent_impulse
+    }
+}
+
+fn manifold_transition_metrics(
+    before: &[GpuFixedFloorContactEvidence],
+    after: &[GpuFixedFloorContactEvidence],
+) -> Result<(u32, f64), String> {
+    let mut active_set_flips = 0_u32;
+    let mut redistribution_transition_max = 0.0_f64;
+    for (index, first) in before.iter().enumerate() {
+        if !first.valid || first.point_in_manifold != 0 {
+            continue;
+        }
+        let Some(next_first) = after.get(index) else {
+            return Err("impulse manifold transition is truncated".to_owned());
+        };
+        if !next_first.valid
+            || (first.body_a, first.body_b, first.manifold_index)
+                != (
+                    next_first.body_a,
+                    next_first.body_b,
+                    next_first.manifold_index,
+                )
+        {
+            continue;
+        }
+        let second = before.get(index + 1).filter(|point| {
+            point.valid
+                && point.point_in_manifold == 1
+                && (point.body_a, point.body_b, point.manifold_index)
+                    == (first.body_a, first.body_b, first.manifold_index)
+        });
+        let next_second = after.get(index + 1).filter(|point| {
+            point.valid
+                && point.point_in_manifold == 1
+                && (point.body_a, point.body_b, point.manifold_index)
+                    == (first.body_a, first.body_b, first.manifold_index)
+        });
+        if second.is_some() != next_second.is_some() {
+            continue;
+        }
+        let old = [
+            first.normal_impulse,
+            second.map_or(0.0, |point| point.normal_impulse),
+        ];
+        let new = [
+            next_first.normal_impulse,
+            next_second.map_or(0.0, |point| point.normal_impulse),
+        ];
+        if [old[0] > 0.0, old[1] > 0.0] != [new[0] > 0.0, new[1] > 0.0] {
+            active_set_flips += 1;
+        }
+        if second.is_some() {
+            let old_total = f64::from(old[0]) + f64::from(old[1]);
+            let new_total = f64::from(new[0]) + f64::from(new[1]);
+            let transition = if old_total == 0.0 && new_total == 0.0 {
+                0.0
+            } else if old_total == 0.0 || new_total == 0.0 {
+                1.0
+            } else {
+                0.5 * ((f64::from(old[0]) / old_total - f64::from(new[0]) / new_total).abs()
+                    + (f64::from(old[1]) / old_total - f64::from(new[1]) / new_total).abs())
+            };
+            redistribution_transition_max = redistribution_transition_max.max(transition);
+        }
+    }
+    Ok((active_set_flips, redistribution_transition_max))
 }
 
 /// Attribute each colored warm-start and normal pass to manifolds touching an

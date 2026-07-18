@@ -18,8 +18,8 @@ use physbox_engine::{
 };
 use physbox_lab::analytic_narrowphase::authored_solver_projection;
 use physbox_lab::pass_energy::{
-    ScalarPassCoverageV1, analyze_scalar_relaxation_derivation, analyze_settling_pass_energy,
-    analyze_static_support_energy_attribution,
+    ScalarPassCoverageV1, analyze_impulse_operator, analyze_scalar_relaxation_derivation,
+    analyze_settling_pass_energy, analyze_static_support_energy_attribution,
 };
 use physbox_lab::settling::centered_stack_structure;
 use physbox_lab::settling::{
@@ -135,6 +135,29 @@ fn stack_pass_trace_attributes_static_support_in_exact_color_order() {
             row.replay_state_difference.max_absolute_difference
         );
     }
+}
+
+#[test]
+fn settled_stack_impulse_operator_reports_selected_reseed_schedule() {
+    let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
+    let scenario = p5_2_centered_rectangle_stack_scenario(2, 2).unwrap();
+    let trace = runner
+        .run_contact_policy_pass_trace(
+            &scenario,
+            2,
+            ContactIdentityPolicyV1::SELECTED,
+            GpuSoftFeedbackPolicyV1::SELECTED,
+        )
+        .unwrap();
+    let report = analyze_impulse_operator(&scenario, &trace).unwrap();
+    report.validate().unwrap();
+    assert_eq!(report.rows.len(), trace.descriptors.len());
+    assert_eq!(report.mechanism.inter_substep_refreshes, 3);
+    assert_eq!(report.mechanism.warm_start_passes, 4);
+    assert!(report.rows.iter().all(|row| {
+        row.scalar_replay_state_difference
+            .is_none_or(|difference| difference.compared_f32_values > 0)
+    }));
 }
 
 #[test]
