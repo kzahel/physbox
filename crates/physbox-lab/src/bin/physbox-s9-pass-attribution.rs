@@ -66,12 +66,16 @@ struct PassFamilySummary {
 #[derive(Clone, Copy, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct RoutingSignals {
+    warm_start_positive_delta_compensated_f64: f64,
     tangent_positive_delta_compensated_f64: f64,
     biased_normal_positive_delta_compensated_f64: f64,
     relaxation_normal_positive_delta_compensated_f64: f64,
+    static_warm_start_positive_delta_compensated_f64: f64,
+    dynamic_warm_start_positive_delta_compensated_f64: f64,
     static_normal_positive_delta_compensated_f64: f64,
     dynamic_normal_positive_delta_compensated_f64: f64,
     non_gravity_integration_or_refresh_positive_delta_compensated_f64: f64,
+    warm_start_material: bool,
     tangent_material: bool,
     static_normal_majority: bool,
     refresh_or_integration_material: bool,
@@ -214,29 +218,58 @@ fn routing_signals(
     };
     let tangent = positive(GpuSolverPassKindV1::TangentBiased)
         + positive(GpuSolverPassKindV1::TangentRelaxation);
+    let warm_start = positive(GpuSolverPassKindV1::WarmStart);
     let biased_normal = positive(GpuSolverPassKindV1::NormalBiased);
     let relaxation_normal = positive(GpuSolverPassKindV1::NormalRelaxation);
+    let static_warm_start = attribution
+        .rows
+        .iter()
+        .filter(|row| row.descriptor.kind == GpuSolverPassKindV1::WarmStart)
+        .map(|row| row.static_positive_delta_compensated_f64)
+        .sum();
+    let dynamic_warm_start = attribution
+        .rows
+        .iter()
+        .filter(|row| row.descriptor.kind == GpuSolverPassKindV1::WarmStart)
+        .map(|row| row.dynamic_positive_delta_compensated_f64)
+        .sum();
     let static_normal = attribution
         .rows
         .iter()
+        .filter(|row| {
+            matches!(
+                row.descriptor.kind,
+                GpuSolverPassKindV1::NormalBiased | GpuSolverPassKindV1::NormalRelaxation
+            )
+        })
         .map(|row| row.static_positive_delta_compensated_f64)
         .sum();
     let dynamic_normal = attribution
         .rows
         .iter()
+        .filter(|row| {
+            matches!(
+                row.descriptor.kind,
+                GpuSolverPassKindV1::NormalBiased | GpuSolverPassKindV1::NormalRelaxation
+            )
+        })
         .map(|row| row.dynamic_positive_delta_compensated_f64)
         .sum();
     let non_gravity_integration_or_refresh = positive(GpuSolverPassKindV1::PrepareContacts)
         + positive(GpuSolverPassKindV1::RefreshContacts)
         + positive(GpuSolverPassKindV1::IntegratePosition);
     RoutingSignals {
+        warm_start_positive_delta_compensated_f64: warm_start,
         tangent_positive_delta_compensated_f64: tangent,
         biased_normal_positive_delta_compensated_f64: biased_normal,
         relaxation_normal_positive_delta_compensated_f64: relaxation_normal,
+        static_warm_start_positive_delta_compensated_f64: static_warm_start,
+        dynamic_warm_start_positive_delta_compensated_f64: dynamic_warm_start,
         static_normal_positive_delta_compensated_f64: static_normal,
         dynamic_normal_positive_delta_compensated_f64: dynamic_normal,
         non_gravity_integration_or_refresh_positive_delta_compensated_f64:
             non_gravity_integration_or_refresh,
+        warm_start_material: warm_start > MATERIAL_EPSILON,
         tangent_material: tangent > MATERIAL_EPSILON,
         static_normal_majority: static_normal > dynamic_normal,
         refresh_or_integration_material: non_gravity_integration_or_refresh > MATERIAL_EPSILON,

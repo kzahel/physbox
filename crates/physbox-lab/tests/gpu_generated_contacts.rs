@@ -118,7 +118,7 @@ fn stack_pass_trace_attributes_static_support_in_exact_color_order() {
         .unwrap();
     let report = analyze_static_support_energy_attribution(&trace).unwrap();
     report.validate().unwrap();
-    assert_eq!(report.rows.len(), 16);
+    assert_eq!(report.rows.len(), 20);
     for row in &report.rows {
         assert_eq!(row.static_manifolds, 1, "pass {}", row.pass_index);
         assert_eq!(row.dynamic_manifolds, 7, "pass {}", row.pass_index);

@@ -236,7 +236,9 @@ impl SettlingStaticSupportAttributionReportV1 {
         for row in &self.rows {
             if !matches!(
                 row.descriptor.kind,
-                GpuSolverPassKindV1::NormalBiased | GpuSolverPassKindV1::NormalRelaxation
+                GpuSolverPassKindV1::WarmStart
+                    | GpuSolverPassKindV1::NormalBiased
+                    | GpuSolverPassKindV1::NormalRelaxation
             ) || row.static_manifolds + row.dynamic_manifolds == 0
                 || !row.static_net_delta_compensated_f64.is_finite()
                 || !row.dynamic_net_delta_compensated_f64.is_finite()
@@ -358,9 +360,9 @@ pub fn analyze_settling_pass_energy(
     Ok(report)
 }
 
-/// Attribute each colored normal pass to manifolds touching an immovable body
-/// versus dynamic-only manifolds while preserving the exact compacted color
-/// and manifold order used by the matched scalar replay.
+/// Attribute each colored warm-start and normal pass to manifolds touching an
+/// immovable body versus dynamic-only manifolds while preserving the exact
+/// compacted color and manifold order used by the matched scalar replay.
 pub fn analyze_static_support_energy_attribution(
     trace: &GpuGeneratedContactPassTraceV3,
 ) -> Result<SettlingStaticSupportAttributionReportV1, String> {
@@ -369,7 +371,9 @@ pub fn analyze_static_support_energy_attribution(
     for (pass_index, descriptor) in trace.descriptors.iter().enumerate() {
         if !matches!(
             descriptor.kind,
-            GpuSolverPassKindV1::NormalBiased | GpuSolverPassKindV1::NormalRelaxation
+            GpuSolverPassKindV1::WarmStart
+                | GpuSolverPassKindV1::NormalBiased
+                | GpuSolverPassKindV1::NormalRelaxation
         ) {
             continue;
         }
