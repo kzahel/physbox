@@ -564,6 +564,16 @@ expanded or partially committed. Exact earliest-loss and execution-failure
 prefixes plus the existing fifth-static-conflict minimal test preserve the
 failure. E2 is not eligible for a combination or product selection.
 
+S9 E3 quality disposition, 2026-07-18: the clean
+[full-corpus package](../../evidence/p5.2b-s9.4-arm-fused-normal-tangent/README.md)
+discards contact-major fused normal+tangent. The order remains replay- and
+capacity-clean and delays both deep-stack diagnostic losses, but the accepted
+16-stack loses structure at step 17. The 8-stack residual and energy regress
+`7.12% / 38.37%`; 16-stack energy regresses `13.61%` with a rising quartile
+envelope. The exact step-17 source prefix has no execution failure, isolating
+the loss to the changed solve order rather than scheduler capacity. E3 is not
+eligible for combinations or product selection.
+
 S9 E4 implementation checkpoint, 2026-07-18: the unpromoted
 `static-stiff-hard` coefficient policy gives contacts with a static endpoint
 the single declared hard tuple `[0.4, 1, 0]`, while dynamic contacts retain

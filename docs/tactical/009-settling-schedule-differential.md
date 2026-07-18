@@ -413,6 +413,17 @@ capacity reproducer. All series replay exactly and match final-only state.
 E2 is not a material survivor and therefore cannot participate in any of the
 three combinations, all of which require E2.
 
+E3 quality checkpoint, 2026-07-18: the
+[verified fused package](../../evidence/p5.2b-s9.4-arm-fused-normal-tangent/README.md)
+discards E3. Fusion is exact-replay and capacity-clean, and delays the 32/64
+diagnostic first losses from steps `29/31` to `281/112`. It nevertheless loses
+the accepted centered 16-stack structure at step 17. No stack meets the paired
+25% threshold: 8-stack speed/energy regress `7.12% / 38.37%`, while 16-stack
+speed improves `18.41%` but last-quartile energy regresses `13.61%` to
+`0.3824171` and its envelope rises. The step-17 prefix is preserved with no
+execution or capacity failure. E3 is not a material survivor and cannot enter
+either E3 combination. E4 remains the last independent primary arm.
+
 ### S9.5 — survivor cost, cross-host, winner determination
 
 - [ ] For the best at most two material survivors by 16-stack settled energy:

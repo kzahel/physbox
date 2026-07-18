@@ -648,6 +648,16 @@ mixed-pile fixture and both 100-body buckets. Exact replay and minimized
 prefixes establish a measured arm failure, not a product regression. E2 is
 not eligible for combinations; mandatory E3 and E4 continue independently.
 
+S9 E3 disposition, 2026-07-18: the clean
+[fused full-corpus package](../../evidence/p5.2b-s9.4-arm-fused-normal-tangent/README.md)
+also fails the material gate. It is replay- and capacity-clean, and its 32/64
+diagnostic structures live substantially longer, but the accepted centered
+16-stack loses structure at step 17. The 8-stack exceeds the 5% residual
+regression allowance and its energy rises `38.37%`; 16-stack last-quartile
+energy rises `13.61%` with a rising envelope. The preserved first-loss prefix
+has no execution failure. E3 is discarded independently; E4 remains
+mandatory and no E2-containing combination is eligible.
+
 ## Authority corrections
 
 Two plausible techniques must not be mislabeled as direct Box2D v3 parity:
