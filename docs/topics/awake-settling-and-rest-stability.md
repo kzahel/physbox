@@ -1,11 +1,10 @@
 # Awake settling and rest stability
 
-Status: S6.5b formulation/policy review required, 2026-07-18. Human review
-accepted the S6.5a rejection and kept every settling candidate unpromoted. The
-exact combined candidate remains a laboratory lane; clean matched-precision
-Metal/scalar evidence agrees that normal relaxation injects the retained
-energy, while pinned Box2D stays quiet. The predeclared stop branch now blocks
-any formulation or physical-policy change pending human review.
+Status: S6.5c relaxation-policy factorial authorized, 2026-07-18. Human review
+accepted the S6.5b formulation attribution and authorized the predeclared
+factorial below. The exact combined candidate remains a laboratory lane;
+hard/direct manifold-block i2 remains the product, and no factorial result may
+promote a settling policy without a fresh human decision.
 Awake settling is a prerequisite for broadphase selection and sleeping
 acceptance. No contact-identity policy, soft-contact coefficients, penetration
 deadband, friction anchor, residual band, or sleep threshold is a product
@@ -355,6 +354,43 @@ gate. The AVD per-pass overlay was not run because it follows, rather than
 precedes, that stop branch. No AVD pass is inferred. Hard/direct manifold-block
 i2 remains the selected product; the soft/prior candidate and every S6.5a
 correction remain unpromoted.
+
+S6.5c authorization, 2026-07-18: test relaxation policy without changing the
+product. Arm 1 omits only normal relaxation for soft contacts. Arm 2 retains
+normal relaxation but, for penetrating contacts, combines zero velocity bias
+with the selected soft mass and accumulated-impulse coefficients; positive-
+separation speculative contacts retain their existing branch. Arm 3 changes
+only normal relaxation to point-sequential accumulation while retaining the
+biased manifold-block solves, and is allowed only if arms 1 and 2 leave block
+coupling attribution ambiguous. Arm 1 energy success accompanied by drop
+overshoot or bounce is a quality rejection, not an arm-3 trigger.
+
+Pinned Box2D corrects the original rationale for arm 2. In both its scalar
+overflow and SIMD contact paths, `useBias = false` selects zero bias,
+`massScale = 1`, and `impulseScale = 0`; it does not preserve contact softness
+during relaxation. Arm 2 is therefore a measured PhysBox formulation
+comparator, not an authority-aligned implementation. The current hard-relax
+equation already has the authority-shaped coefficients, while its interaction
+with PhysBox's coupled block solve and colored order remains under test.
+
+The survival rule is frozen before measurements. On the permanent four-body
+reproducer, steps 900–1,200 must satisfy the existing S6.2 energy-envelope
+gate: `1e-12` absolute epsilon, `1e-5` relative epsilon, fewer than five
+consecutive material increases, and no first-to-last-quartile envelope rise.
+At step 900, every normal-relaxation pass that exists must be neutral or a sink
+under the same per-boundary epsilon in matched GPU and scalar accounting; an
+omitted arm records absence. A survivor may not add a Metal structural loss in
+the governed 4-, 8-, or 16-stack matrix relative to the current soft/prior
+candidate. Endpoint success without that per-pass signature, or structure
+success bought with a frozen-band regression, is rejection.
+
+Only an arm surviving those cheapest kills reaches seeded drop fixtures and
+the full Metal matrix. At most one leader then reaches the hardware-backed
+AVD and available physical hardware. Its AVD trace must include one matched-
+boundary overlay showing whether MoltenVK's amplification collapses with the
+common mode. All arms, including a conditional arm not run, remain named in
+the evidence. Promotion returns to human review with the full matrix and does
+not follow automatically from factorial ranking.
 
 ## Authority corrections
 

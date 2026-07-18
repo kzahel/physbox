@@ -1,11 +1,10 @@
 # S6: Awake settling stabilization
 
-Status: S6.5b formulation/policy manual checkpoint, 2026-07-18. S6.1–S6.4 are
-complete. Human review accepted the S6.5 recommendation to hold promotion and
-the S6.5a rejection of every bounded correction. Matched-precision Metal and
-scalar evidence localizes the retained energy injection to normal relaxation
-and agrees on its recurrence, so the predeclared branch now requires human
-review. Every settling candidate remains unpromoted.
+Status: S6.5c relaxation-policy factorial active, 2026-07-18. S6.1–S6.4 are
+complete. Human review accepted the S6.5b formulation attribution and
+authorized the predeclared relaxation factorial below. Hard/direct
+manifold-block i2 remains the product; every settling candidate remains
+unpromoted.
 
 Governing topic:
 [awake settling and rest stability](../topics/awake-settling-and-rest-stability.md).
@@ -617,6 +616,65 @@ predeclared formulation/policy stop. The AVD per-pass trace remains unchecked
 because that stop occurs before the optional amplification-localization lane,
 not because AVD behavior is inferred. Hard/direct manifold-block i2 remains
 selected and every candidate remains unpromoted.
+
+### S6.5c — authorized relaxation-policy factorial
+
+- [x] Freeze the arm definitions, order, and survival criteria in governing
+  documentation before implementing or measuring an arm.
+- [ ] Arm 1, `soft-no-normal-relax`: omit normal-relaxation passes when contact
+  softness is enabled. Retain biased manifold-block normals, tangent
+  relaxation, restitution, `i2`, coloring, coefficients, and every other pass.
+- [ ] Arm 2, `soft-coefficient-normal-relax`: retain normal relaxation, but for
+  penetrating contacts set velocity bias to zero while retaining the selected
+  soft `massScale` and `impulseScale`. Retain the existing speculative-contact
+  branch for positive separation. This is an experimental feedback equation,
+  not Box2D parity: pinned Box2D v3 relaxation instead uses zero bias,
+  `massScale = 1`, and `impulseScale = 0`, which is the current hard-relax
+  shape.
+- [ ] Arm 3, `soft-point-normal-relax`, is conditional. Implement and run a
+  point-sequential normal-relaxation pass while retaining manifold-block
+  biased solves only if arms 1 and 2 disagree about whether block coupling is
+  the injector. Arm 1 passing energy but showing drop overshoot or bounce does
+  not trigger arm 3.
+- [ ] Reuse the S6.5b matched-precision trace at the same boundaries. Every
+  present normal-relaxation pass must be an energy sink or neutral in both GPU
+  and scalar accounts under the frozen per-boundary epsilon; arm 1 must record
+  that the normal-relaxation passes are absent, not infer a pass from the
+  endpoint.
+- [ ] Apply the cheapest kill first on Metal: the permanent four-dynamic-body
+  reproducer must pass the unchanged S6.2 settled-window energy gate over
+  steps 900–1,200. The gate retains absolute epsilon `1e-12`, relative epsilon
+  `1e-5`, a positive-energy run limit of 5, and the first-versus-last-quartile
+  non-increase check.
+- [ ] A surviving arm must introduce no new Metal structural loss relative to
+  the current soft/prior candidate in the governed 4-, 8-, and 16-body stack
+  matrix. Run realistic seeded drop fixtures only after the energy and
+  structure kills; record overshoot, bounce, residual, churn, capacity, and
+  replay failures without weakening a band.
+- [ ] Forward at most one arm through the complete Metal matrix, then the
+  hardware-backed `jstorrent-tablet` AVD and available physical hardware.
+  Run one AVD matched-boundary overlay for that survivor and require the
+  MoltenVK amplification to collapse with the common defect. Declare a locked
+  or absent physical device as a gap.
+- [ ] Publish a fresh verified package and return to human review before any
+  promotion. The package must retain both rejected arms, the conditional-arm
+  disposition, per-pass attribution, full survivor matrix, synchronized
+  captures, provenance, and reconsideration triggers.
+
+Outcome: decide whether a narrowly changed normal-relaxation policy removes
+the common retained-energy mode without trading it for a stack, drop-quality,
+or portability regression.
+
+Gate: arm definitions and kill criteria precede every measurement. The product
+constructor, launch default, physical coefficients, authority precedence,
+solver/scheduler family, tolerances, and frozen quality bands remain
+unchanged. Passing endpoints without a neutral-or-sink relaxation signature is
+not survival. No result promotes a candidate without a new human decision.
+
+Commit boundaries: this authorization contract; laboratory policy and
+matched-trace support; each independently killed or forwarded arm; the Metal
+survivor matrix; cross-host survivor evidence; and the verified promotion
+checkpoint are separate reviewable commits.
 
 ### S6.6 — accepted policy integration
 
