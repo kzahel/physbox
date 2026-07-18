@@ -26,7 +26,7 @@ use physbox_lab::pass_energy::{
 };
 use serde::Serialize;
 
-const ARTIFACT_VERSION: u32 = 3;
+const ARTIFACT_VERSION: u32 = 4;
 const SUCCESS_SENTINEL: &str = "PHYSBOX5_SETTLING_PASS_ENERGY_SUCCESS";
 const BOX2D_REVISION: &str = "3a4f0da8374af61293a03021c9a0b3ebcfe67948";
 
@@ -54,7 +54,7 @@ struct Artifact {
     trace: GpuGeneratedContactPassTraceV2,
     energy: SettlingPassEnergyReportV1,
     scalar_relaxation_derivation: ScalarRelaxationDerivationReportV1,
-    box2d: Box2dBehaviorComparison,
+    box2d: Option<Box2dBehaviorComparison>,
 }
 
 #[derive(Serialize)]
@@ -117,9 +117,13 @@ fn run() -> Result<(), String> {
         return Err("pass-energy report version changed unexpectedly".to_owned());
     }
     let scalar_relaxation_derivation = analyze_scalar_relaxation_derivation(&trace)?;
-    let box2d_source = verify_clean_git_pin(&arguments.box2d_source, BOX2D_REVISION)
-        .map_err(|error| error.to_string())?;
-    let box2d = run_box2d_comparison(&arguments, &source, &box2d_source)?;
+    let box2d = if arguments.skip_box2d {
+        None
+    } else {
+        let box2d_source = verify_clean_git_pin(&arguments.box2d_source, BOX2D_REVISION)
+            .map_err(|error| error.to_string())?;
+        Some(run_box2d_comparison(&arguments, &source, &box2d_source)?)
+    };
     let adapter_marker = trace.adapter.marker_json();
     let artifact = Artifact {
         schema_version: SCHEMA_VERSION,
@@ -170,6 +174,7 @@ struct Arguments {
     oracle: PathBuf,
     oracle_artifact_root: PathBuf,
     output: PathBuf,
+    skip_box2d: bool,
 }
 
 impl Arguments {
@@ -183,8 +188,13 @@ impl Arguments {
         let mut oracle = None;
         let mut oracle_artifact_root = None;
         let mut output = None;
+        let mut skip_box2d = false;
         let mut arguments = arguments;
         while let Some(argument) = arguments.next() {
+            if argument == "--skip-box2d" {
+                skip_box2d = true;
+                continue;
+            }
             let value = arguments
                 .next()
                 .ok_or_else(|| format!("missing value for {argument}"))?;
@@ -224,6 +234,7 @@ impl Arguments {
             oracle_artifact_root: oracle_artifact_root
                 .ok_or_else(|| "missing --oracle-artifact-root".to_owned())?,
             output: output.ok_or_else(|| "missing --output".to_owned())?,
+            skip_box2d,
         })
     }
 }
@@ -392,6 +403,7 @@ mod tests {
                 "/tmp/pass-oracle",
                 "--output",
                 "/tmp/pass.json.gz",
+                "--skip-box2d",
             ]
             .into_iter()
             .map(str::to_owned),
@@ -399,6 +411,7 @@ mod tests {
         .unwrap();
         assert_eq!(parsed.target_step, 900);
         assert!(!parsed.source_dirty);
+        assert!(parsed.skip_box2d);
         assert_eq!(
             parsed.normal_relaxation_policy,
             GpuNormalRelaxationPolicyV1::SoftCoefficients
