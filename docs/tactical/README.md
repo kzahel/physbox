@@ -7,6 +7,8 @@ parallel-coloring recommendation. S6.5 is closed as a complete negative study:
 human review rejected the one S6.5d candidate, deferred soft settling, and
 retained hard/direct manifold-block i2 as the product. Reopening requires the
 recorded 16-stack energy and cross-Android portability evidence.
+S7 is an active source-only investigation of Box3D planar stability; it cannot
+change product physics or authority precedence without a new human decision.
 Broadphase contract/correctness work remains authorized, while product-scene
 ranking and selection wait for the S6 awake gate. S4.3 grab feel and S4.4
 construction mechanics are complete.
@@ -26,6 +28,7 @@ This README remains the unnumbered index.
 | S4 | Interactive evaluation workbench | [004-basic-scene-navigation-camera.md](004-basic-scene-navigation-camera.md) | S4.4 complete; S4.5 construction-feel review ready, 2026-07-16 |
 | S5 | Interactive rigid quality, construction, and scale | [005-interactive-rigid-quality-and-scale.md](005-interactive-rigid-quality-and-scale.md) | S5.4c scheduler integrated; S5.5 waits for S6 awake gate, 2026-07-17 |
 | S6 | Awake settling stabilization | [006-awake-settling-stabilization.md](006-awake-settling-stabilization.md) | S6.5 closed; soft settling deferred by human review, 2026-07-18 |
+| S7 | Box3D planar stability investigation | [007-box3d-planar-stability-investigation.md](007-box3d-planar-stability-investigation.md) | active; source/runtime study only, 2026-07-18 |
 
 ## Conventions
 

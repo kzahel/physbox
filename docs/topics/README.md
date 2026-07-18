@@ -37,6 +37,9 @@ a running log.
   resting-contact identity, warm-start continuity, soft-contact damping,
   realistic drop fixtures, awake quality gates, and the required visible
   review before physical-default promotion, broadphase selection, or sleeping.
+- [Box3D planar stability reference](box3d-planar-stability-reference.md) —
+  bounded sleep-off study of Box3D's planar locks, persistent contacts and
+  graph order, stable-pile behavior, 3D transfer limits, and forwarding gates.
 
 ## Conventions
 
