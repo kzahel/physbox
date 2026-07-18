@@ -9,5 +9,5 @@ if (!path || process.argv.length !== 3) {
 }
 const document = readAndVerifyObservation(path);
 console.log(
-  `PHYSBOX5_VALIDATION_SUCCESS source=box3d scenario=${document.contract.scenario} steps=${document.contract.steps} observations=${document.observations.length}`,
+  `PHYSBOX5_VALIDATION_SUCCESS source=box3d scenario=${document.contract.scenario} steps=${document.contract.steps} contact_recycling=${document.contract.contactRecycling ? "on" : "off"} observations=${document.observations.length}`,
 );

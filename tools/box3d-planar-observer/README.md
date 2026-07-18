@@ -29,8 +29,24 @@ node tools/box3d-planar-observer/run-observer.mjs \
   --scenario large-pyramid-90 --steps 5000 --output /tmp/large-pyramid-90.json
 ```
 
+S7.5 may ablate Box3D's public body-level contact recycling while leaving every
+other observer setting unchanged:
+
+```sh
+node tools/box3d-planar-observer/run-observer.mjs \
+  --binary /tmp/physbox5-box3d-planar-observer/bin/box3d_planar_observer \
+  --scenario pyramid2d-12 --steps 5000 --contact-recycling off \
+  --output /tmp/pyramid2d-12-no-recycling.json
+```
+
+Omitting `--contact-recycling` selects the stock `on` policy. The wrapper
+records the setting, passes it to both deterministic replays, and rejects a
+result whose contract does not match. Observer schema v2 adds this variable
+policy; the verifier continues to accept the frozen stock-only v1 artifacts.
+
 The contract is 60 Hz, four substeps, one worker, sleeping disabled, warm
-starting enabled, and stock contact recycling. `pyramid2d-12` has the stock
+starting enabled, and stock contact recycling except in the explicit S7.5
+ablation. `pyramid2d-12` has the stock
 linear-Z and angular-X/Y locks. `large-pyramid-90` is only *authored* one box
 deep: the stock benchmark leaves all three translational and rotational axes
 free, so the observer measures its out-of-plane motion rather than calling it

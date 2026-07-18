@@ -143,10 +143,11 @@ static double OrientationDeparture( b3Quat rotation, bool planarLocked )
 	return 2.0 * acos( cosineHalfAngle );
 }
 
-static void CreateGround( b3WorldId worldId, float extent )
+static void CreateGround( b3WorldId worldId, float extent, bool contactRecycling )
 {
 	b3BodyDef bodyDef = b3DefaultBodyDef();
 	bodyDef.position = (b3Pos){ 0.0f, -1.0f, 0.0f };
+	bodyDef.enableContactRecycling = contactRecycling;
 	b3BodyId groundId = b3CreateBody( worldId, &bodyDef );
 	b3ShapeDef shapeDef = b3DefaultShapeDef();
 	b3BoxHull ground = b3MakeBoxHull( extent, 1.0f, extent );
@@ -168,7 +169,7 @@ static void StoreBody( Scenario* scenario, int index, b3BodyId bodyId, b3Pos ini
 	};
 }
 
-static Scenario CreatePyramid2D12( b3WorldId worldId )
+static Scenario CreatePyramid2D12( b3WorldId worldId, bool contactRecycling )
 {
 	Scenario scenario = {
 		.kind = PYRAMID_2D_12,
@@ -186,11 +187,12 @@ static Scenario CreatePyramid2D12( b3WorldId worldId )
 		FailErrno( "allocating Pyramid2D body records" );
 	}
 
-	CreateGround( worldId, scenario.groundExtent );
+	CreateGround( worldId, scenario.groundExtent, contactRecycling );
 	b3BoxHull box = b3MakeBoxHull( 1.0f, 1.0f, 1.0f );
 	b3BodyDef bodyDef = b3DefaultBodyDef();
 	bodyDef.type = b3_dynamicBody;
 	bodyDef.enableSleep = false;
+	bodyDef.enableContactRecycling = contactRecycling;
 	bodyDef.motionLocks.linearZ = true;
 	bodyDef.motionLocks.angularX = true;
 	bodyDef.motionLocks.angularY = true;
@@ -216,7 +218,7 @@ static Scenario CreatePyramid2D12( b3WorldId worldId )
 	return scenario;
 }
 
-static Scenario CreateLargePyramid90( b3WorldId worldId )
+static Scenario CreateLargePyramid90( b3WorldId worldId, bool contactRecycling )
 {
 	Scenario scenario = {
 		.kind = LARGE_PYRAMID_90,
@@ -234,10 +236,11 @@ static Scenario CreateLargePyramid90( b3WorldId worldId )
 		FailErrno( "allocating large-pyramid body records" );
 	}
 
-	CreateGround( worldId, scenario.groundExtent );
+	CreateGround( worldId, scenario.groundExtent, contactRecycling );
 	b3BodyDef bodyDef = b3DefaultBodyDef();
 	bodyDef.type = b3_dynamicBody;
 	bodyDef.enableSleep = false;
+	bodyDef.enableContactRecycling = contactRecycling;
 	b3ShapeDef shapeDef = b3DefaultShapeDef();
 	shapeDef.density = 100.0f;
 	b3BoxHull box = b3MakeBoxHull( 0.5f, 0.5f, 0.5f );
@@ -564,11 +567,26 @@ static int ParseSteps( const char* value )
 	return (int)parsed;
 }
 
+static bool ParseContactRecycling( const char* value )
+{
+	if ( strcmp( value, "on" ) == 0 )
+	{
+		return true;
+	}
+	if ( strcmp( value, "off" ) == 0 )
+	{
+		return false;
+	}
+	Fail( "--contact-recycling must be on or off" );
+	return true;
+}
+
 int main( int argc, char** argv )
 {
 	const char* scenarioArgument = NULL;
 	const char* outputPath = NULL;
 	int steps = 5000;
+	bool contactRecycling = true;
 	for ( int index = 1; index < argc; ++index )
 	{
 		if ( strcmp( argv[index], "--scenario" ) == 0 && index + 1 < argc )
@@ -583,14 +601,18 @@ int main( int argc, char** argv )
 		{
 			outputPath = argv[++index];
 		}
+		else if ( strcmp( argv[index], "--contact-recycling" ) == 0 && index + 1 < argc )
+		{
+			contactRecycling = ParseContactRecycling( argv[++index] );
+		}
 		else
 		{
-			Fail( "usage: --scenario NAME [--steps COUNT] --output PATH" );
+			Fail( "usage: --scenario NAME [--steps COUNT] [--contact-recycling on|off] --output PATH" );
 		}
 	}
 	if ( scenarioArgument == NULL || outputPath == NULL )
 	{
-		Fail( "usage: --scenario NAME [--steps COUNT] --output PATH" );
+		Fail( "usage: --scenario NAME [--steps COUNT] [--contact-recycling on|off] --output PATH" );
 	}
 
 	ScenarioKind kind = ParseScenario( scenarioArgument );
@@ -600,7 +622,8 @@ int main( int argc, char** argv )
 	b3WorldId worldId = b3CreateWorld( &worldDef );
 	b3World_EnableSleeping( worldId, false );
 	b3World_EnableWarmStarting( worldId, true );
-	Scenario scenario = kind == PYRAMID_2D_12 ? CreatePyramid2D12( worldId ) : CreateLargePyramid90( worldId );
+	Scenario scenario = kind == PYRAMID_2D_12 ? CreatePyramid2D12( worldId, contactRecycling ) :
+											 CreateLargePyramid90( worldId, contactRecycling );
 
 	size_t temporaryLength = strlen( outputPath ) + 5;
 	char* temporaryPath = malloc( temporaryLength );
@@ -616,16 +639,17 @@ int main( int argc, char** argv )
 	}
 
 	fprintf( output,
-		"{\"schema\":\"physbox5.box3d-planar-observer/v1\",\"source\":{\"engine\":\"Box3D\","
+		"{\"schema\":\"physbox5.box3d-planar-observer/v2\",\"source\":{\"engine\":\"Box3D\","
 		"\"revision\":\"%s\",\"role\":\"source-reference\"},\"contract\":{\"scenario\":\"%s\","
 		"\"steps\":%d,\"dt\":%.17g,\"substeps\":%d,\"workers\":1,\"sleeping\":false,"
-		"\"warmStarting\":true,\"contactRecycling\":true,\"simd\":true,\"validation\":true,\"planarLocked\":%s,"
+		"\"warmStarting\":true,\"contactRecycling\":%s,\"simd\":true,\"validation\":true,\"planarLocked\":%s,"
 		"\"dynamicBodies\":%d,\"settledStartStep\":%d,\"checkpoints\":[0,200,1200,5000],"
 		"\"nearRestSpeed\":%.17g,\"toppleAngleRadians\":%.17g,\"displacementWidth\":%.17g,"
 		"\"minimumHeightRetention\":%.17g,\"maximumFootprintExpansion\":%.17g,\"maximumOutOfPlaneCenters\":%.17g},"
 		"\"observations\":[",
-		BOX3D_PIN, scenario.name, steps, (double)FIXED_DT, SUBSTEP_COUNT, scenario.planarLocked ? "true" : "false",
-		scenario.bodyCount, SETTLED_START_STEP, SLEEP_SPEED_THRESHOLD, TOPPLE_ANGLE_RADIANS, 2.0 * scenario.halfExtent,
+		BOX3D_PIN, scenario.name, steps, (double)FIXED_DT, SUBSTEP_COUNT, contactRecycling ? "true" : "false",
+		scenario.planarLocked ? "true" : "false", scenario.bodyCount, SETTLED_START_STEP, SLEEP_SPEED_THRESHOLD,
+		TOPPLE_ANGLE_RADIANS, 2.0 * scenario.halfExtent,
 		MINIMUM_HEIGHT_RETENTION, MAXIMUM_FOOTPRINT_EXPANSION, 2.0 * scenario.halfExtent );
 
 	SettledSummary summary = { 0 };
@@ -658,7 +682,8 @@ int main( int argc, char** argv )
 	free( temporaryPath );
 	free( scenario.bodies );
 	b3DestroyWorld( worldId );
-	fprintf( stderr, "PHYSBOX5_VALIDATION_SUCCESS source=box3d scenario=%s steps=%d output=%s\n", scenario.name, steps,
-		outputPath );
+	fprintf( stderr,
+		"PHYSBOX5_VALIDATION_SUCCESS source=box3d scenario=%s steps=%d contact_recycling=%s output=%s\n",
+		scenario.name, steps, contactRecycling ? "on" : "off", outputPath );
 	return EXIT_SUCCESS;
 }

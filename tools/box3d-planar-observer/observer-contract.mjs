@@ -25,7 +25,8 @@ function assertFinite(value, path = "root") {
 }
 
 export function verifyObservation(document, expected = {}) {
-  assert(document.schema === "physbox5.box3d-planar-observer/v1", "observer schema differs");
+  assert(["physbox5.box3d-planar-observer/v1", "physbox5.box3d-planar-observer/v2"].includes(document.schema),
+    "observer schema differs");
   assert(document.source?.engine === "Box3D", "source engine differs");
   assert(document.source?.revision === box3dPin, "Box3D pin differs");
   assert(document.source?.role === "source-reference", "Box3D role differs");
@@ -39,7 +40,10 @@ export function verifyObservation(document, expected = {}) {
   assert(contract.workers === 1, "worker count differs");
   assert(contract.sleeping === false, "sleeping must be disabled");
   assert(contract.warmStarting === true, "warm starting must be enabled");
-  assert(contract.contactRecycling === true, "stock contact recycling must be enabled");
+  assert(typeof contract.contactRecycling === "boolean", "contact-recycling policy differs");
+  if (document.schema === "physbox5.box3d-planar-observer/v1") {
+    assert(contract.contactRecycling === true, "v1 requires stock contact recycling");
+  }
   assert(contract.simd === true, "SIMD build contract differs");
   assert(contract.validation === true, "validation build contract differs");
   assert(contract.settledStartStep === 900, "settled window differs");
@@ -59,6 +63,9 @@ export function verifyObservation(document, expected = {}) {
   }
   if (expected.steps !== undefined) {
     assert(contract.steps === expected.steps, "unexpected step count");
+  }
+  if (expected.contactRecycling !== undefined) {
+    assert(contract.contactRecycling === expected.contactRecycling, "unexpected contact-recycling policy");
   }
 
   assert(Array.isArray(document.observations) && document.observations.length >= 1, "observations are missing");

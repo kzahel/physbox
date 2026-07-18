@@ -14,7 +14,7 @@ for (let index = 2; index < process.argv.length; index += 2) {
   const key = process.argv[index];
   const value = process.argv[index + 1];
   if (!key?.startsWith("--") || value === undefined) {
-    fail("usage: --binary PATH --scenario NAME [--steps COUNT] --output PATH");
+    fail("usage: --binary PATH --scenario NAME [--steps COUNT] [--contact-recycling on|off] --output PATH");
   }
   values.set(key, value);
 }
@@ -24,8 +24,11 @@ const scenario = values.get("--scenario");
 const output = values.get("--output");
 const stepsText = values.get("--steps") ?? "5000";
 const steps = Number(stepsText);
-if (!binary || !scenario || !output || !Number.isInteger(steps) || steps < 0) {
-  fail("usage: --binary PATH --scenario NAME [--steps COUNT] --output PATH");
+const contactRecyclingText = values.get("--contact-recycling") ?? "on";
+const contactRecycling = contactRecyclingText === "on";
+if (!binary || !scenario || !output || !Number.isInteger(steps) || steps < 0 ||
+    !["on", "off"].includes(contactRecyclingText)) {
+  fail("usage: --binary PATH --scenario NAME [--steps COUNT] [--contact-recycling on|off] --output PATH");
 }
 
 const first = `${output}.replay-a`;
@@ -34,7 +37,8 @@ rmSync(first, { force: true });
 rmSync(second, { force: true });
 
 for (const path of [first, second]) {
-  const result = spawnSync(binary, ["--scenario", scenario, "--steps", stepsText, "--output", path], {
+  const result = spawnSync(binary, ["--scenario", scenario, "--steps", stepsText,
+    "--contact-recycling", contactRecyclingText, "--output", path], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -46,7 +50,7 @@ for (const path of [first, second]) {
   if (!result.stderr.includes("PHYSBOX5_VALIDATION_SUCCESS")) {
     fail(`observer process omitted its success sentinel for ${path}`);
   }
-  readAndVerifyObservation(path, { scenario, steps });
+  readAndVerifyObservation(path, { scenario, steps, contactRecycling });
 }
 
 const firstBytes = readFileSync(first);
@@ -57,4 +61,4 @@ if (!firstBytes.equals(secondBytes)) {
 rmSync(output, { force: true });
 renameSync(first, output);
 rmSync(second, { force: true });
-console.log(`PHYSBOX5_VALIDATION_SUCCESS source=box3d scenario=${scenario} steps=${steps} deterministic_replays=2 output=${output}`);
+console.log(`PHYSBOX5_VALIDATION_SUCCESS source=box3d scenario=${scenario} steps=${steps} contact_recycling=${contactRecyclingText} deterministic_replays=2 output=${output}`);
