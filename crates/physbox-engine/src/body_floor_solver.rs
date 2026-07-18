@@ -55,6 +55,27 @@ pub enum GpuSoftFeedbackPolicyV1 {
     FirstBiasedIterationOnly,
 }
 
+/// Laboratory-only control over hard-contact coefficients. Product
+/// construction always derives one uniform tuple from `SolverSettingsV1`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum GpuContactCoefficientPolicyV1 {
+    SettingsDerived,
+    StaticStiffHard,
+}
+
+impl GpuContactCoefficientPolicyV1 {
+    pub const SELECTED: Self = Self::SettingsDerived;
+    pub const STATIC_STIFF_BIAS_RATE: f32 = 0.4;
+
+    pub(crate) fn validate(self, settings: &SolverSettingsV1) -> Result<(), String> {
+        if self == Self::StaticStiffHard && settings.contact_softness.is_some() {
+            return Err("static-stiff-hard requires hard contacts".to_owned());
+        }
+        Ok(())
+    }
+}
+
 /// Laboratory-only control over the normal relaxation recurrence. Product
 /// construction always uses `HardDirect`; alternate values exist only for the
 /// predeclared S6.5c factorial and the single scalar-qualified S6.5d port.
@@ -669,6 +690,7 @@ pub struct GpuAuthoredGatherBenchmarkOutput {
     pub samples: u32,
     pub solver_execution: GpuSolverExecutionV4,
     pub solver_scheduling_policy: GpuSolverSchedulingPolicyV1,
+    pub contact_coefficient_policy: GpuContactCoefficientPolicyV1,
     pub scheduler_work: Option<GpuSchedulerWorkVectorV1>,
     pub topology: GpuGatherTopologyEvidence,
     pub dispatches_per_step: u32,
@@ -1739,16 +1761,18 @@ impl GpuFixedFloorSolver {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    fn new_authored_with_topology(
+    fn new_authored_with_topology_and_coefficients(
         device: &wgpu::Device,
         storage: &GpuBodyStorage,
         scenario: &ScenarioV1,
         topology: GpuGatherTopology,
         execution: GpuSolverExecutionV4,
         scheduling_policy: GpuSolverSchedulingPolicyV1,
+        contact_coefficient_policy: GpuContactCoefficientPolicyV1,
     ) -> Result<Self, String> {
         validate_experiment_settings(&scenario.settings, execution)?;
         scheduling_policy.validate(execution)?;
+        contact_coefficient_policy.validate(&scenario.settings)?;
         if scenario.manifolds.is_empty() {
             return Err("authored gather benchmark requires contact manifolds".to_owned());
         }
@@ -1765,7 +1789,7 @@ impl GpuFixedFloorSolver {
             bytemuck::cast_slice(&points),
             usage,
         );
-        let mut solver = Self::new_with_point_buffer(
+        let mut solver = Self::new_with_point_buffer_and_solver_policies(
             device,
             storage,
             scenario,
@@ -1775,13 +1799,16 @@ impl GpuFixedFloorSolver {
             false,
             execution,
             scheduling_policy,
+            GpuSoftFeedbackPolicyV1::SELECTED,
+            GpuNormalRelaxationPolicyV1::SELECTED,
+            contact_coefficient_policy,
         )?;
         solver._owned_point_input = Some(point_buffer);
         Ok(solver)
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn new_generated_experiment_with_topology_scheduling_and_contact_feedback(
+    pub(crate) fn new_generated_experiment_with_topology_scheduling_and_solver_policies(
         device: &wgpu::Device,
         storage: &GpuBodyStorage,
         scenario: &ScenarioV1,
@@ -1793,18 +1820,20 @@ impl GpuFixedFloorSolver {
         scheduling_policy: GpuSolverSchedulingPolicyV1,
         soft_feedback_policy: GpuSoftFeedbackPolicyV1,
         normal_relaxation_policy: GpuNormalRelaxationPolicyV1,
+        contact_coefficient_policy: GpuContactCoefficientPolicyV1,
     ) -> Result<Self, String> {
         validate_experiment_settings(&scenario.settings, execution)?;
         scheduling_policy.validate(execution)?;
         soft_feedback_policy.validate(&scenario.settings)?;
         normal_relaxation_policy.validate(&scenario.settings, execution)?;
+        contact_coefficient_policy.validate(&scenario.settings)?;
         if !scenario.manifolds.is_empty() || point_capacity == 0 {
             return Err(
                 "generated contact solver requires a neutral scenario and nonzero point capacity"
                     .to_owned(),
             );
         }
-        Self::new_with_point_buffer_and_contact_feedback(
+        Self::new_with_point_buffer_and_solver_policies(
             device,
             storage,
             scenario,
@@ -1816,6 +1845,7 @@ impl GpuFixedFloorSolver {
             scheduling_policy,
             soft_feedback_policy,
             normal_relaxation_policy,
+            contact_coefficient_policy,
         )
     }
 
@@ -1860,9 +1890,41 @@ impl GpuFixedFloorSolver {
         soft_feedback_policy: GpuSoftFeedbackPolicyV1,
         normal_relaxation_policy: GpuNormalRelaxationPolicyV1,
     ) -> Result<Self, String> {
+        Self::new_with_point_buffer_and_solver_policies(
+            device,
+            storage,
+            scenario,
+            point_buffer,
+            point_count,
+            topology,
+            permute_edge_build,
+            execution,
+            scheduling_policy,
+            soft_feedback_policy,
+            normal_relaxation_policy,
+            GpuContactCoefficientPolicyV1::SELECTED,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn new_with_point_buffer_and_solver_policies(
+        device: &wgpu::Device,
+        storage: &GpuBodyStorage,
+        scenario: &ScenarioV1,
+        point_buffer: &wgpu::Buffer,
+        point_count: u32,
+        topology: GpuGatherTopology,
+        permute_edge_build: bool,
+        execution: GpuSolverExecutionV4,
+        scheduling_policy: GpuSolverSchedulingPolicyV1,
+        soft_feedback_policy: GpuSoftFeedbackPolicyV1,
+        normal_relaxation_policy: GpuNormalRelaxationPolicyV1,
+        contact_coefficient_policy: GpuContactCoefficientPolicyV1,
+    ) -> Result<Self, String> {
         scheduling_policy.validate(execution)?;
         soft_feedback_policy.validate(&scenario.settings)?;
         normal_relaxation_policy.validate(&scenario.settings, execution)?;
+        contact_coefficient_policy.validate(&scenario.settings)?;
         if scheduling_policy.colored_dispatch.fuses_normal_tangent()
             && (scenario.settings.contact_softness.is_some()
                 || soft_feedback_policy != GpuSoftFeedbackPolicyV1::SELECTED
@@ -1890,6 +1952,7 @@ impl GpuFixedFloorSolver {
         }
         let (parameters, operations) = if soft_feedback_policy == GpuSoftFeedbackPolicyV1::SELECTED
             && normal_relaxation_policy == GpuNormalRelaxationPolicyV1::SELECTED
+            && contact_coefficient_policy == GpuContactCoefficientPolicyV1::SELECTED
         {
             operations(
                 scenario,
@@ -1901,7 +1964,7 @@ impl GpuFixedFloorSolver {
                 scheduling_policy,
             )
         } else {
-            operations_with_contact_feedback(
+            operations_with_solver_policies(
                 scenario,
                 body_count,
                 point_count,
@@ -1911,6 +1974,7 @@ impl GpuFixedFloorSolver {
                 scheduling_policy,
                 soft_feedback_policy,
                 normal_relaxation_policy,
+                contact_coefficient_policy,
             )
         };
         let mut initial_motion = vec![[0.0; 4]; body_count as usize];
@@ -3000,6 +3064,28 @@ pub async fn benchmark_gpu_authored_solver_experiment(
     execution: GpuSolverExecutionV4,
     scheduling_policy: GpuSolverSchedulingPolicyV1,
 ) -> Result<GpuAuthoredGatherBenchmarkOutput, String> {
+    benchmark_gpu_authored_solver_policy_experiment(
+        scenario,
+        warmup_steps,
+        samples,
+        topology,
+        execution,
+        scheduling_policy,
+        GpuContactCoefficientPolicyV1::SELECTED,
+    )
+    .await
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn benchmark_gpu_authored_solver_policy_experiment(
+    scenario: &ScenarioV1,
+    warmup_steps: u32,
+    samples: u32,
+    topology: GpuGatherTopology,
+    execution: GpuSolverExecutionV4,
+    scheduling_policy: GpuSolverSchedulingPolicyV1,
+    contact_coefficient_policy: GpuContactCoefficientPolicyV1,
+) -> Result<GpuAuthoredGatherBenchmarkOutput, String> {
     if warmup_steps == 0 || samples == 0 {
         return Err("authored gather benchmark requires nonzero warmup and samples".to_owned());
     }
@@ -3028,13 +3114,14 @@ pub async fn benchmark_gpu_authored_solver_experiment(
         &scenario.bodies,
     )?;
     let reset = crate::body_state::GpuBodyResetData::new(body_count, &scenario.bodies)?;
-    let solver = GpuFixedFloorSolver::new_authored_with_topology(
+    let solver = GpuFixedFloorSolver::new_authored_with_topology_and_coefficients(
         &device,
         &storage,
         scenario,
         topology,
         execution,
         scheduling_policy,
+        contact_coefficient_policy,
     )?;
     let (first_digest, first_evidence) =
         authored_gather_result_evidence(&device, &queue, &storage, &reset, &solver)?;
@@ -3277,6 +3364,7 @@ pub async fn benchmark_gpu_authored_solver_experiment(
         samples,
         solver_execution: execution,
         solver_scheduling_policy: scheduling_policy,
+        contact_coefficient_policy,
         scheduler_work,
         topology: solver.gather_topology_evidence(),
         dispatches_per_step: solver.dispatches_per_step(),
@@ -3921,6 +4009,33 @@ fn operations_with_contact_feedback(
     soft_feedback_policy: GpuSoftFeedbackPolicyV1,
     normal_relaxation_policy: GpuNormalRelaxationPolicyV1,
 ) -> (Vec<PassParamsRaw>, Vec<Operation>) {
+    operations_with_solver_policies(
+        scenario,
+        body_count,
+        point_count,
+        topology,
+        permute_edge_build,
+        execution,
+        scheduling_policy,
+        soft_feedback_policy,
+        normal_relaxation_policy,
+        GpuContactCoefficientPolicyV1::SELECTED,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn operations_with_solver_policies(
+    scenario: &ScenarioV1,
+    body_count: u32,
+    point_count: u32,
+    topology: TopologyLayout,
+    permute_edge_build: bool,
+    execution: GpuSolverExecutionV4,
+    scheduling_policy: GpuSolverSchedulingPolicyV1,
+    soft_feedback_policy: GpuSoftFeedbackPolicyV1,
+    normal_relaxation_policy: GpuNormalRelaxationPolicyV1,
+    contact_coefficient_policy: GpuContactCoefficientPolicyV1,
+) -> (Vec<PassParamsRaw>, Vec<Operation>) {
     let mut parameters = Vec::new();
     let mut operations = Vec::new();
     let body_workgroups = workgroups(body_count);
@@ -3944,7 +4059,15 @@ fn operations_with_contact_feedback(
         push_operation(
             &mut parameters,
             &mut operations,
-            pass_params(scenario, body_count, point_count, 0, 0, 0),
+            pass_params(
+                scenario,
+                body_count,
+                point_count,
+                0,
+                0,
+                0,
+                contact_coefficient_policy,
+            ),
             PipelineKind::IntegrateVelocity,
             MotionDirection::AtoB,
             body_workgroups,
@@ -3955,6 +4078,7 @@ fn operations_with_contact_feedback(
             point_count,
             topology,
             execution.normal_solver,
+            contact_coefficient_policy,
         );
         let prepare_kind = if substep == 0 {
             PipelineKind::Prepare
@@ -3975,7 +4099,15 @@ fn operations_with_contact_feedback(
             &mut parameters,
             &mut operations,
             execution,
-            pass_params(scenario, body_count, point_count, 1, 0, 0),
+            pass_params(
+                scenario,
+                body_count,
+                point_count,
+                1,
+                0,
+                0,
+                contact_coefficient_policy,
+            ),
             PipelineKind::Warm,
             MotionDirection::AtoB,
             point_workgroups,
@@ -3997,6 +4129,7 @@ fn operations_with_contact_feedback(
                     soft_feedback_policy.use_bias(iteration),
                     topology,
                     execution.normal_solver,
+                    contact_coefficient_policy,
                 ),
                 normal_pipeline,
                 MotionDirection::BtoA,
@@ -4010,7 +4143,15 @@ fn operations_with_contact_feedback(
                     &mut parameters,
                     &mut operations,
                     execution,
-                    pass_params(scenario, body_count, point_count, 3, iteration, 0),
+                    pass_params(
+                        scenario,
+                        body_count,
+                        point_count,
+                        3,
+                        iteration,
+                        0,
+                        contact_coefficient_policy,
+                    ),
                     PipelineKind::Tangent,
                     MotionDirection::AtoB,
                     point_workgroups,
@@ -4028,7 +4169,15 @@ fn operations_with_contact_feedback(
         push_operation(
             &mut parameters,
             &mut operations,
-            pass_params(scenario, body_count, point_count, 0, 0, 0),
+            pass_params(
+                scenario,
+                body_count,
+                point_count,
+                0,
+                0,
+                0,
+                contact_coefficient_policy,
+            ),
             PipelineKind::IntegratePosition,
             if execution.uses_colored_in_place() {
                 MotionDirection::AtoB
@@ -4046,6 +4195,7 @@ fn operations_with_contact_feedback(
                 point_count,
                 topology,
                 execution.normal_solver,
+                contact_coefficient_policy,
             ),
             PipelineKind::Refresh,
             if execution.uses_colored_in_place() {
@@ -4067,6 +4217,7 @@ fn operations_with_contact_feedback(
                         0,
                         topology,
                         execution.normal_solver,
+                        contact_coefficient_policy,
                     );
                     params.floats2[3] = normal_relaxation_policy.shader_code() as f32;
                     solver_stage(
@@ -4092,7 +4243,15 @@ fn operations_with_contact_feedback(
                         &mut parameters,
                         &mut operations,
                         execution,
-                        pass_params(scenario, body_count, point_count, 5, iteration, 0),
+                        pass_params(
+                            scenario,
+                            body_count,
+                            point_count,
+                            5,
+                            iteration,
+                            0,
+                            contact_coefficient_policy,
+                        ),
                         PipelineKind::Tangent,
                         MotionDirection::AtoB,
                         point_workgroups,
@@ -4112,7 +4271,15 @@ fn operations_with_contact_feedback(
             &mut parameters,
             &mut operations,
             execution,
-            pass_params(scenario, body_count, point_count, 6, 0, 0),
+            pass_params(
+                scenario,
+                body_count,
+                point_count,
+                6,
+                0,
+                0,
+                contact_coefficient_policy,
+            ),
             PipelineKind::Restitution,
             MotionDirection::BtoA,
             point_workgroups,
@@ -4135,8 +4302,17 @@ fn preparation_params(
     point_count: u32,
     topology: TopologyLayout,
     normal_solver: GpuNormalSolverV4,
+    contact_coefficient_policy: GpuContactCoefficientPolicyV1,
 ) -> PassParamsRaw {
-    let mut params = pass_params(scenario, body_count, point_count, 0, 0, 0);
+    let mut params = pass_params(
+        scenario,
+        body_count,
+        point_count,
+        0,
+        0,
+        0,
+        contact_coefficient_policy,
+    );
     params.uints0[2] = topology.ranges_base;
     params.uints1[1] = normal_solver.shader_code();
     params.uints1[2] = u32::from(topology.kind == GpuGatherTopology::StableBodyEdge);
@@ -4154,6 +4330,7 @@ fn normal_params(
     use_bias: u32,
     topology: TopologyLayout,
     normal_solver: GpuNormalSolverV4,
+    contact_coefficient_policy: GpuContactCoefficientPolicyV1,
 ) -> PassParamsRaw {
     let mut params = pass_params(
         scenario,
@@ -4162,6 +4339,7 @@ fn normal_params(
         stage,
         iteration,
         use_bias,
+        contact_coefficient_policy,
     );
     params.uints0[2] = topology.ranges_base;
     params.uints0[3] = topology.manifold_counts_base;
@@ -4481,6 +4659,7 @@ fn pass_params(
     stage: u32,
     iteration: u32,
     use_bias: u32,
+    contact_coefficient_policy: GpuContactCoefficientPolicyV1,
 ) -> PassParamsRaw {
     let substep_dt = scenario.settings.fixed_dt.get() / scenario.settings.substeps as f32;
     let softness = scenario.settings.contact_softness.map(|policy| {
@@ -4520,14 +4699,25 @@ fn pass_params(
             0.0,
             0.0,
         ],
-        floats3: softness.map_or([0.0; 4], |(_, static_contact)| {
-            [
-                static_contact.mass_scale * static_contact.bias_rate * substep_dt,
-                static_contact.mass_scale,
-                static_contact.impulse_scale,
-                1.0,
-            ]
-        }),
+        floats3: softness.map_or_else(
+            || match contact_coefficient_policy {
+                GpuContactCoefficientPolicyV1::SettingsDerived => [0.0; 4],
+                GpuContactCoefficientPolicyV1::StaticStiffHard => [
+                    GpuContactCoefficientPolicyV1::STATIC_STIFF_BIAS_RATE,
+                    scenario.settings.mass_coefficient.get(),
+                    scenario.settings.impulse_coefficient.get(),
+                    1.0,
+                ],
+            },
+            |(_, static_contact)| {
+                [
+                    static_contact.mass_scale * static_contact.bias_rate * substep_dt,
+                    static_contact.mass_scale,
+                    static_contact.impulse_scale,
+                    1.0,
+                ]
+            },
+        ),
         uints0: [body_count, point_count, 0, 0],
         uints1: [iteration, stage, 0, use_bias],
     }
@@ -5696,6 +5886,68 @@ mod tests {
         assert_eq!(
             selected_island_operations.len() - fused_island_operations.len(),
             scenario.settings.substeps as usize * scenario.settings.iterations as usize * 2
+        );
+    }
+
+    #[test]
+    fn static_stiff_hard_changes_only_the_attested_static_coefficient_tuple() {
+        let scenario =
+            crate::p5_2_settling_review_scenario(8, crate::P5_2SettlingReviewPolicy::HardControl)
+                .unwrap();
+        let body_count = scenario.bodies.len() as u32;
+        let point_capacity = body_count * (body_count - 1);
+        let topology = TopologyLayout::new(
+            GpuGatherTopology::StableBodyEdge,
+            body_count,
+            point_capacity,
+            false,
+            GpuColorScheduleV4::CompactIndirect,
+            GpuColorUnitV4::Manifold,
+            GpuSolverSchedulingPolicyV1::SELECTED,
+        )
+        .unwrap();
+        let parameters = |coefficient_policy| {
+            operations_with_solver_policies(
+                &scenario,
+                body_count,
+                point_capacity,
+                topology,
+                false,
+                GpuSolverExecutionV4::SELECTED,
+                GpuSolverSchedulingPolicyV1::SELECTED,
+                GpuSoftFeedbackPolicyV1::SELECTED,
+                GpuNormalRelaxationPolicyV1::SELECTED,
+                coefficient_policy,
+            )
+        };
+        let (selected_parameters, selected_operations) =
+            parameters(GpuContactCoefficientPolicyV1::SELECTED);
+        let (stiff_parameters, stiff_operations) =
+            parameters(GpuContactCoefficientPolicyV1::StaticStiffHard);
+        assert_eq!(selected_operations.len(), stiff_operations.len());
+        assert_eq!(selected_parameters.len(), stiff_parameters.len());
+        let mut changed = 0;
+        for (selected, stiff) in selected_parameters.iter().zip(stiff_parameters.iter()) {
+            assert_eq!(selected.floats0, stiff.floats0);
+            assert_eq!(selected.floats1, stiff.floats1);
+            assert_eq!(selected.floats2, stiff.floats2);
+            assert_eq!(selected.uints0, stiff.uints0);
+            assert_eq!(selected.uints1, stiff.uints1);
+            if selected.floats3 != stiff.floats3 {
+                changed += 1;
+                assert_eq!(selected.floats3, [0.0; 4]);
+                assert_eq!(stiff.floats3, [0.4, 1.0, 0.0, 1.0]);
+            }
+        }
+        assert!(changed > 0);
+
+        let soft =
+            crate::p5_2_settling_review_scenario(8, crate::P5_2SettlingReviewPolicy::SoftCandidate)
+                .unwrap();
+        assert!(
+            GpuContactCoefficientPolicyV1::StaticStiffHard
+                .validate(&soft.settings)
+                .is_err()
         );
     }
 

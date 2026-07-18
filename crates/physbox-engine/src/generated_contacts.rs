@@ -126,6 +126,7 @@ pub(crate) struct GpuGeneratedContactGraph {
     parity: Cell<usize>,
     point_capacity: u32,
     identity_policy: ContactIdentityPolicyV1,
+    contact_coefficient_policy: crate::GpuContactCoefficientPolicyV1,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
@@ -291,6 +292,41 @@ impl GpuGeneratedContactGraph {
         soft_feedback_policy: crate::GpuSoftFeedbackPolicyV1,
         normal_relaxation_policy: crate::GpuNormalRelaxationPolicyV1,
     ) -> Result<Self, String> {
+        Self::new_with_topologies_execution_scheduling_identity_and_solver_policies(
+            device,
+            storage,
+            scenario,
+            persistence_topology,
+            gather_topology,
+            permute_edge_build,
+            permute_pair_build,
+            fingerprint_mask,
+            execution,
+            scheduling_policy,
+            identity_policy,
+            soft_feedback_policy,
+            normal_relaxation_policy,
+            crate::GpuContactCoefficientPolicyV1::SELECTED,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn new_with_topologies_execution_scheduling_identity_and_solver_policies(
+        device: &wgpu::Device,
+        storage: &GpuBodyStorage,
+        scenario: &ScenarioV1,
+        persistence_topology: GpuContactPersistenceTopology,
+        gather_topology: GpuGatherTopology,
+        permute_edge_build: bool,
+        permute_pair_build: bool,
+        fingerprint_mask: u32,
+        execution: GpuSolverExecutionV4,
+        scheduling_policy: GpuSolverSchedulingPolicyV1,
+        identity_policy: ContactIdentityPolicyV1,
+        soft_feedback_policy: crate::GpuSoftFeedbackPolicyV1,
+        normal_relaxation_policy: crate::GpuNormalRelaxationPolicyV1,
+        contact_coefficient_policy: crate::GpuContactCoefficientPolicyV1,
+    ) -> Result<Self, String> {
         if !scenario.manifolds.is_empty()
             || !scenario.contact_cache.is_empty()
             || !scenario.actions.is_empty()
@@ -335,7 +371,7 @@ impl GpuGeneratedContactGraph {
             point_capacity,
             size_of::<PointInputRaw>() as u32,
         )?;
-        let solver = GpuFixedFloorSolver::new_generated_experiment_with_topology_scheduling_and_contact_feedback(
+        let solver = GpuFixedFloorSolver::new_generated_experiment_with_topology_scheduling_and_solver_policies(
                 device,
                 storage,
                 scenario,
@@ -347,6 +383,7 @@ impl GpuGeneratedContactGraph {
                 scheduling_policy,
                 soft_feedback_policy,
                 normal_relaxation_policy,
+                contact_coefficient_policy,
             )?;
         let persistence = GeneratedPersistenceGraph::new(
             device,
@@ -372,6 +409,7 @@ impl GpuGeneratedContactGraph {
             parity: Cell::new(0),
             point_capacity,
             identity_policy,
+            contact_coefficient_policy,
         })
     }
 
@@ -1376,6 +1414,7 @@ pub struct GpuGeneratedContactOutput {
     pub solver_settings: physbox_contracts::SolverSettingsV1,
     pub solver_execution: GpuSolverExecutionV4,
     pub solver_scheduling_policy: GpuSolverSchedulingPolicyV1,
+    pub contact_coefficient_policy: crate::GpuContactCoefficientPolicyV1,
     pub contact_identity_policy: ContactIdentityPolicyV1,
     pub bodies: Vec<physbox_contracts::BodyStateV1>,
     pub manifolds: Vec<physbox_contracts::CollisionManifoldV1>,
@@ -1435,6 +1474,7 @@ pub struct GpuGeneratedContactPassTraceV3 {
     pub contact_identity_policy: ContactIdentityPolicyV1,
     pub soft_feedback_policy: crate::GpuSoftFeedbackPolicyV1,
     pub normal_relaxation_policy: crate::GpuNormalRelaxationPolicyV1,
+    pub contact_coefficient_policy: crate::GpuContactCoefficientPolicyV1,
     pub pass_trace_dispatch: GpuPassTraceDispatchV1,
     pub mapped_after_final_step_only: bool,
     pub state_stride_bytes: u64,
@@ -1466,6 +1506,8 @@ impl GpuGeneratedContactPassTraceV3 {
         self.solver_execution.validate()?;
         self.solver_scheduling_policy
             .validate(self.solver_execution)?;
+        self.contact_coefficient_policy
+            .validate(&self.solver_settings)?;
         let normal_relaxation = self
             .descriptors
             .iter()
@@ -1584,6 +1626,7 @@ pub struct GpuGeneratedContactSeriesV1 {
     pub solver_settings: physbox_contracts::SolverSettingsV1,
     pub solver_execution: GpuSolverExecutionV4,
     pub solver_scheduling_policy: GpuSolverSchedulingPolicyV1,
+    pub contact_coefficient_policy: crate::GpuContactCoefficientPolicyV1,
     pub contact_identity_policy: ContactIdentityPolicyV1,
     pub dispatches_per_step: u32,
     pub allocated_bytes: u64,
@@ -1607,6 +1650,8 @@ impl GpuGeneratedContactSeriesV1 {
         self.solver_execution.validate()?;
         self.solver_scheduling_policy
             .validate(self.solver_execution)?;
+        self.contact_coefficient_policy
+            .validate(&self.solver_settings)?;
         for (index, snapshot) in self.snapshots.iter().enumerate() {
             snapshot.validate()?;
             if snapshot.completed_steps != (index as u32 + 1) * self.observation_interval_steps {
@@ -1632,6 +1677,8 @@ impl GpuGeneratedContactOutput {
         self.solver_execution.validate()?;
         self.solver_scheduling_policy
             .validate(self.solver_execution)?;
+        self.contact_coefficient_policy
+            .validate(&self.solver_settings)?;
         for body in &self.bodies {
             body.validate().map_err(|error| error.to_string())?;
         }
@@ -2417,6 +2464,7 @@ impl GpuGeneratedContactRunner {
             solver_settings: scenario.settings,
             solver_execution: execution,
             solver_scheduling_policy: scheduling_policy,
+            contact_coefficient_policy: graph.contact_coefficient_policy,
             contact_identity_policy: identity_policy,
             soft_feedback_policy,
             normal_relaxation_policy,
@@ -2571,6 +2619,34 @@ impl GpuGeneratedContactRunner {
         soft_feedback_policy: crate::GpuSoftFeedbackPolicyV1,
         normal_relaxation_policy: crate::GpuNormalRelaxationPolicyV1,
     ) -> Result<GpuGeneratedContactSeriesV1, String> {
+        self.run_contact_policy_observation_series_with_solver_policies(
+            scenario,
+            observation_interval_steps,
+            completed_steps,
+            identity_policy,
+            submission_batch_steps,
+            execution,
+            scheduling_policy,
+            soft_feedback_policy,
+            normal_relaxation_policy,
+            crate::GpuContactCoefficientPolicyV1::SELECTED,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn run_contact_policy_observation_series_with_solver_policies(
+        &self,
+        scenario: &ScenarioV1,
+        observation_interval_steps: u32,
+        completed_steps: u32,
+        identity_policy: ContactIdentityPolicyV1,
+        submission_batch_steps: u32,
+        execution: GpuSolverExecutionV4,
+        scheduling_policy: GpuSolverSchedulingPolicyV1,
+        soft_feedback_policy: crate::GpuSoftFeedbackPolicyV1,
+        normal_relaxation_policy: crate::GpuNormalRelaxationPolicyV1,
+        contact_coefficient_policy: crate::GpuContactCoefficientPolicyV1,
+    ) -> Result<GpuGeneratedContactSeriesV1, String> {
         if observation_interval_steps == 0
             || completed_steps == 0
             || !completed_steps.is_multiple_of(observation_interval_steps)
@@ -2596,7 +2672,7 @@ impl GpuGeneratedContactRunner {
             &scenario.bodies,
         )?;
         let graph =
-            GpuGeneratedContactGraph::new_with_topologies_execution_scheduling_identity_and_contact_feedback(
+            GpuGeneratedContactGraph::new_with_topologies_execution_scheduling_identity_and_solver_policies(
                 &self.device,
                 &storage,
                 scenario,
@@ -2610,6 +2686,7 @@ impl GpuGeneratedContactRunner {
                 identity_policy,
                 soft_feedback_policy,
                 normal_relaxation_policy,
+                contact_coefficient_policy,
             )?;
         let snapshot_count = completed_steps / observation_interval_steps;
         let readbacks =
@@ -2846,6 +2923,7 @@ impl GpuGeneratedContactRunner {
             solver_settings: scenario.settings,
             solver_execution: execution,
             solver_scheduling_policy: scheduling_policy,
+            contact_coefficient_policy: graph.contact_coefficient_policy,
             contact_identity_policy: identity_policy,
             dispatches_per_step: graph.dispatches_per_step(),
             allocated_bytes: graph.allocated_bytes(),
@@ -2954,6 +3032,31 @@ impl GpuGeneratedContactRunner {
             u32::MAX,
             execution,
             scheduling_policy,
+        )
+    }
+
+    /// Runs a named laboratory coefficient policy without changing product
+    /// construction or the scenario-owned solver settings.
+    pub fn run_coefficient_policy_experiment(
+        &self,
+        scenario: &ScenarioV1,
+        completed_steps: u32,
+        execution: GpuSolverExecutionV4,
+        scheduling_policy: GpuSolverSchedulingPolicyV1,
+        contact_coefficient_policy: crate::GpuContactCoefficientPolicyV1,
+    ) -> Result<GpuGeneratedContactOutput, String> {
+        self.run_with_topologies_execution_scheduling_identity_and_coefficient_policy(
+            scenario,
+            completed_steps,
+            GpuContactPersistenceTopology::StablePairSlot,
+            GpuGatherTopology::StableBodyEdge,
+            false,
+            false,
+            u32::MAX,
+            execution,
+            scheduling_policy,
+            ContactIdentityPolicyV1::SELECTED,
+            contact_coefficient_policy,
         )
     }
 
@@ -3343,6 +3446,36 @@ impl GpuGeneratedContactRunner {
         scheduling_policy: GpuSolverSchedulingPolicyV1,
         identity_policy: ContactIdentityPolicyV1,
     ) -> Result<GpuGeneratedContactOutput, String> {
+        self.run_with_topologies_execution_scheduling_identity_and_coefficient_policy(
+            scenario,
+            completed_steps,
+            persistence_topology,
+            gather_topology,
+            permute_edge_build,
+            permute_pair_build,
+            fingerprint_mask,
+            execution,
+            scheduling_policy,
+            identity_policy,
+            crate::GpuContactCoefficientPolicyV1::SELECTED,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn run_with_topologies_execution_scheduling_identity_and_coefficient_policy(
+        &self,
+        scenario: &ScenarioV1,
+        completed_steps: u32,
+        persistence_topology: GpuContactPersistenceTopology,
+        gather_topology: GpuGatherTopology,
+        permute_edge_build: bool,
+        permute_pair_build: bool,
+        fingerprint_mask: u32,
+        execution: GpuSolverExecutionV4,
+        scheduling_policy: GpuSolverSchedulingPolicyV1,
+        identity_policy: ContactIdentityPolicyV1,
+        contact_coefficient_policy: crate::GpuContactCoefficientPolicyV1,
+    ) -> Result<GpuGeneratedContactOutput, String> {
         if completed_steps == 0 {
             return Err("generated contact validation requires at least one step".to_owned());
         }
@@ -3356,7 +3489,7 @@ impl GpuGeneratedContactRunner {
             &scenario.bodies,
         )?;
         let graph =
-            GpuGeneratedContactGraph::new_with_topologies_execution_scheduling_and_identity_policy(
+            GpuGeneratedContactGraph::new_with_topologies_execution_scheduling_identity_and_solver_policies(
                 &self.device,
                 &storage,
                 scenario,
@@ -3368,6 +3501,9 @@ impl GpuGeneratedContactRunner {
                 execution,
                 scheduling_policy,
                 identity_policy,
+                crate::GpuSoftFeedbackPolicyV1::SELECTED,
+                crate::GpuNormalRelaxationPolicyV1::SELECTED,
+                contact_coefficient_policy,
             )?;
         let lane_bytes = u64::from(body_count) * size_of::<[u32; 4]>() as u64;
         let state_readback = readback(&self.device, "generated_state_readback", lane_bytes * 3);
@@ -3739,6 +3875,7 @@ impl GpuGeneratedContactRunner {
             solver_settings: scenario.settings,
             solver_execution: execution,
             solver_scheduling_policy: scheduling_policy,
+            contact_coefficient_policy: graph.contact_coefficient_policy,
             contact_identity_policy: graph.identity_policy,
             bodies,
             manifolds,
@@ -4543,5 +4680,111 @@ mod tests {
             )
             .unwrap_err();
         assert!(error.contains("hard/direct"), "{error}");
+    }
+
+    #[test]
+    fn static_stiff_hard_replays_and_matches_both_dispatch_forms_exactly() {
+        let scenario =
+            p5_2_settling_review_scenario(8, P5_2SettlingReviewPolicy::HardControl).unwrap();
+        let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
+        let selected = runner
+            .run_scheduling_experiment(
+                &scenario,
+                4,
+                GpuSolverExecutionV4::SELECTED,
+                GpuSolverSchedulingPolicyV1::SELECTED,
+            )
+            .unwrap();
+        let run = |policy| {
+            runner
+                .run_coefficient_policy_experiment(
+                    &scenario,
+                    4,
+                    GpuSolverExecutionV4::SELECTED,
+                    policy,
+                    crate::GpuContactCoefficientPolicyV1::StaticStiffHard,
+                )
+                .unwrap()
+        };
+        let per_color = run(GpuSolverSchedulingPolicyV1::SELECTED);
+        let per_color_replay = run(GpuSolverSchedulingPolicyV1::SELECTED);
+        let islands = run(GpuSolverSchedulingPolicyV1::SELECTED_SMALL_WORLD);
+
+        assert_eq!(
+            serde_json::to_vec(&per_color).unwrap(),
+            serde_json::to_vec(&per_color_replay).unwrap()
+        );
+        assert_ne!(selected.bodies, per_color.bodies);
+        assert_eq!(per_color.bodies, islands.bodies);
+        assert_eq!(per_color.manifolds, islands.manifolds);
+        assert_eq!(per_color.cache, islands.cache);
+        assert_eq!(
+            per_color.pass_evidence.contacts,
+            islands.pass_evidence.contacts
+        );
+        assert_eq!(
+            per_color
+                .pass_evidence
+                .coloring
+                .as_ref()
+                .unwrap()
+                .point_colors,
+            islands
+                .pass_evidence
+                .coloring
+                .as_ref()
+                .unwrap()
+                .point_colors
+        );
+        let per_color_work = per_color
+            .pass_evidence
+            .scheduler_work_vector(scenario.bodies.len() as u32)
+            .unwrap()
+            .unwrap();
+        let selected_work = selected
+            .pass_evidence
+            .scheduler_work_vector(scenario.bodies.len() as u32)
+            .unwrap()
+            .unwrap();
+        let island_work = islands
+            .pass_evidence
+            .scheduler_work_vector(scenario.bodies.len() as u32)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            per_color_work.assignment_digest,
+            island_work.assignment_digest
+        );
+        assert_eq!(
+            selected_work.assignment_digest,
+            per_color_work.assignment_digest
+        );
+        assert_eq!(
+            per_color_work.compacted_order_digest,
+            island_work.compacted_order_digest
+        );
+        assert_eq!(
+            selected_work.compacted_order_digest,
+            per_color_work.compacted_order_digest
+        );
+        assert_eq!(
+            per_color.contact_coefficient_policy,
+            crate::GpuContactCoefficientPolicyV1::StaticStiffHard
+        );
+        assert!(per_color.failure.is_none());
+        assert!(islands.failure.is_none());
+
+        let soft =
+            p5_2_settling_review_scenario(8, P5_2SettlingReviewPolicy::SoftCandidate).unwrap();
+        let error = runner
+            .run_coefficient_policy_experiment(
+                &soft,
+                1,
+                GpuSolverExecutionV4::SELECTED,
+                GpuSolverSchedulingPolicyV1::SELECTED,
+                crate::GpuContactCoefficientPolicyV1::StaticStiffHard,
+            )
+            .unwrap_err();
+        assert!(error.contains("hard contacts"), "{error}");
     }
 }

@@ -988,6 +988,11 @@ impl EngineHost {
                 .as_ref()
                 .and_then(GpuBodyWorld::generated_solver_configuration)
                 .map(|(_, scheduling)| scheduling),
+            generated_contact_coefficient_policy: self
+                .body_world
+                .as_ref()
+                .and_then(GpuBodyWorld::generated_solver_configuration)
+                .map(|_| crate::GpuContactCoefficientPolicyV1::SELECTED),
             fixed_step_hz: FIXED_STEP_HZ,
             scenario: self.config.scenario.name(),
             scenario_hash: self.scenario_hash.clone(),

@@ -1,9 +1,10 @@
 use physbox_contracts::FiniteF32;
 use physbox_engine::{
-    GpuGatherTopology, GpuSolverExecutionV4, GpuSolverSchedulingPolicyV1,
-    P5_2_SELECTED_SOLVER_ITERATIONS, authored_chain_scenario,
+    GpuContactCoefficientPolicyV1, GpuGatherTopology, GpuSolverExecutionV4,
+    GpuSolverSchedulingPolicyV1, P5_2_SELECTED_SOLVER_ITERATIONS, authored_chain_scenario,
     benchmark_gpu_authored_gather_topology, benchmark_gpu_authored_solver_experiment,
-    benchmark_gpu_pair_slot_persistence, p5_2_generated_performance_scenario,
+    benchmark_gpu_authored_solver_policy_experiment, benchmark_gpu_pair_slot_persistence,
+    p5_2_generated_performance_scenario,
 };
 
 #[test]
@@ -266,6 +267,56 @@ fn fused_normal_tangent_has_exact_single_manifold_control_and_multicolor_effect(
             .unwrap()
             .compacted_order_digest
     );
+}
+
+#[test]
+fn static_stiff_hard_is_inert_without_static_contacts_and_keeps_capacity_atomic() {
+    let mut dynamic = authored_chain_scenario(9, 47).unwrap();
+    dynamic.settings.iterations = P5_2_SELECTED_SOLVER_ITERATIONS;
+    let run = |scenario, coefficient_policy| {
+        pollster::block_on(benchmark_gpu_authored_solver_policy_experiment(
+            scenario,
+            1,
+            1,
+            GpuGatherTopology::StableBodyEdge,
+            GpuSolverExecutionV4::SELECTED,
+            GpuSolverSchedulingPolicyV1::SELECTED,
+            coefficient_policy,
+        ))
+    };
+    let selected = run(&dynamic, GpuContactCoefficientPolicyV1::SELECTED).unwrap();
+    let static_stiff = run(&dynamic, GpuContactCoefficientPolicyV1::StaticStiffHard).unwrap();
+    assert_eq!(selected.result_digest, static_stiff.result_digest);
+    assert_eq!(
+        selected.scheduler_work.as_ref().unwrap().assignment_digest,
+        static_stiff
+            .scheduler_work
+            .as_ref()
+            .unwrap()
+            .assignment_digest
+    );
+    assert_eq!(
+        selected
+            .scheduler_work
+            .as_ref()
+            .unwrap()
+            .compacted_order_digest,
+        static_stiff
+            .scheduler_work
+            .as_ref()
+            .unwrap()
+            .compacted_order_digest
+    );
+
+    let mut overflow = authored_chain_scenario(34, 47).unwrap();
+    overflow.settings.iterations = P5_2_SELECTED_SOLVER_ITERATIONS;
+    let center = overflow.bodies[0].id;
+    for (index, manifold) in overflow.manifolds.iter_mut().enumerate() {
+        manifold.body_a = center;
+        manifold.body_b = overflow.bodies[index + 1].id;
+    }
+    let error = run(&overflow, GpuContactCoefficientPolicyV1::StaticStiffHard).unwrap_err();
+    assert!(error.contains("solver-colors"), "{error}");
 }
 
 #[test]

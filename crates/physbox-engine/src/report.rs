@@ -5,11 +5,11 @@ use physbox_contracts::ConstructionStateV1;
 use crate::clock::PacingReport;
 use crate::{
     GpuColorMaintenanceV1, GpuColorOrderV4, GpuColorScheduleV4, GpuColorUnitV4,
-    GpuColoredDispatchV1, GpuNormalSolverV4, GpuSolverAccumulationV4, GpuSolverExecutionV4,
-    GpuSolverSchedulingPolicyV1,
+    GpuColoredDispatchV1, GpuContactCoefficientPolicyV1, GpuNormalSolverV4,
+    GpuSolverAccumulationV4, GpuSolverExecutionV4, GpuSolverSchedulingPolicyV1,
 };
 
-pub const SCENE_CONTRACT_VERSION: u32 = 4;
+pub const SCENE_CONTRACT_VERSION: u32 = 5;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -24,6 +24,7 @@ pub struct SceneContract {
     pub capacity_overflowed: bool,
     pub generated_solver_execution: Option<GpuSolverExecutionV4>,
     pub generated_solver_scheduling_policy: Option<GpuSolverSchedulingPolicyV1>,
+    pub generated_contact_coefficient_policy: Option<GpuContactCoefficientPolicyV1>,
     pub fixed_step_hz: u32,
     pub scenario: &'static str,
     pub scenario_hash: String,
@@ -193,6 +194,8 @@ impl FrameReport {
             generated_solver_execution: Option<[u32; 8]>,
             #[serde(rename = "g", skip_serializing_if = "Option::is_none")]
             generated_solver_scheduling_policy: Option<[u32; 3]>,
+            #[serde(rename = "q", skip_serializing_if = "Option::is_none")]
+            generated_contact_coefficient_policy: Option<u32>,
             #[serde(rename = "n")]
             scenario: &'static str,
             #[serde(rename = "h")]
@@ -281,6 +284,10 @@ impl FrameReport {
                     .scene_contract
                     .generated_solver_scheduling_policy
                     .map(compact_scheduling),
+                generated_contact_coefficient_policy: self
+                    .scene_contract
+                    .generated_contact_coefficient_policy
+                    .map(compact_contact_coefficients),
                 scenario: self.scene_contract.scenario,
                 scenario_hash: &self.scene_contract.scenario_hash,
             },
@@ -342,6 +349,13 @@ const fn compact_scheduling(policy: GpuSolverSchedulingPolicyV1) -> [u32; 3] {
             GpuColoredDispatchV1::WorkgroupPerIslandFusedNormalTangent => 3,
         },
     ]
+}
+
+const fn compact_contact_coefficients(policy: GpuContactCoefficientPolicyV1) -> u32 {
+    match policy {
+        GpuContactCoefficientPolicyV1::SettingsDerived => 0,
+        GpuContactCoefficientPolicyV1::StaticStiffHard => 1,
+    }
 }
 
 #[cfg(test)]
@@ -457,6 +471,7 @@ mod tests {
                 capacity_overflowed: false,
                 generated_solver_execution: Some(GpuSolverExecutionV4::SELECTED),
                 generated_solver_scheduling_policy: Some(GpuSolverSchedulingPolicyV1::SELECTED),
+                generated_contact_coefficient_policy: Some(GpuContactCoefficientPolicyV1::SELECTED),
                 fixed_step_hz: 60,
                 scenario: "bootstrap",
                 scenario_hash: "f".repeat(64),

@@ -553,6 +553,21 @@ hardware-backed AVD, boundary, and smoke gates pass. The
 [implementation note](../../evidence/p5.2b-s9.4-arm-fused-normal-tangent/IMPLEMENTATION.md)
 records the controls; S9.4 still owns the arm's quality disposition.
 
+S9 E4 implementation checkpoint, 2026-07-18: the unpromoted
+`static-stiff-hard` coefficient policy gives contacts with a static endpoint
+the single declared hard tuple `[0.4, 1, 0]`, while dynamic contacts retain
+`[0.2, 1, 0]`. It is independent of scheduling so the predeclared E2+E4 and
+E3+E2+E4 combinations remain explicit compositions. Parameter-word controls
+prove no other coefficient changes; a dynamic-only chain is byte-identical;
+the centered 8-stack changes body state with unchanged selected scheduler
+digests and remains exact across both dispatch forms. Soft construction and
+32-color overflow fail closed. Scene contract version 5 now attests the
+coefficient policy, but product constructors report only `settings-derived`.
+Full native, WebGPU, Android-target, APK, hardware-backed AVD, boundary, and
+smoke gates pass. The
+[implementation note](../../evidence/p5.2b-s9.4-arm-static-stiff-hard/IMPLEMENTATION.md)
+records the controls; S9.4 still owns the arm's quality disposition.
+
 ## Fallback and reserve options
 
 - **Accepted baseline.** Manifold block i2 improves structural preservation and

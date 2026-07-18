@@ -1372,6 +1372,10 @@ mod tests {
             Some(crate::GpuSolverSchedulingPolicyV1::SERIAL_CONTROL)
         );
         assert_eq!(
+            report.scene_contract.generated_contact_coefficient_policy,
+            Some(crate::GpuContactCoefficientPolicyV1::SELECTED)
+        );
+        assert_eq!(
             crate::GpuSolverExecutionV4::SELECTED.normal_solver,
             crate::GpuNormalSolverV4::ManifoldBlock
         );
@@ -1400,6 +1404,10 @@ mod tests {
         assert_eq!(
             report.scene_contract.generated_solver_scheduling_policy,
             Some(crate::GpuSolverSchedulingPolicyV1::SELECTED)
+        );
+        assert_eq!(
+            report.scene_contract.generated_contact_coefficient_policy,
+            Some(crate::GpuContactCoefficientPolicyV1::SELECTED)
         );
         assert_eq!(report.fixed_steps_total, 8);
         assert!(!report.scene_contract.capacity_overflowed);

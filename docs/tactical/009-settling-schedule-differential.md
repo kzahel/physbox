@@ -302,10 +302,10 @@ stop. No product/default/tolerance/capacity/oracle contract changed.
 - [x] E3 contact-major fused normal+tangent for biased and relaxation sweeps
   (single-manifold byte-identity negative control; multi-contact divergence
   positive control; dispatch-count delta recorded).
-- [ ] E4 static-stiff-hard `bias_rate = 0.4` for static contacts (policy
+- [x] E4 static-stiff-hard `bias_rate = 0.4` for static contacts (policy
   attested in scene contract; no other coefficient touched).
 - [ ] Conditional E5/E6 implemented only when their triggers fire.
-- [ ] Each arm passes the implementation gate before entering S9.4; both
+- [x] Each active arm passes the implementation gate before entering S9.4; both
   dispatch forms (per-color indirect, workgroup-per-island) remain exact per
   the existing equality tests.
 
@@ -348,6 +348,20 @@ construction fails closed. The full repository gate and visually inspected
 Metal/WebGPU/AVD smokes pass. Product constructors still select only
 `SELECTED` or `SELECTED_SMALL_WORLD`; E3 has not entered the product or the
 S9.4 quality matrix yet.
+
+E4 implementation checkpoint, 2026-07-18: the
+[implementation note](../../evidence/p5.2b-s9.4-arm-static-stiff-hard/IMPLEMENTATION.md)
+records the separate `static-stiff-hard` coefficient policy. Dynamic contacts
+retain `[bias, mass, impulse] = [0.2, 1, 0]`; contacts with a static endpoint
+read exactly `[0.4, 1, 0]`. A parameter-word test proves no other coefficient
+or control word changes. A dynamic-only chain is byte-identical, while the
+centered hard/direct 8-stack changes body state with selected scheduler
+digests intact, replays exactly, and matches across per-color and island
+dispatch. The 32-color failure remains atomic and soft construction fails
+closed. Scene contract version 5 adds coefficient-policy identity, while all
+product constructors attest only `settings-derived`. The full repository gate
+and visually inspected Metal/WebGPU/AVD smokes pass. E4 has not entered the
+product or the S9.4 quality matrix yet.
 
 ### S9.4 — Metal quality matrix and combinations
 
