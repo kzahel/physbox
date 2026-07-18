@@ -315,8 +315,20 @@ colored boundary encloses the complete ordered 32-color dispatch sequence;
 this is pass accounting, not a claim that each color is a separate physical
 stage. All copies remain GPU ordered and one map occurs only after the target
 step and pair-cache store. The split diagnostic target is bit-exact with the
-ordinary unsplit graph in the maintained Metal test. Scalar recurrence and
-measured attribution remain open, and the product remains unchanged.
+ordinary unsplit graph in the maintained Metal test. At that checkpoint the
+scalar recurrence and measured attribution were still open, and the product
+remained unchanged.
+
+The version-1 scalar mirror now covers every body-changing pass in the selected
+colored manifold-block schedule using `f32` state and the captured compacted
+color order. Contact prepare/refresh boundaries prove body-state identity and
+then synchronize to actual prepared GPU `f32` inputs, avoiding false
+divergence from CPU-versus-GPU trigonometry. The report retains strict
+ordered-`f32` and compensated wider kinetic-energy accounts together with raw
+bit, absolute, and ULP state differences. The small two-step contract fixture
+has only a one-ULP first difference; this observation is not a newly accepted
+numerical tolerance. The permanent settled-window Metal attribution remains
+open, and all candidates remain unpromoted.
 
 ## Authority corrections
 

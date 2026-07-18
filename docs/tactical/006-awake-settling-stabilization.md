@@ -538,7 +538,7 @@ or another difficult-to-reverse architecture fork.
   reproducer. Each boundary retains the complete ordered per-color dispatch
   sequence. Copy bounded body, contact, and accumulated-impulse state in GPU
   command order and map only after the final requested step.
-- [ ] Mirror the selected manifold-block recurrence in scalar Rust with `f32`
+- [x] Mirror the selected manifold-block recurrence in scalar Rust with `f32`
   state and rounding at the same operation boundaries. Report both strict
   ordered-`f32` kinetic energy and compensated wider accumulation over the
   identical captured `f32` values.
@@ -589,6 +589,18 @@ maps once after the target step and persistence store. A two-step Metal test
 is bit-exact against the ordinary unsplit graph, retains the selected parallel
 scheduler and soft/prior policy, and reports clean construction/color
 capacity. No product constructor or interactive frame path calls this API.
+
+Scalar-recurrence checkpoint, 2026-07-18: report version 1 independently
+replays gravity, pose integration, warm start, manifold-block normal solve,
+sequential per-manifold friction, relaxation, and restitution from each
+captured `f32` pre-pass state in the exact compacted color order. Preparation
+and refresh are declared synchronization boundaries: they must leave body
+state bit-exact, then the mirror consumes their actual prepared `f32` contact
+output so host trigonometry cannot manufacture a solver divergence. Every row
+reports strict ordered-`f32` and compensated-`f64` kinetic energy plus raw
+exact-bit, maximum absolute, and ULP state differences. A two-step Metal
+fixture first differs at pass 33 by one ULP; no pass/fail bound, physical
+tolerance, or product coefficient changes with this diagnostic contract.
 
 ### S6.6 — accepted policy integration
 
