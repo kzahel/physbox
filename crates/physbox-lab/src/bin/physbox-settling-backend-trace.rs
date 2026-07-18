@@ -11,14 +11,14 @@ use physbox_contracts::{
 use physbox_engine::{
     GpuGeneratedContactRunner, GpuGeneratedContactSeriesV1, GpuNormalRelaxationPolicyV1,
     GpuSoftFeedbackPolicyV1, GpuSolverExecutionV4, GpuSolverSchedulingPolicyV1,
-    P5_2_SETTLING_EVIDENCE_STEPS, P5_2SettlingReviewPolicy,
+    P5_2_SETTLING_EVIDENCE_STEPS, P5_2SettlingFixtureKind, P5_2SettlingReviewPolicy,
     p5_2_minimized_mixed_pile_energy_scenario, p5_2_minimized_mixed_pile_soft_i1_scenario,
-    p5_2_settling_review_scenario, p5_2_settling_soft_i1_comparator_scenario,
-    p5_2_settling_soft_stack_matrix_scenario,
+    p5_2_settling_review_scenario, p5_2_settling_soft_fixture_scenario,
+    p5_2_settling_soft_i1_comparator_scenario, p5_2_settling_soft_stack_matrix_scenario,
 };
 use physbox_lab::settling::{
     awake_settling_measurement_policy_v2, centered_stack_structure,
-    observe_generated_settling_series_v2, settling_series_v2,
+    observe_generated_settling_series_v2, settling_fixture_structure, settling_series_v2,
 };
 use serde::Serialize;
 
@@ -60,6 +60,7 @@ enum TraceScenario {
     MinimizedMixedCandidateSoftCoefficientRelax,
     MinimizedMixedCandidatePointSequentialRelax,
     MinimizedMixedCandidateEnergyProjection,
+    EnergyProjectionFixture(P5_2SettlingFixtureKind),
 }
 
 impl TraceScenario {
@@ -105,6 +106,27 @@ impl TraceScenario {
             "minimized-mixed-candidate-energy-projection" => {
                 Ok(Self::MinimizedMixedCandidateEnergyProjection)
             }
+            "settling-energy-projection-near-flat-floor-drop" => Ok(Self::EnergyProjectionFixture(
+                P5_2SettlingFixtureKind::NearFlatFloorDrop,
+            )),
+            "settling-energy-projection-box-on-resting-box-drop" => Ok(
+                Self::EnergyProjectionFixture(P5_2SettlingFixtureKind::BoxOnRestingBoxDrop),
+            ),
+            "settling-energy-projection-sequential-rectangles-3" => Ok(
+                Self::EnergyProjectionFixture(P5_2SettlingFixtureKind::SequentialRectangles3),
+            ),
+            "settling-energy-projection-sequential-rectangles-4" => Ok(
+                Self::EnergyProjectionFixture(P5_2SettlingFixtureKind::SequentialRectangles4),
+            ),
+            "settling-energy-projection-sequential-rectangles-5" => Ok(
+                Self::EnergyProjectionFixture(P5_2SettlingFixtureKind::SequentialRectangles5),
+            ),
+            "settling-energy-projection-slide-to-rest" => Ok(Self::EnergyProjectionFixture(
+                P5_2SettlingFixtureKind::SlideToRest,
+            )),
+            "settling-energy-projection-small-mixed-pile" => Ok(Self::EnergyProjectionFixture(
+                P5_2SettlingFixtureKind::SmallMixedPile,
+            )),
             _ => Err(format!("unknown settling trace scenario {value}")),
         }
     }
@@ -151,6 +173,27 @@ impl TraceScenario {
             Self::MinimizedMixedCandidateEnergyProjection => {
                 "minimized-mixed-candidate-energy-projection"
             }
+            Self::EnergyProjectionFixture(kind) => match kind {
+                P5_2SettlingFixtureKind::NearFlatFloorDrop => {
+                    "settling-energy-projection-near-flat-floor-drop"
+                }
+                P5_2SettlingFixtureKind::BoxOnRestingBoxDrop => {
+                    "settling-energy-projection-box-on-resting-box-drop"
+                }
+                P5_2SettlingFixtureKind::SequentialRectangles3 => {
+                    "settling-energy-projection-sequential-rectangles-3"
+                }
+                P5_2SettlingFixtureKind::SequentialRectangles4 => {
+                    "settling-energy-projection-sequential-rectangles-4"
+                }
+                P5_2SettlingFixtureKind::SequentialRectangles5 => {
+                    "settling-energy-projection-sequential-rectangles-5"
+                }
+                P5_2SettlingFixtureKind::SlideToRest => "settling-energy-projection-slide-to-rest",
+                P5_2SettlingFixtureKind::SmallMixedPile => {
+                    "settling-energy-projection-small-mixed-pile"
+                }
+            },
         }
     }
 
@@ -267,6 +310,7 @@ impl TraceScenario {
             Self::MinimizedMixedCandidateEnergyProjection => {
                 relaxation_energy_source(GpuNormalRelaxationPolicyV1::CoupledEnergyProjection)
             }
+            Self::EnergyProjectionFixture(kind) => energy_projection_fixture(kind),
         }
     }
 }
@@ -398,10 +442,27 @@ fn energy_projection_stack(rectangle_count: u32) -> Result<TraceSource, String> 
         .map_err(|error| error.to_string())
 }
 
+fn energy_projection_fixture(kind: P5_2SettlingFixtureKind) -> Result<TraceSource, String> {
+    p5_2_settling_soft_fixture_scenario(kind, 0x6002)
+        .map(|source| {
+            (
+                source,
+                ContactIdentityPolicyV1::PriorContactHysteresis,
+                Structure::Fixture(kind),
+                GpuSolverExecutionV4::SELECTED,
+                GpuSolverSchedulingPolicyV1::SELECTED,
+                GpuSoftFeedbackPolicyV1::SELECTED,
+                GpuNormalRelaxationPolicyV1::CoupledEnergyProjection,
+            )
+        })
+        .map_err(|error| error.to_string())
+}
+
 #[derive(Clone, Copy)]
 enum Structure {
     CenteredStack,
     EnergyOnly,
+    Fixture(P5_2SettlingFixtureKind),
 }
 
 #[derive(Serialize)]
@@ -486,6 +547,13 @@ fn run() -> Result<(), String> {
                         "energy-only reproducer has no structural acceptance gate"
                     }
                     .to_owned(),
+                ),
+                Structure::Fixture(kind) => settling_fixture_structure(
+                    kind,
+                    &source,
+                    &snapshot.bodies,
+                    capacity_failed,
+                    0.0,
                 ),
             };
             StructuralObservation {
@@ -700,6 +768,28 @@ mod tests {
             assert_eq!(scheduling, GpuSolverSchedulingPolicyV1::SELECTED);
             assert_eq!(soft_feedback, GpuSoftFeedbackPolicyV1::SELECTED);
             assert_eq!(relaxation, expected);
+        }
+    }
+
+    #[test]
+    fn energy_projection_fixture_aliases_share_the_frozen_seed_and_policy() {
+        for kind in P5_2SettlingFixtureKind::ALL {
+            let name = format!("settling-energy-projection-{}", kind.name());
+            let alias = TraceScenario::parse(&name).unwrap();
+            assert_eq!(alias.name(), name);
+            let (source, identity, structure, execution, scheduling, soft_feedback, relaxation) =
+                alias.source().unwrap();
+            assert_eq!(source.seed, 0x6002);
+            assert!(source.settings.contact_softness.is_some());
+            assert_eq!(identity, ContactIdentityPolicyV1::PriorContactHysteresis);
+            assert!(matches!(structure, Structure::Fixture(value) if value == kind));
+            assert_eq!(execution, GpuSolverExecutionV4::SELECTED);
+            assert_eq!(scheduling, GpuSolverSchedulingPolicyV1::SELECTED);
+            assert_eq!(soft_feedback, GpuSoftFeedbackPolicyV1::SELECTED);
+            assert_eq!(
+                relaxation,
+                GpuNormalRelaxationPolicyV1::CoupledEnergyProjection
+            );
         }
     }
 

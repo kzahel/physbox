@@ -1082,6 +1082,27 @@ pub fn p5_2_settling_fixture_scenario(
     Ok(scenario)
 }
 
+/// Shared soft-contact projection of one frozen S6.2 interaction fixture.
+/// Identity and relaxation policies remain execution choices owned by the
+/// validation runner.
+pub fn p5_2_settling_soft_fixture_scenario(
+    kind: P5_2SettlingFixtureKind,
+    seed: u64,
+) -> Result<ScenarioV1, ScenarioBuildError> {
+    let mut scenario = p5_2_settling_fixture_scenario(kind, seed, P5_2_SETTLING_EVIDENCE_STEPS)?;
+    scenario.id = format!("{}-soft-contact", scenario.id);
+    scenario.settings.contact_softness = Some(ContactSoftnessPolicyV1 {
+        version: CONTACT_SOFTNESS_POLICY_VERSION,
+        contact_hertz: finite(30.0),
+        damping_ratio: finite(10.0),
+        static_contact_hertz_multiplier: finite(1.0),
+    });
+    scenario
+        .validate()
+        .map_err(|error| ScenarioBuildError(error.to_string()))?;
+    Ok(scenario)
+}
+
 pub fn p5_2_random_settling_fixture_scenario(
     seed: u64,
     requested_steps: u32,
@@ -2447,6 +2468,21 @@ mod tests {
                 .unwrap()
             );
             p5_2_box2d_world_projection(&scenario).unwrap();
+
+            let soft = p5_2_settling_soft_fixture_scenario(kind, 0x6002).unwrap();
+            soft.validate().unwrap();
+            assert_eq!(soft.bodies, scenario.bodies);
+            assert_eq!(soft.seed, scenario.seed);
+            assert_eq!(soft.requested_steps, scenario.requested_steps);
+            let softness = soft.settings.contact_softness.unwrap();
+            assert_eq!(softness.contact_hertz.get(), 30.0);
+            assert_eq!(softness.damping_ratio.get(), 10.0);
+            assert_eq!(softness.static_contact_hertz_multiplier.get(), 1.0);
+            assert_eq!(
+                canonical_json(&soft).unwrap(),
+                canonical_json(&p5_2_settling_soft_fixture_scenario(kind, 0x6002).unwrap())
+                    .unwrap()
+            );
         }
         let (kind, generated) = p5_2_random_settling_fixture_scenario(9, 120).unwrap();
         assert_eq!(kind, P5_2SettlingFixtureKind::SequentialRectangles3);
