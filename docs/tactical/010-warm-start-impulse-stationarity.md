@@ -1,6 +1,6 @@
 # S10: warm-start and stored-impulse stationarity
 
-Status: active, 2026-07-18. Authorized by human review after the S9 negative
+Status: manual checkpoint, 2026-07-18. Authorized by human review after the S9 negative
 closure. S9.2 localized warm start as the only material non-gravity energy
 injector on the governed 16-stack; this workstream determines whether the
 stored contact-impulse state is non-stationary at depth, root-causes the
@@ -521,12 +521,13 @@ per candidate.
 
 ### S10.5 — survivor qualification or formulation decision package
 
-- [ ] If a material survivor exists: apply S9.5 verbatim — Metal 256/1K
+- [x] If a material survivor exists: apply S9.5 verbatim — Metal 256/1K
   complete-step timing, Chrome WebGPU, hardware-backed AVD, available
   physical Android structure through step 1,200, an AVD matched-boundary
   overlay if any rising-energy mode remains, then the winner gate. A winner
-  stops for human promotion review.
-- [ ] If no survivor: assemble the formulation decision package for human
+  stops for human promotion review. Not applicable: S10.4 produced no
+  material survivor, so no winner-gate clause is inferred.
+- [x] If no survivor: assemble the formulation decision package for human
   review — the warm-start differential, stationarity verdicts, mechanism
   reproducer, candidate dispositions, and the hypothesis-3 unification
   result, presented against the recorded soft-reopening gate (remove the
@@ -546,6 +547,25 @@ Completion gate: winner-gate clauses individually recorded, or the decision
 package verifies with every claim linked to raw evidence.
 
 Commit boundary: qualification or decision package only.
+
+Formulation decision checkpoint, 2026-07-18: the verified
+[S10.5 package](../../evidence/p5.2b-s10.5-formulation-decision/README.md)
+records no material survivor and stops at the predeclared human fork. The
+selected hard lane, all S9 schedule arms, retained refresh, and the unrouted
+active-set slot exhaust the authorized hard correction space without meeting
+the awake gate. This is measured scope exhaustion, not a proof against every
+conceivable hard solver. The recommendation is to retain the current hard
+product and authorize a new bounded soft-specific formulation tactical. Unlike
+S6.5, it would begin with matched soft 16-stack pass/impulse-operator
+attribution across warm start, biased normal, colored support transfer,
+refresh, and persistence; derive only from the measured soft mechanism; and
+use the 16-stack as the primary gate rather than treating the permanent
+reproducer as sufficient. The old soft candidate is not revived: its
+S10.3 signature shares only the point-normal symptom with the hard lane and
+still has a 300-step rising run. Any reopening retains the recorded strict
+Metal/AVD/physical-Android structure, energy, and positive-run clauses. Human
+review may authorize that bounded reopening or defer awake-formulation work;
+neither option changes the current product in this package.
 
 ### S10.6 — review package (always runs)
 

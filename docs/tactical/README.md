@@ -26,8 +26,8 @@ corrections. S10.3 names inter-substep stale-persistence reseeding with a
 four-body minimum and records only partial point-normal unification with the
 deferred soft failure. S10.4 routes one composition correction; retained
 refresh passes scalar and implementation gates but fails the full-corpus
-material gate, leaving no survivor. S10.5 now assembles the formulation
-decision package.
+material gate, leaving no survivor. S10.5 now presents the verified
+formulation decision package at the required human checkpoint.
 With no survivor it returns the deferred-soft formulation decision package
 instead of further hard-family arms.
 
@@ -49,7 +49,7 @@ This README remains the unnumbered index.
 | S7 | Box3D planar stability investigation | [007-box3d-planar-stability-investigation.md](007-box3d-planar-stability-investigation.md) | complete; static-late arm later rejected by S9, 2026-07-18 |
 | S8 | Physical mobile frame pacing | [008-physical-mobile-frame-pacing.md](008-physical-mobile-frame-pacing.md) | complete; Pixel 7a bootstrap sustains rendering and physics cadence, 2026-07-18 |
 | S9 | Awake settling schedule differential | [009-settling-schedule-differential.md](009-settling-schedule-differential.md) | complete; no schedule-differential survivor, 2026-07-18 |
-| S10 | Warm-start and stored-impulse stationarity | [010-warm-start-impulse-stationarity.md](010-warm-start-impulse-stationarity.md) | active; S10.4 complete with no survivor, S10.5 decision package next, 2026-07-18 |
+| S10 | Warm-start and stored-impulse stationarity | [010-warm-start-impulse-stationarity.md](010-warm-start-impulse-stationarity.md) | manual checkpoint; S10.5 recommends bounded soft-specific reopening, human decision required, 2026-07-18 |
 
 ## Conventions
 

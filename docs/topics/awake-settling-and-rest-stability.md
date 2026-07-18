@@ -766,6 +766,41 @@ operator is the complete soft-failure mechanism. S10.4 is routed to the
 bounded warm-start/bias composition space; a separate active-set/tie rule has
 no root-mechanism support in the minimum reproducer.
 
+S10.4 correction disposition, 2026-07-18: the verified
+[retained-refresh package](../../evidence/p5.2b-s10.4-candidate-retained-refresh/README.md)
+closes both candidate slots without a survivor. Retaining just-solved impulses
+through full anchor/effective-mass refresh passes the scalar stationarity and
+quality gate and changes only the three inter-substep reset words on GPU. It
+is exact-replay, dispatch-form exact, and structurally clean across every
+accepted full-corpus scene. It materially improves the 4/8 stacks, but the
+16-stack last-quartile energy regresses `29.24%` to `0.43503416` with a rising
+envelope, and the permanent four-body source remains at `0.04818385 m/s` with
+positive run 199. The changed 64-stack trajectory reaches 33 conflicting
+solver units at step 924 and is atomically rejected by the unchanged 32-color
+capacity. Retained refresh is discarded by the frozen S9 material gate. The
+active-set/tie slot remains `not-routed` because the minimum mechanism has no
+active-set flip and negligible redistribution. No product/default/tolerance/
+capacity/oracle contract changes.
+
+S10.5 formulation decision, 2026-07-18: the
+[verified package](../../evidence/p5.2b-s10.5-formulation-decision/README.md)
+recommends human authorization of a bounded soft-specific formulation
+reopening while the hard/direct manifold-block i2 product remains selected.
+This is not promotion of the rejected S6.5d lane: the fresh soft observation
+still rises for 300 settled observations and shares only the point-normal
+symptom, not the hard manifold-total/active-set/redistribution mechanism. A
+new study would begin with matched soft 16-stack attribution across warm
+start, biased normal, colored support transfer, refresh, and persistence;
+derive any recurrence from that soft mechanism; and treat the 16-stack as the
+primary gate. It must remove the rising-energy mode, stay inside the
+`0.025 m/s` awake bands with positive runs under 5, preserve the 16-stack
+through step 1,200 on AVD and available physical Android, keep the AVD
+permanent reproducer below 5 positive observations, and preserve structures
+on Metal/AVD/physical Android without sleeping or weakened contracts. The
+alternative is continued deferral with the measured hard residual. This is
+the recorded human fork; the package authorizes neither implementation nor
+promotion.
+
 ## Authority corrections
 
 Two plausible techniques must not be mislabeled as direct Box2D v3 parity:
