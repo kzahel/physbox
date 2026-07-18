@@ -129,6 +129,31 @@ color occupancy with static contacts in color 22. These measurements forward
 contact recycling/lifetime, persistent coloring/static priority, four-point
 support, and solve staging to S7.4 as correlations—not yet causes.
 
+S7.4 mechanism-differential checkpoint, 2026-07-18: the
+[verified source report](../../evidence/p5.2b-s7.4-box3d-mechanism-differential/README.md)
+narrows the apparent Box3D advantage to two testable questions. Neither pinned
+Box2D nor Box3D uses a two-point normal block; both solve points sequentially,
+retain graph colors for contact life, reserve late-executing high colors for
+static contacts, and settle awake. Box3D alone recycles the entire cached
+contact inside a motion band. Pinned Box2D instead regenerates its manifold and
+matches exact point identifiers, proving recycling is not a universal
+requirement for the authority behavior.
+
+Existing PhysBox controls further separate lifetime from order. Full-rebuild
+and stable-pair retained-color lanes have identical residual, energy, and churn
+on every accepted structure. The selected speculative order is also identical
+through the eight-stack, but changes the 16-stack residual from `0.33476` to
+`0.44197` and energy from `0.27376` to `0.54254`. Color lifetime alone is
+therefore rejected as the missing mechanism; order is material at depth, and
+authority-style static-late priority is the narrower untested property.
+
+S7.5 is authorized to ablate only Box3D contact recycling through the public
+observer. A later PhysBox static-late ordering factorial is recommended for
+human review, with hard/direct manifold-block i2 and every physical setting
+held fixed. It is not authorized here because it changes in-place
+Gauss-Seidel order and scheduler architecture. Four-point support, 3D friction,
+sleeping, relaxation-only friction, and a new soft recurrence are not forwarded.
+
 ## Initial hypotheses
 
 The investigation ranks these hypotheses before measurement:

@@ -150,14 +150,14 @@ confounders.
 
 ### S7.4 — mechanism differential and forwarding decision
 
-- [ ] Compare pinned Box3D, Box2D, and current PhysBox source contracts for
+- [x] Compare pinned Box3D, Box2D, and current PhysBox source contracts for
   contact identity/cache lifetime, color assignment/lifetime/priority, point
   ordering, warm start/store, normal/tangent ordering, friction staging,
   relaxation, and sleep.
-- [ ] Correlate the source differences with S7.3 feature churn, impulse, energy,
+- [x] Correlate the source differences with S7.3 feature churn, impulse, energy,
   and structural observations; distinguish evidence from inference.
-- [ ] Reject 3D-only or visually flattering explanations explicitly.
-- [ ] Name no more than two dimension-independent questions worth a neutral
+- [x] Reject 3D-only or visually flattering explanations explicitly.
+- [x] Name no more than two dimension-independent questions worth a neutral
   adapter or microscope, or close the study with no forwarded work.
 
 Outcome: runtime results identify mechanisms rather than merely ranking
@@ -170,6 +170,17 @@ Artifacts: source-location matrix, observation correlations, rejected
 alternatives, recommendation, and reconsideration triggers.
 
 Commit boundary: differential report only.
+
+Completion checkpoint, 2026-07-18: the
+[verified differential](../../evidence/p5.2b-s7.4-box3d-mechanism-differential/README.md)
+rejects sleeping, four-point/3D support, a manifold normal block,
+relaxation-only friction, soft coefficients alone, and color lifetime alone as
+the transferable explanation. Box3D's whole-contact recycling is forwarded to
+one public-API on/off ablation in S7.5. The only product-facing question is the
+static-late color priority shared by Box2D and Box3D: existing PhysBox controls
+show lifetime alone is behaviorally identical, while changed assignment becomes
+material at the 16-stack. Any PhysBox static-late factorial remains stopped for
+human review.
 
 ### S7.5 — conditional neutral adapter or microscope
 
