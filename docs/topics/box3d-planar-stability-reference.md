@@ -114,6 +114,21 @@ observes structure nor extends the visual claim beyond 200 steps; the
 [verified package](../../evidence/p5.2b-s7.2-box3d-stock/README.md) forwards the
 sleep-off public observer unchanged.
 
+S7.3 public-observer checkpoint, 2026-07-18: the
+[verified 5,000-step package](../../evidence/p5.2b-s7.3-box3d-planar-observer/README.md)
+confirms that the visible stability is not sleeping. The planar-locked 12-row
+source remains structurally intact and below the 0.05 m/s near-rest bar for
+all 4,101 observations from step 900 onward; final maximum linear and
+angular-edge speeds are 3.97e-5 and 2.98e-5 m/s. The unlocked 4,095-body 3D
+sheet retains 99.38% height with 10.91 mm maximum center-Z drift and reaches
+4.30e-4 m/s maximum linear speed at step 5,000. Every settled public manifold
+point is persisted and each manifold has four points. The large source reports
+all 12,105 contacts recycled and zero settled SAT calls; the small source has
+only one SAT call, at step 2,907, across its settled window. Both use stable
+color occupancy with static contacts in color 22. These measurements forward
+contact recycling/lifetime, persistent coloring/static priority, four-point
+support, and solve staging to S7.4 as correlations—not yet causes.
+
 ## Initial hypotheses
 
 The investigation ranks these hypotheses before measurement:

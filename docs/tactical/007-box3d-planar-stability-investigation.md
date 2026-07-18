@@ -103,17 +103,17 @@ forwarded unchanged.
 
 ### S7.3 — public-API sleep-off observer
 
-- [ ] Add a process-isolated external harness that links the clean pin and
+- [x] Add a process-isolated external harness that links the clean pin and
   independently authors the stock 12-row planar-locked pyramid and 90-row
   unlocked 3D pyramid without modifying Box3D.
-- [ ] Freeze 60 Hz, four substeps, one worker, sleeping disabled, stock contact
+- [x] Freeze 60 Hz, four substeps, one worker, sleeping disabled, stock contact
   recycling, initial transforms/materials, and steps 0/200/1,200/5,000.
-- [ ] Record body transforms, residual speeds, mass/inertia kinetic energy,
+- [x] Record body transforms, residual speeds, mass/inertia kinetic energy,
   structure/loss, contact/manifold/point counts, feature persistence/churn,
   separation, normal impulse, and central friction impulse through public APIs.
-- [ ] Keep every-step settled-window observations for the 12-row source and
+- [x] Keep every-step settled-window observations for the 12-row source and
   bounded checkpoints for the 4,095-body source.
-- [ ] Add deterministic replay, finite-value/schema checks, fresh atomic
+- [x] Add deterministic replay, finite-value/schema checks, fresh atomic
   artifacts, and a success sentinel.
 
 Outcome: visual tower stability becomes objective long-run awake evidence.
@@ -132,6 +132,21 @@ sleeping.
 
 Commit boundaries: harness/schema/tests first; clean long-run evidence and
 interpretation separately.
+
+Completion checkpoint, 2026-07-18: the
+[verified public-API package](../../evidence/p5.2b-s7.3-box3d-planar-observer/README.md)
+records two byte-identical 5,000-step executions per source from a clean pin.
+The sleep-off 12-row motion-locked pyramid retains structure and stays below
+the 0.05 m/s near-rest bar for every step from 900 onward. The 4,095-body
+source is confirmed to be an unlocked 3D sheet, not a 2D mode, but it also
+retains structure and reaches 4.30e-4 m/s maximum linear speed by step 5,000.
+Both sources retain four persisted points per manifold with no fresh settled
+points. The large source recycles all 12,105 contacts with zero settled SAT
+calls; the small source requires one SAT call at step 2,907 across 4,101
+settled observations. Static contacts occupy the dedicated color 22. No
+structural loss exists to minimize. S7.4 is forwarded to distinguish the
+dimension-independent lifetime/order mechanisms from four-point and 3D
+confounders.
 
 ### S7.4 — mechanism differential and forwarding decision
 
