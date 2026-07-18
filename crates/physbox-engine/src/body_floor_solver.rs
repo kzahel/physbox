@@ -53,6 +53,44 @@ pub enum GpuSoftFeedbackPolicyV1 {
     FirstBiasedIterationOnly,
 }
 
+/// Laboratory-only control over the normal relaxation recurrence. Product
+/// construction always uses `HardDirect`; alternate values exist only for the
+/// predeclared S6.5c factorial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum GpuNormalRelaxationPolicyV1 {
+    HardDirect,
+    OmitForSoftContacts,
+    SoftCoefficients,
+}
+
+impl GpuNormalRelaxationPolicyV1 {
+    pub const SELECTED: Self = Self::HardDirect;
+
+    const fn emits_normal_pass(self) -> bool {
+        !matches!(self, Self::OmitForSoftContacts)
+    }
+
+    const fn uses_soft_coefficients(self) -> bool {
+        matches!(self, Self::SoftCoefficients)
+    }
+
+    fn validate(
+        self,
+        settings: &SolverSettingsV1,
+        execution: GpuSolverExecutionV4,
+    ) -> Result<(), String> {
+        if self != Self::SELECTED && (settings.contact_softness.is_none() || !execution.relaxation)
+        {
+            return Err(
+                "normal-relaxation comparators require soft contact and enabled relaxation"
+                    .to_owned(),
+            );
+        }
+        Ok(())
+    }
+}
+
 impl GpuSoftFeedbackPolicyV1 {
     pub const SELECTED: Self = Self::EveryBiasedIteration;
 
@@ -1628,7 +1666,7 @@ impl GpuFixedFloorSolver {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn new_generated_experiment_with_topology_scheduling_and_soft_feedback(
+    pub(crate) fn new_generated_experiment_with_topology_scheduling_and_contact_feedback(
         device: &wgpu::Device,
         storage: &GpuBodyStorage,
         scenario: &ScenarioV1,
@@ -1639,17 +1677,19 @@ impl GpuFixedFloorSolver {
         execution: GpuSolverExecutionV4,
         scheduling_policy: GpuSolverSchedulingPolicyV1,
         soft_feedback_policy: GpuSoftFeedbackPolicyV1,
+        normal_relaxation_policy: GpuNormalRelaxationPolicyV1,
     ) -> Result<Self, String> {
         validate_experiment_settings(&scenario.settings, execution)?;
         scheduling_policy.validate(execution)?;
         soft_feedback_policy.validate(&scenario.settings)?;
+        normal_relaxation_policy.validate(&scenario.settings, execution)?;
         if !scenario.manifolds.is_empty() || point_capacity == 0 {
             return Err(
                 "generated contact solver requires a neutral scenario and nonzero point capacity"
                     .to_owned(),
             );
         }
-        Self::new_with_point_buffer_and_soft_feedback(
+        Self::new_with_point_buffer_and_contact_feedback(
             device,
             storage,
             scenario,
@@ -1660,6 +1700,7 @@ impl GpuFixedFloorSolver {
             execution,
             scheduling_policy,
             soft_feedback_policy,
+            normal_relaxation_policy,
         )
     }
 
@@ -1675,7 +1716,7 @@ impl GpuFixedFloorSolver {
         execution: GpuSolverExecutionV4,
         scheduling_policy: GpuSolverSchedulingPolicyV1,
     ) -> Result<Self, String> {
-        Self::new_with_point_buffer_and_soft_feedback(
+        Self::new_with_point_buffer_and_contact_feedback(
             device,
             storage,
             scenario,
@@ -1686,11 +1727,12 @@ impl GpuFixedFloorSolver {
             execution,
             scheduling_policy,
             GpuSoftFeedbackPolicyV1::SELECTED,
+            GpuNormalRelaxationPolicyV1::SELECTED,
         )
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn new_with_point_buffer_and_soft_feedback(
+    fn new_with_point_buffer_and_contact_feedback(
         device: &wgpu::Device,
         storage: &GpuBodyStorage,
         scenario: &ScenarioV1,
@@ -1701,9 +1743,11 @@ impl GpuFixedFloorSolver {
         execution: GpuSolverExecutionV4,
         scheduling_policy: GpuSolverSchedulingPolicyV1,
         soft_feedback_policy: GpuSoftFeedbackPolicyV1,
+        normal_relaxation_policy: GpuNormalRelaxationPolicyV1,
     ) -> Result<Self, String> {
         scheduling_policy.validate(execution)?;
         soft_feedback_policy.validate(&scenario.settings)?;
+        normal_relaxation_policy.validate(&scenario.settings, execution)?;
         let body_count = storage.layout().capacity_elements;
         let topology_layout = TopologyLayout::new(
             topology,
@@ -1721,6 +1765,7 @@ impl GpuFixedFloorSolver {
             );
         }
         let (parameters, operations) = if soft_feedback_policy == GpuSoftFeedbackPolicyV1::SELECTED
+            && normal_relaxation_policy == GpuNormalRelaxationPolicyV1::SELECTED
         {
             operations(
                 scenario,
@@ -1732,7 +1777,7 @@ impl GpuFixedFloorSolver {
                 scheduling_policy,
             )
         } else {
-            operations_with_soft_feedback(
+            operations_with_contact_feedback(
                 scenario,
                 body_count,
                 point_count,
@@ -1741,6 +1786,7 @@ impl GpuFixedFloorSolver {
                 execution,
                 scheduling_policy,
                 soft_feedback_policy,
+                normal_relaxation_policy,
             )
         };
         let mut initial_motion = vec![[0.0; 4]; body_count as usize];
@@ -3703,7 +3749,7 @@ fn operations(
     execution: GpuSolverExecutionV4,
     scheduling_policy: GpuSolverSchedulingPolicyV1,
 ) -> (Vec<PassParamsRaw>, Vec<Operation>) {
-    operations_with_soft_feedback(
+    operations_with_contact_feedback(
         scenario,
         body_count,
         point_count,
@@ -3712,11 +3758,12 @@ fn operations(
         execution,
         scheduling_policy,
         GpuSoftFeedbackPolicyV1::SELECTED,
+        GpuNormalRelaxationPolicyV1::SELECTED,
     )
 }
 
 #[allow(clippy::too_many_arguments)]
-fn operations_with_soft_feedback(
+fn operations_with_contact_feedback(
     scenario: &ScenarioV1,
     body_count: u32,
     point_count: u32,
@@ -3725,6 +3772,7 @@ fn operations_with_soft_feedback(
     execution: GpuSolverExecutionV4,
     scheduling_policy: GpuSolverSchedulingPolicyV1,
     soft_feedback_policy: GpuSoftFeedbackPolicyV1,
+    normal_relaxation_policy: GpuNormalRelaxationPolicyV1,
 ) -> (Vec<PassParamsRaw>, Vec<Operation>) {
     let mut parameters = Vec::new();
     let mut operations = Vec::new();
@@ -3854,11 +3902,8 @@ fn operations_with_soft_feedback(
         );
         if execution.relaxation {
             for iteration in 0..scenario.settings.iterations {
-                solver_stage(
-                    &mut parameters,
-                    &mut operations,
-                    execution,
-                    normal_params(
+                if normal_relaxation_policy.emits_normal_pass() {
+                    let mut params = normal_params(
                         scenario,
                         body_count,
                         point_count,
@@ -3867,19 +3912,27 @@ fn operations_with_soft_feedback(
                         0,
                         topology,
                         execution.normal_solver,
-                    ),
-                    normal_pipeline,
-                    MotionDirection::BtoA,
-                    point_workgroups,
-                    body_workgroups,
-                    color_sweep_reversed(
+                    );
+                    params.floats2[3] =
+                        u32::from(normal_relaxation_policy.uses_soft_coefficients()) as f32;
+                    solver_stage(
+                        &mut parameters,
+                        &mut operations,
                         execution,
-                        substep,
-                        iteration,
-                        scenario.settings.iterations,
-                    ),
-                    topology,
-                );
+                        params,
+                        normal_pipeline,
+                        MotionDirection::BtoA,
+                        point_workgroups,
+                        body_workgroups,
+                        color_sweep_reversed(
+                            execution,
+                            substep,
+                            iteration,
+                            scenario.settings.iterations,
+                        ),
+                        topology,
+                    );
+                }
                 solver_stage(
                     &mut parameters,
                     &mut operations,
@@ -4954,7 +5007,7 @@ mod tests {
             GpuSolverSchedulingPolicyV1::SELECTED,
         )
         .unwrap();
-        let (selected_parameters, selected_operations) = operations_with_soft_feedback(
+        let (selected_parameters, selected_operations) = operations_with_contact_feedback(
             &scenario,
             17,
             32,
@@ -4963,8 +5016,9 @@ mod tests {
             GpuSolverExecutionV4::SELECTED,
             GpuSolverSchedulingPolicyV1::SELECTED,
             GpuSoftFeedbackPolicyV1::SELECTED,
+            GpuNormalRelaxationPolicyV1::SELECTED,
         );
-        let (diagnostic_parameters, diagnostic_operations) = operations_with_soft_feedback(
+        let (diagnostic_parameters, diagnostic_operations) = operations_with_contact_feedback(
             &scenario,
             17,
             32,
@@ -4973,6 +5027,7 @@ mod tests {
             GpuSolverExecutionV4::SELECTED,
             GpuSolverSchedulingPolicyV1::SELECTED,
             GpuSoftFeedbackPolicyV1::FirstBiasedIterationOnly,
+            GpuNormalRelaxationPolicyV1::SELECTED,
         );
         assert_eq!(selected_operations.len(), diagnostic_operations.len());
         assert_eq!(selected_parameters.len(), diagnostic_parameters.len());
@@ -4993,6 +5048,77 @@ mod tests {
             }
         }
         assert!(differences > 0);
+    }
+
+    #[test]
+    fn relaxation_factorial_arms_change_only_predeclared_normal_passes() {
+        let scenario = crate::p5_2_minimized_mixed_pile_energy_scenario().unwrap();
+        let body_count = scenario.bodies.len() as u32;
+        let point_capacity = body_count * (body_count - 1);
+        let topology = TopologyLayout::new(
+            GpuGatherTopology::StableBodyEdge,
+            body_count,
+            point_capacity,
+            false,
+            GpuColorScheduleV4::CompactIndirect,
+            GpuColorUnitV4::Manifold,
+            GpuSolverSchedulingPolicyV1::SELECTED,
+        )
+        .unwrap();
+        let descriptors = |policy| {
+            let (parameters, operations) = operations_with_contact_feedback(
+                &scenario,
+                body_count,
+                point_capacity,
+                topology,
+                false,
+                GpuSolverExecutionV4::SELECTED,
+                GpuSolverSchedulingPolicyV1::SELECTED,
+                GpuSoftFeedbackPolicyV1::SELECTED,
+                policy,
+            );
+            pass_trace_descriptors(&parameters, &operations)
+        };
+
+        let omitted = descriptors(GpuNormalRelaxationPolicyV1::OmitForSoftContacts);
+        assert_eq!(omitted.len(), 48);
+        assert!(
+            omitted
+                .iter()
+                .all(|pass| pass.kind != GpuSolverPassKindV1::NormalRelaxation)
+        );
+        assert_eq!(
+            omitted
+                .iter()
+                .filter(|pass| pass.kind == GpuSolverPassKindV1::TangentRelaxation)
+                .count(),
+            8
+        );
+
+        let softened = descriptors(GpuNormalRelaxationPolicyV1::SoftCoefficients);
+        assert_eq!(softened.len(), 56);
+        assert_eq!(
+            softened
+                .iter()
+                .filter(|pass| pass.kind == GpuSolverPassKindV1::NormalRelaxation)
+                .count(),
+            8
+        );
+        for pass in softened {
+            assert_eq!(
+                pass.parameters.floats2[3],
+                u32::from(pass.kind == GpuSolverPassKindV1::NormalRelaxation) as f32
+            );
+        }
+
+        let hard =
+            crate::p5_2_settling_review_scenario(8, crate::P5_2SettlingReviewPolicy::HardControl)
+                .unwrap();
+        assert!(
+            GpuNormalRelaxationPolicyV1::SoftCoefficients
+                .validate(&hard.settings, GpuSolverExecutionV4::SELECTED)
+                .is_err()
+        );
     }
 
     #[test]

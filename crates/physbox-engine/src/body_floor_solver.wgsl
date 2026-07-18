@@ -1148,10 +1148,12 @@ fn normal_equation_from_velocity(point: PreparedPoint,
     let coefficients = contact_coefficients(point);
     if (point.data0.w > 0.0) {
         velocity_bias = point.data0.w / params.floats0.x;
-    } else if (params.uints1.w != 0u) {
-        velocity_bias = coefficients.x * point.data0.w / params.floats0.x;
-        if (params.floats2.x > 0.0) {
-            velocity_bias = max(velocity_bias, -params.floats2.x);
+    } else if (params.uints1.w != 0u || params.floats2.w != 0.0) {
+        if (params.uints1.w != 0u) {
+            velocity_bias = coefficients.x * point.data0.w / params.floats0.x;
+            if (params.floats2.x > 0.0) {
+                velocity_bias = max(velocity_bias, -params.floats2.x);
+            }
         }
         mass_scale = coefficients.y;
         output.impulse_scale = coefficients.z;

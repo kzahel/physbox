@@ -42,7 +42,7 @@ const PAIR_SLOT_COLLISION_DISPATCHES: u32 = 15 + PAIR_SLOT_DISPATCHES;
 const BRIDGE_DISPATCHES: u32 = 2;
 pub const GPU_GENERATED_CONTACT_BODY_HISTORY_VERSION: u32 = 1;
 #[cfg(not(target_arch = "wasm32"))]
-pub const GPU_GENERATED_CONTACT_PASS_TRACE_VERSION: u32 = 1;
+pub const GPU_GENERATED_CONTACT_PASS_TRACE_VERSION: u32 = 2;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -255,6 +255,39 @@ impl GpuGeneratedContactGraph {
         identity_policy: ContactIdentityPolicyV1,
         soft_feedback_policy: crate::GpuSoftFeedbackPolicyV1,
     ) -> Result<Self, String> {
+        Self::new_with_topologies_execution_scheduling_identity_and_contact_feedback(
+            device,
+            storage,
+            scenario,
+            persistence_topology,
+            gather_topology,
+            permute_edge_build,
+            permute_pair_build,
+            fingerprint_mask,
+            execution,
+            scheduling_policy,
+            identity_policy,
+            soft_feedback_policy,
+            crate::GpuNormalRelaxationPolicyV1::SELECTED,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn new_with_topologies_execution_scheduling_identity_and_contact_feedback(
+        device: &wgpu::Device,
+        storage: &GpuBodyStorage,
+        scenario: &ScenarioV1,
+        persistence_topology: GpuContactPersistenceTopology,
+        gather_topology: GpuGatherTopology,
+        permute_edge_build: bool,
+        permute_pair_build: bool,
+        fingerprint_mask: u32,
+        execution: GpuSolverExecutionV4,
+        scheduling_policy: GpuSolverSchedulingPolicyV1,
+        identity_policy: ContactIdentityPolicyV1,
+        soft_feedback_policy: crate::GpuSoftFeedbackPolicyV1,
+        normal_relaxation_policy: crate::GpuNormalRelaxationPolicyV1,
+    ) -> Result<Self, String> {
         if !scenario.manifolds.is_empty()
             || !scenario.contact_cache.is_empty()
             || !scenario.actions.is_empty()
@@ -299,7 +332,7 @@ impl GpuGeneratedContactGraph {
             point_capacity,
             size_of::<PointInputRaw>() as u32,
         )?;
-        let solver = GpuFixedFloorSolver::new_generated_experiment_with_topology_scheduling_and_soft_feedback(
+        let solver = GpuFixedFloorSolver::new_generated_experiment_with_topology_scheduling_and_contact_feedback(
                 device,
                 storage,
                 scenario,
@@ -310,6 +343,7 @@ impl GpuGeneratedContactGraph {
                 execution,
                 scheduling_policy,
                 soft_feedback_policy,
+                normal_relaxation_policy,
             )?;
         let persistence = GeneratedPersistenceGraph::new(
             device,
@@ -1370,7 +1404,7 @@ pub struct GpuGeneratedContactSnapshotV1 {
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Clone, Debug, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct GpuGeneratedContactPassStateV1 {
+pub struct GpuGeneratedContactPassStateV2 {
     pub version: u32,
     pub after_operation_index: Option<u32>,
     pub bodies: Vec<physbox_contracts::BodyStateV1>,
@@ -1380,7 +1414,7 @@ pub struct GpuGeneratedContactPassStateV1 {
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Clone, Debug, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct GpuGeneratedContactPassTraceV1 {
+pub struct GpuGeneratedContactPassTraceV2 {
     pub version: u32,
     pub adapter: crate::AdapterDiagnostics,
     pub source_scenario_hash: String,
@@ -1390,16 +1424,17 @@ pub struct GpuGeneratedContactPassTraceV1 {
     pub solver_scheduling_policy: GpuSolverSchedulingPolicyV1,
     pub contact_identity_policy: ContactIdentityPolicyV1,
     pub soft_feedback_policy: crate::GpuSoftFeedbackPolicyV1,
+    pub normal_relaxation_policy: crate::GpuNormalRelaxationPolicyV1,
     pub mapped_after_final_step_only: bool,
     pub state_stride_bytes: u64,
     pub descriptors: Vec<GpuSolverPassDescriptorV1>,
-    pub states: Vec<GpuGeneratedContactPassStateV1>,
+    pub states: Vec<GpuGeneratedContactPassStateV2>,
     pub coloring: crate::GpuColoringEvidenceV4,
     pub construction: GpuConstructionGraphEvidence,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-impl GpuGeneratedContactPassTraceV1 {
+impl GpuGeneratedContactPassTraceV2 {
     pub fn validate(&self) -> Result<(), String> {
         if self.version != GPU_GENERATED_CONTACT_PASS_TRACE_VERSION
             || self.source_scenario_hash.len() != 64
@@ -1419,6 +1454,30 @@ impl GpuGeneratedContactPassTraceV1 {
         self.solver_execution.validate()?;
         self.solver_scheduling_policy
             .validate(self.solver_execution)?;
+        let normal_relaxation = self
+            .descriptors
+            .iter()
+            .filter(|descriptor| descriptor.kind == crate::GpuSolverPassKindV1::NormalRelaxation)
+            .collect::<Vec<_>>();
+        let expected_normal_relaxation = if self.solver_execution.relaxation
+            && self.normal_relaxation_policy
+                != crate::GpuNormalRelaxationPolicyV1::OmitForSoftContacts
+        {
+            (self.solver_settings.substeps * self.solver_settings.iterations) as usize
+        } else {
+            0
+        };
+        if normal_relaxation.len() != expected_normal_relaxation
+            || normal_relaxation.iter().any(|descriptor| {
+                descriptor.parameters.floats2[3]
+                    != u32::from(
+                        self.normal_relaxation_policy
+                            == crate::GpuNormalRelaxationPolicyV1::SoftCoefficients,
+                    ) as f32
+            })
+        {
+            return Err("generated pass trace relaxation policy disagrees with passes".to_owned());
+        }
         if self.states[0].after_operation_index.is_some() {
             return Err("generated pass trace initial state names an operation".to_owned());
         }
@@ -2138,7 +2197,24 @@ impl GpuGeneratedContactRunner {
         target_step: u32,
         identity_policy: ContactIdentityPolicyV1,
         soft_feedback_policy: crate::GpuSoftFeedbackPolicyV1,
-    ) -> Result<GpuGeneratedContactPassTraceV1, String> {
+    ) -> Result<GpuGeneratedContactPassTraceV2, String> {
+        self.run_contact_policy_pass_trace_with_relaxation(
+            scenario,
+            target_step,
+            identity_policy,
+            soft_feedback_policy,
+            crate::GpuNormalRelaxationPolicyV1::SELECTED,
+        )
+    }
+
+    pub fn run_contact_policy_pass_trace_with_relaxation(
+        &self,
+        scenario: &ScenarioV1,
+        target_step: u32,
+        identity_policy: ContactIdentityPolicyV1,
+        soft_feedback_policy: crate::GpuSoftFeedbackPolicyV1,
+        normal_relaxation_policy: crate::GpuNormalRelaxationPolicyV1,
+    ) -> Result<GpuGeneratedContactPassTraceV2, String> {
         if target_step == 0 || target_step > scenario.requested_steps {
             return Err("generated pass trace target must be inside the scenario".to_owned());
         }
@@ -2153,7 +2229,7 @@ impl GpuGeneratedContactRunner {
         )?;
         let execution = GpuSolverExecutionV4::SELECTED;
         let scheduling_policy = GpuSolverSchedulingPolicyV1::SELECTED;
-        let graph = GpuGeneratedContactGraph::new_with_topologies_execution_scheduling_identity_and_soft_feedback(
+        let graph = GpuGeneratedContactGraph::new_with_topologies_execution_scheduling_identity_and_contact_feedback(
             &self.device,
             &storage,
             scenario,
@@ -2166,6 +2242,7 @@ impl GpuGeneratedContactRunner {
             scheduling_policy,
             identity_policy,
             soft_feedback_policy,
+            normal_relaxation_policy,
         )?;
         let expected_descriptors = graph.solver.pass_trace_descriptors();
         let state_stride_bytes = graph.pass_trace_state_bytes();
@@ -2254,7 +2331,7 @@ impl GpuGeneratedContactRunner {
                 body.angular_velocity = physbox_contracts::FiniteF32::new(motion[2])
                     .map_err(|error| error.to_string())?;
             }
-            states.push(GpuGeneratedContactPassStateV1 {
+            states.push(GpuGeneratedContactPassStateV2 {
                 version: GPU_GENERATED_CONTACT_PASS_TRACE_VERSION,
                 after_operation_index: state_index
                     .checked_sub(1)
@@ -2287,7 +2364,7 @@ impl GpuGeneratedContactRunner {
                 "generated pass trace completed step {completed_step}, expected {target_step}"
             ));
         }
-        let trace = GpuGeneratedContactPassTraceV1 {
+        let trace = GpuGeneratedContactPassTraceV2 {
             version: GPU_GENERATED_CONTACT_PASS_TRACE_VERSION,
             adapter: self.diagnostics.clone(),
             source_scenario_hash: canonical_hash(scenario).map_err(|error| error.to_string())?,
@@ -2297,6 +2374,7 @@ impl GpuGeneratedContactRunner {
             solver_scheduling_policy: scheduling_policy,
             contact_identity_policy: identity_policy,
             soft_feedback_policy,
+            normal_relaxation_policy,
             mapped_after_final_step_only: true,
             state_stride_bytes,
             descriptors,
@@ -2420,6 +2498,32 @@ impl GpuGeneratedContactRunner {
         scheduling_policy: GpuSolverSchedulingPolicyV1,
         soft_feedback_policy: crate::GpuSoftFeedbackPolicyV1,
     ) -> Result<GpuGeneratedContactSeriesV1, String> {
+        self.run_contact_policy_observation_series_with_execution_scheduling_and_contact_feedback(
+            scenario,
+            observation_interval_steps,
+            completed_steps,
+            identity_policy,
+            submission_batch_steps,
+            execution,
+            scheduling_policy,
+            soft_feedback_policy,
+            crate::GpuNormalRelaxationPolicyV1::SELECTED,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn run_contact_policy_observation_series_with_execution_scheduling_and_contact_feedback(
+        &self,
+        scenario: &ScenarioV1,
+        observation_interval_steps: u32,
+        completed_steps: u32,
+        identity_policy: ContactIdentityPolicyV1,
+        submission_batch_steps: u32,
+        execution: GpuSolverExecutionV4,
+        scheduling_policy: GpuSolverSchedulingPolicyV1,
+        soft_feedback_policy: crate::GpuSoftFeedbackPolicyV1,
+        normal_relaxation_policy: crate::GpuNormalRelaxationPolicyV1,
+    ) -> Result<GpuGeneratedContactSeriesV1, String> {
         if observation_interval_steps == 0
             || completed_steps == 0
             || !completed_steps.is_multiple_of(observation_interval_steps)
@@ -2445,7 +2549,7 @@ impl GpuGeneratedContactRunner {
             &scenario.bodies,
         )?;
         let graph =
-            GpuGeneratedContactGraph::new_with_topologies_execution_scheduling_identity_and_soft_feedback(
+            GpuGeneratedContactGraph::new_with_topologies_execution_scheduling_identity_and_contact_feedback(
                 &self.device,
                 &storage,
                 scenario,
@@ -2458,6 +2562,7 @@ impl GpuGeneratedContactRunner {
                 scheduling_policy,
                 identity_policy,
                 soft_feedback_policy,
+                normal_relaxation_policy,
             )?;
         let snapshot_count = completed_steps / observation_interval_steps;
         let readbacks =

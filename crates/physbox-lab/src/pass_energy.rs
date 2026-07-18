@@ -1,6 +1,6 @@
 use physbox_contracts::{BodyStateV1, ScenarioV1, Vec2};
 use physbox_engine::{
-    GpuColoringEvidenceV4, GpuFixedFloorContactEvidence, GpuGeneratedContactPassTraceV1,
+    GpuColoringEvidenceV4, GpuFixedFloorContactEvidence, GpuGeneratedContactPassTraceV2,
     GpuSolverPassDescriptorV1, GpuSolverPassKindV1,
 };
 use serde::Serialize;
@@ -121,7 +121,7 @@ impl SettlingPassEnergyReportV1 {
 
 pub fn analyze_settling_pass_energy(
     scenario: &ScenarioV1,
-    trace: &GpuGeneratedContactPassTraceV1,
+    trace: &GpuGeneratedContactPassTraceV2,
 ) -> Result<SettlingPassEnergyReportV1, String> {
     trace.validate()?;
     if scenario.bodies.len() != trace.states[0].bodies.len()
@@ -552,10 +552,12 @@ fn normal_equation(
     };
     if point.separation > 0.0 {
         velocity_bias = point.separation / descriptor.parameters.floats0[0];
-    } else if descriptor.parameters.uints1[3] != 0 {
-        velocity_bias = coefficients[0] * point.separation / descriptor.parameters.floats0[0];
-        if descriptor.parameters.floats2[0] > 0.0 {
-            velocity_bias = velocity_bias.max(-descriptor.parameters.floats2[0]);
+    } else if descriptor.parameters.uints1[3] != 0 || descriptor.parameters.floats2[3] != 0.0 {
+        if descriptor.parameters.uints1[3] != 0 {
+            velocity_bias = coefficients[0] * point.separation / descriptor.parameters.floats0[0];
+            if descriptor.parameters.floats2[0] > 0.0 {
+                velocity_bias = velocity_bias.max(-descriptor.parameters.floats2[0]);
+            }
         }
         mass_scale = coefficients[1];
         impulse_scale = coefficients[2];

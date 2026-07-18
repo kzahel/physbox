@@ -12,8 +12,9 @@ use physbox_contracts::{
     canonical_hash, sha256_bytes,
 };
 use physbox_engine::{
-    GpuGeneratedContactPassTraceV1, GpuGeneratedContactRunner, GpuSoftFeedbackPolicyV1,
-    p5_2_box2d_world_projection, p5_2_minimized_mixed_pile_energy_scenario,
+    GpuGeneratedContactPassTraceV2, GpuGeneratedContactRunner, GpuNormalRelaxationPolicyV1,
+    GpuSoftFeedbackPolicyV1, p5_2_box2d_world_projection,
+    p5_2_minimized_mixed_pile_energy_scenario,
 };
 use physbox_lab::oracle_transport::{
     OracleProcess, OracleRunConfig, OracleSourceIdentity, run_oracle, verify_clean_git_pin,
@@ -24,7 +25,7 @@ use physbox_lab::pass_energy::{
 };
 use serde::Serialize;
 
-const ARTIFACT_VERSION: u32 = 1;
+const ARTIFACT_VERSION: u32 = 2;
 const SUCCESS_SENTINEL: &str = "PHYSBOX5_SETTLING_PASS_ENERGY_SUCCESS";
 const BOX2D_REVISION: &str = "3a4f0da8374af61293a03021c9a0b3ebcfe67948";
 
@@ -39,6 +40,8 @@ struct Artifact {
     source_dirty: bool,
     host: &'static str,
     scenario_name: &'static str,
+    factorial_arm: &'static str,
+    normal_relaxation_policy: GpuNormalRelaxationPolicyV1,
     target_step: u32,
     matched_state_precision: &'static str,
     mapped_after_final_step_only: bool,
@@ -47,7 +50,7 @@ struct Artifact {
     oracle_precedence_changed: bool,
     product_constructor_changed: bool,
     source_scenario: ScenarioV1,
-    trace: GpuGeneratedContactPassTraceV1,
+    trace: GpuGeneratedContactPassTraceV2,
     energy: SettlingPassEnergyReportV1,
     box2d: Box2dBehaviorComparison,
 }
@@ -100,11 +103,12 @@ fn run() -> Result<(), String> {
         ));
     }
     let runner = pollster::block_on(GpuGeneratedContactRunner::new())?;
-    let trace = runner.run_contact_policy_pass_trace(
+    let trace = runner.run_contact_policy_pass_trace_with_relaxation(
         &source,
         arguments.target_step,
         ContactIdentityPolicyV1::PriorContactHysteresis,
         GpuSoftFeedbackPolicyV1::SELECTED,
+        arguments.normal_relaxation_policy,
     )?;
     let energy = analyze_settling_pass_energy(&source, &trace)?;
     if energy.version != SETTLING_PASS_ENERGY_REPORT_VERSION {
@@ -117,7 +121,7 @@ fn run() -> Result<(), String> {
     let artifact = Artifact {
         schema_version: SCHEMA_VERSION,
         artifact_version: ARTIFACT_VERSION,
-        artifact_kind: "p5.2b-s6.5b-settling-pass-energy",
+        artifact_kind: "p5.2b-s6.5c-relaxation-factorial-pass-energy",
         run_id: arguments.run_id,
         source_revision: arguments.source_revision,
         source_dirty: arguments.source_dirty,
@@ -127,6 +131,8 @@ fn run() -> Result<(), String> {
             "native-headless"
         },
         scenario_name: "minimized-mixed-candidate",
+        factorial_arm: relaxation_arm_name(arguments.normal_relaxation_policy),
+        normal_relaxation_policy: arguments.normal_relaxation_policy,
         target_step: arguments.target_step,
         matched_state_precision: "f32",
         mapped_after_final_step_only: true,
@@ -155,6 +161,7 @@ struct Arguments {
     source_revision: String,
     source_dirty: bool,
     target_step: u32,
+    normal_relaxation_policy: GpuNormalRelaxationPolicyV1,
     box2d_source: PathBuf,
     oracle: PathBuf,
     oracle_artifact_root: PathBuf,
@@ -167,6 +174,7 @@ impl Arguments {
         let mut source_revision = None;
         let mut source_dirty = None;
         let mut target_step = None;
+        let mut normal_relaxation_policy = None;
         let mut box2d_source = None;
         let mut oracle = None;
         let mut oracle_artifact_root = None;
@@ -187,6 +195,9 @@ impl Arguments {
                             .map_err(|error| format!("invalid target step: {error}"))?,
                     )
                 }
+                "--normal-relaxation-policy" => {
+                    normal_relaxation_policy = Some(parse_normal_relaxation_policy(&value)?)
+                }
                 "--box2d-source" => box2d_source = Some(PathBuf::from(value)),
                 "--oracle" => oracle = Some(PathBuf::from(value)),
                 "--oracle-artifact-root" => {
@@ -202,12 +213,31 @@ impl Arguments {
                 .ok_or_else(|| "missing --source-revision".to_owned())?,
             source_dirty: source_dirty.ok_or_else(|| "missing --source-dirty".to_owned())?,
             target_step: target_step.ok_or_else(|| "missing --target-step".to_owned())?,
+            normal_relaxation_policy: normal_relaxation_policy
+                .ok_or_else(|| "missing --normal-relaxation-policy".to_owned())?,
             box2d_source: box2d_source.ok_or_else(|| "missing --box2d-source".to_owned())?,
             oracle: oracle.ok_or_else(|| "missing --oracle".to_owned())?,
             oracle_artifact_root: oracle_artifact_root
                 .ok_or_else(|| "missing --oracle-artifact-root".to_owned())?,
             output: output.ok_or_else(|| "missing --output".to_owned())?,
         })
+    }
+}
+
+const fn relaxation_arm_name(policy: GpuNormalRelaxationPolicyV1) -> &'static str {
+    match policy {
+        GpuNormalRelaxationPolicyV1::HardDirect => "soft-current-relax",
+        GpuNormalRelaxationPolicyV1::OmitForSoftContacts => "soft-no-normal-relax",
+        GpuNormalRelaxationPolicyV1::SoftCoefficients => "soft-coefficient-normal-relax",
+    }
+}
+
+fn parse_normal_relaxation_policy(value: &str) -> Result<GpuNormalRelaxationPolicyV1, String> {
+    match value {
+        "hard-direct" => Ok(GpuNormalRelaxationPolicyV1::HardDirect),
+        "omit-for-soft-contacts" => Ok(GpuNormalRelaxationPolicyV1::OmitForSoftContacts),
+        "soft-coefficients" => Ok(GpuNormalRelaxationPolicyV1::SoftCoefficients),
+        _ => Err(format!("invalid normal relaxation policy {value}")),
     }
 }
 
@@ -344,6 +374,8 @@ mod tests {
                 "false",
                 "--target-step",
                 "900",
+                "--normal-relaxation-policy",
+                "soft-coefficients",
                 "--box2d-source",
                 "reference/box2d",
                 "--oracle",
@@ -359,5 +391,9 @@ mod tests {
         .unwrap();
         assert_eq!(parsed.target_step, 900);
         assert!(!parsed.source_dirty);
+        assert_eq!(
+            parsed.normal_relaxation_policy,
+            GpuNormalRelaxationPolicyV1::SoftCoefficients
+        );
     }
 }

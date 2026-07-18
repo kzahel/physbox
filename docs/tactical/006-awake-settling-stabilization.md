@@ -621,6 +621,9 @@ selected and every candidate remains unpromoted.
 
 - [x] Freeze the arm definitions, order, and survival criteria in governing
   documentation before implementing or measuring an arm.
+- [x] Add laboratory-only normal-relaxation policy controls, a version-2
+  policy-attested pass trace, and a matched scalar recurrence. Keep every
+  product-facing constructor on hard/direct relaxation.
 - [ ] Arm 1, `soft-no-normal-relax`: omit normal-relaxation passes when contact
   softness is enabled. Retain biased manifold-block normals, tangent
   relaxation, restitution, `i2`, coloring, coefficients, and every other pass.
@@ -675,6 +678,17 @@ Commit boundaries: this authorization contract; laboratory policy and
 matched-trace support; each independently killed or forwarded arm; the Metal
 survivor matrix; cross-host survivor evidence; and the verified promotion
 checkpoint are separate reviewable commits.
+
+Laboratory-mechanics checkpoint, 2026-07-18: version-2 traces name the normal-
+relaxation policy explicitly. `soft-no-normal-relax` removes the eight normal
+passes while retaining all eight tangent-relaxation passes in the four-
+substep/`i2` schedule. `soft-coefficient-normal-relax` retains all 56 logical
+boundaries and marks only the eight normal-relaxation descriptors for the
+experimental coefficient equation. Both execute on Metal and replay through
+the independent matched-`f32` scalar recurrence within the existing diagnostic
+comparison. Hard/direct remains selected in every wrapper and product
+constructor. These are mechanics checks, not factorial measurements or arm
+survival results.
 
 ### S6.6 — accepted policy integration
 

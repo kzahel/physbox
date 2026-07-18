@@ -47,9 +47,10 @@ pub use body_floor_solver::{
     GpuColorOrderV4, GpuColorScheduleV4, GpuColorUnitV4, GpuColoredDispatchV1,
     GpuColoringEvidenceV4, GpuContactSoftnessCoefficientsV1, GpuFixedFloorContactEvidence,
     GpuFixedFloorPassEvidence, GpuGatherTopology, GpuGatherTopologyEvidence,
-    GpuManifoldBlockEvidenceV2, GpuNormalSolverV4, GpuSoftFeedbackPolicyV1,
-    GpuSolverAccumulationV4, GpuSolverExecutionV4, GpuSolverPassDescriptorV1, GpuSolverPassKindV1,
-    GpuSolverPassParametersV1, GpuSolverSchedulingPolicyV1, gpu_contact_softness_coefficients,
+    GpuManifoldBlockEvidenceV2, GpuNormalRelaxationPolicyV1, GpuNormalSolverV4,
+    GpuSoftFeedbackPolicyV1, GpuSolverAccumulationV4, GpuSolverExecutionV4,
+    GpuSolverPassDescriptorV1, GpuSolverPassKindV1, GpuSolverPassParametersV1,
+    GpuSolverSchedulingPolicyV1, gpu_contact_softness_coefficients,
 };
 pub use body_state::{
     BODY_BYTES_PER_SLOT, BODY_COMMAND_BYTES, BODY_COMMAND_CAPACITY, BodySlotRegistry,
@@ -89,7 +90,7 @@ pub use frame::{
 pub use generated_contacts::{
     GPU_GENERATED_CONTACT_BODY_HISTORY_VERSION, GPU_GENERATED_CONTACT_PASS_TRACE_VERSION,
     GpuGeneratedContactBenchmarkOutput, GpuGeneratedContactBodyHistoryV1,
-    GpuGeneratedContactOutput, GpuGeneratedContactPassStateV1, GpuGeneratedContactPassTraceV1,
+    GpuGeneratedContactOutput, GpuGeneratedContactPassStateV2, GpuGeneratedContactPassTraceV2,
     GpuGeneratedContactRunner, GpuGeneratedContactSeriesV1, GpuGeneratedContactSnapshotV1,
     benchmark_gpu_generated_contact_experiment,
     benchmark_gpu_generated_contact_identity_experiment,
