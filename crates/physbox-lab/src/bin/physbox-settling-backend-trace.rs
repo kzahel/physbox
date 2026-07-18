@@ -54,6 +54,7 @@ enum TraceScenario {
     MinimizedMixedCandidatePointI2,
     MinimizedMixedCandidateNoNormalRelax,
     MinimizedMixedCandidateSoftCoefficientRelax,
+    MinimizedMixedCandidatePointSequentialRelax,
 }
 
 impl TraceScenario {
@@ -89,6 +90,9 @@ impl TraceScenario {
             }
             "minimized-mixed-candidate-soft-coefficient-relax" => {
                 Ok(Self::MinimizedMixedCandidateSoftCoefficientRelax)
+            }
+            "minimized-mixed-candidate-point-sequential-relax" => {
+                Ok(Self::MinimizedMixedCandidatePointSequentialRelax)
             }
             _ => Err(format!("unknown settling trace scenario {value}")),
         }
@@ -126,6 +130,9 @@ impl TraceScenario {
             }
             Self::MinimizedMixedCandidateSoftCoefficientRelax => {
                 "minimized-mixed-candidate-soft-coefficient-relax"
+            }
+            Self::MinimizedMixedCandidatePointSequentialRelax => {
+                "minimized-mixed-candidate-point-sequential-relax"
             }
         }
     }
@@ -233,6 +240,9 @@ impl TraceScenario {
             }
             Self::MinimizedMixedCandidateSoftCoefficientRelax => {
                 relaxation_energy_source(GpuNormalRelaxationPolicyV1::SoftCoefficients)
+            }
+            Self::MinimizedMixedCandidatePointSequentialRelax => {
+                relaxation_energy_source(GpuNormalRelaxationPolicyV1::PointSequential)
             }
         }
     }
@@ -628,6 +638,10 @@ mod tests {
             (
                 "minimized-mixed-candidate-soft-coefficient-relax",
                 GpuNormalRelaxationPolicyV1::SoftCoefficients,
+            ),
+            (
+                "minimized-mixed-candidate-point-sequential-relax",
+                GpuNormalRelaxationPolicyV1::PointSequential,
             ),
         ] {
             let alias = TraceScenario::parse(name).unwrap();

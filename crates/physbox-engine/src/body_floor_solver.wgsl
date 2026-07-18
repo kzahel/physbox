@@ -1148,7 +1148,7 @@ fn normal_equation_from_velocity(point: PreparedPoint,
     let coefficients = contact_coefficients(point);
     if (point.data0.w > 0.0) {
         velocity_bias = point.data0.w / params.floats0.x;
-    } else if (params.uints1.w != 0u || params.floats2.w != 0.0) {
+    } else if (params.uints1.w != 0u || params.floats2.w == 1.0) {
         if (params.uints1.w != 0u) {
             velocity_bias = coefficients.x * point.data0.w / params.floats0.x;
             if (params.floats2.x > 0.0) {
@@ -1399,48 +1399,91 @@ fn solve_colored_manifold(point_index: u32, preserve_static_motion: bool) {
             emit_pair(point_index + 1u, point1, impulse1);
         }
     } else if (stage == 2u || stage == 4u) {
-        let k11 = block_matrix_entry(point0, point0, 1.0, 1.0);
-        var matrix = vec4f(k11, 0.0, 0.0, 0.0);
-        if (point_count == 2u) {
-            matrix = vec4f(
-                k11,
-                block_matrix_entry(point0, point1, 1.0, 1.0),
-                block_matrix_entry(point1, point0, 1.0, 1.0),
-                block_matrix_entry(point1, point1, 1.0, 1.0));
-        }
-        let old = vec2f(point0.data1.z,
-            select(0.0, point1.data1.z, point_count == 2u));
-        let equation0 = normal_equation_from_velocity(point0,
-            relative_velocity_from_motions(point0, point0.normal, motion_a, motion_b));
-        let equation1 = normal_equation_from_velocity(point1,
-            relative_velocity_from_motions(point1, point1.normal, motion_a, motion_b));
-        let solution = solve_normal_block(
-            matrix,
-            vec2f(equation0.base,
-                select(0.0, equation1.base, point_count == 2u)),
-            old,
-            vec2f(equation0.impulse_scale,
-                select(0.0, equation1.impulse_scale, point_count == 2u)),
-            point_count);
-        store_block_trace(point_index, matrix, solution.active_set);
+        if (stage == 4u && params.floats2.w == 2.0) {
+            let equation0 = normal_equation_from_velocity(
+                point0,
+                relative_velocity_from_motions(point0, point0.normal, motion_a, motion_b));
+            let k11 = block_matrix_entry(point0, point0, 1.0, 1.0);
+            let mass0 = select(0.0, 1.0 / k11, k11 > 0.0);
+            let old0 = point0.data1.z;
+            point0.data1.z = max(old0 - mass0 * equation0.base -
+                equation0.impulse_scale * old0, 0.0);
+            let applied0 = point0.data1.z - old0;
+            point0.data2.x += max(applied0, 0.0);
+            point0.data2.w = 4.0;
+            let impulse0 = point0.normal * applied0;
+            motion_a = apply_impulse(point0.ids.x, motion_a, -impulse0, point0.anchor_a);
+            motion_b = apply_impulse(point0.ids.y, motion_b, impulse0, point0.anchor_b);
+            emit_pair(point_index, point0, impulse0);
+            if (point_count == 2u) {
+                let equation1 = normal_equation_from_velocity(
+                    point1,
+                    relative_velocity_from_motions(
+                        point1, point1.normal, motion_a, motion_b));
+                let k22 = block_matrix_entry(point1, point1, 1.0, 1.0);
+                let mass1 = select(0.0, 1.0 / k22, k22 > 0.0);
+                let old1 = point1.data1.z;
+                point1.data1.z = max(old1 - mass1 * equation1.base -
+                    equation1.impulse_scale * old1, 0.0);
+                let applied1 = point1.data1.z - old1;
+                point1.data2.x += max(applied1, 0.0);
+                point1.data2.w = 4.0;
+                let impulse1 = point1.normal * applied1;
+                motion_a = apply_impulse(point1.ids.x, motion_a,
+                    -impulse1, point1.anchor_a);
+                motion_b = apply_impulse(point1.ids.y, motion_b,
+                    impulse1, point1.anchor_b);
+                emit_pair(point_index + 1u, point1, impulse1);
+                store_block_trace(point_index, vec4f(k11, 0.0, 0.0, k22), 4u);
+            } else {
+                store_block_trace(point_index, vec4f(k11, 0.0, 0.0, 0.0), 4u);
+            }
+        } else {
+            let k11 = block_matrix_entry(point0, point0, 1.0, 1.0);
+            var matrix = vec4f(k11, 0.0, 0.0, 0.0);
+            if (point_count == 2u) {
+                matrix = vec4f(
+                    k11,
+                    block_matrix_entry(point0, point1, 1.0, 1.0),
+                    block_matrix_entry(point1, point0, 1.0, 1.0),
+                    block_matrix_entry(point1, point1, 1.0, 1.0));
+            }
+            let old = vec2f(point0.data1.z,
+                select(0.0, point1.data1.z, point_count == 2u));
+            let equation0 = normal_equation_from_velocity(point0,
+                relative_velocity_from_motions(point0, point0.normal, motion_a, motion_b));
+            let equation1 = normal_equation_from_velocity(point1,
+                relative_velocity_from_motions(point1, point1.normal, motion_a, motion_b));
+            let solution = solve_normal_block(
+                matrix,
+                vec2f(equation0.base,
+                    select(0.0, equation1.base, point_count == 2u)),
+                old,
+                vec2f(equation0.impulse_scale,
+                    select(0.0, equation1.impulse_scale, point_count == 2u)),
+                point_count);
+            store_block_trace(point_index, matrix, solution.active_set);
 
-        let applied0 = solution.impulses.x - old.x;
-        point0.data1.z = solution.impulses.x;
-        point0.data2.x += max(applied0, 0.0);
-        point0.data2.w = f32(solution.active_set);
-        let impulse0 = point0.normal * applied0;
-        motion_a = apply_impulse(point0.ids.x, motion_a, -impulse0, point0.anchor_a);
-        motion_b = apply_impulse(point0.ids.y, motion_b, impulse0, point0.anchor_b);
-        emit_pair(point_index, point0, impulse0);
-        if (point_count == 2u) {
-            let applied1 = solution.impulses.y - old.y;
-            point1.data1.z = solution.impulses.y;
-            point1.data2.x += max(applied1, 0.0);
-            point1.data2.w = f32(solution.active_set);
-            let impulse1 = point1.normal * applied1;
-            motion_a = apply_impulse(point1.ids.x, motion_a, -impulse1, point1.anchor_a);
-            motion_b = apply_impulse(point1.ids.y, motion_b, impulse1, point1.anchor_b);
-            emit_pair(point_index + 1u, point1, impulse1);
+            let applied0 = solution.impulses.x - old.x;
+            point0.data1.z = solution.impulses.x;
+            point0.data2.x += max(applied0, 0.0);
+            point0.data2.w = f32(solution.active_set);
+            let impulse0 = point0.normal * applied0;
+            motion_a = apply_impulse(point0.ids.x, motion_a, -impulse0, point0.anchor_a);
+            motion_b = apply_impulse(point0.ids.y, motion_b, impulse0, point0.anchor_b);
+            emit_pair(point_index, point0, impulse0);
+            if (point_count == 2u) {
+                let applied1 = solution.impulses.y - old.y;
+                point1.data1.z = solution.impulses.y;
+                point1.data2.x += max(applied1, 0.0);
+                point1.data2.w = f32(solution.active_set);
+                let impulse1 = point1.normal * applied1;
+                motion_a = apply_impulse(point1.ids.x, motion_a,
+                    -impulse1, point1.anchor_a);
+                motion_b = apply_impulse(point1.ids.y, motion_b,
+                    impulse1, point1.anchor_b);
+                emit_pair(point_index + 1u, point1, impulse1);
+            }
         }
     } else if (stage == 3u || stage == 5u) {
         let tangent_velocity0 = relative_velocity_from_motions(

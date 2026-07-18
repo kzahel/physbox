@@ -1467,14 +1467,16 @@ impl GpuGeneratedContactPassTraceV2 {
         } else {
             0
         };
+        let expected_shader_code = match self.normal_relaxation_policy {
+            crate::GpuNormalRelaxationPolicyV1::HardDirect
+            | crate::GpuNormalRelaxationPolicyV1::OmitForSoftContacts => 0.0,
+            crate::GpuNormalRelaxationPolicyV1::SoftCoefficients => 1.0,
+            crate::GpuNormalRelaxationPolicyV1::PointSequential => 2.0,
+        };
         if normal_relaxation.len() != expected_normal_relaxation
-            || normal_relaxation.iter().any(|descriptor| {
-                descriptor.parameters.floats2[3]
-                    != u32::from(
-                        self.normal_relaxation_policy
-                            == crate::GpuNormalRelaxationPolicyV1::SoftCoefficients,
-                    ) as f32
-            })
+            || normal_relaxation
+                .iter()
+                .any(|descriptor| descriptor.parameters.floats2[3] != expected_shader_code)
         {
             return Err("generated pass trace relaxation policy disagrees with passes".to_owned());
         }

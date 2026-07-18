@@ -229,6 +229,7 @@ const fn relaxation_arm_name(policy: GpuNormalRelaxationPolicyV1) -> &'static st
         GpuNormalRelaxationPolicyV1::HardDirect => "soft-current-relax",
         GpuNormalRelaxationPolicyV1::OmitForSoftContacts => "soft-no-normal-relax",
         GpuNormalRelaxationPolicyV1::SoftCoefficients => "soft-coefficient-normal-relax",
+        GpuNormalRelaxationPolicyV1::PointSequential => "soft-point-normal-relax",
     }
 }
 
@@ -237,6 +238,7 @@ fn parse_normal_relaxation_policy(value: &str) -> Result<GpuNormalRelaxationPoli
         "hard-direct" => Ok(GpuNormalRelaxationPolicyV1::HardDirect),
         "omit-for-soft-contacts" => Ok(GpuNormalRelaxationPolicyV1::OmitForSoftContacts),
         "soft-coefficients" => Ok(GpuNormalRelaxationPolicyV1::SoftCoefficients),
+        "point-sequential" => Ok(GpuNormalRelaxationPolicyV1::PointSequential),
         _ => Err(format!("invalid normal relaxation policy {value}")),
     }
 }
@@ -394,6 +396,10 @@ mod tests {
         assert_eq!(
             parsed.normal_relaxation_policy,
             GpuNormalRelaxationPolicyV1::SoftCoefficients
+        );
+        assert_eq!(
+            parse_normal_relaxation_policy("point-sequential").unwrap(),
+            GpuNormalRelaxationPolicyV1::PointSequential
         );
     }
 }

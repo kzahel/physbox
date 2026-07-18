@@ -62,6 +62,7 @@ pub enum GpuNormalRelaxationPolicyV1 {
     HardDirect,
     OmitForSoftContacts,
     SoftCoefficients,
+    PointSequential,
 }
 
 impl GpuNormalRelaxationPolicyV1 {
@@ -71,8 +72,12 @@ impl GpuNormalRelaxationPolicyV1 {
         !matches!(self, Self::OmitForSoftContacts)
     }
 
-    const fn uses_soft_coefficients(self) -> bool {
-        matches!(self, Self::SoftCoefficients)
+    const fn shader_code(self) -> u32 {
+        match self {
+            Self::HardDirect | Self::OmitForSoftContacts => 0,
+            Self::SoftCoefficients => 1,
+            Self::PointSequential => 2,
+        }
     }
 
     fn validate(
@@ -3913,8 +3918,7 @@ fn operations_with_contact_feedback(
                         topology,
                         execution.normal_solver,
                     );
-                    params.floats2[3] =
-                        u32::from(normal_relaxation_policy.uses_soft_coefficients()) as f32;
+                    params.floats2[3] = normal_relaxation_policy.shader_code() as f32;
                     solver_stage(
                         &mut parameters,
                         &mut operations,
@@ -5108,6 +5112,19 @@ mod tests {
             assert_eq!(
                 pass.parameters.floats2[3],
                 u32::from(pass.kind == GpuSolverPassKindV1::NormalRelaxation) as f32
+            );
+        }
+
+        let sequential = descriptors(GpuNormalRelaxationPolicyV1::PointSequential);
+        assert_eq!(sequential.len(), 56);
+        for pass in sequential {
+            assert_eq!(
+                pass.parameters.floats2[3],
+                if pass.kind == GpuSolverPassKindV1::NormalRelaxation {
+                    2.0
+                } else {
+                    0.0
+                }
             );
         }
 

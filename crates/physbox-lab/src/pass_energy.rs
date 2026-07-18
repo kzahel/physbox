@@ -387,59 +387,114 @@ fn solve_manifold(
         GpuSolverPassKindV1::NormalBiased | GpuSolverPassKindV1::NormalRelaxation => {
             let point0 = contacts[point_index].clone();
             let point1 = has_second.then(|| contacts[point_index + 1].clone());
-            let matrix = block_matrix(&bodies[body_a], &bodies[body_b], &point0, point1.as_ref());
-            let old = [
-                point0.normal_impulse,
-                point1.as_ref().map_or(0.0, |point| point.normal_impulse),
-            ];
-            let equation0 = normal_equation(
-                &bodies[body_a],
-                &bodies[body_b],
-                &point0,
-                motion_a,
-                motion_b,
-                descriptor,
-            );
-            let equation1 = point1.as_ref().map_or([0.0, 0.0], |point| {
-                normal_equation(
+            if descriptor.kind == GpuSolverPassKindV1::NormalRelaxation
+                && descriptor.parameters.floats2[3] == 2.0
+            {
+                let equation0 = normal_equation(
                     &bodies[body_a],
                     &bodies[body_b],
-                    point,
+                    &point0,
                     motion_a,
                     motion_b,
                     descriptor,
-                )
-            });
-            let solution = solve_normal_block(
-                matrix,
-                [equation0[0], equation1[0]],
-                old,
-                [equation0[1], equation1[1]],
-                has_second,
-            );
-            let applied0 = solution[0] - old[0];
-            contacts[point_index].normal_impulse = solution[0];
-            contacts[point_index].total_normal_impulse += applied0.max(0.0);
-            let impulse0 = scale(point0.normal, applied0);
-            motion_a = apply_impulse(
-                &bodies[body_a],
-                motion_a,
-                scale(impulse0, -1.0),
-                point0.anchor_a,
-            );
-            motion_b = apply_impulse(&bodies[body_b], motion_b, impulse0, point0.anchor_b);
-            if let Some(point1) = point1 {
-                let applied1 = solution[1] - old[1];
-                contacts[point_index + 1].normal_impulse = solution[1];
-                contacts[point_index + 1].total_normal_impulse += applied1.max(0.0);
-                let impulse1 = scale(point1.normal, applied1);
+                );
+                let k11 = block_matrix_entry(&bodies[body_a], &bodies[body_b], &point0, &point0);
+                let mass0 = if k11 > 0.0 { k11.recip() } else { 0.0 };
+                let old0 = point0.normal_impulse;
+                let next0 = (old0 - mass0 * equation0[0] - equation0[1] * old0).max(0.0);
+                let applied0 = next0 - old0;
+                contacts[point_index].normal_impulse = next0;
+                contacts[point_index].total_normal_impulse += applied0.max(0.0);
+                let impulse0 = scale(point0.normal, applied0);
                 motion_a = apply_impulse(
                     &bodies[body_a],
                     motion_a,
-                    scale(impulse1, -1.0),
-                    point1.anchor_a,
+                    scale(impulse0, -1.0),
+                    point0.anchor_a,
                 );
-                motion_b = apply_impulse(&bodies[body_b], motion_b, impulse1, point1.anchor_b);
+                motion_b = apply_impulse(&bodies[body_b], motion_b, impulse0, point0.anchor_b);
+                if let Some(point1) = point1 {
+                    let equation1 = normal_equation(
+                        &bodies[body_a],
+                        &bodies[body_b],
+                        &point1,
+                        motion_a,
+                        motion_b,
+                        descriptor,
+                    );
+                    let k22 =
+                        block_matrix_entry(&bodies[body_a], &bodies[body_b], &point1, &point1);
+                    let mass1 = if k22 > 0.0 { k22.recip() } else { 0.0 };
+                    let old1 = point1.normal_impulse;
+                    let next1 = (old1 - mass1 * equation1[0] - equation1[1] * old1).max(0.0);
+                    let applied1 = next1 - old1;
+                    contacts[point_index + 1].normal_impulse = next1;
+                    contacts[point_index + 1].total_normal_impulse += applied1.max(0.0);
+                    let impulse1 = scale(point1.normal, applied1);
+                    motion_a = apply_impulse(
+                        &bodies[body_a],
+                        motion_a,
+                        scale(impulse1, -1.0),
+                        point1.anchor_a,
+                    );
+                    motion_b = apply_impulse(&bodies[body_b], motion_b, impulse1, point1.anchor_b);
+                }
+            } else {
+                let matrix =
+                    block_matrix(&bodies[body_a], &bodies[body_b], &point0, point1.as_ref());
+                let old = [
+                    point0.normal_impulse,
+                    point1.as_ref().map_or(0.0, |point| point.normal_impulse),
+                ];
+                let equation0 = normal_equation(
+                    &bodies[body_a],
+                    &bodies[body_b],
+                    &point0,
+                    motion_a,
+                    motion_b,
+                    descriptor,
+                );
+                let equation1 = point1.as_ref().map_or([0.0, 0.0], |point| {
+                    normal_equation(
+                        &bodies[body_a],
+                        &bodies[body_b],
+                        point,
+                        motion_a,
+                        motion_b,
+                        descriptor,
+                    )
+                });
+                let solution = solve_normal_block(
+                    matrix,
+                    [equation0[0], equation1[0]],
+                    old,
+                    [equation0[1], equation1[1]],
+                    has_second,
+                );
+                let applied0 = solution[0] - old[0];
+                contacts[point_index].normal_impulse = solution[0];
+                contacts[point_index].total_normal_impulse += applied0.max(0.0);
+                let impulse0 = scale(point0.normal, applied0);
+                motion_a = apply_impulse(
+                    &bodies[body_a],
+                    motion_a,
+                    scale(impulse0, -1.0),
+                    point0.anchor_a,
+                );
+                motion_b = apply_impulse(&bodies[body_b], motion_b, impulse0, point0.anchor_b);
+                if let Some(point1) = point1 {
+                    let applied1 = solution[1] - old[1];
+                    contacts[point_index + 1].normal_impulse = solution[1];
+                    contacts[point_index + 1].total_normal_impulse += applied1.max(0.0);
+                    let impulse1 = scale(point1.normal, applied1);
+                    motion_a = apply_impulse(
+                        &bodies[body_a],
+                        motion_a,
+                        scale(impulse1, -1.0),
+                        point1.anchor_a,
+                    );
+                    motion_b = apply_impulse(&bodies[body_b], motion_b, impulse1, point1.anchor_b);
+                }
             }
         }
         GpuSolverPassKindV1::TangentBiased | GpuSolverPassKindV1::TangentRelaxation => {
@@ -552,7 +607,7 @@ fn normal_equation(
     };
     if point.separation > 0.0 {
         velocity_bias = point.separation / descriptor.parameters.floats0[0];
-    } else if descriptor.parameters.uints1[3] != 0 || descriptor.parameters.floats2[3] != 0.0 {
+    } else if descriptor.parameters.uints1[3] != 0 || descriptor.parameters.floats2[3] == 1.0 {
         if descriptor.parameters.uints1[3] != 0 {
             velocity_bias = coefficients[0] * point.separation / descriptor.parameters.floats0[0];
             if descriptor.parameters.floats2[0] > 0.0 {
