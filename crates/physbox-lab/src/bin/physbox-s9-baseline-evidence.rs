@@ -130,6 +130,14 @@ impl ArmDefinition {
                 contact_coefficient_policy: GpuContactCoefficientPolicyV1::SELECTED,
                 substep_contact_policy: GpuSubstepContactPolicyV1::FixedAnchorAnalyticalSeparation,
             }),
+            "retain-within-step-impulses-through-refresh" => Ok(Self {
+                id: "retain-within-step-impulses-through-refresh",
+                components: &["S10.4-b"],
+                scheduling_policy: selected,
+                contact_coefficient_policy: GpuContactCoefficientPolicyV1::SELECTED,
+                substep_contact_policy:
+                    GpuSubstepContactPolicyV1::RefreshAnchorsAndMassRetainImpulses,
+            }),
             "static-late-static-stiff-hard" => Ok(Self {
                 id: "static-late-static-stiff-hard",
                 components: &["E2", "E4"],
@@ -151,7 +159,7 @@ impl ArmDefinition {
                 contact_coefficient_policy: GpuContactCoefficientPolicyV1::StaticStiffHard,
                 substep_contact_policy: GpuSubstepContactPolicyV1::SELECTED,
             }),
-            _ => Err(format!("unknown S9 arm {id}")),
+            _ => Err(format!("unknown settling arm {id}")),
         }
     }
 
@@ -1397,6 +1405,7 @@ mod tests {
             "fused-normal-tangent",
             "static-stiff-hard",
             "fixed-anchor-substep-refresh",
+            "retain-within-step-impulses-through-refresh",
             "static-late-static-stiff-hard",
             "fused-normal-tangent-static-late",
             "fused-normal-tangent-static-late-static-stiff-hard",
@@ -1406,7 +1415,7 @@ mod tests {
             .into_iter()
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
-        assert_eq!(arms.len(), 7);
+        assert_eq!(arms.len(), 8);
         for arm in arms {
             let small = arm.scheduling_for_body_capacity(64);
             let scalable = arm.scheduling_for_body_capacity(65);

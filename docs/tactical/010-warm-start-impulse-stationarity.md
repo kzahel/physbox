@@ -479,6 +479,22 @@ anti-sag checks. The verified package in
 `evidence/p5.2b-s10.4-candidate-retained-refresh/` admits one named,
 unpromoted GPU port; it does not change the selected product.
 
+GPU implementation checkpoint, 2026-07-18: the
+[implementation note](../../evidence/p5.2b-s10.4-candidate-retained-refresh/IMPLEMENTATION.md)
+records `refresh-anchors-and-mass-retain-impulses` as the only GPU port. A
+descriptor-exact control proves that it changes only the three inter-substep
+refresh reset words from mode 1 to mode 0; operation count, refreshed
+geometry/effective mass, post-integration refresh, solver passes, dispatch
+count, storage, and capacity are unchanged. The centered hard/direct 8-stack
+changes body state, replays byte-for-byte, and matches exactly across selected
+per-color and small-world island dispatch forms while preserving assignment
+and compacted-order digests. Soft, composed, non-selected-execution,
+non-selected-identity, or alternate-graph construction fails closed. Product
+output still attests only `refresh-anchors-and-mass`. The full repository gate,
+APK build, and hardware-backed `jstorrent-tablet` AVD lane pass; fresh Metal,
+BrowserWebGPU, and AVD bootstrap captures are visually intact. The candidate
+now proceeds to the unchanged S9 full-corpus material-effect gate.
+
 Completion gate: both candidate slots have dispositions, or one survivor
 advances with the other slot's disposition recorded.
 

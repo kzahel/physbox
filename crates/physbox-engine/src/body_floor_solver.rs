@@ -65,12 +65,15 @@ pub enum GpuContactCoefficientPolicyV1 {
 }
 
 /// Laboratory-only control over contact preparation across solver substeps.
-/// Product construction always refreshes anchors and effective masses at each
-/// boundary; the fixed-anchor alternative is the conditional S9 E5 arm.
+/// Product construction always refreshes anchors and effective masses while
+/// reloading the outer-step persistence seed. The alternatives are the
+/// conditional S9 E5 arm and the single scalar-qualified S10.4 retained-seed
+/// port.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum GpuSubstepContactPolicyV1 {
     RefreshAnchorsAndMass,
+    RefreshAnchorsAndMassRetainImpulses,
     FixedAnchorAnalyticalSeparation,
 }
 
@@ -115,6 +118,17 @@ impl GpuRestitutionTimingPolicyV1 {
 impl GpuSubstepContactPolicyV1 {
     pub const SELECTED: Self = Self::RefreshAnchorsAndMass;
 
+    const fn refreshes_anchors_and_mass(self) -> bool {
+        matches!(
+            self,
+            Self::RefreshAnchorsAndMass | Self::RefreshAnchorsAndMassRetainImpulses
+        )
+    }
+
+    pub(crate) const fn is_retained_refresh_candidate(self) -> bool {
+        matches!(self, Self::RefreshAnchorsAndMassRetainImpulses)
+    }
+
     pub(crate) fn validate(
         self,
         settings: &SolverSettingsV1,
@@ -130,6 +144,44 @@ impl GpuSubstepContactPolicyV1 {
         {
             return Err(
                 "fixed-anchor analytical separation requires hard/direct manifold-block i2"
+                    .to_owned(),
+            );
+        }
+        if self.is_retained_refresh_candidate()
+            && (settings.contact_softness.is_some()
+                || settings.iterations != 2
+                || execution != GpuSolverExecutionV4::SELECTED
+                || normal_relaxation_policy != GpuNormalRelaxationPolicyV1::HardDirect)
+        {
+            return Err(
+                "retained-impulse refresh requires the selected hard/direct manifold-block i2 execution"
+                    .to_owned(),
+            );
+        }
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn validate_composition(
+        self,
+        settings: &SolverSettingsV1,
+        execution: GpuSolverExecutionV4,
+        scheduling_policy: GpuSolverSchedulingPolicyV1,
+        soft_feedback_policy: GpuSoftFeedbackPolicyV1,
+        normal_relaxation_policy: GpuNormalRelaxationPolicyV1,
+        contact_coefficient_policy: GpuContactCoefficientPolicyV1,
+        restitution_timing_policy: GpuRestitutionTimingPolicyV1,
+    ) -> Result<(), String> {
+        self.validate(settings, execution, normal_relaxation_policy)?;
+        if self.is_retained_refresh_candidate()
+            && (scheduling_policy != GpuSolverSchedulingPolicyV1::SELECTED
+                && scheduling_policy != GpuSolverSchedulingPolicyV1::SELECTED_SMALL_WORLD
+                || soft_feedback_policy != GpuSoftFeedbackPolicyV1::SELECTED
+                || contact_coefficient_policy != GpuContactCoefficientPolicyV1::SELECTED
+                || restitution_timing_policy != GpuRestitutionTimingPolicyV1::SELECTED)
+        {
+            return Err(
+                "retained-impulse refresh is a standalone unpromoted selected-policy port"
                     .to_owned(),
             );
         }
@@ -1910,7 +1962,15 @@ impl GpuFixedFloorSolver {
         soft_feedback_policy.validate(&scenario.settings)?;
         normal_relaxation_policy.validate(&scenario.settings, execution)?;
         contact_coefficient_policy.validate(&scenario.settings)?;
-        substep_contact_policy.validate(&scenario.settings, execution, normal_relaxation_policy)?;
+        substep_contact_policy.validate_composition(
+            &scenario.settings,
+            execution,
+            scheduling_policy,
+            soft_feedback_policy,
+            normal_relaxation_policy,
+            contact_coefficient_policy,
+            restitution_timing_policy,
+        )?;
         restitution_timing_policy.validate(
             &scenario.settings,
             execution,
@@ -2053,7 +2113,15 @@ impl GpuFixedFloorSolver {
         soft_feedback_policy.validate(&scenario.settings)?;
         normal_relaxation_policy.validate(&scenario.settings, execution)?;
         contact_coefficient_policy.validate(&scenario.settings)?;
-        substep_contact_policy.validate(&scenario.settings, execution, normal_relaxation_policy)?;
+        substep_contact_policy.validate_composition(
+            &scenario.settings,
+            execution,
+            scheduling_policy,
+            soft_feedback_policy,
+            normal_relaxation_policy,
+            contact_coefficient_policy,
+            restitution_timing_policy,
+        )?;
         restitution_timing_policy.validate(
             &scenario.settings,
             execution,
@@ -4243,7 +4311,7 @@ fn operations_with_extended_solver_policies(
             MotionDirection::AtoB,
             body_workgroups,
         );
-        if substep == 0 || substep_contact_policy == GpuSubstepContactPolicyV1::SELECTED {
+        if substep == 0 || substep_contact_policy.refreshes_anchors_and_mass() {
             let mut prepare = preparation_params(
                 scenario,
                 body_count,
@@ -4255,7 +4323,8 @@ fn operations_with_extended_solver_policies(
             let prepare_kind = if substep == 0 {
                 PipelineKind::Prepare
             } else {
-                prepare.uints0[3] = 1;
+                prepare.uints0[3] =
+                    u32::from(substep_contact_policy == GpuSubstepContactPolicyV1::SELECTED);
                 PipelineKind::Refresh
             };
             prepare.uints1[0] = u32::from(execution.warm_start);
@@ -6225,6 +6294,98 @@ mod tests {
                 .unwrap();
         assert!(
             GpuSubstepContactPolicyV1::FixedAnchorAnalyticalSeparation
+                .validate(
+                    &soft.settings,
+                    GpuSolverExecutionV4::SELECTED,
+                    GpuNormalRelaxationPolicyV1::SELECTED,
+                )
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn retained_impulse_refresh_changes_only_inter_substep_reset_words() {
+        assert_eq!(
+            GpuSubstepContactPolicyV1::SELECTED,
+            GpuSubstepContactPolicyV1::RefreshAnchorsAndMass
+        );
+        let scenario =
+            crate::p5_2_settling_review_scenario(8, crate::P5_2SettlingReviewPolicy::HardControl)
+                .unwrap();
+        let body_count = scenario.bodies.len() as u32;
+        let point_capacity = body_count * (body_count - 1);
+        let topology = TopologyLayout::new(
+            GpuGatherTopology::StableBodyEdge,
+            body_count,
+            point_capacity,
+            false,
+            GpuColorScheduleV4::CompactIndirect,
+            GpuColorUnitV4::Manifold,
+            GpuSolverSchedulingPolicyV1::SELECTED,
+        )
+        .unwrap();
+        let schedule = |policy| {
+            operations_with_extended_solver_policies(
+                &scenario,
+                body_count,
+                point_capacity,
+                topology,
+                false,
+                GpuSolverExecutionV4::SELECTED,
+                GpuSolverSchedulingPolicyV1::SELECTED,
+                GpuSoftFeedbackPolicyV1::SELECTED,
+                GpuNormalRelaxationPolicyV1::SELECTED,
+                GpuContactCoefficientPolicyV1::SELECTED,
+                policy,
+                GpuRestitutionTimingPolicyV1::SELECTED,
+            )
+        };
+        let (selected_parameters, selected_operations) =
+            schedule(GpuSubstepContactPolicyV1::SELECTED);
+        let (candidate_parameters, candidate_operations) =
+            schedule(GpuSubstepContactPolicyV1::RefreshAnchorsAndMassRetainImpulses);
+        assert_eq!(selected_operations.len(), candidate_operations.len());
+        let selected = pass_trace_descriptors(&selected_parameters, &selected_operations);
+        let candidate = pass_trace_descriptors(&candidate_parameters, &candidate_operations);
+        assert_eq!(selected.len(), candidate.len());
+        let mut changed = 0;
+        for (selected, candidate) in selected.iter().zip(&candidate) {
+            let mut expected = *selected;
+            if selected.kind == GpuSolverPassKindV1::RefreshContacts
+                && selected.parameters.uints0[3] == 1
+            {
+                expected.parameters.uints0[3] = 0;
+                changed += 1;
+            }
+            assert_eq!(&expected, candidate);
+        }
+        assert_eq!(changed, scenario.settings.substeps - 1);
+        assert_eq!(
+            candidate
+                .iter()
+                .filter(|descriptor| descriptor.kind == GpuSolverPassKindV1::PrepareContacts)
+                .count(),
+            1
+        );
+        assert_eq!(
+            candidate
+                .iter()
+                .filter(|descriptor| descriptor.kind == GpuSolverPassKindV1::RefreshContacts)
+                .count(),
+            (scenario.settings.substeps * 2 - 1) as usize
+        );
+        assert!(
+            candidate
+                .iter()
+                .filter(|descriptor| descriptor.kind == GpuSolverPassKindV1::RefreshContacts)
+                .all(|descriptor| descriptor.parameters.uints0[3] == 0)
+        );
+
+        let soft =
+            crate::p5_2_settling_review_scenario(8, crate::P5_2SettlingReviewPolicy::SoftCandidate)
+                .unwrap();
+        assert!(
+            GpuSubstepContactPolicyV1::RefreshAnchorsAndMassRetainImpulses
                 .validate(
                     &soft.settings,
                     GpuSolverExecutionV4::SELECTED,

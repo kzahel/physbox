@@ -383,6 +383,19 @@ impl GpuGeneratedContactGraph {
             return Err("generated product contacts currently require dense body slots".to_owned());
         }
         let body_count = storage.layout().capacity_elements;
+        if substep_contact_policy.is_retained_refresh_candidate()
+            && (persistence_topology != GpuContactPersistenceTopology::StablePairSlot
+                || gather_topology != GpuGatherTopology::StableBodyEdge
+                || permute_edge_build
+                || permute_pair_build
+                || fingerprint_mask != u32::MAX
+                || identity_policy != ContactIdentityPolicyV1::SELECTED)
+        {
+            return Err(
+                "retained-impulse refresh requires the selected contact graph and identity policy"
+                    .to_owned(),
+            );
+        }
         let pair_count = body_count
             .checked_mul(body_count.saturating_sub(1))
             .map(|value| value / 2)
@@ -1557,11 +1570,20 @@ impl GpuGeneratedContactPassTraceV3 {
             .validate(self.solver_execution)?;
         self.contact_coefficient_policy
             .validate(&self.solver_settings)?;
-        self.substep_contact_policy.validate(
+        self.substep_contact_policy.validate_composition(
             &self.solver_settings,
             self.solver_execution,
+            self.solver_scheduling_policy,
+            self.soft_feedback_policy,
             self.normal_relaxation_policy,
+            self.contact_coefficient_policy,
+            self.restitution_timing_policy,
         )?;
+        if self.substep_contact_policy.is_retained_refresh_candidate()
+            && self.contact_identity_policy != ContactIdentityPolicyV1::SELECTED
+        {
+            return Err("retained-refresh pass trace changed contact identity".to_owned());
+        }
         self.restitution_timing_policy.validate(
             &self.solver_settings,
             self.solver_execution,
@@ -1715,11 +1737,20 @@ impl GpuGeneratedContactSeriesV1 {
             .validate(self.solver_execution)?;
         self.contact_coefficient_policy
             .validate(&self.solver_settings)?;
-        self.substep_contact_policy.validate(
+        self.substep_contact_policy.validate_composition(
             &self.solver_settings,
             self.solver_execution,
+            self.solver_scheduling_policy,
+            crate::GpuSoftFeedbackPolicyV1::SELECTED,
             crate::GpuNormalRelaxationPolicyV1::SELECTED,
+            self.contact_coefficient_policy,
+            self.restitution_timing_policy,
         )?;
+        if self.substep_contact_policy.is_retained_refresh_candidate()
+            && self.contact_identity_policy != ContactIdentityPolicyV1::SELECTED
+        {
+            return Err("retained-refresh series changed contact identity".to_owned());
+        }
         self.restitution_timing_policy.validate(
             &self.solver_settings,
             self.solver_execution,
@@ -1754,11 +1785,20 @@ impl GpuGeneratedContactOutput {
             .validate(self.solver_execution)?;
         self.contact_coefficient_policy
             .validate(&self.solver_settings)?;
-        self.substep_contact_policy.validate(
+        self.substep_contact_policy.validate_composition(
             &self.solver_settings,
             self.solver_execution,
+            self.solver_scheduling_policy,
+            crate::GpuSoftFeedbackPolicyV1::SELECTED,
             crate::GpuNormalRelaxationPolicyV1::SELECTED,
+            self.contact_coefficient_policy,
+            self.restitution_timing_policy,
         )?;
+        if self.substep_contact_policy.is_retained_refresh_candidate()
+            && self.contact_identity_policy != ContactIdentityPolicyV1::SELECTED
+        {
+            return Err("retained-refresh output changed contact identity".to_owned());
+        }
         self.restitution_timing_policy.validate(
             &self.solver_settings,
             self.solver_execution,
@@ -5141,6 +5181,129 @@ mod tests {
             )
             .unwrap_err();
         assert!(error.contains("hard/direct manifold-block i2"), "{error}");
+    }
+
+    #[test]
+    fn retained_impulse_refresh_is_replayable_dispatch_exact_and_product_inert() {
+        let scenario =
+            p5_2_settling_review_scenario(8, P5_2SettlingReviewPolicy::HardControl).unwrap();
+        let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
+        let run = |scheduling_policy, substep_contact_policy| {
+            runner
+                .run_solver_policy_experiment(
+                    &scenario,
+                    4,
+                    GpuSolverExecutionV4::SELECTED,
+                    scheduling_policy,
+                    crate::GpuContactCoefficientPolicyV1::SELECTED,
+                    substep_contact_policy,
+                    GpuRestitutionTimingPolicyV1::SELECTED,
+                )
+                .unwrap()
+        };
+        let selected = run(
+            GpuSolverSchedulingPolicyV1::SELECTED,
+            GpuSubstepContactPolicyV1::SELECTED,
+        );
+        let candidate = run(
+            GpuSolverSchedulingPolicyV1::SELECTED,
+            GpuSubstepContactPolicyV1::RefreshAnchorsAndMassRetainImpulses,
+        );
+        let replay = run(
+            GpuSolverSchedulingPolicyV1::SELECTED,
+            GpuSubstepContactPolicyV1::RefreshAnchorsAndMassRetainImpulses,
+        );
+        let islands = run(
+            GpuSolverSchedulingPolicyV1::SELECTED_SMALL_WORLD,
+            GpuSubstepContactPolicyV1::RefreshAnchorsAndMassRetainImpulses,
+        );
+        let product = runner.run(&scenario, 4).unwrap();
+
+        assert_eq!(
+            serde_json::to_vec(&candidate).unwrap(),
+            serde_json::to_vec(&replay).unwrap()
+        );
+        assert_ne!(selected.bodies, candidate.bodies);
+        assert_eq!(candidate.bodies, islands.bodies);
+        assert_eq!(candidate.manifolds, islands.manifolds);
+        assert_eq!(candidate.cache, islands.cache);
+        assert_eq!(
+            candidate.pass_evidence.contacts,
+            islands.pass_evidence.contacts
+        );
+        assert_eq!(candidate.dispatches_per_step, selected.dispatches_per_step);
+        let selected_work = selected
+            .pass_evidence
+            .scheduler_work_vector(scenario.bodies.len() as u32)
+            .unwrap()
+            .unwrap();
+        let candidate_work = candidate
+            .pass_evidence
+            .scheduler_work_vector(scenario.bodies.len() as u32)
+            .unwrap()
+            .unwrap();
+        let island_work = islands
+            .pass_evidence
+            .scheduler_work_vector(scenario.bodies.len() as u32)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            selected_work.assignment_digest,
+            candidate_work.assignment_digest
+        );
+        assert_eq!(
+            candidate_work.assignment_digest,
+            island_work.assignment_digest
+        );
+        assert_eq!(
+            selected_work.compacted_order_digest,
+            candidate_work.compacted_order_digest
+        );
+        assert_eq!(
+            candidate_work.compacted_order_digest,
+            island_work.compacted_order_digest
+        );
+        assert_eq!(
+            candidate.substep_contact_policy,
+            GpuSubstepContactPolicyV1::RefreshAnchorsAndMassRetainImpulses
+        );
+        assert_eq!(
+            product.substep_contact_policy,
+            GpuSubstepContactPolicyV1::SELECTED
+        );
+        assert!(candidate.failure.is_none());
+        assert!(islands.failure.is_none());
+
+        let soft =
+            p5_2_settling_review_scenario(8, P5_2SettlingReviewPolicy::SoftCandidate).unwrap();
+        let error = runner
+            .run_solver_policy_experiment(
+                &soft,
+                1,
+                GpuSolverExecutionV4::SELECTED,
+                GpuSolverSchedulingPolicyV1::SELECTED,
+                crate::GpuContactCoefficientPolicyV1::SELECTED,
+                GpuSubstepContactPolicyV1::RefreshAnchorsAndMassRetainImpulses,
+                GpuRestitutionTimingPolicyV1::SELECTED,
+            )
+            .unwrap_err();
+        assert!(
+            error.contains("selected hard/direct manifold-block i2"),
+            "{error}"
+        );
+
+        let error = runner
+            .run_solver_policy_experiment(
+                &scenario,
+                1,
+                GpuSolverExecutionV4::SELECTED,
+                GpuSolverSchedulingPolicyV1::SELECTED,
+                crate::GpuContactCoefficientPolicyV1::StaticStiffHard,
+                GpuSubstepContactPolicyV1::RefreshAnchorsAndMassRetainImpulses,
+                GpuRestitutionTimingPolicyV1::SELECTED,
+            )
+            .unwrap_err();
+        assert!(error.contains("standalone unpromoted"), "{error}");
     }
 
     #[test]
