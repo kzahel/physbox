@@ -197,6 +197,7 @@ struct ArmSceneEvidence {
     source: ArtifactIdentity,
     candidate: LaneEvidence,
     first_loss_reproducer: Option<FirstLossReproducer>,
+    first_execution_failure_reproducer: Option<ExecutionFailureReproducer>,
 }
 
 #[derive(Serialize)]
@@ -205,7 +206,15 @@ struct FirstLossReproducer {
     completed_steps: u32,
     scenario_hash: String,
     source: ArtifactIdentity,
-    execution_failure: Option<FailureV1>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ExecutionFailureReproducer {
+    completed_steps: u32,
+    scenario_hash: String,
+    source: ArtifactIdentity,
+    failure: FailureV1,
 }
 
 #[derive(Serialize)]
@@ -556,7 +565,29 @@ fn evaluate_arm_scene(
                 completed_steps,
                 scenario_hash,
                 source,
-                execution_failure: candidate.first_execution_failure.clone(),
+            })
+        })
+        .transpose()?;
+    let first_execution_failure_reproducer = candidate
+        .first_execution_failure
+        .as_ref()
+        .map(|failure| {
+            let completed_steps = failure
+                .first_step
+                .ok_or_else(|| "S9 execution failure omitted its first step".to_owned())?;
+            let mut reproducer = input.source.clone();
+            reproducer.requested_steps = completed_steps;
+            let scenario_hash = canonical_hash(&reproducer).map_err(|error| error.to_string())?;
+            let source = write_json_artifact(
+                staging,
+                &format!("failures/{}-first-execution-failure.json", input.label),
+                &reproducer,
+            )?;
+            Ok::<_, String>(ExecutionFailureReproducer {
+                completed_steps,
+                scenario_hash,
+                source,
+                failure: failure.clone(),
             })
         })
         .transpose()?;
@@ -570,6 +601,7 @@ fn evaluate_arm_scene(
         source,
         candidate,
         first_loss_reproducer,
+        first_execution_failure_reproducer,
     })
 }
 
