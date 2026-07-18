@@ -288,6 +288,16 @@ a completed scenario cannot produce one line per rendered frame. `off` and
 `all` remain explicit launch modes; Android validation requests `all` only for
 its live held-grab probe.
 
+Known intermittent, 2026-07-18: one AVD settling smoke displayed large black
+rectangles over part of the canvas. An immediate fresh AVD launch and a
+physical Pixel capture were visually clean, so this is open capture debt, not
+a diagnosed or closed renderer defect, and it does not gate S6.5b physics
+attribution. A useful recurrence capture must retain a screenshot with the
+engine HUD visible, exact source revision/dirty state, launch argv, scenario
+and observed step, adapter/backend identity, surface dimensions, and complete
+logcat from before process launch through the occurrence. Do not infer a
+physics failure from the image or mark this closed after another clean run.
+
 ### S4.4 — minimal circle/rectangle construction loop
 
 Dependency: the S3 combined pair-slot plus stable-edge product integration and

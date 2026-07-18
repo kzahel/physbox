@@ -1,13 +1,10 @@
 # S6: Awake settling stabilization
 
-Status: awaiting human formulation review, 2026-07-17. Human review accepted the S5.4c scheduler
-recommendation and authorized autonomous execution through S6.4. S6.1–S6.3
-are complete. S6.4 is complete with scalar/GPU comparators, factorial, failure
-minima, authority/cost, and cross-host evidence. Human review accepted the
-S6.5 recommendation to hold promotion and authorized S6.5a cross-backend
-diagnosis/minimization. S6.5a is complete with no forwarded correction. The
-AVD structure loss and cross-host energy failures continue to block default
-promotion.
+Status: S6.5b per-pass energy diagnosis active, 2026-07-18. S6.1–S6.4 are
+complete. Human review accepted the S6.5 recommendation to hold promotion and
+the S6.5a rejection of every bounded correction. The AVD structure loss and
+cross-host energy failures continue to block default promotion. S6.5b now
+localizes the first energy-producing pass before any formulation decision.
 
 Governing topic:
 [awake settling and rest stability](../topics/awake-settling-and-rest-stability.md).
@@ -533,6 +530,53 @@ Stop early for human direction before a coefficient/identity-band default
 change, tolerance or quality-band revision, scheduler/solver/accumulation
 change, portability exception, simulation-dependent readback, CPU fallback,
 or another difficult-to-reverse architecture fork.
+
+### S6.5b — authorized matched-precision per-pass diagnosis
+
+- [ ] Freeze a versioned per-pass trace that brackets every state-changing
+  generated-contact operation for the permanent four-body energy reproducer.
+  Copy bounded body, contact, and accumulated-impulse state in GPU command
+  order and map only after the final requested step.
+- [ ] Mirror the selected manifold-block recurrence in scalar Rust with `f32`
+  state and rounding at the same operation boundaries. Report both strict
+  ordered-`f32` kinetic energy and compensated wider accumulation over the
+  identical captured `f32` values.
+- [ ] Compare Metal with the scalar trace first. Attribute the first material
+  body/impulse divergence independently of energy-summation precision and
+  retain the exact input, operation index, ULP/absolute delta, and surrounding
+  contact state.
+- [ ] Keep clean pinned Box2D as the world-behavior authority. Use its public
+  process-isolated trace first; create a separate patch-digested microscope
+  only if the localized question cannot be answered from public state.
+- [ ] After the common energy-producing pass is known, run the same final-flush
+  trace on the hardware-backed `jstorrent-tablet` AVD to localize where
+  MoltenVK amplifies it. Attempt the physical-device lane when available and
+  report absence or lock state as a gap.
+- [ ] If GPU state diverges from the scalar recurrence, fix only the
+  attributable implementation defect inside the selected manifold-block
+  family and re-run the frozen quality/energy/response/capacity/performance/
+  authority/platform matrix. If they agree while violating the energy gate,
+  publish the evidence and stop for the formulation/policy decision.
+
+Outcome: distinguish a correctable GPU implementation defect from an accepted-
+equation recurrence that injects energy under colored order, without using
+different accounting precision as evidence and without changing the product.
+
+Artifacts: versioned pass dictionary; exact operation schedule and hashes;
+GPU and scalar pass traces; strict-`f32` and compensated energy tables; first-
+divergence report; public Box2D behavior trace; Metal/AVD amplification overlay;
+capacity/provenance records; verifier; and a compact branch recommendation.
+
+Gate: every compared trace uses the same source, policy, step, operation
+boundary, and captured `f32` state. No per-pass or per-step CPU result advances
+simulation. The product remains hard/direct with the selected manifold-block
+solver and scheduler. An implementation fix cannot be inferred from energy
+accumulation alone; a formulation change cannot be made without human review.
+
+Commit boundaries: this authorization contract; pass-trace schema and scalar
+mirror; GPU final-flush instrumentation; clean Metal attribution; an
+attributable fix if the branch permits it; AVD localization; and the verified
+decision package are independently reviewable commits.
 
 ### S6.6 — accepted policy integration
 

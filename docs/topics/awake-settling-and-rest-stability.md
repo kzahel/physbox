@@ -1,11 +1,10 @@
 # Awake settling and rest stability
 
-Status: S6.5a cross-backend diagnosis complete, awaiting human formulation
-review, 2026-07-17. Human review accepted the recommendation to hold promotion
-and authorized diagnosis/minimization of the AVD 16-stack collapse. No tested
-reversible correction advanced. The exact combined candidate remains an
-unpromoted laboratory lane; its portability and retained energy failures block
-contact-policy promotion.
+Status: S6.5b per-pass energy diagnosis authorized, 2026-07-18. Human review
+accepted the S6.5a rejection and kept every settling candidate unpromoted. The
+exact combined candidate remains a laboratory lane; its portability and
+retained energy failures block contact-policy promotion while matched-precision
+scalar/GPU pass accounting localizes the first injected-energy signal.
 Awake settling is a prerequisite for broadphase selection and sleeping
 acceptance. No contact-identity policy, soft-contact coefficients, penetration
 deadband, friction anchor, residual band, or sleep threshold is a product
@@ -279,6 +278,35 @@ scalar recurrence, GPU point/block executions, and pinned Box2D authority. A
 GPU/scalar implementation divergence can be corrected inside the selected
 family; agreement that conflicts with the awake energy gate requires human
 review before changing accumulation/formulation, physical policy, or scope.
+
+S6.5b authorization, 2026-07-18: accept that recommendation and keep the soft
+candidate, single-iteration, staged-feedback, and point-control lanes
+unpromoted. Instrument the permanent four-body reproducer at identical
+operation boundaries in the selected GPU manifold-block recurrence and a
+shader-faithful scalar recurrence. Metal is the first decision lane. AVD
+Vulkan enters only after the common pass that begins the retained energy mode
+is localized, so MoltenVK amplification is not confused with the root signal.
+
+Accounting precision is part of the diagnostic contract. Captured body,
+contact, and accumulated-impulse values remain the actual `f32` values used by
+the shader. The scalar mirror rounds at the same state-changing operation
+boundaries. Every pass reports both strict ordered-`f32` kinetic energy and a
+compensated wider accumulation over those same `f32` body values. Energy-sum
+disagreement alone cannot establish an implementation defect: the autonomous
+fix branch requires a body, impulse, or per-contact delta that diverges beyond
+the declared exact/ULP-bounded comparison. Pinned unmodified Box2D remains the
+world-behavior authority; it is not relabeled as an exact owner of PhysBox's
+private pass order. A patch-digested microscope may be created separately only
+if public authority state cannot resolve a localized ambiguity.
+
+The branch is fixed before results are measured. If GPU state diverges from
+the scalar recurrence, an attributable implementation defect may be fixed
+autonomously inside the selected manifold-block family, followed by the frozen
+matrix. If GPU and scalar agree on the energy-producing recurrence and the
+Box2D behavior target remains quiet, stop for human review before changing
+formulation, accumulation order, coefficients, identity policy, solver or
+scheduler architecture, or the awake energy gate. Sleeping, wider tolerances,
+and refreshed baselines cannot hide either result.
 
 ## Authority corrections
 
