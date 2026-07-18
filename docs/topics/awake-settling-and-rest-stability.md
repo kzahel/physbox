@@ -475,6 +475,26 @@ The AVD overlay must show the MoltenVK amplification collapsing with the common
 defect. Every result returns to human review; S6.6 promotion remains
 unauthorized.
 
+S6.5d authority-control checkpoint, 2026-07-18: the existing independent
+`b2MakeSoft` transcription is joined by an explicit scalar point-normal update
+covering the pinned overflow and SIMD colored contact equations. Analytic and
+metamorphic tests freeze the speculative, soft-biased, hard-relaxation, and
+unilateral-clamp branches. For non-positive separation, the hard relaxation
+update is the constrained one-dimensional kinetic projection and is
+dissipative. For positive separation, pinned Box2D retains `separation / h` as
+a speculative target even with `useBias = false`; a zero-velocity analytic
+case proves that branch can inject energy. This is an authority fact, not yet
+a PhysBox candidate or a claim that Box2D's complete schedule is unstable.
+
+The matched S6.5c trace identifies the practical trigger: one point in a
+two-point resting manifold is separated by roughly `9.7e-6 m`, so the
+speculative relaxation target is about `0.00233 m/s`. The resulting support-
+impulse reduction creates the measured body-pair kick. The contact has already
+passed the post-integration refresh boundary, so stale prepared geometry is
+not the explanation. The remaining scalar question is whether a coupled
+zero-target kinetic projection retains the biased pass's penetration and
+support work on both frozen fixtures.
+
 ## Authority corrections
 
 Two plausible techniques must not be mislabeled as direct Box2D v3 parity:

@@ -741,7 +741,7 @@ another bounded GPU factorial. S6.6 is not authorized by this result.
 
 - [x] Freeze the authority source, scalar gates, one-candidate limit, forwarding
   order, and stop branches before deriving or measuring a candidate.
-- [ ] Independently transcribe pinned unmodified Box2D v3 `3a4f0da...`
+- [x] Independently transcribe pinned unmodified Box2D v3 `3a4f0da...`
   softness and contact updates into the scalar laboratory. Record its MIT
   provenance and validate the transcription against analytic single-point
   cases without copying reference implementation code.
@@ -792,6 +792,17 @@ Commit boundaries: this authorization contract; authority transcription and
 analytic controls; scalar derivation and quality decision; the single GPU port
 if authorized by scalar results; Metal kill/matrix; cross-host forwarding; and
 the final verified checkpoint are separately reviewable commits.
+
+Authority-control checkpoint, 2026-07-18: the scalar laboratory now exposes
+the independently transcribed pinned point-normal equation as a typed tested
+interface alongside the existing softness equation. Tests freeze all three
+coefficient branches and prove the non-positive hard-relaxation projection is
+dissipative under unilateral clamping. A positive-separation analytic control
+also proves the authority's speculative branch can inject kinetic energy with
+`useBias = false`. In the captured reproducer a refreshed `9.7e-6 m` positive
+point requests about `0.00233 m/s` closing speed and produces the observed
+kick. No product, GPU policy, coefficient, tolerance, or authority precedence
+changes at this checkpoint.
 
 ### S6.6 — accepted policy integration
 

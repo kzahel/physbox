@@ -47,6 +47,114 @@ pub struct ContactSoftnessCoefficients {
     pub impulse_scale: f32,
 }
 
+/// Inputs to the pinned Box2D v3 scalar normal-contact update.
+///
+/// The penetration coefficients are the already selected contact softness for
+/// the body pair. Positive separation always selects the authority's
+/// speculative branch; `use_bias = false` selects the hard relaxation branch
+/// only for non-positive separation.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Box2dPointNormalInput {
+    pub separation: f32,
+    pub substep_dt: f32,
+    pub normal_velocity: f32,
+    pub normal_mass: f32,
+    pub old_impulse: f32,
+    pub penetration_velocity_bias: f32,
+    pub penetration_mass_scale: f32,
+    pub penetration_impulse_scale: f32,
+    pub use_bias: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Box2dPointNormalUpdate {
+    pub velocity_bias: f32,
+    pub mass_scale: f32,
+    pub impulse_scale: f32,
+    pub impulse: f32,
+    pub applied_impulse: f32,
+}
+
+/// Independent Rust transcription of the pinned Box2D v3 point-normal update.
+///
+/// Provenance: clean revision `3a4f0da8374af61293a03021c9a0b3ebcfe67948`,
+/// `src/contact_solver.c` in the scalar overflow and SIMD colored paths. This
+/// function documents the public recurrence; it does not link or copy Box2D.
+pub fn box2d_point_normal_update(
+    input: Box2dPointNormalInput,
+) -> Result<Box2dPointNormalUpdate, ScalarError> {
+    let finite = [
+        input.separation,
+        input.substep_dt,
+        input.normal_velocity,
+        input.normal_mass,
+        input.old_impulse,
+        input.penetration_velocity_bias,
+        input.penetration_mass_scale,
+        input.penetration_impulse_scale,
+    ]
+    .into_iter()
+    .all(f32::is_finite);
+    if !finite
+        || input.substep_dt <= 0.0
+        || input.normal_mass < 0.0
+        || input.old_impulse < 0.0
+        || input.penetration_mass_scale < 0.0
+        || input.penetration_impulse_scale < 0.0
+    {
+        return Err(ScalarError(
+            "Box2D point-normal input is outside the finite unilateral domain".to_owned(),
+        ));
+    }
+    let (velocity_bias, mass_scale, impulse_scale) = if input.separation > 0.0 {
+        (input.separation / input.substep_dt, 1.0, 0.0)
+    } else if input.use_bias {
+        (
+            input.penetration_velocity_bias,
+            input.penetration_mass_scale,
+            input.penetration_impulse_scale,
+        )
+    } else {
+        (0.0, 1.0, 0.0)
+    };
+    let candidate = -input.normal_mass * (mass_scale * input.normal_velocity + velocity_bias)
+        - impulse_scale * input.old_impulse;
+    let impulse = (input.old_impulse + candidate).max(0.0);
+    let update = Box2dPointNormalUpdate {
+        velocity_bias,
+        mass_scale,
+        impulse_scale,
+        impulse,
+        applied_impulse: impulse - input.old_impulse,
+    };
+    if ![
+        update.velocity_bias,
+        update.mass_scale,
+        update.impulse_scale,
+        update.impulse,
+        update.applied_impulse,
+    ]
+    .into_iter()
+    .all(f32::is_finite)
+    {
+        return Err(ScalarError(
+            "Box2D point-normal update produced a non-finite value".to_owned(),
+        ));
+    }
+    Ok(update)
+}
+
+/// Exact kinetic-energy change for a scalar impulse applied along a constraint
+/// with pre-update normal velocity `v` and inverse effective mass `k`.
+pub fn point_impulse_kinetic_energy_delta(
+    normal_velocity: f64,
+    inverse_effective_mass: f64,
+    applied_impulse: f64,
+) -> f64 {
+    normal_velocity * applied_impulse
+        + 0.5 * inverse_effective_mass * applied_impulse * applied_impulse
+}
+
 pub fn box2d_softness_coefficients(
     hertz: f32,
     damping_ratio: f32,
@@ -530,25 +638,26 @@ fn solve_normal(
             point.anchor_b,
             contact.normal,
         );
-        let (velocity_bias, mass_scale, impulse_scale) = if point.separation > 0.0 {
-            (point.separation / substep_dt, 1.0, 0.0)
-        } else if use_bias {
-            (
-                clamp_depenetration_bias(
-                    configured_bias_rate * point.separation / substep_dt,
-                    max_depenetration_velocity,
-                ),
-                configured_mass_scale,
-                configured_impulse_scale,
-            )
-        } else {
-            (0.0, 1.0, 0.0)
-        };
         let old_impulse = point.normal_impulse;
-        let candidate = -point.normal_mass * (mass_scale * normal_velocity + velocity_bias)
-            - impulse_scale * old_impulse;
-        point.normal_impulse = (old_impulse + candidate).max(0.0);
-        let applied_impulse = point.normal_impulse - old_impulse;
+        let update = box2d_point_normal_update(Box2dPointNormalInput {
+            separation: point.separation,
+            substep_dt,
+            normal_velocity,
+            normal_mass: point.normal_mass,
+            old_impulse,
+            penetration_velocity_bias: clamp_depenetration_bias(
+                configured_bias_rate * point.separation / substep_dt,
+                max_depenetration_velocity,
+            ),
+            penetration_mass_scale: configured_mass_scale,
+            penetration_impulse_scale: configured_impulse_scale,
+            use_bias,
+        })?;
+        let velocity_bias = update.velocity_bias;
+        let mass_scale = update.mass_scale;
+        let impulse_scale = update.impulse_scale;
+        point.normal_impulse = update.impulse;
+        let applied_impulse = update.applied_impulse;
         point.total_normal_impulse += applied_impulse.max(0.0);
         apply_pair_impulse(
             bodies,
@@ -1042,6 +1151,94 @@ mod tests {
         assert!(box2d_softness_coefficients(-1.0, 10.0, 1.0 / 240.0).is_err());
         assert!(box2d_softness_coefficients(30.0, -1.0, 1.0 / 240.0).is_err());
         assert!(box2d_softness_coefficients(30.0, 10.0, 0.0).is_err());
+    }
+
+    #[test]
+    fn pinned_point_recurrence_selects_speculative_soft_and_relaxation_branches() {
+        let common = Box2dPointNormalInput {
+            separation: -0.01,
+            substep_dt: 1.0 / 240.0,
+            normal_velocity: -0.25,
+            normal_mass: 0.5,
+            old_impulse: 0.2,
+            penetration_velocity_bias: -0.1,
+            penetration_mass_scale: 0.75,
+            penetration_impulse_scale: 0.25,
+            use_bias: true,
+        };
+        let soft = box2d_point_normal_update(common).unwrap();
+        assert_close(soft.velocity_bias, -0.1);
+        assert_close(soft.mass_scale, 0.75);
+        assert_close(soft.impulse_scale, 0.25);
+        assert_close(soft.impulse, 0.29375);
+
+        let relax = box2d_point_normal_update(Box2dPointNormalInput {
+            use_bias: false,
+            ..common
+        })
+        .unwrap();
+        assert_eq!(relax.velocity_bias, 0.0);
+        assert_eq!(relax.mass_scale, 1.0);
+        assert_eq!(relax.impulse_scale, 0.0);
+        assert_close(relax.impulse, 0.325);
+
+        let speculative = box2d_point_normal_update(Box2dPointNormalInput {
+            separation: 0.001,
+            use_bias: false,
+            ..common
+        })
+        .unwrap();
+        assert_close(speculative.velocity_bias, 0.24);
+        assert_eq!(speculative.mass_scale, 1.0);
+        assert_eq!(speculative.impulse_scale, 0.0);
+        assert_close(speculative.impulse, 0.205);
+    }
+
+    #[test]
+    fn hard_relaxation_projection_is_dissipative_with_unilateral_clamping() {
+        for inverse_effective_mass in [0.25_f32, 1.0, 7.0] {
+            for normal_velocity in [-2.0_f32, -0.1, 0.0, 0.1, 2.0] {
+                for old_impulse in [0.0_f32, 0.01, 0.5] {
+                    let update = box2d_point_normal_update(Box2dPointNormalInput {
+                        separation: -0.001,
+                        substep_dt: 1.0 / 240.0,
+                        normal_velocity,
+                        normal_mass: inverse_effective_mass.recip(),
+                        old_impulse,
+                        penetration_velocity_bias: -1.0,
+                        penetration_mass_scale: 0.5,
+                        penetration_impulse_scale: 0.5,
+                        use_bias: false,
+                    })
+                    .unwrap();
+                    let delta = point_impulse_kinetic_energy_delta(
+                        f64::from(normal_velocity),
+                        f64::from(inverse_effective_mass),
+                        f64::from(update.applied_impulse),
+                    );
+                    assert!(delta <= 1.0e-12, "energy delta {delta}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn pinned_speculative_relaxation_can_inject_kinetic_energy() {
+        let update = box2d_point_normal_update(Box2dPointNormalInput {
+            separation: 1.0e-5,
+            substep_dt: 1.0 / 240.0,
+            normal_velocity: 0.0,
+            normal_mass: 0.25,
+            old_impulse: 0.1,
+            penetration_velocity_bias: 0.0,
+            penetration_mass_scale: 1.0,
+            penetration_impulse_scale: 0.0,
+            use_bias: false,
+        })
+        .unwrap();
+        let delta = point_impulse_kinetic_energy_delta(0.0, 4.0, f64::from(update.applied_impulse));
+        assert!(update.applied_impulse < 0.0);
+        assert!(delta > 0.0);
     }
 
     #[test]
