@@ -462,7 +462,6 @@ fn evaluate_authority_lane(
         staging,
         box2d,
         &input.label,
-        lane,
         projection,
         warm_start,
         false,
@@ -472,7 +471,6 @@ fn evaluate_authority_lane(
         staging,
         box2d,
         &input.label,
-        lane,
         projection,
         warm_start,
         true,
@@ -562,7 +560,6 @@ fn run_authority(
     staging: &Path,
     box2d: &OracleSourceIdentity,
     scene_label: &str,
-    lane: &str,
     projection: &ScenarioV1,
     warm_start: bool,
     replay: bool,
@@ -570,11 +567,7 @@ fn run_authority(
     let request_hash = canonical_hash(projection).map_err(|error| error.to_string())?;
     let request = OracleRequestV1 {
         schema_version: SCHEMA_VERSION,
-        run_id: format!(
-            "{}-{scene_label}-{lane}{}",
-            arguments.run_id,
-            if replay { "-replay" } else { "" }
-        ),
+        run_id: authority_run_id(&arguments.run_id, scene_label, warm_start, replay)?,
         source_scenario_hash: request_hash,
         scenario: projection.clone(),
     };
@@ -598,6 +591,28 @@ fn run_authority(
         &request,
     )
     .map_err(|error| error.to_string())
+}
+
+fn authority_run_id(
+    base: &str,
+    scene_label: &str,
+    warm_start: bool,
+    replay: bool,
+) -> Result<String, String> {
+    let scene = match scene_label {
+        "centered-stack-4" => "s4",
+        "centered-stack-8" => "s8",
+        "centered-stack-16" => "s16",
+        "permanent-four-body-reproducer" => "r4",
+        _ => return Err(format!("unknown S10.1 authority scene {scene_label}")),
+    };
+    let warm = if warm_start { "won" } else { "woff" };
+    let replay = if replay { "-r" } else { "" };
+    let run_id = format!("{base}-{scene}-{warm}{replay}");
+    if run_id.len() > 96 {
+        return Err("S10.1 authority run id exceeds the portable limit".to_owned());
+    }
+    Ok(run_id)
 }
 
 fn routing_verdict(scenes: &[SceneEvidence]) -> Result<RoutingVerdict, String> {
@@ -876,5 +891,17 @@ mod tests {
         let mut expected = GpuSolverExecutionV4::SELECTED;
         expected.warm_start = false;
         assert_eq!(expected, GpuSolverExecutionV4::WARM_START_OFF_DIAGNOSTIC);
+        let run_id = authority_run_id(
+            "p5.2b-s10.1-warm-start-differential-20260718-r1",
+            "permanent-four-body-reproducer",
+            false,
+            true,
+        )
+        .unwrap();
+        assert_eq!(
+            run_id,
+            "p5.2b-s10.1-warm-start-differential-20260718-r1-r4-woff-r"
+        );
+        assert!(run_id.len() <= 96);
     }
 }
