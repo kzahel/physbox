@@ -187,6 +187,24 @@ pub enum GpuColorMaintenanceV1 {
 pub enum GpuColoredDispatchV1 {
     PerColorIndirect,
     WorkgroupPerIsland,
+    PerColorIndirectFusedNormalTangent,
+    WorkgroupPerIslandFusedNormalTangent,
+}
+
+impl GpuColoredDispatchV1 {
+    pub const fn uses_workgroup_per_island(self) -> bool {
+        matches!(
+            self,
+            Self::WorkgroupPerIsland | Self::WorkgroupPerIslandFusedNormalTangent
+        )
+    }
+
+    pub const fn fuses_normal_tangent(self) -> bool {
+        matches!(
+            self,
+            Self::PerColorIndirectFusedNormalTangent | Self::WorkgroupPerIslandFusedNormalTangent
+        )
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -245,6 +263,19 @@ impl GpuSolverSchedulingPolicyV1 {
         ..Self::STATIC_LATE
     };
 
+    /// S9 E3 laboratory arm. Product construction never selects this policy.
+    pub const FUSED_NORMAL_TANGENT: Self = Self {
+        colored_dispatch: GpuColoredDispatchV1::PerColorIndirectFusedNormalTangent,
+        ..Self::SELECTED
+    };
+
+    /// S9 E3 small-world dispatch-form control. Product construction never
+    /// selects this policy.
+    pub const FUSED_NORMAL_TANGENT_SMALL_WORLD: Self = Self {
+        colored_dispatch: GpuColoredDispatchV1::WorkgroupPerIslandFusedNormalTangent,
+        ..Self::FUSED_NORMAL_TANGENT
+    };
+
     pub const WORKGROUP_PER_ISLAND: Self = Self {
         colored_dispatch: GpuColoredDispatchV1::WorkgroupPerIsland,
         ..Self::SERIAL_CONTROL
@@ -269,6 +300,14 @@ impl GpuSolverSchedulingPolicyV1 {
             Self::STATIC_LATE_SMALL_WORLD
         } else {
             Self::STATIC_LATE
+        }
+    }
+
+    pub const fn fused_normal_tangent_for_body_capacity(body_capacity: u32) -> Self {
+        if body_capacity <= Self::SMALL_WORLD_BODY_CAPACITY_MAX {
+            Self::FUSED_NORMAL_TANGENT_SMALL_WORLD
+        } else {
+            Self::FUSED_NORMAL_TANGENT
         }
     }
 
@@ -311,6 +350,13 @@ impl GpuSolverSchedulingPolicyV1 {
             return Err(
                 "solver scheduling comparators require compact manifold-colored execution"
                     .to_owned(),
+            );
+        }
+        if self.colored_dispatch.fuses_normal_tangent()
+            && (!execution.normal_solver.uses_block() || !execution.relaxation)
+        {
+            return Err(
+                "fused normal/tangent scheduling requires block normals and relaxation".to_owned(),
             );
         }
         Ok(())
@@ -1359,7 +1405,10 @@ impl TopologyLayout {
                     .ok_or_else(|| "solver color maintenance state overflowed".to_owned())?;
                 layout.has_incremental_coloring = true;
             }
-            if scheduling_policy.colored_dispatch == GpuColoredDispatchV1::WorkgroupPerIsland {
+            if scheduling_policy
+                .colored_dispatch
+                .uses_workgroup_per_island()
+            {
                 let island_bin_capacity = body_count
                     .checked_mul(MAX_COLORS)
                     .ok_or_else(|| "solver island-bin capacity overflowed".to_owned())?;
@@ -1814,6 +1863,15 @@ impl GpuFixedFloorSolver {
         scheduling_policy.validate(execution)?;
         soft_feedback_policy.validate(&scenario.settings)?;
         normal_relaxation_policy.validate(&scenario.settings, execution)?;
+        if scheduling_policy.colored_dispatch.fuses_normal_tangent()
+            && (scenario.settings.contact_softness.is_some()
+                || soft_feedback_policy != GpuSoftFeedbackPolicyV1::SELECTED
+                || normal_relaxation_policy != GpuNormalRelaxationPolicyV1::SELECTED)
+        {
+            return Err(
+                "fused normal/tangent scheduling is limited to the hard/direct policy".to_owned(),
+            );
+        }
         let body_count = storage.layout().capacity_elements;
         let topology_layout = TopologyLayout::new(
             topology,
@@ -3872,6 +3930,7 @@ fn operations_with_contact_feedback(
     } else {
         PipelineKind::Normal
     };
+    let fused_normal_tangent = scheduling_policy.colored_dispatch.fuses_normal_tangent();
     topology_operations(
         &mut parameters,
         &mut operations,
@@ -3933,7 +3992,7 @@ fn operations_with_contact_feedback(
                     scenario,
                     body_count,
                     point_count,
-                    2,
+                    if fused_normal_tangent { 7 } else { 2 },
                     iteration,
                     soft_feedback_policy.use_bias(iteration),
                     topology,
@@ -3946,18 +4005,25 @@ fn operations_with_contact_feedback(
                 color_sweep_reversed(execution, substep, iteration, scenario.settings.iterations),
                 topology,
             );
-            solver_stage(
-                &mut parameters,
-                &mut operations,
-                execution,
-                pass_params(scenario, body_count, point_count, 3, iteration, 0),
-                PipelineKind::Tangent,
-                MotionDirection::AtoB,
-                point_workgroups,
-                body_workgroups,
-                color_sweep_reversed(execution, substep, iteration, scenario.settings.iterations),
-                topology,
-            );
+            if !fused_normal_tangent {
+                solver_stage(
+                    &mut parameters,
+                    &mut operations,
+                    execution,
+                    pass_params(scenario, body_count, point_count, 3, iteration, 0),
+                    PipelineKind::Tangent,
+                    MotionDirection::AtoB,
+                    point_workgroups,
+                    body_workgroups,
+                    color_sweep_reversed(
+                        execution,
+                        substep,
+                        iteration,
+                        scenario.settings.iterations,
+                    ),
+                    topology,
+                );
+            }
         }
         push_operation(
             &mut parameters,
@@ -3996,7 +4062,7 @@ fn operations_with_contact_feedback(
                         scenario,
                         body_count,
                         point_count,
-                        4,
+                        if fused_normal_tangent { 8 } else { 4 },
                         iteration,
                         0,
                         topology,
@@ -4021,23 +4087,25 @@ fn operations_with_contact_feedback(
                         topology,
                     );
                 }
-                solver_stage(
-                    &mut parameters,
-                    &mut operations,
-                    execution,
-                    pass_params(scenario, body_count, point_count, 5, iteration, 0),
-                    PipelineKind::Tangent,
-                    MotionDirection::AtoB,
-                    point_workgroups,
-                    body_workgroups,
-                    color_sweep_reversed(
+                if !fused_normal_tangent {
+                    solver_stage(
+                        &mut parameters,
+                        &mut operations,
                         execution,
-                        substep,
-                        iteration,
-                        scenario.settings.iterations,
-                    ),
-                    topology,
-                );
+                        pass_params(scenario, body_count, point_count, 5, iteration, 0),
+                        PipelineKind::Tangent,
+                        MotionDirection::AtoB,
+                        point_workgroups,
+                        body_workgroups,
+                        color_sweep_reversed(
+                            execution,
+                            substep,
+                            iteration,
+                            scenario.settings.iterations,
+                        ),
+                        topology,
+                    );
+                }
             }
         }
         solver_stage(
@@ -4681,6 +4749,8 @@ fn pass_trace_descriptors(
                     4 => GpuSolverPassKindV1::NormalRelaxation,
                     5 => GpuSolverPassKindV1::TangentRelaxation,
                     6 => GpuSolverPassKindV1::Restitution,
+                    7 => GpuSolverPassKindV1::NormalBiased,
+                    8 => GpuSolverPassKindV1::NormalRelaxation,
                     _ => return None,
                 },
                 _ => return None,
@@ -5495,6 +5565,137 @@ mod tests {
             parameters
                 .iter()
                 .any(|parameter| parameter.uints1[3] & 8 != 0)
+        );
+    }
+
+    #[test]
+    fn fused_normal_tangent_is_named_unpromoted_and_halves_contact_sweeps() {
+        assert!(
+            !GpuSolverSchedulingPolicyV1::SELECTED
+                .colored_dispatch
+                .fuses_normal_tangent()
+        );
+        assert!(
+            !GpuSolverSchedulingPolicyV1::SELECTED_SMALL_WORLD
+                .colored_dispatch
+                .fuses_normal_tangent()
+        );
+        assert_eq!(
+            GpuSolverSchedulingPolicyV1::fused_normal_tangent_for_body_capacity(16),
+            GpuSolverSchedulingPolicyV1::FUSED_NORMAL_TANGENT_SMALL_WORLD
+        );
+        assert_eq!(
+            GpuSolverSchedulingPolicyV1::fused_normal_tangent_for_body_capacity(65),
+            GpuSolverSchedulingPolicyV1::FUSED_NORMAL_TANGENT
+        );
+        assert!(
+            GpuSolverSchedulingPolicyV1::FUSED_NORMAL_TANGENT
+                .validate(GpuSolverExecutionV4::compact_colored_experiment(true, true))
+                .is_err()
+        );
+        assert!(
+            GpuSolverSchedulingPolicyV1::FUSED_NORMAL_TANGENT
+                .validate(GpuSolverExecutionV4::manifold_colored_block_experiment(
+                    true, false,
+                ))
+                .is_err()
+        );
+
+        let scenario =
+            crate::p5_2_settling_review_scenario(8, crate::P5_2SettlingReviewPolicy::HardControl)
+                .unwrap();
+        let body_count = scenario.bodies.len() as u32;
+        let point_capacity = body_count * (body_count - 1);
+        let per_color = |policy| {
+            TopologyLayout::new(
+                GpuGatherTopology::StableBodyEdge,
+                body_count,
+                point_capacity,
+                false,
+                GpuColorScheduleV4::CompactIndirect,
+                GpuColorUnitV4::Manifold,
+                policy,
+            )
+            .unwrap()
+        };
+        let (selected_parameters, selected_operations) = operations(
+            &scenario,
+            body_count,
+            point_capacity,
+            per_color(GpuSolverSchedulingPolicyV1::SELECTED),
+            false,
+            GpuSolverExecutionV4::SELECTED,
+            GpuSolverSchedulingPolicyV1::SELECTED,
+        );
+        let (fused_parameters, fused_operations) = operations(
+            &scenario,
+            body_count,
+            point_capacity,
+            per_color(GpuSolverSchedulingPolicyV1::FUSED_NORMAL_TANGENT),
+            false,
+            GpuSolverExecutionV4::SELECTED,
+            GpuSolverSchedulingPolicyV1::FUSED_NORMAL_TANGENT,
+        );
+        let selected_descriptors =
+            pass_trace_descriptors(&selected_parameters, &selected_operations);
+        let fused_descriptors = pass_trace_descriptors(&fused_parameters, &fused_operations);
+        assert_eq!(selected_descriptors.len(), 56);
+        assert_eq!(fused_descriptors.len(), 40);
+        assert_eq!(
+            selected_operations.len() - fused_operations.len(),
+            scenario.settings.substeps as usize
+                * scenario.settings.iterations as usize
+                * 2
+                * MAX_COLORS as usize
+        );
+        assert!(fused_descriptors.iter().all(|descriptor| {
+            !matches!(
+                descriptor.kind,
+                GpuSolverPassKindV1::TangentBiased | GpuSolverPassKindV1::TangentRelaxation
+            )
+        }));
+        assert!(fused_descriptors.iter().any(|descriptor| {
+            descriptor.kind == GpuSolverPassKindV1::NormalBiased
+                && descriptor.parameters.uints1[1] == 7
+        }));
+        assert!(fused_descriptors.iter().any(|descriptor| {
+            descriptor.kind == GpuSolverPassKindV1::NormalRelaxation
+                && descriptor.parameters.uints1[1] == 8
+        }));
+
+        let island_topology = |policy| {
+            TopologyLayout::new(
+                GpuGatherTopology::StableBodyEdge,
+                body_count,
+                point_capacity,
+                false,
+                GpuColorScheduleV4::CompactIndirect,
+                GpuColorUnitV4::Manifold,
+                policy,
+            )
+            .unwrap()
+        };
+        let (_, selected_island_operations) = operations(
+            &scenario,
+            body_count,
+            point_capacity,
+            island_topology(GpuSolverSchedulingPolicyV1::SELECTED_SMALL_WORLD),
+            false,
+            GpuSolverExecutionV4::SELECTED,
+            GpuSolverSchedulingPolicyV1::SELECTED_SMALL_WORLD,
+        );
+        let (_, fused_island_operations) = operations(
+            &scenario,
+            body_count,
+            point_capacity,
+            island_topology(GpuSolverSchedulingPolicyV1::FUSED_NORMAL_TANGENT_SMALL_WORLD),
+            false,
+            GpuSolverExecutionV4::SELECTED,
+            GpuSolverSchedulingPolicyV1::FUSED_NORMAL_TANGENT_SMALL_WORLD,
+        );
+        assert_eq!(
+            selected_island_operations.len() - fused_island_operations.len(),
+            scenario.settings.substeps as usize * scenario.settings.iterations as usize * 2
         );
     }
 

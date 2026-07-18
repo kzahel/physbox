@@ -338,6 +338,8 @@ const fn compact_scheduling(policy: GpuSolverSchedulingPolicyV1) -> [u32; 3] {
         match policy.colored_dispatch {
             GpuColoredDispatchV1::PerColorIndirect => 0,
             GpuColoredDispatchV1::WorkgroupPerIsland => 1,
+            GpuColoredDispatchV1::PerColorIndirectFusedNormalTangent => 2,
+            GpuColoredDispatchV1::WorkgroupPerIslandFusedNormalTangent => 3,
         },
     ]
 }

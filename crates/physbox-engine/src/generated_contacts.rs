@@ -1750,8 +1750,10 @@ impl GpuGeneratedContactOutput {
                     || coloring.color_count > coloring.max_colors
                     || coloring.color_occupancy.len() != coloring.color_count as usize
                     || coloring.encoded_color_passes
-                        != if coloring.scheduling_policy.colored_dispatch
-                            == crate::GpuColoredDispatchV1::WorkgroupPerIsland
+                        != if coloring
+                            .scheduling_policy
+                            .colored_dispatch
+                            .uses_workgroup_per_island()
                         {
                             1
                         } else {
@@ -1828,8 +1830,10 @@ impl GpuGeneratedContactOutput {
                 }
                 match coloring.schedule {
                     crate::GpuColorScheduleV4::CompactIndirect => {
-                        let expected_indirect = if coloring.scheduling_policy.colored_dispatch
-                            == crate::GpuColoredDispatchV1::WorkgroupPerIsland
+                        let expected_indirect = if coloring
+                            .scheduling_policy
+                            .colored_dispatch
+                            .uses_workgroup_per_island()
                         {
                             1
                         } else {
@@ -1853,6 +1857,7 @@ impl GpuGeneratedContactOutput {
                         }
                         match coloring.scheduling_policy.colored_dispatch {
                             crate::GpuColoredDispatchV1::PerColorIndirect
+                            | crate::GpuColoredDispatchV1::PerColorIndirectFusedNormalTangent
                                 if coloring.island_count != 0
                                     || !coloring.island_body_occupancy.is_empty()
                                     || !coloring.island_manifold_occupancy.is_empty() =>
@@ -1862,6 +1867,7 @@ impl GpuGeneratedContactOutput {
                                 );
                             }
                             crate::GpuColoredDispatchV1::WorkgroupPerIsland
+                            | crate::GpuColoredDispatchV1::WorkgroupPerIslandFusedNormalTangent
                                 if coloring.island_body_occupancy.len()
                                     != coloring.island_count as usize
                                     || coloring.island_manifold_occupancy.len()
@@ -4448,5 +4454,94 @@ mod tests {
             selected_work.compacted_order_digest,
             static_late_work.compacted_order_digest
         );
+    }
+
+    #[test]
+    fn fused_normal_tangent_replays_and_matches_both_dispatch_forms_exactly() {
+        let scenario =
+            p5_2_settling_review_scenario(8, P5_2SettlingReviewPolicy::HardControl).unwrap();
+        let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
+        let per_color = runner
+            .run_scheduling_experiment(
+                &scenario,
+                4,
+                GpuSolverExecutionV4::SELECTED,
+                GpuSolverSchedulingPolicyV1::FUSED_NORMAL_TANGENT,
+            )
+            .unwrap();
+        let per_color_replay = runner
+            .run_scheduling_experiment(
+                &scenario,
+                4,
+                GpuSolverExecutionV4::SELECTED,
+                GpuSolverSchedulingPolicyV1::FUSED_NORMAL_TANGENT,
+            )
+            .unwrap();
+        let islands = runner
+            .run_scheduling_experiment(
+                &scenario,
+                4,
+                GpuSolverExecutionV4::SELECTED,
+                GpuSolverSchedulingPolicyV1::FUSED_NORMAL_TANGENT_SMALL_WORLD,
+            )
+            .unwrap();
+
+        assert_eq!(
+            serde_json::to_vec(&per_color).unwrap(),
+            serde_json::to_vec(&per_color_replay).unwrap()
+        );
+        assert_eq!(per_color.bodies, islands.bodies);
+        assert_eq!(per_color.manifolds, islands.manifolds);
+        assert_eq!(per_color.cache, islands.cache);
+        assert_eq!(
+            per_color.pass_evidence.contacts,
+            islands.pass_evidence.contacts
+        );
+        assert_eq!(
+            per_color
+                .pass_evidence
+                .coloring
+                .as_ref()
+                .unwrap()
+                .point_colors,
+            islands
+                .pass_evidence
+                .coloring
+                .as_ref()
+                .unwrap()
+                .point_colors
+        );
+        let per_color_work = per_color
+            .pass_evidence
+            .scheduler_work_vector(scenario.bodies.len() as u32)
+            .unwrap()
+            .unwrap();
+        let island_work = islands
+            .pass_evidence
+            .scheduler_work_vector(scenario.bodies.len() as u32)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            per_color_work.assignment_digest,
+            island_work.assignment_digest
+        );
+        assert_eq!(
+            per_color_work.compacted_order_digest,
+            island_work.compacted_order_digest
+        );
+        assert!(per_color.failure.is_none());
+        assert!(islands.failure.is_none());
+
+        let soft =
+            p5_2_settling_review_scenario(8, P5_2SettlingReviewPolicy::SoftCandidate).unwrap();
+        let error = runner
+            .run_scheduling_experiment(
+                &soft,
+                1,
+                GpuSolverExecutionV4::SELECTED,
+                GpuSolverSchedulingPolicyV1::FUSED_NORMAL_TANGENT,
+            )
+            .unwrap_err();
+        assert!(error.contains("hard/direct"), "{error}");
     }
 }

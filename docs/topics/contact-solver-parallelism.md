@@ -539,6 +539,20 @@ pass. The [implementation note](../../evidence/p5.2b-s9.4-arm-static-late/IMPLEM
 records the controls. Product constructors and the selected policy remain
 unchanged; S9.4 still owns the arm's quality disposition.
 
+S9 E3 implementation checkpoint, 2026-07-18: the unpromoted fused-contact arm
+now has explicit per-color and workgroup-per-island policies. Its biased and
+relaxation kernels solve each manifold's block normals immediately followed by
+its tangent points, so friction consumes the just-updated normal impulse while
+color assignment and compacted order remain selected. The negative
+single-manifold control is byte-identical, a multi-color chain diverges with
+unchanged scheduler digests, and the centered 8-stack is exact between both
+dispatch forms. The graph removes 512 fixed per-color launches or 16 island
+launches per outer step. Hard/direct construction is enforced and product
+constructors remain unchanged. Full native, WebGPU, Android-target, APK,
+hardware-backed AVD, boundary, and smoke gates pass. The
+[implementation note](../../evidence/p5.2b-s9.4-arm-fused-normal-tangent/IMPLEMENTATION.md)
+records the controls; S9.4 still owns the arm's quality disposition.
+
 ## Fallback and reserve options
 
 - **Accepted baseline.** Manifold block i2 improves structural preservation and

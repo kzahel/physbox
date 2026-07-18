@@ -1415,8 +1415,9 @@ fn solve_colored_manifold(point_index: u32, preserve_static_motion: bool) {
             motion_b = apply_impulse(point1.ids.y, motion_b, impulse1, point1.anchor_b);
             emit_pair(point_index + 1u, point1, impulse1);
         }
-    } else if (stage == 2u || stage == 4u) {
-        if (stage == 4u && params.floats2.w == 2.0) {
+    } else if (stage == 2u || stage == 4u || stage == 7u || stage == 8u) {
+        let relaxation_stage = stage == 4u || stage == 8u;
+        if (relaxation_stage && params.floats2.w == 2.0) {
             let equation0 = normal_equation_from_velocity(
                 point0,
                 relative_velocity_from_motions(point0, point0.normal, motion_a, motion_b));
@@ -1499,6 +1500,34 @@ fn solve_colored_manifold(point_index: u32, preserve_static_motion: bool) {
                     -impulse1, point1.anchor_a);
                 motion_b = apply_impulse(point1.ids.y, motion_b,
                     impulse1, point1.anchor_b);
+                emit_pair(point_index + 1u, point1, impulse1);
+            }
+        }
+        if (stage == 7u || stage == 8u) {
+            let tangent_velocity0 = relative_velocity_from_motions(
+                point0, point0.tangent, motion_a, motion_b);
+            let old0 = point0.data1.w;
+            let limit0 = point0.data1.x * point0.data1.z;
+            point0.data1.w = clamp(
+                old0 - point0.data0.z * tangent_velocity0, -limit0, limit0);
+            let impulse0 = point0.tangent * (point0.data1.w - old0);
+            motion_a = apply_impulse(
+                point0.ids.x, motion_a, -impulse0, point0.anchor_a);
+            motion_b = apply_impulse(
+                point0.ids.y, motion_b, impulse0, point0.anchor_b);
+            emit_pair(point_index, point0, impulse0);
+            if (point_count == 2u) {
+                let tangent_velocity1 = relative_velocity_from_motions(
+                    point1, point1.tangent, motion_a, motion_b);
+                let old1 = point1.data1.w;
+                let limit1 = point1.data1.x * point1.data1.z;
+                point1.data1.w = clamp(
+                    old1 - point1.data0.z * tangent_velocity1, -limit1, limit1);
+                let impulse1 = point1.tangent * (point1.data1.w - old1);
+                motion_a = apply_impulse(
+                    point1.ids.x, motion_a, -impulse1, point1.anchor_a);
+                motion_b = apply_impulse(
+                    point1.ids.y, motion_b, impulse1, point1.anchor_b);
                 emit_pair(point_index + 1u, point1, impulse1);
             }
         }

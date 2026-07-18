@@ -299,7 +299,7 @@ stop. No product/default/tolerance/capacity/oracle contract changed.
 
 - [x] E2 static-late partition (constructor-selected policy; conflict-freedom
   invariant test; fail-closed capacity test; schedule identity exposed).
-- [ ] E3 contact-major fused normal+tangent for biased and relaxation sweeps
+- [x] E3 contact-major fused normal+tangent for biased and relaxation sweeps
   (single-manifold byte-identity negative control; multi-contact divergence
   positive control; dispatch-count delta recorded).
 - [ ] E4 static-stiff-hard `bias_rate = 0.4` for static contacts (policy
@@ -333,6 +333,21 @@ partitions closed. The full repository gate and visually inspected Metal/WebGPU
 smokes pass. Product constructors still select only `SELECTED` or
 `SELECTED_SMALL_WORLD`; E2 has not entered the product or the S9.4 quality
 matrix yet.
+
+E3 implementation checkpoint, 2026-07-18: the
+[implementation note](../../evidence/p5.2b-s9.4-arm-fused-normal-tangent/IMPLEMENTATION.md)
+records the named per-color and workgroup-per-island fused policies. Biased
+stage 7 and relaxation stage 8 solve each manifold's block normals followed
+immediately by its tangent points, while keeping selected colors and their
+order unchanged. A single-manifold/single-color fixture is byte-identical to
+the staged policy; an eight-manifold chain preserves assignment and compacted
+order but diverges in final pose/motion bytes. The centered hard/direct
+8-stack replays exactly and matches across both dispatch forms. Fusion removes
+512 per-color or 16 island launches per outer step, and soft/non-block/no-relax
+construction fails closed. The full repository gate and visually inspected
+Metal/WebGPU/AVD smokes pass. Product constructors still select only
+`SELECTED` or `SELECTED_SMALL_WORLD`; E3 has not entered the product or the
+S9.4 quality matrix yet.
 
 ### S9.4 — Metal quality matrix and combinations
 

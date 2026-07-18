@@ -203,6 +203,72 @@ fn static_late_keeps_dynamic_only_order_and_fails_closed_at_partition_capacity()
 }
 
 #[test]
+fn fused_normal_tangent_has_exact_single_manifold_control_and_multicolor_effect() {
+    let run = |body_count, policy| {
+        let mut scenario = authored_chain_scenario(body_count, 47).unwrap();
+        scenario.settings.iterations = P5_2_SELECTED_SOLVER_ITERATIONS;
+        pollster::block_on(benchmark_gpu_authored_solver_experiment(
+            &scenario,
+            1,
+            1,
+            GpuGatherTopology::StableBodyEdge,
+            GpuSolverExecutionV4::SELECTED,
+            policy,
+        ))
+        .unwrap()
+    };
+
+    let selected_single = run(2, GpuSolverSchedulingPolicyV1::SELECTED);
+    let fused_single = run(2, GpuSolverSchedulingPolicyV1::FUSED_NORMAL_TANGENT);
+    assert_eq!(selected_single.manifold_count, 1);
+    assert_eq!(selected_single.result_digest, fused_single.result_digest);
+    assert_eq!(
+        selected_single
+            .scheduler_work
+            .as_ref()
+            .unwrap()
+            .assignment_digest,
+        fused_single
+            .scheduler_work
+            .as_ref()
+            .unwrap()
+            .assignment_digest
+    );
+    assert_eq!(
+        selected_single.dispatches_per_step - fused_single.dispatches_per_step,
+        512
+    );
+
+    let selected_chain = run(9, GpuSolverSchedulingPolicyV1::SELECTED);
+    let fused_chain = run(9, GpuSolverSchedulingPolicyV1::FUSED_NORMAL_TANGENT);
+    assert_ne!(selected_chain.result_digest, fused_chain.result_digest);
+    assert_eq!(
+        selected_chain
+            .scheduler_work
+            .as_ref()
+            .unwrap()
+            .assignment_digest,
+        fused_chain
+            .scheduler_work
+            .as_ref()
+            .unwrap()
+            .assignment_digest
+    );
+    assert_eq!(
+        selected_chain
+            .scheduler_work
+            .as_ref()
+            .unwrap()
+            .compacted_order_digest,
+        fused_chain
+            .scheduler_work
+            .as_ref()
+            .unwrap()
+            .compacted_order_digest
+    );
+}
+
+#[test]
 fn pair_slot_benchmark_retains_the_correctness_gate() {
     let scenario = p5_2_generated_performance_scenario(32).unwrap();
     let benchmark =
