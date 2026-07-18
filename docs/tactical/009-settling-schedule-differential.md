@@ -45,12 +45,15 @@ checkout.
 | substep Jacobian | anchors/effective mass fixed at prepare; separation updated analytically from accumulated delta transforms (`src/contact_solver.c:1608-1616`, `1849-1850`) | full per-substep prepare/refresh recomputing anchors, effective mass, separation (`body_floor_solver.rs:3851`, `:3932`) | never |
 | restitution timing | once after all substeps (`src/solver.c:1182-1196`) | every substep (`body_floor_solver.rs:4001`, inside the loop closing at `:4018`) | never; inert for resting stacks under the `1.0 m/s` eligibility threshold |
 
-Orientation baselines from the frozen record (S9.1 re-pins fresh values):
-selected-product settled max linear speed `0.03652 / 0.12402 / 0.44197 m/s`
-on the 4/8/16 stacks with 16-stack energy `0.54254`; serial-order control
-`0.33476 / 0.27376`; pinned Box2D 16-stack final speed `0.000158 m/s`. The
-gap is roughly three orders of magnitude; existing order controls move
-16-stack energy about 2x.
+Fresh S9.1 S6.2-v2 baselines are selected-product settled max linear speed
+`0.03873 / 0.17960 / 0.70853 m/s` on the 4/8/16 stacks, with 16-stack last-
+quartile energy `0.33661`; serial control is `0.70533 / 1.77033` on the
+16-stack, and pinned Box2D final speed is `0.000158 m/s`. The initial
+authorization's `0.03652 / 0.12402 / 0.44197` orientation row and `0.54254`
+energy were historical S5.4c values at source `62f2fa1`, not the later clean
+S6.4/S6.5 current-product record. S9.1 corrects that attribution with fresh
+current-source evidence; no product setting or acceptance band changed. The
+authority gap remains roughly three orders of magnitude.
 
 ## Arms and rationale
 
@@ -201,10 +204,10 @@ session memory.
 
 - [x] Freeze this contract: arms, gates, routing rules, combination cap, and
   evidence naming, before any measurement.
-- [ ] Re-run and pin the selected product baseline (hard/direct, selected
+- [x] Re-run and pin the selected product baseline (hard/direct, selected
   scheduling) over the full corpus with fresh provenance; retain the serial
   control lane.
-- [ ] Produce fresh process-isolated pinned Box2D authority rows for the same
+- [x] Produce fresh process-isolated pinned Box2D authority rows for the same
   corpus.
 
 Outcome: one pinned baseline every arm compares against; no stale-number
@@ -224,6 +227,20 @@ S9.1 runner keeps the product-selected and serial-control schedules distinct,
 uses the frozen S6.2 v2 observation policy, and runs fresh process-isolated
 Box2D rows over the same governed corpus. No product constructor, physical
 default, tolerance, or authority setting changes in the re-pin.
+
+Baseline checkpoint, 2026-07-18: the
+[verified S9.1 package](../../evidence/p5.2b-s9.1-baseline-repin/README.md)
+at clean source `211395f` pins all 15 governed scenes. All 13 accepted
+selected-product, per-color-control where applicable, and serial-control lanes
+preserve structure, replay exactly, finish capacity-clean, and match their
+final-only body/manifold/cache state. The selected 4/8/16 v2 residuals are
+`0.03872548 / 0.17960109 / 0.70852673 m/s`; 16-stack last-quartile energy is
+`0.3366095`, versus serial `1.7703259`. The 32/64 diagnostic first losses stay
+at steps 29/31. Fresh clean pinned-Box2D final speeds are
+`0.0000015425 / 0.0000027144 / 0.0001575757 m/s`, and every authority final
+replay is exact. The package reconciles the stale S5.4c orientation prose
+against the already-established later S6.4/S6.5 hard-control record rather
+than weakening a gate or accepting a new regression.
 
 ### S9.2 — E1 matched per-pass energy attribution at depth
 
