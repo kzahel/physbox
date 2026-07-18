@@ -402,6 +402,17 @@ not exonerate or condemn block coupling in a retained relaxation equation.
 Arm 2 therefore proceeds, while Arm 1 stops before stack and drop gates. See
 the [verified package](../../evidence/p5.2b-s6.5c-arm1-no-normal-relax/README.md).
 
+Arm 2 result, 2026-07-18: the soft-coefficient normal-relaxation equation is
+rejected by both predeclared gates. Although maximum linear speed improves to
+`0.01083445 m/s`, the settled envelope rises 1.273× with a 299-observation
+positive run. Every one of the eight normal-relaxation passes injects energy
+in GPU and scalar recurrences, totaling `0.00034883377174823997` on Metal;
+their close state agreement excludes a hidden GPU-only update. Arm 1 shows the
+overall mode persists without block normal relaxation, while Arm 2 shows a
+retained block relaxation remains an injector. The conditional point-
+sequential Arm 3 is therefore triggered to isolate block coupling. See the
+[verified package](../../evidence/p5.2b-s6.5c-arm2-soft-coefficient-relax/README.md).
+
 ## Authority corrections
 
 Two plausible techniques must not be mislabeled as direct Box2D v3 parity:

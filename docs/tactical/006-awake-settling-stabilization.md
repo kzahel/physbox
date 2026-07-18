@@ -629,7 +629,7 @@ selected and every candidate remains unpromoted.
 - [x] Arm 1, `soft-no-normal-relax`: omit normal-relaxation passes when contact
   softness is enabled. Retain biased manifold-block normals, tangent
   relaxation, restitution, `i2`, coloring, coefficients, and every other pass.
-- [ ] Arm 2, `soft-coefficient-normal-relax`: retain normal relaxation, but for
+- [x] Arm 2, `soft-coefficient-normal-relax`: retain normal relaxation, but for
   penetrating contacts set velocity bias to zero while retaining the selected
   soft `massScale` and `impulseScale`. Retain the existing speculative-contact
   branch for positive separation. This is an experimental feedback equation,
@@ -701,6 +701,17 @@ step-900 trace contains zero normal-relaxation passes and all eight tangent-
 relaxation passes, so omission is direct evidence rather than an endpoint
 inference. Capacity, structure, contact identity, and warm cache remain clean.
 Arm 1 does not reach stacks or drops; product construction remains unchanged.
+
+Arm 2 checkpoint and Arm 3 trigger, 2026-07-18: the clean
+[soft-coefficient package](../../evidence/p5.2b-s6.5c-arm2-soft-coefficient-relax/README.md)
+is also rejected before stacks and drops. Residual linear speed falls within
+the frozen band at `0.01083445 m/s`, but the settled energy envelope still
+rises 1.273× with a 299-observation positive run. More decisively, all eight
+normal-relaxation passes inject in matched GPU and scalar recurrences, totaling
+`0.00034883377174823997` on Metal. Arm 1 shows that the overall energy mode
+survives without block normal relaxation; Arm 2 shows that retained block
+relaxation still injects. This is the predeclared ambiguity about block
+coupling, so conditional Arm 3 is triggered. No arm is forwarded.
 
 ### S6.6 — accepted policy integration
 
