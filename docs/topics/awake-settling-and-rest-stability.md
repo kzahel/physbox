@@ -609,6 +609,20 @@ observations, and preserves the same structural outcomes on Metal, AVD, and
 physical Android. It may not widen tolerances, change oracle precedence, drop
 portability, or use sleeping to conceal awake motion.
 
+S9 authorization, 2026-07-18: human review authorizes the bounded settling
+schedule-differential program tracked by
+[tactical 009](../tactical/009-settling-schedule-differential.md). It first
+satisfies the attribution prerequisite recorded above — matched-precision
+per-pass energy accounting on the governed 16-stack, including biased-normal,
+tangent, integration, and support-transfer boundaries — for the hard/direct
+product itself, then measures unpromoted schedule arms derived from verified
+pinned-authority differences: static-late contact ordering, contact-major
+fused normal/tangent solves, a single declared static-stiff-hard bias value,
+and conditional fixed-anchor-refresh and restitution-timing arms. The program
+stays inside the hard/direct manifold-block family, does not reopen the
+deferred soft direction, changes no product default, and returns any winner
+to human review under this topic's existing completion gate.
+
 ## Authority corrections
 
 Two plausible techniques must not be mislabeled as direct Box2D v3 parity:

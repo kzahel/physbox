@@ -1,6 +1,10 @@
 # Box3D planar stability reference
 
-Status: source-reference investigation at human checkpoint, 2026-07-18.
+Status: study complete, 2026-07-18. The S7.6 human decision authorized the
+recommended static-late ordering question as arm E2 of the S9 settling
+schedule-differential program
+([tactical 009](../tactical/009-settling-schedule-differential.md)); nothing
+else from this study is forwarded and no product change occurred.
 Box3D v0.1.0 is pinned as a clean local reference. It may generate bounded
 solver, contact-persistence, and scheduling hypotheses, but it is not a rigid
 authority, product dependency, or alternative engine. Box2D remains the rigid
@@ -183,6 +187,17 @@ predeclared material improvement on the existing 4/8/16 stack and S6 energy
 evidence without structural, capacity, diagnostic first-loss, performance, or
 portability regression. Even a survivor returns to human review before product
 integration. Nothing further in this source workstream is autonomous.
+
+S7.6 human decision, 2026-07-18: authorize the static-late ordering question,
+executed as arm E2 of the S9 settling schedule-differential program
+([tactical 009](../tactical/009-settling-schedule-differential.md)) beside a
+16-stack per-pass attribution diagnostic and additional authority-derived
+schedule arms, under the same predeclared material-effect gate. The review
+also recorded why the ordering arm alone is expected to be insufficient:
+existing order controls move 16-stack energy about 2x while the residual gap
+to the pinned authority is roughly three orders of magnitude, and both quiet
+references pair static-late order with 2x static-contact stiffening. This
+closes the Box3D source workstream; S9 owns all further execution.
 
 ## Initial hypotheses
 

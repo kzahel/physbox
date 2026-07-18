@@ -1,9 +1,11 @@
 # S7: Box3D planar stability investigation
 
-Status: manual checkpoint, 2026-07-18. The clean v0.1.0 source study is
-complete and recommends one static-late PhysBox order factorial. No
-Box3D-derived PhysBox comparator, physical-default change, or authority change
-is authorized until human review.
+Status: complete, 2026-07-18. The clean v0.1.0 source study recommended one
+static-late PhysBox order factorial; human review authorized that question as
+arm E2 of the broader
+[S9 settling schedule differential](009-settling-schedule-differential.md)
+rather than a standalone factorial. No Box3D-derived product, physical-default,
+or authority change occurred in this workstream.
 
 Governing topic:
 [Box3D planar stability reference](../topics/box3d-planar-stability-reference.md).
