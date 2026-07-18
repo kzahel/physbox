@@ -19,6 +19,7 @@ use physbox_engine::{
 use physbox_lab::analytic_narrowphase::authored_solver_projection;
 use physbox_lab::pass_energy::{
     ScalarPassCoverageV1, analyze_scalar_relaxation_derivation, analyze_settling_pass_energy,
+    analyze_static_support_energy_attribution,
 };
 use physbox_lab::settling::centered_stack_structure;
 use physbox_lab::settling::{
@@ -101,6 +102,39 @@ fn per_pass_trace_replays_through_the_matched_f32_scalar_recurrence() {
         "matched f32 replay: firstNonExact={:?} maxUlp={} maxPass={:?}",
         report.first_non_exact_pass, report.maximum_ulp_difference, report.maximum_ulp_pass
     );
+}
+
+#[test]
+fn stack_pass_trace_attributes_static_support_in_exact_color_order() {
+    let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
+    let scenario = p5_2_centered_rectangle_stack_scenario(8, 2).unwrap();
+    let trace = runner
+        .run_contact_policy_pass_trace(
+            &scenario,
+            2,
+            ContactIdentityPolicyV1::SELECTED,
+            GpuSoftFeedbackPolicyV1::SELECTED,
+        )
+        .unwrap();
+    let report = analyze_static_support_energy_attribution(&trace).unwrap();
+    report.validate().unwrap();
+    assert_eq!(report.rows.len(), 16);
+    for row in &report.rows {
+        assert_eq!(row.static_manifolds, 1, "pass {}", row.pass_index);
+        assert_eq!(row.dynamic_manifolds, 7, "pass {}", row.pass_index);
+        assert!(
+            row.accounting_error_compensated_f64.abs() <= 1.0e-8,
+            "pass {} accounting error {}",
+            row.pass_index,
+            row.accounting_error_compensated_f64
+        );
+        assert!(
+            row.replay_state_difference.max_absolute_difference <= PASS_TOLERANCE,
+            "pass {} max difference {}",
+            row.pass_index,
+            row.replay_state_difference.max_absolute_difference
+        );
+    }
 }
 
 #[test]

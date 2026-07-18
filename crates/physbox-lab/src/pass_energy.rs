@@ -9,6 +9,7 @@ use crate::scalar::{Box2dPointNormalInput, box2d_point_normal_update};
 
 pub const SETTLING_PASS_ENERGY_REPORT_VERSION: u32 = 1;
 pub const RELAXATION_DERIVATION_REPORT_VERSION: u32 = 1;
+pub const STATIC_SUPPORT_ATTRIBUTION_REPORT_VERSION: u32 = 1;
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -70,6 +71,34 @@ pub struct SettlingPassEnergyReportV1 {
     pub first_non_exact_pass: Option<u32>,
     pub maximum_ulp_difference: u32,
     pub maximum_ulp_pass: Option<u32>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StaticSupportEnergyAttributionRowV1 {
+    pub pass_index: u32,
+    pub descriptor: GpuSolverPassDescriptorV1,
+    pub static_manifolds: u32,
+    pub dynamic_manifolds: u32,
+    pub static_injecting_manifolds: u32,
+    pub dynamic_injecting_manifolds: u32,
+    pub static_net_delta_compensated_f64: f64,
+    pub dynamic_net_delta_compensated_f64: f64,
+    pub static_positive_delta_compensated_f64: f64,
+    pub dynamic_positive_delta_compensated_f64: f64,
+    pub accounting_error_compensated_f64: f64,
+    pub replay_state_difference: ScalarStateDifferenceV1,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SettlingStaticSupportAttributionReportV1 {
+    pub version: u32,
+    pub source_scenario_hash: String,
+    pub target_step: u32,
+    pub rows: Vec<StaticSupportEnergyAttributionRowV1>,
+    pub maximum_accounting_error_compensated_f64: f64,
+    pub maximum_replay_ulp_difference: u32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
@@ -194,6 +223,50 @@ impl SettlingPassEnergyReportV1 {
     }
 }
 
+impl SettlingStaticSupportAttributionReportV1 {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.version != STATIC_SUPPORT_ATTRIBUTION_REPORT_VERSION
+            || self.source_scenario_hash.len() != 64
+            || self.target_step == 0
+            || self.rows.is_empty()
+            || !self.maximum_accounting_error_compensated_f64.is_finite()
+        {
+            return Err("static-support attribution identity is invalid".to_owned());
+        }
+        for row in &self.rows {
+            if !matches!(
+                row.descriptor.kind,
+                GpuSolverPassKindV1::NormalBiased | GpuSolverPassKindV1::NormalRelaxation
+            ) || row.static_manifolds + row.dynamic_manifolds == 0
+                || !row.static_net_delta_compensated_f64.is_finite()
+                || !row.dynamic_net_delta_compensated_f64.is_finite()
+                || !row.static_positive_delta_compensated_f64.is_finite()
+                || !row.dynamic_positive_delta_compensated_f64.is_finite()
+                || !row.accounting_error_compensated_f64.is_finite()
+            {
+                return Err("static-support attribution row is invalid".to_owned());
+            }
+        }
+        let maximum_error = self
+            .rows
+            .iter()
+            .map(|row| row.accounting_error_compensated_f64.abs())
+            .fold(0.0_f64, f64::max);
+        let maximum_ulp = self
+            .rows
+            .iter()
+            .map(|row| row.replay_state_difference.max_ulp_difference)
+            .max()
+            .unwrap_or(0);
+        if self.maximum_accounting_error_compensated_f64 != maximum_error
+            || self.maximum_replay_ulp_difference != maximum_ulp
+        {
+            return Err("static-support attribution summary is inconsistent".to_owned());
+        }
+        Ok(())
+    }
+}
+
 pub fn analyze_settling_pass_energy(
     scenario: &ScenarioV1,
     trace: &GpuGeneratedContactPassTraceV3,
@@ -280,6 +353,111 @@ pub fn analyze_settling_pass_energy(
         first_non_exact_pass,
         maximum_ulp_difference,
         maximum_ulp_pass,
+    };
+    report.validate()?;
+    Ok(report)
+}
+
+/// Attribute each colored normal pass to manifolds touching an immovable body
+/// versus dynamic-only manifolds while preserving the exact compacted color
+/// and manifold order used by the matched scalar replay.
+pub fn analyze_static_support_energy_attribution(
+    trace: &GpuGeneratedContactPassTraceV3,
+) -> Result<SettlingStaticSupportAttributionReportV1, String> {
+    trace.validate()?;
+    let mut rows = Vec::new();
+    for (pass_index, descriptor) in trace.descriptors.iter().enumerate() {
+        if !matches!(
+            descriptor.kind,
+            GpuSolverPassKindV1::NormalBiased | GpuSolverPassKindV1::NormalRelaxation
+        ) {
+            continue;
+        }
+        let before = trace
+            .states
+            .get(pass_index)
+            .ok_or_else(|| "normal attribution is missing a pre-pass state".to_owned())?;
+        let after = trace
+            .states
+            .get(pass_index + 1)
+            .ok_or_else(|| "normal attribution is missing a post-pass state".to_owned())?;
+        let mut bodies = before.bodies.clone();
+        let mut contacts = before.contacts.clone();
+        let mut static_manifolds = 0_u32;
+        let mut dynamic_manifolds = 0_u32;
+        let mut static_injecting_manifolds = 0_u32;
+        let mut dynamic_injecting_manifolds = 0_u32;
+        let mut static_net = 0.0_f64;
+        let mut dynamic_net = 0.0_f64;
+        let mut static_positive = 0.0_f64;
+        let mut dynamic_positive = 0.0_f64;
+        visit_colored_manifolds(descriptor, &trace.coloring, |point_index| {
+            let point = contacts
+                .get(point_index)
+                .ok_or_else(|| "normal attribution points outside contact capacity".to_owned())?;
+            let body_a = bodies
+                .get(point.body_a as usize)
+                .ok_or_else(|| "normal attribution body A is invalid".to_owned())?;
+            let body_b = bodies
+                .get(point.body_b as usize)
+                .ok_or_else(|| "normal attribution body B is invalid".to_owned())?;
+            let static_support =
+                body_a.inverse_mass.get() == 0.0 || body_b.inverse_mass.get() == 0.0;
+            let energy_before = kinetic_energy(&bodies).compensated_f64;
+            solve_manifold(&mut bodies, &mut contacts, point_index, descriptor)?;
+            let delta = kinetic_energy(&bodies).compensated_f64 - energy_before;
+            if static_support {
+                static_manifolds += 1;
+                static_net += delta;
+                if delta > 0.0 {
+                    static_injecting_manifolds += 1;
+                    static_positive += delta;
+                }
+            } else {
+                dynamic_manifolds += 1;
+                dynamic_net += delta;
+                if delta > 0.0 {
+                    dynamic_injecting_manifolds += 1;
+                    dynamic_positive += delta;
+                }
+            }
+            Ok(())
+        })?;
+        let replay_state_difference =
+            compare_state(&bodies, &after.bodies, &contacts, &after.contacts, true)?;
+        let gpu_delta = kinetic_energy(&after.bodies).compensated_f64
+            - kinetic_energy(&before.bodies).compensated_f64;
+        rows.push(StaticSupportEnergyAttributionRowV1 {
+            pass_index: pass_index as u32,
+            descriptor: *descriptor,
+            static_manifolds,
+            dynamic_manifolds,
+            static_injecting_manifolds,
+            dynamic_injecting_manifolds,
+            static_net_delta_compensated_f64: static_net,
+            dynamic_net_delta_compensated_f64: dynamic_net,
+            static_positive_delta_compensated_f64: static_positive,
+            dynamic_positive_delta_compensated_f64: dynamic_positive,
+            accounting_error_compensated_f64: static_net + dynamic_net - gpu_delta,
+            replay_state_difference,
+        });
+    }
+    let maximum_accounting_error_compensated_f64 = rows
+        .iter()
+        .map(|row| row.accounting_error_compensated_f64.abs())
+        .fold(0.0_f64, f64::max);
+    let maximum_replay_ulp_difference = rows
+        .iter()
+        .map(|row| row.replay_state_difference.max_ulp_difference)
+        .max()
+        .unwrap_or(0);
+    let report = SettlingStaticSupportAttributionReportV1 {
+        version: STATIC_SUPPORT_ATTRIBUTION_REPORT_VERSION,
+        source_scenario_hash: trace.source_scenario_hash.clone(),
+        target_step: trace.target_step,
+        rows,
+        maximum_accounting_error_compensated_f64,
+        maximum_replay_ulp_difference,
     };
     report.validate()?;
     Ok(report)
@@ -542,6 +720,16 @@ fn replay_colored_manifolds(
     descriptor: &GpuSolverPassDescriptorV1,
     coloring: &GpuColoringEvidenceV4,
 ) -> Result<(), String> {
+    visit_colored_manifolds(descriptor, coloring, |point_index| {
+        solve_manifold(bodies, contacts, point_index, descriptor)
+    })
+}
+
+fn visit_colored_manifolds(
+    descriptor: &GpuSolverPassDescriptorV1,
+    coloring: &GpuColoringEvidenceV4,
+    mut visit: impl FnMut(usize) -> Result<(), String>,
+) -> Result<(), String> {
     if descriptor.first_color != Some(0)
         || descriptor.color_passes != coloring.max_colors
         || coloring.compacted_point_indices.len()
@@ -557,7 +745,7 @@ fn replay_colored_manifolds(
     for &occupancy in &coloring.color_occupancy {
         let end = offset + occupancy as usize;
         for &point_index in &coloring.compacted_point_indices[offset..end] {
-            solve_manifold(bodies, contacts, point_index as usize, descriptor)?;
+            visit(point_index as usize)?;
         }
         offset = end;
     }
