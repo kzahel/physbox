@@ -498,13 +498,15 @@ survivor.
 
 ### S9.5 — survivor cost, cross-host, winner determination
 
-- [ ] For the best at most two material survivors by 16-stack settled energy:
+- [x] For the best at most two material survivors by 16-stack settled energy:
   Metal 256/1K complete-step timing (plus 1K/10K authored rows if the arm
   changed scheduling shape), Chrome WebGPU, hardware-backed AVD, and available
-  physical Android structure runs.
-- [ ] One AVD matched-boundary overlay for the best arm if any rising-energy
-  mode remains.
-- [ ] Apply the winner gate.
+  physical Android structure runs. The survivor set is empty, so no discarded
+  arm was advanced into cost or cross-host qualification.
+- [x] One AVD matched-boundary overlay for the best arm if any rising-energy
+  mode remains. Not applicable: there is no best material survivor.
+- [x] Apply the winner gate. Entry eligibility fails because S9.4 produced no
+  material survivor; no downstream clause is inferred or credited.
 
 Outcome: a survivor is either a winner-gate promotion candidate or a
 recorded near-miss with the exact failed clause.
@@ -515,6 +517,17 @@ Completion gate: winner-gate clauses individually recorded pass/fail; no
 inferred platform result.
 
 Commit boundary: survivor evidence separate from arm evidence.
+
+S9.5 completion checkpoint, 2026-07-18: the ranked material-survivor set is
+empty after E2, E3, E4, and E5 all failed S9.4. E6 is a byte-inert conditional
+hygiene result, not a formulation arm. The winner gate therefore fails at its
+entry prerequisite and S9 produces no promotion candidate. The remaining
+winner clauses — full awake quality bands, stable-support churn and energy,
+preserved physical bands, Metal cost, Chrome/AVD/physical-Android structure,
+and AVD matched-boundary energy — are not applicable and were not run against
+discarded policies. Their status is explicitly unevaluated, not an inferred
+pass. No S9.5 survivor artifact is created because the declared artifact set
+is indexed by an eligible survivor.
 
 ### S9.6 — review package (always runs)
 
