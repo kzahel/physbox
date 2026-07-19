@@ -263,10 +263,10 @@ Commit boundary: forced-overflow/capacity evidence.
 
 ### S13.4 — governed authority qualification
 
-- [ ] Execute primary and exact replay for depth 11 and depth 16.
-- [ ] Compare both GPU results to the bound native authority using every
+- [x] Execute primary and exact replay for depth 11 and depth 16.
+- [x] Compare both GPU results to the bound native authority using every
   frozen S12 band and report the unchanged product ceiling independently.
-- [ ] Retain complete raw observations, state/cache/color diagnostics, and
+- [x] Retain complete raw observations, state/cache/color diagnostics, and
   recursively verified provenance.
 
 Artifacts: `evidence/p5.2b-s13.4-gpu-authority-qualification/`.
