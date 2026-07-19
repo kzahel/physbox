@@ -352,7 +352,7 @@ fn authority_gpu_probe_first_step_phase_dump() {
                     .find(|contact| {
                         contact.valid
                             && contact.manifold_index == record.manifold_id
-                            && contact.point_in_manifold == record.point_index as u32
+                            && contact.point_in_manifold == record.point_index
                     })
                     .unwrap();
                 let expected = record
@@ -371,7 +371,7 @@ fn authority_gpu_probe_first_step_phase_dump() {
                 if difference > maximum.2 {
                     maximum = (
                         record.manifold_id,
-                        record.point_index as u32,
+                        record.point_index,
                         difference,
                         actual,
                         expected,
@@ -462,7 +462,7 @@ fn authority_gpu_probe_first_step_phase_dump() {
                     .find(|contact| {
                         contact.valid
                             && contact.manifold_index == record.manifold_id
-                            && contact.point_in_manifold == record.point_index as u32
+                            && contact.point_in_manifold == record.point_index
                     })
                     .unwrap();
                 let expected = record
@@ -476,7 +476,7 @@ fn authority_gpu_probe_first_step_phase_dump() {
                 if difference > tangent_maximum.2 {
                     tangent_maximum = (
                         record.manifold_id,
-                        record.point_index as u32,
+                        record.point_index,
                         difference,
                         contact.tangent_impulse,
                         expected,
