@@ -414,6 +414,43 @@ Completion gate: every routed candidate has a disposition and either one
 survivor advances or no unresolved mechanism-supported correction remains
 inside the ownership constraints. Consuming two slots alone is not closure.
 
+Candidate-1 scalar contract freeze, 2026-07-19, before measurement: the one
+routed policy is `retain-within-step-impulses-through-refresh`. It changes
+only which already-existing impulse vector seeds the three full inter-substep
+geometry/effective-mass refreshes; contact regeneration, anchors, effective
+masses, separation, unilateral projection, soft coefficients, penetration
+bias, friction, restitution, colored order, and final persistence remain
+unchanged. It has zero free parameters and is not a product policy. The
+soft-specific scalar argument must prove the active one-constraint endpoint
+is warm-seed independent algebraically because the pinned soft coefficients
+satisfy `massScale + impulseScale = 1`, then retain and bound the actual `f32`
+coefficient-complement residual; retention removes the measured coupled-color
+rewind transient rather than hiding rounding. The exact scalar lanes are the
+two-step soft four-body contract, full-length permanent soft four-body
+context, full-length depth-11 S11.2 reproducer, and full-length soft 16-stack.
+Every lane must remain finite, structurally accepted, no more penetrated than
+its stale-seed
+control, support-preserving, and non-sagging; the two-step body response must
+remain exact, while every full-length candidate must independently remain
+inside both `0.025 m/s` bands with positive run below 5 and a non-rising
+energy envelope. Any scalar failure discards candidate 1 before a GPU port.
+Only a complete scalar pass admits the existing single unpromoted GPU policy
+to the frozen early 16-stack/four-body falsification; no wider GPU corpus may
+run first. Artifact name:
+`evidence/p5.2b-s11.3-candidate-retained-refresh/`.
+
+Candidate-1 scalar implementation checkpoint, 2026-07-19: the native-only
+runner binds the verified S11.2 manifest, evaluates 720 soft unilateral seed
+combinations, and executes control/candidate plus exact replay on all four
+frozen scalar lanes. It retains complete scalar observations in deterministic
+compressed captures and fails closed on finite state, structure, penetration,
+support, anti-sag, two-step exactness, awake speed, positive-run, and
+energy-envelope predicates. A scalar rejection is a successful measured
+disposition with `gpuPortAdmitted=false`; it cannot emit authorization for a
+GPU run.
+Product constructors and all physical defaults remain inert. Clean candidate
+evidence remains open.
+
 Commit boundaries: scalar derivation; GPU port and falsification; quality
 evidence — separately per candidate.
 
