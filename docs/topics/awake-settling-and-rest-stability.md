@@ -838,6 +838,24 @@ unresolved mechanism-supported correction remains inside the recorded
 ownership constraints. No product default changes; any winner returns to
 human promotion review.
 
+S11.1 attribution result, 2026-07-19: the clean
+[soft pass package](../../evidence/p5.2b-s11.1-soft-pass-attribution/README.md)
+routes the governed 16-stack to hypothesis 1, but only as a composition. Over
+settled steps 900–1200 its compensated kinetic energy grows by
+`4.342633906687518e-5` with positive run 300. `normal-biased` is the only
+consistent non-gravity material injector (`+5.953993913608667e-7`, positive
+on all 301 steps and at steps 900/1000/1100), while normal relaxation is a
+sink and the gravity/warm-start pair leaves a larger
+`+4.526201848124244e-5` support-cancellation deficit. The permanent four-body
+context reverses the soft-normal signs: biased normal is a sink and normal
+relaxation is the consistent injector. S11.2 therefore owns a
+scene-dependent soft-normal recurrence study across bias, relaxation,
+gravity-to-warm support cancellation, and the persistence handoff; it may not
+infer a bias-only correction from the primary family label. All observation,
+window, and anchor lanes replay exactly with clean capacity and structure;
+energy accounting reconciles within the frozen bands. Product/default/
+tolerance/oracle contracts remain unchanged.
+
 ## Authority corrections
 
 Two plausible techniques must not be mislabeled as direct Box2D v3 parity:

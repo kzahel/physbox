@@ -242,7 +242,7 @@ session memory.
   graph without changing product paths; add the single-run settled-window
   motion trace described above, and retain the scalar mirror's proven
   pass-boundary exactness on the soft composition.
-- [ ] Run matched-precision per-pass compensated energy attribution on the
+- [x] Run matched-precision per-pass compensated energy attribution on the
   soft 16-stack over the complete settled window and at exact steps
   900/1000/1100 with exact replay, and record the permanent four-body soft
   lane as secondary context under the same contract.
@@ -263,9 +263,10 @@ Implementation checkpoint, 2026-07-19: the attribution contract is frozen to
 the ten named motion-changing pass families, the S6.2 material predicate, and
 the per-step/full-window reconciliation bands above. A native-only version-1
 motion-window capture now records raw `f32` body motion at all 57 selected
-pass boundaries for every step 900–1200 in GPU command order and maps once
-after step 1200. The lab emits strict ordered-`f32` and compensated-`f64`
-energy, family net/gross/material totals, occupancy, anchors, and routing.
+motion states spanning 56 pass boundaries for every step 900–1200 in GPU
+command order and maps once after step 1200. The lab emits strict
+ordered-`f32` and compensated-`f64` energy, family net/gross/material totals,
+occupancy, anchors, and routing.
 The existing version-3 exact trace remains the full-state/contact/scalar
 anchor and is required to equal the window motion at steps 900/1000/1100.
 The extension leaves product constructors and all physical defaults inert.
@@ -273,6 +274,31 @@ Standard repository gates, the APK build, and the hardware-backed AVD lane
 pass; the attached physical Pixel 7a lane was available but locked and is not
 an instrument-completion dependency. Clean attribution evidence remains the
 last S11.1 action.
+
+Completion checkpoint, 2026-07-19: clean run
+`p5.2b-s11.1-soft-pass-attribution-20260719-r1` passes every frozen S11.1
+gate in the
+[verified package](../../evidence/p5.2b-s11.1-soft-pass-attribution/README.md).
+Both lanes exactly replay their 1,200-step observation series, complete
+settled-window motion captures, and three full anchor traces; capacity,
+structure, matched scalar state, static-support accounting, and energy
+reconciliation pass. The primary 16-stack grows from
+`3.901851147423373e-9` to `4.34302409180226e-5` compensated kinetic energy
+over steps 900–1200, with positive run 300. `normal-biased` is its only
+consistent non-gravity material injector (`+5.953993913608667e-7`, positive
+on all 301 steps and all three anchors), while normal relaxation is a
+`-2.385762499016329e-6` sink. The larger secular balance includes a
+`+4.526201848124244e-5` deficit between gravity integration and warm-start
+support, so the signed route is hypothesis 1 at composition level rather
+than bias in isolation. The required four-body lane reverses the soft-normal
+signs — biased normal is `-7.207121141519029e-4` and normal relaxation is the
+consistent `+8.186273718758345e-4` injector — while retaining the rising mode
+and positive run 300. S11.2 therefore leads with the primary normal-biased
+operator but must retain bias, relaxation, gravity/warm support cancellation,
+and the persistence-to-next-step handoff as one scene-dependent recurrence.
+Prepare, refresh, integrate-position, and restitution have exact zero direct
+motion delta and do not route hypothesis 2 by themselves. No product or
+contract default changed.
 
 Commit boundaries: contract and instrument extension; clean attribution
 evidence.

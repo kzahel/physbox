@@ -32,7 +32,10 @@ with exact-anchor plus full-settled-window matched pass attribution and
 impulse-operator analysis, derives only mechanism-supported scalar-first
 corrections under versioned verdicts with a mandatory early GPU falsification,
 and qualifies any survivor independently on Metal, the hardware-backed AVD,
-and physical Android under the recorded reopening gate.
+and physical Android under the recorded reopening gate. S11.1 is complete:
+the 16-stack routes to a scene-dependent warm-start/soft-normal composition,
+with biased normal the primary consistent injector and the four-body context
+reversing the bias/relaxation signs; S11.2 operator localization is next.
 
 Tactical filenames use a three-digit zero-padded prefix ordered by their first
 Git creation timestamp. This repository starts at `001`. Never renumber an
