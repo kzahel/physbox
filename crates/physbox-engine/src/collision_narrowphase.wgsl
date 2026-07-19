@@ -121,12 +121,87 @@ fn finish_scratch(pair: CandidatePair, normal: vec2f,
     output.point_count.x = point_count;
     output.point0 = point0;
     output.point1 = point1;
-    if (point_count == 2u && point_key_greater(output.point0, output.point1)) {
+    if (u32(params.policy.y) == 4u) {
+        let tangent = vec2f(normal.y, -normal.x);
+        if (point_count == 2u &&
+                dot(output.point0.world_separation.xy, tangent) <
+                dot(output.point1.world_separation.xy, tangent)) {
+            let swap = output.point0;
+            output.point0 = output.point1;
+            output.point1 = swap;
+        }
+        let reference_a = point_count == 2u &&
+            output.point0.features.x == FEATURE_FACE &&
+            output.point1.features.x == FEATURE_FACE;
+        let reference_b = point_count == 2u &&
+            output.point0.features.z == FEATURE_FACE &&
+            output.point1.features.z == FEATURE_FACE;
+        let reference_face_a = output.point0.features.y;
+        let reference_face_b = output.point0.features.w;
+        let midpoint0 = output.point0.world_separation.xy;
+        output.point0.anchors = vec4f(
+            inverse_rotate(midpoint0 - poses[pair.identities.x].xy,
+                           poses[pair.identities.x].z),
+            inverse_rotate(midpoint0 - poses[pair.identities.z].xy,
+                           poses[pair.identities.z].z));
+        if (reference_a) {
+            output.point0.features = vec4u(
+                FEATURE_VERTEX, reference_face_a,
+                FEATURE_VERTEX, output.point0.features.w);
+        } else if (reference_b) {
+            output.point0.features = vec4u(
+                FEATURE_VERTEX, output.point0.features.y,
+                FEATURE_VERTEX, (reference_face_b + 1u) % 4u);
+        } else {
+            output.point0.features = vec4u(
+                FEATURE_VERTEX, closest_rectangle_vertex(pair.identities.x,
+                    output.point0.anchors.xy),
+                FEATURE_VERTEX, closest_rectangle_vertex(pair.identities.z,
+                    output.point0.anchors.zw));
+        }
+        if (point_count == 2u) {
+            let midpoint1 = output.point1.world_separation.xy;
+            output.point1.anchors = vec4f(
+                inverse_rotate(midpoint1 - poses[pair.identities.x].xy,
+                               poses[pair.identities.x].z),
+                inverse_rotate(midpoint1 - poses[pair.identities.z].xy,
+                               poses[pair.identities.z].z));
+            if (reference_a) {
+                output.point1.features = vec4u(
+                    FEATURE_VERTEX, (reference_face_a + 1u) % 4u,
+                    FEATURE_VERTEX, output.point1.features.w);
+            } else if (reference_b) {
+                output.point1.features = vec4u(
+                    FEATURE_VERTEX, output.point1.features.y,
+                    FEATURE_VERTEX, reference_face_b);
+            } else {
+                output.point1.features = vec4u(
+                    FEATURE_VERTEX, closest_rectangle_vertex(pair.identities.x,
+                        output.point1.anchors.xy),
+                    FEATURE_VERTEX, closest_rectangle_vertex(pair.identities.z,
+                        output.point1.anchors.zw));
+            }
+        }
+    } else if (point_count == 2u && point_key_greater(output.point0, output.point1)) {
         let swap = output.point0;
         output.point0 = output.point1;
         output.point1 = swap;
     }
     return output;
+}
+
+fn closest_rectangle_vertex(body: u32, local_anchor: vec2f) -> u32 {
+    var selected = 0u;
+    var best = 1.0e30;
+    for (var vertex = 0u; vertex < 4u; vertex += 1u) {
+        let delta = shifted_rectangle_vertex(properties[body].xy, vertex) - local_anchor;
+        let distance = dot(delta, delta);
+        if (distance < best) {
+            best = distance;
+            selected = vertex;
+        }
+    }
+    return selected;
 }
 
 fn point_key_greater(a: ContactPoint, b: ContactPoint) -> bool {

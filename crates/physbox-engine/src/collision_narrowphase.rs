@@ -583,6 +583,45 @@ impl NarrowphaseCase {
         body_storage: &crate::GpuBodyStorage,
         identity_policy: ContactIdentityPolicyV1,
     ) -> Result<Self, String> {
+        Self::new_with_storage_and_identity_mode(
+            device,
+            pipelines,
+            candidate,
+            requested_manifold_capacity,
+            body_storage,
+            identity_policy,
+            false,
+        )
+    }
+
+    pub(crate) fn new_with_storage_and_authority_identity(
+        device: &wgpu::Device,
+        pipelines: &NarrowphasePipelines,
+        candidate: &CandidateCase,
+        requested_manifold_capacity: Option<u32>,
+        body_storage: &crate::GpuBodyStorage,
+    ) -> Result<Self, String> {
+        Self::new_with_storage_and_identity_mode(
+            device,
+            pipelines,
+            candidate,
+            requested_manifold_capacity,
+            body_storage,
+            ContactIdentityPolicyV1::SELECTED,
+            true,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn new_with_storage_and_identity_mode(
+        device: &wgpu::Device,
+        pipelines: &NarrowphasePipelines,
+        candidate: &CandidateCase,
+        requested_manifold_capacity: Option<u32>,
+        body_storage: &crate::GpuBodyStorage,
+        identity_policy: ContactIdentityPolicyV1,
+        authority_identity: bool,
+    ) -> Result<Self, String> {
         let candidate_capacity = candidate.candidate_capacity();
         let manifold_capacity = requested_manifold_capacity.unwrap_or(candidate_capacity);
         if manifold_capacity == 0 || manifold_capacity > candidate_capacity {
@@ -622,11 +661,15 @@ impl NarrowphaseCase {
                 execution: [TOTAL_DISPATCHES, 0, 0, 0],
                 policy: [
                     candidate.speculative_distance(),
-                    match identity_policy {
-                        ContactIdentityPolicyV1::DirectMaximumSeparation => 0.0,
-                        ContactIdentityPolicyV1::RelativeCoherenceBias => 1.0,
-                        ContactIdentityPolicyV1::CanonicalAbsoluteBand => 2.0,
-                        ContactIdentityPolicyV1::PriorContactHysteresis => 3.0,
+                    if authority_identity {
+                        4.0
+                    } else {
+                        match identity_policy {
+                            ContactIdentityPolicyV1::DirectMaximumSeparation => 0.0,
+                            ContactIdentityPolicyV1::RelativeCoherenceBias => 1.0,
+                            ContactIdentityPolicyV1::CanonicalAbsoluteBand => 2.0,
+                            ContactIdentityPolicyV1::PriorContactHysteresis => 3.0,
+                        }
                     },
                     0.98,
                     1.0e-3,

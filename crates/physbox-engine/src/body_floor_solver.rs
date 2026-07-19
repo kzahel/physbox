@@ -62,6 +62,7 @@ pub enum GpuSoftFeedbackPolicyV1 {
 pub enum GpuContactCoefficientPolicyV1 {
     SettingsDerived,
     StaticStiffHard,
+    AuthorityCappedSoft,
 }
 
 /// Laboratory-only control over contact preparation across solver substeps.
@@ -75,6 +76,7 @@ pub enum GpuSubstepContactPolicyV1 {
     RefreshAnchorsAndMass,
     RefreshAnchorsAndMassRetainImpulses,
     FixedAnchorAnalyticalSeparation,
+    AuthorityFixedAnchorAnalyticalSeparation,
 }
 
 /// Laboratory-only control over restitution placement relative to substeps.
@@ -147,6 +149,15 @@ impl GpuSubstepContactPolicyV1 {
                     .to_owned(),
             );
         }
+        if self == Self::AuthorityFixedAnchorAnalyticalSeparation
+            && (settings.contact_softness.is_none()
+                || execution != GpuSolverExecutionV4::AUTHORITY_GPU_PROBE
+                || normal_relaxation_policy != GpuNormalRelaxationPolicyV1::PointSequential)
+        {
+            return Err(
+                "authority fixed-anchor separation requires the exact S13 GPU probe".to_owned(),
+            );
+        }
         if self.is_retained_refresh_candidate()
             && (settings.contact_softness.is_some()
                 || settings.iterations != 2
@@ -196,6 +207,20 @@ impl GpuContactCoefficientPolicyV1 {
     pub(crate) fn validate(self, settings: &SolverSettingsV1) -> Result<(), String> {
         if self == Self::StaticStiffHard && settings.contact_softness.is_some() {
             return Err("static-stiff-hard requires hard contacts".to_owned());
+        }
+        if self == Self::AuthorityCappedSoft {
+            let Some(softness) = settings.contact_softness else {
+                return Err("authority capped coefficients require soft contact".to_owned());
+            };
+            if softness.contact_hertz.get() != 30.0
+                || softness.damping_ratio.get() != 10.0
+                || settings.substeps != 4
+            {
+                return Err(
+                    "authority capped coefficients require the frozen 30 Hz / damping 10 / four-substep source"
+                        .to_owned(),
+                );
+            }
         }
         Ok(())
     }
@@ -326,6 +351,7 @@ pub enum GpuColorMaintenanceV1 {
     FullRebuildParallelSpeculative,
     FullRebuildParallelSpeculativeStaticLate,
     StablePairIncremental,
+    AuthoritySourceOrder,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -415,6 +441,28 @@ impl GpuSolverSchedulingPolicyV1 {
         ..Self::SELECTED
     };
 
+    /// Exact validation-only schedule authorized by S13. Product construction
+    /// never selects this policy.
+    pub const AUTHORITY_GPU_PROBE: Self = Self {
+        color_maintenance: GpuColorMaintenanceV1::AuthoritySourceOrder,
+        colored_dispatch: GpuColoredDispatchV1::PerColorIndirectFusedNormalTangent,
+        ..Self::SERIAL_CONTROL
+    };
+
+    /// Body-capacity-bounded dispatch form of the same exact S13 policy.
+    pub const AUTHORITY_GPU_PROBE_SMALL_WORLD: Self = Self {
+        colored_dispatch: GpuColoredDispatchV1::WorkgroupPerIslandFusedNormalTangent,
+        ..Self::AUTHORITY_GPU_PROBE
+    };
+
+    pub const fn authority_gpu_probe_for_body_capacity(body_capacity: u32) -> Self {
+        if body_capacity <= Self::SMALL_WORLD_BODY_CAPACITY_MAX {
+            Self::AUTHORITY_GPU_PROBE_SMALL_WORLD
+        } else {
+            Self::AUTHORITY_GPU_PROBE
+        }
+    }
+
     /// S9 E3 small-world dispatch-form control. Product construction never
     /// selects this policy.
     pub const FUSED_NORMAL_TANGENT_SMALL_WORLD: Self = Self {
@@ -481,6 +529,13 @@ impl GpuSolverSchedulingPolicyV1 {
         )
     }
 
+    pub const fn uses_authority_source_order(self) -> bool {
+        matches!(
+            self.color_maintenance,
+            GpuColorMaintenanceV1::AuthoritySourceOrder
+        )
+    }
+
     pub(crate) fn validate(self, execution: GpuSolverExecutionV4) -> Result<(), String> {
         if self.version != GPU_SOLVER_SCHEDULING_POLICY_VERSION {
             return Err(format!(
@@ -499,7 +554,7 @@ impl GpuSolverSchedulingPolicyV1 {
             );
         }
         if self.colored_dispatch.fuses_normal_tangent()
-            && (!execution.normal_solver.uses_block() || !execution.relaxation)
+            && (!execution.normal_solver.uses_manifold_kernel() || !execution.relaxation)
         {
             return Err(
                 "fused normal/tangent scheduling requires block normals and relaxation".to_owned(),
@@ -516,6 +571,7 @@ pub enum GpuNormalSolverV4 {
     ScalarMassSplit,
     ManifoldBlock,
     BlockMassSplit,
+    ManifoldPointSequential,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -545,6 +601,7 @@ pub enum GpuColorUnitV4 {
 pub enum GpuColorOrderV4 {
     Forward,
     Alternating,
+    AuthorityOverflowFirst,
 }
 
 impl GpuNormalSolverV4 {
@@ -554,11 +611,19 @@ impl GpuNormalSolverV4 {
             Self::ScalarMassSplit => 1,
             Self::ManifoldBlock => 2,
             Self::BlockMassSplit => 3,
+            Self::ManifoldPointSequential => 4,
         }
     }
 
     pub const fn uses_block(self) -> bool {
         matches!(self, Self::ManifoldBlock | Self::BlockMassSplit)
+    }
+
+    pub const fn uses_manifold_kernel(self) -> bool {
+        matches!(
+            self,
+            Self::ManifoldBlock | Self::BlockMassSplit | Self::ManifoldPointSequential
+        )
     }
 
     const fn uses_manifold_mass_split(self) -> bool {
@@ -597,6 +662,18 @@ impl GpuSolverExecutionV4 {
     pub const WARM_START_OFF_DIAGNOSTIC: Self = Self {
         warm_start: false,
         ..Self::SELECTED
+    };
+
+    /// Exact validation-only X1-X4 execution authorized by S13.
+    pub const AUTHORITY_GPU_PROBE: Self = Self {
+        version: GPU_SOLVER_EXECUTION_VERSION,
+        accumulation: GpuSolverAccumulationV4::ColoredInPlace,
+        normal_solver: GpuNormalSolverV4::ManifoldPointSequential,
+        color_schedule: GpuColorScheduleV4::CompactIndirect,
+        color_unit: GpuColorUnitV4::Manifold,
+        color_order: GpuColorOrderV4::AuthorityOverflowFirst,
+        warm_start: true,
+        relaxation: true,
     };
 
     pub const fn experiment(warm_start: bool, relaxation: bool) -> Self {
@@ -688,6 +765,10 @@ impl GpuSolverExecutionV4 {
                 (self.normal_solver, self.color_unit),
                 (GpuNormalSolverV4::PointJacobi, GpuColorUnitV4::Point)
                     | (GpuNormalSolverV4::ManifoldBlock, GpuColorUnitV4::Manifold)
+                    | (
+                        GpuNormalSolverV4::ManifoldPointSequential,
+                        GpuColorUnitV4::Manifold
+                    )
             )
         {
             return Err("colored solver and color unit disagree".to_owned());
@@ -709,6 +790,13 @@ impl GpuSolverExecutionV4 {
             && self.color_schedule != GpuColorScheduleV4::CompactIndirect
         {
             return Err("alternating coloring requires the compact indirect schedule".to_owned());
+        }
+        if self.color_order == GpuColorOrderV4::AuthorityOverflowFirst
+            && self != Self::AUTHORITY_GPU_PROBE
+        {
+            return Err(
+                "authority overflow-first order requires the exact S13 GPU probe".to_owned(),
+            );
         }
         Ok(())
     }
@@ -840,6 +928,76 @@ pub struct GpuAuthoredGatherBenchmarkOutput {
     pub replay_exact: bool,
     pub result_digest: String,
     pub capacities: Vec<CapacityRecordV1>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GpuAuthorityProbeCapacityDispositionV1 {
+    pub capacity_class: &'static str,
+    pub capacity: u32,
+    pub attempted: u32,
+    pub accepted: u32,
+    pub committed: u32,
+    pub overflowed: bool,
+    pub rejected: bool,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GpuAuthoredAuthorityProbeOutputV1 {
+    pub adapter: crate::AdapterDiagnostics,
+    pub source_scenario_hash: String,
+    pub solver_execution: GpuSolverExecutionV4,
+    pub solver_scheduling_policy: GpuSolverSchedulingPolicyV1,
+    pub pass_descriptors: Vec<GpuSolverPassDescriptorV1>,
+    pub bodies: Vec<physbox_contracts::BodyStateV1>,
+    pub pass_evidence: GpuFixedFloorPassEvidence,
+    pub capacities: Vec<CapacityRecordV1>,
+    pub dispatches_per_step: u32,
+    pub allocated_bytes: u64,
+    pub replay_exact: bool,
+    pub result_digest: String,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GpuS13MeasuredConfigurationV1 {
+    pub configuration: &'static str,
+    pub solver_execution: GpuSolverExecutionV4,
+    pub solver_scheduling_policy: GpuSolverSchedulingPolicyV1,
+    pub topology: GpuGatherTopologyEvidence,
+    pub pass_descriptors: Vec<GpuSolverPassDescriptorV1>,
+    pub coloring: GpuColoringEvidenceV4,
+    pub dispatches_per_step: u32,
+    pub allocated_bytes: u64,
+    pub gpu_complete_step_seconds: Vec<f64>,
+    pub cpu_encode_submit_seconds: Vec<f64>,
+    pub capacities: Vec<CapacityRecordV1>,
+    pub replay_exact: bool,
+    pub result_digest: String,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GpuS13AuthorityProbeBenchmarkV1 {
+    pub adapter: crate::AdapterDiagnostics,
+    pub candidate_source_scenario_hash: String,
+    pub selected_projected_source_scenario_hash: String,
+    pub body_count: u32,
+    pub manifold_count: u32,
+    pub contact_points: u32,
+    pub warmup_samples: u32,
+    pub retained_samples: u32,
+    pub invocation_order: Vec<[&'static str; 2]>,
+    pub timestamp_period_nanoseconds: f32,
+    pub candidate_specific_transform_bytes: u64,
+    pub candidate_allocation_delta_bytes: i64,
+    pub selected: GpuS13MeasuredConfigurationV1,
+    pub candidate: GpuS13MeasuredConfigurationV1,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -1290,6 +1448,7 @@ enum PipelineKind {
     IntegratePosition,
     Gather,
     Colored,
+    AuthorityOverflow,
     IslandColored,
 }
 
@@ -1356,6 +1515,7 @@ impl PipelineKind {
             | Self::Restitution
             | Self::IntegratePosition
             | Self::Colored
+            | Self::AuthorityOverflow
             | Self::IslandColored => InstrumentedPhase::Solve,
         }
     }
@@ -1420,6 +1580,7 @@ struct TopologyLayout {
     island_bin_cursors_base: u32,
     island_point_indices_base: u32,
     island_count_index: u32,
+    authority_initial_transforms_base: u32,
     color_unit: GpuColorUnitV4,
     has_coloring: bool,
     has_compact_coloring: bool,
@@ -1427,6 +1588,7 @@ struct TopologyLayout {
     has_parallel_coloring: bool,
     has_incremental_coloring: bool,
     has_island_dispatch: bool,
+    has_authority_initial_transforms: bool,
     static_late: bool,
     element_count: u32,
 }
@@ -1612,6 +1774,17 @@ impl TopologyLayout {
                     .ok_or_else(|| "solver island count range overflowed".to_owned())?;
                 layout.has_island_dispatch = true;
             }
+            if scheduling_policy.uses_authority_source_order() {
+                layout.authority_initial_transforms_base = layout.element_count;
+                let transform_words = body_count
+                    .checked_mul(3)
+                    .ok_or_else(|| "authority initial-transform capacity overflowed".to_owned())?;
+                layout.element_count = layout
+                    .element_count
+                    .checked_add(transform_words)
+                    .ok_or_else(|| "authority initial-transform range overflowed".to_owned())?;
+                layout.has_authority_initial_transforms = true;
+            }
         }
         Ok(layout)
     }
@@ -1673,6 +1846,7 @@ impl TopologyLayout {
             island_bin_cursors_base: 0,
             island_point_indices_base: 0,
             island_count_index: 0,
+            authority_initial_transforms_base: 0,
             color_unit: GpuColorUnitV4::Point,
             has_coloring: false,
             has_compact_coloring: false,
@@ -1680,6 +1854,7 @@ impl TopologyLayout {
             has_parallel_coloring: false,
             has_incremental_coloring: false,
             has_island_dispatch: false,
+            has_authority_initial_transforms: false,
             static_late: false,
             element_count,
         })
@@ -1761,6 +1936,7 @@ impl TopologyLayout {
             island_bin_cursors_base: 0,
             island_point_indices_base: 0,
             island_count_index: 0,
+            authority_initial_transforms_base: 0,
             color_unit: GpuColorUnitV4::Point,
             has_coloring: false,
             has_compact_coloring: false,
@@ -1768,6 +1944,7 @@ impl TopologyLayout {
             has_parallel_coloring: false,
             has_incremental_coloring: false,
             has_island_dispatch: false,
+            has_authority_initial_transforms: false,
             static_late: false,
             element_count,
         })
@@ -1845,6 +2022,7 @@ pub(crate) struct GpuFixedFloorSolver {
     integrate_position_pipeline: wgpu::ComputePipeline,
     gather_pipeline: wgpu::ComputePipeline,
     colored_pipeline: Option<wgpu::ComputePipeline>,
+    authority_overflow_pipeline: Option<wgpu::ComputePipeline>,
     island_colored_pipeline: Option<wgpu::ComputePipeline>,
     operations: Vec<Operation>,
     capacities: Vec<CapacityRecordV1>,
@@ -1935,6 +2113,52 @@ impl GpuFixedFloorSolver {
             GpuSoftFeedbackPolicyV1::SELECTED,
             GpuNormalRelaxationPolicyV1::SELECTED,
             contact_coefficient_policy,
+        )?;
+        solver._owned_point_input = Some(point_buffer);
+        Ok(solver)
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn new_authored_authority_gpu_probe(
+        device: &wgpu::Device,
+        storage: &GpuBodyStorage,
+        scenario: &ScenarioV1,
+    ) -> Result<Self, String> {
+        crate::AuthorityGpuProbePolicyV1::AUTHORIZED.validate_product_selection(false)?;
+        crate::authority_gpu_probe::validate_authority_gpu_probe_settings(&scenario.settings)?;
+        if scenario.manifolds.is_empty() {
+            return Err("authored authority probe requires contact manifolds".to_owned());
+        }
+        let (points, point_count) = point_inputs(scenario)?;
+        if point_count == 0 {
+            return Err("authored authority probe requires contact points".to_owned());
+        }
+        let usage = wgpu::BufferUsages::STORAGE
+            | wgpu::BufferUsages::COPY_SRC
+            | wgpu::BufferUsages::COPY_DST;
+        let point_buffer = storage_init(
+            device,
+            "physbox5_authored_authority_probe_points",
+            bytemuck::cast_slice(&points),
+            usage,
+        );
+        let mut solver = Self::new_with_point_buffer_and_extended_solver_policies(
+            device,
+            storage,
+            scenario,
+            &point_buffer,
+            point_count,
+            GpuGatherTopology::StableBodyEdge,
+            false,
+            GpuSolverExecutionV4::AUTHORITY_GPU_PROBE,
+            GpuSolverSchedulingPolicyV1::authority_gpu_probe_for_body_capacity(
+                storage.layout().capacity_elements,
+            ),
+            GpuSoftFeedbackPolicyV1::EveryBiasedIteration,
+            GpuNormalRelaxationPolicyV1::PointSequential,
+            GpuContactCoefficientPolicyV1::AuthorityCappedSoft,
+            GpuSubstepContactPolicyV1::AuthorityFixedAnchorAnalyticalSeparation,
+            GpuRestitutionTimingPolicyV1::AfterEachSubstep,
         )?;
         solver._owned_point_input = Some(point_buffer);
         Ok(solver)
@@ -2109,6 +2333,20 @@ impl GpuFixedFloorSolver {
         substep_contact_policy: GpuSubstepContactPolicyV1,
         restitution_timing_policy: GpuRestitutionTimingPolicyV1,
     ) -> Result<Self, String> {
+        let authority_probe =
+            crate::authority_gpu_probe::validate_authority_gpu_probe_runtime_tuple(
+                execution,
+                scheduling_policy,
+                soft_feedback_policy,
+                normal_relaxation_policy,
+                contact_coefficient_policy,
+                substep_contact_policy,
+                restitution_timing_policy,
+            )
+            .is_ok();
+        if authority_probe {
+            crate::authority_gpu_probe::validate_authority_gpu_probe_settings(&scenario.settings)?;
+        }
         scheduling_policy.validate(execution)?;
         soft_feedback_policy.validate(&scenario.settings)?;
         normal_relaxation_policy.validate(&scenario.settings, execution)?;
@@ -2133,6 +2371,7 @@ impl GpuFixedFloorSolver {
             && (scenario.settings.contact_softness.is_some()
                 || soft_feedback_policy != GpuSoftFeedbackPolicyV1::SELECTED
                 || normal_relaxation_policy != GpuNormalRelaxationPolicyV1::SELECTED)
+            && !authority_probe
         {
             return Err(
                 "fused normal/tangent scheduling is limited to the hard/direct policy".to_owned(),
@@ -2565,6 +2804,9 @@ impl GpuFixedFloorSolver {
             colored_pipeline: execution
                 .uses_colored_in_place()
                 .then(|| pipeline("floor_colored", "colored_stage")),
+            authority_overflow_pipeline: (execution.color_order
+                == GpuColorOrderV4::AuthorityOverflowFirst)
+                .then(|| pipeline("floor_authority_overflow", "authority_overflow_stage")),
             island_colored_pipeline: topology_layout
                 .has_island_dispatch
                 .then(|| pipeline("floor_island_colored", "island_colored_stage")),
@@ -2881,6 +3123,10 @@ impl GpuFixedFloorSolver {
                 .colored_pipeline
                 .as_ref()
                 .expect("colored operations require the comparator pipeline"),
+            PipelineKind::AuthorityOverflow => self
+                .authority_overflow_pipeline
+                .as_ref()
+                .expect("authority overflow operations require the candidate pipeline"),
             PipelineKind::IslandColored => self
                 .island_colored_pipeline
                 .as_ref()
@@ -3062,6 +3308,7 @@ impl GpuFixedFloorSolver {
                     SolverInstrumentedPhase::ActiveColorSolve
                 }
             }
+            PipelineKind::AuthorityOverflow => SolverInstrumentedPhase::ActiveColorSolve,
             PipelineKind::IslandColored => SolverInstrumentedPhase::ActiveColorSolve,
             _ => SolverInstrumentedPhase::OtherSolver,
         };
@@ -3676,6 +3923,391 @@ pub async fn benchmark_gpu_authored_solver_policy_experiment(
     })
 }
 
+/// Runs the frozen S13 selected/candidate timing pair on one adapter. Each
+/// warm-up and retained sample resets the same body storage, and retained
+/// invocation order alternates by sample.
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn benchmark_gpu_s13_authority_probe(
+    scenario: &ScenarioV1,
+    warmup_samples: u32,
+    retained_samples: u32,
+) -> Result<GpuS13AuthorityProbeBenchmarkV1, String> {
+    if warmup_samples == 0 || retained_samples == 0 {
+        return Err("S13 benchmark requires nonzero warm-up and retained samples".to_owned());
+    }
+    scenario.validate().map_err(|error| error.to_string())?;
+    crate::authority_gpu_probe::validate_authority_gpu_probe_settings(&scenario.settings)?;
+    let (_, point_count) = point_inputs(scenario)?;
+    let body_count = u32::try_from(scenario.bodies.len())
+        .map_err(|_| "S13 benchmark body count exceeds u32".to_owned())?;
+    let manifold_count = u32::try_from(scenario.manifolds.len())
+        .map_err(|_| "S13 benchmark manifold count exceeds u32".to_owned())?;
+    let mut selected_scenario = scenario.clone();
+    selected_scenario.settings.contact_softness = None;
+    validate_selected_settings(&selected_scenario)?;
+
+    let instance = crate::gpu_context::create_instance();
+    let adapter = crate::gpu_context::request_adapter(&instance, None).await?;
+    if !adapter.features().contains(wgpu::Features::TIMESTAMP_QUERY) {
+        return Err("S13 benchmark requires supported GPU timestamp queries".to_owned());
+    }
+    let diagnostics = crate::AdapterDiagnostics::from_adapter(&adapter);
+    let (device, queue) =
+        crate::gpu_context::request_device_with_features(&adapter, wgpu::Features::TIMESTAMP_QUERY)
+            .await?;
+    let storage = GpuBodyStorage::new(
+        &device,
+        body_count,
+        crate::BODY_COMMAND_CAPACITY,
+        &scenario.bodies,
+    )?;
+    let reset = crate::body_state::GpuBodyResetData::new(body_count, &scenario.bodies)?;
+    let selected_scheduling = GpuSolverSchedulingPolicyV1::selected_for_body_capacity(body_count);
+    let selected_solver = GpuFixedFloorSolver::new_authored_with_topology_and_coefficients(
+        &device,
+        &storage,
+        &selected_scenario,
+        GpuGatherTopology::StableBodyEdge,
+        GpuSolverExecutionV4::SELECTED,
+        selected_scheduling,
+        GpuContactCoefficientPolicyV1::SELECTED,
+    )?;
+    let candidate_solver =
+        GpuFixedFloorSolver::new_authored_authority_gpu_probe(&device, &storage, scenario)?;
+
+    let (selected_digest, selected_evidence) =
+        authored_gather_result_evidence(&device, &queue, &storage, &reset, &selected_solver)?;
+    let (candidate_digest, candidate_evidence) =
+        authored_gather_result_evidence(&device, &queue, &storage, &reset, &candidate_solver)?;
+    let selected_coloring = selected_evidence
+        .coloring
+        .clone()
+        .ok_or_else(|| "S13 selected control omitted coloring evidence".to_owned())?;
+    let candidate_coloring = candidate_evidence
+        .coloring
+        .clone()
+        .ok_or_else(|| "S13 candidate omitted coloring evidence".to_owned())?;
+
+    let selected_queries = BenchmarkTimestampResources::new(
+        &device,
+        "physbox5_s13_selected_complete_step",
+        retained_samples
+            .checked_mul(2)
+            .ok_or_else(|| "S13 selected timestamp count overflowed".to_owned())?,
+    );
+    let candidate_queries = BenchmarkTimestampResources::new(
+        &device,
+        "physbox5_s13_candidate_complete_step",
+        retained_samples
+            .checked_mul(2)
+            .ok_or_else(|| "S13 candidate timestamp count overflowed".to_owned())?,
+    );
+
+    let execute = |label: &'static str,
+                   solver: &GpuFixedFloorSolver,
+                   timestamp: Option<(&BenchmarkTimestampResources, u32)>|
+     -> Result<f64, String> {
+        storage.upload_reset_data(&queue, &reset);
+        device
+            .poll(wgpu::PollType::Wait)
+            .map_err(|error| format!("poll S13 {label} reset: {error}"))?;
+        let started = Instant::now();
+        let mut encoder =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(label) });
+        if let Some((resources, sample)) = timestamp {
+            solver.encode_step_with_timestamps(
+                &mut encoder,
+                &resources.query_set,
+                sample * 2,
+                sample * 2 + 1,
+            );
+        } else {
+            solver.encode_step(&mut encoder);
+        }
+        queue.submit([encoder.finish()]);
+        let cpu = started.elapsed().as_secs_f64();
+        device
+            .poll(wgpu::PollType::Wait)
+            .map_err(|error| format!("poll S13 {label} completion: {error}"))?;
+        Ok(cpu)
+    };
+
+    for sample in 0..warmup_samples {
+        if sample % 2 == 0 {
+            execute("physbox5_s13_selected_warmup", &selected_solver, None)?;
+            execute("physbox5_s13_candidate_warmup", &candidate_solver, None)?;
+        } else {
+            execute("physbox5_s13_candidate_warmup", &candidate_solver, None)?;
+            execute("physbox5_s13_selected_warmup", &selected_solver, None)?;
+        }
+    }
+
+    let mut invocation_order = Vec::with_capacity(retained_samples as usize);
+    let mut selected_cpu = vec![0.0_f64; retained_samples as usize];
+    let mut candidate_cpu = vec![0.0_f64; retained_samples as usize];
+    for sample in 0..retained_samples {
+        if sample % 2 == 0 {
+            invocation_order.push(["selected", "candidate"]);
+            selected_cpu[sample as usize] = execute(
+                "physbox5_s13_selected_sample",
+                &selected_solver,
+                Some((&selected_queries, sample)),
+            )?;
+            candidate_cpu[sample as usize] = execute(
+                "physbox5_s13_candidate_sample",
+                &candidate_solver,
+                Some((&candidate_queries, sample)),
+            )?;
+        } else {
+            invocation_order.push(["candidate", "selected"]);
+            candidate_cpu[sample as usize] = execute(
+                "physbox5_s13_candidate_sample",
+                &candidate_solver,
+                Some((&candidate_queries, sample)),
+            )?;
+            selected_cpu[sample as usize] = execute(
+                "physbox5_s13_selected_sample",
+                &selected_solver,
+                Some((&selected_queries, sample)),
+            )?;
+        }
+    }
+    let period = queue.get_timestamp_period();
+    let decode_times = |values: Vec<u64>| {
+        values
+            .chunks_exact(2)
+            .map(|pair| pair[1].saturating_sub(pair[0]) as f64 * f64::from(period) * 1.0e-9)
+            .collect::<Vec<_>>()
+    };
+    let selected_gpu = decode_times(selected_queries.resolve_and_map(&device, &queue)?);
+    let candidate_gpu = decode_times(candidate_queries.resolve_and_map(&device, &queue)?);
+
+    let (selected_replay_digest, selected_replay_evidence) =
+        authored_gather_result_evidence(&device, &queue, &storage, &reset, &selected_solver)?;
+    let (candidate_replay_digest, candidate_replay_evidence) =
+        authored_gather_result_evidence(&device, &queue, &storage, &reset, &candidate_solver)?;
+    let selected_replay_exact =
+        selected_digest == selected_replay_digest && selected_evidence == selected_replay_evidence;
+    let candidate_replay_exact = candidate_digest == candidate_replay_digest
+        && candidate_evidence == candidate_replay_evidence;
+    if !selected_replay_exact || !candidate_replay_exact {
+        return Err("S13 benchmark replay differed".to_owned());
+    }
+    let capacity_records = |solver: &GpuFixedFloorSolver| -> Result<Vec<CapacityRecordV1>, String> {
+        let mut records = vec![storage.body_capacity_record()];
+        records.extend_from_slice(solver.capacities());
+        records.sort_by(|left, right| left.class.cmp(&right.class));
+        for record in &records {
+            record.validate().map_err(|error| error.to_string())?;
+            if record.overflowed {
+                return Err(format!("S13 benchmark overflowed {}", record.class));
+            }
+        }
+        Ok(records)
+    };
+    let selected_allocated = storage.layout().allocated_bytes + selected_solver.allocated_bytes();
+    let candidate_allocated = storage.layout().allocated_bytes + candidate_solver.allocated_bytes();
+    Ok(GpuS13AuthorityProbeBenchmarkV1 {
+        adapter: diagnostics,
+        candidate_source_scenario_hash: canonical_hash(scenario)
+            .map_err(|error| error.to_string())?,
+        selected_projected_source_scenario_hash: canonical_hash(&selected_scenario)
+            .map_err(|error| error.to_string())?,
+        body_count,
+        manifold_count,
+        contact_points: point_count,
+        warmup_samples,
+        retained_samples,
+        invocation_order,
+        timestamp_period_nanoseconds: period,
+        candidate_specific_transform_bytes: u64::from(body_count) * 3 * 4,
+        candidate_allocation_delta_bytes: i64::try_from(candidate_allocated)
+            .map_err(|_| "candidate allocation exceeds i64".to_owned())?
+            - i64::try_from(selected_allocated)
+                .map_err(|_| "selected allocation exceeds i64".to_owned())?,
+        selected: GpuS13MeasuredConfigurationV1 {
+            configuration: "selected-hard-direct",
+            solver_execution: GpuSolverExecutionV4::SELECTED,
+            solver_scheduling_policy: selected_scheduling,
+            topology: selected_solver.gather_topology_evidence(),
+            pass_descriptors: selected_solver.pass_trace_descriptors(),
+            coloring: selected_coloring,
+            dispatches_per_step: selected_solver.dispatches_per_step(),
+            allocated_bytes: selected_allocated,
+            gpu_complete_step_seconds: selected_gpu,
+            cpu_encode_submit_seconds: selected_cpu,
+            capacities: capacity_records(&selected_solver)?,
+            replay_exact: selected_replay_exact,
+            result_digest: selected_digest,
+        },
+        candidate: GpuS13MeasuredConfigurationV1 {
+            configuration: "authority-x1-x4-current-x5-v1",
+            solver_execution: GpuSolverExecutionV4::AUTHORITY_GPU_PROBE,
+            solver_scheduling_policy: candidate_solver.scheduling_policy,
+            topology: candidate_solver.gather_topology_evidence(),
+            pass_descriptors: candidate_solver.pass_trace_descriptors(),
+            coloring: candidate_coloring,
+            dispatches_per_step: candidate_solver.dispatches_per_step(),
+            allocated_bytes: candidate_allocated,
+            gpu_complete_step_seconds: candidate_gpu,
+            cpu_encode_submit_seconds: candidate_cpu,
+            capacities: capacity_records(&candidate_solver)?,
+            replay_exact: candidate_replay_exact,
+            result_digest: candidate_digest,
+        },
+    })
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn authority_gpu_probe_capacity_disposition(
+    scenario: &ScenarioV1,
+    manifold_capacity: u32,
+) -> Result<GpuAuthorityProbeCapacityDispositionV1, String> {
+    scenario.validate().map_err(|error| error.to_string())?;
+    crate::AuthorityGpuProbePolicyV1::AUTHORIZED.validate_product_selection(false)?;
+    crate::authority_gpu_probe::validate_authority_gpu_probe_settings(&scenario.settings)?;
+    let attempted = u32::try_from(scenario.manifolds.len())
+        .map_err(|_| "authored authority manifold demand exceeds u32".to_owned())?;
+    let rejected = attempted > manifold_capacity;
+    Ok(GpuAuthorityProbeCapacityDispositionV1 {
+        capacity_class: "solver-manifolds",
+        capacity: manifold_capacity,
+        attempted,
+        accepted: if rejected { 0 } else { attempted },
+        committed: if rejected { 0 } else { attempted },
+        overflowed: rejected,
+        rejected,
+    })
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn run_gpu_authored_authority_probe(
+    scenario: &ScenarioV1,
+) -> Result<GpuAuthoredAuthorityProbeOutputV1, String> {
+    scenario.validate().map_err(|error| error.to_string())?;
+    let body_count = u32::try_from(scenario.bodies.len())
+        .map_err(|_| "authored authority body count exceeds u32".to_owned())?;
+    let instance = crate::gpu_context::create_instance();
+    let adapter = crate::gpu_context::request_adapter(&instance, None).await?;
+    let diagnostics = crate::AdapterDiagnostics::from_adapter(&adapter);
+    let (device, queue) = crate::gpu_context::request_device(&adapter).await?;
+    let storage = GpuBodyStorage::new(
+        &device,
+        body_count,
+        crate::BODY_COMMAND_CAPACITY,
+        &scenario.bodies,
+    )?;
+    let reset = crate::body_state::GpuBodyResetData::new(body_count, &scenario.bodies)?;
+    let solver =
+        GpuFixedFloorSolver::new_authored_authority_gpu_probe(&device, &storage, scenario)?;
+    let first =
+        authored_authority_probe_result(&device, &queue, &storage, &reset, &solver, scenario)?;
+    let replay =
+        authored_authority_probe_result(&device, &queue, &storage, &reset, &solver, scenario)?;
+    let replay_exact = first == replay;
+    if !replay_exact {
+        return Err("authored authority probe replay differed".to_owned());
+    }
+    let (result_digest, pass_evidence, bodies) = first;
+    let mut capacities = vec![storage.body_capacity_record()];
+    capacities.extend_from_slice(solver.capacities());
+    capacities.sort_by(|left, right| left.class.cmp(&right.class));
+    if capacities.iter().any(|capacity| capacity.overflowed) {
+        return Err("authored authority probe overflowed bounded storage".to_owned());
+    }
+    Ok(GpuAuthoredAuthorityProbeOutputV1 {
+        adapter: diagnostics,
+        source_scenario_hash: canonical_hash(scenario).map_err(|error| error.to_string())?,
+        solver_execution: solver.execution,
+        solver_scheduling_policy: solver.scheduling_policy,
+        pass_descriptors: solver.pass_trace_descriptors(),
+        bodies,
+        pass_evidence,
+        capacities,
+        dispatches_per_step: solver.dispatches_per_step(),
+        allocated_bytes: storage.layout().allocated_bytes + solver.allocated_bytes(),
+        replay_exact,
+        result_digest,
+    })
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn authored_authority_probe_result(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    storage: &GpuBodyStorage,
+    reset: &crate::body_state::GpuBodyResetData,
+    solver: &GpuFixedFloorSolver,
+    scenario: &ScenarioV1,
+) -> Result<
+    (
+        String,
+        GpuFixedFloorPassEvidence,
+        Vec<physbox_contracts::BodyStateV1>,
+    ),
+    String,
+> {
+    storage.upload_reset_data(queue, reset);
+    device
+        .poll(wgpu::PollType::Wait)
+        .map_err(|error| format!("poll authored authority reset: {error}"))?;
+    let lane_bytes = storage.pose_buffer().size();
+    let state_bytes = lane_bytes * 2;
+    let state_readback = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("physbox5_authored_authority_state_readback"),
+        size: state_bytes,
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let evidence_layout = solver.pass_evidence_layout();
+    let evidence_readback = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("physbox5_authored_authority_evidence_readback"),
+        size: evidence_layout.total_bytes,
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("physbox5_authored_authority_step"),
+    });
+    solver.encode_step(&mut encoder);
+    encoder.copy_buffer_to_buffer(storage.pose_buffer(), 0, &state_readback, 0, lane_bytes);
+    encoder.copy_buffer_to_buffer(
+        storage.motion_buffer(),
+        0,
+        &state_readback,
+        lane_bytes,
+        lane_bytes,
+    );
+    solver.copy_pass_evidence(&mut encoder, &evidence_readback);
+    queue.submit([encoder.finish()]);
+    let state = crate::collision_candidates::map_values::<[f32; 4]>(
+        device,
+        &state_readback,
+        (state_bytes as usize) / size_of::<[f32; 4]>(),
+    )?;
+    let body_count = scenario.bodies.len();
+    let mut bodies = scenario.bodies.clone();
+    for (index, body) in bodies.iter_mut().enumerate() {
+        let pose = state[index];
+        let motion = state[body_count + index];
+        body.position.x = pose[0];
+        body.position.y = pose[1];
+        body.angle =
+            physbox_contracts::FiniteF32::new(pose[2]).map_err(|error| error.to_string())?;
+        body.linear_velocity.x = motion[0];
+        body.linear_velocity.y = motion[1];
+        body.angular_velocity =
+            physbox_contracts::FiniteF32::new(motion[2]).map_err(|error| error.to_string())?;
+    }
+    let evidence_bytes = crate::collision_candidates::map_values::<u8>(
+        device,
+        &evidence_readback,
+        evidence_layout.total_bytes as usize,
+    )?;
+    let evidence = decode_pass_evidence(&evidence_bytes, evidence_layout)?;
+    Ok((sha256_bytes(bytemuck::cast_slice(&state)), evidence, bodies))
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 fn authored_gather_result_evidence(
     device: &wgpu::Device,
@@ -3917,14 +4549,21 @@ pub(crate) fn decode_pass_evidence(
             {
                 return Err("compact color indirect arguments are invalid".to_owned());
             }
-            let empty = indirect
+            let executed_indirect = if layout.color_order == GpuColorOrderV4::AuthorityOverflowFirst
+            {
+                &indirect[..crate::AUTHORITY_GPU_COLOR_COUNT as usize - 1]
+            } else {
+                &indirect[..]
+            };
+            let empty = executed_indirect
                 .iter()
                 .filter(|arguments| arguments[0] == 0)
                 .count() as u32;
-            let invocations = indirect
+            let invocations = executed_indirect
                 .iter()
                 .map(|arguments| u64::from(arguments[0]) * u64::from(WORKGROUP_SIZE))
-                .sum();
+                .sum::<u64>()
+                + u64::from(layout.color_order == GpuColorOrderV4::AuthorityOverflowFirst);
             (compacted, indirect, empty, invocations)
         } else {
             let expected_topology_words = status_offset + 2;
@@ -4103,6 +4742,8 @@ pub(crate) fn decode_pass_evidence(
             indirect_workgroups,
             encoded_color_passes: if layout.topology_layout.has_island_dispatch {
                 1
+            } else if layout.color_order == GpuColorOrderV4::AuthorityOverflowFirst {
+                crate::AUTHORITY_GPU_COLOR_COUNT
             } else {
                 MAX_COLORS
             },
@@ -4361,6 +5002,12 @@ fn operations_with_extended_solver_policies(
 ) -> (Vec<PassParamsRaw>, Vec<Operation>) {
     let mut parameters = Vec::new();
     let mut operations = Vec::new();
+    let authority_probe = execution == GpuSolverExecutionV4::AUTHORITY_GPU_PROBE;
+    let iterations_per_substep = if authority_probe {
+        1
+    } else {
+        scenario.settings.iterations
+    };
     let body_workgroups = workgroups(body_count);
     let point_workgroups = workgroups(point_count);
     let normal_pipeline = if execution.normal_solver.uses_block() {
@@ -4379,18 +5026,20 @@ fn operations_with_extended_solver_policies(
         scheduling_policy,
     );
     for substep in 0..scenario.settings.substeps {
+        let mut integrate_velocity = pass_params(
+            scenario,
+            body_count,
+            point_count,
+            0,
+            0,
+            0,
+            contact_coefficient_policy,
+        );
+        integrate_velocity.uints1[2] = u32::from(authority_probe);
         push_operation(
             &mut parameters,
             &mut operations,
-            pass_params(
-                scenario,
-                body_count,
-                point_count,
-                0,
-                0,
-                0,
-                contact_coefficient_policy,
-            ),
+            integrate_velocity,
             PipelineKind::IntegrateVelocity,
             MotionDirection::AtoB,
             body_workgroups,
@@ -4438,10 +5087,10 @@ fn operations_with_extended_solver_policies(
             MotionDirection::AtoB,
             point_workgroups,
             body_workgroups,
-            color_sweep_reversed(execution, substep, 0, scenario.settings.iterations),
+            color_sweep_reversed(execution, substep, 0, iterations_per_substep),
             topology,
         );
-        for iteration in 0..scenario.settings.iterations {
+        for iteration in 0..iterations_per_substep {
             solver_stage(
                 &mut parameters,
                 &mut operations,
@@ -4461,7 +5110,7 @@ fn operations_with_extended_solver_policies(
                 MotionDirection::BtoA,
                 point_workgroups,
                 body_workgroups,
-                color_sweep_reversed(execution, substep, iteration, scenario.settings.iterations),
+                color_sweep_reversed(execution, substep, iteration, iterations_per_substep),
                 topology,
             );
             if !fused_normal_tangent {
@@ -4482,28 +5131,27 @@ fn operations_with_extended_solver_policies(
                     MotionDirection::AtoB,
                     point_workgroups,
                     body_workgroups,
-                    color_sweep_reversed(
-                        execution,
-                        substep,
-                        iteration,
-                        scenario.settings.iterations,
-                    ),
+                    color_sweep_reversed(execution, substep, iteration, iterations_per_substep),
                     topology,
                 );
             }
         }
+        let mut integrate_position = pass_params(
+            scenario,
+            body_count,
+            point_count,
+            0,
+            0,
+            0,
+            contact_coefficient_policy,
+        );
+        integrate_position.uints1[2] = u32::from(authority_probe);
+        integrate_position.uints1[3] = u32::from(authority_probe && substep == 0);
+        integrate_position.uints0[2] = topology.authority_initial_transforms_base;
         push_operation(
             &mut parameters,
             &mut operations,
-            pass_params(
-                scenario,
-                body_count,
-                point_count,
-                0,
-                0,
-                0,
-                contact_coefficient_policy,
-            ),
+            integrate_position,
             PipelineKind::IntegratePosition,
             if execution.uses_colored_in_place() {
                 MotionDirection::AtoB
@@ -4522,6 +5170,11 @@ fn operations_with_extended_solver_policies(
         );
         if substep_contact_policy == GpuSubstepContactPolicyV1::FixedAnchorAnalyticalSeparation {
             refresh.uints0[3] = 2;
+        } else if substep_contact_policy
+            == GpuSubstepContactPolicyV1::AuthorityFixedAnchorAnalyticalSeparation
+        {
+            refresh.uints0[3] = 3;
+            refresh.uints0[2] = topology.authority_initial_transforms_base;
         }
         push_operation(
             &mut parameters,
@@ -4536,7 +5189,7 @@ fn operations_with_extended_solver_policies(
             point_workgroups,
         );
         if execution.relaxation {
-            for iteration in 0..scenario.settings.iterations {
+            for iteration in 0..iterations_per_substep {
                 if normal_relaxation_policy.emits_normal_pass() {
                     let mut params = normal_params(
                         scenario,
@@ -4559,12 +5212,7 @@ fn operations_with_extended_solver_policies(
                         MotionDirection::BtoA,
                         point_workgroups,
                         body_workgroups,
-                        color_sweep_reversed(
-                            execution,
-                            substep,
-                            iteration,
-                            scenario.settings.iterations,
-                        ),
+                        color_sweep_reversed(execution, substep, iteration, iterations_per_substep),
                         topology,
                     );
                 }
@@ -4586,12 +5234,7 @@ fn operations_with_extended_solver_policies(
                         MotionDirection::AtoB,
                         point_workgroups,
                         body_workgroups,
-                        color_sweep_reversed(
-                            execution,
-                            substep,
-                            iteration,
-                            scenario.settings.iterations,
-                        ),
+                        color_sweep_reversed(execution, substep, iteration, iterations_per_substep),
                         topology,
                     );
                 }
@@ -4618,8 +5261,8 @@ fn operations_with_extended_solver_policies(
                 color_sweep_reversed(
                     execution,
                     substep,
-                    scenario.settings.iterations - 1,
-                    scenario.settings.iterations,
+                    iterations_per_substep - 1,
+                    iterations_per_substep,
                 ),
                 topology,
             );
@@ -4646,8 +5289,8 @@ fn operations_with_extended_solver_policies(
             color_sweep_reversed(
                 execution,
                 scenario.settings.substeps - 1,
-                scenario.settings.iterations - 1,
-                scenario.settings.iterations,
+                iterations_per_substep - 1,
+                iterations_per_substep,
             ),
             topology,
         );
@@ -4864,7 +5507,8 @@ fn topology_operations(
                 u32::from(topology.has_compact_coloring)
                     | (u32::from(topology.color_unit == GpuColorUnitV4::Manifold) << 1)
                     | (u32::from(topology.has_parallel_compaction) << 2)
-                    | (u32::from(scheduling_policy.uses_static_late()) << 3),
+                    | (u32::from(scheduling_policy.uses_static_late()) << 3)
+                    | (u32::from(scheduling_policy.uses_authority_source_order()) << 4),
             ],
         };
         let mut colors = colors;
@@ -5021,7 +5665,11 @@ fn pass_params(
     contact_coefficient_policy: GpuContactCoefficientPolicyV1,
 ) -> PassParamsRaw {
     let substep_dt = scenario.settings.fixed_dt.get() / scenario.settings.substeps as f32;
-    let softness = scenario.settings.contact_softness.map(|policy| {
+    let softness = scenario.settings.contact_softness.map(|mut policy| {
+        if contact_coefficient_policy == GpuContactCoefficientPolicyV1::AuthorityCappedSoft {
+            policy.static_contact_hertz_multiplier = physbox_contracts::FiniteF32::new(2.0)
+                .expect("the frozen authority static multiplier is finite");
+        }
         (
             gpu_contact_softness_coefficients_validated(policy, substep_dt, false),
             gpu_contact_softness_coefficients_validated(policy, substep_dt, true),
@@ -5067,6 +5715,9 @@ fn pass_params(
                     scenario.settings.impulse_coefficient.get(),
                     1.0,
                 ],
+                GpuContactCoefficientPolicyV1::AuthorityCappedSoft => {
+                    unreachable!("authority capped coefficients require soft contact")
+                }
             },
             |(_, static_contact)| {
                 [
@@ -5101,7 +5752,11 @@ fn solver_stage(
             island.uints0[0] = topology.island_count_index;
             island.uints0[2] = topology.island_bin_offsets_base;
             island.uints0[3] = topology.island_point_indices_base;
-            island.uints1[2] = u32::from(reverse_colors);
+            island.uints1[2] = if execution.color_order == GpuColorOrderV4::AuthorityOverflowFirst {
+                2
+            } else {
+                u32::from(reverse_colors)
+            };
             island.floats2[3] = f32::from_bits(topology.color_count_index);
             push_indirect_operation(
                 parameters,
@@ -5113,9 +5768,32 @@ fn solver_stage(
             );
             return;
         }
-        for scheduled_color in 0..MAX_COLORS {
+        let authority_overflow_first =
+            execution.color_order == GpuColorOrderV4::AuthorityOverflowFirst;
+        let scheduled_color_count = if authority_overflow_first {
+            crate::AUTHORITY_GPU_DYNAMIC_COLOR_COUNT + crate::AUTHORITY_GPU_STATIC_COLOR_COUNT
+        } else {
+            MAX_COLORS
+        };
+        if authority_overflow_first {
+            let mut overflow = parameter;
+            overflow.uints0[0] = topology.color_counts_base;
+            overflow.uints0[2] = topology.color_indices_base;
+            overflow.uints0[3] = crate::AUTHORITY_GPU_COLOR_COUNT - 1;
+            overflow.uints1[2] = topology.color_offsets_base;
+            overflow.floats2[2] = 1.0;
+            push_operation(
+                parameters,
+                operations,
+                overflow,
+                PipelineKind::AuthorityOverflow,
+                MotionDirection::AtoB,
+                1,
+            );
+        }
+        for scheduled_color in 0..scheduled_color_count {
             let color = if reverse_colors {
-                MAX_COLORS - 1 - scheduled_color
+                scheduled_color_count - 1 - scheduled_color
             } else {
                 scheduled_color
             };
@@ -5224,7 +5902,11 @@ fn push_operation(
     workgroups: u32,
 ) {
     let parameter_index = parameters.len() as u32;
-    let color = matches!(pipeline, PipelineKind::Colored).then_some(parameter.uints0[3]);
+    let color = matches!(
+        pipeline,
+        PipelineKind::Colored | PipelineKind::AuthorityOverflow
+    )
+    .then_some(parameter.uints0[3]);
     parameters.push(parameter);
     operations.push(Operation {
         pipeline,
@@ -5291,7 +5973,9 @@ fn pass_trace_descriptors(
                 PipelineKind::Restitution => GpuSolverPassKindV1::Restitution,
                 PipelineKind::IntegratePosition => GpuSolverPassKindV1::IntegratePosition,
                 PipelineKind::Gather => GpuSolverPassKindV1::Gather,
-                PipelineKind::Colored | PipelineKind::IslandColored => match stage {
+                PipelineKind::Colored
+                | PipelineKind::AuthorityOverflow
+                | PipelineKind::IslandColored => match stage {
                     1 => GpuSolverPassKindV1::WarmStart,
                     2 => GpuSolverPassKindV1::NormalBiased,
                     3 => GpuSolverPassKindV1::TangentBiased,
@@ -6307,6 +6991,39 @@ mod tests {
             GpuContactCoefficientPolicyV1::StaticStiffHard
                 .validate(&soft.settings)
                 .is_err()
+        );
+    }
+
+    #[test]
+    fn authority_transform_storage_is_candidate_only_and_prepared_layout_is_unchanged() {
+        assert_eq!(size_of::<PreparedPointRaw>(), 96);
+        let body_count = 12;
+        let point_count = 22;
+        let selected = TopologyLayout::new(
+            GpuGatherTopology::StableBodyEdge,
+            body_count,
+            point_count,
+            false,
+            GpuColorScheduleV4::CompactIndirect,
+            GpuColorUnitV4::Manifold,
+            GpuSolverSchedulingPolicyV1::SELECTED,
+        )
+        .unwrap();
+        let candidate = TopologyLayout::new(
+            GpuGatherTopology::StableBodyEdge,
+            body_count,
+            point_count,
+            false,
+            GpuColorScheduleV4::CompactIndirect,
+            GpuColorUnitV4::Manifold,
+            GpuSolverSchedulingPolicyV1::AUTHORITY_GPU_PROBE,
+        )
+        .unwrap();
+        assert!(!selected.has_authority_initial_transforms);
+        assert!(candidate.has_authority_initial_transforms);
+        assert_eq!(
+            candidate.element_count - candidate.authority_initial_transforms_base,
+            body_count * 3
         );
     }
 

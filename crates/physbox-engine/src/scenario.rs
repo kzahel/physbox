@@ -1965,6 +1965,152 @@ pub fn authored_chain_scenario(
     })
 }
 
+pub fn p5_2_s13_authority_overflow_scenario() -> Result<ScenarioV1, ScenarioBuildError> {
+    let material = MaterialV1 {
+        friction: finite(0.5),
+        restitution: finite(0.0),
+    };
+    let mut bodies = Vec::with_capacity(22);
+    for slot in 0..22 {
+        bodies.push(s13_authored_body(
+            slot,
+            Vec2::new(slot as f32, 0.0),
+            material,
+        ));
+    }
+    let mut manifolds = Vec::with_capacity(21);
+    for manifold_id in 0..21 {
+        manifolds.push(AuthoredManifoldV1 {
+            id: manifold_id,
+            body_a: bodies[0].id,
+            body_b: bodies[manifold_id as usize + 1].id,
+            normal: Vec2::new(1.0, 0.0),
+            material,
+            points: vec![s13_authored_point(Vec2::new(0.0, 0.0))],
+        });
+    }
+    s13_authored_scenario(
+        "p5.2b-s13-authority-forced-overflow",
+        0x5130,
+        bodies,
+        manifolds,
+    )
+}
+
+pub fn p5_2_s13_authority_measurement_scenario(
+    manifold_count: u32,
+) -> Result<ScenarioV1, ScenarioBuildError> {
+    if !matches!(manifold_count, 32 | 256 | 1_024) {
+        return Err(ScenarioBuildError(
+            "S13 authority measurement requires 32, 256, or 1024 manifolds".to_owned(),
+        ));
+    }
+    let material = MaterialV1 {
+        friction: finite(0.5),
+        restitution: finite(0.0),
+    };
+    let body_count = manifold_count * 2;
+    let mut bodies = Vec::with_capacity(body_count as usize);
+    for slot in 0..body_count {
+        let pair = slot / 2;
+        let side = slot % 2;
+        bodies.push(s13_authored_body(
+            slot,
+            Vec2::new(pair as f32 * 2.0 + side as f32, 0.0),
+            material,
+        ));
+    }
+    let mut manifolds = Vec::with_capacity(manifold_count as usize);
+    for manifold_id in 0..manifold_count {
+        manifolds.push(AuthoredManifoldV1 {
+            id: manifold_id,
+            body_a: bodies[(manifold_id * 2) as usize].id,
+            body_b: bodies[(manifold_id * 2 + 1) as usize].id,
+            normal: Vec2::new(1.0, 0.0),
+            material,
+            points: vec![s13_authored_point(Vec2::new(
+                manifold_id as f32 * 2.0 + 0.5,
+                0.0,
+            ))],
+        });
+    }
+    s13_authored_scenario(
+        &format!("p5.2b-s13-authority-measurement-{manifold_count}"),
+        0x5131 + u64::from(manifold_count),
+        bodies,
+        manifolds,
+    )
+}
+
+fn s13_authored_body(slot: u32, position: Vec2, material: MaterialV1) -> BodyStateV1 {
+    BodyStateV1 {
+        id: BodyId {
+            slot,
+            generation: 1,
+        },
+        shape: ShapeV1::Rectangle {
+            half_extents: Vec2::new(0.5, 0.5),
+        },
+        position,
+        angle: finite(0.0),
+        linear_velocity: Vec2::new(0.0, 0.0),
+        angular_velocity: finite(0.0),
+        inverse_mass: finite(1.0),
+        inverse_inertia: finite(1.0),
+        material,
+        sleeping: false,
+    }
+}
+
+fn s13_authored_point(world_point: Vec2) -> AuthoredContactPointV1 {
+    AuthoredContactPointV1 {
+        local_anchor_a: Vec2::new(0.5, 0.0),
+        local_anchor_b: Vec2::new(-0.5, 0.0),
+        world_point,
+        separation: finite(0.0),
+        feature_a: FeatureIdV1 {
+            feature_type: 2,
+            feature_index: 1,
+        },
+        feature_b: FeatureIdV1 {
+            feature_type: 2,
+            feature_index: 0,
+        },
+    }
+}
+
+fn s13_authored_scenario(
+    id: &str,
+    seed: u64,
+    bodies: Vec<BodyStateV1>,
+    manifolds: Vec<AuthoredManifoldV1>,
+) -> Result<ScenarioV1, ScenarioBuildError> {
+    let mut settings = default_settings();
+    settings.iterations = 2;
+    settings.contact_softness = Some(ContactSoftnessPolicyV1 {
+        version: CONTACT_SOFTNESS_POLICY_VERSION,
+        contact_hertz: finite(30.0),
+        damping_ratio: finite(10.0),
+        static_contact_hertz_multiplier: finite(1.0),
+    });
+    settings.contact_policy = Some(p5_2_contact_policy_candidate());
+    let scenario = ScenarioV1 {
+        schema_version: SCHEMA_VERSION,
+        id: id.to_owned(),
+        seed,
+        requested_steps: 1,
+        settings,
+        bodies,
+        manifolds,
+        contact_cache: Vec::new(),
+        actions: Vec::new(),
+    };
+    scenario
+        .validate()
+        .map_err(|error| ScenarioBuildError(error.to_string()))?;
+    Ok(scenario)
+}
+
 fn default_settings() -> SolverSettingsV1 {
     SolverSettingsV1 {
         fixed_dt: finite(1.0 / 60.0),

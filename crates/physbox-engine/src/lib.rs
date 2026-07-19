@@ -33,7 +33,8 @@ pub use authority_gpu_probe::{
     AUTHORITY_GPU_COLOR_COUNT, AUTHORITY_GPU_DYNAMIC_COLOR_COUNT,
     AUTHORITY_GPU_OVERFLOW_COLOR_COUNT, AUTHORITY_GPU_PROBE_CANDIDATE_ID,
     AUTHORITY_GPU_PROBE_POLICY_VERSION, AUTHORITY_GPU_STATIC_COLOR_COUNT,
-    AuthorityGpuProbePolicyV1, SelectedGpuSolverPolicySnapshotV1,
+    AUTHORITY_GPU_TRANSFORM_STORAGE_VERSION, AuthorityGpuProbePolicyV1,
+    SelectedGpuSolverPolicySnapshotV1,
 };
 #[cfg(not(target_arch = "wasm32"))]
 pub use body_benchmark::benchmark_gpu_body_free_flight;
@@ -44,9 +45,13 @@ pub use body_benchmark::{
 };
 #[cfg(not(target_arch = "wasm32"))]
 pub use body_floor_solver::{
-    GPU_SCHEDULER_WORK_VECTOR_VERSION, GpuAuthoredGatherBenchmarkOutput, GpuSchedulerWorkVectorV1,
-    GpuSolverInstrumentedSampleV4, benchmark_gpu_authored_gather_topology,
-    benchmark_gpu_authored_solver_experiment, benchmark_gpu_authored_solver_policy_experiment,
+    GPU_SCHEDULER_WORK_VECTOR_VERSION, GpuAuthoredAuthorityProbeOutputV1,
+    GpuAuthoredGatherBenchmarkOutput, GpuAuthorityProbeCapacityDispositionV1,
+    GpuS13AuthorityProbeBenchmarkV1, GpuS13MeasuredConfigurationV1, GpuSchedulerWorkVectorV1,
+    GpuSolverInstrumentedSampleV4, authority_gpu_probe_capacity_disposition,
+    benchmark_gpu_authored_gather_topology, benchmark_gpu_authored_solver_experiment,
+    benchmark_gpu_authored_solver_policy_experiment, benchmark_gpu_s13_authority_probe,
+    run_gpu_authored_authority_probe,
 };
 pub use body_floor_solver::{
     GPU_SOLVER_EXECUTION_VERSION, GPU_SOLVER_PASS_TRACE_VERSION,
@@ -149,7 +154,8 @@ pub use scenario::{
     p5_2_minimized_mixed_pile_hard_scenario, p5_2_minimized_mixed_pile_soft_i1_scenario,
     p5_2_narrowphase_pair_scenario, p5_2_random_settling_fixture_scenario,
     p5_2_rectangle_pyramid_scenario, p5_2_s11_soft_composition_reproducer_scenario,
-    p5_2_s11_soft_depth_sweep_scenario, p5_2_settling_fixture_scenario,
+    p5_2_s11_soft_depth_sweep_scenario, p5_2_s13_authority_measurement_scenario,
+    p5_2_s13_authority_overflow_scenario, p5_2_settling_fixture_scenario,
     p5_2_settling_review_scenario, p5_2_settling_soft_fixture_scenario,
     p5_2_settling_soft_i1_comparator_scenario, p5_2_settling_soft_stack_matrix_scenario,
     p5_2_stale_reseed_reproducer_scenario,

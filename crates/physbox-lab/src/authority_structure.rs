@@ -156,6 +156,27 @@ pub struct AuthorityInteractionSlotV1 {
     pub policy: Option<AuthorityStructurePolicyV1>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum AuthorityStructurePassKindV1 {
+    IntegrateVelocity,
+    Prepare,
+    WarmStart,
+    BiasedSolve,
+    IntegratePosition,
+    Refresh,
+    Relaxation,
+    Restitution,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuthorityStructurePassStateV1 {
+    pub substep: u32,
+    pub kind: AuthorityStructurePassKindV1,
+    pub bodies: Vec<BodyStateV1>,
+}
+
 pub fn mandatory_authority_structure_configurations_v1() -> Vec<AuthorityStructureConfigurationV1> {
     let mut configurations = vec![
         AuthorityStructureConfigurationV1 {
@@ -199,6 +220,40 @@ pub fn solve_authority_structure_steps_observed(
     scenario: &ScenarioV1,
     policy: AuthorityStructurePolicyV1,
     retain_traces: bool,
+) -> Result<ScalarObservedSolveResultV1, ScalarError> {
+    solve_authority_structure_steps_observed_internal(scenario, policy, retain_traces, None)
+}
+
+pub fn solve_authority_structure_one_step_pass_states(
+    scenario: &ScenarioV1,
+    policy: AuthorityStructurePolicyV1,
+) -> Result<
+    (
+        ScalarObservedSolveResultV1,
+        Vec<AuthorityStructurePassStateV1>,
+    ),
+    ScalarError,
+> {
+    if scenario.requested_steps != 1 {
+        return Err(ScalarError(
+            "authority pass-state diagnostic requires exactly one outer step".to_owned(),
+        ));
+    }
+    let mut pass_states = Vec::new();
+    let result = solve_authority_structure_steps_observed_internal(
+        scenario,
+        policy,
+        true,
+        Some(&mut pass_states),
+    )?;
+    Ok((result, pass_states))
+}
+
+fn solve_authority_structure_steps_observed_internal(
+    scenario: &ScenarioV1,
+    policy: AuthorityStructurePolicyV1,
+    retain_traces: bool,
+    mut pass_states: Option<&mut Vec<AuthorityStructurePassStateV1>>,
 ) -> Result<ScalarObservedSolveResultV1, ScalarError> {
     policy.validate()?;
     scenario
@@ -257,9 +312,21 @@ pub fn solve_authority_structure_steps_observed(
             let visit_order = contact_visit_order(contacts, &bodies, policy.accumulation);
 
             integrate_velocities(&mut bodies, scenario.settings.gravity, substep_dt)?;
+            record_pass_state(
+                &mut pass_states,
+                substep,
+                AuthorityStructurePassKindV1::IntegrateVelocity,
+                &bodies,
+            );
             for &contact_index in &visit_order {
                 warm_start(&contacts[contact_index], &mut bodies, &mut traces)?;
             }
+            record_pass_state(
+                &mut pass_states,
+                substep,
+                AuthorityStructurePassKindV1::WarmStart,
+                &bodies,
+            );
             for iteration in 0..biased_iterations {
                 for &contact_index in &visit_order {
                     solve_normal(
@@ -285,17 +352,35 @@ pub fn solve_authority_structure_steps_observed(
                     )?;
                 }
             }
+            record_pass_state(
+                &mut pass_states,
+                substep,
+                AuthorityStructurePassKindV1::BiasedSolve,
+                &bodies,
+            );
 
             if policy.preparation == AuthorityStructureSideV1::Authority {
                 integrate_positions_authority(&mut bodies, substep_dt, &mut traces)?;
             } else {
                 integrate_positions(&mut bodies, substep_dt, &mut traces)?;
             }
+            record_pass_state(
+                &mut pass_states,
+                substep,
+                AuthorityStructurePassKindV1::IntegratePosition,
+                &bodies,
+            );
             if policy.preparation == AuthorityStructureSideV1::Authority {
                 refresh_authority_separations(contacts, &bodies);
             } else {
                 refresh_separations(contacts, &bodies);
             }
+            record_pass_state(
+                &mut pass_states,
+                substep,
+                AuthorityStructurePassKindV1::Refresh,
+                &bodies,
+            );
             for &contact_index in &visit_order {
                 solve_normal(
                     &mut contacts[contact_index],
@@ -326,6 +411,20 @@ pub fn solve_authority_structure_steps_observed(
                         &mut traces,
                     )?;
                 }
+            }
+            record_pass_state(
+                &mut pass_states,
+                substep,
+                AuthorityStructurePassKindV1::Relaxation,
+                &bodies,
+            );
+            if policy.restitution == AuthorityStructureSideV1::Physbox {
+                record_pass_state(
+                    &mut pass_states,
+                    substep,
+                    AuthorityStructurePassKindV1::Restitution,
+                    &bodies,
+                );
             }
             contact_cache = collect_contact_cache(contacts, &bodies)?;
             assign_trace_location(&mut traces[trace_start..], step, substep);
@@ -369,6 +468,21 @@ pub fn solve_authority_structure_steps_observed(
         },
         observations,
     })
+}
+
+fn record_pass_state(
+    output: &mut Option<&mut Vec<AuthorityStructurePassStateV1>>,
+    substep: u32,
+    kind: AuthorityStructurePassKindV1,
+    bodies: &[BodyStateV1],
+) {
+    if let Some(output) = output.as_deref_mut() {
+        output.push(AuthorityStructurePassStateV1 {
+            substep,
+            kind,
+            bodies: bodies.to_vec(),
+        });
+    }
 }
 
 fn prepare_contacts(

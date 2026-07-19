@@ -5,8 +5,10 @@ use crate::body_floor_solver::{
     GpuSoftFeedbackPolicyV1, GpuSolverExecutionV4, GpuSolverSchedulingPolicyV1,
     GpuSubstepContactPolicyV1,
 };
+use physbox_contracts::SolverSettingsV1;
 
 pub const AUTHORITY_GPU_PROBE_POLICY_VERSION: u32 = 1;
+pub const AUTHORITY_GPU_TRANSFORM_STORAGE_VERSION: u32 = 1;
 pub const AUTHORITY_GPU_PROBE_CANDIDATE_ID: &str = "authority-x1-x4-current-x5-v1";
 pub const AUTHORITY_GPU_DYNAMIC_COLOR_COUNT: u32 = 20;
 pub const AUTHORITY_GPU_STATIC_COLOR_COUNT: u32 = 3;
@@ -105,6 +107,49 @@ impl AuthorityGpuProbePolicyV1 {
     }
 }
 
+pub(crate) fn validate_authority_gpu_probe_settings(
+    settings: &SolverSettingsV1,
+) -> Result<(), String> {
+    let Some(softness) = settings.contact_softness else {
+        return Err("authority GPU probe requires soft contact".to_owned());
+    };
+    if settings.substeps != AuthorityGpuProbePolicyV1::AUTHORIZED.substeps
+        || settings.iterations != 2
+        || softness.version != physbox_contracts::CONTACT_SOFTNESS_POLICY_VERSION
+        || softness.contact_hertz.get() != AuthorityGpuProbePolicyV1::AUTHORIZED.contact_hertz
+        || softness.damping_ratio.get() != AuthorityGpuProbePolicyV1::AUTHORIZED.damping_ratio
+    {
+        return Err(
+            "authority GPU probe settings differ from the frozen S12 source contract".to_owned(),
+        );
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_authority_gpu_probe_runtime_tuple(
+    execution: GpuSolverExecutionV4,
+    scheduling: GpuSolverSchedulingPolicyV1,
+    soft_feedback: GpuSoftFeedbackPolicyV1,
+    normal_relaxation: GpuNormalRelaxationPolicyV1,
+    contact_coefficients: GpuContactCoefficientPolicyV1,
+    substep_contacts: GpuSubstepContactPolicyV1,
+    restitution_timing: GpuRestitutionTimingPolicyV1,
+) -> Result<(), String> {
+    AuthorityGpuProbePolicyV1::AUTHORIZED.validate_product_selection(false)?;
+    if execution != GpuSolverExecutionV4::AUTHORITY_GPU_PROBE
+        || (scheduling != GpuSolverSchedulingPolicyV1::AUTHORITY_GPU_PROBE
+            && scheduling != GpuSolverSchedulingPolicyV1::AUTHORITY_GPU_PROBE_SMALL_WORLD)
+        || soft_feedback != GpuSoftFeedbackPolicyV1::EveryBiasedIteration
+        || normal_relaxation != GpuNormalRelaxationPolicyV1::PointSequential
+        || contact_coefficients != GpuContactCoefficientPolicyV1::AuthorityCappedSoft
+        || substep_contacts != GpuSubstepContactPolicyV1::AuthorityFixedAnchorAnalyticalSeparation
+        || restitution_timing != GpuRestitutionTimingPolicyV1::AfterEachSubstep
+    {
+        return Err("GPU runtime tuple differs from the authorized S13 candidate".to_owned());
+    }
+    Ok(())
+}
+
 /// Snapshot of the independently selected product policy. S13 tests bind this
 /// value so probe work cannot silently promote itself by changing a SELECTED
 /// constant.
@@ -187,6 +232,32 @@ mod tests {
         assert_ne!(
             serde_json::to_vec(&AuthorityGpuProbePolicyV1::AUTHORIZED).unwrap(),
             serde_json::to_vec(&SelectedGpuSolverPolicySnapshotV1::current()).unwrap()
+        );
+    }
+
+    #[test]
+    fn authorized_descriptor_maps_to_one_exact_runtime_tuple() {
+        validate_authority_gpu_probe_runtime_tuple(
+            GpuSolverExecutionV4::AUTHORITY_GPU_PROBE,
+            GpuSolverSchedulingPolicyV1::AUTHORITY_GPU_PROBE,
+            GpuSoftFeedbackPolicyV1::EveryBiasedIteration,
+            GpuNormalRelaxationPolicyV1::PointSequential,
+            GpuContactCoefficientPolicyV1::AuthorityCappedSoft,
+            GpuSubstepContactPolicyV1::AuthorityFixedAnchorAnalyticalSeparation,
+            GpuRestitutionTimingPolicyV1::AfterEachSubstep,
+        )
+        .unwrap();
+        assert!(
+            validate_authority_gpu_probe_runtime_tuple(
+                GpuSolverExecutionV4::SELECTED,
+                GpuSolverSchedulingPolicyV1::AUTHORITY_GPU_PROBE,
+                GpuSoftFeedbackPolicyV1::EveryBiasedIteration,
+                GpuNormalRelaxationPolicyV1::PointSequential,
+                GpuContactCoefficientPolicyV1::AuthorityCappedSoft,
+                GpuSubstepContactPolicyV1::AuthorityFixedAnchorAnalyticalSeparation,
+                GpuRestitutionTimingPolicyV1::AfterEachSubstep,
+            )
+            .is_err()
         );
     }
 }

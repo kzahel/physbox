@@ -313,6 +313,7 @@ const fn compact_execution(execution: GpuSolverExecutionV4) -> [u32; 8] {
             GpuNormalSolverV4::ScalarMassSplit => 1,
             GpuNormalSolverV4::ManifoldBlock => 2,
             GpuNormalSolverV4::BlockMassSplit => 3,
+            GpuNormalSolverV4::ManifoldPointSequential => 4,
         },
         match execution.color_schedule {
             GpuColorScheduleV4::None => 0,
@@ -326,6 +327,7 @@ const fn compact_execution(execution: GpuSolverExecutionV4) -> [u32; 8] {
         match execution.color_order {
             GpuColorOrderV4::Forward => 0,
             GpuColorOrderV4::Alternating => 1,
+            GpuColorOrderV4::AuthorityOverflowFirst => 2,
         },
         execution.warm_start as u32,
         execution.relaxation as u32,
@@ -341,6 +343,7 @@ const fn compact_scheduling(policy: GpuSolverSchedulingPolicyV1) -> [u32; 3] {
             GpuColorMaintenanceV1::FullRebuildParallelCompaction => 2,
             GpuColorMaintenanceV1::FullRebuildParallelSpeculative => 3,
             GpuColorMaintenanceV1::FullRebuildParallelSpeculativeStaticLate => 4,
+            GpuColorMaintenanceV1::AuthoritySourceOrder => 5,
         },
         match policy.colored_dispatch {
             GpuColoredDispatchV1::PerColorIndirect => 0,
@@ -355,6 +358,7 @@ const fn compact_contact_coefficients(policy: GpuContactCoefficientPolicyV1) -> 
     match policy {
         GpuContactCoefficientPolicyV1::SettingsDerived => 0,
         GpuContactCoefficientPolicyV1::StaticStiffHard => 1,
+        GpuContactCoefficientPolicyV1::AuthorityCappedSoft => 2,
     }
 }
 

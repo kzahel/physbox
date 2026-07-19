@@ -207,6 +207,7 @@ fn color_contacts(@builtin(global_invocation_id) id: vec3u) {
     let compact = (params.uints1.w & 1u) != 0u;
     let manifold_units = (params.uints1.w & 2u) != 0u;
     let parallel_compaction = (params.uints1.w & 4u) != 0u;
+    let authority_order = (params.uints1.w & 16u) != 0u;
     let counts_base = params.uints1.y + 1u;
     let offsets_base = counts_base + params.uints1.z;
     let cursors_base = offsets_base + params.uints1.z + 1u;
@@ -230,6 +231,54 @@ fn color_contacts(@builtin(global_invocation_id) id: vec3u) {
                 atomicStore(&topology[params.uints0.z + point_index], 0xffffffffu);
                 atomicStore(&topology[params.uints1.x], 1u);
             }
+            continue;
+        }
+        if (authority_order) {
+            let dynamic_a = properties[point.ids.x].z > 0.0;
+            let dynamic_b = properties[point.ids.y].z > 0.0;
+            let used = atomicLoad(&topology[params.uints0.w + point.ids.x]) |
+                       atomicLoad(&topology[params.uints0.w + point.ids.y]);
+            var color = 23u;
+            if (dynamic_a && dynamic_b) {
+                for (var candidate = 0u; candidate < 20u; candidate += 1u) {
+                    if ((used & (1u << candidate)) == 0u) {
+                        color = candidate;
+                        break;
+                    }
+                }
+            } else {
+                var candidate = 22u;
+                loop {
+                    if ((used & (1u << candidate)) == 0u) {
+                        color = candidate;
+                        break;
+                    }
+                    if (candidate == 1u) { break; }
+                    candidate -= 1u;
+                }
+            }
+            atomicStore(&topology[params.uints0.z + point_index], color);
+            if (manifold_units && point_index + 1u < params.uints0.y) {
+                let next = point_inputs[point_index + 1u];
+                if (valid_point(next) && next.ids.x == point.ids.x &&
+                        next.ids.y == point.ids.y && next.ids.z == point.ids.z &&
+                        next.ids.w == 1u) {
+                    atomicStore(&topology[params.uints0.z + point_index + 1u], color);
+                }
+            }
+            if (color < 23u) {
+                let color_bit = 1u << color;
+                if (dynamic_a) {
+                    atomicOr(&topology[params.uints0.w + point.ids.x], color_bit);
+                }
+                if (dynamic_b) {
+                    atomicOr(&topology[params.uints0.w + point.ids.y], color_bit);
+                }
+            }
+            if (compact && !parallel_compaction) {
+                atomicAdd(&topology[counts_base + color], 1u);
+            }
+            color_count = max(color_count, color + 1u);
             continue;
         }
         let used = atomicLoad(&topology[params.uints0.w + point.ids.x]) |
@@ -1042,12 +1091,33 @@ fn integrate_velocity(@builtin(global_invocation_id) id: vec3u) {
 @compute @workgroup_size(64)
 fn integrate_position(@builtin(global_invocation_id) id: vec3u) {
     let body_index = id.x;
-    if (body_index >= params.uints0.x || properties[body_index].z <= 0.0) { return; }
-    let motion = motions_source[body_index];
+    if (body_index >= params.uints0.x) { return; }
+    var motion = motions_source[body_index];
     var pose = poses[body_index];
+    if (params.uints1.z != 0u && params.uints1.w != 0u) {
+        let initial_base = params.uints0.z + body_index * 3u;
+        atomicStore(&topology[initial_base], bitcast<u32>(pose.x));
+        atomicStore(&topology[initial_base + 1u], bitcast<u32>(pose.y));
+        atomicStore(&topology[initial_base + 2u], bitcast<u32>(pose.z));
+    }
+    if (properties[body_index].z <= 0.0) {
+        return;
+    }
     pose.x += motion.x * params.floats0.x;
     pose.y += motion.y * params.floats0.x;
-    pose.z += motion.z * params.floats0.x;
+    let delta_angle = motion.z * params.floats0.x;
+    if (params.uints1.z != 0u) {
+        let sine = sin(pose.z);
+        let cosine = cos(pose.z);
+        let integrated_sine = sine + delta_angle * cosine;
+        let integrated_cosine = cosine - delta_angle * sine;
+        let magnitude = sqrt(integrated_cosine * integrated_cosine +
+                             integrated_sine * integrated_sine);
+        pose.z = atan2(integrated_sine / magnitude,
+                       integrated_cosine / magnitude);
+    } else {
+        pose.z += delta_angle;
+    }
     poses[body_index] = pose;
 }
 
@@ -1114,6 +1184,35 @@ fn refresh_contacts(@builtin(global_invocation_id) id: vec3u) {
         var fixed = prepared_points[id.x];
         fixed.data0.w = dot((pose_b.xy + moving_anchor_b) -
                             (pose_a.xy + moving_anchor_a), fixed.normal);
+        prepared_points[id.x] = fixed;
+        return;
+    }
+    if (params.uints0.w == 3u) {
+        let input = point_inputs[id.x];
+        let pose_a = poses[input.ids.x];
+        let pose_b = poses[input.ids.y];
+        var fixed = prepared_points[id.x];
+        let initial_base_a = params.uints0.z + input.ids.x * 3u;
+        let initial_base_b = params.uints0.z + input.ids.y * 3u;
+        let initial_position_a = vec2f(
+            bitcast<f32>(atomicLoad(&topology[initial_base_a])),
+            bitcast<f32>(atomicLoad(&topology[initial_base_a + 1u])));
+        let initial_position_b = vec2f(
+            bitcast<f32>(atomicLoad(&topology[initial_base_b])),
+            bitcast<f32>(atomicLoad(&topology[initial_base_b + 1u])));
+        let initial_angle_a = bitcast<f32>(
+            atomicLoad(&topology[initial_base_a + 2u]));
+        let initial_angle_b = bitcast<f32>(
+            atomicLoad(&topology[initial_base_b + 2u]));
+        let delta_position_a = pose_a.xy - initial_position_a;
+        let delta_position_b = pose_b.xy - initial_position_b;
+        let delta_position = delta_position_b - delta_position_a;
+        let authority_anchor_a = rotate(fixed.anchor_a, pose_a.z - initial_angle_a);
+        let authority_anchor_b = rotate(fixed.anchor_b, pose_b.z - initial_angle_b);
+        let base_separation = input.material.x -
+            dot(fixed.anchor_b - fixed.anchor_a, fixed.normal);
+        fixed.data0.w = base_separation +
+            dot(delta_position + (authority_anchor_b - authority_anchor_a), fixed.normal);
         prepared_points[id.x] = fixed;
         return;
     }
@@ -1429,12 +1528,15 @@ fn solve_colored_manifold(point_index: u32, preserve_static_motion: bool) {
         }
     } else if (stage == 2u || stage == 4u || stage == 7u || stage == 8u) {
         let relaxation_stage = stage == 4u || stage == 8u;
-        if (relaxation_stage && params.floats2.w == 2.0) {
+        let authority_point_sequential = u32(params.floats2.y) == 4u;
+        if (authority_point_sequential ||
+                (relaxation_stage && params.floats2.w == 2.0)) {
             let equation0 = normal_equation_from_velocity(
                 point0,
                 relative_velocity_from_motions(point0, point0.normal, motion_a, motion_b));
             let k11 = block_matrix_entry(point0, point0, 1.0, 1.0);
-            let mass0 = select(0.0, 1.0 / k11, k11 > 0.0);
+            let mass0 = select(select(0.0, 1.0 / k11, k11 > 0.0),
+                               point0.data0.y, authority_point_sequential);
             let old0 = point0.data1.z;
             point0.data1.z = max(old0 - mass0 * equation0.base -
                 equation0.impulse_scale * old0, 0.0);
@@ -1451,7 +1553,8 @@ fn solve_colored_manifold(point_index: u32, preserve_static_motion: bool) {
                     relative_velocity_from_motions(
                         point1, point1.normal, motion_a, motion_b));
                 let k22 = block_matrix_entry(point1, point1, 1.0, 1.0);
-                let mass1 = select(0.0, 1.0 / k22, k22 > 0.0);
+                let mass1 = select(select(0.0, 1.0 / k22, k22 > 0.0),
+                                   point1.data0.y, authority_point_sequential);
                 let old1 = point1.data1.z;
                 point1.data1.z = max(old1 - mass1 * equation1.base -
                     equation1.impulse_scale * old1, 0.0);
@@ -1680,23 +1783,51 @@ fn colored_stage(@builtin(global_invocation_id) id: vec3u) {
     motions_source[point.ids.y] = motion_b;
 }
 
+@compute @workgroup_size(1)
+fn authority_overflow_stage(@builtin(global_invocation_id) id: vec3u) {
+    if (id.x != 0u) { return; }
+    let color = params.uints0.w;
+    let count = atomicLoad(&topology[params.uints0.x + color]);
+    let offset = atomicLoad(&topology[params.uints1.z + color]);
+    for (var slot = 0u; slot < count; slot += 1u) {
+        let point_index = atomicLoad(&topology[params.uints0.z + offset + slot]);
+        solve_colored_manifold(point_index, false);
+    }
+}
+
 @compute @workgroup_size(64)
 fn island_colored_stage(@builtin(local_invocation_id) local_id: vec3u,
                         @builtin(workgroup_id) workgroup_id: vec3u) {
     let island = workgroup_id.x;
     let island_count = atomicLoad(&topology[params.uints0.x]);
     let color_count = atomicLoad(&topology[bitcast<u32>(params.floats2.w)]);
-    for (var scheduled_color = 0u; scheduled_color < 32u;
+    let authority_order = params.uints1.z == 2u;
+    let scheduled_count = select(32u, 24u, authority_order);
+    for (var scheduled_color = 0u; scheduled_color < scheduled_count;
             scheduled_color += 1u) {
-        if (island < island_count && scheduled_color < color_count) {
-            let color = select(scheduled_color, color_count - 1u - scheduled_color,
-                               params.uints1.z != 0u);
+        if (island < island_count &&
+                (authority_order || scheduled_color < color_count)) {
+            var color = select(scheduled_color, color_count - 1u - scheduled_color,
+                               params.uints1.z == 1u);
+            if (authority_order) {
+                color = 23u;
+                if (scheduled_color > 0u) { color = scheduled_color - 1u; }
+            }
             let bin = island * 32u + color;
             let start = atomicLoad(&topology[params.uints0.z + bin]);
             let end = atomicLoad(&topology[params.uints0.z + bin + 1u]);
-            for (var slot = start + local_id.x; slot < end; slot += 64u) {
-                let point_index = atomicLoad(&topology[params.uints0.w + slot]);
-                solve_colored_manifold(point_index, true);
+            if (authority_order && color == 23u) {
+                if (local_id.x == 0u) {
+                    for (var slot = start; slot < end; slot += 1u) {
+                        let point_index = atomicLoad(&topology[params.uints0.w + slot]);
+                        solve_colored_manifold(point_index, true);
+                    }
+                }
+            } else {
+                for (var slot = start + local_id.x; slot < end; slot += 64u) {
+                    let point_index = atomicLoad(&topology[params.uints0.w + slot]);
+                    solve_colored_manifold(point_index, true);
+                }
             }
         }
         storageBarrier();

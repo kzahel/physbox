@@ -8,15 +8,21 @@ use physbox_engine::{
     GpuSoftFeedbackPolicyV1, GpuSolverAccumulationV4, GpuSolverCandidate, GpuSolverExecutionV4,
     GpuSolverPassKindV1, GpuSolverSchedulingPolicyV1, P5_2_BUCKET_EVIDENCE_STEPS,
     P5_2_CENTERED_STACK_EVIDENCE_STEPS, P5_2BucketShape, P5_2CandidatePattern,
-    P5_2GeneratedScenarioKind, benchmark_gpu_generated_contact_experiment,
+    P5_2GeneratedScenarioKind, authority_gpu_probe_capacity_disposition,
+    benchmark_gpu_generated_contact_experiment,
     benchmark_gpu_generated_contact_scheduling_experiment, benchmark_gpu_generated_contacts,
-    p5_2_bucket_scenario, p5_2_candidate_scenario, p5_2_centered_rectangle_stack_scenario,
-    p5_2_coloring_churn_snapshots, p5_2_contact_policy_candidate,
-    p5_2_generated_performance_scenario, p5_2_generated_scenario,
+    gpu_contact_softness_coefficients, p5_2_bucket_scenario, p5_2_candidate_scenario,
+    p5_2_centered_rectangle_stack_scenario, p5_2_coloring_churn_snapshots,
+    p5_2_contact_policy_candidate, p5_2_generated_performance_scenario, p5_2_generated_scenario,
     p5_2_minimized_mixed_pile_energy_scenario, p5_2_rectangle_pyramid_scenario,
-    run_gpu_soft_step_case,
+    p5_2_s11_soft_depth_sweep_scenario, p5_2_s13_authority_overflow_scenario,
+    run_gpu_authored_authority_probe, run_gpu_soft_step_case,
 };
 use physbox_lab::analytic_narrowphase::authored_solver_projection;
+use physbox_lab::authority_structure::{
+    AuthorityStructureAxisV1, AuthorityStructurePassKindV1, AuthorityStructurePolicyV1,
+    solve_authority_structure_one_step_pass_states, solve_authority_structure_steps_observed,
+};
 use physbox_lab::pass_energy::{
     ScalarPassCoverageV1, analyze_impulse_operator, analyze_scalar_relaxation_derivation,
     analyze_settling_pass_energy, analyze_static_support_energy_attribution,
@@ -28,6 +34,529 @@ use physbox_lab::settling::{
 };
 
 const PASS_TOLERANCE: f32 = 2.0e-5;
+// The two-step scalar comparison is an implementation diagnostic, not a
+// governed response gate. Its frozen agreement band is retained so the S13
+// arithmetic divergence cannot be mistaken for a phase match.
+const AUTHORITY_PROBE_TWO_STEP_IMPLEMENTATION_BAND: f32 = 5.0e-5;
+
+#[test]
+fn authority_gpu_probe_forces_overflow_first_and_capacity_fails_closed() {
+    let scenario = p5_2_s13_authority_overflow_scenario().unwrap();
+    let capacity = authority_gpu_probe_capacity_disposition(&scenario, 20).unwrap();
+    let capacity_replay = authority_gpu_probe_capacity_disposition(&scenario, 20).unwrap();
+    assert_eq!(
+        serde_json::to_vec(&capacity).unwrap(),
+        serde_json::to_vec(&capacity_replay).unwrap()
+    );
+    assert!(capacity.rejected && capacity.overflowed);
+    assert_eq!(capacity.attempted, 21);
+    assert_eq!(capacity.capacity, 20);
+    assert_eq!(capacity.accepted, 0);
+    assert_eq!(capacity.committed, 0);
+
+    let output = pollster::block_on(run_gpu_authored_authority_probe(&scenario)).unwrap();
+    assert!(output.replay_exact);
+    let coloring = output.pass_evidence.coloring.as_ref().unwrap();
+    assert_eq!(coloring.point_colors[..20], (0..20).collect::<Vec<_>>());
+    assert_eq!(coloring.point_colors[20], 23);
+    assert_eq!(coloring.color_occupancy[23], 1);
+    assert_eq!(coloring.color_occupancy.iter().sum::<u32>(), 21);
+    assert!(!coloring.overflowed);
+    assert!(
+        output
+            .pass_descriptors
+            .iter()
+            .filter(|descriptor| descriptor.color_passes != 0)
+            .all(|descriptor| descriptor.parameters.uints1[2] == 2)
+    );
+    assert!(output.bodies.iter().all(|body| body.validate().is_ok()));
+}
+
+#[test]
+fn exact_authority_gpu_probe_replays_and_exposes_portable_arithmetic_divergence() {
+    let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
+    let mut scenario = p5_2_s11_soft_depth_sweep_scenario(11).unwrap();
+    scenario.requested_steps = 2;
+    let first = runner
+        .run_authority_gpu_probe_observation_series(&scenario, 1, 2)
+        .unwrap();
+    let replay = runner
+        .run_authority_gpu_probe_observation_series(&scenario, 1, 2)
+        .unwrap();
+    first.validate().unwrap();
+    assert_eq!(
+        serde_json::to_vec(&first).unwrap(),
+        serde_json::to_vec(&replay).unwrap()
+    );
+    assert_eq!(
+        first.solver_execution,
+        GpuSolverExecutionV4::AUTHORITY_GPU_PROBE
+    );
+    assert_eq!(
+        first.solver_scheduling_policy,
+        GpuSolverSchedulingPolicyV1::AUTHORITY_GPU_PROBE_SMALL_WORLD
+    );
+    assert!(first.authority_identity);
+    assert!(first.authority_gpu_probe_policy.is_some());
+
+    let scalar = solve_authority_structure_steps_observed(
+        &scenario,
+        AuthorityStructurePolicyV1::a_minus(AuthorityStructureAxisV1::Restitution),
+        false,
+    )
+    .unwrap();
+    let gpu_bodies = &first.snapshots.last().unwrap().bodies;
+    let mut maximum_difference = 0.0_f32;
+    let mut maximum_field = (0_usize, "", 0.0_f32);
+    for (body_index, (gpu, scalar)) in gpu_bodies.iter().zip(&scalar.result.bodies).enumerate() {
+        for (field, difference) in [
+            ("position-x", (gpu.position.x - scalar.position.x).abs()),
+            ("position-y", (gpu.position.y - scalar.position.y).abs()),
+            ("angle", (gpu.angle.get() - scalar.angle.get()).abs()),
+            (
+                "linear-velocity-x",
+                (gpu.linear_velocity.x - scalar.linear_velocity.x).abs(),
+            ),
+            (
+                "linear-velocity-y",
+                (gpu.linear_velocity.y - scalar.linear_velocity.y).abs(),
+            ),
+            (
+                "angular-velocity",
+                (gpu.angular_velocity.get() - scalar.angular_velocity.get()).abs(),
+            ),
+        ] {
+            if difference > maximum_difference {
+                maximum_difference = difference;
+                maximum_field = (body_index, field, difference);
+            }
+        }
+    }
+    assert!(
+        maximum_difference > AUTHORITY_PROBE_TWO_STEP_IMPLEMENTATION_BAND
+            && maximum_difference < 0.01,
+        "expected retained S13 divergence; body {} {} GPU/scalar difference {}",
+        maximum_field.0,
+        maximum_field.1,
+        maximum_field.2
+    );
+}
+
+#[test]
+#[ignore = "long-running S13 governed diagnostic"]
+fn authority_gpu_probe_depth_eleven_governed_diagnostic() {
+    let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
+    let scenario = p5_2_s11_soft_depth_sweep_scenario(11).unwrap();
+    let series = runner
+        .run_authority_gpu_probe_observation_series(&scenario, 1, 1_200)
+        .unwrap();
+    let observations = observe_generated_settling_series_v2(&scenario, &series).unwrap();
+    let summary =
+        summarize_settling_v2(&observations, awake_settling_measurement_policy_v2()).unwrap();
+    let final_snapshot = series.snapshots.last().unwrap();
+    let height_sum = final_snapshot
+        .bodies
+        .iter()
+        .filter(|body| body.inverse_mass.get() > 0.0)
+        .map(|body| body.position.y)
+        .sum::<f32>();
+    let maximum_penetration = observations
+        .iter()
+        .filter(|observation| observation.base.completed_steps >= 900)
+        .map(|observation| observation.base.penetration_max.get())
+        .fold(0.0_f32, f32::max);
+    eprintln!(
+        "S13 depth 11 summary={summary:?} height_sum={height_sum} penetration={maximum_penetration}"
+    );
+}
+
+#[test]
+#[ignore = "S13 implementation diagnostic"]
+fn authority_gpu_probe_one_step_scalar_deltas() {
+    let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
+    let mut scenario = p5_2_s11_soft_depth_sweep_scenario(11).unwrap();
+    scenario.requested_steps = 1;
+    let gpu = runner
+        .run_authority_gpu_probe_observation_series(&scenario, 1, 1)
+        .unwrap();
+    let scalar = solve_authority_structure_steps_observed(
+        &scenario,
+        AuthorityStructurePolicyV1::a_minus(AuthorityStructureAxisV1::Restitution),
+        false,
+    )
+    .unwrap();
+    for (index, (gpu, scalar)) in gpu.snapshots[0]
+        .bodies
+        .iter()
+        .zip(&scalar.result.bodies)
+        .enumerate()
+    {
+        eprintln!(
+            "body={index} pos=({:.9},{:.9}) vel=({:.9},{:.9}) angle={:.9} angular={:.9}",
+            gpu.position.x - scalar.position.x,
+            gpu.position.y - scalar.position.y,
+            gpu.linear_velocity.x - scalar.linear_velocity.x,
+            gpu.linear_velocity.y - scalar.linear_velocity.y,
+            gpu.angle.get() - scalar.angle.get(),
+            gpu.angular_velocity.get() - scalar.angular_velocity.get(),
+        );
+    }
+}
+
+#[test]
+#[ignore = "S13 phase diagnostic"]
+fn authority_gpu_probe_first_step_phase_dump() {
+    let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
+    let mut scenario = p5_2_s11_soft_depth_sweep_scenario(11).unwrap();
+    scenario.requested_steps = 1;
+    let gpu = runner
+        .run_authority_gpu_probe_pass_trace(&scenario, 1)
+        .unwrap();
+    eprintln!("colors={:?}", gpu.coloring.point_colors);
+    let (scalar, scalar_pass_states) = solve_authority_structure_one_step_pass_states(
+        &scenario,
+        AuthorityStructurePolicyV1::a_minus(AuthorityStructureAxisV1::Restitution),
+    )
+    .unwrap();
+    for (index, descriptor) in gpu.descriptors.iter().enumerate() {
+        let state = &gpu.states[index + 1];
+        let maximum_linear = state
+            .bodies
+            .iter()
+            .map(|body| {
+                body.linear_velocity
+                    .x
+                    .abs()
+                    .max(body.linear_velocity.y.abs())
+            })
+            .fold(0.0_f32, f32::max);
+        let maximum_angular = state
+            .bodies
+            .iter()
+            .map(|body| body.angular_velocity.get().abs())
+            .fold(0.0_f32, f32::max);
+        eprintln!(
+            "pass={index} kind={:?} substep={} colors={:?}-{:?} linear={maximum_linear:.9} angular={maximum_angular:.9}",
+            descriptor.kind, descriptor.substep, descriptor.first_color, descriptor.last_color,
+        );
+        let scalar_pass_kind = match descriptor.kind {
+            GpuSolverPassKindV1::IntegrateVelocity => {
+                Some(AuthorityStructurePassKindV1::IntegrateVelocity)
+            }
+            GpuSolverPassKindV1::WarmStart => Some(AuthorityStructurePassKindV1::WarmStart),
+            GpuSolverPassKindV1::NormalBiased => Some(AuthorityStructurePassKindV1::BiasedSolve),
+            GpuSolverPassKindV1::IntegratePosition => {
+                Some(AuthorityStructurePassKindV1::IntegratePosition)
+            }
+            GpuSolverPassKindV1::RefreshContacts => Some(AuthorityStructurePassKindV1::Refresh),
+            GpuSolverPassKindV1::NormalRelaxation => Some(AuthorityStructurePassKindV1::Relaxation),
+            GpuSolverPassKindV1::Restitution => Some(AuthorityStructurePassKindV1::Restitution),
+            _ => None,
+        };
+        if let Some(kind) = scalar_pass_kind {
+            let expected = scalar_pass_states
+                .iter()
+                .find(|state| state.substep == descriptor.substep && state.kind == kind)
+                .unwrap();
+            let mut body_maximum = (0_usize, "", 0.0_f32, 0.0_f32, 0.0_f32);
+            for (body_index, (actual, expected)) in
+                state.bodies.iter().zip(&expected.bodies).enumerate()
+            {
+                for (field, actual, expected) in [
+                    ("px", actual.position.x, expected.position.x),
+                    ("py", actual.position.y, expected.position.y),
+                    ("angle", actual.angle.get(), expected.angle.get()),
+                    ("vx", actual.linear_velocity.x, expected.linear_velocity.x),
+                    ("vy", actual.linear_velocity.y, expected.linear_velocity.y),
+                    (
+                        "angular",
+                        actual.angular_velocity.get(),
+                        expected.angular_velocity.get(),
+                    ),
+                ] {
+                    let difference = (actual - expected).abs();
+                    if difference > body_maximum.2 {
+                        body_maximum = (body_index, field, difference, actual, expected);
+                    }
+                }
+            }
+            eprintln!("body-max={body_maximum:?}");
+        }
+        let scalar_stage = match descriptor.kind {
+            GpuSolverPassKindV1::NormalBiased => Some((
+                physbox_contracts::TraceStageV1::NormalSolve,
+                "normalImpulse",
+                true,
+            )),
+            GpuSolverPassKindV1::NormalRelaxation => Some((
+                physbox_contracts::TraceStageV1::Relaxation,
+                "normalImpulse",
+                true,
+            )),
+            _ => None,
+        };
+        if let Some((stage, value_name, normal)) = scalar_stage {
+            let input_state = &gpu.states[index];
+            let first_contact = input_state
+                .contacts
+                .iter()
+                .find(|contact| {
+                    contact.valid && contact.manifold_index == 1 && contact.point_in_manifold == 0
+                })
+                .unwrap();
+            let body_a = &input_state.bodies[first_contact.body_a as usize];
+            let body_b = &input_state.bodies[first_contact.body_b as usize];
+            let point_velocity =
+                |body: &physbox_contracts::BodyStateV1, anchor: physbox_contracts::Vec2| {
+                    physbox_contracts::Vec2::new(
+                        body.linear_velocity.x - body.angular_velocity.get() * anchor.y,
+                        body.linear_velocity.y + body.angular_velocity.get() * anchor.x,
+                    )
+                };
+            let velocity_a = point_velocity(body_a, first_contact.anchor_a);
+            let velocity_b = point_velocity(body_b, first_contact.anchor_b);
+            let gpu_normal_velocity = (velocity_b.x - velocity_a.x) * first_contact.normal.x
+                + (velocity_b.y - velocity_a.y) * first_contact.normal.y;
+            let scalar_first = scalar
+                .result
+                .traces
+                .iter()
+                .find(|record| {
+                    record.substep == descriptor.substep
+                        && record.stage == stage
+                        && record.manifold_id == 1
+                        && record.point_index == 0
+                        && record.values.iter().any(|value| value.name == value_name)
+                })
+                .unwrap();
+            let scalar_normal_velocity = scalar_first
+                .values
+                .iter()
+                .find(|value| value.name == "normalVelocity")
+                .unwrap()
+                .value
+                .get();
+            eprintln!(
+                "first-input normal-velocity gpu={gpu_normal_velocity:.9} scalar={scalar_normal_velocity:.9} separation={:.9}",
+                first_contact.separation
+            );
+            let mut maximum = (0_u32, 0_u32, 0.0_f32, 0.0_f32, 0.0_f32);
+            for record in scalar.result.traces.iter().filter(|record| {
+                record.substep == descriptor.substep
+                    && record.stage == stage
+                    && record.values.iter().any(|value| value.name == value_name)
+            }) {
+                let contact_index = state
+                    .contacts
+                    .iter()
+                    .find(|contact| {
+                        contact.valid
+                            && contact.manifold_index == record.manifold_id
+                            && contact.point_in_manifold == record.point_index as u32
+                    })
+                    .unwrap();
+                let expected = record
+                    .values
+                    .iter()
+                    .find(|value| value.name == value_name)
+                    .unwrap()
+                    .value
+                    .get();
+                let actual = if normal {
+                    contact_index.normal_impulse
+                } else {
+                    contact_index.tangent_impulse
+                };
+                let difference = (actual - expected).abs();
+                if difference > maximum.2 {
+                    maximum = (
+                        record.manifold_id,
+                        record.point_index as u32,
+                        difference,
+                        actual,
+                        expected,
+                    );
+                }
+            }
+            eprintln!("impulse-max={maximum:?}");
+            if maximum.2 > 0.0 {
+                let input_contact = input_state
+                    .contacts
+                    .iter()
+                    .find(|contact| {
+                        contact.valid
+                            && contact.manifold_index == maximum.0
+                            && contact.point_in_manifold == maximum.1
+                    })
+                    .unwrap();
+                let output_contact = state
+                    .contacts
+                    .iter()
+                    .find(|contact| {
+                        contact.valid
+                            && contact.manifold_index == maximum.0
+                            && contact.point_in_manifold == maximum.1
+                    })
+                    .unwrap();
+                let scalar_record = scalar
+                    .result
+                    .traces
+                    .iter()
+                    .find(|record| {
+                        record.substep == descriptor.substep
+                            && record.stage == stage
+                            && record.manifold_id == maximum.0
+                            && record.point_index == maximum.1
+                            && record.values.iter().any(|value| value.name == value_name)
+                    })
+                    .unwrap();
+                let scalar_velocity = scalar_record
+                    .values
+                    .iter()
+                    .find(|value| value.name == "normalVelocity")
+                    .unwrap()
+                    .value
+                    .get();
+                let h = scenario.settings.fixed_dt.get() / scenario.settings.substeps as f32;
+                let coefficients = gpu_contact_softness_coefficients(
+                    scenario.settings.contact_softness.unwrap(),
+                    h,
+                    false,
+                )
+                .unwrap();
+                let gpu_velocity = if descriptor.kind == GpuSolverPassKindV1::NormalBiased {
+                    let bias =
+                        coefficients.mass_scale * coefficients.bias_rate * input_contact.separation;
+                    ((input_contact.normal_impulse
+                        - output_contact.normal_impulse
+                        - coefficients.impulse_scale * input_contact.normal_impulse)
+                        / input_contact.normal_effective_mass
+                        - bias)
+                        / coefficients.mass_scale
+                } else {
+                    (input_contact.normal_impulse - output_contact.normal_impulse)
+                        / input_contact.normal_effective_mass
+                };
+                eprintln!(
+                    "impulse-max-input gpu-normal-velocity={gpu_velocity:.9} scalar-normal-velocity={scalar_velocity:.9} separation={:.9} old={:.9}",
+                    input_contact.separation, input_contact.normal_impulse,
+                );
+            }
+            let tangent_stage = if descriptor.kind == GpuSolverPassKindV1::NormalBiased {
+                physbox_contracts::TraceStageV1::TangentSolve
+            } else {
+                physbox_contracts::TraceStageV1::Relaxation
+            };
+            let mut tangent_maximum = (0_u32, 0_u32, 0.0_f32, 0.0_f32, 0.0_f32);
+            for record in scalar.result.traces.iter().filter(|record| {
+                record.substep == descriptor.substep
+                    && record.stage == tangent_stage
+                    && record
+                        .values
+                        .iter()
+                        .any(|value| value.name == "tangentImpulse")
+            }) {
+                let contact = state
+                    .contacts
+                    .iter()
+                    .find(|contact| {
+                        contact.valid
+                            && contact.manifold_index == record.manifold_id
+                            && contact.point_in_manifold == record.point_index as u32
+                    })
+                    .unwrap();
+                let expected = record
+                    .values
+                    .iter()
+                    .find(|value| value.name == "tangentImpulse")
+                    .unwrap()
+                    .value
+                    .get();
+                let difference = (contact.tangent_impulse - expected).abs();
+                if difference > tangent_maximum.2 {
+                    tangent_maximum = (
+                        record.manifold_id,
+                        record.point_index as u32,
+                        difference,
+                        contact.tangent_impulse,
+                        expected,
+                    );
+                }
+            }
+            eprintln!("tangent-max={tangent_maximum:?}");
+            if descriptor.substep == 3 && descriptor.kind == GpuSolverPassKindV1::NormalBiased {
+                for point_index in 0..2 {
+                    let contact = state
+                        .contacts
+                        .iter()
+                        .find(|contact| {
+                            contact.valid
+                                && contact.manifold_index == 4
+                                && contact.point_in_manifold == point_index
+                        })
+                        .unwrap();
+                    let record = scalar
+                        .result
+                        .traces
+                        .iter()
+                        .find(|record| {
+                            record.substep == 3
+                                && record.stage == physbox_contracts::TraceStageV1::NormalSolve
+                                && record.manifold_id == 4
+                                && record.point_index == point_index
+                        })
+                        .unwrap();
+                    let expected = record
+                        .values
+                        .iter()
+                        .find(|value| value.name == "normalImpulse")
+                        .unwrap()
+                        .value
+                        .get();
+                    let velocity = record
+                        .values
+                        .iter()
+                        .find(|value| value.name == "normalVelocity")
+                        .unwrap()
+                        .value
+                        .get();
+                    eprintln!(
+                        "manifold4 point={point_index} anchor-x={:.9} gpu-impulse={:.9} scalar-impulse={expected:.9} scalar-velocity={velocity:.9}",
+                        contact.anchor_a.x, contact.normal_impulse,
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+#[ignore = "S13 scalar branch diagnostic"]
+fn authority_scalar_separation_branch_dump() {
+    let mut scenario = p5_2_s11_soft_depth_sweep_scenario(11).unwrap();
+    scenario.requested_steps = 1;
+    let scalar = solve_authority_structure_steps_observed(
+        &scenario,
+        AuthorityStructurePolicyV1::a_minus(AuthorityStructureAxisV1::Restitution),
+        true,
+    )
+    .unwrap();
+    for record in scalar.result.traces.iter().filter(|record| {
+        record.stage == physbox_contracts::TraceStageV1::NormalSolve
+            && record.manifold_id == 4
+            && record.point_index == 1
+    }) {
+        eprintln!(
+            "substep={} values={:?}",
+            record.substep,
+            record
+                .values
+                .iter()
+                .map(|value| (value.name.as_str(), value.value.get()))
+                .collect::<Vec<_>>()
+        );
+    }
+}
 
 fn contact_softness(hertz: f32, damping: f32, static_multiplier: f32) -> ContactSoftnessPolicyV1 {
     ContactSoftnessPolicyV1 {
