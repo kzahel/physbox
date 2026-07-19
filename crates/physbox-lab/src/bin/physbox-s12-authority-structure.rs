@@ -29,7 +29,7 @@ use physbox_lab::{
     settling::{centered_stack_structure, settling_fixture_structure},
     stationarity::{AuthorityTraceSnapshotV1, decode_box2d_step_trace},
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 const BOX2D_REVISION: &str = "3a4f0da8374af61293a03021c9a0b3ebcfe67948";
 const SOURCE_ROOT: &str = "evidence/p5.2b-s11.3-candidate-fixed-anchor-transport/sources";
@@ -93,6 +93,7 @@ enum SourceRole {
 enum EvidenceMode {
     Endpoints,
     SingleAxis,
+    Interactions,
 }
 
 impl EvidenceMode {
@@ -100,6 +101,7 @@ impl EvidenceMode {
         match self {
             Self::Endpoints => "p5.2b-s12.2-authority-endpoints",
             Self::SingleAxis => "p5.2b-s12.3-single-axis-decomposition",
+            Self::Interactions => "p5.2b-s12.4-structure-minimization",
         }
     }
 
@@ -107,6 +109,7 @@ impl EvidenceMode {
         match self {
             Self::Endpoints => "s12-authority-endpoints",
             Self::SingleAxis => "s12-single-axis-decomposition",
+            Self::Interactions => "s12-structure-minimization",
         }
     }
 }
@@ -125,7 +128,9 @@ struct Manifest {
     authority_bands: AuthorityBands,
     configurations: Vec<AuthorityStructureConfigurationV1>,
     cases: Vec<CaseEvidence>,
+    routing_input: Option<ArtifactIdentity>,
     single_axis_decomposition: Option<SingleAxisDecomposition>,
+    interaction_minimization: Option<InteractionMinimization>,
     p_endpoint_exact: bool,
     a_endpoint_qualified: bool,
     decomposition_admitted: bool,
@@ -187,6 +192,60 @@ struct InteractionRoute {
     policy: Option<AuthorityStructurePolicyV1>,
     status: &'static str,
     reason: &'static str,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RoutingManifest {
+    artifact_kind: String,
+    single_axis_decomposition: RoutingDecomposition,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RoutingDecomposition {
+    axes: Vec<RoutingAxisDisposition>,
+    interaction_routes: Vec<RoutingInteraction>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RoutingAxisDisposition {
+    axis: AuthorityStructureAxisV1,
+    necessary: bool,
+    individually_sufficient: bool,
+}
+
+#[derive(Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RoutingInteraction {
+    id: String,
+    axes: Option<[AuthorityStructureAxisV1; 2]>,
+    policy: Option<AuthorityStructurePolicyV1>,
+    status: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct InteractionMinimization {
+    routes: Vec<InteractionOutcome>,
+    smallest_qualified_measured_cardinality: u8,
+    minimal_sufficient_measured_axes: Vec<AuthorityStructureAxisV1>,
+    minimal_sufficient_measured_configuration: String,
+    bounded_minimum_cardinality: [u8; 2],
+    unmeasured_three_axis_expansion: bool,
+    statement: &'static str,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct InteractionOutcome {
+    id: String,
+    axes: [AuthorityStructureAxisV1; 2],
+    policy: AuthorityStructurePolicyV1,
+    all_sources_qualified: bool,
+    governed_sources_qualified: bool,
+    governed_sources: Vec<GovernedDisposition>,
 }
 
 #[derive(Serialize)]
@@ -348,12 +407,47 @@ fn run() -> Result<(), String> {
     let box2d =
         verify_clean_git_pin(&arguments.box2d_source, BOX2D_REVISION).map_err(display_error)?;
     let staging = prepare_staging(&arguments.output, &["sources", "captures", "oracles"])?;
+    let (routing_manifest, routing_input) = if matches!(arguments.mode, EvidenceMode::Interactions)
+    {
+        let path = arguments
+            .routing_manifest
+            .as_ref()
+            .ok_or_else(|| "interaction mode requires --routing-manifest".to_owned())?;
+        let path = if path.is_absolute() {
+            path.clone()
+        } else {
+            repository.join(path)
+        };
+        let bytes = fs::read(&path).map_err(display_error)?;
+        let routing: RoutingManifest = serde_json::from_slice(&bytes).map_err(display_error)?;
+        let relative = path
+            .strip_prefix(&repository)
+            .map_err(|_| "routing manifest must be inside the repository".to_owned())?;
+        (
+            Some(routing),
+            Some(ArtifactIdentity {
+                path: relative.to_string_lossy().replace('\\', "/"),
+                sha256: sha256_bytes(&bytes),
+            }),
+        )
+    } else {
+        if arguments.routing_manifest.is_some() {
+            return Err("--routing-manifest is valid only in interaction mode".to_owned());
+        }
+        (None, None)
+    };
     let configurations = match arguments.mode {
         EvidenceMode::Endpoints => mandatory_authority_structure_configurations_v1()
             .into_iter()
             .take(2)
             .collect(),
         EvidenceMode::SingleAxis => mandatory_authority_structure_configurations_v1(),
+        EvidenceMode::Interactions => {
+            let routing = routing_manifest
+                .as_ref()
+                .ok_or_else(|| "S12 interaction routing is missing".to_owned())?;
+            interaction_configurations(routing)?
+        }
     };
     let mut cases = Vec::new();
     for descriptor in SOURCES {
@@ -380,6 +474,16 @@ fn run() -> Result<(), String> {
     let single_axis_decomposition = match arguments.mode {
         EvidenceMode::Endpoints => None,
         EvidenceMode::SingleAxis => Some(single_axis_decomposition(&cases)?),
+        EvidenceMode::Interactions => None,
+    };
+    let interaction_minimization = match arguments.mode {
+        EvidenceMode::Interactions => Some(interaction_minimization(
+            &cases,
+            routing_manifest
+                .as_ref()
+                .ok_or_else(|| "S12 interaction routing is missing".to_owned())?,
+        )?),
+        EvidenceMode::Endpoints | EvidenceMode::SingleAxis => None,
     };
     let manifest = Manifest {
         schema_version: SCHEMA_VERSION,
@@ -404,7 +508,9 @@ fn run() -> Result<(), String> {
         },
         configurations,
         cases,
+        routing_input,
         single_axis_decomposition,
+        interaction_minimization,
         p_endpoint_exact,
         a_endpoint_qualified,
         decomposition_admitted: p_endpoint_exact && a_endpoint_qualified,
@@ -1066,6 +1172,125 @@ fn single_axis_decomposition(cases: &[CaseEvidence]) -> Result<SingleAxisDecompo
     })
 }
 
+fn interaction_configurations(
+    routing: &RoutingManifest,
+) -> Result<Vec<AuthorityStructureConfigurationV1>, String> {
+    if routing.artifact_kind != "p5.2b-s12.3-single-axis-decomposition"
+        || routing.single_axis_decomposition.axes.len() != 5
+        || routing
+            .single_axis_decomposition
+            .axes
+            .iter()
+            .any(|axis| axis.individually_sufficient)
+        || routing.single_axis_decomposition.interaction_routes.len() != 3
+    {
+        return Err("invalid S12.3 routing manifest".to_owned());
+    }
+    let mut configurations = mandatory_authority_structure_configurations_v1()
+        .into_iter()
+        .take(2)
+        .collect::<Vec<_>>();
+    for (index, route) in routing
+        .single_axis_decomposition
+        .interaction_routes
+        .iter()
+        .enumerate()
+    {
+        let expected_id = format!("I{}", index + 1);
+        if route.id != expected_id || route.status != "routed" {
+            return Err(format!("S12 interaction slot {expected_id} is not routed"));
+        }
+        let axes = route
+            .axes
+            .ok_or_else(|| format!("S12 interaction slot {expected_id} omits axes"))?;
+        let policy = route
+            .policy
+            .ok_or_else(|| format!("S12 interaction slot {expected_id} omits policy"))?;
+        if axes[0].number() >= axes[1].number()
+            || policy != AuthorityStructurePolicyV1::interaction(axes[0], axes[1])
+        {
+            return Err(format!("S12 interaction slot {expected_id} policy differs"));
+        }
+        configurations.push(AuthorityStructureConfigurationV1 {
+            id: expected_id,
+            policy,
+        });
+    }
+    Ok(configurations)
+}
+
+fn interaction_minimization(
+    cases: &[CaseEvidence],
+    routing: &RoutingManifest,
+) -> Result<InteractionMinimization, String> {
+    let governed = cases
+        .iter()
+        .filter(|case| matches!(case.role, SourceRole::Governed))
+        .collect::<Vec<_>>();
+    let mut outcomes = Vec::with_capacity(3);
+    for route in &routing.single_axis_decomposition.interaction_routes {
+        let axes = route
+            .axes
+            .ok_or_else(|| format!("routed interaction {} omits axes", route.id))?;
+        let policy = route
+            .policy
+            .ok_or_else(|| format!("routed interaction {} omits policy", route.id))?;
+        let governed_sources = governed
+            .iter()
+            .map(|case| governed_disposition(case, &route.id))
+            .collect::<Result<Vec<_>, _>>()?;
+        outcomes.push(InteractionOutcome {
+            id: route.id.clone(),
+            axes,
+            policy,
+            all_sources_qualified: cases.iter().all(|case| {
+                configuration(case, &route.id).is_ok_and(|value| value.authority_qualified)
+            }),
+            governed_sources_qualified: governed_sources
+                .iter()
+                .all(|value| value.authority_qualified),
+            governed_sources,
+        });
+    }
+    if let Some(survivor) = outcomes
+        .iter()
+        .find(|outcome| outcome.all_sources_qualified && outcome.governed_sources_qualified)
+    {
+        let survivor_axes = survivor.axes.to_vec();
+        let survivor_id = survivor.id.clone();
+        return Ok(InteractionMinimization {
+            routes: outcomes,
+            smallest_qualified_measured_cardinality: 2,
+            minimal_sufficient_measured_axes: survivor_axes,
+            minimal_sufficient_measured_configuration: survivor_id,
+            bounded_minimum_cardinality: [2, 2],
+            unmeasured_three_axis_expansion: false,
+            statement: "a routed pair is sufficient and no singleton qualifies",
+        });
+    }
+    let necessary = routing
+        .single_axis_decomposition
+        .axes
+        .iter()
+        .filter(|axis| axis.necessary)
+        .map(|axis| axis.axis)
+        .collect::<Vec<_>>();
+    if necessary.len() != 4 {
+        return Err(
+            "no routed pair qualified and the S12.3 four-axis survivor is unavailable".to_owned(),
+        );
+    }
+    Ok(InteractionMinimization {
+        routes: outcomes,
+        smallest_qualified_measured_cardinality: 4,
+        minimal_sufficient_measured_axes: necessary,
+        minimal_sufficient_measured_configuration: "A-X5".to_owned(),
+        bounded_minimum_cardinality: [3, 4],
+        unmeasured_three_axis_expansion: false,
+        statement: "no routed pair qualifies; A-X5 is the smallest measured survivor and the bounded minimum cardinality is three through four",
+    })
+}
+
 fn governed_disposition(
     case: &CaseEvidence,
     configuration_id: &str,
@@ -1458,6 +1683,7 @@ struct Arguments {
     box2d_source: PathBuf,
     require_clean: bool,
     mode: EvidenceMode,
+    routing_manifest: Option<PathBuf>,
 }
 
 impl Arguments {
@@ -1468,6 +1694,7 @@ impl Arguments {
         let mut box2d_source = None;
         let mut require_clean = false;
         let mut mode = None;
+        let mut routing_manifest = None;
         let mut arguments = std::env::args().skip(1);
         while let Some(argument) = arguments.next() {
             if argument == "--require-clean" {
@@ -1486,9 +1713,11 @@ impl Arguments {
                     mode = Some(match value.as_str() {
                         "endpoints" => EvidenceMode::Endpoints,
                         "single-axis" => EvidenceMode::SingleAxis,
+                        "interactions" => EvidenceMode::Interactions,
                         _ => return Err(format!("unknown S12 evidence mode {value}")),
                     })
                 }
+                "--routing-manifest" => routing_manifest = Some(PathBuf::from(value)),
                 _ => return Err(format!("unknown argument {argument}")),
             }
         }
@@ -1499,6 +1728,7 @@ impl Arguments {
             box2d_source: box2d_source.ok_or_else(|| "missing --box2d-source".to_owned())?,
             require_clean,
             mode: mode.ok_or_else(|| "missing --mode".to_owned())?,
+            routing_manifest,
         })
     }
 }
