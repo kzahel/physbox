@@ -221,11 +221,11 @@ sound retained-sample error bound. Otherwise close at a human checkpoint.
 
 ### S14.3 — scalar implementation and local robustness
 
-- [ ] Implement the one candidate and seven perturbation policies in the
+- [x] Implement the one candidate and seven perturbation policies in the
   independent scalar laboratory only.
-- [ ] Add analytic, metamorphic, branch, outward-rounding, exact-replay,
+- [x] Add analytic, metamorphic, branch, outward-rounding, exact-replay,
   finite-state, and bound-violation controls.
-- [ ] Prove baseline candidate changes only the derived expression evaluation
+- [x] Prove baseline candidate changes only the derived expression evaluation
   and preserves all other trace identities/settings.
 
 Artifacts: `evidence/p5.2b-s14.3-scalar-implementation/`.
