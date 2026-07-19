@@ -44,6 +44,52 @@ pub const GPU_GENERATED_CONTACT_BODY_HISTORY_VERSION: u32 = 1;
 #[cfg(not(target_arch = "wasm32"))]
 pub const GPU_GENERATED_CONTACT_PASS_TRACE_VERSION: u32 = 3;
 #[cfg(not(target_arch = "wasm32"))]
+pub const GPU_AUTHORITY_SEPARATION_DIAGNOSTIC_VERSION: u32 = 1;
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GpuAuthoritySeparationInputV1 {
+    pub normal: physbox_contracts::Vec2,
+    pub anchor_a: physbox_contracts::Vec2,
+    pub anchor_b: physbox_contracts::Vec2,
+    pub pose_a: physbox_contracts::Vec2,
+    pub pose_b: physbox_contracts::Vec2,
+    pub initial_position_a: physbox_contracts::Vec2,
+    pub initial_position_b: physbox_contracts::Vec2,
+    pub angle_a: f32,
+    pub angle_b: f32,
+    pub initial_angle_a: f32,
+    pub initial_angle_b: f32,
+    pub input_separation: f32,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GpuAuthoritySeparationValueV1 {
+    pub name: &'static str,
+    pub value: f32,
+    pub bits: u32,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GpuAuthoritySeparationDiagnosticV1 {
+    pub version: u32,
+    pub adapter: crate::AdapterDiagnostics,
+    pub input: GpuAuthoritySeparationInputV1,
+    pub values: Vec<GpuAuthoritySeparationValueV1>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct AuthoritySeparationWordsRaw {
+    values: [u32; 64],
+}
+#[cfg(not(target_arch = "wasm32"))]
 pub const GPU_GENERATED_CONTACT_PASS_MOTION_WINDOW_VERSION: u32 = 1;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
@@ -2692,6 +2738,205 @@ impl GpuGeneratedContactRunner {
 
     pub fn adapter(&self) -> &crate::AdapterDiagnostics {
         &self.diagnostics
+    }
+
+    /// Evaluates the S13 analytical-separation expression on retained binary32
+    /// inputs with explicit intermediate materialization. This validation-only
+    /// microscope cannot affect a solver step; the pass trace remains the
+    /// ground truth when a backend contracts the production expression.
+    pub fn run_authority_separation_diagnostic(
+        &self,
+        input: GpuAuthoritySeparationInputV1,
+    ) -> Result<GpuAuthoritySeparationDiagnosticV1, String> {
+        let mut input_words = [0_u32; 64];
+        for (index, value) in [
+            input.normal.x,
+            input.normal.y,
+            input.anchor_a.x,
+            input.anchor_a.y,
+            input.anchor_b.x,
+            input.anchor_b.y,
+            input.pose_a.x,
+            input.pose_a.y,
+            input.pose_b.x,
+            input.pose_b.y,
+            input.initial_position_a.x,
+            input.initial_position_a.y,
+            input.initial_position_b.x,
+            input.initial_position_b.y,
+            input.angle_a,
+            input.angle_b,
+            input.initial_angle_a,
+            input.initial_angle_b,
+            input.input_separation,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            input_words[index] = value.to_bits();
+        }
+        let source = storage_init(
+            &self.device,
+            "physbox5_authority_separation_diagnostic_input",
+            &AuthoritySeparationWordsRaw {
+                values: input_words,
+            },
+        );
+        let output = storage_init(
+            &self.device,
+            "physbox5_authority_separation_diagnostic_output",
+            &AuthoritySeparationWordsRaw { values: [0; 64] },
+        );
+        let readback = readback(
+            &self.device,
+            "physbox5_authority_separation_diagnostic_readback",
+            size_of::<AuthoritySeparationWordsRaw>() as u64,
+        );
+        let layout = self
+            .device
+            .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("physbox5_authority_separation_diagnostic_layout"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: false },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                ],
+            });
+        let pipeline_layout = self
+            .device
+            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("physbox5_authority_separation_diagnostic_pipeline_layout"),
+                bind_group_layouts: &[&layout],
+                push_constant_ranges: &[],
+            });
+        let shader = self
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("physbox5_authority_separation_diagnostic_shader"),
+                source: wgpu::ShaderSource::Wgsl(
+                    include_str!("authority_separation_diagnostic.wgsl").into(),
+                ),
+            });
+        let pipeline = self
+            .device
+            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("physbox5_authority_separation_diagnostic_pipeline"),
+                layout: Some(&pipeline_layout),
+                module: &shader,
+                entry_point: Some("evaluate"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                cache: None,
+            });
+        let group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("physbox5_authority_separation_diagnostic_group"),
+            layout: &layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: source.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: output.as_entire_binding(),
+                },
+            ],
+        });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("physbox5_authority_separation_diagnostic_encoder"),
+            });
+        {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("physbox5_authority_separation_diagnostic_pass"),
+                timestamp_writes: None,
+            });
+            pass.set_pipeline(&pipeline);
+            pass.set_bind_group(0, &group, &[]);
+            pass.dispatch_workgroups(1, 1, 1);
+        }
+        encoder.copy_buffer_to_buffer(
+            &output,
+            0,
+            &readback,
+            0,
+            size_of::<AuthoritySeparationWordsRaw>() as u64,
+        );
+        self.queue.submit([encoder.finish()]);
+        let words = map_range::<AuthoritySeparationWordsRaw>(&self.device, &readback, 0, 1)?
+            .pop()
+            .ok_or_else(|| "authority separation diagnostic returned no result".to_owned())?;
+        const NAMES: [&str; 38] = [
+            "delta-position-a-x",
+            "delta-position-a-y",
+            "delta-position-b-x",
+            "delta-position-b-y",
+            "delta-position-x",
+            "delta-position-y",
+            "delta-angle-a",
+            "delta-angle-b",
+            "cos-delta-angle-a",
+            "sin-delta-angle-a",
+            "rotated-anchor-a-x",
+            "rotated-anchor-a-y",
+            "cos-delta-angle-b",
+            "sin-delta-angle-b",
+            "rotated-anchor-b-x",
+            "rotated-anchor-b-y",
+            "prepared-anchor-delta-x",
+            "prepared-anchor-delta-y",
+            "prepared-anchor-projection",
+            "base-separation",
+            "rotated-anchor-delta-x",
+            "rotated-anchor-delta-y",
+            "original-motion-x",
+            "original-motion-y",
+            "original-projection",
+            "original-separation",
+            "rotation-displacement-a-x",
+            "rotation-displacement-a-y",
+            "rotation-displacement-b-x",
+            "rotation-displacement-b-y",
+            "relative-rotation-displacement-x",
+            "relative-rotation-displacement-y",
+            "robust-motion-x",
+            "robust-motion-y",
+            "robust-projection",
+            "robust-separation",
+            "native-original-separation",
+            "native-robust-separation",
+        ];
+        Ok(GpuAuthoritySeparationDiagnosticV1 {
+            version: GPU_AUTHORITY_SEPARATION_DIAGNOSTIC_VERSION,
+            adapter: self.diagnostics.clone(),
+            input,
+            values: NAMES
+                .into_iter()
+                .enumerate()
+                .map(|(index, name)| GpuAuthoritySeparationValueV1 {
+                    name,
+                    value: f32::from_bits(words.values[index]),
+                    bits: words.values[index],
+                })
+                .collect(),
+        })
     }
 
     /// Captures every state-changing solver operation for one exact outer

@@ -101,8 +101,10 @@ pub use frame::{
 };
 #[cfg(not(target_arch = "wasm32"))]
 pub use generated_contacts::{
-    GPU_GENERATED_CONTACT_BODY_HISTORY_VERSION, GPU_GENERATED_CONTACT_PASS_MOTION_WINDOW_VERSION,
-    GPU_GENERATED_CONTACT_PASS_TRACE_VERSION, GpuGeneratedContactBenchmarkOutput,
+    GPU_AUTHORITY_SEPARATION_DIAGNOSTIC_VERSION, GPU_GENERATED_CONTACT_BODY_HISTORY_VERSION,
+    GPU_GENERATED_CONTACT_PASS_MOTION_WINDOW_VERSION, GPU_GENERATED_CONTACT_PASS_TRACE_VERSION,
+    GpuAuthoritySeparationDiagnosticV1, GpuAuthoritySeparationInputV1,
+    GpuAuthoritySeparationValueV1, GpuGeneratedContactBenchmarkOutput,
     GpuGeneratedContactBodyHistoryV1, GpuGeneratedContactOutput,
     GpuGeneratedContactPassMotionStepV1, GpuGeneratedContactPassMotionWindowV1,
     GpuGeneratedContactPassStateV3, GpuGeneratedContactPassTraceV3, GpuGeneratedContactRunner,
