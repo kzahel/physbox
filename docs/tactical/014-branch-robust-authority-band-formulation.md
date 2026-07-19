@@ -206,12 +206,12 @@ are committed before a candidate expression is implemented.
 
 ### S14.2 — retained divergence localization and derivation
 
-- [ ] Re-run and retain the S13.2 first-divergence trace with exact operand
+- [x] Re-run and retain the S13.2 first-divergence trace with exact operand
   identities, decimal values, binary32 bits, ULP deltas, branch outcomes, and
   the first downstream impulse/body-state difference.
-- [ ] Write and verify the original expression, candidate identity proof,
+- [x] Write and verify the original expression, candidate identity proof,
   operation DAG, original/candidate forward bounds, and `f64` shadow checks.
-- [ ] Freeze the one candidate formula/hash before governed scalar execution.
+- [x] Freeze the one candidate formula/hash before governed scalar execution.
 
 Artifacts: `evidence/p5.2b-s14.2-separation-derivation/`.
 
