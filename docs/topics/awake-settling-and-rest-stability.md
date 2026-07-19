@@ -1,14 +1,16 @@
 # Awake settling and rest stability
 
 Status: S6.5, S9, S10, and S11 are closed as negative results; S12's coupled
-soft scalar authority endpoint qualifies, while S13 rejects its one exact GPU
-execution candidate on frozen response quality, 2026-07-19.
+soft scalar authority endpoint qualifies, S13 rejects its one exact GPU
+execution candidate on frozen response quality, and S14 is the authorized
+branch-robust authority-band formulation study, 2026-07-19.
 S11's measured rewind correction space is exhausted with no survivor. The
 comparator-engine trigger remains recorded but no comparator is authorized.
 The S6.5d soft candidate and all S9/S10/S11 material candidates are rejected;
 restitution timing is byte-inert on the governed controls.
 Hard/direct manifold-block i2 remains the product. S13 is at its manual
-checkpoint; no candidate is promoted or authorized for cross-host expansion.
+checkpoint and S14 is validation-only; no candidate is promoted or authorized
+for cross-host expansion.
 Awake settling is a prerequisite for broadphase selection and sleeping
 acceptance. No contact-identity policy, soft-contact coefficients, penetration
 deadband, friction anchor, residual band, or sleep threshold is a product
@@ -1053,6 +1055,26 @@ because the exact soft GPU response fails. A portable branch-robust
 authority-band formulation would be a new study requiring human authorization;
 it may not be smuggled in as an implementation correction, tolerance change,
 coefficient sweep, approximate selected-kernel port, or comparator.
+
+S14 human fork resolution, 2026-07-19: human review declines S13 promotion and
+authorizes the bounded
+[branch-robust authority-band formulation study](../tactical/014-branch-robust-authority-band-formulation.md).
+It starts from the retained S13.2 first divergence, identifies the exact
+near-zero separation expression and branch amplification, and admits exactly
+one real-equivalent cancellation-robust evaluation only after a written
+binary32 forward-error argument. Empirical damping, deadbands, branch
+hysteresis, coefficient changes or sweeps, comparator engines, higher-
+precision product state, and band changes are forbidden.
+
+The scalar gate is frozen before governed results: nearest, two outward bound
+endpoints, and four deterministic alternating/hashed endpoint schedules must
+all pass the unchanged depth-11 and depth-16 native authority bands with exact
+replay. Only then may the candidate rerun the S13 portable GPU contract
+unchanged, including the same governed bands, 21-manifold overflow-first
+fixture, one-below-demand fail-closed fixture, and 32/256/1K timing matrix.
+Hard/direct remains selected. S14 stops before cross-host qualification or
+promotion and cannot reinterpret a clean negative by changing the formula arm
+or a frozen gate.
 
 ## Authority corrections
 
