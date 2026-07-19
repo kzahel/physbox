@@ -949,6 +949,21 @@ settling formulation. No S9 timing, browser, AVD, or physical-Android result
 is inferred for a discarded arm. The accepted scheduler rows and unresolved
 CPU-crossover/scale contract remain controlling.
 
+S12 static work-vector disposition, 2026-07-19: the authority-structure
+[feasibility package](../../evidence/p5.2b-s12.5-gpu-feasibility-decision/README.md)
+projects command and storage counts only; it contains no S12 GPU timing. On
+the retained paired-contact 32/256/1K vectors, the exact X1-X4 policy would
+visit `384/3,072/12,288` contact point-stages instead of
+`640/5,120/20,480`. Source-faithful color construction, one-biased/one-relax
+composition, and 24 rather than 32 large-world lanes project complete encoded
+dispatches from `195/1,437/1,437` to `79/633/633`. Conservatively reusing the
+selected topology allocation adds zero storage; removed 256-byte parameter
+records reduce projected allocation by `29,696/205,824/205,824` bytes. These
+counts do not imply faster execution: a single-invocation exact color builder,
+serial overflow lane, midpoint identity projection, and scalar point-
+sequential kernel require measured portable cost and watchdog evidence before
+any timing, crossover, mobile, or product claim.
+
 ## Regression and claim gates
 
 Before representative hardware is selected, store named measurements and

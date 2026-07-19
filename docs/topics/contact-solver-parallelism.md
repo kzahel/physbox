@@ -620,6 +620,31 @@ records no material survivor and no eligible E2-containing combination. The
 selected coloring, color order, dispatch split, hard/direct equations, full
 substep refresh, and per-substep restitution remain unchanged.
 
+S12 static authority-structure feasibility, 2026-07-19: the verified
+[decision package](../../evidence/p5.2b-s12.5-gpu-feasibility-decision/README.md)
+finds the qualified scalar X1-X4 structure exactly representable by portable
+GPU-resident colored execution, but not by the selected policy unchanged. The
+existing 32 color slots, `u32` body masks, compacted manifold indices,
+indirect arguments, prepared points, and small-world island storage can hold
+the pinned 20 dynamic plus three non-overflow static-capable lanes and one
+overflow lane without new allocation. Above the small-world tier, exact
+execution uses one bounded source-faithful assignment invocation, a bounded
+serial overflow lane first, then 23 indirect colored lanes. At or below 64
+bodies, independent island workgroups visit overflow then colors with existing
+workgroup barriers. Neither form needs CPU readback, a device-wide barrier,
+subgroups, or a fallback world.
+
+Exactness also requires an authority identity/shared-midpoint preparation
+projection, prepared base separation in the fixed-anchor refresh, normalized
+incremental rotation semantics, independent one-biased/one-relaxation pass
+counts, and scalar point-sequential normal solving in both stages. The current
+relaxation diagnostic implements only part of that recurrence; selected
+manifold-block normals and speculative color assignment may not be substituted
+silently. X5 is unnecessary, so per-substep restitution remains unchanged.
+This is a static feasibility result only. It does not qualify GPU numerics,
+overflow cost, runtime, or a product policy; those remain behind the recorded
+human checkpoint for one minimal exact unpromoted probe.
+
 ## Fallback and reserve options
 
 - **Accepted baseline.** Manifold block i2 improves structural preservation and

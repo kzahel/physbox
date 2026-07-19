@@ -297,13 +297,13 @@ Commit boundary: interaction/minimization evidence.
 
 ### S12.5 — colored-parallel GPU feasibility decision
 
-- [ ] Map every required ingredient to selected GPU storage, passes,
+- [x] Map every required ingredient to selected GPU storage, passes,
   synchronization, coloring, dispatch, persistence, and capacity ownership.
-- [ ] Report whether the minimal structure is exact, approximated, or
+- [x] Report whether the minimal structure is exact, approximated, or
   incompatible; an approximation is not implementable for this decision.
-- [ ] Produce a bounded work vector and dispatch/memory delta at 32/256/1K
+- [x] Produce a bounded work vector and dispatch/memory delta at 32/256/1K
   without claiming unmeasured runtime.
-- [ ] Stop for human review before any unpromoted GPU execution probe or
+- [x] Stop for human review before any unpromoted GPU execution probe or
   product change.
 
 Artifacts: `evidence/p5.2b-s12.5-gpu-feasibility-decision/`.
@@ -311,6 +311,18 @@ Artifacts: `evidence/p5.2b-s12.5-gpu-feasibility-decision/`.
 Completion gate: each required ingredient has an evidence-linked mapping and
 the feasibility verdict is verified against the no-readback and portable-
 WebGPU contracts.
+
+Recorded result: the X1-X4 survivor is exactly representable in portable
+WebGPU, but not by the selected product policy unchanged. An exact unpromoted
+policy needs authority identity/midpoint preparation, a source-faithful
+20+3+overflow graph, one biased plus one relaxation pass, and a scalar point-
+sequential manifold kernel. All fit the existing bounded storage and colored
+dispatch architecture without readback or fallback. The checked static work
+projection reduces encoded dispatches from `195/1437/1437` to `79/633/633`
+at 32/256/1K and parameter allocation by `29,696/205,824/205,824` bytes; these
+are operation/storage counts, not runtime claims. No GPU probe or product
+change was executed. The next decision is whether to authorize one minimal
+exact unpromoted probe.
 
 Commit boundary: feasibility decision only.
 
