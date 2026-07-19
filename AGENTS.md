@@ -183,6 +183,10 @@ npm run test:web
 After shared runtime, rendering, shader, launch, or pixel changes, also run
 `npm run android:apk` and the maintained Android device/AVD validation lane
 when its environment is available. Visually inspect fresh pixel artifacts.
+Prefer an attached physical Android device over starting an AVD for Android
+validation and benchmarks. When an AVD is used, shut it down immediately after
+the run, including after failed or interrupted runs; do not leave an emulator
+running in the background.
 
 Never weaken a gate to accommodate platform-local engine behavior. Add a
 negative fixture when a new duplication shape is discovered.
