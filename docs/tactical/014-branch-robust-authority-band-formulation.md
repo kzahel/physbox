@@ -235,11 +235,12 @@ governed response result or second formulation.
 
 ### S14.4 — scalar authority and perturbation qualification
 
-- [ ] Run all seven lanes at both governed depths, plus the two diagnostic
+- [x] Run all seven lanes at both governed depths, plus the two diagnostic
   sources under their frozen roles, twice for exact replay.
-- [ ] Retain complete observations, bound high-water, branch counts,
+- [x] Retain complete observations, bound high-water, branch counts,
   structures, support topology, and every unchanged authority predicate.
-- [ ] Admit the GPU port only if every governed lane passes.
+- [x] Admit the GPU port only if every governed lane passes. The verified
+  10/14 result rejects admission, so S14.5 and S14.6 are not executed.
 
 Artifacts: `evidence/p5.2b-s14.4-scalar-robustness/`.
 
