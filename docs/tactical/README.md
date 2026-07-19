@@ -35,7 +35,11 @@ and qualifies any survivor independently on Metal, the hardware-backed AVD,
 and physical Android under the recorded reopening gate. S11.1 is complete:
 the 16-stack routes to a scene-dependent warm-start/soft-normal composition,
 with biased normal the primary consistent injector and the four-body context
-reversing the bias/relaxation signs; S11.2 operator localization is next.
+reversing the bias/relaxation signs. S11.2 is complete: exact outer
+persistence is clean, while three inter-substep refreshes rewind the current
+soft impulse to the first prepared seed; depth 11 is the exact smallest
+rising-signature reproducer. S11.3 routes first to a scalar-first
+retained-impulse refresh candidate with mandatory early GPU falsification.
 
 Tactical filenames use a three-digit zero-padded prefix ordered by their first
 Git creation timestamp. This repository starts at `001`. Never renumber an
@@ -56,7 +60,7 @@ This README remains the unnumbered index.
 | S8 | Physical mobile frame pacing | [008-physical-mobile-frame-pacing.md](008-physical-mobile-frame-pacing.md) | complete; Pixel 7a bootstrap sustains rendering and physics cadence, 2026-07-18 |
 | S9 | Awake settling schedule differential | [009-settling-schedule-differential.md](009-settling-schedule-differential.md) | complete; no schedule-differential survivor, 2026-07-18 |
 | S10 | Warm-start and stored-impulse stationarity | [010-warm-start-impulse-stationarity.md](010-warm-start-impulse-stationarity.md) | complete; no hard survivor; soft-specific formulation study authorized, 2026-07-19 |
-| S11 | Soft contact formulation study | [011-soft-contact-formulation.md](011-soft-contact-formulation.md) | active; authorized 2026-07-19 |
+| S11 | Soft contact formulation study | [011-soft-contact-formulation.md](011-soft-contact-formulation.md) | active; S11.2 mechanism/minimizer complete, 2026-07-19 |
 
 ## Conventions
 

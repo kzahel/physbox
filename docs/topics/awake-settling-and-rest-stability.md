@@ -1,12 +1,12 @@
 # Awake settling and rest stability
 
-Status: S6.5 and the bounded S9 schedule-differential study are closed as
-negative results, 2026-07-18. The S6.5d soft candidate and all S9 material
-arms are rejected; restitution timing is byte-inert on the governed controls.
-Hard/direct manifold-block i2 remains the product. Reopening requires the
-specific deep-stack energy and cross-Android portability evidence recorded
-below or a separately authorized new hypothesis; no second recurrence,
-feedback-composition study, or deep-stack quality trade is authorized.
+Status: S6.5, S9, and S10 are closed as negative results; the bounded S11 soft
+formulation study is active and its S11.2 mechanism/minimizer is complete,
+2026-07-19. The S6.5d soft candidate and all S9/S10 material candidates are
+rejected; restitution timing is byte-inert on the governed controls.
+Hard/direct manifold-block i2 remains the product. S11 is authorized only
+under the recorded deep-stack energy and cross-Android reopening gate; no
+candidate is promoted by this topic.
 Awake settling is a prerequisite for broadphase selection and sleeping
 acceptance. No contact-identity policy, soft-contact coefficients, penetration
 deadband, friction anchor, residual band, or sleep threshold is a product
@@ -855,6 +855,31 @@ infer a bias-only correction from the primary family label. All observation,
 window, and anchor lanes replay exactly with clean capacity and structure;
 energy accounting reconciles within the frozen bands. Product/default/
 tolerance/oracle contracts remain unchanged.
+
+S11.2 mechanism and minimizer, 2026-07-19: the clean
+[soft operator package](../../evidence/p5.2b-s11.2-soft-mechanism/README.md)
+names `depth-triggered-inter-substep-soft-seed-rewind`. Across the complete
+depth catalog and permanent four-body context, every step-1099 final contact
+hands its slot and impulse bit-exactly to step 1100, excluding an outer
+persistence loss. Inside the next outer step, all three later-substep
+refreshes restore the first prepared impulse and discard the correction
+accumulated by the preceding substep. The primary normal-biased maps are all
+oscillatory and the normal-relaxation maps all contractive. The frozen rising
+signature first appears at depth 11, is below the predicate at depths 12–14,
+and reappears at 15/16; the exact shared depth-11 source hash is
+`9c02153e801e463f5e693f2187ee8ca497fce817a52933676916c7b614644658`.
+At depth 16 the refreshes discard `1.925067298338412e-4` impulse L1 even
+though all 32 handoff points are exact. The four-body lane carries the same
+rewind schedule but reverses the bias/relaxation energy signs, confirming the
+composition route rather than bias attenuation. A correction must therefore
+refresh geometry/effective mass while retaining the current outer-step
+impulse and must preserve unilateral response, penetration correction,
+deterministic colored support transfer, final persistence, exact replay and
+capacity, and soft impact response without sag. S11.3 first evaluates the
+existing isolated retained-impulse refresh policy under soft-specific scalar
+and early-GPU gates; the discarded S10 hard result is evidence, not a
+transferred verdict. Product/default/tolerance/oracle contracts remain
+unchanged.
 
 ## Authority corrections
 

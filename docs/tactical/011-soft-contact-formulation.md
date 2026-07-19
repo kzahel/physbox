@@ -305,14 +305,14 @@ evidence.
 
 ### S11.2 — soft operator study, mechanism, and minimal reproducer
 
-- [ ] Single-step operator study from captured settled soft `f32` state using
+- [x] Single-step operator study from captured settled soft `f32` state using
   the matched scalar mirror: label every pass-boundary stored-impulse map
   fixed, contraction, or oscillation, and name which family carries each
   change under the frozen S10.1/S10.3 rules.
-- [ ] Depth sweep over the accepted centered stacks (`2, 4, 8..=16`) for the
+- [x] Depth sweep over the accepted centered stacks (`2, 4, 8..=16`) for the
   smallest structure exhibiting the identified soft signature; preserve it as
   a permanent reproducer with exact prefixes.
-- [ ] Record the mechanism verdict: what a correction must change and what it
+- [x] Record the mechanism verdict: what a correction must change and what it
   must provably preserve (unilateral response, penetration correction,
   deterministic colored support transfer, refreshed geometry, final
   persistence, and soft impact response without sag).
@@ -356,6 +356,35 @@ the shared depth-11 source is the first exact primary-signature match. Product
 constructors and all physical defaults remain inert. Standard repository
 gates, APK construction, and the hardware-backed AVD lane pass; clean operator
 and minimization evidence remains the last S11.2 measurement action.
+
+Completion checkpoint, 2026-07-19: clean run
+`p5.2b-s11.2-soft-mechanism-20260719-r1` passes the frozen operator and
+minimization contract in the
+[verified package](../../evidence/p5.2b-s11.2-soft-mechanism/README.md). All
+12 lanes replay the 1,200-step series, adjacent step-1099/1100 prefixes, and
+operator report exactly with clean capacity, accepted structure, and maximum
+scalar difference below `4.3593536e-7`. The named mechanism is
+`depth-triggered-inter-substep-soft-seed-rewind`: outer persistence retains
+all active points and both impulses exactly, but each of three later-substep
+refreshes restores the first prepared impulse and discards the current
+within-step correction. Biased normal is oscillatory on all eight maps and
+normal relaxation contractive on all eight. The complete rising signature
+first appears at depth 11 (positive run 6, energy maxima
+`1.3462258e-9`/`1.350559e-9`), falls below the predicate at depths 12–14,
+and reappears at 15/16, so this is depth-triggered rather than a monotonic
+threshold. The exact permanent reproducer hash is
+`9c02153e801e463f5e693f2187ee8ca497fce817a52933676916c7b614644658`.
+At depth 16, all 32 points hand off exactly while the refreshes discard
+`1.925067298338412e-4` impulse L1; the outer-step gravity/warm deficit is
+`+4.8204905025994726e-8`. The four-body context retains the same three
+rewinds and exact handoff while reversing the normal-family energy signs.
+Therefore a correction must refresh geometry/effective mass without
+overwriting current outer-step impulses, and must preserve unilateral
+response, penetration correction, deterministic colored support transfer,
+final persistence, exact replay/capacity, and soft impact response without
+sag. S11.3 routes candidate 1 to the existing isolated retained-impulse
+refresh policy as a soft-specific unpromoted experiment; S10's hard quality
+disposition is not transferred and no product default changed.
 
 Commit boundaries: operator tooling; mechanism and minimization evidence.
 
