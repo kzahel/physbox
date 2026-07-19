@@ -279,11 +279,11 @@ Commit boundary: governed GPU disposition.
 
 ### S13.5 — measured work, allocation, and complete-step time
 
-- [ ] Measure the selected control and exact candidate at 32, 256, and 1,024
+- [x] Measure the selected control and exact candidate at 32, 256, and 1,024
   manifolds under the frozen sampling contract.
-- [ ] Publish raw samples, phase work/dispatches, overflow work, allocations,
+- [x] Publish raw samples, phase work/dispatches, overflow work, allocations,
   CPU encode time, GPU complete-step time, median, p95, and control deltas.
-- [ ] Classify any hard capacity/device/watchdog constraint separately from a
+- [x] Classify any hard capacity/device/watchdog constraint separately from a
   completing performance cost.
 
 Artifacts: `evidence/p5.2b-s13.5-gpu-work-time/`.
