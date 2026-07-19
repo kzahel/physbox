@@ -8,8 +8,9 @@ meeting the awake settling gate, while the pinned authority has only ever
 demonstrated rest-level stillness with soft contacts and the frozen soft
 lane's residual is roughly four orders of magnitude smaller in energy than
 the hard one. This workstream root-causes the soft 16-stack rising-energy
-mode with the S10 measurement discipline and derives at most two
-mechanism-supported corrections. Every candidate is an unpromoted laboratory
+mode with the S10 measurement discipline and derives only
+mechanism-supported corrections under a bounded, versioned mechanism verdict.
+Every candidate is an unpromoted laboratory
 policy; the product remains hard/direct manifold-block i2 with the selected
 scheduler throughout, and any winner returns to human review before
 promotion.
@@ -34,8 +35,12 @@ discipline, closed negative with a taken decision).
 
 Explain and, if possible, remove the frozen soft 16-stack rising-energy mode
 by measuring where the soft formulation injects energy, naming the mechanism
-with a minimal reproducer, and testing at most two corrections derived from
-that mechanism. A survivor must pass the recorded reopening gate on Metal,
+with a minimal reproducer, and testing corrections derived from that mechanism.
+At most two candidates may be active under one frozen mechanism verdict; a
+discarded candidate can reopen attribution only when its evidence exposes a
+distinct previously unmeasurable injector, and that reroute must be frozen as
+a versioned mechanism addendum before another candidate. A survivor must pass
+the recorded reopening gate on Metal,
 the hardware-backed AVD, and available physical Android independently before
 stopping for human promotion review. If the soft mechanism cannot be removed
 inside the authorized space, produce the closure decision package — including
@@ -112,8 +117,11 @@ negative with a completed decision package is a valid outcome.
   free-form empirical knobs (scaling factors, clamps, deadbands, damping)
   without a measured-mechanism route and a scalar stationarity or
   discrete-energy argument. The S6.5 selection space is not re-entered.
-- At most two derived candidates, scalar first, each with at most one named
-  unpromoted GPU port. Warm-start-off remains a diagnostic lane only.
+- At most two candidates under one frozen mechanism verdict, scalar first,
+  each with at most one named unpromoted GPU port. A discarded candidate may
+  route another only through a versioned mechanism addendum supported by new
+  attribution evidence; candidate count alone can never justify closure.
+  Warm-start-off remains a diagnostic lane only.
 - The mandatory early GPU falsification (frozen below) runs before any
   full-corpus or cross-host investment; skipping it is a contract violation.
 - No sleeping, no tolerance widening, no baseline refresh to a worse result,
@@ -140,13 +148,41 @@ four-body reproducer, the seven frozen S6.2 fixtures, 32/64 diagnostics, and
 both buckets.
 
 Attribution and operator rules follow the S9.2 and S10.3 freezes applied to
-the soft graph: compensated kinetic-energy attribution per pass family (warm
-start, biased normal, tangent, normal relaxation where present, colored
-support transfer, refresh, persistence, integration) at settled steps
-900/1000/1100; stored-impulse vector maps labeled fixed, contraction, or
-oscillation per captured pass boundary from exact settled `f32` state; the
-S10.1 active-set and redistribution rules unchanged. Any S11-specific metric
-must be frozen in S11.1 before measurement.
+the soft graph. Exact full-state/contact traces at settled steps 900, 1000,
+and 1100 retain compensated kinetic-energy attribution and matched scalar
+replay for the pass families `integrate-velocity`, `prepare-contacts`,
+`refresh-contacts`, `warm-start`, `normal-biased`, `tangent-biased`,
+`integrate-position`, `normal-relaxation`, `tangent-relaxation`, and
+`restitution`. In addition, one motion-only trace captures the exact `f32`
+body motion after every one of those pass boundaries for every settled step
+900 through 1200 in GPU command order and maps only after step 1200. It emits
+strict ordered-`f32` and compensated-`f64` kinetic energy, per-step and
+full-window pass-family totals, and retains the raw captured motion values.
+The exact anchor initial/final motions must equal their corresponding window
+states. `persistence-store` has zero direct kinetic-energy delta by ownership
+because it changes cache state rather than body motion; its impulse handoff is
+still an explicit cross-step operator boundary in S11.2 and may route the
+persistence-composition hypothesis.
+
+A pass boundary is materially positive only when its compensated energy
+delta exceeds the frozen S6.2 predicate
+`max(1e-12, 1e-5 * max(abs(E_before), abs(E_after)))`. A pass family is a
+consistent material injector only when its net compensated delta is positive
+beyond that predicate over the complete window and at each of the three exact
+anchors. Gross positive delta, material-boundary count, net delta, and step
+occupancy are always retained so an alternating composition cannot disappear
+inside a net total. Attribution reconciliation is accepted only when the sum
+of all pass deltas matches both every captured outer-step endpoint and the
+complete-window endpoint within `1e-10` absolute plus `1e-8` relative error.
+One or more consistent non-gravity families route hypothesis 1 or 2 by their
+owned mechanism; no such family routes hypothesis 3. Cross-hypothesis,
+sign-changing, or reconciliation-clean but non-consistent results are recorded
+as ambiguous input to S11.2 rather than reclassified after measurement.
+
+Stored-impulse vector maps remain labeled fixed, contraction, or oscillation
+per captured pass boundary from exact settled `f32` state; the S10.1
+active-set and redistribution rules are unchanged. These definitions and the
+artifact name below are frozen before S11.1 measurement.
 
 The winner bar is the recorded reopening gate, verbatim: remove the soft
 16-stack rising-energy mode; keep 16-stack linear and angular-edge settled
@@ -199,15 +235,17 @@ session memory.
 
 ### S11.1 — soft attribution contract freeze and matched pass attribution
 
-- [ ] Freeze the soft-graph attribution pass-family list, any S11-specific
+- [x] Freeze the soft-graph attribution pass-family list, any S11-specific
   metric definitions, verdict rules, routing, and evidence naming before
   measurement.
-- [ ] Extend the version-3 matched instrument to the frozen soft 16-stack
-  graph without changing product paths; the scalar mirror must retain its
-  proven pass-boundary exactness on the soft composition.
+- [x] Extend the version-3 matched instrument to the frozen soft 16-stack
+  graph without changing product paths; add the single-run settled-window
+  motion trace described above, and retain the scalar mirror's proven
+  pass-boundary exactness on the soft composition.
 - [ ] Run matched-precision per-pass compensated energy attribution on the
-  soft 16-stack at settled steps 900/1000/1100 with exact replay, and record
-  the permanent four-body soft lane as secondary context.
+  soft 16-stack over the complete settled window and at exact steps
+  900/1000/1100 with exact replay, and record the permanent four-body soft
+  lane as secondary context under the same contract.
 
 Routing (predeclared): a material positive pass family routes hypothesis 1
 or 2 by which family carries it, and S11.2 leads with that family's operator
@@ -220,6 +258,21 @@ Artifacts: `evidence/p5.2b-s11.1-soft-pass-attribution/`.
 Completion gate: exact replay and capacity cleanliness on every lane; the
 attribution sums reconcile with the observed energy envelope; the routing
 verdict is recorded here with its numbers.
+
+Implementation checkpoint, 2026-07-19: the attribution contract is frozen to
+the ten named motion-changing pass families, the S6.2 material predicate, and
+the per-step/full-window reconciliation bands above. A native-only version-1
+motion-window capture now records raw `f32` body motion at all 57 selected
+pass boundaries for every step 900–1200 in GPU command order and maps once
+after step 1200. The lab emits strict ordered-`f32` and compensated-`f64`
+energy, family net/gross/material totals, occupancy, anchors, and routing.
+The existing version-3 exact trace remains the full-state/contact/scalar
+anchor and is required to equal the window motion at steps 900/1000/1100.
+The extension leaves product constructors and all physical defaults inert.
+Standard repository gates, the APK build, and the hardware-backed AVD lane
+pass; the attached physical Pixel 7a lane was available but locked and is not
+an instrument-completion dependency. Clean attribution evidence remains the
+last S11.1 action.
 
 Commit boundaries: contract and instrument extension; clean attribution
 evidence.
@@ -249,11 +302,14 @@ correction from; recorded here with its reproducer hashes.
 
 Commit boundaries: operator tooling; mechanism and minimization evidence.
 
-### S11.3 — bounded corrections (at most two, scalar first, falsify early)
+### S11.3 — bounded corrections (mechanism-routed, scalar first, falsify early)
 
-- [ ] Select at most two candidates strictly routed by the S11.1/S11.2
-  verdicts, each with a scalar stationarity or discrete-energy argument.
-  Free-form attenuation is outside the space.
+- [ ] Select at most two candidates under the frozen S11.1/S11.2 mechanism
+  verdict, each with a scalar stationarity or discrete-energy argument.
+  Free-form attenuation is outside the space. If both are discarded without
+  establishing a closure constraint, another candidate requires new measured
+  attribution, a versioned S11.2 mechanism addendum, and its own predeclared
+  scalar argument before implementation.
 - [ ] For each candidate, in order and failing closed at each step: the
   scalar argument; scalar quality on the two-step contract fixture, the
   permanent four-body reproducer, the S11.2 reproducer, and the full-length
@@ -268,8 +324,9 @@ Commit boundaries: operator tooling; mechanism and minimization evidence.
 
 Artifacts: `evidence/p5.2b-s11.3-candidate-<name>/` per candidate.
 
-Completion gate: both candidate slots have dispositions, or one survivor
-advances with the other slot's disposition recorded.
+Completion gate: every routed candidate has a disposition and either one
+survivor advances or no unresolved mechanism-supported correction remains
+inside the ownership constraints. Consuming two slots alone is not closure.
 
 Commit boundaries: scalar derivation; GPU port and falsification; quality
 evidence — separately per candidate.
@@ -315,9 +372,9 @@ Commit boundary: review package and status updates only.
 
 Autonomous after this authorization: measurement tooling, the soft
 instrument extension, attribution and operator lanes, minimization, scalar
-derivations, the at-most-two GPU candidate ports as unpromoted policies,
-falsification and corpus and gate runs, discard decisions strictly by the
-predeclared rules, per-slice commits, and the final package.
+derivations, the bounded mechanism-routed GPU candidate ports as unpromoted
+policies, falsification and corpus and gate runs, discard decisions strictly
+by the predeclared rules, per-slice commits, and the final package.
 
 Check back with the human only when:
 
@@ -345,7 +402,8 @@ outcome.
 The workstream is complete when either a reopening-gate survivor is packaged
 for human promotion review, or the soft injector question is answered with
 matched attribution, the mechanism is named with a permanent reproducer,
-both candidate slots have dispositions, and the S11.4 closure or S11.5
-review package is returned. Every intermediate and discarded result is
+every routed candidate has a disposition, no unresolved mechanism-supported
+correction remains inside the ownership constraints, and the S11.4 closure or
+S11.5 review package is returned. Every intermediate and discarded result is
 preserved in evidence and in this document. Completion never changes product
 defaults, quality bands, oracle precedence, or authority interpretation.

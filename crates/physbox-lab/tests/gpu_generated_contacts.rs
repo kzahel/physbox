@@ -72,6 +72,53 @@ fn per_pass_trace_is_final_flush_and_equivalent_to_the_unsplit_graph() {
 }
 
 #[test]
+fn pass_motion_window_replays_and_matches_the_exact_anchor() {
+    let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
+    let scenario = p5_2_minimized_mixed_pile_energy_scenario().unwrap();
+    let window = runner
+        .run_contact_policy_pass_motion_window(
+            &scenario,
+            1,
+            2,
+            ContactIdentityPolicyV1::PriorContactHysteresis,
+            GpuSoftFeedbackPolicyV1::SELECTED,
+        )
+        .unwrap();
+    let replay = runner
+        .run_contact_policy_pass_motion_window(
+            &scenario,
+            1,
+            2,
+            ContactIdentityPolicyV1::PriorContactHysteresis,
+            GpuSoftFeedbackPolicyV1::SELECTED,
+        )
+        .unwrap();
+    window.validate().unwrap();
+    assert_eq!(
+        serde_json::to_vec(&window).unwrap(),
+        serde_json::to_vec(&replay).unwrap()
+    );
+    assert_eq!(window.steps.len(), 2);
+    assert_eq!(window.steps[0].states.len(), window.descriptors.len() + 1);
+
+    let anchor = runner
+        .run_contact_policy_pass_trace(
+            &scenario,
+            2,
+            ContactIdentityPolicyV1::PriorContactHysteresis,
+            GpuSoftFeedbackPolicyV1::SELECTED,
+        )
+        .unwrap();
+    let window_final = window.steps.last().unwrap().states.last().unwrap();
+    let anchor_final = &anchor.states.last().unwrap().bodies;
+    for (motion, body) in window_final.iter().zip(anchor_final) {
+        assert_eq!(motion[0], body.linear_velocity.x);
+        assert_eq!(motion[1], body.linear_velocity.y);
+        assert_eq!(motion[2], body.angular_velocity.get());
+    }
+}
+
+#[test]
 fn per_pass_trace_replays_through_the_matched_f32_scalar_recurrence() {
     let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
     let scenario = p5_2_minimized_mixed_pile_energy_scenario().unwrap();

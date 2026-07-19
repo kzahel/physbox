@@ -43,6 +43,8 @@ const BRIDGE_DISPATCHES: u32 = 2;
 pub const GPU_GENERATED_CONTACT_BODY_HISTORY_VERSION: u32 = 1;
 #[cfg(not(target_arch = "wasm32"))]
 pub const GPU_GENERATED_CONTACT_PASS_TRACE_VERSION: u32 = 3;
+#[cfg(not(target_arch = "wasm32"))]
+pub const GPU_GENERATED_CONTACT_PASS_MOTION_WINDOW_VERSION: u32 = 1;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -527,6 +529,33 @@ impl GpuGeneratedContactGraph {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
+    fn encode_step_with_pass_motion_trace(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        storage: &GpuBodyStorage,
+        destination: &wgpu::Buffer,
+        destination_offset: u64,
+    ) -> Result<Vec<GpuSolverPassDescriptorV1>, String> {
+        let parity = self.parity.get();
+        self.candidate
+            .encode_with_timestamp(encoder, &self.candidate_pipelines, None);
+        self.narrowphase
+            .encode(encoder, &self.narrowphase_pipelines);
+        self.persistence
+            .encode_before_solver(encoder, parity, false, self.point_capacity, None);
+        let descriptors = self.solver.encode_step_with_pass_motion_trace(
+            encoder,
+            storage,
+            destination,
+            destination_offset,
+        )?;
+        self.persistence
+            .encode_after_solver(encoder, parity, self.point_capacity, None);
+        self.parity.set(1 - parity);
+        Ok(descriptors)
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
     fn encode_step_solver_instrumented(
         &self,
         encoder: &mut wgpu::CommandEncoder,
@@ -588,6 +617,11 @@ impl GpuGeneratedContactGraph {
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn pass_trace_state_bytes(&self) -> u64 {
         self.solver.pass_trace_state_bytes()
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn pass_trace_motion_bytes(&self) -> u64 {
+        self.solver.pass_trace_motion_bytes()
     }
 
     pub(crate) fn allocated_bytes(&self) -> u64 {
@@ -1547,6 +1581,41 @@ pub struct GpuGeneratedContactPassTraceV3 {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GpuGeneratedContactPassMotionStepV1 {
+    pub completed_step: u32,
+    pub states: Vec<Vec<[f32; 4]>>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GpuGeneratedContactPassMotionWindowV1 {
+    pub version: u32,
+    pub adapter: crate::AdapterDiagnostics,
+    pub source_scenario_hash: String,
+    pub first_step: u32,
+    pub last_step: u32,
+    pub solver_settings: physbox_contracts::SolverSettingsV1,
+    pub solver_execution: GpuSolverExecutionV4,
+    pub solver_scheduling_policy: GpuSolverSchedulingPolicyV1,
+    pub contact_identity_policy: ContactIdentityPolicyV1,
+    pub soft_feedback_policy: crate::GpuSoftFeedbackPolicyV1,
+    pub normal_relaxation_policy: crate::GpuNormalRelaxationPolicyV1,
+    pub contact_coefficient_policy: crate::GpuContactCoefficientPolicyV1,
+    pub substep_contact_policy: crate::GpuSubstepContactPolicyV1,
+    pub restitution_timing_policy: crate::GpuRestitutionTimingPolicyV1,
+    pub pass_trace_dispatch: GpuPassTraceDispatchV1,
+    pub mapped_after_final_step_only: bool,
+    pub motion_state_stride_bytes: u64,
+    pub descriptors: Vec<GpuSolverPassDescriptorV1>,
+    pub steps: Vec<GpuGeneratedContactPassMotionStepV1>,
+    pub coloring: crate::GpuColoringEvidenceV4,
+    pub construction: GpuConstructionGraphEvidence,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 impl GpuGeneratedContactPassTraceV3 {
     pub fn validate(&self) -> Result<(), String> {
         if self.version != GPU_GENERATED_CONTACT_PASS_TRACE_VERSION
@@ -1643,6 +1712,89 @@ impl GpuGeneratedContactPassTraceV3 {
                         || contact.body_b as usize >= state.bodies.len())
             }) {
                 return Err("generated pass trace contact references an invalid body".to_owned());
+            }
+        }
+        Ok(())
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl GpuGeneratedContactPassMotionWindowV1 {
+    pub fn validate(&self) -> Result<(), String> {
+        let expected_steps = self
+            .last_step
+            .checked_sub(self.first_step)
+            .and_then(|difference| difference.checked_add(1))
+            .ok_or_else(|| "generated pass-motion window has an invalid step range".to_owned())?;
+        let body_count = self
+            .steps
+            .first()
+            .and_then(|step| step.states.first())
+            .map(Vec::len)
+            .ok_or_else(|| "generated pass-motion window has no body state".to_owned())?;
+        if self.version != GPU_GENERATED_CONTACT_PASS_MOTION_WINDOW_VERSION
+            || self.source_scenario_hash.len() != 64
+            || self.first_step == 0
+            || self.pass_trace_dispatch != GpuPassTraceDispatchV1::DirectOverCompactedColorCapacity
+            || !self.mapped_after_final_step_only
+            || self.motion_state_stride_bytes != (body_count * size_of::<[f32; 4]>()) as u64
+            || self.descriptors.is_empty()
+            || self.steps.len() != expected_steps as usize
+            || self.construction.overflowed
+            || self.coloring.overflowed
+        {
+            return Err(
+                "generated pass-motion window has invalid identity/completion/capacity".to_owned(),
+            );
+        }
+        self.solver_settings
+            .validate()
+            .map_err(|error| error.to_string())?;
+        self.solver_execution.validate()?;
+        self.solver_scheduling_policy
+            .validate(self.solver_execution)?;
+        self.contact_coefficient_policy
+            .validate(&self.solver_settings)?;
+        self.substep_contact_policy.validate_composition(
+            &self.solver_settings,
+            self.solver_execution,
+            self.solver_scheduling_policy,
+            self.soft_feedback_policy,
+            self.normal_relaxation_policy,
+            self.contact_coefficient_policy,
+            self.restitution_timing_policy,
+        )?;
+        self.restitution_timing_policy.validate(
+            &self.solver_settings,
+            self.solver_execution,
+            self.normal_relaxation_policy,
+            self.contact_coefficient_policy,
+            self.substep_contact_policy,
+        )?;
+        for (index, descriptor) in self.descriptors.iter().enumerate() {
+            if descriptor.version != crate::GPU_SOLVER_PASS_TRACE_VERSION
+                || descriptor.operation_index < descriptor.first_operation_index
+                || (index > 0
+                    && descriptor.first_operation_index
+                        != self.descriptors[index - 1].operation_index + 1)
+            {
+                return Err(
+                    "generated pass-motion window descriptor sequence is invalid".to_owned(),
+                );
+            }
+        }
+        for (index, step) in self.steps.iter().enumerate() {
+            if step.completed_step != self.first_step + index as u32
+                || step.states.len() != self.descriptors.len() + 1
+                || step.states.iter().any(|state| {
+                    state.len() != body_count
+                        || state
+                            .iter()
+                            .flat_map(|motion| motion.iter())
+                            .any(|value| !value.is_finite())
+                })
+            {
+                return Err("generated pass-motion window state sequence is invalid".to_owned());
             }
         }
         Ok(())
@@ -2607,6 +2759,190 @@ impl GpuGeneratedContactRunner {
         };
         trace.validate()?;
         Ok(trace)
+    }
+
+    /// Captures motion-only `f32` state at every logical pass boundary for a
+    /// contiguous outer-step window. The window stays GPU ordered and maps
+    /// once after its final persistence store; exact full-state traces remain
+    /// the scalar/contact authority at selected anchor steps.
+    pub fn run_contact_policy_pass_motion_window(
+        &self,
+        scenario: &ScenarioV1,
+        first_step: u32,
+        last_step: u32,
+        identity_policy: ContactIdentityPolicyV1,
+        soft_feedback_policy: crate::GpuSoftFeedbackPolicyV1,
+    ) -> Result<GpuGeneratedContactPassMotionWindowV1, String> {
+        if first_step == 0 || first_step > last_step || last_step > scenario.requested_steps {
+            return Err("generated pass-motion window must lie inside the scenario".to_owned());
+        }
+        scenario.validate().map_err(|error| error.to_string())?;
+        let body_count = u32::try_from(scenario.bodies.len())
+            .map_err(|_| "generated pass-motion body count exceeds u32".to_owned())?;
+        let storage = GpuBodyStorage::new(
+            &self.device,
+            body_count,
+            crate::BODY_COMMAND_CAPACITY,
+            &scenario.bodies,
+        )?;
+        let execution = GpuSolverExecutionV4::SELECTED;
+        let scheduling_policy = GpuSolverSchedulingPolicyV1::SELECTED;
+        let normal_relaxation_policy = crate::GpuNormalRelaxationPolicyV1::SELECTED;
+        let graph = GpuGeneratedContactGraph::new_with_topologies_execution_scheduling_identity_and_contact_feedback(
+            &self.device,
+            &storage,
+            scenario,
+            GpuContactPersistenceTopology::StablePairSlot,
+            GpuGatherTopology::StableBodyEdge,
+            false,
+            false,
+            u32::MAX,
+            execution,
+            scheduling_policy,
+            identity_policy,
+            soft_feedback_policy,
+            normal_relaxation_policy,
+        )?;
+        let expected_descriptors = graph.solver.pass_trace_descriptors();
+        let state_count = expected_descriptors.len() + 1;
+        let motion_state_stride_bytes = graph.pass_trace_motion_bytes();
+        let step_stride_bytes = motion_state_stride_bytes
+            .checked_mul(state_count as u64)
+            .ok_or_else(|| "generated pass-motion step byte count overflowed".to_owned())?;
+        let step_count = last_step - first_step + 1;
+        let trace_bytes = step_stride_bytes
+            .checked_mul(u64::from(step_count))
+            .ok_or_else(|| "generated pass-motion window byte count overflowed".to_owned())?;
+        let motion_readback = readback(
+            &self.device,
+            "generated_pass_motion_window_readback",
+            trace_bytes,
+        );
+        let pass_layout = graph.pass_evidence_layout();
+        let pass_readback = readback(
+            &self.device,
+            "generated_pass_motion_window_evidence_readback",
+            pass_layout.total_bytes,
+        );
+        let construction_readback = readback(
+            &self.device,
+            "generated_pass_motion_window_capacity_readback",
+            u64::from(COLLISION_CAPACITY_COUNTER_BYTES) * 4,
+        );
+        let step_readback = readback(
+            &self.device,
+            "generated_pass_motion_window_step_readback",
+            4,
+        );
+
+        for _ in 1..first_step {
+            let mut encoder = self
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("physbox5_generated_pass_motion_window_leading_step"),
+                });
+            graph.encode_step(&mut encoder, false);
+            self.queue.submit([encoder.finish()]);
+        }
+        for completed_step in first_step..=last_step {
+            let mut encoder = self
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("physbox5_generated_pass_motion_window_step"),
+                });
+            let destination_offset = u64::from(completed_step - first_step) * step_stride_bytes;
+            let descriptors = graph.encode_step_with_pass_motion_trace(
+                &mut encoder,
+                &storage,
+                &motion_readback,
+                destination_offset,
+            )?;
+            if descriptors != expected_descriptors {
+                return Err("generated pass-motion schedule changed while encoding".to_owned());
+            }
+            if completed_step == last_step {
+                graph.copy_pass_evidence(&mut encoder, &pass_readback);
+                graph.copy_construction_graph_evidence(&mut encoder, &construction_readback);
+                let (step_source, step_offset) = graph.persistence.step_counter_source();
+                encoder.copy_buffer_to_buffer(step_source, step_offset, &step_readback, 0, 4);
+            }
+            self.queue.submit([encoder.finish()]);
+        }
+        self.device
+            .poll(wgpu::PollType::Wait)
+            .map_err(|error| format!("generated pass-motion window poll failed: {error}"))?;
+
+        let motion_bytes = crate::collision_candidates::map_values::<u8>(
+            &self.device,
+            &motion_readback,
+            trace_bytes as usize,
+        )?;
+        let mut steps = Vec::with_capacity(step_count as usize);
+        for step_index in 0..step_count as usize {
+            let mut states = Vec::with_capacity(state_count);
+            let step_start = step_index * step_stride_bytes as usize;
+            for state_index in 0..state_count {
+                let start = step_start + state_index * motion_state_stride_bytes as usize;
+                let motions = bytemuck::try_cast_slice::<u8, [f32; 4]>(
+                    &motion_bytes[start..start + motion_state_stride_bytes as usize],
+                )
+                .map_err(|error| format!("decode pass-motion state: {error}"))?;
+                states.push(motions.to_vec());
+            }
+            steps.push(GpuGeneratedContactPassMotionStepV1 {
+                completed_step: first_step + step_index as u32,
+                states,
+            });
+        }
+        let pass_evidence = crate::body_floor_solver::decode_pass_evidence(
+            &crate::collision_candidates::map_values::<u8>(
+                &self.device,
+                &pass_readback,
+                pass_layout.total_bytes as usize,
+            )?,
+            pass_layout,
+        )?;
+        let coloring = pass_evidence
+            .coloring
+            .ok_or_else(|| "generated pass-motion window omitted coloring evidence".to_owned())?;
+        let construction =
+            decode_construction_graph_evidence(&crate::collision_candidates::map_values::<u8>(
+                &self.device,
+                &construction_readback,
+                COLLISION_CAPACITY_COUNTER_BYTES as usize * 4,
+            )?)?;
+        let completed_step =
+            crate::collision_candidates::map_values::<u32>(&self.device, &step_readback, 1)?[0];
+        if completed_step != last_step {
+            return Err(format!(
+                "generated pass-motion window completed step {completed_step}, expected {last_step}"
+            ));
+        }
+        let window = GpuGeneratedContactPassMotionWindowV1 {
+            version: GPU_GENERATED_CONTACT_PASS_MOTION_WINDOW_VERSION,
+            adapter: self.diagnostics.clone(),
+            source_scenario_hash: canonical_hash(scenario).map_err(|error| error.to_string())?,
+            first_step,
+            last_step,
+            solver_settings: scenario.settings,
+            solver_execution: execution,
+            solver_scheduling_policy: scheduling_policy,
+            contact_coefficient_policy: graph.contact_coefficient_policy,
+            substep_contact_policy: graph.substep_contact_policy,
+            restitution_timing_policy: graph.restitution_timing_policy,
+            contact_identity_policy: identity_policy,
+            soft_feedback_policy,
+            normal_relaxation_policy,
+            pass_trace_dispatch: GpuPassTraceDispatchV1::DirectOverCompactedColorCapacity,
+            mapped_after_final_step_only: true,
+            motion_state_stride_bytes,
+            descriptors: expected_descriptors,
+            steps,
+            coloring,
+            construction,
+        };
+        window.validate()?;
+        Ok(window)
     }
 
     /// Records exact post-step state, narrowphase output, and warm-start state

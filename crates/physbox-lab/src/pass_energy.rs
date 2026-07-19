@@ -1,13 +1,14 @@
 use physbox_contracts::{BodyStateV1, ScenarioV1, Vec2};
 use physbox_engine::{
-    GpuColoringEvidenceV4, GpuFixedFloorContactEvidence, GpuGeneratedContactPassTraceV3,
-    GpuSolverPassDescriptorV1, GpuSolverPassKindV1,
+    GpuColoringEvidenceV4, GpuFixedFloorContactEvidence, GpuGeneratedContactPassMotionWindowV1,
+    GpuGeneratedContactPassTraceV3, GpuSolverPassDescriptorV1, GpuSolverPassKindV1,
 };
 use serde::Serialize;
 
 use crate::scalar::{Box2dPointNormalInput, box2d_point_normal_update};
 
 pub const SETTLING_PASS_ENERGY_REPORT_VERSION: u32 = 1;
+pub const SETTLING_PASS_ENERGY_WINDOW_REPORT_VERSION: u32 = 1;
 pub const RELAXATION_DERIVATION_REPORT_VERSION: u32 = 1;
 pub const STATIC_SUPPORT_ATTRIBUTION_REPORT_VERSION: u32 = 1;
 pub const IMPULSE_OPERATOR_REPORT_VERSION: u32 = 1;
@@ -72,6 +73,83 @@ pub struct SettlingPassEnergyReportV1 {
     pub first_non_exact_pass: Option<u32>,
     pub maximum_ulp_difference: u32,
     pub maximum_ulp_pass: Option<u32>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SettlingPassEnergyWindowBoundaryV1 {
+    pub completed_step: u32,
+    pub pass_index: u32,
+    pub descriptor: GpuSolverPassDescriptorV1,
+    pub energy_before: KineticEnergyAccountingV1,
+    pub energy_after: KineticEnergyAccountingV1,
+    pub delta_compensated_f64: f64,
+    pub material_positive_threshold: f64,
+    pub material_positive: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SettlingPassEnergyWindowStepV1 {
+    pub completed_step: u32,
+    pub energy_before: KineticEnergyAccountingV1,
+    pub energy_after: KineticEnergyAccountingV1,
+    pub endpoint_delta_compensated_f64: f64,
+    pub pass_delta_sum_compensated_f64: f64,
+    pub reconciliation_error_compensated_f64: f64,
+    pub reconciliation_tolerance: f64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SettlingPassEnergyAnchorV1 {
+    pub completed_step: u32,
+    pub net_delta_compensated_f64: f64,
+    pub material_positive_threshold: f64,
+    pub materially_positive: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SettlingPassEnergyWindowFamilyV1 {
+    pub kind: GpuSolverPassKindV1,
+    pub boundary_count: u32,
+    pub materially_positive_boundaries: u32,
+    pub materially_positive_steps: u32,
+    pub net_delta_compensated_f64: f64,
+    pub gross_positive_delta_compensated_f64: f64,
+    pub material_positive_delta_compensated_f64: f64,
+    pub maximum_positive_delta_compensated_f64: f64,
+    pub anchors: [SettlingPassEnergyAnchorV1; 3],
+    pub window_material_positive_threshold: f64,
+    pub consistent_material_injector: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SettlingPassEnergyWindowReportV1 {
+    pub version: u32,
+    pub source_scenario_hash: String,
+    pub first_step: u32,
+    pub last_step: u32,
+    pub anchor_steps: [u32; 3],
+    pub matched_state_precision: &'static str,
+    pub energy_accounting: [&'static str; 2],
+    pub material_absolute_epsilon: f64,
+    pub material_relative_epsilon: f64,
+    pub reconciliation_absolute_epsilon: f64,
+    pub reconciliation_relative_epsilon: f64,
+    pub rows: Vec<SettlingPassEnergyWindowBoundaryV1>,
+    pub steps: Vec<SettlingPassEnergyWindowStepV1>,
+    pub families: Vec<SettlingPassEnergyWindowFamilyV1>,
+    pub window_energy_before: KineticEnergyAccountingV1,
+    pub window_energy_after: KineticEnergyAccountingV1,
+    pub window_endpoint_delta_compensated_f64: f64,
+    pub window_pass_delta_sum_compensated_f64: f64,
+    pub window_reconciliation_error_compensated_f64: f64,
+    pub window_reconciliation_tolerance: f64,
+    pub maximum_step_reconciliation_error_compensated_f64: f64,
+    pub cross_step_motion_exact: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -439,6 +517,324 @@ pub fn analyze_settling_pass_energy(
     };
     report.validate()?;
     Ok(report)
+}
+
+const PASS_ENERGY_WINDOW_ANCHORS: [u32; 3] = [900, 1_000, 1_100];
+const PASS_ENERGY_WINDOW_MATERIAL_ABSOLUTE_EPSILON: f64 = 1.0e-12;
+const PASS_ENERGY_WINDOW_MATERIAL_RELATIVE_EPSILON: f64 = 1.0e-5;
+const PASS_ENERGY_WINDOW_RECONCILIATION_ABSOLUTE_EPSILON: f64 = 1.0e-10;
+const PASS_ENERGY_WINDOW_RECONCILIATION_RELATIVE_EPSILON: f64 = 1.0e-8;
+
+const PASS_ENERGY_FAMILIES: [GpuSolverPassKindV1; 10] = [
+    GpuSolverPassKindV1::IntegrateVelocity,
+    GpuSolverPassKindV1::PrepareContacts,
+    GpuSolverPassKindV1::RefreshContacts,
+    GpuSolverPassKindV1::WarmStart,
+    GpuSolverPassKindV1::NormalBiased,
+    GpuSolverPassKindV1::TangentBiased,
+    GpuSolverPassKindV1::IntegratePosition,
+    GpuSolverPassKindV1::NormalRelaxation,
+    GpuSolverPassKindV1::TangentRelaxation,
+    GpuSolverPassKindV1::Restitution,
+];
+
+impl SettlingPassEnergyWindowReportV1 {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.version != SETTLING_PASS_ENERGY_WINDOW_REPORT_VERSION
+            || self.source_scenario_hash.len() != 64
+            || self.first_step == 0
+            || self.first_step > self.last_step
+            || self.anchor_steps != PASS_ENERGY_WINDOW_ANCHORS
+            || self.matched_state_precision != "f32"
+            || self.material_absolute_epsilon != PASS_ENERGY_WINDOW_MATERIAL_ABSOLUTE_EPSILON
+            || self.material_relative_epsilon != PASS_ENERGY_WINDOW_MATERIAL_RELATIVE_EPSILON
+            || self.reconciliation_absolute_epsilon
+                != PASS_ENERGY_WINDOW_RECONCILIATION_ABSOLUTE_EPSILON
+            || self.reconciliation_relative_epsilon
+                != PASS_ENERGY_WINDOW_RECONCILIATION_RELATIVE_EPSILON
+            || self.rows.is_empty()
+            || self.steps.len() != (self.last_step - self.first_step + 1) as usize
+            || self.families.len() != PASS_ENERGY_FAMILIES.len()
+            || !self.cross_step_motion_exact
+        {
+            return Err("settling pass-energy window identity is invalid".to_owned());
+        }
+        if self.steps.iter().any(|step| {
+            step.reconciliation_error_compensated_f64.abs() > step.reconciliation_tolerance
+        }) || self.window_reconciliation_error_compensated_f64.abs()
+            > self.window_reconciliation_tolerance
+        {
+            return Err("settling pass-energy window does not reconcile".to_owned());
+        }
+        for (index, step) in self.steps.iter().enumerate() {
+            if step.completed_step != self.first_step + index as u32 {
+                return Err("settling pass-energy window steps are not contiguous".to_owned());
+            }
+        }
+        for (kind, family) in PASS_ENERGY_FAMILIES.iter().zip(&self.families) {
+            if family.kind != *kind
+                || family.boundary_count == 0
+                || family.anchors.map(|anchor| anchor.completed_step) != PASS_ENERGY_WINDOW_ANCHORS
+            {
+                return Err("settling pass-energy window family summary is invalid".to_owned());
+            }
+        }
+        Ok(())
+    }
+}
+
+pub fn analyze_settling_pass_energy_window(
+    scenario: &ScenarioV1,
+    window: &GpuGeneratedContactPassMotionWindowV1,
+) -> Result<SettlingPassEnergyWindowReportV1, String> {
+    window.validate()?;
+    let source_hash =
+        physbox_contracts::canonical_hash(scenario).map_err(|error| error.to_string())?;
+    if source_hash != window.source_scenario_hash
+        || window.first_step > PASS_ENERGY_WINDOW_ANCHORS[0]
+        || window.last_step < PASS_ENERGY_WINDOW_ANCHORS[2]
+    {
+        return Err("settling pass-energy window source or anchor range changed".to_owned());
+    }
+    let body_count = scenario.bodies.len();
+    if window
+        .steps
+        .iter()
+        .flat_map(|step| &step.states)
+        .any(|motions| motions.len() != body_count)
+    {
+        return Err("settling pass-energy motion/body counts differ".to_owned());
+    }
+
+    let mut rows = Vec::with_capacity(window.steps.len() * window.descriptors.len());
+    let mut steps = Vec::with_capacity(window.steps.len());
+    let mut cross_step_motion_exact = true;
+    for (step_index, step) in window.steps.iter().enumerate() {
+        if step_index > 0 {
+            cross_step_motion_exact &=
+                window.steps[step_index - 1].states.last() == step.states.first();
+        }
+        let energy_before = kinetic_energy_from_motions(&scenario.bodies, &step.states[0])?;
+        let energy_after = kinetic_energy_from_motions(
+            &scenario.bodies,
+            step.states
+                .last()
+                .ok_or_else(|| "pass-energy window step has no final state".to_owned())?,
+        )?;
+        let endpoint_delta = energy_after.compensated_f64 - energy_before.compensated_f64;
+        let mut pass_delta_sum = 0.0_f64;
+        for (pass_index, ((before, after), descriptor)) in step
+            .states
+            .windows(2)
+            .map(|states| (&states[0], &states[1]))
+            .zip(&window.descriptors)
+            .enumerate()
+        {
+            let before = kinetic_energy_from_motions(&scenario.bodies, before)?;
+            let after = kinetic_energy_from_motions(&scenario.bodies, after)?;
+            let delta = after.compensated_f64 - before.compensated_f64;
+            let threshold = material_energy_threshold(before, after);
+            pass_delta_sum += delta;
+            rows.push(SettlingPassEnergyWindowBoundaryV1 {
+                completed_step: step.completed_step,
+                pass_index: pass_index as u32,
+                descriptor: *descriptor,
+                energy_before: before,
+                energy_after: after,
+                delta_compensated_f64: delta,
+                material_positive_threshold: threshold,
+                material_positive: delta > threshold,
+            });
+        }
+        let reconciliation_error = pass_delta_sum - endpoint_delta;
+        let reconciliation_tolerance = reconciliation_tolerance(endpoint_delta);
+        steps.push(SettlingPassEnergyWindowStepV1 {
+            completed_step: step.completed_step,
+            energy_before,
+            energy_after,
+            endpoint_delta_compensated_f64: endpoint_delta,
+            pass_delta_sum_compensated_f64: pass_delta_sum,
+            reconciliation_error_compensated_f64: reconciliation_error,
+            reconciliation_tolerance,
+        });
+    }
+    let window_energy_before = steps
+        .first()
+        .ok_or_else(|| "pass-energy window has no first step".to_owned())?
+        .energy_before;
+    let window_energy_after = steps
+        .last()
+        .ok_or_else(|| "pass-energy window has no final step".to_owned())?
+        .energy_after;
+    let window_endpoint_delta =
+        window_energy_after.compensated_f64 - window_energy_before.compensated_f64;
+    let window_pass_delta_sum = rows
+        .iter()
+        .map(|row| row.delta_compensated_f64)
+        .sum::<f64>();
+    let window_reconciliation_error = window_pass_delta_sum - window_endpoint_delta;
+    let window_reconciliation_tolerance = reconciliation_tolerance(window_endpoint_delta);
+    let maximum_step_reconciliation_error = steps
+        .iter()
+        .map(|step| step.reconciliation_error_compensated_f64.abs())
+        .fold(0.0_f64, f64::max);
+    let window_material_threshold =
+        material_energy_threshold(window_energy_before, window_energy_after);
+
+    let mut families = Vec::with_capacity(PASS_ENERGY_FAMILIES.len());
+    for kind in PASS_ENERGY_FAMILIES {
+        let family_rows = rows
+            .iter()
+            .filter(|row| row.descriptor.kind == kind)
+            .collect::<Vec<_>>();
+        let mut materially_positive_steps = 0;
+        for step in &steps {
+            let net = family_rows
+                .iter()
+                .filter(|row| row.completed_step == step.completed_step)
+                .map(|row| row.delta_compensated_f64)
+                .sum::<f64>();
+            if net > material_energy_threshold(step.energy_before, step.energy_after) {
+                materially_positive_steps += 1;
+            }
+        }
+        let anchors = PASS_ENERGY_WINDOW_ANCHORS.map(|completed_step| {
+            let step = steps
+                .iter()
+                .find(|step| step.completed_step == completed_step)
+                .expect("validated pass-energy window includes every anchor");
+            let net = family_rows
+                .iter()
+                .filter(|row| row.completed_step == completed_step)
+                .map(|row| row.delta_compensated_f64)
+                .sum::<f64>();
+            let threshold = material_energy_threshold(step.energy_before, step.energy_after);
+            SettlingPassEnergyAnchorV1 {
+                completed_step,
+                net_delta_compensated_f64: net,
+                material_positive_threshold: threshold,
+                materially_positive: net > threshold,
+            }
+        });
+        let net_delta = family_rows
+            .iter()
+            .map(|row| row.delta_compensated_f64)
+            .sum::<f64>();
+        families.push(SettlingPassEnergyWindowFamilyV1 {
+            kind,
+            boundary_count: family_rows.len() as u32,
+            materially_positive_boundaries: family_rows
+                .iter()
+                .filter(|row| row.material_positive)
+                .count() as u32,
+            materially_positive_steps,
+            net_delta_compensated_f64: net_delta,
+            gross_positive_delta_compensated_f64: family_rows
+                .iter()
+                .map(|row| row.delta_compensated_f64.max(0.0))
+                .sum(),
+            material_positive_delta_compensated_f64: family_rows
+                .iter()
+                .filter(|row| row.material_positive)
+                .map(|row| row.delta_compensated_f64)
+                .sum(),
+            maximum_positive_delta_compensated_f64: family_rows
+                .iter()
+                .map(|row| row.delta_compensated_f64.max(0.0))
+                .fold(0.0_f64, f64::max),
+            anchors,
+            window_material_positive_threshold: window_material_threshold,
+            consistent_material_injector: net_delta > window_material_threshold
+                && anchors.iter().all(|anchor| anchor.materially_positive),
+        });
+    }
+    let report = SettlingPassEnergyWindowReportV1 {
+        version: SETTLING_PASS_ENERGY_WINDOW_REPORT_VERSION,
+        source_scenario_hash: source_hash,
+        first_step: window.first_step,
+        last_step: window.last_step,
+        anchor_steps: PASS_ENERGY_WINDOW_ANCHORS,
+        matched_state_precision: "f32",
+        energy_accounting: ["strict-ordered-f32", "compensated-f64-over-f32-state"],
+        material_absolute_epsilon: PASS_ENERGY_WINDOW_MATERIAL_ABSOLUTE_EPSILON,
+        material_relative_epsilon: PASS_ENERGY_WINDOW_MATERIAL_RELATIVE_EPSILON,
+        reconciliation_absolute_epsilon: PASS_ENERGY_WINDOW_RECONCILIATION_ABSOLUTE_EPSILON,
+        reconciliation_relative_epsilon: PASS_ENERGY_WINDOW_RECONCILIATION_RELATIVE_EPSILON,
+        rows,
+        steps,
+        families,
+        window_energy_before,
+        window_energy_after,
+        window_endpoint_delta_compensated_f64: window_endpoint_delta,
+        window_pass_delta_sum_compensated_f64: window_pass_delta_sum,
+        window_reconciliation_error_compensated_f64: window_reconciliation_error,
+        window_reconciliation_tolerance,
+        maximum_step_reconciliation_error_compensated_f64: maximum_step_reconciliation_error,
+        cross_step_motion_exact,
+    };
+    report.validate()?;
+    Ok(report)
+}
+
+fn kinetic_energy_from_motions(
+    bodies: &[BodyStateV1],
+    motions: &[[f32; 4]],
+) -> Result<KineticEnergyAccountingV1, String> {
+    if bodies.len() != motions.len() {
+        return Err("kinetic-energy motion/body counts differ".to_owned());
+    }
+    let mut ordered = 0.0_f32;
+    let mut compensated = 0.0_f64;
+    let mut correction = 0.0_f64;
+    for (body, motion) in bodies.iter().zip(motions) {
+        let inverse_mass = body.inverse_mass.get();
+        if inverse_mass <= 0.0 {
+            continue;
+        }
+        let mass = inverse_mass.recip();
+        let inverse_inertia = body.inverse_inertia.get();
+        let inertia = if inverse_inertia > 0.0 {
+            inverse_inertia.recip()
+        } else {
+            0.0
+        };
+        let linear_squared = motion[0] * motion[0] + motion[1] * motion[1];
+        let angular_squared = motion[2] * motion[2];
+        let term = 0.5_f32 * mass * linear_squared + 0.5_f32 * inertia * angular_squared;
+        ordered += term;
+
+        let vx = f64::from(motion[0]);
+        let vy = f64::from(motion[1]);
+        let angular = f64::from(motion[2]);
+        let wider_term = 0.5 * f64::from(mass) * (vx * vx + vy * vy)
+            + 0.5 * f64::from(inertia) * angular * angular;
+        let adjusted = wider_term - correction;
+        let next = compensated + adjusted;
+        correction = (next - compensated) - adjusted;
+        compensated = next;
+    }
+    Ok(KineticEnergyAccountingV1 {
+        ordered_f32: ordered,
+        compensated_f64: compensated,
+    })
+}
+
+fn material_energy_threshold(
+    before: KineticEnergyAccountingV1,
+    after: KineticEnergyAccountingV1,
+) -> f64 {
+    PASS_ENERGY_WINDOW_MATERIAL_ABSOLUTE_EPSILON.max(
+        PASS_ENERGY_WINDOW_MATERIAL_RELATIVE_EPSILON
+            * before
+                .compensated_f64
+                .abs()
+                .max(after.compensated_f64.abs()),
+    )
+}
+
+fn reconciliation_tolerance(reference_delta: f64) -> f64 {
+    PASS_ENERGY_WINDOW_RECONCILIATION_ABSOLUTE_EPSILON
+        + PASS_ENERGY_WINDOW_RECONCILIATION_RELATIVE_EPSILON * reference_delta.abs()
 }
 
 impl ImpulseOperatorReportV1 {

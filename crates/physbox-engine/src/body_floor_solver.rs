@@ -2665,9 +2665,93 @@ impl GpuFixedFloorSolver {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn encode_step_with_pass_motion_trace(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        storage: &GpuBodyStorage,
+        destination: &wgpu::Buffer,
+        destination_offset: u64,
+    ) -> Result<Vec<GpuSolverPassDescriptorV1>, String> {
+        let descriptors = self.pass_trace_descriptors();
+        let first_operation = descriptors
+            .first()
+            .map(|descriptor| descriptor.first_operation_index as usize)
+            .ok_or_else(|| {
+                "solver pass-motion trace has no state-changing operations".to_owned()
+            })?;
+        let mut expected_operation = first_operation;
+        for descriptor in &descriptors {
+            if descriptor.first_operation_index as usize != expected_operation
+                || descriptor.operation_index < descriptor.first_operation_index
+            {
+                return Err(
+                    "solver pass-motion trace requires contiguous logical operation groups"
+                        .to_owned(),
+                );
+            }
+            expected_operation = descriptor.operation_index as usize + 1;
+        }
+        if expected_operation != self.operations.len() {
+            return Err("solver pass-motion trace omitted a state-changing operation".to_owned());
+        }
+        if first_operation != 0 {
+            let mut preparation = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("physbox5_solver_pass_motion_trace_topology"),
+                timestamp_writes: None,
+            });
+            for operation in &self.operations[..first_operation] {
+                self.encode_operation(&mut preparation, operation);
+            }
+        }
+        self.copy_pass_trace_motion(storage, encoder, destination, destination_offset);
+        let stride = self.pass_trace_motion_bytes();
+        for (index, descriptor) in descriptors.iter().enumerate() {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("physbox5_solver_pass_motion_trace_operation"),
+                timestamp_writes: None,
+            });
+            for operation in &self.operations
+                [descriptor.first_operation_index as usize..=descriptor.operation_index as usize]
+            {
+                self.encode_trace_operation(&mut pass, operation);
+            }
+            drop(pass);
+            self.copy_pass_trace_motion(
+                storage,
+                encoder,
+                destination,
+                destination_offset + (index as u64 + 1) * stride,
+            );
+        }
+        Ok(descriptors)
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn pass_trace_state_bytes(&self) -> u64 {
         u64::from(self.body_count) * size_of::<[f32; 4]>() as u64 * 2
             + u64::from(self.point_count) * size_of::<PreparedPointRaw>() as u64
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn pass_trace_motion_bytes(&self) -> u64 {
+        u64::from(self.body_count) * size_of::<[f32; 4]>() as u64
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn copy_pass_trace_motion(
+        &self,
+        storage: &GpuBodyStorage,
+        encoder: &mut wgpu::CommandEncoder,
+        destination: &wgpu::Buffer,
+        destination_offset: u64,
+    ) {
+        encoder.copy_buffer_to_buffer(
+            storage.motion_buffer(),
+            0,
+            destination,
+            destination_offset,
+            self.pass_trace_motion_bytes(),
+        );
     }
 
     #[cfg(not(target_arch = "wasm32"))]

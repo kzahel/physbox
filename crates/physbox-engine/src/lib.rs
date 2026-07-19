@@ -89,11 +89,13 @@ pub use frame::{
 };
 #[cfg(not(target_arch = "wasm32"))]
 pub use generated_contacts::{
-    GPU_GENERATED_CONTACT_BODY_HISTORY_VERSION, GPU_GENERATED_CONTACT_PASS_TRACE_VERSION,
-    GpuGeneratedContactBenchmarkOutput, GpuGeneratedContactBodyHistoryV1,
-    GpuGeneratedContactOutput, GpuGeneratedContactPassStateV3, GpuGeneratedContactPassTraceV3,
-    GpuGeneratedContactRunner, GpuGeneratedContactSeriesV1, GpuGeneratedContactSnapshotV1,
-    GpuPassTraceDispatchV1, benchmark_gpu_generated_contact_experiment,
+    GPU_GENERATED_CONTACT_BODY_HISTORY_VERSION, GPU_GENERATED_CONTACT_PASS_MOTION_WINDOW_VERSION,
+    GPU_GENERATED_CONTACT_PASS_TRACE_VERSION, GpuGeneratedContactBenchmarkOutput,
+    GpuGeneratedContactBodyHistoryV1, GpuGeneratedContactOutput,
+    GpuGeneratedContactPassMotionStepV1, GpuGeneratedContactPassMotionWindowV1,
+    GpuGeneratedContactPassStateV3, GpuGeneratedContactPassTraceV3, GpuGeneratedContactRunner,
+    GpuGeneratedContactSeriesV1, GpuGeneratedContactSnapshotV1, GpuPassTraceDispatchV1,
+    benchmark_gpu_generated_contact_experiment,
     benchmark_gpu_generated_contact_identity_experiment,
     benchmark_gpu_generated_contact_scheduling_experiment, benchmark_gpu_generated_contacts,
     benchmark_gpu_generated_contacts_with_gather_topology,

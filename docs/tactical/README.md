@@ -28,10 +28,11 @@ mechanism support. Human review, 2026-07-19, retains the hard/direct product
 and authorizes a bounded soft-specific formulation study under the recorded
 reopening gate.
 S11 is active: it root-causes the frozen soft 16-stack rising-energy mode
-with matched per-pass and impulse-operator attribution, derives at most two
-mechanism-supported scalar-first corrections with a mandatory early GPU
-falsification, and qualifies any survivor independently on Metal, the
-hardware-backed AVD, and physical Android under the recorded reopening gate.
+with exact-anchor plus full-settled-window matched pass attribution and
+impulse-operator analysis, derives only mechanism-supported scalar-first
+corrections under versioned verdicts with a mandatory early GPU falsification,
+and qualifies any survivor independently on Metal, the hardware-backed AVD,
+and physical Android under the recorded reopening gate.
 
 Tactical filenames use a three-digit zero-padded prefix ordered by their first
 Git creation timestamp. This repository starts at `001`. Never renumber an

@@ -824,14 +824,19 @@ contact formulation study tracked by
 matched-precision per-pass and impulse-operator attribution on the frozen
 unpromoted soft 16-stack — warm start, biased normal, colored support
 transfer, refresh, and persistence treated as one stationarity problem —
-derives at most two scalar-first corrections only from the measured soft
-mechanism, subjects each single named unpromoted GPU port to the early
+derives at most two simultaneous scalar-first corrections under each frozen
+mechanism verdict only from the measured soft mechanism, subjects each single
+named unpromoted GPU port to the early
 16-stack/permanent-reproducer falsification before corpus investment, and
 qualifies any survivor on Metal, the hardware-backed AVD, and available
 physical Android independently under the recorded reopening gate. The
 16-stack is the primary derivation gate; the permanent four-body reproducer
-is required evidence but cannot qualify a candidate alone. No product
-default changes; any winner returns to human promotion review.
+is required evidence but cannot qualify a candidate alone. Candidate count is
+not a closure argument: another candidate after a discarded pair requires new
+attribution and a versioned mechanism addendum, while closure requires that no
+unresolved mechanism-supported correction remains inside the recorded
+ownership constraints. No product default changes; any winner returns to
+human promotion review.
 
 ## Authority corrections
 
