@@ -2016,7 +2016,7 @@ pub fn p5_2_s13_authority_measurement_scenario(
         let side = slot % 2;
         bodies.push(s13_authored_body(
             slot,
-            Vec2::new(pair as f32 * 2.0 + side as f32, 0.0),
+            Vec2::new(pair as f32 * 2.0, side as f32),
             material,
         ));
     }
@@ -2026,12 +2026,12 @@ pub fn p5_2_s13_authority_measurement_scenario(
             id: manifold_id,
             body_a: bodies[(manifold_id * 2) as usize].id,
             body_b: bodies[(manifold_id * 2 + 1) as usize].id,
-            normal: Vec2::new(1.0, 0.0),
+            normal: Vec2::new(0.0, 1.0),
             material,
-            points: vec![s13_authored_point(Vec2::new(
-                manifold_id as f32 * 2.0 + 0.5,
-                0.0,
-            ))],
+            points: vec![
+                s13_measurement_point(manifold_id, -0.35, 0),
+                s13_measurement_point(manifold_id, 0.35, 1),
+            ],
         });
     }
     s13_authored_scenario(
@@ -2075,6 +2075,27 @@ fn s13_authored_point(world_point: Vec2) -> AuthoredContactPointV1 {
         feature_b: FeatureIdV1 {
             feature_type: 2,
             feature_index: 0,
+        },
+    }
+}
+
+fn s13_measurement_point(
+    manifold_id: u32,
+    horizontal_offset: f32,
+    point_index: u32,
+) -> AuthoredContactPointV1 {
+    AuthoredContactPointV1 {
+        local_anchor_a: Vec2::new(horizontal_offset, 0.5),
+        local_anchor_b: Vec2::new(horizontal_offset, -0.5),
+        world_point: Vec2::new(manifold_id as f32 * 2.0 + horizontal_offset, 0.5),
+        separation: finite(0.0),
+        feature_a: FeatureIdV1 {
+            feature_type: 2,
+            feature_index: point_index,
+        },
+        feature_b: FeatureIdV1 {
+            feature_type: 2,
+            feature_index: point_index + 2,
         },
     }
 }
@@ -2749,5 +2770,24 @@ mod tests {
             );
         }
         assert!(p5_2_generated_performance_scenario(33).is_err());
+    }
+
+    #[test]
+    fn s13_measurement_repeats_the_two_point_governed_contact_shape() {
+        for manifold_count in [32, 256, 1_024] {
+            let scenario = p5_2_s13_authority_measurement_scenario(manifold_count).unwrap();
+            scenario.validate().unwrap();
+            assert_eq!(scenario.bodies.len(), manifold_count as usize * 2);
+            assert_eq!(scenario.manifolds.len(), manifold_count as usize);
+            assert!(scenario.manifolds.iter().all(|manifold| {
+                manifold.normal == Vec2::new(0.0, 1.0)
+                    && manifold.points.len() == 2
+                    && manifold.points.iter().all(|point| {
+                        point.local_anchor_a.y == 0.5
+                            && point.local_anchor_b.y == -0.5
+                            && point.separation.get() == 0.0
+                    })
+            }));
+        }
     }
 }
