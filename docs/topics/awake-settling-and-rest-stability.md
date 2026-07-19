@@ -1,9 +1,10 @@
 # Awake settling and rest stability
 
-Status: S6.5, S9, S10, and S11 are closed as negative results, 2026-07-19.
-S11's measured rewind correction space is exhausted with no survivor and its
-verified review returns the comparator-engine fork to human decision. The
-S6.5d soft candidate and all S9/S10/S11 material candidates are rejected;
+Status: S6.5, S9, S10, and S11 are closed as negative results; the bounded
+S12 authority-structure decomposition is active by human decision, 2026-07-19.
+S11's measured rewind correction space is exhausted with no survivor. The
+comparator-engine trigger remains recorded but no comparator is authorized.
+The S6.5d soft candidate and all S9/S10/S11 material candidates are rejected;
 restitution timing is byte-inert on the governed controls.
 Hard/direct manifold-block i2 remains the product. S11 is authorized only
 under the recorded deep-stack energy and cross-Android reopening gate; no
@@ -947,6 +948,24 @@ study or a separately scoped new solver architecture. The comparator trigger
 is satisfied but no comparator is authorized or added. S11 is complete; the
 selected product is unchanged and is not reclassified as an awake-settling
 solution. Product/default/tolerance/oracle contracts remain unchanged.
+
+S12 human fork resolution, 2026-07-19: human review declines to authorize the
+comparator-engine study and instead authorizes the bounded
+[authority solve-structure decomposition](../tactical/012-authority-structure-decomposition.md).
+An independent Rust scalar bridge first reproduces the existing S11 scalar
+endpoint exactly and then must qualify the pinned Box2D structure endpoint
+against fresh awake native authority results. It crosses exactly five
+source-derived axes — preparation/anchors/impulse transport, solve order,
+static/dynamic coefficient schedule, biased/relaxation composition, and
+restitution timing — through ten mandatory bidirectional single-axis hybrids
+and at most three mechanically routed two-axis interactions. For this
+laboratory only, native authority response bands own acceptance instead of
+exact current PhysBox response; that is an explicit experimental target
+change, not a relaxation or product baseline refresh. The study stops at a
+decision package identifying the minimal sufficient measured structure and
+whether it maps exactly to the selected colored-parallel GPU architecture.
+No product, authority precedence, source pin, comparator, or physical default
+changes by this authorization.
 
 ## Authority corrections
 
