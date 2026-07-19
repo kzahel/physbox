@@ -801,6 +801,23 @@ alternative is continued deferral with the measured hard residual. This is
 the recorded human fork; the package authorizes neither implementation nor
 promotion.
 
+S10.6 review and human decision, 2026-07-19: the verified
+[S10.6 review](../../evidence/p5.2b-s10.6-stationarity-review/README.md)
+closes S10 complete with no hard survivor and one recommendation — take the
+formulation decision. Human review takes the recommended option: the
+hard/direct manifold-block i2 product remains selected, and a bounded
+soft-specific formulation study is authorized under the recorded reopening
+gate above. The deferred comparator-engine question stays deferred: a
+Rapier2D or other comparator lane is reconsidered only if the authorized soft
+study itself closes negative, and then requires its own explicit decision in
+this topic. One measured caution is carried forward as a successor gate: the
+retained-refresh candidate passed its full-length scalar lane on the
+permanent four-body reproducer (`0.006659909 m/s`, positive run 3) yet failed
+the same scene on the GPU corpus (`0.04818385 m/s`, positive run 199), so a
+soft candidate must pass an early GPU falsification on the 16-stack and the
+permanent reproducer before any wider corpus investment; a scalar-only pass
+is never a qualification signal.
+
 ## Authority corrections
 
 Two plausible techniques must not be mislabeled as direct Box2D v3 parity:

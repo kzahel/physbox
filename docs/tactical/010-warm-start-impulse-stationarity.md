@@ -1,7 +1,10 @@
 # S10: warm-start and stored-impulse stationarity
 
-Status: manual checkpoint, 2026-07-18. Authorized by human review after the S9 negative
-closure. S9.2 localized warm start as the only material non-gravity energy
+Status: complete, 2026-07-19. Authorized by human review after the S9 negative
+closure and closed by the recorded human decision at the S10.5 fork: the
+hard/direct manifold-block i2 product is retained unchanged and a bounded
+soft-specific formulation study is authorized under the recorded reopening
+gate. S9.2 localized warm start as the only material non-gravity energy
 injector on the governed 16-stack; this workstream determines whether the
 stored contact-impulse state is non-stationary at depth, root-causes the
 mechanism, and derives at most two scalar-first corrections. Every candidate
@@ -569,12 +572,12 @@ neither option changes the current product in this package.
 
 ### S10.6 — review package (always runs)
 
-- [ ] Assemble the compact review: differential, stationarity, mechanism,
+- [x] Assemble the compact review: differential, stationarity, mechanism,
   candidate dispositions, cross-host results if any, and one specific
   recommendation — promote-candidate, take the formulation decision, or close
   with named reconsideration triggers (including the deferred comparator-
   engine question).
-- [ ] Update this tactical, the governing topics, and the tactical index in
+- [x] Update this tactical, the governing topics, and the tactical index in
   the same change.
 
 Outcome: a reviewer can act without reading either engine.
@@ -585,6 +588,23 @@ Completion gate: package verifies from a clean tree; no product or authority
 setting changed.
 
 Commit boundary: review package and status updates only.
+
+Completion checkpoint, 2026-07-19: the verified
+[S10.6 review](../../evidence/p5.2b-s10.6-stationarity-review/README.md)
+assembles the warm-start differential, the authority-referenced stationarity
+verdicts, the named mechanism with its minimum reproducer, both candidate
+dispositions, and the S10.5 fork into one package whose verifier re-runs
+every input verifier from a clean tree. Its single recommendation is to take
+the formulation decision. Human review, 2026-07-19, takes the recommended
+option: the hard/direct manifold-block i2 product is retained unchanged and a
+bounded soft-specific formulation study is authorized under the recorded
+reopening gate. The deferred comparator-engine question remains deferred with
+its recorded trigger. The measured S10.4 scalar-to-GPU divergence on the
+permanent four-body reproducer (`0.006659909 m/s` with positive run 3 scalar
+against `0.04818385 m/s` with positive run 199 on the GPU corpus) is carried
+forward as a required early-GPU-falsification gate for the successor study.
+S10 is complete; no product, default, tolerance, capacity, or oracle setting
+changed anywhere in the workstream.
 
 ## Autonomous boundary and stop conditions
 

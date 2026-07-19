@@ -19,17 +19,14 @@ S9 is complete as a negative result: matched 16-stack attribution localized
 warm-start energy, but every predeclared material arm was discarded, no
 combination was eligible, and restitution timing was byte-inert. The selected
 hard/direct product remains unchanged.
-S10 is active: it follows the S9.2 warm-start localization with a
-warm-start on/off differential in both engines, stored-impulse stationarity
-measurement against the authority band, and at most two scalar-first
-corrections. S10.3 names inter-substep stale-persistence reseeding with a
-four-body minimum and records only partial point-normal unification with the
-deferred soft failure. S10.4 routes one composition correction; retained
-refresh passes scalar and implementation gates but fails the full-corpus
-material gate, leaving no survivor. S10.5 now presents the verified
-formulation decision package at the required human checkpoint.
-With no survivor it returns the deferred-soft formulation decision package
-instead of further hard-family arms.
+S10 is complete as a negative result with a taken decision: warm start
+carries the 16-stack residual, stored impulses oscillate far above the
+authority band, and the named inter-substep stale-persistence reseed routes
+one retained-refresh correction that passes scalar and implementation gates
+but fails the full-corpus material gate; the second candidate slot has no
+mechanism support. Human review, 2026-07-19, retains the hard/direct product
+and authorizes a bounded soft-specific formulation study under the recorded
+reopening gate.
 
 Tactical filenames use a three-digit zero-padded prefix ordered by their first
 Git creation timestamp. This repository starts at `001`. Never renumber an
@@ -49,7 +46,7 @@ This README remains the unnumbered index.
 | S7 | Box3D planar stability investigation | [007-box3d-planar-stability-investigation.md](007-box3d-planar-stability-investigation.md) | complete; static-late arm later rejected by S9, 2026-07-18 |
 | S8 | Physical mobile frame pacing | [008-physical-mobile-frame-pacing.md](008-physical-mobile-frame-pacing.md) | complete; Pixel 7a bootstrap sustains rendering and physics cadence, 2026-07-18 |
 | S9 | Awake settling schedule differential | [009-settling-schedule-differential.md](009-settling-schedule-differential.md) | complete; no schedule-differential survivor, 2026-07-18 |
-| S10 | Warm-start and stored-impulse stationarity | [010-warm-start-impulse-stationarity.md](010-warm-start-impulse-stationarity.md) | manual checkpoint; S10.5 recommends bounded soft-specific reopening, human decision required, 2026-07-18 |
+| S10 | Warm-start and stored-impulse stationarity | [010-warm-start-impulse-stationarity.md](010-warm-start-impulse-stationarity.md) | complete; no hard survivor; soft-specific formulation study authorized, 2026-07-19 |
 
 ## Conventions
 
