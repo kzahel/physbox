@@ -451,6 +451,27 @@ GPU run.
 Product constructors and all physical defaults remain inert. Clean candidate
 evidence remains open.
 
+Candidate-1 disposition, 2026-07-19: clean run
+`p5.2b-s11.3-retained-refresh-scalar-20260719-r1` is independently verified
+in the
+[candidate package](../../evidence/p5.2b-s11.3-candidate-retained-refresh/README.md)
+and discards raw retained refresh at the scalar stage. The local soft argument
+passes 720 samples: the actual `f32` coefficient complement residual is
+`1.862645149230957e-8`, with maximum endpoint impulse/velocity differences
+`3.7252903206663746e-8`/`2.607703215584678e-7`. The coupled lanes do not.
+Depth 11 improves from `0.17856713` to `0.00850862 m/s`, but its candidate
+energy maxima rise from `1.0909919e-4` to `1.1369673e-4` and penetration
+worsens from `0.01701543` to `0.02646441 m`. The scalar 16-stack is
+structurally invalid in both lanes and candidate penetration worsens from
+`0.03863653` to `0.04534828 m`; the four-body candidate changes the final
+active support count from 7 to 8. Every policy replays exactly and the
+two-step response is exact, so this is a quality/structure rejection rather
+than nondeterminism. `gpuPortAdmitted=false`: no S11 GPU candidate, corpus,
+or cross-host lane ran. Candidate 1 is recorded but the mechanism is not
+closed; candidate 2 now requires a distinct soft-consistent impulse-transport
+derivation rather than raw retention, attenuation, or a weakened penetration
+gate.
+
 Commit boundaries: scalar derivation; GPU port and falsification; quality
 evidence — separately per candidate.
 

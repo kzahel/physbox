@@ -881,6 +881,25 @@ and early-GPU gates; the discarded S10 hard result is evidence, not a
 transferred verdict. Product/default/tolerance/oracle contracts remain
 unchanged.
 
+S11.3 candidate-1 disposition, 2026-07-19: the verified
+[retained-refresh scalar package](../../evidence/p5.2b-s11.3-candidate-retained-refresh/README.md)
+discards raw within-step impulse retention before any GPU port. The local
+soft complement argument passes 720 analytic samples with only the bounded
+serialized-`f32` endpoint residual, and the two-step soft response remains
+exact. In the full recurrence, depth 11 falls from `0.17856713` to
+`0.00850862 m/s` but retains a rising settled energy envelope and worsens
+penetration from `0.01701543` to `0.02646441 m`. The scalar 16-stack is
+structurally invalid in both control and candidate and candidate penetration
+worsens; the four-body candidate changes the final active support-point count.
+All control/candidate lanes replay exactly. Per the frozen scalar-first rule,
+`gpuPortAdmitted=false` and no early-GPU, corpus, or cross-host result is
+inferred. Candidate 1 therefore rules out simple raw retention as the complete
+soft correction but does not close the measured mechanism. Any candidate 2
+must derive a distinct soft-consistent impulse transport through refresh;
+attenuation, coefficient retuning, or a weakened penetration/structure gate
+has no authorization. Product/default/tolerance/oracle contracts remain
+unchanged.
+
 ## Authority corrections
 
 Two plausible techniques must not be mislabeled as direct Box2D v3 parity:

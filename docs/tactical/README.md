@@ -40,6 +40,10 @@ persistence is clean, while three inter-substep refreshes rewind the current
 soft impulse to the first prepared seed; depth 11 is the exact smallest
 rising-signature reproducer. S11.3 routes first to a scalar-first
 retained-impulse refresh candidate with mandatory early GPU falsification.
+That first candidate is discarded at the scalar stage for worse penetration,
+a still-rising depth-11 envelope, and invalid scalar 16-stack structure; no
+GPU lane was admitted. A distinct soft-consistent transport derivation is the
+only supported route to candidate 2.
 
 Tactical filenames use a three-digit zero-padded prefix ordered by their first
 Git creation timestamp. This repository starts at `001`. Never renumber an
@@ -60,7 +64,7 @@ This README remains the unnumbered index.
 | S8 | Physical mobile frame pacing | [008-physical-mobile-frame-pacing.md](008-physical-mobile-frame-pacing.md) | complete; Pixel 7a bootstrap sustains rendering and physics cadence, 2026-07-18 |
 | S9 | Awake settling schedule differential | [009-settling-schedule-differential.md](009-settling-schedule-differential.md) | complete; no schedule-differential survivor, 2026-07-18 |
 | S10 | Warm-start and stored-impulse stationarity | [010-warm-start-impulse-stationarity.md](010-warm-start-impulse-stationarity.md) | complete; no hard survivor; soft-specific formulation study authorized, 2026-07-19 |
-| S11 | Soft contact formulation study | [011-soft-contact-formulation.md](011-soft-contact-formulation.md) | active; S11.2 mechanism/minimizer complete, 2026-07-19 |
+| S11 | Soft contact formulation study | [011-soft-contact-formulation.md](011-soft-contact-formulation.md) | active; S11.3 candidate 1 discarded at scalar stage, 2026-07-19 |
 
 ## Conventions
 
