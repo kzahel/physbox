@@ -1021,6 +1021,19 @@ then stop before cross-host expansion or product promotion. S12 itself is
 complete; no comparator, GPU probe, product default, tolerance, or authority
 precedence changed.
 
+S13 human fork resolution, 2026-07-19: human review authorizes the exact
+unpromoted GPU probe recommended by S12.6 and recorded in
+[S13](../tactical/013-authority-structure-gpu-probe.md). The probe contains
+exactly X1-X4, the common normal-then-friction point-sequential recurrence,
+and current PhysBox X5 restitution timing. It compares depth 11 and depth 16
+to the already frozen authority bands, replays exactly, fails closed on true
+capacity overflow, exercises one source-faithful forced-overflow fixture, and
+measures 32/256/1K work, allocation, and GPU complete-step time. No approximate
+selected-kernel port, comparator, wider scalar or coefficient sweep, product
+selection, default change, tolerance change, or authority-precedence change is
+authorized. The workstream stops at a new human checkpoint before cross-host
+candidate qualification or product promotion.
+
 ## Authority corrections
 
 Two plausible techniques must not be mislabeled as direct Box2D v3 parity:
