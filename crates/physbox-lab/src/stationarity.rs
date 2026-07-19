@@ -51,7 +51,7 @@ pub const fn stationarity_metric_contract_v1() -> StationarityMetricContractV1 {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct AuthorityTraceSnapshotV1 {
     pub completed_steps: u32,
     pub bodies: Vec<BodyStateV1>,

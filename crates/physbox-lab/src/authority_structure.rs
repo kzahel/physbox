@@ -7,16 +7,17 @@
 //! `constraint_graph.c`, `contact_solver.c`, and `physics_world.c`.
 
 use physbox_contracts::{
-    BodyStateV1, ContactCachePointV1, ContactSoftnessPolicyV1, FiniteF32, ScenarioV1,
-    TraceRecordV1, TraceStageV1, Validate,
+    AuthoredManifoldV1, BodyStateV1, ContactCachePointV1, ContactSoftnessPolicyV1, FeatureIdV1,
+    FiniteF32, ScenarioV1, ShapeV1, TraceRecordV1, TraceStageV1, Validate, Vec2,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::scalar::{
     PreparedContact, ScalarError, ScalarObservedSolveResultV1, ScalarSolveResult,
     ScalarStepObservationV1, apply_restitution, collect_contact_cache, generate_portable_contacts,
-    integrate_positions, integrate_velocities, maximum_depenetration_velocity, prepare_contact,
-    refresh_separations, solve_normal, solve_tangent, warm_start,
+    integrate_positions, integrate_positions_authority, integrate_velocities,
+    maximum_depenetration_velocity, order_authority_contact_points, prepare_contact,
+    refresh_authority_separations, refresh_separations, solve_normal, solve_tangent, warm_start,
 };
 
 pub const AUTHORITY_STRUCTURE_POLICY_VERSION: u32 = 1;
@@ -234,16 +235,19 @@ pub fn solve_authority_structure_steps_observed(
             let trace_start = traces.len();
             if policy.preparation == AuthorityStructureSideV1::Authority {
                 if fixed_contacts.is_none() {
-                    fixed_contacts = Some(prepare_contacts(
-                        scenario,
-                        &bodies,
-                        &contact_cache,
-                        &mut traces,
-                    )?);
+                    let mut contacts =
+                        prepare_contacts(scenario, &bodies, &contact_cache, &mut traces, true)?;
+                    if policy.accumulation == AuthorityStructureSideV1::Authority {
+                        order_authority_contact_points(&mut contacts);
+                    }
+                    fixed_contacts = Some(contacts);
                 }
             } else {
                 refreshed_contacts =
-                    prepare_contacts(scenario, &bodies, &outer_step_cache, &mut traces)?;
+                    prepare_contacts(scenario, &bodies, &outer_step_cache, &mut traces, false)?;
+                if policy.accumulation == AuthorityStructureSideV1::Authority {
+                    order_authority_contact_points(&mut refreshed_contacts);
+                }
             }
             let contacts = if let Some(contacts) = fixed_contacts.as_mut() {
                 contacts
@@ -282,8 +286,16 @@ pub fn solve_authority_structure_steps_observed(
                 }
             }
 
-            integrate_positions(&mut bodies, substep_dt, &mut traces)?;
-            refresh_separations(contacts, &bodies);
+            if policy.preparation == AuthorityStructureSideV1::Authority {
+                integrate_positions_authority(&mut bodies, substep_dt, &mut traces)?;
+            } else {
+                integrate_positions(&mut bodies, substep_dt, &mut traces)?;
+            }
+            if policy.preparation == AuthorityStructureSideV1::Authority {
+                refresh_authority_separations(contacts, &bodies);
+            } else {
+                refresh_separations(contacts, &bodies);
+            }
             for &contact_index in &visit_order {
                 solve_normal(
                     &mut contacts[contact_index],
@@ -364,12 +376,131 @@ fn prepare_contacts(
     bodies: &[BodyStateV1],
     cache: &[ContactCachePointV1],
     traces: &mut Vec<TraceRecordV1>,
+    authority_identity: bool,
 ) -> Result<Vec<PreparedContact>, ScalarError> {
-    let manifolds = generate_portable_contacts(scenario, bodies)?;
+    let mut manifolds = generate_portable_contacts(scenario, bodies)?;
+    if authority_identity {
+        canonicalize_authority_features(&mut manifolds, bodies)?;
+    }
     manifolds
         .iter()
         .map(|manifold| prepare_contact(bodies, manifold, cache, traces))
         .collect()
+}
+
+fn canonicalize_authority_features(
+    manifolds: &mut [AuthoredManifoldV1],
+    bodies: &[BodyStateV1],
+) -> Result<(), ScalarError> {
+    for manifold in manifolds {
+        let body_a = bodies
+            .iter()
+            .find(|body| body.id == manifold.body_a)
+            .ok_or_else(|| ScalarError("authority manifold body A is missing".to_owned()))?;
+        let body_b = bodies
+            .iter()
+            .find(|body| body.id == manifold.body_b)
+            .ok_or_else(|| ScalarError("authority manifold body B is missing".to_owned()))?;
+        let mut authority_order = (0..manifold.points.len()).collect::<Vec<_>>();
+        let tangent = Vec2::new(manifold.normal.y, -manifold.normal.x);
+        authority_order.sort_by(|&left, &right| {
+            let left_coordinate = dot(manifold.points[left].world_point, tangent);
+            let right_coordinate = dot(manifold.points[right].world_point, tangent);
+            right_coordinate.total_cmp(&left_coordinate)
+        });
+        let reference_a = manifold.points.len() == 2
+            && manifold
+                .points
+                .iter()
+                .all(|point| point.feature_a.feature_type == 1);
+        let reference_b = manifold.points.len() == 2
+            && manifold
+                .points
+                .iter()
+                .all(|point| point.feature_b.feature_type == 1);
+        for (rank, &point_index) in authority_order.iter().enumerate() {
+            let point = &mut manifold.points[point_index];
+            if reference_a {
+                let reference_face = point.feature_a.feature_index;
+                point.feature_a = authority_vertex(if rank == 0 {
+                    reference_face
+                } else {
+                    (reference_face + 1) % 4
+                });
+                point.feature_b = authority_vertex(point.feature_b.feature_index);
+            } else if reference_b {
+                let reference_face = point.feature_b.feature_index;
+                point.feature_a = authority_vertex(point.feature_a.feature_index);
+                point.feature_b = authority_vertex(if rank == 0 {
+                    (reference_face + 1) % 4
+                } else {
+                    reference_face
+                });
+            } else {
+                point.feature_a = authority_feature(body_a.shape, point.local_anchor_a);
+                point.feature_b = authority_feature(body_b.shape, point.local_anchor_b);
+            }
+            point.local_anchor_a = inverse_rotate(
+                Vec2::new(
+                    point.world_point.x - body_a.position.x,
+                    point.world_point.y - body_a.position.y,
+                ),
+                body_a.angle.get(),
+            );
+            point.local_anchor_b = inverse_rotate(
+                Vec2::new(
+                    point.world_point.x - body_b.position.x,
+                    point.world_point.y - body_b.position.y,
+                ),
+                body_b.angle.get(),
+            );
+        }
+    }
+    Ok(())
+}
+
+fn authority_vertex(feature_index: u32) -> FeatureIdV1 {
+    FeatureIdV1 {
+        feature_type: 3,
+        feature_index,
+    }
+}
+
+fn authority_feature(shape: ShapeV1, local_anchor: Vec2) -> FeatureIdV1 {
+    let feature_index = match shape {
+        ShapeV1::Circle { .. } => 0,
+        ShapeV1::Rectangle { half_extents } => [
+            Vec2::new(-half_extents.x, -half_extents.y),
+            Vec2::new(half_extents.x, -half_extents.y),
+            Vec2::new(half_extents.x, half_extents.y),
+            Vec2::new(-half_extents.x, half_extents.y),
+        ]
+        .into_iter()
+        .enumerate()
+        .min_by(|(_, left), (_, right)| {
+            squared_distance(*left, local_anchor).total_cmp(&squared_distance(*right, local_anchor))
+        })
+        .map_or(0, |(index, _)| index as u32),
+    };
+    authority_vertex(feature_index)
+}
+
+fn dot(left: Vec2, right: Vec2) -> f32 {
+    left.x * right.x + left.y * right.y
+}
+
+fn squared_distance(left: Vec2, right: Vec2) -> f32 {
+    let x = left.x - right.x;
+    let y = left.y - right.y;
+    x * x + y * y
+}
+
+fn inverse_rotate(vector: Vec2, angle: f32) -> Vec2 {
+    let (sine, cosine) = (-angle).sin_cos();
+    Vec2::new(
+        cosine * vector.x - sine * vector.y,
+        sine * vector.x + cosine * vector.y,
+    )
 }
 
 fn selected_contact_softness(

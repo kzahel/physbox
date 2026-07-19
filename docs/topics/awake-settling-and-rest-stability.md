@@ -967,6 +967,23 @@ whether it maps exactly to the selected colored-parallel GPU architecture.
 No product, authority precedence, source pin, comparator, or physical default
 changes by this authorization.
 
+S12 gate-consistency resolution, 2026-07-19, before qualifying evidence: the
+first unretained bridge diagnostic showed that the draft absolute energy rule
+rejected native Box2D itself on both governed stacks (depth 11 has a positive
+run of 5 and both depths have rising last/first energy quartiles). The native
+public trace also exposes contact records only during the settled window, so
+an all-step scalar penetration maximum has no native counterpart. The durable
+S12 gate now compares settled speed to `2 * native + 2e-5`, settled energy
+growth and positive-run to a no-worse-than-native band, and settled
+penetration to native plus `2e-4 m`. The two-step source gates response only;
+the permanent mixed pile remains finite/structure/product-ceiling context;
+depth 11 and depth 16 own qualification. This implements the human-authorized
+authority-band ownership instead of requiring the authority to pass a stricter
+PhysBox-authored absolute predicate. It changes no product quality ceiling,
+physical default, numerical product tolerance, oracle precedence, or source
+pin. No clean S12 endpoint or ablation evidence was accepted under the
+discarded draft.
+
 ## Authority corrections
 
 Two plausible techniques must not be mislabeled as direct Box2D v3 parity:

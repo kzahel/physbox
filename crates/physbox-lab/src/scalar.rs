@@ -241,6 +241,10 @@ pub(crate) struct PreparedContact {
     manifold_id: u32,
     pub(crate) body_a: usize,
     pub(crate) body_b: usize,
+    initial_position_a: Vec2,
+    initial_position_b: Vec2,
+    initial_angle_a: f32,
+    initial_angle_b: f32,
     normal: Vec2,
     tangent: Vec2,
     friction: f32,
@@ -256,6 +260,7 @@ struct PreparedPoint {
     local_anchor_b: Vec2,
     anchor_a: Vec2,
     anchor_b: Vec2,
+    base_separation: f32,
     separation: f32,
     normal_mass: f32,
     tangent_mass: f32,
@@ -718,6 +723,7 @@ pub(crate) fn prepare_contact(
             local_anchor_b: point.local_anchor_b,
             anchor_a,
             anchor_b,
+            base_separation: point.separation.get() - dot(sub(anchor_b, anchor_a), normal),
             separation: point.separation.get(),
             normal_mass,
             tangent_mass,
@@ -748,6 +754,10 @@ pub(crate) fn prepare_contact(
         manifold_id: manifold.id,
         body_a,
         body_b,
+        initial_position_a: bodies[body_a].position,
+        initial_position_b: bodies[body_b].position,
+        initial_angle_a: bodies[body_a].angle.get(),
+        initial_angle_b: bodies[body_b].angle.get(),
         normal,
         tangent,
         friction: manifold.material.friction.get(),
@@ -1070,6 +1080,51 @@ pub(crate) fn integrate_positions(
     Ok(())
 }
 
+/// Advances positions with the pinned authority's normalized incremental
+/// rotation update. This is the rotation representation used by the fixed
+/// anchor/delta transform policy; the PhysBox endpoint keeps its existing
+/// direct angle integration.
+pub(crate) fn integrate_positions_authority(
+    bodies: &mut [BodyStateV1],
+    substep_dt: f32,
+    traces: &mut Vec<TraceRecordV1>,
+) -> Result<(), ScalarError> {
+    for (body_index, body) in bodies.iter_mut().enumerate() {
+        if body.inverse_mass.get() != 0.0 && !body.sleeping {
+            let position = add(body.position, scale(body.linear_velocity, substep_dt));
+            position.validate().map_err(|_| {
+                ScalarError("integration produced a non-finite position".to_owned())
+            })?;
+            body.position = position;
+            let delta_angle = substep_dt * body.angular_velocity.get();
+            let (sine, cosine) = body.angle.get().sin_cos();
+            let integrated_cosine = cosine - delta_angle * sine;
+            let integrated_sine = sine + delta_angle * cosine;
+            let magnitude =
+                (integrated_cosine * integrated_cosine + integrated_sine * integrated_sine).sqrt();
+            body.angle = finite_result(
+                (integrated_sine / magnitude).atan2(integrated_cosine / magnitude),
+                "authority integrated angle",
+            )?;
+        }
+        traces.push(trace(
+            TraceStageV1::Integrate,
+            u32::MAX,
+            body_index,
+            0,
+            vec![
+                ("angle", body.angle.get()),
+                ("angularVelocity", body.angular_velocity.get()),
+                ("positionX", body.position.x),
+                ("positionY", body.position.y),
+                ("velocityX", body.linear_velocity.x),
+                ("velocityY", body.linear_velocity.y),
+            ],
+        )?);
+    }
+    Ok(())
+}
+
 pub(crate) fn refresh_separations(contacts: &mut [PreparedContact], bodies: &[BodyStateV1]) {
     for contact in contacts {
         for point in &mut contact.points {
@@ -1079,6 +1134,46 @@ pub(crate) fn refresh_separations(contacts: &mut [PreparedContact], bodies: &[Bo
             let world_b = add(bodies[contact.body_b].position, current_anchor_b);
             point.separation = dot(sub(world_b, world_a), contact.normal);
         }
+    }
+}
+
+/// Refreshes the pinned authority's fixed-basis separation from the outer-step
+/// transform deltas. Unlike `refresh_separations`, this preserves the prepared
+/// manifold separation at zero delta instead of treating the two anchors as
+/// coincident geometric witnesses.
+pub(crate) fn refresh_authority_separations(
+    contacts: &mut [PreparedContact],
+    bodies: &[BodyStateV1],
+) {
+    for contact in contacts {
+        let delta_position_a = sub(bodies[contact.body_a].position, contact.initial_position_a);
+        let delta_position_b = sub(bodies[contact.body_b].position, contact.initial_position_b);
+        let delta_angle_a = bodies[contact.body_a].angle.get() - contact.initial_angle_a;
+        let delta_angle_b = bodies[contact.body_b].angle.get() - contact.initial_angle_b;
+        let delta_position = sub(delta_position_b, delta_position_a);
+        for point in &mut contact.points {
+            let rotated_anchor_a = rotate(point.anchor_a, delta_angle_a);
+            let rotated_anchor_b = rotate(point.anchor_b, delta_angle_b);
+            point.separation = point.base_separation
+                + dot(
+                    add(delta_position, sub(rotated_anchor_b, rotated_anchor_a)),
+                    contact.normal,
+                );
+        }
+    }
+}
+
+/// Orders points along the prepared tangent as emitted by the pinned Box2D
+/// polygon manifold. The portable PhysBox clipper retains the opposite
+/// incident-edge traversal for two-point rectangle contacts, so the authority
+/// accumulation schedule must normalize that local visit order explicitly.
+pub(crate) fn order_authority_contact_points(contacts: &mut [PreparedContact]) {
+    for contact in contacts {
+        contact.points.sort_by(|left, right| {
+            let left_coordinate = dot(add(left.anchor_a, left.anchor_b), contact.tangent);
+            let right_coordinate = dot(add(right.anchor_a, right.anchor_b), contact.tangent);
+            right_coordinate.total_cmp(&left_coordinate)
+        });
     }
 }
 
