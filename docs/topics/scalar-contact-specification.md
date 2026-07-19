@@ -217,6 +217,22 @@ specification and requires a human-authorized study plus new scalar/GPU traces.
 No tolerance, selected scalar equation, product coefficient, or oracle
 precedence changes by the S13 result.
 
+## S14 branch-robust scalar disposition
+
+The [S14 review](../../evidence/p5.2b-s14.7-branch-robust-review/README.md)
+derives and freezes one real-equivalent separation evaluation without changing
+the normal equation, predicate, coefficients, or this selected specification.
+It removes the retained large-term cancellation and passes local identity,
+bound, outward-rounding, metamorphic, finite-state, and exact-replay controls.
+
+The governed rounding gate rejects it at 10/14 rows. All depth-11 lanes pass;
+at depth 16 the nearest, uniform-high, step-alternating, and hashed lanes fail
+the unchanged energy or positive-run predicates. This is a response failure,
+not a mathematical identity, finite-state, support, or error-bound failure.
+The conditional GPU port is therefore not admitted. The formula remains
+validation-only, the S12 endpoint and this specification remain unchanged,
+and another formulation requires a new human decision.
+
 ## Reconsideration triggers
 
 Change these equations or ordering only with measured candidate evidence and a

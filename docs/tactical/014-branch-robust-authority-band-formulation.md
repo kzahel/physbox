@@ -1,7 +1,9 @@
 # S14: branch-robust authority-band formulation
 
-Status: active, 2026-07-19. Authorized by human decision at the S13.6
-checkpoint. This workstream studies exactly one algebraically derived,
+Status: complete at the human checkpoint, 2026-07-19. The sole formulation
+passes derivation and local controls but fails the frozen scalar robustness
+gate at depth 16, so no GPU work is admitted. Authorized by human decision at
+the S13.6 checkpoint. This workstream studies exactly one algebraically derived,
 cancellation-robust reformulation of the near-zero separation expression
 identified from the retained S13.2 divergence. It is a scalar-first decision
 study and, only after scalar qualification, an unpromoted portable-GPU probe.
@@ -249,6 +251,9 @@ verified failure closes S14 at the scalar human checkpoint.
 
 ### S14.5 — unchanged GPU response and capacity rerun
 
+Not executed. S14.4 qualified only 10/14 governed scalar rows, so the frozen
+scalar-first gate denied GPU admission.
+
 - [ ] Port only the frozen candidate expression to the validation-only GPU
   path and retain focused scalar/GPU expression/phase traces.
 - [ ] Run exact primary/replay at depths 11 and 16 against unchanged bands.
@@ -263,6 +268,9 @@ the exact failing disposition is retained.
 
 ### S14.6 — unchanged 32/256/1K work and timing rerun
 
+Not executed. Timing was conditional on scalar qualification and a valid GPU
+response lane; neither condition was met.
+
 - [ ] Measure the selected control and S14 candidate under the exact S13
   source, sample-order, timestamp, work, allocation, and statistic contract.
 - [ ] Classify execution constraints separately from completing cost and
@@ -275,11 +283,11 @@ or a reproducible hard execution failure is retained.
 
 ### S14.7 — decision package and human checkpoint
 
-- [ ] Recursively verify every admitted slice and publish exactly one final
+- [x] Recursively verify every admitted slice and publish exactly one final
   disposition plus one recommendation.
-- [ ] Update this tactical, tactical index, and governing topics in the same
+- [x] Update this tactical, tactical index, and governing topics in the same
   change.
-- [ ] Stop before cross-host candidate qualification or product promotion.
+- [x] Stop before cross-host candidate qualification or product promotion.
 
 Artifacts: `evidence/p5.2b-s14.7-branch-robust-review/`.
 

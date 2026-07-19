@@ -69,8 +69,11 @@ soft scalar result remains valid; any branch-robust GPU formulation is a new
 human decision. Human review at S13.6 declines promotion and authorizes S14 as
 one scalar-first cancellation-robust authority-band formulation study with a
 written binary32 error bound, frozen perturbation gate, and unchanged S13 GPU
-rerun after scalar qualification. S14 is active and stops before cross-host
-qualification or product promotion.
+rerun after scalar qualification. S14 is complete as a scalar negative: all
+depth-11 lanes pass, but four depth-16 lanes fail the unchanged energy or
+positive-run predicates. The GPU admission gate is closed, so no S14 GPU,
+timing, cross-host, or promotion work ran. Soft contact is not globally ruled
+out, but another formulation requires a new human decision.
 
 Tactical filenames use a three-digit zero-padded prefix ordered by their first
 Git creation timestamp. This repository starts at `001`. Never renumber an
@@ -94,7 +97,7 @@ This README remains the unnumbered index.
 | S11 | Soft contact formulation study | [011-soft-contact-formulation.md](011-soft-contact-formulation.md) | complete; no survivor, comparator-engine fork returned to human review, 2026-07-19 |
 | S12 | Authority solve-structure decomposition | [012-authority-structure-decomposition.md](012-authority-structure-decomposition.md) | complete; four-axis authority structure qualifies and exact GPU probe recommended, 2026-07-19 |
 | S13 | Exact authority-structure GPU execution probe | [013-authority-structure-gpu-probe.md](013-authority-structure-gpu-probe.md) | manual checkpoint; exact candidate rejected by frozen authority quality, no execution constraint, 2026-07-19 |
-| S14 | Branch-robust authority-band formulation | [014-branch-robust-authority-band-formulation.md](014-branch-robust-authority-band-formulation.md) | active; one scalar-first cancellation-robust formulation authorized, 2026-07-19 |
+| S14 | Branch-robust authority-band formulation | [014-branch-robust-authority-band-formulation.md](014-branch-robust-authority-band-formulation.md) | complete; sole candidate rejected at 10/14 scalar robustness rows, no GPU admitted, 2026-07-19 |
 
 ## Conventions
 

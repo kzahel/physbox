@@ -1,16 +1,16 @@
 # Awake settling and rest stability
 
-Status: S6.5, S9, S10, and S11 are closed as negative results; S12's coupled
-soft scalar authority endpoint qualifies, S13 rejects its one exact GPU
-execution candidate on frozen response quality, and S14 is the authorized
-branch-robust authority-band formulation study, 2026-07-19.
+Status: S6.5, S9, S10, S11, and S14 are closed as negative results; S12's
+coupled soft scalar authority endpoint qualifies, S13 rejects its one exact
+GPU execution candidate on frozen response quality, and S14 rejects its sole
+branch-robust formulation at the scalar robustness gate, 2026-07-19.
 S11's measured rewind correction space is exhausted with no survivor. The
 comparator-engine trigger remains recorded but no comparator is authorized.
 The S6.5d soft candidate and all S9/S10/S11 material candidates are rejected;
 restitution timing is byte-inert on the governed controls.
-Hard/direct manifold-block i2 remains the product. S13 is at its manual
-checkpoint and S14 is validation-only; no candidate is promoted or authorized
-for cross-host expansion.
+Hard/direct manifold-block i2 remains the product. S14 is complete at its
+human checkpoint; no candidate is promoted or authorized for GPU or cross-host
+expansion.
 Awake settling is a prerequisite for broadphase selection and sleeping
 acceptance. No contact-identity policy, soft-contact coefficients, penetration
 deadband, friction anchor, residual band, or sleep threshold is a product
@@ -1075,6 +1075,32 @@ fixture, one-below-demand fail-closed fixture, and 32/256/1K timing matrix.
 Hard/direct remains selected. S14 stops before cross-host qualification or
 promotion and cannot reinterpret a clean negative by changing the formula arm
 or a frozen gate.
+
+S14 measured disposition, 2026-07-19: the recursive
+[review package](../../evidence/p5.2b-s14.7-branch-robust-review/README.md)
+rejects `authority-band-cancellation-robust-v1` at the frozen scalar-first
+gate. The retained S13 branch split is explained exactly: the original
+separation combines `0.25` and `-0.24999994`, reaching zero on the GPU while
+the scalar reaches one positive binary32 ULP and selects the other biased-
+normal equation. The real-equivalent displacement formulation reduces the
+retained forward bound from `1.49032e-7` to `2.98230e-8`, with a wholly
+positive local interval, and all local controls pass.
+
+The full robustness result is nevertheless 10/14. Every depth-11 lane passes.
+At depth 16, nearest, uniform-high, and hashed-sign-v1 fail only the unchanged
+energy-growth predicate; step-alternating fails only the positive-energy-run
+predicate. All rows replay exactly and remain finite, structurally valid,
+support-compatible, and inside speed, height, penetration, and arithmetic-
+bound gates. Because nearest itself fails, this is not merely an overly broad
+endpoint stress. The scalar gate denies GPU admission; S14 performs no GPU,
+capacity, timing, cross-host, or promotion run.
+
+This rejects one formulation, not soft contact as a family. S12's coupled
+scalar endpoint remains promising, and S14 brings the depth-16 response near
+the authority band without crossing every stationary predicate. Hard/direct
+remains selected. Any further soft formulation is a new human-authorized
+study; it may not reuse S14 to change coefficients, bands, authority, product
+selection, or the frozen perturbation result.
 
 ## Authority corrections
 
