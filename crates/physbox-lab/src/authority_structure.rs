@@ -12,12 +12,17 @@ use physbox_contracts::{
 };
 use serde::{Deserialize, Serialize};
 
+use crate::branch_robust::{
+    BRANCH_ROBUST_CANDIDATE_ID, BRANCH_ROBUST_ERROR_BOUND_VERSION, BRANCH_ROBUST_FORMULA_VERSION,
+};
+use crate::branch_robust_scalar::{BranchRobustPerturbationV1, BranchRobustRunStatisticsV1};
 use crate::scalar::{
     PreparedContact, ScalarError, ScalarObservedSolveResultV1, ScalarSolveResult,
     ScalarStepObservationV1, apply_restitution, collect_contact_cache, generate_portable_contacts,
     integrate_positions, integrate_positions_authority, integrate_velocities,
     maximum_depenetration_velocity, order_authority_contact_points, prepare_contact,
-    refresh_authority_separations, refresh_separations, solve_normal, solve_tangent, warm_start,
+    refresh_authority_separations, refresh_branch_robust_authority_separations,
+    refresh_separations, solve_normal, solve_tangent, warm_start,
 };
 
 pub const AUTHORITY_STRUCTURE_POLICY_VERSION: u32 = 1;
@@ -177,6 +182,16 @@ pub struct AuthorityStructurePassStateV1 {
     pub bodies: Vec<BodyStateV1>,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct BranchRobustAuthoritySolveResultV1 {
+    pub candidate_id: &'static str,
+    pub formula_version: u32,
+    pub error_bound_version: u32,
+    pub perturbation: BranchRobustPerturbationV1,
+    pub statistics: BranchRobustRunStatisticsV1,
+    pub solve: ScalarObservedSolveResultV1,
+}
+
 pub fn mandatory_authority_structure_configurations_v1() -> Vec<AuthorityStructureConfigurationV1> {
     let mut configurations = vec![
         AuthorityStructureConfigurationV1 {
@@ -221,7 +236,44 @@ pub fn solve_authority_structure_steps_observed(
     policy: AuthorityStructurePolicyV1,
     retain_traces: bool,
 ) -> Result<ScalarObservedSolveResultV1, ScalarError> {
-    solve_authority_structure_steps_observed_internal(scenario, policy, retain_traces, None)
+    solve_authority_structure_steps_observed_internal(
+        scenario,
+        policy,
+        retain_traces,
+        None,
+        None,
+        None,
+    )
+}
+
+pub fn solve_branch_robust_authority_structure_steps_observed(
+    scenario: &ScenarioV1,
+    policy: AuthorityStructurePolicyV1,
+    perturbation: BranchRobustPerturbationV1,
+    retain_traces: bool,
+) -> Result<BranchRobustAuthoritySolveResultV1, ScalarError> {
+    if policy.preparation != AuthorityStructureSideV1::Authority {
+        return Err(ScalarError(
+            "branch-robust separation requires authority-side preparation".to_owned(),
+        ));
+    }
+    let mut statistics = BranchRobustRunStatisticsV1::default();
+    let solve = solve_authority_structure_steps_observed_internal(
+        scenario,
+        policy,
+        retain_traces,
+        None,
+        Some(perturbation),
+        Some(&mut statistics),
+    )?;
+    Ok(BranchRobustAuthoritySolveResultV1 {
+        candidate_id: BRANCH_ROBUST_CANDIDATE_ID,
+        formula_version: BRANCH_ROBUST_FORMULA_VERSION,
+        error_bound_version: BRANCH_ROBUST_ERROR_BOUND_VERSION,
+        perturbation,
+        statistics,
+        solve,
+    })
 }
 
 pub fn solve_authority_structure_one_step_pass_states(
@@ -245,6 +297,8 @@ pub fn solve_authority_structure_one_step_pass_states(
         policy,
         true,
         Some(&mut pass_states),
+        None,
+        None,
     )?;
     Ok((result, pass_states))
 }
@@ -254,6 +308,8 @@ fn solve_authority_structure_steps_observed_internal(
     policy: AuthorityStructurePolicyV1,
     retain_traces: bool,
     mut pass_states: Option<&mut Vec<AuthorityStructurePassStateV1>>,
+    branch_robust_perturbation: Option<BranchRobustPerturbationV1>,
+    mut branch_robust_statistics: Option<&mut BranchRobustRunStatisticsV1>,
 ) -> Result<ScalarObservedSolveResultV1, ScalarError> {
     policy.validate()?;
     scenario
@@ -371,7 +427,21 @@ fn solve_authority_structure_steps_observed_internal(
                 &bodies,
             );
             if policy.preparation == AuthorityStructureSideV1::Authority {
-                refresh_authority_separations(contacts, &bodies);
+                if let (Some(perturbation), Some(statistics)) = (
+                    branch_robust_perturbation,
+                    branch_robust_statistics.as_deref_mut(),
+                ) {
+                    refresh_branch_robust_authority_separations(
+                        contacts,
+                        &bodies,
+                        step,
+                        substep,
+                        perturbation,
+                        statistics,
+                    );
+                } else {
+                    refresh_authority_separations(contacts, &bodies);
+                }
             } else {
                 refresh_separations(contacts, &bodies);
             }
@@ -827,5 +897,54 @@ mod tests {
         )
         .unwrap();
         assert_eq!(first, second);
+    }
+
+    #[test]
+    fn branch_robust_lanes_replay_and_remain_finite_locally() {
+        let mut scenario = p5_2_centered_rectangle_stack_scenario(2, 2).unwrap();
+        scenario.settings.contact_softness = Some(ContactSoftnessPolicyV1 {
+            version: 1,
+            contact_hertz: FiniteF32::new(30.0).unwrap(),
+            damping_ratio: FiniteF32::new(10.0).unwrap(),
+            static_contact_hertz_multiplier: FiniteF32::new(1.0).unwrap(),
+        });
+        let policy = AuthorityStructurePolicyV1::a_minus(AuthorityStructureAxisV1::Restitution);
+        for lane in BranchRobustPerturbationV1::ALL {
+            let first = solve_branch_robust_authority_structure_steps_observed(
+                &scenario, policy, lane, true,
+            )
+            .unwrap();
+            let second = solve_branch_robust_authority_structure_steps_observed(
+                &scenario, policy, lane, true,
+            )
+            .unwrap();
+            assert_eq!(first, second);
+            assert!(first.statistics.evaluations > 0);
+            assert_eq!(first.statistics.bound_violations, 0);
+            assert_eq!(first.statistics.non_finite_results, 0);
+            assert_eq!(first.statistics.normal_range_violations, 0);
+            assert!(
+                first
+                    .solve
+                    .result
+                    .bodies
+                    .iter()
+                    .all(|body| body.validate().is_ok())
+            );
+        }
+    }
+
+    #[test]
+    fn branch_robust_rejects_non_authority_preparation() {
+        let scenario = p5_2_centered_rectangle_stack_scenario(2, 1).unwrap();
+        assert!(
+            solve_branch_robust_authority_structure_steps_observed(
+                &scenario,
+                AuthorityStructurePolicyV1::physbox(),
+                BranchRobustPerturbationV1::Nearest,
+                false,
+            )
+            .is_err()
+        );
     }
 }

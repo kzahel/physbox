@@ -4,6 +4,14 @@ use physbox_contracts::{
     AuthoredManifoldV1, BodyId, BodyStateV1, ContactCachePointV1, ContactSoftnessPolicyV1,
     FiniteF32, ScenarioV1, TraceRecordV1, TraceStageV1, TraceValueV1, Validate, Vec2,
 };
+
+use crate::{
+    branch_robust::AuthoritySeparationInputsV1,
+    branch_robust_scalar::{
+        BranchRobustPerturbationV1, BranchRobustRunStatisticsV1, evaluate_branch_robust_scalar_v1,
+        select_branch_robust_perturbation_v1,
+    },
+};
 use serde::Serialize;
 
 use crate::{
@@ -260,6 +268,7 @@ struct PreparedPoint {
     local_anchor_b: Vec2,
     anchor_a: Vec2,
     anchor_b: Vec2,
+    input_separation: f32,
     base_separation: f32,
     separation: f32,
     normal_mass: f32,
@@ -723,6 +732,7 @@ pub(crate) fn prepare_contact(
             local_anchor_b: point.local_anchor_b,
             anchor_a,
             anchor_b,
+            input_separation: point.separation.get(),
             base_separation: point.separation.get() - dot(sub(anchor_b, anchor_a), normal),
             separation: point.separation.get(),
             normal_mass,
@@ -1159,6 +1169,43 @@ pub(crate) fn refresh_authority_separations(
                     add(delta_position, sub(rotated_anchor_b, rotated_anchor_a)),
                     contact.normal,
                 );
+        }
+    }
+}
+
+pub(crate) fn refresh_branch_robust_authority_separations(
+    contacts: &mut [PreparedContact],
+    bodies: &[BodyStateV1],
+    zero_based_step: u32,
+    substep: u32,
+    lane: BranchRobustPerturbationV1,
+    statistics: &mut BranchRobustRunStatisticsV1,
+) {
+    for contact in contacts {
+        for (point_index, point) in contact.points.iter_mut().enumerate() {
+            let result = evaluate_branch_robust_scalar_v1(AuthoritySeparationInputsV1 {
+                normal: contact.normal,
+                anchor_a: point.anchor_a,
+                anchor_b: point.anchor_b,
+                position_a: bodies[contact.body_a].position,
+                position_b: bodies[contact.body_b].position,
+                initial_position_a: contact.initial_position_a,
+                initial_position_b: contact.initial_position_b,
+                angle_a: bodies[contact.body_a].angle.get(),
+                angle_b: bodies[contact.body_b].angle.get(),
+                initial_angle_a: contact.initial_angle_a,
+                initial_angle_b: contact.initial_angle_b,
+                input_separation: point.input_separation,
+            });
+            point.separation = select_branch_robust_perturbation_v1(
+                result,
+                lane,
+                zero_based_step,
+                substep,
+                contact.manifold_id,
+                point_index as u32,
+                statistics,
+            );
         }
     }
 }
