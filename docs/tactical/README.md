@@ -50,13 +50,16 @@ ownership constraints. The verified S11.4 closure and S11.5 review recommend
 closing the current soft route and return the comparator-engine fork to human
 review. The current product remains unchanged and is not reclassified as a
 settling solution.
-S12 is active by human decision: the comparator-engine trigger remains
-recorded but no comparator is authorized. An independent scalar bridge must
-qualify both the existing PhysBox-soft and pinned Box2D solve-structure
-endpoints, then run ten bidirectional single-axis ablations and at most three
-mechanically routed interactions. Its deliverable is the minimal sufficient
-stillness structure and a colored-parallel GPU feasibility decision, not a
-product change.
+S12 is complete with a qualified authority-structure endpoint. One bounded
+study ran two endpoints, ten bidirectional single-axis ablations, and three
+routed interactions over four sources. Preparation, authority-colored
+accumulation, the authority coefficient schedule, and one-biased/one-relax
+composition are the smallest qualified measured structure; restitution timing
+is unnecessary. No singleton or pair qualifies, so the true minimum is bounded
+at 3-4. Static analysis finds the four-axis target exactly representable but
+not directly selected-policy compatible. The recommendation at the recorded
+checkpoint is one minimal exact unpromoted GPU probe. No comparator, probe,
+product change, or gate weakening is authorized by closure.
 
 Tactical filenames use a three-digit zero-padded prefix ordered by their first
 Git creation timestamp. This repository starts at `001`. Never renumber an
@@ -78,7 +81,7 @@ This README remains the unnumbered index.
 | S9 | Awake settling schedule differential | [009-settling-schedule-differential.md](009-settling-schedule-differential.md) | complete; no schedule-differential survivor, 2026-07-18 |
 | S10 | Warm-start and stored-impulse stationarity | [010-warm-start-impulse-stationarity.md](010-warm-start-impulse-stationarity.md) | complete; no hard survivor; soft-specific formulation study authorized, 2026-07-19 |
 | S11 | Soft contact formulation study | [011-soft-contact-formulation.md](011-soft-contact-formulation.md) | complete; no survivor, comparator-engine fork returned to human review, 2026-07-19 |
-| S12 | Authority solve-structure decomposition | [012-authority-structure-decomposition.md](012-authority-structure-decomposition.md) | active; contract and bounded matrix frozen, 2026-07-19 |
+| S12 | Authority solve-structure decomposition | [012-authority-structure-decomposition.md](012-authority-structure-decomposition.md) | complete; four-axis authority structure qualifies and exact GPU probe recommended, 2026-07-19 |
 
 ## Conventions
 

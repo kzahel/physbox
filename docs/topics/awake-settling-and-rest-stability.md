@@ -1,14 +1,15 @@
 # Awake settling and rest stability
 
 Status: S6.5, S9, S10, and S11 are closed as negative results; the bounded
-S12 authority-structure decomposition is active by human decision, 2026-07-19.
+S12 authority-structure decomposition is complete with a qualified coupled
+soft endpoint and a minimal exact GPU probe recommendation, 2026-07-19.
 S11's measured rewind correction space is exhausted with no survivor. The
 comparator-engine trigger remains recorded but no comparator is authorized.
 The S6.5d soft candidate and all S9/S10/S11 material candidates are rejected;
 restitution timing is byte-inert on the governed controls.
-Hard/direct manifold-block i2 remains the product. S11 is authorized only
-under the recorded deep-stack energy and cross-Android reopening gate; no
-candidate is promoted by this topic.
+Hard/direct manifold-block i2 remains the product. The recommended exact S12
+GPU probe remains behind its human checkpoint; no candidate is promoted by
+this topic.
 Awake settling is a prerequisite for broadphase selection and sleeping
 acceptance. No contact-identity policy, soft-contact coefficients, penetration
 deadband, friction anchor, residual band, or sleep threshold is a product
@@ -983,6 +984,42 @@ PhysBox-authored absolute predicate. It changes no product quality ceiling,
 physical default, numerical product tolerance, oracle precedence, or source
 pin. No clean S12 endpoint or ablation evidence was accepted under the
 discarded draft.
+
+S12 endpoint qualification, 2026-07-19: the verified
+[endpoint package](../../evidence/p5.2b-s12.2-authority-endpoints/README.md)
+proves the bridge P endpoint bit-exact to S11 on all four frozen sources and
+reproduces its known failures. The independently implemented A endpoint
+qualifies against fresh, exactly replayed native Box2D on both governed stacks.
+Depth-11 settled maximum speed is `6.9533e-6 m/s` versus native
+`5.9432e-6`; depth 16 is `5.6202e-4` versus native `5.3794e-4`. Both retain
+the native support structure, penetration/height bands, positive-run and
+energy bands, finite state, and the unchanged product ceiling while awake.
+
+S12 decomposition and minimization, 2026-07-19: all ten mandatory
+bidirectional ablations replay exactly. Preparation/anchors/impulse transport,
+authority-colored accumulation, authority dynamic/static coefficients, and
+one-biased/one-relaxation composition are each necessary on at least one
+governed source; none is individually sufficient. Restitution timing is
+unnecessary. None of the three precommitted pairs qualifies: preparation plus
+accumulation reaches `3.4080e-4 m/s` on depth 16 but loses support structure;
+preparation plus coefficients preserves structure but remains at
+`0.010768 m/s`; preparation plus composition loses structure at `8.2683
+m/s`. `A-X5` is therefore the smallest qualified measured structure. The true
+minimum is bounded at 3-4 because triples were outside the frozen matrix; no
+unplanned factorial was opened.
+
+S12 final review, 2026-07-19: the recursive
+[decision package](../../evidence/p5.2b-s12.6-authority-structure-review/README.md)
+records that soft contact remains promising as a coupled authority structure.
+S11's local rewind corrections were insufficient; that did not rule out the
+coupled route. Static GPU analysis finds the exact X1-X4 structure portable,
+GPU-resident, bounded, and storage-compatible, but not expressible by the
+selected speculative-color/manifold-block policy unchanged. One minimal exact
+unpromoted GPU probe is recommended next. It must preserve the frozen authority
+bands, exact replay, forced-overflow capacity, and measured 32/256/1K cost,
+then stop before cross-host expansion or product promotion. S12 itself is
+complete; no comparator, GPU probe, product default, tolerance, or authority
+precedence changed.
 
 ## Authority corrections
 

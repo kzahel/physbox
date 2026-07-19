@@ -1,7 +1,8 @@
 # Box2D rigid authority
 
 Status: deterministic authority and synchronized behavioral playback
-implemented, 2026-07-14.
+implemented; S12 qualified an independent authority-structure scalar endpoint
+against fresh clean native results, 2026-07-19.
 
 Governing direction:
 [layered rigid oracle model](physbox5-unified-gpu-physics.md#layered-rigid-oracle-model).
@@ -129,6 +130,25 @@ The command refuses to reuse a run directory and emits
 `PHYSBOX5_VALIDATION_SUCCESS` only after syncing the manifest and SVG. A dirty
 PhysBox harness is allowed for diagnosis only when its patch digest is
 recorded; the S1.6 review package is regenerated from a clean committed tree.
+
+## S12 authority-structure qualification
+
+The [S12 endpoint package](../../evidence/p5.2b-s12.2-authority-endpoints/README.md)
+uses fresh primary and replay processes from the unchanged clean pin to qualify
+an independently implemented Rust solve-structure bridge. The bridge links no
+Box2D code and cites `solver.c`, `contact_solver.c`, `constraint_graph.c`,
+`physics_world.c`, and `types.c` as source material. Native public bodies,
+settled manifolds, cadence, projection identity, settings, build options, and
+process provenance remain the acceptance authority.
+
+For this laboratory only, the native response band owns acceptance. Depth 11
+and 16 both retain native structure/support while the bridge stays within the
+precommitted speed, penetration/height, energy-ratio, and positive-run bands.
+This is an explicit S12 experimental target, not a change to oracle precedence
+or a product tolerance. The subsequent ablations identify the authority
+structure's coupled sufficient ingredients; they do not turn the reference
+checkout into a dependency or permit a GPU approximation to overrule native
+behavior.
 
 ## Reconsideration triggers
 

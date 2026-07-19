@@ -1,6 +1,6 @@
 # S12: authority solve-structure decomposition
 
-Status: active, 2026-07-19. Authorized by human decision after the verified
+Status: complete, 2026-07-19. Authorized by human decision after the verified
 [S11 soft formulation review](../../evidence/p5.2b-s11.5-soft-formulation-review/README.md).
 The recorded comparator-engine trigger remains satisfied but no comparator
 study is authorized. The chosen continuation is an independent scalar
@@ -328,15 +328,25 @@ Commit boundary: feasibility decision only.
 
 ### S12.6 — final review
 
-- [ ] Assemble endpoints, ten ablations, routed interactions, minimal
+- [x] Assemble endpoints, ten ablations, routed interactions, minimal
   structure, GPU feasibility, remaining options, and one recommendation.
-- [ ] Update this tactical, the governing topics, and tactical index in the
+- [x] Update this tactical, the governing topics, and tactical index in the
   same change.
 
 Artifacts: `evidence/p5.2b-s12.6-authority-structure-review/`.
 
 Completion gate: a clean-tree verifier recursively checks every input and no
 product/default/tolerance/oracle setting changed.
+
+Recorded result: one bounded study executed 15 configurations over four
+sources. P is exact to S11 and reproduces its failures; A qualifies against
+fresh native authority. X1-X4 are necessary, X5 is unnecessary, no singleton
+or routed pair qualifies, and `A-X5` is the smallest measured survivor. The
+true minimum is bounded at 3-4 because triples were intentionally excluded.
+The structure is statically exact and bounded on the portable GPU architecture
+but needs an unpromoted policy rather than a selected-kernel approximation.
+The final recommendation is one minimal exact GPU probe; S12 completes and
+stops before that probe or any product change.
 
 Commit boundary: review and durable status only.
 

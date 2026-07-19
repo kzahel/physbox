@@ -1,8 +1,9 @@
 # Scalar contact specification
 
 Status: S1.2 executable pass equations, analytic baselines, and scoped
-multi-step fixture contact regeneration implemented; S9 closed without
-changing the selected equations or stage order, 2026-07-18.
+multi-step fixture contact regeneration implemented; S12 independently
+qualified a coupled authority-structure bridge without changing the selected
+scalar equations or stage order, 2026-07-19.
 
 Governing direction:
 [one GPU-resident 2D physics world](physbox5-unified-gpu-physics.md).
@@ -179,6 +180,25 @@ hygiene result rather than authority to reorder the selected trace. E5 reduces
 short-stack residuals but materially worsens 16-stack energy, so its changed
 preparation recurrence is rejected. The equations, coefficient ownership,
 trace identity, and Box2D/invariant precedence above remain authoritative.
+
+## S12 authority-structure laboratory boundary
+
+The [S12 review](../../evidence/p5.2b-s12.6-authority-structure-review/README.md)
+uses this specification as endpoint P and proves its independent bridge
+bit-exact on all four frozen sources. Endpoint A is a separate versioned
+laboratory recurrence derived independently from the pinned authority
+structure; it does not redefine `physbox-lab::scalar` or the selected GPU
+equations.
+
+The decomposition finds a coupled four-axis measured survivor: outer-step
+authority preparation/impulse transport, authority graph-color accumulation,
+authority soft coefficients including static `2x`, and one biased plus one
+relaxation pass. Restitution timing is unnecessary. No one axis or routed pair
+qualifies, and unmeasured triples leave the true minimum bounded at 3-4. The
+common authority bridge also uses scalar point-sequential normal-then-friction
+order; the selected two-point block normal equation is not an exact
+substitute. These are an executable decision target for a separately
+authorized GPU probe, not a selected scalar or product-policy change.
 
 ## Reconsideration triggers
 
