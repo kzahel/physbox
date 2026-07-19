@@ -232,7 +232,7 @@ structure without depth 11 and depth 16.
   source-derived endpoints, exact bounded matrix, routing, and stop gates.
 - [x] Implement the versioned policy descriptor and fail-closed validation
   without adding a product dependency or constructor.
-- [ ] Record clean reference status and exact source citations.
+- [x] Record clean reference status and exact source citations.
 
 Artifacts: `evidence/p5.2b-s12.1-authority-structure-contract/`.
 
