@@ -230,13 +230,13 @@ Commit boundaries: documentation authorization; executable contract.
 
 ### S13.2 — exact unpromoted GPU implementation
 
-- [ ] Implement the validation-only candidate policy, exact preparation,
+- [x] Implement the validation-only candidate policy, exact preparation,
   source-faithful 20+3+overflow construction, overflow-first schedule,
   point-sequential biased and relaxation recurrence, and current X5 timing.
-- [ ] Add focused controls for policy rejection, stable identity/midpoints,
+- [x] Add focused controls for policy rejection, stable identity/midpoints,
   analytical separation, retained impulses, normalized rotation, coefficients,
   graph assignments/order, pass counts, point order, and restitution timing.
-- [ ] Prove selected construction and execution remain unchanged and cannot
+- [x] Prove selected construction and execution remain unchanged and cannot
   select the candidate through product configuration.
 
 Artifacts: `evidence/p5.2b-s13.2-exact-gpu-implementation/`.
