@@ -4091,7 +4091,9 @@ pub async fn benchmark_gpu_s13_authority_probe(
     let candidate_replay_exact = candidate_digest == candidate_replay_digest
         && candidate_evidence == candidate_replay_evidence;
     if !selected_replay_exact || !candidate_replay_exact {
-        return Err("S13 benchmark replay differed".to_owned());
+        return Err(format!(
+            "S13 benchmark replay differed: selected={selected_replay_exact} candidate={candidate_replay_exact} selected_digests={selected_digest}/{selected_replay_digest} candidate_digests={candidate_digest}/{candidate_replay_digest}"
+        ));
     }
     let capacity_records = |solver: &GpuFixedFloorSolver| -> Result<Vec<CapacityRecordV1>, String> {
         let mut records = vec![storage.body_capacity_record()];
