@@ -390,13 +390,13 @@ Commit boundaries: operator tooling; mechanism and minimization evidence.
 
 ### S11.3 — bounded corrections (mechanism-routed, scalar first, falsify early)
 
-- [ ] Select at most two candidates under the frozen S11.1/S11.2 mechanism
+- [x] Select at most two candidates under the frozen S11.1/S11.2 mechanism
   verdict, each with a scalar stationarity or discrete-energy argument.
   Free-form attenuation is outside the space. If both are discarded without
   establishing a closure constraint, another candidate requires new measured
   attribution, a versioned S11.2 mechanism addendum, and its own predeclared
   scalar argument before implementation.
-- [ ] For each candidate, in order and failing closed at each step: the
+- [x] For each candidate, in order and failing closed at each step: the
   scalar argument; scalar quality on the two-step contract fixture, the
   permanent four-body reproducer, the S11.2 reproducer, and the full-length
   scalar 16-stack (support transfer and penetration preserved; quiet-by-sag
@@ -405,7 +405,7 @@ Commit boundaries: operator tooling; mechanism and minimization evidence.
   dispatch-form exactness, fail-closed negatives, repository/platform
   gates); then the full-corpus evaluation against the recorded reopening
   gate.
-- [ ] Record every candidate disposition — including a scalar-stage or
+- [x] Record every candidate disposition — including a scalar-stage or
   falsification kill — as a dated checkpoint with evidence.
 
 Artifacts: `evidence/p5.2b-s11.3-candidate-<name>/` per candidate.
@@ -448,8 +448,8 @@ support, anti-sag, two-step exactness, awake speed, positive-run, and
 energy-envelope predicates. A scalar rejection is a successful measured
 disposition with `gpuPortAdmitted=false`; it cannot emit authorization for a
 GPU run.
-Product constructors and all physical defaults remain inert. Clean candidate
-evidence remains open.
+Product constructors and all physical defaults remain inert. At this
+implementation checkpoint, clean candidate evidence remained open.
 
 Candidate-1 disposition, 2026-07-19: clean run
 `p5.2b-s11.3-retained-refresh-scalar-20260719-r1` is independently verified
@@ -496,6 +496,30 @@ scalar pass admits exactly the existing unpromoted fixed-anchor analytical-
 separation GPU policy to the mandatory 16-stack/four-body falsification before
 any wider corpus. Artifact name:
 `evidence/p5.2b-s11.3-candidate-fixed-anchor-transport/`.
+
+Candidate-2 disposition, 2026-07-19: clean run
+`p5.2b-s11.3-fixed-anchor-scalar-20260719-r1` is independently verified in
+the
+[fixed-anchor package](../../evidence/p5.2b-s11.3-candidate-fixed-anchor-transport/README.md)
+and discards fixed-basis soft impulse transport at the scalar stage. It is
+not uniformly worse: the permanent four-body lane passes, depth-11 maximum
+linear speed falls from `0.17856713` to `0.03549986 m/s`, and depth-11
+penetration improves from `0.01701543` to `0.01385809 m`. The unchanged gates
+still reject it. The exact two-step body response changes; depth 11 has a
+positive energy run of 6; and the scalar 16-stack changes final active support
+points from 34 to 33 while maximum penetration rises from `0.03863653` to
+`0.09379554 m`. Every lane remains finite and control/candidate replay
+exactly. `gpuPortAdmitted=false`: the mandatory scalar-first order excludes
+the early GPU port, corpus, and cross-host lanes.
+
+The measured `depth-triggered-inter-substep-soft-seed-rewind` route is now
+exhausted inside the ownership constraints. Candidate 1 tested impulse
+continuity through regenerated bases; candidate 2 tested the distinct pinned-
+authority fixed-basis transport schedule exposed by candidate 1. The remaining
+changes are coefficient re-selection, empirical attenuation, a new
+accumulation architecture, or weakened quality/structure gates, all explicitly
+outside S11. S11.3 is complete with no survivor and routes S11.4 to the
+closure decision package.
 
 Commit boundaries: scalar derivation; GPU port and falsification; quality
 evidence — separately per candidate.

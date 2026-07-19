@@ -1,9 +1,10 @@
 # Awake settling and rest stability
 
 Status: S6.5, S9, and S10 are closed as negative results; the bounded S11 soft
-formulation study is active and its S11.2 mechanism/minimizer is complete,
-2026-07-19. The S6.5d soft candidate and all S9/S10 material candidates are
-rejected; restitution timing is byte-inert on the governed controls.
+formulation study is active, its S11.3 candidates are exhausted with no
+survivor, and its closure decision package is next, 2026-07-19. The S6.5d
+soft candidate and all S9/S10/S11 material candidates are rejected;
+restitution timing is byte-inert on the governed controls.
 Hard/direct manifold-block i2 remains the product. S11 is authorized only
 under the recorded deep-stack energy and cross-Android reopening gate; no
 candidate is promoted by this topic.
@@ -899,6 +900,27 @@ must derive a distinct soft-consistent impulse transport through refresh;
 attenuation, coefficient retuning, or a weakened penetration/structure gate
 has no authorization. Product/default/tolerance/oracle contracts remain
 unchanged.
+
+S11.3 candidate-2 disposition, 2026-07-19: candidate 1's measured basis/state
+composition and the pinned authority's exact once-per-outer-step preparation
+schedule route the zero-parameter `fixed-anchor-soft-impulse-transport`
+candidate. The verified
+[fixed-anchor scalar package](../../evidence/p5.2b-s11.3-candidate-fixed-anchor-transport/README.md)
+discards it before any GPU port. It passes the permanent four-body lane and
+reduces depth-11 maximum linear speed `80.12%` while improving depth-11
+penetration `18.56%`, but the exact two-step body response changes, depth 11
+has positive energy run 6, and the 16-stack loses one final active support
+point while maximum penetration rises from `0.03863653` to `0.09379554 m`.
+Every lane remains finite and replays exactly. The scalar-first rule therefore
+sets `gpuPortAdmitted=false`; no GPU or cross-host result is inferred.
+Together the two candidates cover the measured rewind correction with either
+regenerated or fixed bases. Coefficient re-selection, empirical attenuation,
+a new accumulation architecture, and gate weakening remain outside the
+authorized space, so no unresolved mechanism-supported correction remains.
+S11 advances to its closure decision package; satisfying the recorded
+comparator reconsideration trigger does not itself authorize a comparator or
+change the hard/direct product. Product/default/tolerance/oracle contracts
+remain unchanged.
 
 ## Authority corrections
 
