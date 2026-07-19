@@ -244,11 +244,11 @@ Commit boundaries: documentation contract; policy/bridge scaffold.
 
 ### S12.2 — endpoint implementation and qualification
 
-- [ ] Implement bridge P independently and prove exact equivalence to the
+- [x] Implement bridge P independently and prove exact equivalence to the
   existing scalar control on all four sources.
-- [ ] Implement bridge A from the documented source contract and qualify it
+- [x] Implement bridge A from the documented source contract and qualify it
   against fresh, exactly replayed native Box2D results.
-- [ ] If A fails, diagnose and correct implementation defects inside the
+- [x] If A fails, diagnose and correct implementation defects inside the
   frozen structure; an unresolved authority mismatch stops without ablations.
 
 Artifacts: `evidence/p5.2b-s12.2-authority-endpoints/`.
