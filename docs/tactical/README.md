@@ -27,6 +27,11 @@ but fails the full-corpus material gate; the second candidate slot has no
 mechanism support. Human review, 2026-07-19, retains the hard/direct product
 and authorizes a bounded soft-specific formulation study under the recorded
 reopening gate.
+S11 is active: it root-causes the frozen soft 16-stack rising-energy mode
+with matched per-pass and impulse-operator attribution, derives at most two
+mechanism-supported scalar-first corrections with a mandatory early GPU
+falsification, and qualifies any survivor independently on Metal, the
+hardware-backed AVD, and physical Android under the recorded reopening gate.
 
 Tactical filenames use a three-digit zero-padded prefix ordered by their first
 Git creation timestamp. This repository starts at `001`. Never renumber an
@@ -47,6 +52,7 @@ This README remains the unnumbered index.
 | S8 | Physical mobile frame pacing | [008-physical-mobile-frame-pacing.md](008-physical-mobile-frame-pacing.md) | complete; Pixel 7a bootstrap sustains rendering and physics cadence, 2026-07-18 |
 | S9 | Awake settling schedule differential | [009-settling-schedule-differential.md](009-settling-schedule-differential.md) | complete; no schedule-differential survivor, 2026-07-18 |
 | S10 | Warm-start and stored-impulse stationarity | [010-warm-start-impulse-stationarity.md](010-warm-start-impulse-stationarity.md) | complete; no hard survivor; soft-specific formulation study authorized, 2026-07-19 |
+| S11 | Soft contact formulation study | [011-soft-contact-formulation.md](011-soft-contact-formulation.md) | active; authorized 2026-07-19 |
 
 ## Conventions
 

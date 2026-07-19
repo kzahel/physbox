@@ -818,6 +818,21 @@ soft candidate must pass an early GPU falsification on the 16-stack and the
 permanent reproducer before any wider corpus investment; a scalar-only pass
 is never a qualification signal.
 
+S11 authorization, 2026-07-19: human review authorizes the bounded soft
+contact formulation study tracked by
+[tactical 011](../tactical/011-soft-contact-formulation.md). It begins with
+matched-precision per-pass and impulse-operator attribution on the frozen
+unpromoted soft 16-stack — warm start, biased normal, colored support
+transfer, refresh, and persistence treated as one stationarity problem —
+derives at most two scalar-first corrections only from the measured soft
+mechanism, subjects each single named unpromoted GPU port to the early
+16-stack/permanent-reproducer falsification before corpus investment, and
+qualifies any survivor on Metal, the hardware-backed AVD, and available
+physical Android independently under the recorded reopening gate. The
+16-stack is the primary derivation gate; the permanent four-body reproducer
+is required evidence but cannot qualify a candidate alone. No product
+default changes; any winner returns to human promotion review.
+
 ## Authority corrections
 
 Two plausible techniques must not be mislabeled as direct Box2D v3 parity:
