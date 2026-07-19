@@ -274,17 +274,24 @@ Commit boundary: single-axis evidence and routed interaction freeze.
 
 ### S12.4 — bounded interactions and minimal sufficient structure
 
-- [ ] Execute only routed I1–I3 configurations; record `not-routed` slots
+- [x] Execute only routed I1–I3 configurations; record `not-routed` slots
   explicitly.
-- [ ] Identify the smallest qualified measured subset, or record the bounded
+- [x] Identify the smallest qualified measured subset, or record the bounded
   lower constraint when no single/pair qualifies despite A qualification.
-- [ ] Preserve a minimized failing source for each necessary axis whose
+- [x] Preserve a minimized failing source for each necessary axis whose
   removal changes the endpoint verdict.
 
 Artifacts: `evidence/p5.2b-s12.4-structure-minimization/`.
 
 Completion gate: every routed slot has a disposition and the sufficient-
 structure statement follows mechanically from the bounded matrix.
+
+Recorded result: no routed pair qualifies. `A-X5` is the smallest qualified
+measured subset, containing X1–X4; because triples are outside the frozen
+matrix, the true minimum cardinality is bounded at 3–4. Within the two-source
+governed minimization domain, depth 11 is the smallest retained removal
+failure for X1, X2, and X3, while depth 16 is the smallest for X4 because
+depth 11 `A-X4` qualifies.
 
 Commit boundary: interaction/minimization evidence.
 
