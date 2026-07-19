@@ -260,9 +260,9 @@ Commit boundaries: endpoint implementation; clean endpoint evidence.
 
 ### S12.3 — bidirectional single-axis decomposition
 
-- [ ] Run all `P+X1..X5` and `A-X1..X5` configurations on the complete frozen
+- [x] Run all `P+X1..X5` and `A-X1..X5` configurations on the complete frozen
   source set with exact replay.
-- [ ] Record necessity, individual sufficiency, failure vectors, P/A deltas,
+- [x] Record necessity, individual sufficiency, failure vectors, P/A deltas,
   and the mechanically derived I1–I3 routes.
 
 Artifacts: `evidence/p5.2b-s12.3-single-axis-decomposition/`.
