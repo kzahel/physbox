@@ -16,7 +16,7 @@ use physbox_contracts::{
 use physbox_engine::{P5_2SettlingFixtureKind, p5_2_box2d_world_projection};
 use physbox_lab::{
     authority_structure::{
-        AuthorityStructureConfigurationV1, AuthorityStructurePolicyV1,
+        AuthorityStructureAxisV1, AuthorityStructureConfigurationV1, AuthorityStructurePolicyV1,
         mandatory_authority_structure_configurations_v1, solve_authority_structure_steps_observed,
     },
     oracle_transport::{
@@ -125,6 +125,7 @@ struct Manifest {
     authority_bands: AuthorityBands,
     configurations: Vec<AuthorityStructureConfigurationV1>,
     cases: Vec<CaseEvidence>,
+    single_axis_decomposition: Option<SingleAxisDecomposition>,
     p_endpoint_exact: bool,
     a_endpoint_qualified: bool,
     decomposition_admitted: bool,
@@ -144,6 +145,48 @@ struct AuthorityBands {
     awake_product_ceiling: f64,
     positive_energy_run_floor: u32,
     energy_growth_rule: &'static str,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SingleAxisDecomposition {
+    ordered_failure_vector: [&'static str; 7],
+    axes: Vec<AxisDisposition>,
+    interaction_routes: Vec<InteractionRoute>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AxisDisposition {
+    axis: AuthorityStructureAxisV1,
+    axis_number: u8,
+    p_plus_id: String,
+    a_minus_id: String,
+    necessary: bool,
+    individually_sufficient: bool,
+    individually_improving: bool,
+    p_plus_governed_sources: Vec<GovernedDisposition>,
+    a_minus_governed_sources: Vec<GovernedDisposition>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GovernedDisposition {
+    label: &'static str,
+    authority_qualified: bool,
+    ordered_failures: Vec<&'static str>,
+    settled_linear_speed_max: f64,
+    settled_angular_edge_speed_max: f64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct InteractionRoute {
+    id: String,
+    axes: Option<[AuthorityStructureAxisV1; 2]>,
+    policy: Option<AuthorityStructurePolicyV1>,
+    status: &'static str,
+    reason: &'static str,
 }
 
 #[derive(Serialize)]
@@ -334,6 +377,10 @@ fn run() -> Result<(), String> {
             .find(|configuration| configuration.id == "A")
             .is_some_and(|configuration| configuration.authority_qualified)
     });
+    let single_axis_decomposition = match arguments.mode {
+        EvidenceMode::Endpoints => None,
+        EvidenceMode::SingleAxis => Some(single_axis_decomposition(&cases)?),
+    };
     let manifest = Manifest {
         schema_version: SCHEMA_VERSION,
         artifact_kind: arguments.mode.artifact_kind(),
@@ -357,6 +404,7 @@ fn run() -> Result<(), String> {
         },
         configurations,
         cases,
+        single_axis_decomposition,
         p_endpoint_exact,
         a_endpoint_qualified,
         decomposition_admitted: p_endpoint_exact && a_endpoint_qualified,
@@ -907,6 +955,233 @@ fn authority_delta(candidate: &QualitySummary, authority: &QualitySummary) -> Au
         final_dynamic_center_height_sum: candidate.final_dynamic_center_height_sum
             - authority.final_dynamic_center_height_sum,
         maximum_penetration: candidate.maximum_penetration - authority.maximum_penetration,
+    }
+}
+
+fn single_axis_decomposition(cases: &[CaseEvidence]) -> Result<SingleAxisDecomposition, String> {
+    let governed = cases
+        .iter()
+        .filter(|case| matches!(case.role, SourceRole::Governed))
+        .collect::<Vec<_>>();
+    if governed.len() != 2 {
+        return Err("S12 decomposition requires exactly two governed sources".to_owned());
+    }
+    let mut axes = Vec::with_capacity(5);
+    for axis in AuthorityStructureAxisV1::ALL {
+        let p_plus_id = format!("P+X{}", axis.number());
+        let a_minus_id = format!("A-X{}", axis.number());
+        let p_plus = governed
+            .iter()
+            .map(|case| governed_disposition(case, &p_plus_id))
+            .collect::<Result<Vec<_>, _>>()?;
+        let a_minus = governed
+            .iter()
+            .map(|case| governed_disposition(case, &a_minus_id))
+            .collect::<Result<Vec<_>, _>>()?;
+        let necessary = a_minus.iter().any(|value| !value.authority_qualified);
+        let individually_sufficient = p_plus.iter().all(|value| value.authority_qualified);
+        let improvement = governed
+            .iter()
+            .map(|case| configuration_improvement(case, &p_plus_id))
+            .collect::<Result<Vec<_>, _>>()?;
+        let individually_improving = improvement.iter().all(Result::is_ok)
+            && improvement
+                .iter()
+                .any(|comparison| matches!(comparison, Ok(true)));
+        axes.push(AxisDisposition {
+            axis,
+            axis_number: axis.number(),
+            p_plus_id,
+            a_minus_id,
+            necessary,
+            individually_sufficient,
+            individually_improving,
+            p_plus_governed_sources: p_plus,
+            a_minus_governed_sources: a_minus,
+        });
+    }
+
+    let necessary = axes
+        .iter()
+        .filter(|value| value.necessary)
+        .map(|value| value.axis)
+        .collect::<Vec<_>>();
+    let improving = axes
+        .iter()
+        .filter(|value| value.individually_improving)
+        .map(|value| value.axis)
+        .collect::<Vec<_>>();
+    let mut routed = Vec::<[AuthorityStructureAxisV1; 2]>::new();
+    for (index, &first) in necessary.iter().enumerate() {
+        for &second in &necessary[index + 1..] {
+            routed.push([first, second]);
+        }
+    }
+    for &first in &necessary {
+        for &second in &improving {
+            if first == second {
+                continue;
+            }
+            let pair = ordered_axis_pair(first, second);
+            if !routed.contains(&pair) {
+                routed.push(pair);
+            }
+        }
+    }
+    routed.truncate(3);
+    let interaction_routes = (0..3)
+        .map(|index| {
+            let id = format!("I{}", index + 1);
+            if let Some([first, second]) = routed.get(index).copied() {
+                InteractionRoute {
+                    id,
+                    axes: Some([first, second]),
+                    policy: Some(AuthorityStructurePolicyV1::interaction(first, second)),
+                    status: "routed",
+                    reason: "necessary-axis pairs precede necessary-plus-improving pairs",
+                }
+            } else {
+                InteractionRoute {
+                    id,
+                    axes: None,
+                    policy: None,
+                    status: "not-routed",
+                    reason: "fewer than three eligible pairs",
+                }
+            }
+        })
+        .collect();
+    Ok(SingleAxisDecomposition {
+        ordered_failure_vector: [
+            "non-finite",
+            "structure",
+            "authority-response",
+            "penetration-support",
+            "awake-speed",
+            "positive-run",
+            "energy-envelope",
+        ],
+        axes,
+        interaction_routes,
+    })
+}
+
+fn governed_disposition(
+    case: &CaseEvidence,
+    configuration_id: &str,
+) -> Result<GovernedDisposition, String> {
+    let configuration = configuration(case, configuration_id)?;
+    Ok(GovernedDisposition {
+        label: case.label,
+        authority_qualified: configuration.authority_qualified,
+        ordered_failures: configuration.failure_vector.ordered_failures.clone(),
+        settled_linear_speed_max: configuration.quality.settled_linear_speed_max,
+        settled_angular_edge_speed_max: configuration.quality.settled_angular_edge_speed_max,
+    })
+}
+
+/// Returns `Ok(Ok(improved))` when the candidate introduces no earlier
+/// governed failure, and `Ok(Err(()))` when it does. The outer result carries
+/// malformed-matrix errors.
+fn configuration_improvement(
+    case: &CaseEvidence,
+    configuration_id: &str,
+) -> Result<Result<bool, ()>, String> {
+    let control = configuration(case, "P")?;
+    let candidate = configuration(case, configuration_id)?;
+    let control_rank = first_failure_rank(&control.failure_vector);
+    let candidate_rank = first_failure_rank(&candidate.failure_vector);
+    if candidate_rank < control_rank {
+        return Ok(Err(()));
+    }
+    if candidate_rank > control_rank {
+        return Ok(Ok(true));
+    }
+    let authority = &case.authority.quality;
+    Ok(Ok(failure_magnitude(candidate, authority, candidate_rank)
+        < failure_magnitude(control, authority, control_rank)))
+}
+
+fn configuration<'a>(
+    case: &'a CaseEvidence,
+    configuration_id: &str,
+) -> Result<&'a ConfigurationEvidence, String> {
+    case.configurations
+        .iter()
+        .find(|value| value.id == configuration_id)
+        .ok_or_else(|| {
+            format!(
+                "S12 case {} omits configuration {configuration_id}",
+                case.label
+            )
+        })
+}
+
+fn first_failure_rank(vector: &FailureVector) -> usize {
+    [
+        vector.non_finite,
+        vector.structure,
+        vector.authority_response,
+        vector.penetration_support,
+        vector.awake_speed,
+        vector.positive_run,
+        vector.energy_envelope,
+    ]
+    .into_iter()
+    .position(|failed| failed)
+    .unwrap_or(7)
+}
+
+fn failure_magnitude(
+    configuration: &ConfigurationEvidence,
+    authority: &QualitySummary,
+    rank: usize,
+) -> f64 {
+    let quality = &configuration.quality;
+    match rank {
+        0 | 1 => 1.0,
+        2 => {
+            let linear_limit = AUTHORITY_SPEED_MULTIPLIER * authority.settled_linear_speed_max
+                + AUTHORITY_SPEED_ADDITIVE_BAND;
+            let angular_limit = AUTHORITY_SPEED_MULTIPLIER
+                * authority.settled_angular_edge_speed_max
+                + AUTHORITY_SPEED_ADDITIVE_BAND;
+            (quality.settled_linear_speed_max / linear_limit)
+                .max(quality.settled_angular_edge_speed_max / angular_limit)
+        }
+        3 => {
+            if configuration.active_support_pairs.is_empty() {
+                f64::INFINITY
+            } else {
+                let height_limit =
+                    AUTHORITY_HEIGHT_ABSOLUTE_BAND.max(authority.maximum_penetration);
+                (configuration
+                    .delta_from_authority
+                    .final_dynamic_center_height_sum
+                    .abs()
+                    / height_limit)
+                    .max(
+                        quality.maximum_penetration
+                            / (authority.maximum_penetration + AUTHORITY_HEIGHT_ABSOLUTE_BAND),
+                    )
+            }
+        }
+        4 => (quality.settled_linear_speed_max / 0.025)
+            .max(quality.settled_angular_edge_speed_max / 0.025),
+        5 => f64::from(quality.positive_energy_run_max),
+        6 => quality.energy_quartile_growth_ratio / authority.energy_quartile_growth_ratio.max(1.0),
+        _ => 0.0,
+    }
+}
+
+fn ordered_axis_pair(
+    first: AuthorityStructureAxisV1,
+    second: AuthorityStructureAxisV1,
+) -> [AuthorityStructureAxisV1; 2] {
+    if first.number() < second.number() {
+        [first, second]
+    } else {
+        [second, first]
     }
 }
 
