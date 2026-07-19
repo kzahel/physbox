@@ -526,13 +526,14 @@ evidence — separately per candidate.
 
 ### S11.4 — survivor cross-host qualification or closure package
 
-- [ ] If a survivor exists: Metal 256/1K complete-step timing, Chrome WebGPU
+- [x] If a survivor exists: Metal 256/1K complete-step timing, Chrome WebGPU
   structure, hardware-backed AVD and available physical Android 16-stack
   structure through step 1,200 measured independently, the AVD permanent
   reproducer positive-run clause, and an AVD matched-boundary overlay if any
   rising-energy mode remains. A candidate meeting every reopening-gate clause
-  stops for human promotion review; no cross-host result is inferred.
-- [ ] If no survivor: assemble the closure decision package — attribution,
+  stops for human promotion review; no cross-host result is inferred. Not
+  applicable: both candidates were discarded at the scalar stage.
+- [x] If no survivor: assemble the closure decision package — attribution,
   mechanism, candidate dispositions, and the remaining options, including
   the recorded comparator-engine reconsideration trigger. It recommends; the
   human decides.
@@ -544,6 +545,21 @@ Completion gate: reopening-gate clauses individually recorded, or the
 closure package verifies with every claim linked to raw evidence.
 
 Commit boundary: qualification or closure package only.
+
+Closure decision checkpoint, 2026-07-19: the verified
+[S11.4 package](../../evidence/p5.2b-s11.4-soft-closure-decision/README.md)
+re-runs the S11.1 attribution, S11.2 mechanism, and both S11.3 candidate
+verifiers, then derives the closure from their manifests. The measured
+`depth-triggered-inter-substep-soft-seed-rewind` correction space is exhausted
+with no survivor: candidate 1 transports current impulse through regenerated
+bases and candidate 2 transports it in the pinned-authority fixed basis.
+Neither passes scalar admission, so early GPU, full-corpus, and cross-host
+lanes are correctly absent rather than inferred. The package recommends
+closing the current soft formulation route, retaining the hard/direct product
+pending a separate decision, and returning the comparator-engine fork to
+human review. This is scope exhaustion, not a proof that every conceivable
+soft solver fails. The comparator trigger is satisfied but does not authorize
+a comparator dependency or study by itself.
 
 ### S11.5 — review package (always runs)
 

@@ -45,7 +45,9 @@ the four-body lane but changes exact two-step response, exceeds the depth-11
 positive-run bound, and loses depth-16 support while penetration rises
 `142.76%`. Both candidates were discarded at the scalar stage, so no GPU lane
 was admitted. The measured mechanism has no unresolved correction inside the
-ownership constraints; S11.4 now assembles the closure decision package.
+ownership constraints. S11.4's verified closure package recommends closing
+the current soft route and returning the comparator-engine fork to human
+review; S11.5 compact review is next.
 
 Tactical filenames use a three-digit zero-padded prefix ordered by their first
 Git creation timestamp. This repository starts at `001`. Never renumber an
@@ -66,7 +68,7 @@ This README remains the unnumbered index.
 | S8 | Physical mobile frame pacing | [008-physical-mobile-frame-pacing.md](008-physical-mobile-frame-pacing.md) | complete; Pixel 7a bootstrap sustains rendering and physics cadence, 2026-07-18 |
 | S9 | Awake settling schedule differential | [009-settling-schedule-differential.md](009-settling-schedule-differential.md) | complete; no schedule-differential survivor, 2026-07-18 |
 | S10 | Warm-start and stored-impulse stationarity | [010-warm-start-impulse-stationarity.md](010-warm-start-impulse-stationarity.md) | complete; no hard survivor; soft-specific formulation study authorized, 2026-07-19 |
-| S11 | Soft contact formulation study | [011-soft-contact-formulation.md](011-soft-contact-formulation.md) | active; S11.3 complete with no survivor, closure package next, 2026-07-19 |
+| S11 | Soft contact formulation study | [011-soft-contact-formulation.md](011-soft-contact-formulation.md) | active; S11.4 closure package verified, compact review next, 2026-07-19 |
 
 ## Conventions
 

@@ -2,8 +2,8 @@
 
 Status: S6.5, S9, and S10 are closed as negative results; the bounded S11 soft
 formulation study is active, its S11.3 candidates are exhausted with no
-survivor, and its closure decision package is next, 2026-07-19. The S6.5d
-soft candidate and all S9/S10/S11 material candidates are rejected;
+survivor, and its S11.4 closure decision package is verified, 2026-07-19. The
+S6.5d soft candidate and all S9/S10/S11 material candidates are rejected;
 restitution timing is byte-inert on the governed controls.
 Hard/direct manifold-block i2 remains the product. S11 is authorized only
 under the recorded deep-stack energy and cross-Android reopening gate; no
@@ -921,6 +921,21 @@ S11 advances to its closure decision package; satisfying the recorded
 comparator reconsideration trigger does not itself authorize a comparator or
 change the hard/direct product. Product/default/tolerance/oracle contracts
 remain unchanged.
+
+S11.4 closure decision, 2026-07-19: the verified
+[closure package](../../evidence/p5.2b-s11.4-soft-closure-decision/README.md)
+binds and re-runs every S11.1–S11.3 evidence verifier. The two dispositions
+cover current-impulse transport through both regenerated and fixed contact
+bases, and neither passes scalar admission. No unresolved correction remains
+for the measured rewind mechanism inside S11's frozen formulation,
+accumulation, and quality ownership; no GPU or cross-host result is inferred.
+The recommendation is to close this soft route as a measured negative, retain
+the hard/direct product pending a separate decision, and return the recorded
+comparator-engine fork to human review. The comparator reconsideration trigger
+is satisfied but is not self-authorizing. A new accumulation architecture or
+coefficient/contact-policy re-selection likewise requires new measured scope;
+acceptance-band weakening remains forbidden. Product/default/tolerance/oracle
+contracts remain unchanged.
 
 ## Authority corrections
 
