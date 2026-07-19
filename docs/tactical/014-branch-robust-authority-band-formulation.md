@@ -193,11 +193,11 @@ qualified branch-robust candidate for later human decision.
 
 ### S14.1 — fork and frozen study contract
 
-- [ ] Record this authorization, sole candidate, derivation/error-bound rule,
+- [x] Record this authorization, sole candidate, derivation/error-bound rule,
   seven-lane perturbation gate, unchanged S13 rerun, exclusions, and stops.
-- [ ] Materialize a machine-readable contract that rejects formula-arm,
+- [x] Materialize a machine-readable contract that rejects formula-arm,
   perturbation-lane, authority-band, overflow/capacity, or timing expansion.
-- [ ] Prove the selected product and S13 base descriptors are unchanged.
+- [x] Prove the selected product and S13 base descriptors are unchanged.
 
 Artifacts: `evidence/p5.2b-s14.1-branch-robust-contract/`.
 
