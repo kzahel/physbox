@@ -472,6 +472,31 @@ closed; candidate 2 now requires a distinct soft-consistent impulse-transport
 derivation rather than raw retention, attenuation, or a weakened penetration
 gate.
 
+S11.2 mechanism addendum v2 and candidate-2 scalar contract freeze,
+2026-07-19, before measurement: candidate 1 exposes a previously unresolved
+refresh-basis/impulse-state composition. Raw retention with full contact
+regeneration reduces depth-11 speed but worsens penetration and fails the
+energy envelope, so impulse continuity alone is insufficient. The pinned
+Box2D authority prepares each contact constraint once per outer step, retains
+its evolving impulse through all substeps, and analytically updates separation
+from body position/rotation deltas; it does not regenerate anchors or
+effective masses between substeps (`reference/box2d/src/solver.c:1093-1174`,
+`reference/box2d/src/contact_solver.c:24-158`). This routes the distinct
+zero-parameter candidate `fixed-anchor-soft-impulse-transport`: prepare the
+contact basis once per outer step, retain the current impulse in that fixed
+basis, and update separation analytically before relaxation. It preserves
+unilateral projection, the pinned soft coefficients, penetration bias,
+friction, restitution, deterministic colored order, final persistence, and
+the outer-step geometry preparation. This addendum deliberately revises the
+S11.2 “refreshed geometry” preservation clause only for candidate 2; the new
+candidate-1 evidence and exact authority schedule are the route, not candidate
+count. Candidate 2 runs the same four scalar lanes and unchanged gates as
+candidate 1. Any scalar failure discards it without a GPU port. A complete
+scalar pass admits exactly the existing unpromoted fixed-anchor analytical-
+separation GPU policy to the mandatory 16-stack/four-body falsification before
+any wider corpus. Artifact name:
+`evidence/p5.2b-s11.3-candidate-fixed-anchor-transport/`.
+
 Commit boundaries: scalar derivation; GPU port and falsification; quality
 evidence — separately per candidate.
 

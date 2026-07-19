@@ -27,6 +27,75 @@ const S11_2_MANIFEST_PATH: &str = "evidence/p5.2b-s11.2-soft-mechanism/manifest.
 const S11_2_MANIFEST_SHA256: &str =
     "b0551bfe6cc4712c93b96c3cba292aa34508094da671538266fdc687e7301537";
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CandidateKind {
+    RetainedRefresh,
+    FixedAnchorSoftTransport,
+}
+
+impl CandidateKind {
+    const fn id(self) -> &'static str {
+        match self {
+            Self::RetainedRefresh => CANDIDATE,
+            Self::FixedAnchorSoftTransport => "fixed-anchor-soft-impulse-transport",
+        }
+    }
+
+    const fn artifact_kind(self) -> &'static str {
+        match self {
+            Self::RetainedRefresh => "p5.2b-s11.3-retained-refresh-soft-scalar",
+            Self::FixedAnchorSoftTransport => "p5.2b-s11.3-fixed-anchor-soft-transport-scalar",
+        }
+    }
+
+    const fn capture_kind(self) -> &'static str {
+        match self {
+            Self::RetainedRefresh => "p5.2b-s11.3-retained-refresh-soft-scalar-capture",
+            Self::FixedAnchorSoftTransport => {
+                "p5.2b-s11.3-fixed-anchor-soft-transport-scalar-capture"
+            }
+        }
+    }
+
+    const fn scalar_policy(self) -> ScalarSubstepImpulsePolicyV1 {
+        match self {
+            Self::RetainedRefresh => ScalarSubstepImpulsePolicyV1::RetainWithinStepImpulses,
+            Self::FixedAnchorSoftTransport => {
+                ScalarSubstepImpulsePolicyV1::FixedAnchorRetainWithinStepImpulses
+            }
+        }
+    }
+
+    const fn family(self) -> &'static str {
+        match self {
+            Self::RetainedRefresh => "soft-warm-start-normal-composition-correction",
+            Self::FixedAnchorSoftTransport => "soft-fixed-basis-impulse-transport-correction",
+        }
+    }
+
+    const fn changes(self) -> &'static str {
+        match self {
+            Self::RetainedRefresh => {
+                "each full inter-substep geometry/effective-mass refresh retains the just-solved normal and tangent impulse vector instead of restoring the first prepared outer-step seed"
+            }
+            Self::FixedAnchorSoftTransport => {
+                "prepare anchors, normals, and effective masses once per outer step, retain the evolving impulse in that fixed basis, and update separation analytically through the substeps"
+            }
+        }
+    }
+
+    const fn preserves(self) -> &'static str {
+        match self {
+            Self::RetainedRefresh => {
+                "contact regeneration, refreshed anchors and effective masses, separation, unilateral projection, pinned soft coefficients, penetration bias, friction, restitution, deterministic colored order, and final persistence"
+            }
+            Self::FixedAnchorSoftTransport => {
+                "outer-step contact generation and exact basis preparation, analytic separation, unilateral projection, pinned soft coefficients, penetration bias, friction, restitution, deterministic colored order, and final persistence"
+            }
+        }
+    }
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Manifest {
@@ -297,7 +366,7 @@ fn run() -> Result<(), String> {
     };
     let manifest = Manifest {
         schema_version: SCHEMA_VERSION,
-        artifact_kind: "p5.2b-s11.3-retained-refresh-soft-scalar",
+        artifact_kind: arguments.candidate.artifact_kind(),
         run_id: arguments.run_id.clone(),
         source_revision,
         source_dirty,
@@ -317,12 +386,12 @@ fn run() -> Result<(), String> {
             depth_16_discarded_impulse_l1,
         },
         candidate: CandidateContract {
-            id: CANDIDATE,
-            family: "soft-warm-start-normal-composition-correction",
+            id: arguments.candidate.id(),
+            family: arguments.candidate.family(),
             control_policy: ScalarSubstepImpulsePolicyV1::OuterStepStaleReseed,
-            candidate_policy: ScalarSubstepImpulsePolicyV1::RetainWithinStepImpulses,
-            changes: "each full inter-substep geometry/effective-mass refresh retains the just-solved normal and tangent impulse vector instead of restoring the first prepared outer-step seed",
-            preserves: "contact regeneration, refreshed anchors and effective masses, separation, unilateral projection, pinned soft coefficients, penetration bias, friction, restitution, deterministic colored order, and final persistence",
+            candidate_policy: arguments.candidate.scalar_policy(),
+            changes: arguments.candidate.changes(),
+            preserves: arguments.candidate.preserves(),
             free_parameter_count: 0,
             product_policy: "unchanged-selected-hard-direct",
         },
@@ -340,7 +409,8 @@ fn run() -> Result<(), String> {
     let manifest_bytes =
         fs::read(arguments.output.join("manifest.json")).map_err(|error| error.to_string())?;
     println!(
-        "PHYSBOX5_VALIDATION_SUCCESS host=native-scalar scenario=s11.3-retained-refresh run_id={} disposition={} manifest_sha256={} output={}",
+        "PHYSBOX5_VALIDATION_SUCCESS host=native-scalar scenario=s11.3-{} run_id={} disposition={} manifest_sha256={} output={}",
+        arguments.candidate.id(),
         arguments.run_id,
         candidate_disposition,
         sha256_bytes(&manifest_bytes),
@@ -463,7 +533,7 @@ fn run_case(
     structure_kind: StructureKind,
     frozen_awake_gate_applicable: bool,
 ) -> Result<CaseEvidence, String> {
-    eprintln!("S11.3 retained-refresh scalar case {label}");
+    eprintln!("S11.3 {} scalar case {label}", arguments.candidate.id());
     let source_scenario_hash = canonical_hash(source).map_err(|error| error.to_string())?;
     let source_artifact = write_json_artifact(staging, &format!("sources/{label}.json"), source)?;
     let control = solve_portable_narrowphase_steps_observed_with_substep_impulses(
@@ -474,7 +544,7 @@ fn run_case(
     .map_err(|error| error.to_string())?;
     let candidate = solve_portable_narrowphase_steps_observed_with_substep_impulses(
         source,
-        ScalarSubstepImpulsePolicyV1::RetainWithinStepImpulses,
+        arguments.candidate.scalar_policy(),
         false,
     )
     .map_err(|error| error.to_string())?;
@@ -486,7 +556,7 @@ fn run_case(
     .map_err(|error| error.to_string())?;
     let replay_candidate = solve_portable_narrowphase_steps_observed_with_substep_impulses(
         source,
-        ScalarSubstepImpulsePolicyV1::RetainWithinStepImpulses,
+        arguments.candidate.scalar_policy(),
         false,
     )
     .map_err(|error| error.to_string())?;
@@ -527,7 +597,7 @@ fn run_case(
         && frozen_awake_gate_passed.unwrap_or(true);
     let capture = CaseCapture {
         schema_version: SCHEMA_VERSION,
-        artifact_kind: "p5.2b-s11.3-retained-refresh-soft-scalar-capture",
+        artifact_kind: arguments.candidate.capture_kind(),
         run_id: &arguments.run_id,
         source_revision,
         source_dirty,
@@ -842,6 +912,7 @@ struct Arguments {
     run_id: String,
     output: PathBuf,
     require_clean: bool,
+    candidate: CandidateKind,
 }
 
 impl Arguments {
@@ -849,6 +920,7 @@ impl Arguments {
         let mut run_id = None;
         let mut output = None;
         let mut require_clean = false;
+        let mut candidate = CandidateKind::RetainedRefresh;
         let mut arguments = arguments;
         while let Some(argument) = arguments.next() {
             if argument == "--require-clean" {
@@ -861,6 +933,17 @@ impl Arguments {
             match argument.as_str() {
                 "--run-id" => run_id = Some(value),
                 "--output" => output = Some(PathBuf::from(value)),
+                "--candidate" => {
+                    candidate = match value.as_str() {
+                        "retain-within-step-impulses-through-refresh" => {
+                            CandidateKind::RetainedRefresh
+                        }
+                        "fixed-anchor-soft-impulse-transport" => {
+                            CandidateKind::FixedAnchorSoftTransport
+                        }
+                        _ => return Err(format!("unknown S11.3 scalar candidate {value}")),
+                    }
+                }
                 _ => return Err(format!("unknown argument {argument}")),
             }
         }
@@ -868,6 +951,7 @@ impl Arguments {
             run_id: run_id.ok_or_else(|| "missing --run-id".to_owned())?,
             output: output.ok_or_else(|| "missing --output".to_owned())?,
             require_clean,
+            candidate,
         })
     }
 }
@@ -880,6 +964,14 @@ mod tests {
     fn soft_retained_refresh_argument_and_candidate_are_frozen() {
         let argument = scalar_argument(1.0e-6, 1.0e-4).unwrap();
         assert_eq!(CANDIDATE, "retain-within-step-impulses-through-refresh");
+        assert_eq!(
+            CandidateKind::FixedAnchorSoftTransport.id(),
+            "fixed-anchor-soft-impulse-transport"
+        );
+        assert_eq!(
+            CandidateKind::FixedAnchorSoftTransport.scalar_policy(),
+            ScalarSubstepImpulsePolicyV1::FixedAnchorRetainWithinStepImpulses
+        );
         assert_eq!(argument.analytic_samples, 720);
         assert!(
             argument.passed,

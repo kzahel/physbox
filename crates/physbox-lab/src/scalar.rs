@@ -30,15 +30,18 @@ pub struct ScalarSolveResult {
     pub traces: Vec<TraceRecordV1>,
 }
 
-/// Scalar-only comparison of how the prepared impulse seed advances between
-/// substeps. The existing analytic stepper retains the just-solved cache; the
-/// alternate value reproduces the selected GPU graph's older outer-step seed
-/// without changing geometry regeneration or effective-mass preparation.
+/// Scalar-only comparison policies for inter-substep contact state.
+///
+/// The stale and retained-refresh policies regenerate geometry and effective
+/// masses every substep while selecting different impulse seeds. The
+/// fixed-anchor policy prepares once per outer step, retains the evolving
+/// impulse in that basis, and refreshes separation analytically.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ScalarSubstepImpulsePolicyV1 {
     OuterStepStaleReseed,
     RetainWithinStepImpulses,
+    FixedAnchorRetainWithinStepImpulses,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -421,29 +424,57 @@ fn solve_fixture_steps_observed(
     let substep_dt = scenario.settings.fixed_dt.get() / scenario.settings.substeps as f32;
     for step in 0..scenario.requested_steps {
         let outer_step_cache = contact_cache.clone();
+        let mut fixed_contacts = None;
         for substep in 0..scenario.settings.substeps {
-            let manifolds = generate_contacts(scenario, &bodies, contact_generation)?;
             let trace_start = traces.len();
-            let mut contacts = Vec::with_capacity(manifolds.len());
-            let preparation_cache = match impulse_policy {
-                ScalarSubstepImpulsePolicyV1::OuterStepStaleReseed => &outer_step_cache,
-                ScalarSubstepImpulsePolicyV1::RetainWithinStepImpulses => &contact_cache,
-            };
-            for manifold in &manifolds {
-                contacts.push(prepare_contact(
-                    &bodies,
-                    manifold,
-                    preparation_cache,
-                    &mut traces,
-                )?);
+            let mut refreshed_contacts = None;
+            if impulse_policy == ScalarSubstepImpulsePolicyV1::FixedAnchorRetainWithinStepImpulses
+                && fixed_contacts.is_none()
+            {
+                let manifolds = generate_contacts(scenario, &bodies, contact_generation)?;
+                let mut contacts = Vec::with_capacity(manifolds.len());
+                for manifold in &manifolds {
+                    contacts.push(prepare_contact(
+                        &bodies,
+                        manifold,
+                        &contact_cache,
+                        &mut traces,
+                    )?);
+                }
+                fixed_contacts = Some(contacts);
+            } else if impulse_policy
+                != ScalarSubstepImpulsePolicyV1::FixedAnchorRetainWithinStepImpulses
+            {
+                let manifolds = generate_contacts(scenario, &bodies, contact_generation)?;
+                let mut contacts = Vec::with_capacity(manifolds.len());
+                let preparation_cache = match impulse_policy {
+                    ScalarSubstepImpulsePolicyV1::OuterStepStaleReseed => &outer_step_cache,
+                    ScalarSubstepImpulsePolicyV1::RetainWithinStepImpulses => &contact_cache,
+                    ScalarSubstepImpulsePolicyV1::FixedAnchorRetainWithinStepImpulses => {
+                        unreachable!("fixed-anchor contacts were prepared above")
+                    }
+                };
+                for manifold in &manifolds {
+                    contacts.push(prepare_contact(
+                        &bodies,
+                        manifold,
+                        preparation_cache,
+                        &mut traces,
+                    )?);
+                }
+                refreshed_contacts = Some(contacts);
             }
+            let contacts = fixed_contacts
+                .as_mut()
+                .or(refreshed_contacts.as_mut())
+                .ok_or_else(|| ScalarError("substep contact preparation was empty".to_owned()))?;
 
             integrate_velocities(&mut bodies, scenario.settings.gravity, substep_dt)?;
-            for contact in &contacts {
+            for contact in contacts.iter() {
                 warm_start(contact, &mut bodies, &mut traces)?;
             }
             for iteration in 0..scenario.settings.iterations {
-                for contact in &mut contacts {
+                for contact in contacts.iter_mut() {
                     solve_normal(
                         contact,
                         &mut bodies,
@@ -469,8 +500,8 @@ fn solve_fixture_steps_observed(
             }
 
             integrate_positions(&mut bodies, substep_dt, &mut traces)?;
-            refresh_separations(&mut contacts, &bodies);
-            for contact in &mut contacts {
+            refresh_separations(contacts, &bodies);
+            for contact in contacts.iter_mut() {
                 solve_normal(
                     contact,
                     &mut bodies,
@@ -499,7 +530,7 @@ fn solve_fixture_steps_observed(
                     &mut traces,
                 )?;
             }
-            contact_cache = collect_contact_cache(&contacts, &bodies)?;
+            contact_cache = collect_contact_cache(contacts, &bodies)?;
             for trace in &mut traces[trace_start..] {
                 trace.step = step;
                 trace.substep = substep;
@@ -1679,6 +1710,36 @@ mod tests {
                 .observations
                 .iter()
                 .all(|observation| observation.maximum_penetration.is_finite())
+        );
+
+        let fixed = solve_analytic_fixture_steps_observed_with_substep_impulses(
+            &scenario,
+            ScalarSubstepImpulsePolicyV1::FixedAnchorRetainWithinStepImpulses,
+            true,
+        )
+        .unwrap();
+        assert_eq!(
+            fixed,
+            solve_analytic_fixture_steps_observed_with_substep_impulses(
+                &scenario,
+                ScalarSubstepImpulsePolicyV1::FixedAnchorRetainWithinStepImpulses,
+                true,
+            )
+            .unwrap()
+        );
+        assert!(
+            fixed
+                .result
+                .traces
+                .iter()
+                .filter(|trace| trace.stage == TraceStageV1::Prepare)
+                .count()
+                < retained
+                    .result
+                    .traces
+                    .iter()
+                    .filter(|trace| trace.stage == TraceStageV1::Prepare)
+                    .count()
         );
     }
 
