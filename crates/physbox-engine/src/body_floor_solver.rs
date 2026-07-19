@@ -4086,10 +4086,30 @@ pub async fn benchmark_gpu_s13_authority_probe(
         authored_gather_result_evidence(&device, &queue, &storage, &reset, &selected_solver)?;
     let (candidate_replay_digest, candidate_replay_evidence) =
         authored_gather_result_evidence(&device, &queue, &storage, &reset, &candidate_solver)?;
-    let selected_replay_exact =
-        selected_digest == selected_replay_digest && selected_evidence == selected_replay_evidence;
-    let candidate_replay_exact = candidate_digest == candidate_replay_digest
-        && candidate_evidence == candidate_replay_evidence;
+    // These timing fixtures contain only one-point manifolds. Their decoded
+    // two-point block lane is not executed and is therefore not semantic
+    // replay state; compare the result and every executed diagnostic lane.
+    let semantic_replay = |first_digest: &str,
+                           replay_digest: &str,
+                           first: &GpuFixedFloorPassEvidence,
+                           replay: &GpuFixedFloorPassEvidence| {
+        first_digest == replay_digest
+            && first.contacts == replay.contacts
+            && first.contributions == replay.contributions
+            && first.coloring == replay.coloring
+    };
+    let selected_replay_exact = semantic_replay(
+        &selected_digest,
+        &selected_replay_digest,
+        &selected_evidence,
+        &selected_replay_evidence,
+    );
+    let candidate_replay_exact = semantic_replay(
+        &candidate_digest,
+        &candidate_replay_digest,
+        &candidate_evidence,
+        &candidate_replay_evidence,
+    );
     if !selected_replay_exact || !candidate_replay_exact {
         return Err(format!(
             "S13 benchmark replay differed: selected={selected_replay_exact} candidate={candidate_replay_exact} selected_digests={selected_digest}/{selected_replay_digest} candidate_digests={candidate_digest}/{candidate_replay_digest} selected_parts={}/{}/{}/{} candidate_parts={}/{}/{}/{}",
