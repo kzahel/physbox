@@ -237,10 +237,10 @@ pub fn box2d_softness_coefficients(
 }
 
 #[derive(Clone, Debug)]
-struct PreparedContact {
+pub(crate) struct PreparedContact {
     manifold_id: u32,
-    body_a: usize,
-    body_b: usize,
+    pub(crate) body_a: usize,
+    pub(crate) body_b: usize,
     normal: Vec2,
     tangent: Vec2,
     friction: f32,
@@ -604,6 +604,13 @@ fn generate_contacts(
     }
 }
 
+pub(crate) fn generate_portable_contacts(
+    source: &ScenarioV1,
+    bodies: &[BodyStateV1],
+) -> Result<Vec<AuthoredManifoldV1>, ScalarError> {
+    generate_contacts(source, bodies, ContactGeneration::PortableNarrowphase)
+}
+
 pub fn first_trace_divergence(
     expected: &[TraceRecordV1],
     actual: &[TraceRecordV1],
@@ -662,7 +669,7 @@ pub fn first_trace_divergence(
     None
 }
 
-fn prepare_contact(
+pub(crate) fn prepare_contact(
     bodies: &[BodyStateV1],
     manifold: &AuthoredManifoldV1,
     cache: &[ContactCachePointV1],
@@ -749,7 +756,7 @@ fn prepare_contact(
     })
 }
 
-fn warm_start(
+pub(crate) fn warm_start(
     contact: &PreparedContact,
     bodies: &mut [BodyStateV1],
     traces: &mut Vec<TraceRecordV1>,
@@ -784,7 +791,7 @@ fn warm_start(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn solve_normal(
+pub(crate) fn solve_normal(
     contact: &mut PreparedContact,
     bodies: &mut [BodyStateV1],
     substep_dt: f32,
@@ -900,7 +907,7 @@ fn configured_contact_coefficients(
     ))
 }
 
-fn maximum_depenetration_velocity(scenario: &ScenarioV1) -> f32 {
+pub(crate) fn maximum_depenetration_velocity(scenario: &ScenarioV1) -> f32 {
     scenario
         .settings
         .contact_policy
@@ -915,7 +922,7 @@ fn clamp_depenetration_bias(velocity_bias: f32, maximum: f32) -> f32 {
     }
 }
 
-fn solve_tangent(
+pub(crate) fn solve_tangent(
     contact: &mut PreparedContact,
     bodies: &mut [BodyStateV1],
     iteration: u32,
@@ -960,7 +967,7 @@ fn solve_tangent(
     Ok(())
 }
 
-fn apply_restitution(
+pub(crate) fn apply_restitution(
     contact: &mut PreparedContact,
     bodies: &mut [BodyStateV1],
     threshold: f32,
@@ -1010,7 +1017,7 @@ fn apply_restitution(
     Ok(())
 }
 
-fn integrate_velocities(
+pub(crate) fn integrate_velocities(
     bodies: &mut [BodyStateV1],
     gravity: Vec2,
     substep_dt: f32,
@@ -1028,7 +1035,7 @@ fn integrate_velocities(
     Ok(())
 }
 
-fn integrate_positions(
+pub(crate) fn integrate_positions(
     bodies: &mut [BodyStateV1],
     substep_dt: f32,
     traces: &mut Vec<TraceRecordV1>,
@@ -1063,7 +1070,7 @@ fn integrate_positions(
     Ok(())
 }
 
-fn refresh_separations(contacts: &mut [PreparedContact], bodies: &[BodyStateV1]) {
+pub(crate) fn refresh_separations(contacts: &mut [PreparedContact], bodies: &[BodyStateV1]) {
     for contact in contacts {
         for point in &mut contact.points {
             let current_anchor_a = rotate(point.local_anchor_a, bodies[contact.body_a].angle.get());
@@ -1075,7 +1082,7 @@ fn refresh_separations(contacts: &mut [PreparedContact], bodies: &[BodyStateV1])
     }
 }
 
-fn collect_contact_cache(
+pub(crate) fn collect_contact_cache(
     contacts: &[PreparedContact],
     bodies: &[BodyStateV1],
 ) -> Result<Vec<ContactCachePointV1>, ScalarError> {
