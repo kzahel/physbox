@@ -249,9 +249,9 @@ Commit boundary: versioned implementation and focused evidence.
 
 ### S13.3 — overflow and capacity qualification
 
-- [ ] Run and exactly replay the 21-manifold forced-overflow fixture.
-- [ ] Run and exactly replay the one-below-demand capacity rejection.
-- [ ] Verify overflow is executed first while true capacity overflow fails
+- [x] Run and exactly replay the 21-manifold forced-overflow fixture.
+- [x] Run and exactly replay the one-below-demand capacity rejection.
+- [x] Verify overflow is executed first while true capacity overflow fails
   closed with zero accepted/committed work.
 
 Artifacts: `evidence/p5.2b-s13.3-overflow-capacity/`.
