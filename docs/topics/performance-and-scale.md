@@ -964,6 +964,27 @@ serial overflow lane, midpoint identity projection, and scalar point-
 sequential kernel require measured portable cost and watchdog evidence before
 any timing, crossover, mobile, or product claim.
 
+S13 measured exact-probe cost, 2026-07-19: the clean
+[32/256/1K package](../../evidence/p5.2b-s13.5-gpu-work-time/README.md)
+replaces the S12 projection for this exact unpromoted candidate. On Apple M4
+Pro Metal, five warmups and 20 alternating retained samples per configuration
+measure the selected hard/direct control and exact candidate on body-disjoint
+repetitions of the governed two-point contact shape. Candidate GPU
+complete-step median/p95 is `1.110/1.258`, `2.229/3.273`, and
+`4.606/5.820 ms`; selected is `1.540/1.732`, `5.598/10.693`, and
+`7.245/9.262 ms`. CPU encode/submit is reported independently in the raw
+manifest.
+
+Candidate total allocation is `62,048/302,860/893,452` bytes, deltas of
+`-40,460/-319,244/-509,708` from selected, while its versioned initial-
+transform slice is exactly 12 bytes per body. All result and diagnostic lanes
+replay, capacities stay clean, timestamps are supported, and no hard execution
+constraint appears. These results do not qualify or promote the candidate:
+both governed response sources fail S13.4. They establish only that performance
+and bounded GPU execution are not the reason the exact route is rejected. They
+are named-adapter authored-solver measurements, not a CPU crossover,
+representative-hardware band, liquid projection, or public scale claim.
+
 ## Regression and claim gates
 
 Before representative hardware is selected, store named measurements and

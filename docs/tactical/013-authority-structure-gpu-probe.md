@@ -1,10 +1,11 @@
 # S13: exact authority-structure GPU execution probe
 
-Status: active, 2026-07-19. Authorized by human decision at the S12.6
-checkpoint. This workstream executes exactly one unpromoted portable-WebGPU
-candidate: the S12 X1-X4 authority structure with the current PhysBox X5
-restitution timing. It is an execution and decision probe, not a selected
-solver or product change.
+Status: manual checkpoint, 2026-07-19. The exact candidate is rejected by the
+frozen authority quality gates; overflow, capacity, replay, and measured cost
+qualify, and no execution constraint is present. Cross-host qualification and
+promotion remain unauthorized. This workstream executed exactly one
+unpromoted portable-WebGPU candidate: the S12 X1-X4 authority structure with
+the current PhysBox X5 restitution timing.
 
 Governing topics:
 [awake settling and rest stability](../topics/awake-settling-and-rest-stability.md)
@@ -245,6 +246,11 @@ Completion gate: focused GPU diagnostics match the qualified scalar endpoint
 at every exposed phase within the frozen S12 implementation-agreement bands;
 all policy and selected-unchanged tests pass.
 
+Disposition: policy and selected-unchanged controls pass, but portable GPU
+arithmetic first exceeds the frozen implementation band in the substep-1
+biased normal pass. The retained two-step maximum is `9.26018e-4`; no band or
+candidate ingredient was changed to hide the negative.
+
 Commit boundary: versioned implementation and focused evidence.
 
 ### S13.3 — overflow and capacity qualification
@@ -296,12 +302,12 @@ Commit boundary: measured GPU cost package.
 
 ### S13.6 — decision package and human checkpoint
 
-- [ ] Assemble the exact policy, implementation controls, overflow/capacity,
+- [x] Assemble the exact policy, implementation controls, overflow/capacity,
   governed response, replay, work/allocation/time, constraints, and one
   recommendation.
-- [ ] Update this tactical, the governing topics, and tactical index in the
+- [x] Update this tactical, the governing topics, and tactical index in the
   same change.
-- [ ] Stop before cross-host candidate qualification or product promotion.
+- [x] Stop before cross-host candidate qualification or product promotion.
 
 Artifacts: `evidence/p5.2b-s13.6-exact-gpu-probe-review/`.
 
@@ -347,3 +353,9 @@ allocation, and complete-step time are retained, all evidence recursively
 verifies, and the decision package reaches the human checkpoint. Completion
 does not authorize cross-host candidate qualification, a product/default
 change, a comparator, or a wider sweep.
+
+Reached 2026-07-19: the recursively verified disposition is
+`exact-candidate-rejected-by-frozen-authority-quality`. Both governed depths
+fail, while execution, replay, overflow/capacity, and the complete timing
+matrix pass. The workstream is complete at its required manual checkpoint;
+only the human may authorize a different formulation study.

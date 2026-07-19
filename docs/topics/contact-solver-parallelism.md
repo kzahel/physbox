@@ -645,6 +645,26 @@ This is a static feasibility result only. It does not qualify GPU numerics,
 overflow cost, runtime, or a product policy; those remain behind the recorded
 human checkpoint for one minimal exact unpromoted probe.
 
+S13 exact execution disposition, 2026-07-19: the authorized probe implements
+the source-faithful 20 dynamic plus three static-capable colors and one serial
+overflow lane, overflow first, ascending colors, in-place body-disjoint
+updates, and point-sequential manifold recurrence. The 21-manifold star uses
+colors 0-19 plus exactly one overflow item and replays; forced manifold
+capacity 20 rejects demand 21 with zero accepted and committed work. Candidate
+initial transforms use a versioned 12-byte-per-body topology slice, leaving
+the selected 96-byte prepared-point layout unchanged.
+
+The portable schedule is feasible and inexpensive on the measured Apple M4
+Pro Metal adapter. The two-point 32/256/1K matrix completes in 41/411/411
+candidate dispatches versus 168/1,410/1,410 selected dispatches; candidate p95
+GPU complete-step time is `1.258/3.273/5.820 ms`, with total allocation
+`62,048/302,860/893,452` bytes. No storage, bind, device-limit, watchdog, or
+timing constraint occurs. Nevertheless, the candidate is rejected because it
+does not preserve the governed authority response. This closes exact S13
+promotion and cross-host expansion, not the architectural ability to execute
+colored soft constraints. A branch-robust variation is a new solver policy
+and requires a separate human decision.
+
 ## Fallback and reserve options
 
 - **Accepted baseline.** Manifold block i2 improves structural preservation and

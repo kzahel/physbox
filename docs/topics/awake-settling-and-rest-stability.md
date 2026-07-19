@@ -1,15 +1,14 @@
 # Awake settling and rest stability
 
-Status: S6.5, S9, S10, and S11 are closed as negative results; the bounded
-S12 authority-structure decomposition is complete with a qualified coupled
-soft endpoint and a minimal exact GPU probe recommendation, 2026-07-19.
+Status: S6.5, S9, S10, and S11 are closed as negative results; S12's coupled
+soft scalar authority endpoint qualifies, while S13 rejects its one exact GPU
+execution candidate on frozen response quality, 2026-07-19.
 S11's measured rewind correction space is exhausted with no survivor. The
 comparator-engine trigger remains recorded but no comparator is authorized.
 The S6.5d soft candidate and all S9/S10/S11 material candidates are rejected;
 restitution timing is byte-inert on the governed controls.
-Hard/direct manifold-block i2 remains the product. The recommended exact S12
-GPU probe remains behind its human checkpoint; no candidate is promoted by
-this topic.
+Hard/direct manifold-block i2 remains the product. S13 is at its manual
+checkpoint; no candidate is promoted or authorized for cross-host expansion.
 Awake settling is a prerequisite for broadphase selection and sleeping
 acceptance. No contact-identity policy, soft-contact coefficients, penetration
 deadband, friction anchor, residual band, or sleep threshold is a product
@@ -1033,6 +1032,27 @@ selected-kernel port, comparator, wider scalar or coefficient sweep, product
 selection, default change, tolerance change, or authority-precedence change is
 authorized. The workstream stops at a new human checkpoint before cross-host
 candidate qualification or product promotion.
+
+S13 exact GPU disposition, 2026-07-19: the recursive
+[review package](../../evidence/p5.2b-s13.6-exact-gpu-probe-review/README.md)
+rejects the sole X1-X4/current-X5 candidate by the unchanged frozen authority
+quality gates. Implementation and every retained governed stream replay
+exactly. The focused GPU/scalar path first leaves the `5e-5` implementation
+band in the substep-1 biased normal pass and reaches a two-step maximum state
+difference of `9.26018e-4`. Depth 11 preserves native support topology but
+settles at `0.0304508 m/s`; depth 16 loses stack order and support topology.
+
+This is not a broad rejection of soft contact. S12's independently qualified
+coupled soft scalar endpoint remains evidence that the response mechanism is
+viable. S13 instead establishes that an exact source-faithful recurrence is
+too branch-sensitive under the measured portable GPU arithmetic. Execution
+is not the blocker: overflow-first scheduling, fail-closed capacity, and exact
+replay qualify, and the measured candidate p95 is `1.258/3.273/5.820 ms` at
+32/256/1K paired manifolds with no hard constraint. Hard/direct stays selected
+because the exact soft GPU response fails. A portable branch-robust
+authority-band formulation would be a new study requiring human authorization;
+it may not be smuggled in as an implementation correction, tolerance change,
+coefficient sweep, approximate selected-kernel port, or comparator.
 
 ## Authority corrections
 

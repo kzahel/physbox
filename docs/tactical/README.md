@@ -61,8 +61,12 @@ not directly selected-policy compatible. The recommendation at the recorded
 checkpoint is one minimal exact unpromoted GPU probe. No comparator, probe,
 product change, or gate weakening is authorized by closure. Human review at
 S12.6 authorizes S13 as one exact unpromoted X1-X4 GPU execution probe with
-current X5 timing. S13 is active and stops before cross-host candidate
-qualification or product promotion.
+current X5 timing. S13 reaches its manual checkpoint as a clean quality
+negative: both governed GPU depths exactly replay but fail frozen native
+authority bands, while overflow/capacity and 32/256/1K execution cost qualify.
+There is no execution constraint and no candidate is promoted. The coupled
+soft scalar result remains valid; any branch-robust GPU formulation is a new
+human decision.
 
 Tactical filenames use a three-digit zero-padded prefix ordered by their first
 Git creation timestamp. This repository starts at `001`. Never renumber an
@@ -85,7 +89,7 @@ This README remains the unnumbered index.
 | S10 | Warm-start and stored-impulse stationarity | [010-warm-start-impulse-stationarity.md](010-warm-start-impulse-stationarity.md) | complete; no hard survivor; soft-specific formulation study authorized, 2026-07-19 |
 | S11 | Soft contact formulation study | [011-soft-contact-formulation.md](011-soft-contact-formulation.md) | complete; no survivor, comparator-engine fork returned to human review, 2026-07-19 |
 | S12 | Authority solve-structure decomposition | [012-authority-structure-decomposition.md](012-authority-structure-decomposition.md) | complete; four-axis authority structure qualifies and exact GPU probe recommended, 2026-07-19 |
-| S13 | Exact authority-structure GPU execution probe | [013-authority-structure-gpu-probe.md](013-authority-structure-gpu-probe.md) | active; exact unpromoted X1-X4 candidate authorized, 2026-07-19 |
+| S13 | Exact authority-structure GPU execution probe | [013-authority-structure-gpu-probe.md](013-authority-structure-gpu-probe.md) | manual checkpoint; exact candidate rejected by frozen authority quality, no execution constraint, 2026-07-19 |
 
 ## Conventions
 

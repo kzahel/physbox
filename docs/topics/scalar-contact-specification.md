@@ -200,6 +200,23 @@ order; the selected two-point block normal equation is not an exact
 substitute. These are an executable decision target for a separately
 authorized GPU probe, not a selected scalar or product-policy change.
 
+## S13 portable arithmetic disposition
+
+The [S13 review](../../evidence/p5.2b-s13.6-exact-gpu-probe-review/README.md)
+executes that one exact target on portable GPU arithmetic without changing
+this scalar recurrence. Scalar and GPU agree through the first substep to a
+few ULPs, then first exceed the frozen `5e-5` implementation band in the
+substep-1 biased normal pass. Exact GPU replay does not rescue the response:
+depth 11 remains at `0.0304508 m/s`, and depth 16 loses structure.
+
+This leaves the S12 scalar authority endpoint qualified and unchanged while
+rejecting it as a directly portable product candidate. A future branch-robust
+formulation would intentionally be a new recurrence with authority-band
+response ownership; it is not an implementation correction to this
+specification and requires a human-authorized study plus new scalar/GPU traces.
+No tolerance, selected scalar equation, product coefficient, or oracle
+precedence changes by the S13 result.
+
 ## Reconsideration triggers
 
 Change these equations or ordering only with measured candidate evidence and a
