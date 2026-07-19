@@ -1,7 +1,9 @@
 # S11: soft contact formulation study
 
-Status: active, 2026-07-19. Authorized by human review at the S10.5
-formulation fork recorded in the
+Status: complete, 2026-07-19. Authorized by human review at the S10.5
+formulation fork and closed as a measured negative with no survivor; the
+verified review returns the comparator-engine fork to human decision. The
+authorization is recorded in the
 [S10.6 review](../../evidence/p5.2b-s10.6-stationarity-review/README.md).
 S10 measurably exhausted the authorized hard/direct correction space without
 meeting the awake settling gate, while the pinned authority has only ever
@@ -563,11 +565,11 @@ a comparator dependency or study by itself.
 
 ### S11.5 — review package (always runs)
 
-- [ ] Assemble the compact review: attribution, mechanism, candidate
+- [x] Assemble the compact review: attribution, mechanism, candidate
   dispositions, cross-host results if any, and one specific recommendation —
   promote-candidate, take the closure decision, or close with named
   reconsideration triggers.
-- [ ] Update this tactical, the governing topics, and the tactical index in
+- [x] Update this tactical, the governing topics, and the tactical index in
   the same change.
 
 Artifacts: `evidence/p5.2b-s11.5-soft-formulation-review/`.
@@ -576,6 +578,19 @@ Completion gate: package verifies from a clean tree; no product or authority
 setting changed.
 
 Commit boundary: review package and status updates only.
+
+Completion checkpoint, 2026-07-19: the verified
+[S11.5 review](../../evidence/p5.2b-s11.5-soft-formulation-review/README.md)
+recursively verifies the S11.4 closure and therefore every S11.1–S11.3 raw
+evidence package. It records the matched attribution, named minimum mechanism,
+both deterministic scalar dispositions, absence of an admissible GPU/cross-
+host lane, and one recommendation: take the soft closure and return the
+comparator-engine fork to human review. The current soft-contact rewind
+correction space is definitively ruled out under the frozen coefficients,
+accumulation architecture, and acceptance gates; this does not rule out every
+soft solver. S11 is complete with no product, default, tolerance, capacity,
+or oracle change. A comparator study, new accumulation architecture, or new
+formulation requires separate authorization.
 
 ## Autonomous boundary and stop conditions
 

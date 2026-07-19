@@ -1,8 +1,8 @@
 # Awake settling and rest stability
 
-Status: S6.5, S9, and S10 are closed as negative results; the bounded S11 soft
-formulation study is active, its S11.3 candidates are exhausted with no
-survivor, and its S11.4 closure decision package is verified, 2026-07-19. The
+Status: S6.5, S9, S10, and S11 are closed as negative results, 2026-07-19.
+S11's measured rewind correction space is exhausted with no survivor and its
+verified review returns the comparator-engine fork to human decision. The
 S6.5d soft candidate and all S9/S10/S11 material candidates are rejected;
 restitution timing is byte-inert on the governed controls.
 Hard/direct manifold-block i2 remains the product. S11 is authorized only
@@ -936,6 +936,17 @@ is satisfied but is not self-authorizing. A new accumulation architecture or
 coefficient/contact-policy re-selection likewise requires new measured scope;
 acceptance-band weakening remains forbidden. Product/default/tolerance/oracle
 contracts remain unchanged.
+
+S11.5 final review, 2026-07-19: the verified
+[review package](../../evidence/p5.2b-s11.5-soft-formulation-review/README.md)
+recursively verifies the closure decision and all attribution, mechanism, and
+candidate inputs. Its specific recommendation is to take the measured soft-
+route closure, retain hard/direct manifold-block i2 pending a separate human
+decision, and explicitly decide whether to authorize a comparator-engine
+study or a separately scoped new solver architecture. The comparator trigger
+is satisfied but no comparator is authorized or added. S11 is complete; the
+selected product is unchanged and is not reclassified as an awake-settling
+solution. Product/default/tolerance/oracle contracts remain unchanged.
 
 ## Authority corrections
 
