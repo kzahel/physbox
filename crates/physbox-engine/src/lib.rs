@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+mod authority_gpu_probe;
 mod body_benchmark;
 mod body_floor_solver;
 mod body_state;
@@ -28,6 +29,12 @@ mod scenario;
 mod ui;
 mod ui_font;
 
+pub use authority_gpu_probe::{
+    AUTHORITY_GPU_COLOR_COUNT, AUTHORITY_GPU_DYNAMIC_COLOR_COUNT,
+    AUTHORITY_GPU_OVERFLOW_COLOR_COUNT, AUTHORITY_GPU_PROBE_CANDIDATE_ID,
+    AUTHORITY_GPU_PROBE_POLICY_VERSION, AUTHORITY_GPU_STATIC_COLOR_COUNT,
+    AuthorityGpuProbePolicyV1, SelectedGpuSolverPolicySnapshotV1,
+};
 #[cfg(not(target_arch = "wasm32"))]
 pub use body_benchmark::benchmark_gpu_body_free_flight;
 pub use body_benchmark::{
