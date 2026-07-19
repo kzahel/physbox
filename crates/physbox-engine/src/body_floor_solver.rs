@@ -4092,7 +4092,15 @@ pub async fn benchmark_gpu_s13_authority_probe(
         && candidate_evidence == candidate_replay_evidence;
     if !selected_replay_exact || !candidate_replay_exact {
         return Err(format!(
-            "S13 benchmark replay differed: selected={selected_replay_exact} candidate={candidate_replay_exact} selected_digests={selected_digest}/{selected_replay_digest} candidate_digests={candidate_digest}/{candidate_replay_digest}"
+            "S13 benchmark replay differed: selected={selected_replay_exact} candidate={candidate_replay_exact} selected_digests={selected_digest}/{selected_replay_digest} candidate_digests={candidate_digest}/{candidate_replay_digest} selected_parts={}/{}/{}/{} candidate_parts={}/{}/{}/{}",
+            selected_evidence.contacts == selected_replay_evidence.contacts,
+            selected_evidence.contributions == selected_replay_evidence.contributions,
+            selected_evidence.manifold_blocks == selected_replay_evidence.manifold_blocks,
+            selected_evidence.coloring == selected_replay_evidence.coloring,
+            candidate_evidence.contacts == candidate_replay_evidence.contacts,
+            candidate_evidence.contributions == candidate_replay_evidence.contributions,
+            candidate_evidence.manifold_blocks == candidate_replay_evidence.manifold_blocks,
+            candidate_evidence.coloring == candidate_replay_evidence.coloring,
         ));
     }
     let capacity_records = |solver: &GpuFixedFloorSolver| -> Result<Vec<CapacityRecordV1>, String> {
