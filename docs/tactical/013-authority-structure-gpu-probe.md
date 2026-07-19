@@ -213,11 +213,11 @@ descriptor.
 
 ### S13.1 — fork and exact probe contract
 
-- [ ] Record the human fork, exact candidate, frozen sources/bands, replay,
+- [x] Record the human fork, exact candidate, frozen sources/bands, replay,
   overflow/capacity fixture, measurement method, exclusions, and stop gates.
-- [ ] Materialize a machine-readable versioned candidate descriptor and a
+- [x] Materialize a machine-readable versioned candidate descriptor and a
   verifier that rejects any policy or matrix expansion.
-- [ ] Prove the selected product descriptor remains byte-identical.
+- [x] Prove the selected product descriptor remains byte-identical.
 
 Artifacts: `evidence/p5.2b-s13.1-exact-gpu-probe-contract/`.
 
