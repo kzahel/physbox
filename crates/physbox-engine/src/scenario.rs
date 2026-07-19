@@ -569,6 +569,42 @@ pub fn p5_2_settling_soft_stack_matrix_scenario(
     Ok(scenario)
 }
 
+/// Shared soft-contact depth source for the bounded S11.2 mechanism sweep.
+/// The catalog deliberately keeps the accepted small controls and every
+/// depth from eight through the governed 16-stack derivation gate.
+pub fn p5_2_s11_soft_depth_sweep_scenario(
+    rectangle_count: u32,
+) -> Result<ScenarioV1, ScenarioBuildError> {
+    if !matches!(rectangle_count, 2 | 4 | 8..=16) {
+        return Err(ScenarioBuildError(
+            "S11 soft depth sweep requires 2, 4, or 8 through 16 rectangles".to_owned(),
+        ));
+    }
+    let mut scenario = p5_2_centered_rectangle_stack_scenario(
+        rectangle_count,
+        P5_2_CENTERED_STACK_EVIDENCE_STEPS,
+    )?;
+    scenario.id = format!("p5.2-s11-soft-depth-sweep-{rectangle_count}");
+    scenario.settings.contact_softness = Some(ContactSoftnessPolicyV1 {
+        version: CONTACT_SOFTNESS_POLICY_VERSION,
+        contact_hertz: finite(30.0),
+        damping_ratio: finite(10.0),
+        static_contact_hertz_multiplier: finite(1.0),
+    });
+    scenario
+        .validate()
+        .map_err(|error| ScenarioBuildError(error.to_string()))?;
+    Ok(scenario)
+}
+
+/// Exact alias for the smallest S11 soft composition reproducer established
+/// by the frozen depth sweep. Keeping the depth-source identity unchanged
+/// makes later candidate comparisons byte-comparable with the minimization
+/// evidence.
+pub fn p5_2_s11_soft_composition_reproducer_scenario() -> Result<ScenarioV1, ScenarioBuildError> {
+    p5_2_s11_soft_depth_sweep_scenario(11)
+}
+
 /// Returns the permanent four-dynamic-body rising-energy reproducer retained
 /// by the S6.4 failure minimizer. The source is rebuilt from the shared seeded
 /// fixture so native and Android diagnostics cannot fork the scenario.
@@ -2367,6 +2403,35 @@ mod tests {
         }
         assert!(p5_2_settling_soft_stack_matrix_scenario(2).is_err());
         assert!(p5_2_settling_soft_stack_matrix_scenario(32).is_err());
+    }
+
+    #[test]
+    fn p5_2_s11_soft_depth_sweep_is_shared_exact_and_bounded() {
+        for count in [2, 4, 8, 9, 10, 11, 12, 13, 14, 15, 16] {
+            let source = p5_2_s11_soft_depth_sweep_scenario(count).unwrap();
+            source.validate().unwrap();
+            assert_eq!(source.bodies.len(), count as usize + 1);
+            assert_eq!(source.requested_steps, P5_2_CENTERED_STACK_EVIDENCE_STEPS);
+            assert_eq!(
+                source
+                    .settings
+                    .contact_softness
+                    .unwrap()
+                    .contact_hertz
+                    .get(),
+                30.0
+            );
+            assert_eq!(
+                canonical_json(&source).unwrap(),
+                canonical_json(&p5_2_s11_soft_depth_sweep_scenario(count).unwrap()).unwrap()
+            );
+        }
+        assert!(p5_2_s11_soft_depth_sweep_scenario(3).is_err());
+        assert!(p5_2_s11_soft_depth_sweep_scenario(17).is_err());
+        assert_eq!(
+            canonical_json(&p5_2_s11_soft_composition_reproducer_scenario().unwrap()).unwrap(),
+            canonical_json(&p5_2_s11_soft_depth_sweep_scenario(11).unwrap()).unwrap()
+        );
     }
 
     #[test]

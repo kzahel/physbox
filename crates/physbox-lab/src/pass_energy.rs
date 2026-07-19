@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use physbox_contracts::{BodyStateV1, ScenarioV1, Vec2};
 use physbox_engine::{
     GpuColoringEvidenceV4, GpuFixedFloorContactEvidence, GpuGeneratedContactPassMotionWindowV1,
@@ -12,6 +14,7 @@ pub const SETTLING_PASS_ENERGY_WINDOW_REPORT_VERSION: u32 = 1;
 pub const RELAXATION_DERIVATION_REPORT_VERSION: u32 = 1;
 pub const STATIC_SUPPORT_ATTRIBUTION_REPORT_VERSION: u32 = 1;
 pub const IMPULSE_OPERATOR_REPORT_VERSION: u32 = 1;
+pub const SOFT_IMPULSE_OPERATOR_REPORT_VERSION: u32 = 1;
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -230,6 +233,77 @@ pub struct ImpulseOperatorReportV1 {
     pub vector_identity_rule: &'static str,
     pub rows: Vec<ImpulseOperatorPassRowV1>,
     pub mechanism: ImpulseOperatorMechanismV1,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SoftCrossStepImpulseHandoffV1 {
+    pub previous_completed_step: u32,
+    pub current_completed_step: u32,
+    pub retained_points: u32,
+    pub added_points: u32,
+    pub lost_points: u32,
+    pub exact_impulse_points: u32,
+    pub impulse: ImpulseVectorMapV1,
+    pub exact_slot_and_impulse_handoff: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SoftImpulseOperatorFamilyV1 {
+    pub kind: GpuSolverPassKindV1,
+    pub pass_count: u32,
+    pub fixed_maps: u32,
+    pub contraction_maps: u32,
+    pub oscillation_maps: u32,
+    pub kinetic_energy_delta_compensated_f64: f64,
+    pub materially_positive: bool,
+    pub impulse_normal_l1_change: f64,
+    pub impulse_tangent_l1_change: f64,
+    pub endpoint_l2_before_total: f64,
+    pub endpoint_l2_after_total: f64,
+    pub active_set_flips: u32,
+    pub redistribution_transition_max: f64,
+    pub static_net_delta_compensated_f64: f64,
+    pub dynamic_net_delta_compensated_f64: f64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SoftNormalCompositionV1 {
+    pub outer_step_energy_before_compensated_f64: f64,
+    pub outer_step_energy_after_compensated_f64: f64,
+    pub outer_step_delta_compensated_f64: f64,
+    pub material_positive_threshold: f64,
+    pub integrate_velocity_delta_compensated_f64: f64,
+    pub warm_start_delta_compensated_f64: f64,
+    pub gravity_warm_support_deficit_compensated_f64: f64,
+    pub normal_biased_delta_compensated_f64: f64,
+    pub normal_relaxation_delta_compensated_f64: f64,
+    pub biased_relaxation_net_compensated_f64: f64,
+    pub tangent_net_compensated_f64: f64,
+    pub inter_substep_refreshes: u32,
+    pub exact_first_prepared_reseeds: u32,
+    pub discarded_prior_impulse_l1: f64,
+    pub normal_biased_materially_positive: bool,
+    pub normal_relaxation_materially_positive: bool,
+    pub gravity_warm_deficit_materially_positive: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SoftImpulseOperatorReportV1 {
+    pub version: u32,
+    pub source_scenario_hash: String,
+    pub previous_completed_step: u32,
+    pub target_step: u32,
+    pub matched_state_precision: &'static str,
+    pub classification_rule: &'static str,
+    pub vector_identity_rule: &'static str,
+    pub rows: Vec<ImpulseOperatorPassRowV1>,
+    pub families: Vec<SoftImpulseOperatorFamilyV1>,
+    pub cross_step_handoff: SoftCrossStepImpulseHandoffV1,
+    pub composition: SoftNormalCompositionV1,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
@@ -1068,6 +1142,249 @@ pub fn analyze_impulse_operator(
     };
     report.validate()?;
     Ok(report)
+}
+
+impl SoftImpulseOperatorReportV1 {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.version != SOFT_IMPULSE_OPERATOR_REPORT_VERSION
+            || self.source_scenario_hash.len() != 64
+            || self.previous_completed_step == 0
+            || self.target_step != self.previous_completed_step + 1
+            || self.matched_state_precision != "f32"
+            || self.rows.is_empty()
+            || self.families.len() != PASS_ENERGY_FAMILIES.len()
+            || self.cross_step_handoff.previous_completed_step != self.previous_completed_step
+            || self.cross_step_handoff.current_completed_step != self.target_step
+        {
+            return Err("soft impulse-operator report identity is invalid".to_owned());
+        }
+        for (kind, family) in PASS_ENERGY_FAMILIES.iter().zip(&self.families) {
+            if family.kind != *kind
+                || family.pass_count == 0
+                || family.fixed_maps + family.contraction_maps + family.oscillation_maps
+                    != family.pass_count
+            {
+                return Err("soft impulse-operator family summary is invalid".to_owned());
+            }
+        }
+        let finite = [
+            self.composition.outer_step_energy_before_compensated_f64,
+            self.composition.outer_step_energy_after_compensated_f64,
+            self.composition.outer_step_delta_compensated_f64,
+            self.composition.material_positive_threshold,
+            self.composition.integrate_velocity_delta_compensated_f64,
+            self.composition.warm_start_delta_compensated_f64,
+            self.composition
+                .gravity_warm_support_deficit_compensated_f64,
+            self.composition.normal_biased_delta_compensated_f64,
+            self.composition.normal_relaxation_delta_compensated_f64,
+            self.composition.biased_relaxation_net_compensated_f64,
+            self.composition.tangent_net_compensated_f64,
+            self.composition.discarded_prior_impulse_l1,
+        ]
+        .into_iter()
+        .all(f64::is_finite);
+        if !finite {
+            return Err("soft impulse-operator composition is non-finite".to_owned());
+        }
+        Ok(())
+    }
+}
+
+/// Applies the frozen S10 impulse-map classification to one exact soft step,
+/// and adds the outer-step persistence handoff plus scene-local energy
+/// composition required by S11.2. The hard S10 mechanism label is
+/// deliberately not carried into this report.
+pub fn analyze_soft_impulse_operator(
+    scenario: &ScenarioV1,
+    previous: &GpuGeneratedContactPassTraceV3,
+    current: &GpuGeneratedContactPassTraceV3,
+) -> Result<SoftImpulseOperatorReportV1, String> {
+    previous.validate()?;
+    current.validate()?;
+    let source_hash =
+        physbox_contracts::canonical_hash(scenario).map_err(|error| error.to_string())?;
+    if scenario.settings.contact_softness.is_none()
+        || source_hash != previous.source_scenario_hash
+        || source_hash != current.source_scenario_hash
+        || current.target_step != previous.target_step + 1
+        || previous.descriptors != current.descriptors
+    {
+        return Err("soft impulse-operator sources or adjacent prefixes differ".to_owned());
+    }
+    let operator = analyze_impulse_operator(scenario, current)?;
+    let support = analyze_static_support_energy_attribution(current)?;
+    let energy_before = kinetic_energy(&current.states[0].bodies);
+    let energy_after = kinetic_energy(
+        &current
+            .states
+            .last()
+            .ok_or_else(|| "soft impulse-operator trace has no final state".to_owned())?
+            .bodies,
+    );
+    let material_threshold = material_energy_threshold(energy_before, energy_after);
+
+    let mut families = Vec::with_capacity(PASS_ENERGY_FAMILIES.len());
+    for kind in PASS_ENERGY_FAMILIES {
+        let rows = operator
+            .rows
+            .iter()
+            .filter(|row| row.descriptor.kind == kind)
+            .collect::<Vec<_>>();
+        let energy_delta = rows
+            .iter()
+            .map(|row| row.kinetic_energy_delta_compensated_f64)
+            .sum::<f64>();
+        let support_rows = support
+            .rows
+            .iter()
+            .filter(|row| row.descriptor.kind == kind)
+            .collect::<Vec<_>>();
+        families.push(SoftImpulseOperatorFamilyV1 {
+            kind,
+            pass_count: rows.len() as u32,
+            fixed_maps: rows
+                .iter()
+                .filter(|row| row.classification == ImpulseOperatorClassV1::Fixed)
+                .count() as u32,
+            contraction_maps: rows
+                .iter()
+                .filter(|row| row.classification == ImpulseOperatorClassV1::Contraction)
+                .count() as u32,
+            oscillation_maps: rows
+                .iter()
+                .filter(|row| row.classification == ImpulseOperatorClassV1::Oscillation)
+                .count() as u32,
+            kinetic_energy_delta_compensated_f64: energy_delta,
+            materially_positive: energy_delta > material_threshold,
+            impulse_normal_l1_change: rows.iter().map(|row| row.impulse.normal_l1_change).sum(),
+            impulse_tangent_l1_change: rows.iter().map(|row| row.impulse.tangent_l1_change).sum(),
+            endpoint_l2_before_total: rows.iter().map(|row| row.impulse.endpoint_l2_before).sum(),
+            endpoint_l2_after_total: rows.iter().map(|row| row.impulse.endpoint_l2_after).sum(),
+            active_set_flips: rows.iter().map(|row| row.impulse.active_set_flips).sum(),
+            redistribution_transition_max: rows
+                .iter()
+                .map(|row| row.impulse.redistribution_transition_max)
+                .fold(0.0_f64, f64::max),
+            static_net_delta_compensated_f64: support_rows
+                .iter()
+                .map(|row| row.static_net_delta_compensated_f64)
+                .sum(),
+            dynamic_net_delta_compensated_f64: support_rows
+                .iter()
+                .map(|row| row.dynamic_net_delta_compensated_f64)
+                .sum(),
+        });
+    }
+    let family_energy = |kind| {
+        families
+            .iter()
+            .find(|family| family.kind == kind)
+            .map_or(0.0, |family| family.kinetic_energy_delta_compensated_f64)
+    };
+    let integrate_velocity = family_energy(GpuSolverPassKindV1::IntegrateVelocity);
+    let warm_start = family_energy(GpuSolverPassKindV1::WarmStart);
+    let normal_biased = family_energy(GpuSolverPassKindV1::NormalBiased);
+    let normal_relaxation = family_energy(GpuSolverPassKindV1::NormalRelaxation);
+    let tangent_net = family_energy(GpuSolverPassKindV1::TangentBiased)
+        + family_energy(GpuSolverPassKindV1::TangentRelaxation);
+    let cross_step_handoff = analyze_soft_cross_step_handoff(previous, current)?;
+    let composition = SoftNormalCompositionV1 {
+        outer_step_energy_before_compensated_f64: energy_before.compensated_f64,
+        outer_step_energy_after_compensated_f64: energy_after.compensated_f64,
+        outer_step_delta_compensated_f64: energy_after.compensated_f64
+            - energy_before.compensated_f64,
+        material_positive_threshold: material_threshold,
+        integrate_velocity_delta_compensated_f64: integrate_velocity,
+        warm_start_delta_compensated_f64: warm_start,
+        gravity_warm_support_deficit_compensated_f64: integrate_velocity + warm_start,
+        normal_biased_delta_compensated_f64: normal_biased,
+        normal_relaxation_delta_compensated_f64: normal_relaxation,
+        biased_relaxation_net_compensated_f64: normal_biased + normal_relaxation,
+        tangent_net_compensated_f64: tangent_net,
+        inter_substep_refreshes: operator.mechanism.inter_substep_refreshes,
+        exact_first_prepared_reseeds: operator.mechanism.exact_first_prepared_reseeds,
+        discarded_prior_impulse_l1: operator.mechanism.discarded_prior_impulse_l1,
+        normal_biased_materially_positive: normal_biased > material_threshold,
+        normal_relaxation_materially_positive: normal_relaxation > material_threshold,
+        gravity_warm_deficit_materially_positive: integrate_velocity + warm_start
+            > material_threshold,
+    };
+    let report = SoftImpulseOperatorReportV1 {
+        version: SOFT_IMPULSE_OPERATOR_REPORT_VERSION,
+        source_scenario_hash: source_hash,
+        previous_completed_step: previous.target_step,
+        target_step: current.target_step,
+        matched_state_precision: "f32",
+        classification_rule: operator.classification_rule,
+        vector_identity_rule: operator.vector_identity_rule,
+        rows: operator.rows,
+        families,
+        cross_step_handoff,
+        composition,
+    };
+    report.validate()?;
+    Ok(report)
+}
+
+fn analyze_soft_cross_step_handoff(
+    previous: &GpuGeneratedContactPassTraceV3,
+    current: &GpuGeneratedContactPassTraceV3,
+) -> Result<SoftCrossStepImpulseHandoffV1, String> {
+    let before = &previous
+        .states
+        .last()
+        .ok_or_else(|| "soft handoff previous trace has no final state".to_owned())?
+        .contacts;
+    let after = &current
+        .states
+        .first()
+        .ok_or_else(|| "soft handoff current trace has no initial state".to_owned())?
+        .contacts;
+    let impulse = impulse_vector_map(before, after, after)?;
+    let key = |point: &GpuFixedFloorContactEvidence| {
+        (
+            point.body_a,
+            point.body_b,
+            point.manifold_index,
+            point.point_in_manifold,
+        )
+    };
+    let previous_points = before
+        .iter()
+        .filter(|point| point.valid)
+        .map(|point| (key(point), point))
+        .collect::<BTreeMap<_, _>>();
+    let current_points = after
+        .iter()
+        .filter(|point| point.valid)
+        .map(|point| (key(point), point))
+        .collect::<BTreeMap<_, _>>();
+    let retained_points = previous_points
+        .keys()
+        .filter(|key| current_points.contains_key(key))
+        .count() as u32;
+    let exact_impulse_points = previous_points
+        .iter()
+        .filter(|(key, previous)| {
+            current_points.get(key).is_some_and(|current| {
+                previous.normal_impulse.to_bits() == current.normal_impulse.to_bits()
+                    && previous.tangent_impulse.to_bits() == current.tangent_impulse.to_bits()
+            })
+        })
+        .count() as u32;
+    Ok(SoftCrossStepImpulseHandoffV1 {
+        previous_completed_step: previous.target_step,
+        current_completed_step: current.target_step,
+        retained_points,
+        added_points: current_points.len() as u32 - retained_points,
+        lost_points: previous_points.len() as u32 - retained_points,
+        exact_impulse_points,
+        impulse,
+        exact_slot_and_impulse_handoff: exact_impulse_points == retained_points
+            && previous_points.len() == current_points.len()
+            && retained_points as usize == previous_points.len(),
+    })
 }
 
 fn scalar_color_impulse_maps(

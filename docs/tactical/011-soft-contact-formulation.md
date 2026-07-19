@@ -326,6 +326,37 @@ Artifacts: `evidence/p5.2b-s11.2-soft-mechanism/`.
 Completion gate: the mechanism verdict is specific enough to derive a
 correction from; recorded here with its reproducer hashes.
 
+Operator/minimization contract freeze, 2026-07-19, before governed S11.2
+measurement: the exact operator prefix is completed step 1100 with the
+adjacent step-1099 final state retained for the persistence-store handoff.
+Every pass map uses the frozen S10 fixed/contraction/oscillation rule and the
+same `2e-5` scalar ceiling. The depth catalog is exactly
+`2, 4, 8, 9, 10, 11, 12, 13, 14, 15, 16`; every depth runs the full S6.2
+series with exact replay plus exact replay of both operator prefixes. The
+identified primary composition signature requires all of: the full-length
+rising-energy mode; materially positive biased normal at step 1100; all eight
+biased-normal maps oscillatory; all eight normal-relaxation maps contractive;
+three exact refresh rewinds to the first prepared impulse; a bit-exact
+outer-step persistence handoff; and nonzero within-step impulse discarded by
+those rewinds. The individual gravity/warm deficit is retained as composition
+evidence but is not an onset predicate because S11.1 already measured
+scene-dependent sign changes between bias and relaxation. The smallest depth
+meeting the conjunction must remain the exact shared
+`p5_2_s11_soft_composition_reproducer_scenario` alias at depth 11 or the clean
+lane fails closed. Candidate derivation may not begin from dirty diagnostic
+numbers; it begins only after the full clean sweep confirms this contract.
+
+Implementation checkpoint, 2026-07-19: the native-only version-1 soft
+operator runner now binds the verified S11.1 manifest, executes the complete
+frozen depth catalog plus the permanent four-body context, and records exact
+1,200-step replay, adjacent step-1099/1100 pass traces, matched scalar rows,
+capacity and structure verdicts, per-family maps, the outer persistence
+handoff, and inter-substep discarded-impulse totals. Clean runs fail unless
+the shared depth-11 source is the first exact primary-signature match. Product
+constructors and all physical defaults remain inert. Standard repository
+gates, APK construction, and the hardware-backed AVD lane pass; clean operator
+and minimization evidence remains the last S11.2 measurement action.
+
 Commit boundaries: operator tooling; mechanism and minimization evidence.
 
 ### S11.3 — bounded corrections (mechanism-routed, scalar first, falsify early)
