@@ -1,19 +1,22 @@
 # Awake settling and rest stability
 
-Status: S6.5, S9, S10, S11, S14, and S15 are closed as negative results; S16
-is an active measurement-only authority-event-structure decomposition.
-S12's
-coupled soft scalar authority endpoint qualifies, S13 rejects its one exact
-GPU execution candidate on frozen response quality, and S14 rejects its sole
-branch-robust formulation at the scalar robustness gate, 2026-07-19.
+Status: S6.5 and S9-S16 retain their recorded dispositions. The program is now
+split into two explicit tracks, 2026-07-20. Track A is the active
+[S17 product-relative promotion study](../tactical/017-branch-robust-product-promotion.md):
+GPU-port the S14 branch-robust formulation on the proven S13 pipeline and
+compare it with the current hard/direct product under the recorded material-
+effect gate. Track B owns full authority parity; its next authority-robustness
+study is paused, not closed, and its authority bands remain unchanged.
+S12's coupled soft scalar authority endpoint qualifies, S13 rejects its one
+exact GPU execution candidate on frozen authority response quality, and S14
+rejects its sole branch-robust formulation at the scalar authority-robustness
+gate. Those facts are not rewritten by Track A.
 S11's measured rewind correction space is exhausted with no survivor. The
 comparator-engine trigger remains recorded but no comparator is authorized.
 The S6.5d soft candidate and all S9/S10/S11 material candidates are rejected;
 restitution timing is byte-inert on the governed controls.
-Hard/direct manifold-block i2 remains the product. S15 reaches its human
-checkpoint with no two-float candidate admitted and returns an authority-
-event-structure decomposition addendum for possible human authorization. No
-candidate is promoted or authorized for GPU or cross-host expansion.
+Hard/direct manifold-block i2 remains the product until the S17 human
+promotion decision. No sleeping change is authorized.
 Awake settling is a prerequisite for broadphase selection and sleeping
 acceptance. No contact-identity policy, soft-contact coefficients, penetration
 deadband, friction anchor, residual band, or sleep threshold is a product
@@ -1213,6 +1216,36 @@ The workstream is stopped at its mandatory human checkpoint. A4 static GPU
 representability remains authorized but held; no product candidate, GPU
 mapping or execution, source copy, new family, band change, or recurrence
 change is admitted.
+
+## S9-S16 program-status ledger and two-track plan
+
+Human regrouping, 2026-07-20, preserves the negative results without treating
+every useful component as dead. This compact ledger is the durable routing
+record for the next work.
+
+| Stage | Proven-dead class in its frozen scope | Shelf asset that remains valid |
+| --- | --- | --- |
+| S9 | Static-late order, fused normal/tangent staging, hard static×2 bias, and fixed-anchor hard refresh each miss the product-relative material gate; restitution relocation is byte-inert | Fresh 15-scene selected baseline, S6.2-v2 observations, three-tier product material/winner gates, per-pass attribution, reversible scheduling arms |
+| S10 | Simple hard warm-start suppression/retained-refresh correction does not fix depth-16 stationarity; the one retained-refresh arm worsens depth-16 energy | Stored-impulse stationarity instrument, scalar/GPU stale-reseed diagnosis, full-corpus arm runner and verifier |
+| S11 | Raw impulse retention through regenerated bases and fixed-anchor soft impulse transport are insufficient local repairs for the measured rewind mechanism | Soft pass attribution, depth-11 minimizer, governed soft sources, scalar-first admission discipline |
+| S12 | No single authority-structure axis and none of the three routed pairs is sufficient; restitution timing is unnecessary | Qualified independent soft authority endpoint; necessary X1-X4 structure; exact static GPU work/capacity mapping |
+| S13 | Exact source-faithful X1-X4/current-X5 portable GPU arithmetic does not preserve authority response at depth | Proven bounded GPU pipeline, overflow-first/fail-closed capacity, exact replay, 32/256/1K timing harness, retained first divergence |
+| S14 | The one cancellation-robust formula does not pass all 14 frozen authority perturbation rows, so it is not an authority-parity winner | Algebraically equivalent displacement expression, written binary32 forward bound, local controls, near-band depth-16 scalar response; this is Track A's sole promotion candidate |
+| S15 | Higher precision is not the still limit of the exact recurrence; no two-float candidate is admitted | Binary64 attribution, depth-16 perturbation-margin curve, proof that arithmetic compensation alone is insufficient |
+| S16 | No single declared discrete event-owner route completes locally, and the bounded routed subset domain yields no sufficient structure | Aligned endpoint events, six-family taxonomy, fail-closed routing machinery, exact negative matrix |
+
+Track A asks a product question, not an authority-parity question. S17 ports
+only the S14 expression onto the S13 pipeline, keeps the candidate unselected,
+and evaluates it against a freshly measured current hard/direct control under
+the unchanged S9 material-effect tier plus explicit 16-stack, geometry,
+response, three-host, capacity, replay, and cost gates. It stops with one
+per-scene better/worse promotion package. No sleeping change is in scope.
+
+Track B preserves the stronger full-parity objective. Its native authority
+bands, S14 perturbation failure, S15 precision result, and S16 event result all
+remain authoritative inputs. The next authority-robustness study is paused,
+not rejected or closed; S17 cannot modify or satisfy it by product-relative
+success. Resuming Track B requires a new human authorization.
 
 ## Authority corrections
 

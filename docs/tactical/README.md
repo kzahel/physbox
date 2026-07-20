@@ -97,7 +97,13 @@ structure disposition. A4 is scoped but held behind that human checkpoint.
 S16 reaches the mandatory A3 checkpoint with
 `no-declared-routed-event-structure`: all 24 single-family routes fail closed
 on absent local owner choices, leaving an empty causal-family subset domain.
-A4 remains authorized but held pending a new human release.
+A4 remains held. Human review now regroups the program into two tracks. Track
+A is active as S17: port the S14 branch-robust formulation onto the proven S13
+pipeline and evaluate it against the current product under the recorded
+product-relative material gate, with full Metal/AVD/physical-Android and cost
+evidence before human promotion review. Track B retains full authority parity
+and its next authority-robustness study in a paused, not closed, status. S17 has
+one candidate and no sleeping work.
 
 Tactical filenames use a three-digit zero-padded prefix ordered by their first
 Git creation timestamp. This repository starts at `001`. Never renumber an
@@ -124,6 +130,7 @@ This README remains the unnumbered index.
 | S14 | Branch-robust authority-band formulation | [014-branch-robust-authority-band-formulation.md](014-branch-robust-authority-band-formulation.md) | complete; sole candidate rejected at 10/14 scalar robustness rows, no GPU admitted, 2026-07-19 |
 | S15 | Exact-recurrence precision margin | [015-exact-recurrence-precision-margin.md](015-exact-recurrence-precision-margin.md) | complete; precision limit not still, no candidate, event-structure addendum returned to human review, 2026-07-20 |
 | S16 | Authority event-structure decomposition | [016-authority-event-structure-decomposition.md](016-authority-event-structure-decomposition.md) | manual checkpoint; no declared routed event structure, A4 held pending human release, 2026-07-20 |
+| S17 | Branch-robust product-relative promotion study | [017-branch-robust-product-promotion.md](017-branch-robust-product-promotion.md) | active; one S14-on-S13 GPU candidate, product-relative qualification before human promotion review, 2026-07-20 |
 
 ## Conventions
 
