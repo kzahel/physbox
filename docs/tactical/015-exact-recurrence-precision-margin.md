@@ -206,13 +206,13 @@ the no-candidate route but does not stop before S15.3.
 
 ### S15.3 — depth-16 margin and EFT feasibility bound
 
-- [ ] Run the frozen amplitude lattice under all seven schedules twice and
+- [x] Run the frozen amplitude lattice under all seven schedules twice and
   retain the full metric curves, prefix margins, failures, and re-entry.
-- [ ] Derive and mechanically verify the conservative `E_eft` feasibility
-  bound over retained operand high-water values without implementing a
+- [x] Apply the authorized route short-circuit: because S15.2 qualifies only
+  1/4 precision rows, do not instantiate a candidate-specific `E_eft` proof or
   response candidate.
-- [ ] Admit the sole candidate only when `study_margin > E_eft` and all bound
-  preconditions hold.
+- [x] Verify that the sole candidate is not admitted; the measured study
+  margin is `2^-40 m`, but the mandatory precision predicate is false.
 
 Artifacts: `evidence/p5.2b-s15.3-depth16-margin/`.
 
@@ -223,6 +223,10 @@ human checkpoint.
 ### S15.4 — exact two-float derivation and scalar controls
 
 Conditional on S15.3 admission.
+
+Not executed. S15.2 makes the mandatory precision condition false and S15.3
+routes to a no-candidate decomposition addendum, so no candidate-specific EFT
+bound, DAG, or scalar implementation is authorized.
 
 - [ ] Freeze the sole candidate DAG/hash and written error-bound argument.
 - [ ] Implement only the exact error-free-transformation cancellation path in
@@ -239,6 +243,8 @@ bound, or close at the scalar human checkpoint.
 
 Conditional on S15.4 qualification.
 
+Not executed. No S15.4 candidate is admitted.
+
 - [ ] Run the unchanged seven schedules at governed depths 11 and 16 twice.
 - [ ] Retain complete observations, error high-water, structures, support,
   branch counts, replay, and every unchanged authority predicate.
@@ -251,6 +257,8 @@ Completion gate: 14/14 rows pass, or close at the scalar human checkpoint.
 ### S15.6 — unchanged GPU response, capacity, work, and timing
 
 Conditional on S15.5 qualification.
+
+Not executed. No scalar candidate reaches the GPU admission gate.
 
 - [ ] Port only the proved two-float DAG and retain focused scalar/GPU traces.
 - [ ] Rerun unchanged depth-11/depth-16 authority and replay gates plus the
