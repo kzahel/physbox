@@ -169,6 +169,10 @@ struct LaneEvidence {
     structural_reason: String,
     first_structural_loss_step: Option<u32>,
     first_execution_failure_step: Option<u32>,
+    #[serde(default)]
+    execution_error: Option<String>,
+    #[serde(default)]
+    completed_steps: u32,
     summary: Option<SettlingSummaryV2>,
     physical_envelope: Option<PhysicalEnvelope>,
     scheduling_policy_digest: String,
@@ -568,24 +572,24 @@ fn evaluate_lane(
     projection_hash: &str,
     candidate: bool,
 ) -> Result<LaneEvidence, String> {
-    let run_series = |interval| {
-        if candidate {
-            runner.run_branch_robust_gpu_promotion_observation_series(
-                scenario,
-                interval,
-                scenario.requested_steps,
-            )
-        } else {
-            runner.run_selected_observation_series(scenario, interval, scenario.requested_steps)
+    let raw = match run_lane_series(runner, scenario, 1, scenario.requested_steps, candidate) {
+        Ok(raw) => raw,
+        Err(error) => {
+            return evaluate_failed_lane(staging, runner, input, scenario, candidate, error);
         }
     };
-    let raw = run_series(1)?;
     raw.validate()?;
-    let replay = run_series(1)?;
+    let replay = run_lane_series(runner, scenario, 1, scenario.requested_steps, candidate)?;
     replay.validate()?;
     let raw_series_hash = serialized_hash(&raw)?;
     let exact_replay = raw_series_hash == serialized_hash(&replay)?;
-    let final_only = run_series(scenario.requested_steps)?;
+    let final_only = run_lane_series(
+        runner,
+        scenario,
+        scenario.requested_steps,
+        scenario.requested_steps,
+        candidate,
+    )?;
     let final_snapshot = raw
         .snapshots
         .last()
@@ -671,6 +675,8 @@ fn evaluate_lane(
             .snapshots
             .iter()
             .find_map(|snapshot| snapshot.failure.as_ref()?.first_step),
+        execution_error: None,
+        completed_steps: scenario.requested_steps,
         summary,
         physical_envelope,
         scheduling_policy_digest: serialized_hash(&raw.solver_scheduling_policy)?,
@@ -678,6 +684,146 @@ fn evaluate_lane(
         dispatches_per_step: raw.dispatches_per_step,
         allocated_bytes: raw.allocated_bytes,
     })
+}
+
+fn run_lane_series(
+    runner: &GpuGeneratedContactRunner,
+    scenario: &ScenarioV1,
+    observation_interval_steps: u32,
+    completed_steps: u32,
+    candidate: bool,
+) -> Result<physbox_engine::GpuGeneratedContactSeriesV1, String> {
+    if candidate {
+        runner.run_branch_robust_gpu_promotion_observation_series(
+            scenario,
+            observation_interval_steps,
+            completed_steps,
+        )
+    } else {
+        runner.run_selected_observation_series(
+            scenario,
+            observation_interval_steps,
+            completed_steps,
+        )
+    }
+}
+
+fn evaluate_failed_lane(
+    staging: &Path,
+    runner: &GpuGeneratedContactRunner,
+    input: &SceneInput,
+    scenario: &ScenarioV1,
+    candidate: bool,
+    terminal_error: String,
+) -> Result<LaneEvidence, String> {
+    let first_failure_step = first_invalid_series_step(runner, scenario, candidate)?;
+    if first_failure_step <= 1 {
+        return Err(format!(
+            "S17 {} failed before a retainable prefix: {terminal_error}",
+            input.label
+        ));
+    }
+    let completed_steps = first_failure_step - 1;
+    eprintln!(
+        "S17 {} first invalid execution step {}: {}",
+        input.label, first_failure_step, terminal_error
+    );
+    let raw = run_lane_series(runner, scenario, 1, completed_steps, candidate)?;
+    let replay = run_lane_series(runner, scenario, 1, completed_steps, candidate)?;
+    let final_only = run_lane_series(
+        runner,
+        scenario,
+        completed_steps,
+        completed_steps,
+        candidate,
+    )?;
+    let raw_series_hash = serialized_hash(&raw)?;
+    let exact_replay = raw_series_hash == serialized_hash(&replay)?;
+    let final_snapshot = raw
+        .snapshots
+        .last()
+        .ok_or("S17 failed prefix returned no snapshot")?;
+    let separate_final = final_only
+        .snapshots
+        .last()
+        .ok_or("S17 failed final-only prefix returned no snapshot")?;
+    let instrumentation_final_exact = final_snapshot.bodies == separate_final.bodies
+        && final_snapshot.manifolds == separate_final.manifolds
+        && final_snapshot.cache == separate_final.cache;
+    let prefix_capacity_clean = raw.snapshots.iter().all(snapshot_capacity_clean);
+    let finite = raw
+        .snapshots
+        .iter()
+        .all(|snapshot| snapshot.bodies.iter().all(|body| body.validate().is_ok()));
+    let first_observed_structure_loss = raw.snapshots.iter().find_map(|snapshot| {
+        (!structure(
+            input.kind,
+            scenario,
+            &snapshot.bodies,
+            !snapshot_capacity_clean(snapshot),
+        )
+        .0)
+            .then_some(snapshot.completed_steps)
+    });
+    let lane = if candidate {
+        "branch-robust-product-promotion-v1"
+    } else {
+        "current-selected-product"
+    };
+    let trace = write_gzip_json_artifact(
+        staging,
+        &format!("traces/{}-{lane}-valid-prefix.json.gz", input.label),
+        &raw,
+    )?;
+    let work_vector_digest = serialized_hash(&(
+        raw.solver_scheduling_policy,
+        &final_snapshot.work,
+        &final_snapshot.capacities,
+    ))?;
+    Ok(LaneEvidence {
+        lane: lane.to_owned(),
+        raw_series_hash,
+        trace,
+        exact_replay,
+        instrumentation_final_exact,
+        capacity_clean: prefix_capacity_clean,
+        finite,
+        structural_pass: false,
+        structural_reason: format!(
+            "execution became invalid at step {first_failure_step}: {terminal_error}"
+        ),
+        first_structural_loss_step: first_observed_structure_loss.or(Some(first_failure_step)),
+        first_execution_failure_step: Some(first_failure_step),
+        execution_error: Some(terminal_error),
+        completed_steps,
+        summary: None,
+        physical_envelope: None,
+        scheduling_policy_digest: serialized_hash(&raw.solver_scheduling_policy)?,
+        work_vector_digest,
+        dispatches_per_step: raw.dispatches_per_step,
+        allocated_bytes: raw.allocated_bytes,
+    })
+}
+
+fn first_invalid_series_step(
+    runner: &GpuGeneratedContactRunner,
+    scenario: &ScenarioV1,
+    candidate: bool,
+) -> Result<u32, String> {
+    let mut low = 1;
+    let mut high = scenario.requested_steps;
+    while low < high {
+        let middle = low + (high - low) / 2;
+        if run_lane_series(runner, scenario, 1, middle, candidate).is_ok() {
+            low = middle + 1;
+        } else {
+            high = middle;
+        }
+    }
+    if run_lane_series(runner, scenario, 1, low, candidate).is_ok() {
+        return Err("S17 failed series did not reproduce under prefix search".to_owned());
+    }
+    Ok(low)
 }
 
 fn physical_envelope(observations: &[SettlingObservationV2]) -> Result<PhysicalEnvelope, String> {
@@ -1009,6 +1155,7 @@ fn product_relative_gate(
                         && height_delta <= allowed_height,
                 )
             }
+            _ if candidate.accepted => (None, None, None, None, None, false),
             _ => (None, None, None, None, None, true),
         };
         scene_comparisons.push(SceneComparison {
