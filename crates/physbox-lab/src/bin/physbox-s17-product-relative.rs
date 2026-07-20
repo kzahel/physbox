@@ -482,11 +482,9 @@ fn run_corpus(arguments: &Arguments, staging: &Path, provenance: Provenance) -> 
             if candidate { "candidate" } else { "baseline" },
             input.label
         );
-        let runner = corpus_runner(&mut adapter)?;
-        scenes.push(evaluate_scene(staging, &runner, input, candidate)?);
+        scenes.push(evaluate_scene(staging, &mut adapter, input, candidate)?);
     }
-    let runner = corpus_runner(&mut adapter)?;
-    let response = response_evidence(&runner, candidate)?;
+    let response = response_evidence(&mut adapter, candidate)?;
     let product_relative_gate = baseline
         .as_ref()
         .map(|(baseline, _, code_equivalent)| {
@@ -526,7 +524,7 @@ fn corpus_runner(
 
 fn evaluate_scene(
     staging: &Path,
-    runner: &GpuGeneratedContactRunner,
+    adapter: &mut Option<physbox_engine::AdapterDiagnostics>,
     input: SceneInput,
     candidate: bool,
 ) -> Result<SceneEvidence, String> {
@@ -542,7 +540,7 @@ fn evaluate_scene(
     let source = write_json_artifact(staging, &format!("sources/{}.json", input.label), &scenario)?;
     let lane = evaluate_lane(
         staging,
-        runner,
+        adapter,
         &input,
         &scenario,
         &projection_hash,
@@ -583,16 +581,16 @@ fn evaluate_scene(
 
 fn evaluate_lane(
     staging: &Path,
-    runner: &GpuGeneratedContactRunner,
+    adapter: &mut Option<physbox_engine::AdapterDiagnostics>,
     input: &SceneInput,
     scenario: &ScenarioV1,
     projection_hash: &str,
     candidate: bool,
 ) -> Result<LaneEvidence, String> {
-    let raw = match run_lane_series(runner, scenario, 1, scenario.requested_steps, candidate) {
+    let raw = match run_lane_series(adapter, scenario, 1, scenario.requested_steps, candidate) {
         Ok(raw) => raw,
         Err(error) => {
-            return evaluate_failed_lane(staging, runner, input, scenario, candidate, error);
+            return evaluate_failed_lane(staging, adapter, input, scenario, candidate, error);
         }
     };
     raw.validate()?;
@@ -672,12 +670,12 @@ fn evaluate_lane(
     let allocated_bytes = raw.allocated_bytes;
     drop(raw);
 
-    let replay = run_lane_series(runner, scenario, 1, scenario.requested_steps, candidate)?;
+    let replay = run_lane_series(adapter, scenario, 1, scenario.requested_steps, candidate)?;
     replay.validate()?;
     let exact_replay = raw_series_hash == serialized_hash(&replay)?;
     drop(replay);
     let final_only = run_lane_series(
-        runner,
+        adapter,
         scenario,
         scenario.requested_steps,
         scenario.requested_steps,
@@ -714,12 +712,13 @@ fn evaluate_lane(
 }
 
 fn run_lane_series(
-    runner: &GpuGeneratedContactRunner,
+    adapter: &mut Option<physbox_engine::AdapterDiagnostics>,
     scenario: &ScenarioV1,
     observation_interval_steps: u32,
     completed_steps: u32,
     candidate: bool,
 ) -> Result<physbox_engine::GpuGeneratedContactSeriesV1, String> {
+    let runner = corpus_runner(adapter)?;
     if candidate {
         runner.run_branch_robust_gpu_promotion_observation_series(
             scenario,
@@ -737,13 +736,13 @@ fn run_lane_series(
 
 fn evaluate_failed_lane(
     staging: &Path,
-    runner: &GpuGeneratedContactRunner,
+    adapter: &mut Option<physbox_engine::AdapterDiagnostics>,
     input: &SceneInput,
     scenario: &ScenarioV1,
     candidate: bool,
     terminal_error: String,
 ) -> Result<LaneEvidence, String> {
-    let first_failure_step = first_invalid_series_step(runner, scenario, candidate)?;
+    let first_failure_step = first_invalid_series_step(adapter, scenario, candidate)?;
     if first_failure_step <= 1 {
         return Err(format!(
             "S17 {} failed before a retainable prefix: {terminal_error}",
@@ -755,7 +754,7 @@ fn evaluate_failed_lane(
         "S17 {} first invalid execution step {}: {}",
         input.label, first_failure_step, terminal_error
     );
-    let raw = run_lane_series(runner, scenario, 1, completed_steps, candidate)?;
+    let raw = run_lane_series(adapter, scenario, 1, completed_steps, candidate)?;
     let raw_series_hash = serialized_hash(&raw)?;
     let final_snapshot = raw
         .snapshots
@@ -803,11 +802,11 @@ fn evaluate_failed_lane(
     let allocated_bytes = raw.allocated_bytes;
     drop(raw);
 
-    let replay = run_lane_series(runner, scenario, 1, completed_steps, candidate)?;
+    let replay = run_lane_series(adapter, scenario, 1, completed_steps, candidate)?;
     let exact_replay = raw_series_hash == serialized_hash(&replay)?;
     drop(replay);
     let final_only = run_lane_series(
-        runner,
+        adapter,
         scenario,
         completed_steps,
         completed_steps,
@@ -846,7 +845,7 @@ fn evaluate_failed_lane(
 }
 
 fn first_invalid_series_step(
-    runner: &GpuGeneratedContactRunner,
+    adapter: &mut Option<physbox_engine::AdapterDiagnostics>,
     scenario: &ScenarioV1,
     candidate: bool,
 ) -> Result<u32, String> {
@@ -854,13 +853,13 @@ fn first_invalid_series_step(
     let mut high = scenario.requested_steps;
     while low < high {
         let middle = low + (high - low) / 2;
-        if run_lane_series(runner, scenario, 1, middle, candidate).is_ok() {
+        if run_lane_series(adapter, scenario, 1, middle, candidate).is_ok() {
             low = middle + 1;
         } else {
             high = middle;
         }
     }
-    if run_lane_series(runner, scenario, 1, low, candidate).is_ok() {
+    if run_lane_series(adapter, scenario, 1, low, candidate).is_ok() {
         return Err("S17 failed series did not reproduce under prefix search".to_owned());
     }
     Ok(low)
@@ -903,7 +902,7 @@ fn physical_envelope(observations: &[SettlingObservationV2]) -> Result<PhysicalE
 }
 
 fn response_evidence(
-    runner: &GpuGeneratedContactRunner,
+    adapter: &mut Option<physbox_engine::AdapterDiagnostics>,
     candidate: bool,
 ) -> Result<ResponseEvidence, String> {
     let inputs = [
@@ -927,15 +926,8 @@ fn response_evidence(
         if candidate {
             scenario.settings.contact_softness = Some(candidate_softness());
         }
-        let run = || {
-            if candidate {
-                runner.run_branch_robust_gpu_promotion_observation_series(&scenario, steps, steps)
-            } else {
-                runner.run_selected_observation_series(&scenario, steps, steps)
-            }
-        };
-        let output = run()?;
-        let replay = run()?;
+        let output = run_lane_series(adapter, &scenario, steps, steps, candidate)?;
+        let replay = run_lane_series(adapter, &scenario, steps, steps, candidate)?;
         let snapshot = output.snapshots.last().ok_or("empty response output")?;
         let result_hash = serialized_hash(snapshot)?;
         let replay_hash = serialized_hash(replay.snapshots.last().ok_or("empty response replay")?)?;
