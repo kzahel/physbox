@@ -150,7 +150,7 @@ cannot hide one structural or response regression.
 - [x] Publish an executable contract binding the S9 baseline/gate, S13
   pipeline, S14 formula/proof/disposition, S15/S16 status, selected-product
   snapshot, and reference pins.
-- [ ] After the candidate implementation commit, freshly re-pin the unchanged
+- [x] After the candidate implementation commit, freshly re-pin the unchanged
   selected product over all 15 scenes before retaining candidate corpus
   results.
 
@@ -160,6 +160,13 @@ Artifacts: `evidence/p5.2b-s17.1-promotion-contract/` and
 Completion gate: the contract is committed before candidate measurement, and
 the later baseline proves the current selected descriptor and constructors are
 unchanged at the measured implementation revision.
+
+S17.1 baseline checkpoint, 2026-07-20: the clean
+[fresh Metal baseline](../../evidence/p5.2b-s17.2-selected-baseline/README.md)
+at the committed implementation revision passes all 15 replay, final-only,
+finite, capacity, accepted-structure, and five response controls. It pins the
+current 4/8/16 metrics and diagnostic first-loss steps before any candidate
+corpus result is retained; the selected policy remains the S13 snapshot.
 
 ### S17.2 — exact branch-robust GPU port
 
