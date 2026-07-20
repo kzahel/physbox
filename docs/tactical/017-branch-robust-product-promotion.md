@@ -1,7 +1,8 @@
 # S17: branch-robust product-relative promotion study
 
-Status: blocked at the recorded S17.5 required-device stop, 2026-07-20. Human
-review authorizes Track A: port the one
+Status: active at S17.5 after the required-device blocker was cleared by a
+host reboot and physical-device unlock, 2026-07-20. Human review authorizes
+Track A: port the one
 S14 cancellation-robust separation expression onto the proven S13 X1-X4 /
 current-X5 GPU pipeline and evaluate it against the current selected
 hard/direct product under the already recorded product-relative material-
@@ -270,6 +271,18 @@ records the non-qualifying physical prefix, APK digest, exact device state,
 and resume requirements. Per the declared stop, S17.6 is not authored until
 the Pixel is unlocked and the host is restarted so both complete Android
 lanes and fresh repository gates can run.
+
+S17.5 resume checkpoint, 2026-07-20: the reboot reaped the exiting QEMU
+process and the unlocked Pixel admitted a fresh physical-first run. That run
+again reached centered-64, where the evidence runner held the full raw and
+replay series concurrently and allocated whole-document JSON buffers,
+reaching approximately `5.3 GB` resident before Android reset ADB. This is an
+evidence-harness memory defect, not a solver disposition. The runner now
+streams JSON hashing and gzip output and drops each full series before running
+the next replay/final-only lane. Hash bytes, gzip format, scene order, exact
+replay, solver operations, metrics, and gates are unchanged. Focused unit and
+clippy gates pass; full physical qualification is rerunning from a clean
+commit.
 
 ### S17.6 — promotion review
 

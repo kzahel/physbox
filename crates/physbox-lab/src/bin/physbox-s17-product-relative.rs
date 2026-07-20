@@ -37,6 +37,7 @@ use physbox_lab::{
     },
 };
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 const FULL_CHECKPOINTS: [u32; 7] = [1, 60, 180, 600, 900, 1_050, 1_200];
 const BUCKET_CHECKPOINTS: [u32; 7] = [1, 60, 180, 300, 420, 540, 600];
@@ -579,28 +580,14 @@ fn evaluate_lane(
         }
     };
     raw.validate()?;
-    let replay = run_lane_series(runner, scenario, 1, scenario.requested_steps, candidate)?;
-    replay.validate()?;
     let raw_series_hash = serialized_hash(&raw)?;
-    let exact_replay = raw_series_hash == serialized_hash(&replay)?;
-    let final_only = run_lane_series(
-        runner,
-        scenario,
-        scenario.requested_steps,
-        scenario.requested_steps,
-        candidate,
-    )?;
     let final_snapshot = raw
         .snapshots
         .last()
         .ok_or_else(|| "empty S17 series".to_owned())?;
-    let separate_final = final_only
-        .snapshots
-        .last()
-        .ok_or_else(|| "empty S17 final-only series".to_owned())?;
-    let instrumentation_final_exact = final_snapshot.bodies == separate_final.bodies
-        && final_snapshot.manifolds == separate_final.manifolds
-        && final_snapshot.cache == separate_final.cache;
+    let final_bodies = final_snapshot.bodies.clone();
+    let final_manifolds = final_snapshot.manifolds.clone();
+    let final_cache = final_snapshot.cache.clone();
     let capacity_clean = raw.snapshots.iter().all(snapshot_capacity_clean);
     let finite = raw
         .snapshots
@@ -627,39 +614,66 @@ fn evaluate_lane(
     } else {
         "current-selected-product"
     };
-    let (summary, physical_envelope) = if scenario.requested_steps == P5_2_SETTLING_EVIDENCE_STEPS {
-        let observations = observe_generated_settling_series_v2(scenario, &raw)?;
-        let envelope = physical_envelope(&observations)?;
-        let trace = settling_series_v2(
-            scenario,
-            Some(projection_hash.to_owned()),
-            lane,
-            awake_settling_measurement_policy_v2(),
-            observations,
-            final_structure.0,
-            final_structure.1.clone(),
-        )?;
-        let summary = trace.summary.clone();
-        write_gzip_json_artifact(
-            staging,
-            &format!("traces/{}-{lane}.json.gz", input.label),
-            &trace,
-        )?;
-        (Some(summary), Some(envelope))
-    } else {
-        write_gzip_json_artifact(
-            staging,
-            &format!("traces/{}-{lane}.json.gz", input.label),
-            &raw,
-        )?;
-        (None, None)
-    };
-    let trace = artifact_identity(staging, &format!("traces/{}-{lane}.json.gz", input.label))?;
+    let (summary, physical_envelope, trace) =
+        if scenario.requested_steps == P5_2_SETTLING_EVIDENCE_STEPS {
+            let observations = observe_generated_settling_series_v2(scenario, &raw)?;
+            let envelope = physical_envelope(&observations)?;
+            let trace = settling_series_v2(
+                scenario,
+                Some(projection_hash.to_owned()),
+                lane,
+                awake_settling_measurement_policy_v2(),
+                observations,
+                final_structure.0,
+                final_structure.1.clone(),
+            )?;
+            let summary = trace.summary.clone();
+            let trace = write_gzip_json_artifact(
+                staging,
+                &format!("traces/{}-{lane}.json.gz", input.label),
+                &trace,
+            )?;
+            (Some(summary), Some(envelope), trace)
+        } else {
+            let trace = write_gzip_json_artifact(
+                staging,
+                &format!("traces/{}-{lane}.json.gz", input.label),
+                &raw,
+            )?;
+            (None, None, trace)
+        };
     let work_vector_digest = serialized_hash(&(
         raw.solver_scheduling_policy,
         &final_snapshot.work,
         &final_snapshot.capacities,
     ))?;
+    let scheduling_policy_digest = serialized_hash(&raw.solver_scheduling_policy)?;
+    let first_execution_failure_step = raw
+        .snapshots
+        .iter()
+        .find_map(|snapshot| snapshot.failure.as_ref()?.first_step);
+    let dispatches_per_step = raw.dispatches_per_step;
+    let allocated_bytes = raw.allocated_bytes;
+    drop(raw);
+
+    let replay = run_lane_series(runner, scenario, 1, scenario.requested_steps, candidate)?;
+    replay.validate()?;
+    let exact_replay = raw_series_hash == serialized_hash(&replay)?;
+    drop(replay);
+    let final_only = run_lane_series(
+        runner,
+        scenario,
+        scenario.requested_steps,
+        scenario.requested_steps,
+        candidate,
+    )?;
+    let separate_final = final_only
+        .snapshots
+        .last()
+        .ok_or_else(|| "empty S17 final-only series".to_owned())?;
+    let instrumentation_final_exact = final_bodies == separate_final.bodies
+        && final_manifolds == separate_final.manifolds
+        && final_cache == separate_final.cache;
     Ok(LaneEvidence {
         lane: lane.to_owned(),
         raw_series_hash,
@@ -671,18 +685,15 @@ fn evaluate_lane(
         structural_pass: first_structural_loss_step.is_none(),
         structural_reason: final_structure.1,
         first_structural_loss_step,
-        first_execution_failure_step: raw
-            .snapshots
-            .iter()
-            .find_map(|snapshot| snapshot.failure.as_ref()?.first_step),
+        first_execution_failure_step,
         execution_error: None,
         completed_steps: scenario.requested_steps,
         summary,
         physical_envelope,
-        scheduling_policy_digest: serialized_hash(&raw.solver_scheduling_policy)?,
+        scheduling_policy_digest,
         work_vector_digest,
-        dispatches_per_step: raw.dispatches_per_step,
-        allocated_bytes: raw.allocated_bytes,
+        dispatches_per_step,
+        allocated_bytes,
     })
 }
 
@@ -729,27 +740,14 @@ fn evaluate_failed_lane(
         input.label, first_failure_step, terminal_error
     );
     let raw = run_lane_series(runner, scenario, 1, completed_steps, candidate)?;
-    let replay = run_lane_series(runner, scenario, 1, completed_steps, candidate)?;
-    let final_only = run_lane_series(
-        runner,
-        scenario,
-        completed_steps,
-        completed_steps,
-        candidate,
-    )?;
     let raw_series_hash = serialized_hash(&raw)?;
-    let exact_replay = raw_series_hash == serialized_hash(&replay)?;
     let final_snapshot = raw
         .snapshots
         .last()
         .ok_or("S17 failed prefix returned no snapshot")?;
-    let separate_final = final_only
-        .snapshots
-        .last()
-        .ok_or("S17 failed final-only prefix returned no snapshot")?;
-    let instrumentation_final_exact = final_snapshot.bodies == separate_final.bodies
-        && final_snapshot.manifolds == separate_final.manifolds
-        && final_snapshot.cache == separate_final.cache;
+    let final_bodies = final_snapshot.bodies.clone();
+    let final_manifolds = final_snapshot.manifolds.clone();
+    let final_cache = final_snapshot.cache.clone();
     let prefix_capacity_clean = raw.snapshots.iter().all(snapshot_capacity_clean);
     let finite = raw
         .snapshots
@@ -780,6 +778,32 @@ fn evaluate_failed_lane(
         &final_snapshot.work,
         &final_snapshot.capacities,
     ))?;
+    let scheduling_policy_digest = serialized_hash(&raw.solver_scheduling_policy)?;
+    let first_execution_failure_step = raw
+        .snapshots
+        .iter()
+        .find_map(|snapshot| snapshot.failure.as_ref()?.first_step);
+    let dispatches_per_step = raw.dispatches_per_step;
+    let allocated_bytes = raw.allocated_bytes;
+    drop(raw);
+
+    let replay = run_lane_series(runner, scenario, 1, completed_steps, candidate)?;
+    let exact_replay = raw_series_hash == serialized_hash(&replay)?;
+    drop(replay);
+    let final_only = run_lane_series(
+        runner,
+        scenario,
+        completed_steps,
+        completed_steps,
+        candidate,
+    )?;
+    let separate_final = final_only
+        .snapshots
+        .last()
+        .ok_or("S17 failed final-only prefix returned no snapshot")?;
+    let instrumentation_final_exact = final_bodies == separate_final.bodies
+        && final_manifolds == separate_final.manifolds
+        && final_cache == separate_final.cache;
     Ok(LaneEvidence {
         lane: lane.to_owned(),
         raw_series_hash,
@@ -793,15 +817,15 @@ fn evaluate_failed_lane(
             "execution became invalid at step {first_failure_step}: {terminal_error}"
         ),
         first_structural_loss_step: first_observed_structure_loss.or(Some(first_failure_step)),
-        first_execution_failure_step: Some(first_failure_step),
+        first_execution_failure_step: first_execution_failure_step.or(Some(first_failure_step)),
         execution_error: Some(terminal_error),
         completed_steps,
         summary: None,
         physical_envelope: None,
-        scheduling_policy_digest: serialized_hash(&raw.solver_scheduling_policy)?,
+        scheduling_policy_digest,
         work_vector_digest,
-        dispatches_per_step: raw.dispatches_per_step,
-        allocated_bytes: raw.allocated_bytes,
+        dispatches_per_step,
+        allocated_bytes,
     })
 }
 
@@ -1720,9 +1744,9 @@ fn command_output(repository: &Path, arguments: &[&str]) -> Result<String, Strin
 }
 
 fn serialized_hash(value: &impl Serialize) -> Result<String, String> {
-    serde_json::to_vec(value)
-        .map(|bytes| sha256_bytes(&bytes))
-        .map_err(display)
+    let mut writer = Sha256Writer::default();
+    serde_json::to_writer(&mut writer, value).map_err(display)?;
+    Ok(writer.finish())
 }
 
 fn write_json_artifact(
@@ -1740,21 +1764,56 @@ fn write_gzip_json_artifact(
     relative: &str,
     value: &impl Serialize,
 ) -> Result<ArtifactIdentity, String> {
-    let bytes = serde_json::to_vec(value).map_err(display)?;
-    let mut encoder = GzBuilder::new()
-        .mtime(0)
-        .write(Vec::new(), Compression::fast());
-    encoder.write_all(&bytes).map_err(display)?;
-    let compressed = encoder.finish().map_err(display)?;
-    write_artifact(root, relative, &compressed)
+    let path = root.join(relative);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(display)?;
+    }
+    let staging = path.with_extension("partial");
+    if path.exists() || staging.exists() {
+        return Err(format!("refusing to replace artifact {}", path.display()));
+    }
+    let file = OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .open(&staging)
+        .map_err(display)?;
+    let mut encoder = GzBuilder::new().mtime(0).write(file, Compression::fast());
+    serde_json::to_writer(&mut encoder, value).map_err(display)?;
+    let file = encoder.finish().map_err(display)?;
+    file.sync_all().map_err(display)?;
+    drop(file);
+    fs::rename(staging, path).map_err(display)?;
+    artifact_identity(root, relative)
 }
 
 fn artifact_identity(root: &Path, relative: &str) -> Result<ArtifactIdentity, String> {
-    let bytes = fs::read(root.join(relative)).map_err(display)?;
+    let mut file = fs::File::open(root.join(relative)).map_err(display)?;
+    let mut writer = Sha256Writer::default();
+    std::io::copy(&mut file, &mut writer).map_err(display)?;
     Ok(ArtifactIdentity {
         path: relative.to_owned(),
-        sha256: sha256_bytes(&bytes),
+        sha256: writer.finish(),
     })
+}
+
+#[derive(Default)]
+struct Sha256Writer(Sha256);
+
+impl Sha256Writer {
+    fn finish(self) -> String {
+        format!("{:x}", self.0.finalize())
+    }
+}
+
+impl Write for Sha256Writer {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0.update(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
 }
 
 fn write_artifact(root: &Path, relative: &str, bytes: &[u8]) -> Result<ArtifactIdentity, String> {
@@ -1887,5 +1946,12 @@ mod tests {
         );
         assert_eq!(candidate_softness().contact_hertz.get(), 30.0);
         assert_eq!(candidate_softness().damping_ratio.get(), 10.0);
+    }
+
+    #[test]
+    fn streamed_hash_preserves_the_existing_json_digest() {
+        let value = ("s17", vec![1_u32, 2, 3], Some(true));
+        let bytes = serde_json::to_vec(&value).unwrap();
+        assert_eq!(serialized_hash(&value).unwrap(), sha256_bytes(&bytes));
     }
 }

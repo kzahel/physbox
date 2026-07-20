@@ -1,14 +1,14 @@
 # Awake settling and rest stability
 
 Status: S6.5 and S9-S16 retain their recorded dispositions. The program is now
-split into two explicit tracks, 2026-07-20. Track A is blocked at the recorded
-S17.5 required-device stop in the
+split into two explicit tracks, 2026-07-20. Track A resumed at S17.5 after the
+recorded required-device blocker was cleared by reboot/unlock in the
 [S17 product-relative promotion study](../tactical/017-branch-robust-product-promotion.md):
 GPU-port the S14 branch-robust formulation on the proven S13 pipeline and
 compare it with the current hard/direct product under the recorded material-
 effect gate. Metal rejects the sole candidate on structure, geometry, and
 persistent-contact validity despite large stillness and timing wins; Android
-qualification remains incomplete pending a Pixel unlock and host restart.
+qualification is rerunning with a memory-bounded evidence harness.
 Track B owns full authority parity; its next authority-robustness
 study is paused, not closed, and its authority bands remain unchanged.
 S12's coupled soft scalar authority endpoint qualifies, S13 rejects its one
