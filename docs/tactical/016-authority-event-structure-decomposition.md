@@ -217,16 +217,21 @@ unavailable rather than inferred.
 
 ### S16.3 / A2 — bidirectional event-owner replay
 
-- [ ] Route exactly one family at a time in both directions, at both governed
+- [x] Route exactly one family at a time in both directions, at both governed
   depths, from immutable endpoint event streams.
-- [ ] Retain native continuous values, exact replay, finite state, fail-closed
+- [x] Retain native continuous values, exact replay, finite state, fail-closed
   unavailable choices, and every unchanged predicate vector.
-- [ ] Mechanically identify the individually causal family set.
+- [x] Mechanically identify the individually causal family set.
 
 Artifacts: `evidence/p5.2b-s16.3-event-owner-replay/`.
 
 Completion gate: all 24 governed directional rows have dispositions and no
 continuous payload or undeclared event family crossed lanes.
+
+Disposition, 2026-07-20: all 24 rows replay exactly and fail closed as
+`owner-choice-unavailable`. No `f64<-f32` arm completes to improve full
+binary64's first failing structure predicate, so the individually causal
+family set is empty. A3 therefore has an empty authorized subset domain.
 
 ### S16.4 / A3 — minimal event structure
 

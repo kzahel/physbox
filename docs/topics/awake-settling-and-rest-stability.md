@@ -1190,6 +1190,18 @@ divergence to an authorized family and admits A2 without claiming that the
 family is sufficient or changing any product, recurrence, coefficient, band,
 or authority decision.
 
+S16 A2 event-owner replay, 2026-07-20: the verified
+[bidirectional replay package](../../evidence/p5.2b-s16.3-event-owner-replay/README.md)
+contains all 24 single-family rows across both directions and depths. Every
+row replays its fail-closed result exactly. Each immutable owner eventually
+requests a choice absent from the receiving trajectory: active-set payload at
+step 1, cache ownership as early as step 2, identity or exact normal-event key
+around steps 99–102, and contact/order ownership around steps 106–119. No
+continuous value is copied and no missing choice is invented. Because no
+`f64<-f32` arm completes to improve the full-binary64 first failure, the
+individually causal family set is empty. This is negative evidence for
+single-family discrete ownership, not a product or authority change.
+
 ## Authority corrections
 
 Two plausible techniques must not be mislabeled as direct Box2D v3 parity:
