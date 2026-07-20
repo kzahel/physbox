@@ -39,6 +39,7 @@ case "$EVIDENCE_MODE" in
 esac
 [[ -n "$OUTPUT" ]] || { echo "error: --output is required" >&2; exit 2; }
 [[ ! -e "$OUTPUT" && ! -e "$OUTPUT.partial" ]] || { echo "error: output already exists: $OUTPUT" >&2; exit 1; }
+mkdir -p "$(dirname "$OUTPUT")"
 
 if [[ "$TARGET_MODE" = "avd" ]]; then
     EMULATOR="$(physbox5_android_require_tool emulator/emulator emulator)"
