@@ -1,6 +1,7 @@
 # S17: branch-robust product-relative promotion study
 
-Status: active, 2026-07-20. Human review authorizes Track A: port the one
+Status: blocked at the recorded S17.5 required-device stop, 2026-07-20. Human
+review authorizes Track A: port the one
 S14 cancellation-robust separation expression onto the proven S13 X1-X4 /
 current-X5 GPU pipeline and evaluate it against the current selected
 hard/direct product under the already recorded product-relative material-
@@ -256,6 +257,19 @@ Completion gate: Metal, physical Android, and AVD each have fresh adapter,
 source, scene, replay, capacity, response, and 16-stack evidence. A locked,
 disconnected, or unavailable required device is a recorded blocker rather
 than an inferred pass.
+
+S17.5 blocker checkpoint, 2026-07-20: the physical-first selected run on the
+attached Pixel 7a recovered 11 accepted structural-pass traces plus the
+centered-32 diagnostic prefix, then ADB disconnected during centered-64 before
+an atomic package existed. After reconnect, the credential-protected device
+remains locked. The stopped AVD is offline and at 0% CPU / 0% memory, but its
+QEMU PID remains in macOS exit state `?E`, retains the AVD locks, and prevents
+a safe fresh instance. The locks were not deleted. The
+[blocker package](../../evidence/p5.2b-s17.6-android-qualification/README.md)
+records the non-qualifying physical prefix, APK digest, exact device state,
+and resume requirements. Per the declared stop, S17.6 is not authored until
+the Pixel is unlocked and the host is restarted so both complete Android
+lanes and fresh repository gates can run.
 
 ### S17.6 — promotion review
 
