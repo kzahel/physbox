@@ -1,4 +1,5 @@
 #![cfg_attr(target_arch = "wasm32", allow(dead_code))]
+#![cfg_attr(not(feature = "solver-lab"), allow(dead_code, unused_imports))]
 
 use std::mem::size_of;
 

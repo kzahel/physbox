@@ -1,3 +1,7 @@
+// Native laboratory runners consume additional diagnostic fields and helpers.
+// They intentionally disappear from the product API when `solver-lab` is off.
+#![cfg_attr(not(feature = "solver-lab"), allow(dead_code, unused_imports))]
+
 use std::mem::size_of;
 
 #[cfg(not(target_arch = "wasm32"))]

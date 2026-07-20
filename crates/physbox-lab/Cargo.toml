@@ -4,14 +4,53 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
+autobins = false
 
 [dependencies]
 flate2.workspace = true
 physbox-contracts = { path = "../physbox-contracts" }
-physbox-engine = { path = "../physbox-engine" }
+physbox-engine = { path = "../physbox-engine", features = ["solver-lab"] }
 physbox-launch = { path = "../physbox-launch" }
 png.workspace = true
 pollster.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
+
+# Keep Cargo's workspace graph bounded. Closed study commands remain under
+# `src/bin` as source history, but only these maintained entry points are
+# executable targets.
+[[bin]]
+name = "physbox-lab"
+path = "src/main.rs"
+test = false
+
+[[bin]]
+name = "physbox-oracle-fixture"
+path = "src/bin/physbox-oracle-fixture.rs"
+test = false
+
+[[bin]]
+name = "physbox-s17-product-relative"
+path = "src/bin/physbox-s17-product-relative.rs"
+test = false
+
+[[bin]]
+name = "physbox-scheduler-benchmark"
+path = "src/bin/physbox-scheduler-benchmark.rs"
+test = false
+
+[[bin]]
+name = "physbox-settling-backend-trace"
+path = "src/bin/physbox-settling-backend-trace.rs"
+test = false
+
+[[bin]]
+name = "physbox-solver-evidence"
+path = "src/bin/physbox-solver-evidence.rs"
+test = false
+
+[[bin]]
+name = "physbox-synchronized-playback"
+path = "src/bin/physbox-synchronized-playback.rs"
+test = false

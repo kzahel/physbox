@@ -38,6 +38,7 @@ done
 [[ -n "$MODE" ]] || { echo "error: choose --avd or --device" >&2; exit 2; }
 if [[ -z "$OUTPUT" ]]; then OUTPUT="/tmp/physbox5-android-bodies-$MODE.json"; fi
 STARTED=0
+EMULATOR_PID=""
 if [[ "$MODE" = "avd" ]]; then
     EMULATOR="$(physbox5_android_require_tool emulator/emulator emulator)"
     "$EMULATOR" -list-avds | rg -qx "$AVD_NAME" || { echo "error: AVD $AVD_NAME not found" >&2; exit 1; }
@@ -50,6 +51,7 @@ if [[ "$MODE" = "avd" ]]; then
         STARTED=1
         physbox5_android_configure_emulator_display
         nohup "${PHYSBOX5_ANDROID_EMULATOR_PREFIX[@]}" "$EMULATOR" -avd "$AVD_NAME" -gpu host "${PHYSBOX5_ANDROID_EMULATOR_DISPLAY_ARGS[@]}" -no-snapshot-save -no-audio >/tmp/physbox5-android-body-benchmark-emulator.log 2>&1 </dev/null &
+        EMULATOR_PID=$!
         for _ in $(seq 1 120); do
             SERIAL="$($ADB devices | awk '$1 ~ /^emulator-/ && $2 == "device" {print $1; exit}')"
             if [[ -n "$SERIAL" && "$($ADB -s "$SERIAL" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]]; then break; fi
@@ -66,7 +68,9 @@ else
 fi
 [[ -n "$SERIAL" ]] || { echo "error: Android target did not become ready" >&2; exit 1; }
 cleanup() {
-    if [[ "$STARTED" -eq 1 && "$KEEP_EMULATOR" -eq 0 ]]; then "$ADB" -s "$SERIAL" emu kill >/dev/null 2>&1 || true; fi
+    if [[ "$STARTED" -eq 1 && "$KEEP_EMULATOR" -eq 0 ]]; then
+        physbox5_android_stop_emulator "$ADB" "$SERIAL" "$EMULATOR_PID" "$AVD_NAME"
+    fi
 }
 trap cleanup EXIT
 ABI="$($ADB -s "$SERIAL" shell getprop ro.product.cpu.abi | tr -d '\r')"

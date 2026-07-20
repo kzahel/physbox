@@ -12,10 +12,14 @@ qualified combined product graph, shared camera/menu/grab and construction
 tools, and the human-accepted colored in-place manifold-block solver. Human
 review also accepted bounded parallel scheduler construction as the product
 schedule; its serial predecessor remains an explicit validation control. S6
-is now stabilizing awake settling before broadphase selection or sleeping can
-proceed. The scheduler promotion is an architecture and latency improvement,
-not acceptance of the current CPU comparison, residual-motion band, or liquid
-performance.
+through S17 now record the closed settling investigations and rejected
+candidate chain; none changed the selected hard/direct manifold-block product
+solver. S18 is the active engineering loop: fix the branch-robust
+persistent-key corruption, sweep its soft coefficients cheaply, and either
+present one survivor for promotion review or accept the residual-motion band
+before broadphase selection and sleeping proceed. The scheduler promotion is
+an architecture and latency improvement, not acceptance of the current CPU
+comparison, residual-motion band, or liquid performance.
 The repository still contains no Rapier or CPU product physics backend, fluid
 solver, legacy settings UI, or PhysBox 4 scene compatibility.
 
@@ -81,10 +85,13 @@ and open the printed local URL.
 
 The Cargo workspace defaults to the maintained production surface: desktop,
 headless, web, Android, engine, contracts, launch, and shell. Routine Rust
-validation therefore avoids compiling historical lab, evidence-generator,
-native-oracle, and benchmark targets, and does not execute candidate-only
-engine tests. Validation-only code that still lives in the shared engine
-continues to compile:
+validation therefore avoids historical lab, evidence-generator,
+native-oracle, and benchmark targets and does not execute candidate-only
+engine tests. Native experiment APIs require the `physbox-engine/solver-lab`
+feature, enabled by the opt-in `physbox-lab` and Android GPU benchmark
+packages. Cargo automatic binary discovery is disabled in the lab; seven
+maintained commands remain registered and closed study sources are retained
+without being compile targets:
 
 ```sh
 npm run test:rust:production

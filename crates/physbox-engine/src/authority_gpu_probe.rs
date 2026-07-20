@@ -1,3 +1,5 @@
+#![cfg_attr(not(feature = "solver-lab"), allow(dead_code))]
+
 use serde::Serialize;
 
 use crate::body_floor_solver::{

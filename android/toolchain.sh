@@ -66,3 +66,37 @@ physbox5_android_configure_emulator_display() {
         fi
     fi
 }
+
+physbox5_android_stop_emulator() {
+    local adb="$1" serial="$2" emulator_pid="$3" avd_name="$4"
+    "$adb" -s "$serial" emu kill >/dev/null 2>&1 || true
+    for _ in $(seq 1 30); do
+        local process_live=0 device_live=0
+        if [[ -n "$emulator_pid" ]] && kill -0 "$emulator_pid" 2>/dev/null; then
+            process_live=1
+        fi
+        if "$adb" devices | awk -v serial="$serial" '$1 == serial && $2 == "device" {found=1} END {exit found ? 0 : 1}'; then
+            device_live=1
+        fi
+        if [[ "$process_live" -eq 0 && "$device_live" -eq 0 ]]; then
+            [[ -z "$emulator_pid" ]] || wait "$emulator_pid" 2>/dev/null || true
+            echo "PHYSBOX5_ANDROID_AVD_SHUTDOWN_SUCCESS avd=$avd_name"
+            return 0
+        fi
+        sleep 1
+    done
+    if [[ -n "$emulator_pid" ]] && kill -0 "$emulator_pid" 2>/dev/null; then
+        kill -TERM "$emulator_pid" 2>/dev/null || true
+        sleep 2
+    fi
+    if [[ -n "$emulator_pid" ]] && kill -0 "$emulator_pid" 2>/dev/null; then
+        kill -KILL "$emulator_pid" 2>/dev/null || true
+        sleep 1
+    fi
+    [[ -z "$emulator_pid" ]] || wait "$emulator_pid" 2>/dev/null || true
+    if "$adb" devices | awk -v serial="$serial" '$1 == serial && $2 == "device" {found=1} END {exit found ? 0 : 1}'; then
+        echo "error: AVD $avd_name ($serial) remained live after shutdown" >&2
+        return 1
+    fi
+    echo "PHYSBOX5_ANDROID_AVD_SHUTDOWN_SUCCESS avd=$avd_name"
+}

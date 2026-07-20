@@ -7,6 +7,7 @@ publish.workspace = true
 
 [features]
 production-validation = []
+solver-lab = []
 
 [dependencies]
 bytemuck.workspace = true

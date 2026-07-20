@@ -1,3 +1,5 @@
+#![cfg_attr(not(feature = "solver-lab"), allow(dead_code))]
+
 use bytemuck::{Pod, Zeroable};
 use physbox_contracts::{
     BodyId, FiniteF32, GRAB_INTENT_CONTRACT_VERSION, GrabIntentBatchV1, GrabIntentV1, GrabTuningV1,

@@ -1,3 +1,5 @@
+#![cfg_attr(not(feature = "solver-lab"), allow(dead_code))]
+
 use std::mem::size_of;
 
 use bytemuck::{Pod, Zeroable};

@@ -17,7 +17,7 @@ mod construction_validation;
 mod frame;
 mod generated_contacts;
 mod gpu_context;
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(feature = "solver-lab", not(target_arch = "wasm32")))]
 mod gpu_primitives;
 mod gpu_solver;
 mod grab;
@@ -30,6 +30,9 @@ mod scenario;
 mod ui;
 mod ui_font;
 
+#[cfg(not(feature = "solver-lab"))]
+pub(crate) use authority_gpu_probe::*;
+#[cfg(feature = "solver-lab")]
 pub use authority_gpu_probe::{
     AUTHORITY_GPU_COLOR_COUNT, AUTHORITY_GPU_DYNAMIC_COLOR_COUNT,
     AUTHORITY_GPU_OVERFLOW_COLOR_COUNT, AUTHORITY_GPU_PROBE_CANDIDATE_ID,
@@ -44,7 +47,7 @@ pub use body_benchmark::{
     GpuBodyBenchmarkOutput, GpuBodyBenchmarkSession, GpuTimestampStatus, PendingBodyValidation,
     PendingCompletion, PendingTimestampReadback,
 };
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(feature = "solver-lab", not(target_arch = "wasm32")))]
 pub use body_floor_solver::{
     GPU_SCHEDULER_WORK_VECTOR_VERSION, GpuAuthoredAuthorityProbeOutputV1,
     GpuAuthoredGatherBenchmarkOutput, GpuAuthorityProbeCapacityDispositionV1,
@@ -72,6 +75,9 @@ pub use body_state::{
     BoundedBodyCommands, GpuBodyStorage, analytic_shape_encoding,
 };
 pub use body_world::GpuConstructionBodySlotEvidence;
+#[cfg(not(feature = "solver-lab"))]
+pub(crate) use branch_robust_gpu_promotion::*;
+#[cfg(feature = "solver-lab")]
 pub use branch_robust_gpu_promotion::{
     BRANCH_ROBUST_GPU_PROMOTION_CANDIDATE_ID, BRANCH_ROBUST_GPU_PROMOTION_FORMULA_ID,
     BRANCH_ROBUST_GPU_PROMOTION_POLICY_VERSION, BranchRobustGpuPromotionPolicyV1,
@@ -82,11 +88,11 @@ pub use camera::{
 };
 pub use clock::{InteractiveClockAction, PacingMode, PacingReport};
 pub use collision_candidates::GpuCandidateOutput;
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(feature = "solver-lab", not(target_arch = "wasm32")))]
 pub use collision_candidates::{GpuCandidateRunner, run_gpu_collision_candidates};
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(feature = "solver-lab", not(target_arch = "wasm32")))]
 pub use collision_narrowphase::{GpuNarrowphaseOutput, GpuNarrowphaseRunner};
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(feature = "solver-lab", not(target_arch = "wasm32")))]
 pub use collision_persistence::{
     GpuPersistenceOutput, GpuPersistenceRunner, GpuPersistenceStepOutput,
 };
@@ -105,7 +111,7 @@ pub use construction_validation::{
 pub use frame::{
     FrameInput, InputEvent, PointerButton, PointerEvent, PointerPhase, StepRequest, WheelEvent,
 };
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(feature = "solver-lab", not(target_arch = "wasm32")))]
 pub use generated_contacts::{
     GPU_AUTHORITY_SEPARATION_DIAGNOSTIC_VERSION, GPU_GENERATED_CONTACT_BODY_HISTORY_VERSION,
     GPU_GENERATED_CONTACT_PASS_MOTION_WINDOW_VERSION, GPU_GENERATED_CONTACT_PASS_TRACE_VERSION,
@@ -122,17 +128,17 @@ pub use generated_contacts::{
 };
 pub use generated_contacts::{GpuConstructionGraphEvidence, GpuContactPersistenceTopology};
 pub use gpu_context::{AdapterDiagnostics, create_instance};
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(feature = "solver-lab", not(target_arch = "wasm32")))]
 pub use gpu_primitives::{GpuPrimitiveBenchmarkOutput, GpuPrimitiveKind, benchmark_gpu_primitive};
 pub use gpu_solver::{GpuContributionEvidence, GpuSolverCandidate, GpuSolverOutput};
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(feature = "solver-lab", not(target_arch = "wasm32")))]
 pub use gpu_solver::{
     GpuSolverBenchmarkOutput, benchmark_gpu_soft_step_case, run_gpu_soft_step_case,
     run_gpu_soft_step_stress_case, run_gpu_solver_case,
 };
 pub use grab::{GrabValidationState, provisional_grab_tuning};
 pub use input::{INPUT_TRACE_VERSION, InputTraceError, InputTraceFrameV1, InputTraceV1};
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(feature = "solver-lab", not(target_arch = "wasm32")))]
 pub use pair_slot_persistence::{
     GpuPairSlotPersistenceBenchmarkOutput, GpuPairSlotPersistenceOutput,
     GpuPairSlotPersistenceRunner, GpuPairSlotPersistenceStepOutput,

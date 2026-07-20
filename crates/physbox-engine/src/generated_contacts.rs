@@ -1,3 +1,7 @@
+// Product hosts use the shared contact graph below. Native-only experiment
+// runners reuse its internals through the opt-in `solver-lab` API.
+#![cfg_attr(not(feature = "solver-lab"), allow(dead_code, unused_imports))]
+
 use std::{cell::Cell, mem::size_of};
 
 #[cfg(not(target_arch = "wasm32"))]

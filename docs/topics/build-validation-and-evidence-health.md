@@ -1,8 +1,9 @@
 # Build, validation, and evidence health
 
-Status: audit snapshot with production-scoped routine gates implemented and
-broader remediation proposed, 2026-07-20. No cleanup, retention-policy,
-solver-selection, or product change is accepted by this document alone.
+Status: audit snapshot with production-scoped gates, bounded lab targets,
+managed runner cleanup, and local Cargo cleanup implemented, 2026-07-20.
+Evidence retention and external archival remain unresolved. No
+solver-selection or product change is accepted by this document alone.
 
 Related contracts:
 [performance and scale](performance-and-scale.md),
@@ -90,18 +91,18 @@ The four product hosts are intentional and share the same engine:
 | --- | ---: | --- |
 | Product hosts | 4 | desktop, headless, browser, Android |
 | Workspace packages | 12 | apps, shared crates, oracle, and benchmark tooling |
-| Cargo target entries | 72 | every metadata target in the workspace |
-| Binary targets | 49 | product binaries plus benchmark, oracle, and laboratory commands |
+| Cargo target entries | 36 | every current metadata target in the workspace |
+| Binary targets | 13 | product binaries plus maintained benchmark, oracle, and laboratory commands |
 | Integration-test targets | 12 | ten in `physbox-lab`, one per Box2D tool |
 | Conventional library targets | 7 | shared Rust libraries |
 | Dual `cdylib`/`rlib` targets | 2 | web and Android adapters |
 | Custom build scripts | 2 | Box2D oracle and optimized benchmark |
 
-`physbox-lab` accounts for 54 of the 72 target entries: one library, 43
-binaries, and ten integration tests. Cargo discovers its `src/main.rs` and
-every `src/bin/*.rs` automatically because the package does not disable
-automatic binary discovery. No evidence binary is marked `test = false` or
-protected by a `required-features` gate.
+Before remediation, `physbox-lab` accounted for 54 of 72 target entries: one
+library, 43 binaries, and ten integration tests. It now accounts for 18 of 36:
+one library, seven explicitly registered binaries with test harnesses disabled,
+and the same ten integration tests. Closed `src/bin/*.rs` sources are no longer
+automatically discovered.
 
 The normal shared gate matrix compiles three target triples on this host:
 
@@ -143,13 +144,14 @@ seven development dates:
 | 2026-07-19 | 48 |
 | 2026-07-20 | 41 |
 
-Completed S1-S16 investigation binaries remain active build targets. Several
-validation-only formulations also remain in `physbox-engine`, including the
-S13 authority probe, the S17 branch-robust promotion path, old S9 arms, and
-their shared scenarios and diagnostics. Keeping a product-inert comparator in
-the shared engine can be necessary to prove identical GPU execution, but it
-does not require every closed experiment to remain part of every ordinary
-build forever.
+Completed S1-S16 investigation command sources remain as history but no longer
+as Cargo targets. Several validation-only formulations still share exact
+implementation with `physbox-engine`, including the S13 authority probe, the
+S17 branch-robust promotion path, old S9 arms, and their shared scenarios and
+diagnostics. Their native runner API is now feature-gated. Keeping a
+product-inert comparator in the shared engine can be necessary to prove
+identical GPU execution, but it does not require every closed experiment to
+remain part of every ordinary build forever.
 
 ## Local storage audit
 
@@ -299,6 +301,78 @@ PIDs created during that validation run before awaiting shutdown. The repeated
 smoke exited successfully and left no browser-smoke or crashpad process from
 the run.
 
+## Repository-health remediation, 2026-07-20
+
+Owner review accepted the target and runner cleanup following the initial gate
+scope change:
+
+- `physbox-lab` now disables automatic binary discovery and explicitly
+  registers seven maintained commands with binary test harnesses disabled.
+  Thirty-six closed-study command sources remain in Git but are no longer
+  Cargo targets. Workspace metadata fell from 72 to 36 target entries, and
+  the lab package fell from 54 to 18 (one library, seven commands, and ten
+  integration tests).
+- `physbox-engine/solver-lab` now gates the public native experiment-runner
+  API. The opt-in lab and Android GPU benchmark packages enable it; product
+  packages do not. Exact product and comparator GPU implementation remains
+  shared inside the engine so measurements cannot silently drift to a copied
+  algorithm.
+- Intentional native-runner internals now carry feature-scoped dead-code
+  allowances in mixed product/lab modules. The normal WASM check fell from 57
+  engine warnings to zero without globally disabling warnings or weakening
+  clippy.
+- Browser smoke and the browser body benchmark now share managed Playwright
+  browser-server teardown, bounded HTTP connection closure, and macOS
+  crashpad-helper cleanup. Ordinary AVD validation and benchmark scripts now
+  capture the emulator process, wait for ADB and process shutdown, escalate a
+  stuck child, and reap it before reporting success.
+
+The closed commands are documented in `crates/physbox-lab/README.md`. Reopening
+one requires explicitly adding its Cargo target; automatic discovery must not
+be restored.
+
+### Clean and warm measurements
+
+The authorized `cargo clean` began from a tree that had reached `58 GiB`,
+901,324 files, and 10,287 directories. Of those, 780,557 files were directly
+under `target/debug/deps`, and 2,044 top-level incremental directories had
+accumulated. Removing the tree took approximately four minutes because Cargo
+had to unlink almost a million files.
+
+The following clean timings start from that empty tree and use the implemented
+production-scoped commands. The warm column is an immediate repeat after the
+whole ordinary matrix had populated its native and cross-target caches:
+
+| Gate | Clean seconds | Warm seconds |
+| --- | ---: | ---: |
+| production Rust library tests (118 tests) | 22.90 | 2.14 |
+| production clippy, warnings denied | 10.31 | 0.24 |
+| WASM web check | 17.00 | 0.10 |
+| ARM64 Android check | 12.16 | 0.10 |
+| headless build, GPU smoke, and artifacts | 13.05 | 1.13 |
+| format | 0.42 | effectively unchanged |
+| platform boundaries | 0.16 | 0.16 |
+| browser build and WebGPU smoke | included a one-time local `wasm-bindgen-cli` install; exact wrapper timing was not retained | 1.97 |
+
+The clean browser run passed and produced fresh artifacts, but its wrapper
+yielded while the one-time CLI install continued, so this audit does not invent
+a precise wall time. The immediate warm run emitted the success sentinel,
+terminated the one crashpad helper created by Chrome, and left no browser or
+crashpad process. A one-count, one-sample release browser body benchmark also
+passed in 19.21 seconds and exercised the same teardown path.
+
+The affected lab package remains independently healthy: its library and ten
+registered integration-test targets passed in 56.60 seconds, and clippy over
+all 18 remaining lab targets passed in 11.12 seconds. Those measurements are
+not part of the ordinary production lane.
+
+After all clean and warm gates, the lab tests, a release browser build, and the
+local WASM CLI installation, plus final active-lab and Android-benchmark
+compile checks, `target/` is `4.7 GiB` with 13,382 files and 1,308 directories.
+`target/debug/deps` contains 4,928 files and incremental state has 85 top-level
+directories. This is a 92% byte reduction and a greater than 98% file-count
+reduction from the pre-clean tree while retaining the useful warm cache.
+
 There is no tracked `.github` workflow. The gate system is local convention
 and agent discipline rather than centrally timed CI. The pre-push hook owns
 exact-pushed-SHA deployment scheduling; it does not run the validation matrix.
@@ -420,9 +494,10 @@ track wall time for the ordinary gate suite.
 The remediation should retain these correctness and provenance properties
 while reducing default scope, redundant state, and restart cost.
 
-## Proposed remediation order
+## Original remediation order
 
-These are recommendations requiring an explicit implementation decision.
+These recommendations were the basis for the owner decisions recorded above.
+Unimplemented items still require an explicit implementation decision.
 
 ### 1. Pause expansion and establish a clean baseline
 
@@ -435,8 +510,8 @@ These are recommendations requiring an explicit implementation decision.
 - Measure and record one clean and one immediate warm execution of each
   ordinary gate on the named host.
 
-`cargo clean` is intentionally not performed by this audit. It is a destructive
-operation on regenerable local outputs and should be a visible owner action.
+The initial snapshot intentionally did not run `cargo clean`. The owner later
+authorized it explicitly; the resulting measurements are recorded above.
 
 ### 2. Reduce the default Cargo target graph
 

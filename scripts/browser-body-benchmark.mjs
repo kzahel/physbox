@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { rename, rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { spawnSync } from "node:child_process";
-import { chromium } from "@playwright/test";
+import { closeHttpServer, closeManagedBrowser, launchManagedBrowser } from "./browser-process.mjs";
 import { startServer } from "./server.mjs";
 
 const root = resolve(import.meta.dirname, "..");
@@ -19,9 +19,9 @@ await rm(temporary, { force: true });
 run(process.execPath, [resolve(root, "scripts/build-web.mjs"), "--release"]);
 
 const server = await startServer(resolve(root, "target", "web"));
-let browser;
+let browserSession;
 try {
-  browser = await chromium.launch({
+  browserSession = await launchManagedBrowser({
     channel: process.env.PLAYWRIGHT_CHROME_CHANNEL ?? "chrome",
     headless: process.env.HEADED !== "1",
     args: [
@@ -30,6 +30,7 @@ try {
       ...(process.platform === "darwin" ? ["--use-angle=metal"] : []),
     ],
   });
+  const { browser } = browserSession;
   const page = await browser.newPage({ viewport: { width, height } });
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -78,8 +79,8 @@ try {
   console.log(JSON.stringify({ output, report }, null, 2));
   console.log(`PHYSBOX5_BODY_BENCHMARK_SUCCESS host=browser run_id=${report.runId}`);
 } finally {
-  await browser?.close();
-  await new Promise((resolveClose) => server.close(resolveClose));
+  await closeManagedBrowser(browserSession);
+  await closeHttpServer(server);
 }
 
 function run(command, args) {

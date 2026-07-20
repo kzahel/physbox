@@ -85,6 +85,30 @@ test("display-less Linux AVD launchers stay headless with guarded host graphics"
   }
 });
 
+test("ordinary AVD launchers bound shutdown and reap their emulator child", () => {
+  const toolchain = readFileSync(join(androidDir, "toolchain.sh"), "utf8");
+  assert.match(toolchain, /physbox5_android_stop_emulator/);
+  assert.match(toolchain, /emu kill/);
+  assert.match(toolchain, /wait "\$emulator_pid"/);
+  assert.match(toolchain, /kill -TERM "\$emulator_pid"/);
+  assert.match(toolchain, /kill -KILL "\$emulator_pid"/);
+
+  for (const file of [
+    "validate-avd.sh",
+    "benchmark-gpu.sh",
+    "benchmark-bodies.sh",
+    "trace-settling.sh",
+  ]) {
+    const source = readFileSync(join(androidDir, file), "utf8");
+    assert.match(source, /EMULATOR_PID=\$!/, `${file} must retain its emulator child PID`);
+    assert.match(
+      source,
+      /physbox5_android_stop_emulator "\$ADB" "\$SERIAL" "\$EMULATOR_PID" "\$AVD_NAME"/,
+      `${file} must use bounded shared shutdown`,
+    );
+  }
+});
+
 function check(payload) {
   return spawnSync(process.execPath, [checker], {
     encoding: "utf8",
