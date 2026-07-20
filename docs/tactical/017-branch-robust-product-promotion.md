@@ -304,6 +304,17 @@ the next allocation. Device memory returned immediately after the safely
 stopped probe; the phone retained its boot uptime. The same boundary replay
 and clippy controls pass with explicit reclamation.
 
+The explicit-reclamation retry was stopped safely during centered-64 at
+approximately `4.9 GB` resident with the phone still on its original boot.
+Individual readback windows were reclaimed, but the one-process corpus kept
+the GPU device and allocator high-water from every preceding scene. The S17
+corpus harness now creates a fresh GPU device for each scene and the response
+probe group, rejects any adapter-identity change, and releases that device at
+the scene boundary. Raw/replay/final-only ownership, scene order, authored
+steps, 64-step submission grouping, readback cadence, metrics, hashes, and
+gates remain unchanged. This is a qualification-memory boundary only; no
+solver, candidate, product, coefficient, band, or fixture changes.
+
 The OOM event rebooted the Pixel rather than merely resetting USB: Android
 records `kernel_panic` with a system-dead/OOM boot reason. The secured device
 therefore requires a human credential for UI access, but this Pixel exposes

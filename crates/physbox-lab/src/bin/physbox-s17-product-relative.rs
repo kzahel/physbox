@@ -472,9 +472,9 @@ fn run_corpus(arguments: &Arguments, staging: &Path, provenance: Provenance) -> 
         }
         None
     };
-    let runner = pollster::block_on(GpuGeneratedContactRunner::new())?;
     let inputs = scene_inputs()?;
     let mut scenes = Vec::with_capacity(inputs.len());
+    let mut adapter = None;
     for input in inputs {
         eprintln!(
             "S17 {} {} {}",
@@ -482,8 +482,10 @@ fn run_corpus(arguments: &Arguments, staging: &Path, provenance: Provenance) -> 
             if candidate { "candidate" } else { "baseline" },
             input.label
         );
+        let runner = corpus_runner(&mut adapter)?;
         scenes.push(evaluate_scene(staging, &runner, input, candidate)?);
     }
+    let runner = corpus_runner(&mut adapter)?;
     let response = response_evidence(&runner, candidate)?;
     let product_relative_gate = baseline
         .as_ref()
@@ -493,7 +495,7 @@ fn run_corpus(arguments: &Arguments, staging: &Path, provenance: Provenance) -> 
         .transpose()?;
     let manifest = CorpusManifest {
         provenance,
-        adapter: runner.diagnostics().clone(),
+        adapter: adapter.ok_or_else(|| "S17 corpus omitted adapter diagnostics".to_owned())?,
         policy: awake_settling_measurement_policy_v2(),
         lane: if candidate {
             "branch-robust-product-promotion-v1"
@@ -506,6 +508,20 @@ fn run_corpus(arguments: &Arguments, staging: &Path, provenance: Provenance) -> 
         product_relative_gate,
     };
     atomic_json(&staging.join("manifest.json"), &manifest)
+}
+
+fn corpus_runner(
+    adapter: &mut Option<physbox_engine::AdapterDiagnostics>,
+) -> Result<GpuGeneratedContactRunner, String> {
+    let runner = pollster::block_on(GpuGeneratedContactRunner::new())?;
+    if let Some(expected) = adapter {
+        if expected.marker_json() != runner.diagnostics().marker_json() {
+            return Err("S17 corpus changed GPU adapter between isolated scenes".to_owned());
+        }
+    } else {
+        *adapter = Some(runner.diagnostics().clone());
+    }
+    Ok(runner)
 }
 
 fn evaluate_scene(
