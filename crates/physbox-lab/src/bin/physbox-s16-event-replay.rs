@@ -246,7 +246,11 @@ fn run_case(case: &S12Case, bands: &AuthorityBandsV1) -> Result<CaseOutput, Stri
     if case.requested_steps != 1_200 {
         return Err(format!("{} requested-step drift", case.label));
     }
-    let source_bytes = fs::read(&case.source.path).map_err(display)?;
+    let source_path = Path::new(S12_MANIFEST)
+        .parent()
+        .expect("S12 manifest has a parent")
+        .join(&case.source.path);
+    let source_bytes = fs::read(&source_path).map_err(display)?;
     if sha256_bytes(&source_bytes) != case.source.sha256 {
         return Err(format!("{} source digest drift", case.label));
     }
