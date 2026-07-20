@@ -393,6 +393,10 @@ struct BenchmarkRow {
     selected_gpu_p50_seconds: f64,
     candidate_gpu_p50_seconds: f64,
     gpu_p50_delta_fraction: f64,
+    gpu_timestamps_valid: bool,
+    selected_host_complete_p50_seconds: f64,
+    candidate_host_complete_p50_seconds: f64,
+    host_complete_p50_delta_fraction: f64,
     selected_cpu_encode_submit_p50_seconds: f64,
     candidate_cpu_encode_submit_p50_seconds: f64,
     selected_dispatches_per_step: u32,
@@ -1452,12 +1456,24 @@ fn run_benchmark(
             write_json_artifact(staging, &format!("raw/{manifold_count}.json"), &raw)?;
         let selected_gpu = median(&raw.selected.gpu_complete_step_seconds)?;
         let candidate_gpu = median(&raw.candidate.gpu_complete_step_seconds)?;
+        let gpu_timestamps_valid = raw
+            .selected
+            .gpu_complete_step_seconds
+            .iter()
+            .chain(&raw.candidate.gpu_complete_step_seconds)
+            .all(|sample| sample.is_finite() && *sample > 0.0);
+        let selected_host = median(&raw.selected.host_complete_step_seconds)?;
+        let candidate_host = median(&raw.candidate.host_complete_step_seconds)?;
         rows.push(BenchmarkRow {
             manifold_count,
             source_scenario_hash,
             selected_gpu_p50_seconds: selected_gpu,
             candidate_gpu_p50_seconds: candidate_gpu,
             gpu_p50_delta_fraction: (candidate_gpu - selected_gpu) / selected_gpu,
+            gpu_timestamps_valid,
+            selected_host_complete_p50_seconds: selected_host,
+            candidate_host_complete_p50_seconds: candidate_host,
+            host_complete_p50_delta_fraction: (candidate_host - selected_host) / selected_host,
             selected_cpu_encode_submit_p50_seconds: median(
                 &raw.selected.cpu_encode_submit_seconds,
             )?,
@@ -1477,7 +1493,7 @@ fn run_benchmark(
     let metal_256_and_1024_within_five_percent = metal_gate_applicable.then(|| {
         rows.iter()
             .filter(|row| matches!(row.manifold_count, 256 | 1_024))
-            .all(|row| row.gpu_p50_delta_fraction <= 0.05)
+            .all(|row| row.gpu_timestamps_valid && row.gpu_p50_delta_fraction <= 0.05)
     });
     atomic_json(
         &staging.join("manifest.json"),

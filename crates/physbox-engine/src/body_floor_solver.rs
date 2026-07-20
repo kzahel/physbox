@@ -979,6 +979,7 @@ pub struct GpuS13MeasuredConfigurationV1 {
     pub dispatches_per_step: u32,
     pub allocated_bytes: u64,
     pub gpu_complete_step_seconds: Vec<f64>,
+    pub host_complete_step_seconds: Vec<f64>,
     pub cpu_encode_submit_seconds: Vec<f64>,
     pub capacities: Vec<CapacityRecordV1>,
     pub replay_exact: bool,
@@ -4104,7 +4105,7 @@ async fn benchmark_gpu_authority_derived_pair(
     let execute = |label: &'static str,
                    solver: &GpuFixedFloorSolver,
                    timestamp: Option<(&BenchmarkTimestampResources, u32)>|
-     -> Result<f64, String> {
+     -> Result<(f64, f64), String> {
         storage.upload_reset_data(&queue, &reset);
         device
             .poll(wgpu::PollType::Wait)
@@ -4127,7 +4128,7 @@ async fn benchmark_gpu_authority_derived_pair(
         device
             .poll(wgpu::PollType::Wait)
             .map_err(|error| format!("poll S13 {label} completion: {error}"))?;
-        Ok(cpu)
+        Ok((cpu, started.elapsed().as_secs_f64()))
     };
 
     for sample in 0..warmup_samples {
@@ -4143,27 +4144,41 @@ async fn benchmark_gpu_authority_derived_pair(
     let mut invocation_order = Vec::with_capacity(retained_samples as usize);
     let mut selected_cpu = vec![0.0_f64; retained_samples as usize];
     let mut candidate_cpu = vec![0.0_f64; retained_samples as usize];
+    let mut selected_host = vec![0.0_f64; retained_samples as usize];
+    let mut candidate_host = vec![0.0_f64; retained_samples as usize];
     for sample in 0..retained_samples {
         if sample % 2 == 0 {
             invocation_order.push(["selected", "candidate"]);
-            selected_cpu[sample as usize] = execute(
+            (
+                selected_cpu[sample as usize],
+                selected_host[sample as usize],
+            ) = execute(
                 "physbox5_s13_selected_sample",
                 &selected_solver,
                 Some((&selected_queries, sample)),
             )?;
-            candidate_cpu[sample as usize] = execute(
+            (
+                candidate_cpu[sample as usize],
+                candidate_host[sample as usize],
+            ) = execute(
                 "physbox5_s13_candidate_sample",
                 &candidate_solver,
                 Some((&candidate_queries, sample)),
             )?;
         } else {
             invocation_order.push(["candidate", "selected"]);
-            candidate_cpu[sample as usize] = execute(
+            (
+                candidate_cpu[sample as usize],
+                candidate_host[sample as usize],
+            ) = execute(
                 "physbox5_s13_candidate_sample",
                 &candidate_solver,
                 Some((&candidate_queries, sample)),
             )?;
-            selected_cpu[sample as usize] = execute(
+            (
+                selected_cpu[sample as usize],
+                selected_host[sample as usize],
+            ) = execute(
                 "physbox5_s13_selected_sample",
                 &selected_solver,
                 Some((&selected_queries, sample)),
@@ -4243,6 +4258,7 @@ async fn benchmark_gpu_authority_derived_pair(
             dispatches_per_step: selected_solver.dispatches_per_step(),
             allocated_bytes: selected_allocated,
             gpu_complete_step_seconds: selected_gpu,
+            host_complete_step_seconds: selected_host,
             cpu_encode_submit_seconds: selected_cpu,
             capacities: capacity_records(&selected_solver)?,
             replay_exact: selected_replay_exact,
@@ -4262,6 +4278,7 @@ async fn benchmark_gpu_authority_derived_pair(
             dispatches_per_step: candidate_solver.dispatches_per_step(),
             allocated_bytes: candidate_allocated,
             gpu_complete_step_seconds: candidate_gpu,
+            host_complete_step_seconds: candidate_host,
             cpu_encode_submit_seconds: candidate_cpu,
             capacities: capacity_records(&candidate_solver)?,
             replay_exact: candidate_replay_exact,

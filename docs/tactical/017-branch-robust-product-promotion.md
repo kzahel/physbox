@@ -325,6 +325,16 @@ while checking one exact adapter identity across the package. Series contents,
 execution order, authored steps, submission/readback cadence, exact-replay
 comparison, metrics, and all frozen gates remain unchanged.
 
+The completed physical timing pass then showed that the Pixel's Mali driver
+advertises timestamp queries but resolves every retained complete-step query
+to zero. The alternating benchmark already measures from encoding start
+through the blocking completion poll, but the S13 artifact retained only its
+encode/submit prefix. S17 now retains that existing host-complete duration as
+an Android-qualified selected/candidate comparison, records whether GPU
+timestamps are strictly positive, and keeps the GPU timestamp series and
+Metal-only timing gate unchanged. No dispatch, synchronization, sample order,
+warm-up, retained count, solver, or product behavior changes.
+
 The OOM event rebooted the Pixel rather than merely resetting USB: Android
 records `kernel_panic` with a system-dead/OOM boot reason. The secured device
 therefore requires a human credential for UI access, but this Pixel exposes
