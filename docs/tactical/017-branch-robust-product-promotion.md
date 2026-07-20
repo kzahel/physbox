@@ -225,15 +225,22 @@ Metal failure.
 
 ### S17.4 — complete-step cost
 
-- [ ] Measure matched selected/candidate complete steps at 32/256/1,024
+- [x] Measure matched selected/candidate complete steps at 32/256/1,024
   two-point manifolds on Metal with the frozen 5/20 alternating sample policy.
-- [ ] Retain dispatch, work, allocation, raw timing, replay, and capacity
+- [x] Retain dispatch, work, allocation, raw timing, replay, and capacity
   evidence; classify the +5% P50 gate at 256 and 1,024.
 
 Artifacts: `evidence/p5.2b-s17.5-metal-complete-step/`.
 
 Completion gate: no missing sample, adapter ambiguity, overflow, or partial-
 kernel timing is accepted.
+
+S17.4 checkpoint, 2026-07-20: the clean
+[Metal complete-step matrix](../../evidence/p5.2b-s17.5-metal-complete-step/README.md)
+passes replay, capacity, raw-sample, alternating-order, and `<= +5%` gates.
+Candidate GPU P50 is `25.31% / 59.84% / 38.58%` lower at 32/256/1,024
+manifolds, with fewer dispatches and bytes. This cost win cannot override the
+S17.3 structural rejection.
 
 ### S17.5 — physical Android and AVD qualification
 
