@@ -251,12 +251,7 @@ pub fn solve_authority_structure_steps_observed(
         scenario,
         policy,
         retain_traces,
-        None,
-        None,
-        None,
-        None,
-        0.0,
-        None,
+        AuthoritySolveDiagnostics::default(),
     )
 }
 
@@ -276,12 +271,11 @@ pub fn solve_branch_robust_authority_structure_steps_observed(
         scenario,
         policy,
         retain_traces,
-        None,
-        Some(perturbation),
-        Some(&mut statistics),
-        None,
-        0.0,
-        None,
+        AuthoritySolveDiagnostics {
+            branch_robust_perturbation: Some(perturbation),
+            branch_robust_statistics: Some(&mut statistics),
+            ..AuthoritySolveDiagnostics::default()
+        },
     )?;
     Ok(BranchRobustAuthoritySolveResultV1 {
         candidate_id: BRANCH_ROBUST_CANDIDATE_ID,
@@ -315,12 +309,12 @@ pub fn solve_precision_path_authority_structure_steps_observed(
         scenario,
         policy,
         retain_traces,
-        None,
-        None,
-        None,
-        Some(perturbation),
-        amplitude,
-        Some(&mut statistics),
+        AuthoritySolveDiagnostics {
+            precision_perturbation: Some(perturbation),
+            precision_amplitude: amplitude,
+            precision_statistics: Some(&mut statistics),
+            ..AuthoritySolveDiagnostics::default()
+        },
     )?;
     Ok(PrecisionPathAuthoritySolveResultV1 {
         base_candidate_id: crate::precision_margin::PRECISION_BASE_CANDIDATE_ID,
@@ -351,26 +345,29 @@ pub fn solve_authority_structure_one_step_pass_states(
         scenario,
         policy,
         true,
-        Some(&mut pass_states),
-        None,
-        None,
-        None,
-        0.0,
-        None,
+        AuthoritySolveDiagnostics {
+            pass_states: Some(&mut pass_states),
+            ..AuthoritySolveDiagnostics::default()
+        },
     )?;
     Ok((result, pass_states))
+}
+
+#[derive(Default)]
+struct AuthoritySolveDiagnostics<'a> {
+    pass_states: Option<&'a mut Vec<AuthorityStructurePassStateV1>>,
+    branch_robust_perturbation: Option<BranchRobustPerturbationV1>,
+    branch_robust_statistics: Option<&'a mut BranchRobustRunStatisticsV1>,
+    precision_perturbation: Option<PrecisionPerturbationV1>,
+    precision_amplitude: f64,
+    precision_statistics: Option<&'a mut PrecisionPathStatisticsV1>,
 }
 
 fn solve_authority_structure_steps_observed_internal(
     scenario: &ScenarioV1,
     policy: AuthorityStructurePolicyV1,
     retain_traces: bool,
-    mut pass_states: Option<&mut Vec<AuthorityStructurePassStateV1>>,
-    branch_robust_perturbation: Option<BranchRobustPerturbationV1>,
-    mut branch_robust_statistics: Option<&mut BranchRobustRunStatisticsV1>,
-    precision_perturbation: Option<PrecisionPerturbationV1>,
-    precision_amplitude: f64,
-    mut precision_statistics: Option<&mut PrecisionPathStatisticsV1>,
+    mut diagnostics: AuthoritySolveDiagnostics<'_>,
 ) -> Result<ScalarObservedSolveResultV1, ScalarError> {
     policy.validate()?;
     scenario
@@ -430,7 +427,7 @@ fn solve_authority_structure_steps_observed_internal(
 
             integrate_velocities(&mut bodies, scenario.settings.gravity, substep_dt)?;
             record_pass_state(
-                &mut pass_states,
+                &mut diagnostics.pass_states,
                 substep,
                 AuthorityStructurePassKindV1::IntegrateVelocity,
                 &bodies,
@@ -439,7 +436,7 @@ fn solve_authority_structure_steps_observed_internal(
                 warm_start(&contacts[contact_index], &mut bodies, &mut traces)?;
             }
             record_pass_state(
-                &mut pass_states,
+                &mut diagnostics.pass_states,
                 substep,
                 AuthorityStructurePassKindV1::WarmStart,
                 &bodies,
@@ -470,7 +467,7 @@ fn solve_authority_structure_steps_observed_internal(
                 }
             }
             record_pass_state(
-                &mut pass_states,
+                &mut diagnostics.pass_states,
                 substep,
                 AuthorityStructurePassKindV1::BiasedSolve,
                 &bodies,
@@ -482,27 +479,28 @@ fn solve_authority_structure_steps_observed_internal(
                 integrate_positions(&mut bodies, substep_dt, &mut traces)?;
             }
             record_pass_state(
-                &mut pass_states,
+                &mut diagnostics.pass_states,
                 substep,
                 AuthorityStructurePassKindV1::IntegratePosition,
                 &bodies,
             );
             if policy.preparation == AuthorityStructureSideV1::Authority {
-                if let (Some(perturbation), Some(statistics)) =
-                    (precision_perturbation, precision_statistics.as_deref_mut())
-                {
+                if let (Some(perturbation), Some(statistics)) = (
+                    diagnostics.precision_perturbation,
+                    diagnostics.precision_statistics.as_deref_mut(),
+                ) {
                     refresh_precision_path_authority_separations(
                         contacts,
                         &bodies,
                         step,
                         substep,
                         perturbation,
-                        precision_amplitude,
+                        diagnostics.precision_amplitude,
                         statistics,
                     );
                 } else if let (Some(perturbation), Some(statistics)) = (
-                    branch_robust_perturbation,
-                    branch_robust_statistics.as_deref_mut(),
+                    diagnostics.branch_robust_perturbation,
+                    diagnostics.branch_robust_statistics.as_deref_mut(),
                 ) {
                     refresh_branch_robust_authority_separations(
                         contacts,
@@ -519,7 +517,7 @@ fn solve_authority_structure_steps_observed_internal(
                 refresh_separations(contacts, &bodies);
             }
             record_pass_state(
-                &mut pass_states,
+                &mut diagnostics.pass_states,
                 substep,
                 AuthorityStructurePassKindV1::Refresh,
                 &bodies,
@@ -556,14 +554,14 @@ fn solve_authority_structure_steps_observed_internal(
                 }
             }
             record_pass_state(
-                &mut pass_states,
+                &mut diagnostics.pass_states,
                 substep,
                 AuthorityStructurePassKindV1::Relaxation,
                 &bodies,
             );
             if policy.restitution == AuthorityStructureSideV1::Physbox {
                 record_pass_state(
-                    &mut pass_states,
+                    &mut diagnostics.pass_states,
                     substep,
                     AuthorityStructurePassKindV1::Restitution,
                     &bodies,

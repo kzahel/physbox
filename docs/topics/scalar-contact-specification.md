@@ -255,6 +255,22 @@ band response rather than bit identity with the selected specification and
 must pass the existing frozen scalar and GPU gates before returning to human
 review.
 
+S15 closes without admitting that candidate. The
+[review](../../evidence/p5.2b-s15.7-precision-margin-review/README.md) qualifies
+only one of four binary64 precision rows: cancellation-path-only binary64
+passes depth 16 but fails depth-11 energy growth, while the independent full-
+solve binary64 recurrence loses both governed structures. The exact S12
+binary32 response is consequently not evidence of a still precision limit.
+
+The required depth-16 curve replays exactly but certifies only `2^-40 m`
+across all six signed schedules before the first failure; later passing islands
+are non-monotone and do not enlarge that prefix. Since the mandatory precision
+condition is false, no candidate-specific EFT bound, two-float expression,
+scalar candidate response, or GPU port exists. The original S12 and selected
+scalar specifications remain unchanged. Further work requires the recorded
+human decision on a discrete authority-event-structure decomposition addendum,
+not another autonomous arithmetic formulation.
+
 ## Reconsideration triggers
 
 Change these equations or ordering only with measured candidate evidence and a

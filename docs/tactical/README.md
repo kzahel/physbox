@@ -80,6 +80,14 @@ depth-16 perturbation margin; admit at most one exact two-float cancellation-
 path candidate only if that measured margin dominates its proved error bound.
 No reformulation, coefficient/band change, comparator, or promotion is
 authorized.
+S15 is complete as a precision-limit negative. Only 1/4 governed binary64
+rows qualifies: cancellation-path binary64 fails depth-11 energy growth and
+the complete binary64 solve loses both governed structures. The separately
+required depth-16 curve replays exactly but has a worst all-passing prefix of
+only `2^-40 m` with many later pass/fail re-entries. No EFT candidate, scalar
+candidate gate, GPU probe, timing, cross-host work, or promotion is admitted.
+The recorded next fork is a proposed measurement-only authority-event-
+structure decomposition addendum requiring human authorization.
 
 Tactical filenames use a three-digit zero-padded prefix ordered by their first
 Git creation timestamp. This repository starts at `001`. Never renumber an
@@ -104,7 +112,7 @@ This README remains the unnumbered index.
 | S12 | Authority solve-structure decomposition | [012-authority-structure-decomposition.md](012-authority-structure-decomposition.md) | complete; four-axis authority structure qualifies and exact GPU probe recommended, 2026-07-19 |
 | S13 | Exact authority-structure GPU execution probe | [013-authority-structure-gpu-probe.md](013-authority-structure-gpu-probe.md) | manual checkpoint; exact candidate rejected by frozen authority quality, no execution constraint, 2026-07-19 |
 | S14 | Branch-robust authority-band formulation | [014-branch-robust-authority-band-formulation.md](014-branch-robust-authority-band-formulation.md) | complete; sole candidate rejected at 10/14 scalar robustness rows, no GPU admitted, 2026-07-19 |
-| S15 | Exact-recurrence precision margin | [015-exact-recurrence-precision-margin.md](015-exact-recurrence-precision-margin.md) | active; binary64 precision-limit and depth-16 margin contract authorized, 2026-07-20 |
+| S15 | Exact-recurrence precision margin | [015-exact-recurrence-precision-margin.md](015-exact-recurrence-precision-margin.md) | complete; precision limit not still, no candidate, event-structure addendum returned to human review, 2026-07-20 |
 
 ## Conventions
 

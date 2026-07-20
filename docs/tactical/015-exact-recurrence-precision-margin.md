@@ -1,10 +1,11 @@
 # S15: exact-recurrence precision margin
 
-Status: active, 2026-07-20. Authorized by human decision at the S14.7
-checkpoint. This workstream rejects the S14 reformulation and measures whether
-the unchanged S12 recurrence has a usable arithmetic-precision margin before
-admitting at most one error-free-transformation candidate on the already
-identified cancellation path.
+Status: complete at the human checkpoint, 2026-07-20. The exact recurrence is
+not still at its precision limit: only 1/4 governed binary64 rows qualifies.
+The required depth-16 curve has an exact-replay worst prefix of `2^-40 m` with
+non-monotone re-entry islands. No EFT candidate or GPU work is admitted; the
+study returns the proposed authority-event-structure decomposition addendum to
+human review. Authorized by human decision at the S14.7 checkpoint.
 
 Governing topics:
 [awake settling and rest stability](../topics/awake-settling-and-rest-stability.md)
@@ -273,11 +274,11 @@ quality/execution disposition is retained.
 
 ### S15.7 — decision package and human checkpoint
 
-- [ ] Recursively verify every admitted slice and publish exactly one final
+- [x] Recursively verify every admitted slice and publish exactly one final
   disposition and recommendation.
-- [ ] Update this tactical, tactical index, and governing topics in the same
+- [x] Update this tactical, tactical index, and governing topics in the same
   change.
-- [ ] Stop before cross-host candidate qualification or product promotion.
+- [x] Stop before cross-host candidate qualification or product promotion.
 
 Artifacts: `evidence/p5.2b-s15.7-precision-margin-review/`.
 

@@ -1,7 +1,7 @@
 # Awake settling and rest stability
 
-Status: S6.5, S9, S10, S11, and S14 are closed as negative results; S15 is an
-active exact-recurrence precision-margin study. S12's
+Status: S6.5, S9, S10, S11, S14, and S15 are closed as negative results.
+S12's
 coupled soft scalar authority endpoint qualifies, S13 rejects its one exact
 GPU execution candidate on frozen response quality, and S14 rejects its sole
 branch-robust formulation at the scalar robustness gate, 2026-07-19.
@@ -9,10 +9,10 @@ S11's measured rewind correction space is exhausted with no survivor. The
 comparator-engine trigger remains recorded but no comparator is authorized.
 The S6.5d soft candidate and all S9/S10/S11 material candidates are rejected;
 restitution timing is byte-inert on the governed controls.
-Hard/direct manifold-block i2 remains the product. S15 initially authorizes
-measurement only; one exact two-float cancellation-path candidate becomes
-eligible solely under its recorded binary64 stillness and precision-margin
-route. No candidate is promoted or authorized for cross-host expansion.
+Hard/direct manifold-block i2 remains the product. S15 reaches its human
+checkpoint with no two-float candidate admitted and returns an authority-
+event-structure decomposition addendum for possible human authorization. No
+candidate is promoted or authorized for GPU or cross-host expansion.
 Awake settling is a prerequisite for broadphase selection and sleeping
 acceptance. No contact-identity policy, soft-contact coefficients, penetration
 deadband, friction anchor, residual band, or sleep threshold is a product
@@ -1125,6 +1125,34 @@ returns a decomposition-addendum fork with no candidate. Reformulation arms,
 coefficient sweeps, band changes, comparators, approximate ports, cross-host
 qualification, and promotion remain outside authorization. Hard/direct stays
 selected throughout.
+
+S15 measured disposition, 2026-07-20: the recursive
+[precision-margin review](../../evidence/p5.2b-s15.7-precision-margin-review/README.md)
+closes the arithmetic route with no candidate. The precision matrix qualifies
+only 1/4 governed rows. Evaluating only the original cancellation path in
+binary64 remains structurally still at depth 16 but fails the unchanged depth-
+11 energy-growth predicate. The independent complete binary64 solve loses the
+declared stack and native support topology at both depths. Exact S12 binary32
+qualification is therefore a precision-specific trajectory, not the still
+precision limit of the recurrence.
+
+The separately required depth-16 amplitude curve replays exactly. Its worst
+all-passing prefix is `2^-40 m`; substep- and step-alternating schedules first
+fail at `2^-39 m`, and every schedule later re-enters passing islands. These
+re-entries do not extend the frozen prefix margin. A non-governed optimized-
+profile control also changes the zero-amplitude trajectory enough to fail the
+debug-lineage baseline, reinforcing the arithmetic sensitivity without
+changing the governed curve.
+
+Because 4/4 precision stillness is mandatory, no candidate-specific EFT proof,
+two-float implementation, scalar candidate gate, GPU response/capacity/timing,
+cross-host qualification, or promotion is admitted. The one recommendation is
+the proposed measurement-only `authority-event-structure-decomposition-
+addendum-v1`: localize and ablate which contact-admissibility, identity,
+separation/speculative, unilateral active-set, cache, or support-graph decision
+selects the still trajectory across precisions. That addendum has zero product
+candidates and is not authorized by S15 closure. Hard/direct remains selected;
+soft contact as a family is not globally ruled out.
 
 ## Authority corrections
 
