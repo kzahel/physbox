@@ -191,11 +191,11 @@ are committed before precision response implementation.
 
 ### S15.2 — binary64 precision-limit response
 
-- [ ] Implement the independent cancellation-path-only and complete-solve
+- [x] Implement the independent cancellation-path-only and complete-solve
   binary64 lanes with scope-attestation controls.
-- [ ] Run depths 11 and 16 twice, retain full observations and predicates, and
+- [x] Run depths 11 and 16 twice, retain full observations and predicates, and
   verify exact replay and unchanged authority ownership.
-- [ ] Record the candidate-admission precision predicate without using a
+- [x] Record the candidate-admission precision predicate without using a
   failed row to skip the separately authorized margin measurement.
 
 Artifacts: `evidence/p5.2b-s15.2-f64-precision-limit/`.
