@@ -296,6 +296,14 @@ manifold, and cache state; the existing replay control and focused clippy gate
 also pass. This cuts the centered-64 readback allocation by approximately 19x
 without weakening the evidence contract.
 
+The first windowed physical retry was also stopped before reboot after Android
+residency rose to `3.88 GB`: wgpu deferred destruction of each completed
+window until a later device maintenance poll. Each fully decoded readback
+window is now explicitly destroyed and followed by a completion poll before
+the next allocation. Device memory returned immediately after the safely
+stopped probe; the phone retained its boot uptime. The same boundary replay
+and clippy controls pass with explicit reclamation.
+
 The OOM event rebooted the Pixel rather than merely resetting USB: Android
 records `kernel_panic` with a system-dead/OOM boot reason. The secured device
 therefore requires a human credential for UI access, but this Pixel exposes

@@ -2777,6 +2777,22 @@ impl GeneratedSettlingReadbacks {
             );
         }
     }
+
+    fn destroy(self) {
+        self.state.destroy();
+        self.cache.destroy();
+        self.candidate_capacity.destroy();
+        self.manifold_capacity.destroy();
+        self.point_capacity.destroy();
+        self.persistence_capacity.destroy();
+        self.manifold_records.destroy();
+        self.point_records.destroy();
+        self.work.destroy();
+        self.step.destroy();
+        if let Some(color_status) = self.color_status {
+            color_status.destroy();
+        }
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -3929,6 +3945,10 @@ impl GpuGeneratedContactRunner {
                 &source_scenario_hash,
             )?;
             snapshots.append(&mut decoded);
+            readbacks.destroy();
+            self.device.poll(wgpu::PollType::Wait).map_err(|error| {
+                format!("generated settling readback destruction poll failed: {error}")
+            })?;
             decoded_snapshots += flush_snapshot_count;
         }
         if encoded_steps != completed_steps || snapshots.len() != snapshot_count as usize {
