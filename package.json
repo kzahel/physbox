@@ -3,6 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "check:host": "bash scripts/setup-host.sh --check",
+    "setup:host": "bash scripts/setup-host.sh --install",
     "android:apk": "bash android/build-apk.sh",
     "android:avd": "bash android/validate-avd.sh",
     "android:benchmark-avd": "bash android/benchmark-gpu.sh --avd",
@@ -22,7 +24,8 @@
     "references:status": "node scripts/references.mjs status",
     "references:sync": "node scripts/references.mjs sync",
     "serve:web": "node scripts/serve-web.mjs",
-    "test:desktop": "node scripts/desktop-smoke.mjs",
+    "test:desktop": "bash scripts/with-host-env.sh --linux-x11 node scripts/desktop-smoke.mjs",
+    "test:host-tools": "node --test scripts/host-env.test.mjs",
     "test:android-tools": "node --test android/*.test.mjs",
     "test:web": "node scripts/browser-smoke.mjs",
     "prepare": "bash scripts/install-git-hooks.sh"

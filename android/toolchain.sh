@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+PHYSBOX5_ANDROID_TOOLCHAIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$PHYSBOX5_ANDROID_TOOLCHAIN_DIR/../scripts/host-env.sh"
+
 physbox5_android_detect_sdk() {
     local candidates=()
     [[ -z "${ANDROID_HOME:-}" ]] || candidates+=("$ANDROID_HOME")
@@ -42,4 +45,24 @@ physbox5_android_require_tool() {
     path="$PHYSBOX5_ANDROID_SDK/$relative"
     [[ -x "$path" ]] || { echo "error: $description not found: $path" >&2; return 1; }
     printf '%s\n' "$path"
+}
+
+physbox5_android_configure_emulator_display() {
+    local shell_had_x11=1
+    PHYSBOX5_ANDROID_EMULATOR_PREFIX=()
+    PHYSBOX5_ANDROID_EMULATOR_DISPLAY_ARGS=()
+    if [[ "$(physbox5_host_platform)" = linux ]] && ! physbox5_host_x11_available; then
+        shell_had_x11=0
+        physbox5_host_import_graphical_session force
+    fi
+    if [[ "$(physbox5_host_platform)" = linux && "$shell_had_x11" -eq 0 ]]; then
+        PHYSBOX5_ANDROID_EMULATOR_DISPLAY_ARGS=(-no-window)
+        if ! physbox5_host_x11_available; then
+            command -v xvfb-run >/dev/null || {
+                echo "error: Linux AVD validation needs an accessible graphical session or xvfb-run" >&2
+                return 1
+            }
+            PHYSBOX5_ANDROID_EMULATOR_PREFIX=(xvfb-run -a)
+        fi
+    fi
 }

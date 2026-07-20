@@ -1,4 +1,4 @@
-schema_version = 1
+schema_version = 2
 
 [[checkout]]
 name = "box2d"
@@ -36,10 +36,10 @@ required = true
 name = "physbox3"
 path = "../physbox3"
 repository = "git@github.com:kzahel/physbox3.git"
-revision = "4169eba477201fe8220b49d95473555c4ac22995"
+branch = "main"
 purpose = "Web-product calibration and subjective behavior reference"
 required = true
-allowed_dirty_paths = ["worker/index.js", "worker/wrangler.toml"]
+allowed_dirty_paths = ["vendor/"]
 
 [[sibling]]
 name = "physbox3-liquidfun"
@@ -53,9 +53,10 @@ required = true
 name = "physbox3-box2d3-wasm"
 path = "../physbox3/vendor/box2d3-wasm"
 repository = "git@github.com:kzahel/box2d3-wasm.git"
-revision = "9288709b4c04e0c7a1a1d325b74b6e114cbc3750"
+branch = "main"
 purpose = "Primary later native sidecar oracle plus PhysBox 3 binding and build path"
 required = true
+submodules = true
 
 [[sibling]]
 name = "physbox3-box2d"

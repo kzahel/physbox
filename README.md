@@ -45,6 +45,25 @@ and be reshaped behind a PhysBox 5 contract.
 
 ## Quick start
 
+On a fresh Linux or macOS host, inspect prerequisites or install the supported
+host packages and project toolchains with:
+
+```sh
+npm run check:host
+npm run setup:host
+```
+
+The setup command detects the host OS, installs known native prerequisites,
+adds the required Rust targets, checks Android SDK/NDK access, installs npm
+dependencies, syncs declared source references, and configures the Git hooks.
+On Linux, repo launchers recover the active GNOME/systemd graphical-session
+environment when invoked from a
+remote shell. Android AVD automation stays headless while retaining that
+session's hardware GPU; the desktop smoke uses Xwayland so it can progress
+while the GNOME session is locked. Display-less machines use Xvfb for Android
+emulator startup; the hardware desktop smoke still requires an accessible
+graphical session.
+
 ```sh
 cargo run -p physbox-desktop
 cargo run -p physbox-headless -- \

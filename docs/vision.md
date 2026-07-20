@@ -201,9 +201,10 @@ The reproducible checkout pins and the workspace-local paths into the PhysBox
   [Jax2D](https://github.com/MichaelTMatthews/Jax2D), and
   [GPU Gems broadphase](https://developer.nvidia.com/gpugems/gpugems3/part-v-physics-simulation/chapter-32-broad-phase-collision-detection-cuda)
   are secondary algorithm references.
-- PhysBox 3 commit `4169eba477201fe8220b49d95473555c4ac22995`, its
-  LiquidFun checkout at `7f20402173fd143a3988c921bc384459c6a858f2`, and its
-  actual nested Box2D/WASM source become the later fluid-behavior oracle.
+- PhysBox 3 and its first-party Box2D/WASM bridge track clean `main` tips; each
+  artifact records the resolved revisions. Its LiquidFun checkout remains at
+  `7f20402173fd143a3988c921bc384459c6a858f2`, and its nested external Box2D
+  source remains exact. Together they become the later fluid-behavior oracle.
 - Rapier2D is a real compile-time 2D specialization despite sharing source with
   Rapier3D. It remains an optional, non-gating dissent comparator after the
   Box2D lane is established, not an initial dependency or implementation

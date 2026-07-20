@@ -66,10 +66,21 @@ test("rejects malformed adapter diagnostics", () => {
   assert.match(result.stderr, /adapter diagnostics are missing/);
 });
 
-test("maintained AVD launchers force host graphics and invoke the guard", () => {
+test("display-less Linux AVD launchers stay headless with guarded host graphics", () => {
+  const toolchain = readFileSync(join(androidDir, "toolchain.sh"), "utf8");
+  assert.match(toolchain, /physbox5_android_configure_emulator_display/);
+  assert.match(toolchain, /physbox5_host_import_graphical_session force/);
+  assert.match(toolchain, /physbox5_host_x11_available/);
+  assert.match(toolchain, /command -v xvfb-run/);
+  assert.match(toolchain, /PHYSBOX5_ANDROID_EMULATOR_PREFIX=\(xvfb-run -a\)/);
+  assert.match(toolchain, /PHYSBOX5_ANDROID_EMULATOR_DISPLAY_ARGS=\(-no-window\)/);
+
   for (const file of ["validate-avd.sh", "benchmark-gpu.sh", "benchmark-bodies.sh"]) {
     const source = readFileSync(join(androidDir, file), "utf8");
     assert.match(source, /-gpu host/, `${file} must force host graphics`);
+    assert.match(source, /physbox5_android_configure_emulator_display/, `${file} must configure display-less Linux`);
+    assert.match(source, /PHYSBOX5_ANDROID_EMULATOR_PREFIX\[@\]/, `${file} must use the shared emulator prefix`);
+    assert.match(source, /PHYSBOX5_ANDROID_EMULATOR_DISPLAY_ARGS\[@\]/, `${file} must use the shared display arguments`);
     assert.match(source, /require-hardware-adapter\.mjs/, `${file} must validate the reported adapter`);
   }
 });

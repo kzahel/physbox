@@ -19,11 +19,11 @@ PhysBox 4 runtime code accompanied it. The PhysBox 4 tactical numbering and
 completed bootstrap tactical remain archive history; PhysBox 5 begins its own
 tactical sequence at `001`.
 
-The machine-readable pin set is [reference/pins.toml](../reference/pins.toml),
+The machine-readable reference set is [reference/pins.toml](../reference/pins.toml),
 and [the reference map](../reference/README.md) describes each source's oracle
 role and exact workspace path. It records independent Box2D, PhysX, and wgmath
 checkouts plus the PhysBox 3 sibling, its LiquidFun checkout, its Box2D v3
-source, and its WASM bridge revision.
+source, and its first-party WASM bridge checkout.
 
 At bootstrap the PhysBox 3 sibling was at
 `4169eba477201fe8220b49d95473555c4ac22995` with pre-existing changes in
@@ -34,6 +34,12 @@ nested Box2D source was the same
 `3a4f0da8374af61293a03021c9a0b3ebcfe67948` revision selected for the
 independent unmodified authority checkout. Its LiquidFun source was pinned at
 `7f20402173fd143a3988c921bc384459c6a858f2`.
+
+The reviewed first-machine Linux bring-up changed source acquisition for
+first-party `kzahel` references: PhysBox 3 and `box2d3-wasm` now track clean
+`main` tips, while their resolved revisions remain mandatory artifact
+provenance. External Box2D, LiquidFun, PhysX, and wgmath inputs remain exact
+pins.
 
 Run `npm run references:status` before relying on local source and include its
 result in oracle provenance. References are not product dependencies. Any

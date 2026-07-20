@@ -12,12 +12,13 @@ npm run references:sync
 npm run references:status
 ```
 
-`references:sync` clones missing managed checkouts, checks out their exact
-commits in detached-HEAD state, and refuses to overwrite local changes.
-`references:status` is read-only and fails for a missing, dirty, incorrectly
-pinned, or wrong-origin managed checkout. It also validates the local PhysBox
-3 sibling without modifying it. The currently known PhysBox 3 worker changes
-are reported as a warning.
+`references:sync` clones missing declared checkouts, checks external sources
+out at exact detached revisions, fast-forwards clean first-party `main`
+branches, initializes declared submodules, and refuses to overwrite unexpected
+local changes. `references:status` is read-only and fails for a missing,
+dirty, incorrectly pinned/tracked, or wrong-origin checkout. Branch status is
+relative to the locally fetched `origin/main`; run sync first when current tip
+matters.
 
 ## Managed clean checkouts
 
@@ -45,14 +46,13 @@ PhysBox 3 deliberately remains a sibling repository rather than being copied
 here. These workspace-local links point to the implementation that produced
 the behavior we want to characterize:
 
-- [PhysBox 3 product tree](../../physbox3) at
-  `4169eba477201fe8220b49d95473555c4ac22995`;
+- [PhysBox 3 product tree](../../physbox3), tracking first-party `main`;
 - [LiquidFun source checkout](../../physbox3/reference/liquidfun) at
   `7f20402173fd143a3988c921bc384459c6a858f2`;
 - [PhysBox 3's Box2D v3 source](../../physbox3/vendor/box2d3-wasm/box2d) at
   `3a4f0da8374af61293a03021c9a0b3ebcfe67948`;
-- [Box2D WASM bridge and build](../../physbox3/vendor/box2d3-wasm) at
-  `9288709b4c04e0c7a1a1d325b74b6e114cbc3750`.
+- [Box2D WASM bridge and build](../../physbox3/vendor/box2d3-wasm), tracking
+  first-party `main` with its checked submodules.
 
 Use these sources for different questions:
 
@@ -65,10 +65,10 @@ Use these sources for different questions:
 - The running PhysBox 3 web product supplies a small calibration corpus and
   subjective review, not the routine unattended correctness lane.
 
-The PhysBox 3 tree currently has pre-existing modifications in
-`worker/index.js` and `worker/wrangler.toml`. A run against it must record the
-root revision, nested revisions, build/settings, and a digest of relevant
-dirty patches. A commit hash alone is not reproducible oracle provenance.
+Every run against a first-party tracked checkout must record the resolved root
+and nested revisions, build/settings, and any relevant dirty-patch digest.
+`main` is a source acquisition policy, not sufficient artifact provenance by
+itself.
 
 ## Native oracle execution
 
@@ -164,6 +164,6 @@ show that browser automation is not a prerequisite for the routine lanes.
 - Record exact revisions and build/runtime settings in every oracle result.
 - Run status again after changing or updating any sibling repository.
 
-`pins.toml` is the machine-readable authority for revisions and locations.
-Change a pin only through a reviewed oracle/reference decision, not as an
-incidental refresh.
+`pins.toml` is the machine-readable authority for exact external revisions,
+first-party tracking branches, and locations. Change either policy only
+through a reviewed oracle/reference decision, not as an incidental refresh.

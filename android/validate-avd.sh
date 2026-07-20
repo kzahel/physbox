@@ -39,7 +39,8 @@ if [[ -z "$SERIAL" ]]; then
     STARTED=1
     EMULATOR_LOG="/tmp/physbox5-android-emulator.log"
     rm -f "$EMULATOR_LOG"
-    nohup "$EMULATOR" -avd "$AVD_NAME" -gpu host -no-snapshot-save -no-audio >"$EMULATOR_LOG" 2>&1 </dev/null &
+    physbox5_android_configure_emulator_display
+    nohup "${PHYSBOX5_ANDROID_EMULATOR_PREFIX[@]}" "$EMULATOR" -avd "$AVD_NAME" -gpu host "${PHYSBOX5_ANDROID_EMULATOR_DISPLAY_ARGS[@]}" -no-snapshot-save -no-audio >"$EMULATOR_LOG" 2>&1 </dev/null &
     for _ in $(seq 1 120); do
         SERIAL="$("$ADB" devices | awk '$1 ~ /^emulator-/ && $2 == "device" {print $1; exit}')"
         if [[ -n "$SERIAL" && "$("$ADB" -s "$SERIAL" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]]; then break; fi

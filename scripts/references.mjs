@@ -47,18 +47,27 @@ function readManifest() {
     current[assignment[1]] = parseValue(assignment[2], index + 1);
   }
 
-  if (manifest.schema_version !== 1) fail("pins.toml schema_version must be 1");
+  if (manifest.schema_version !== 2) fail("pins.toml schema_version must be 2");
 
   const names = new Set();
   const locations = new Set();
   for (const record of [...manifest.checkout, ...manifest.sibling]) {
-    for (const key of ["name", "path", "repository", "revision"]) {
+    for (const key of ["name", "path", "repository"]) {
       if (typeof record[key] !== "string" || record[key] === "") {
         fail(`${record.kind} record is missing ${key}`);
       }
     }
-    if (!/^[0-9a-f]{40}$/.test(record.revision)) {
+    if ((record.revision === undefined) === (record.branch === undefined)) {
+      fail(`${record.name} must declare exactly one revision or branch`);
+    }
+    if (record.revision !== undefined && !/^[0-9a-f]{40}$/.test(record.revision)) {
       fail(`${record.name} does not have a full lowercase Git revision`);
+    }
+    if (record.branch !== undefined && !/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(record.branch)) {
+      fail(`${record.name} has an invalid tracking branch`);
+    }
+    if (record.kind === "checkout" && record.branch !== undefined) {
+      fail(`${record.name} managed checkout must use an exact revision`);
     }
     if (names.has(record.name)) fail(`duplicate name ${record.name}`);
     names.add(record.name);
@@ -139,7 +148,7 @@ function repositoryProblem(record) {
   }
 
   const head = outputAt(record, ["rev-parse", "HEAD"]);
-  if (head !== record.revision) {
+  if (record.revision !== undefined && head !== record.revision) {
     return `HEAD is ${head}; expected ${record.revision}`;
   }
 
@@ -149,6 +158,22 @@ function repositoryProblem(record) {
   if (remote.status !== 0) return "has no origin remote";
   if (normalizeRemote(remote.stdout) !== normalizeRemote(record.repository)) {
     return `origin is ${remote.stdout.trim()}; expected ${record.repository}`;
+  }
+
+  if (record.branch !== undefined) {
+    const branch = gitAt(record, ["symbolic-ref", "--quiet", "--short", "HEAD"], {
+      allowFailure: true,
+    });
+    if (branch.status !== 0 || branch.stdout.trim() !== record.branch) {
+      return `is not on tracking branch ${record.branch}`;
+    }
+    const remoteRevision = gitAt(record, ["rev-parse", `refs/remotes/origin/${record.branch}`], {
+      allowFailure: true,
+    });
+    if (remoteRevision.status !== 0) return `has no local origin/${record.branch} ref; run references:sync`;
+    if (head !== remoteRevision.stdout.trim()) {
+      return `HEAD is ${head}; local origin/${record.branch} is ${remoteRevision.stdout.trim()}; run references:sync`;
+    }
   }
 
   const dirty = dirtyPaths(record);
@@ -173,7 +198,8 @@ function status(manifest) {
     } else if (problem?.warning) {
       console.log(`[warn] ${record.name}: ${problem.warning}`);
     } else {
-      console.log(`[ok]   ${record.name}: ${record.revision}`);
+      const identity = record.revision ?? `${record.branch}@${outputAt(record, ["rev-parse", "HEAD"])}`;
+      console.log(`[ok]   ${record.name}: ${identity}`);
     }
   }
   if (failed) process.exit(1);
@@ -230,6 +256,53 @@ function syncCheckout(record) {
   }
 }
 
+function syncBranchSibling(record) {
+  if (!fs.existsSync(record.absolutePath)) {
+    fs.mkdirSync(path.dirname(record.absolutePath), { recursive: true });
+    console.log(`[clone] ${record.name} -> ${record.path} (${record.branch})`);
+    git(
+      [
+        "clone",
+        "--filter=blob:none",
+        "--single-branch",
+        "--branch",
+        record.branch,
+        record.repository,
+        record.absolutePath,
+      ],
+      { capture: false },
+    );
+  }
+
+  const probe = gitAt(record, ["rev-parse", "--show-toplevel"], { allowFailure: true });
+  if (probe.status !== 0 || path.resolve(probe.stdout.trim()) !== fs.realpathSync(record.absolutePath)) {
+    fail(`${record.path} is not the root of its own Git repository`);
+  }
+  const remote = outputAt(record, ["remote", "get-url", "origin"]);
+  if (normalizeRemote(remote) !== normalizeRemote(record.repository)) {
+    fail(`${record.path} origin is ${remote}; expected ${record.repository}`);
+  }
+  const dirty = dirtyPaths(record);
+  const allowed = new Set(record.allowed_dirty_paths || []);
+  const unexpected = dirty.filter((entry) => !allowed.has(entry));
+  if (unexpected.length > 0) {
+    fail(`${record.path} has unexpected local changes; refusing to update: ${unexpected.join(", ")}`);
+  }
+  const branch = gitAt(record, ["symbolic-ref", "--quiet", "--short", "HEAD"], {
+    allowFailure: true,
+  });
+  if (branch.status !== 0 || branch.stdout.trim() !== record.branch) {
+    fail(`${record.path} must already be on ${record.branch}; refusing to replace its current checkout`);
+  }
+  console.log(`[fetch] ${record.name} origin/${record.branch}`);
+  gitAt(record, ["fetch", "--filter=blob:none", "origin", record.branch], { capture: false });
+  gitAt(record, ["merge", "--ff-only", `origin/${record.branch}`], { capture: false });
+  if (record.submodules === true) {
+    console.log(`[sync]  ${record.name} submodules`);
+    gitAt(record, ["submodule", "update", "--init", "--recursive"], { capture: false });
+  }
+}
+
 const command = process.argv[2];
 if (!new Set(["status", "sync"]).has(command)) {
   fail("usage: node scripts/references.mjs <status|sync>");
@@ -238,5 +311,9 @@ if (!new Set(["status", "sync"]).has(command)) {
 const manifest = readManifest();
 if (command === "sync") {
   for (const record of manifest.checkout) syncCheckout(record);
+  for (const record of manifest.sibling) {
+    if (record.branch !== undefined) syncBranchSibling(record);
+    else syncCheckout(record);
+  }
 }
 status(manifest);
