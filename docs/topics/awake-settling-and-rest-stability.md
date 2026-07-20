@@ -1,6 +1,7 @@
 # Awake settling and rest stability
 
-Status: S6.5, S9, S10, S11, S14, and S15 are closed as negative results.
+Status: S6.5, S9, S10, S11, S14, and S15 are closed as negative results; S16
+is an active measurement-only authority-event-structure decomposition.
 S12's
 coupled soft scalar authority endpoint qualifies, S13 rejects its one exact
 GPU execution candidate on frozen response quality, and S14 rejects its sole
@@ -1153,6 +1154,26 @@ separation/speculative, unilateral active-set, cache, or support-graph decision
 selects the still trajectory across precisions. That addendum has zero product
 candidates and is not authorized by S15 closure. Hard/direct remains selected;
 soft contact as a family is not globally ruled out.
+
+S16 human fork resolution, 2026-07-20: human review authorizes
+`authority-event-structure-decomposition-addendum-v1` exactly as recorded by
+the S15.7 review and tracked in
+[S16](../tactical/016-authority-event-structure-decomposition.md). The study
+aligns the exact-S12 binary32, cancellation-path binary64, complete-solve
+binary64, and retained native-public event streams on depths 11 and 16. It may
+route only six declared discrete families: contact admission/point count,
+reference/feature identity, separation/speculative branch, unilateral active
+set, cache/impulse ownership, and support-graph color/order.
+
+Continuous equations, coefficients, sources, projections, authority bands,
+and values remain native to each scalar lane. Bidirectional replay may select
+only locally available payloads from immutable endpoint event tokens; it may
+not copy continuous state between precisions. The study has zero product
+candidates. It stops after A1 if the first causal divergence has no declared
+owner, after the A3 minimal-event-structure disposition before A4, and before
+any product candidate or GPU execution probe. A4 is an authorized static
+representability question held behind the A3 human checkpoint. Hard/direct
+remains selected and no product/default/tolerance/oracle decision changes.
 
 ## Authority corrections
 

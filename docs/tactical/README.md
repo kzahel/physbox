@@ -88,6 +88,12 @@ only `2^-40 m` with many later pass/fail re-entries. No EFT candidate, scalar
 candidate gate, GPU probe, timing, cross-host work, or promotion is admitted.
 The recorded next fork is a proposed measurement-only authority-event-
 structure decomposition addendum requiring human authorization.
+Human review at S15.7 authorizes S16 exactly as recorded: align the retained
+binary32, cancellation-path binary64, full-solve binary64, and native-public
+event streams; replay the six declared discrete decision families in both
+directions; and return a minimal routed event structure before any static GPU
+mapping. The work has zero product candidates and stops after the A3 minimal-
+structure disposition. A4 is scoped but held behind that human checkpoint.
 
 Tactical filenames use a three-digit zero-padded prefix ordered by their first
 Git creation timestamp. This repository starts at `001`. Never renumber an
@@ -113,6 +119,7 @@ This README remains the unnumbered index.
 | S13 | Exact authority-structure GPU execution probe | [013-authority-structure-gpu-probe.md](013-authority-structure-gpu-probe.md) | manual checkpoint; exact candidate rejected by frozen authority quality, no execution constraint, 2026-07-19 |
 | S14 | Branch-robust authority-band formulation | [014-branch-robust-authority-band-formulation.md](014-branch-robust-authority-band-formulation.md) | complete; sole candidate rejected at 10/14 scalar robustness rows, no GPU admitted, 2026-07-19 |
 | S15 | Exact-recurrence precision margin | [015-exact-recurrence-precision-margin.md](015-exact-recurrence-precision-margin.md) | complete; precision limit not still, no candidate, event-structure addendum returned to human review, 2026-07-20 |
+| S16 | Authority event-structure decomposition | [016-authority-event-structure-decomposition.md](016-authority-event-structure-decomposition.md) | active; A1-A3 measurement phase authorized, A4 held behind minimal-structure checkpoint, 2026-07-20 |
 
 ## Conventions
 
