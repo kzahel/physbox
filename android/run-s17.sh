@@ -48,7 +48,7 @@ if [[ "$TARGET_MODE" = "avd" ]]; then
         [[ "$RUNNING_AVD" = "$AVD_NAME" ]] || { echo "error: running emulator is $RUNNING_AVD, expected $AVD_NAME" >&2; exit 1; }
         EMULATOR_PID="$(pgrep -f "[q]emu-system.*-avd $AVD_NAME" | head -1 || true)"
     else
-        nohup "$EMULATOR" -avd "$AVD_NAME" -gpu host -no-snapshot-save -no-audio >/tmp/physbox5-s17-emulator.log 2>&1 </dev/null &
+        nohup "$EMULATOR" -avd "$AVD_NAME" -read-only -gpu host -no-snapshot-save -no-audio >/tmp/physbox5-s17-emulator.log 2>&1 </dev/null &
         EMULATOR_PID=$!
         for _ in $(seq 1 120); do
             SERIAL="$($ADB devices | awk '$1 ~ /^emulator-/ && $2 == "device" {print $1; exit}')"
