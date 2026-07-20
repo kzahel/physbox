@@ -1,6 +1,7 @@
 # Awake settling and rest stability
 
-Status: S6.5, S9, S10, S11, and S14 are closed as negative results; S12's
+Status: S6.5, S9, S10, S11, and S14 are closed as negative results; S15 is an
+active exact-recurrence precision-margin study. S12's
 coupled soft scalar authority endpoint qualifies, S13 rejects its one exact
 GPU execution candidate on frozen response quality, and S14 rejects its sole
 branch-robust formulation at the scalar robustness gate, 2026-07-19.
@@ -8,9 +9,10 @@ S11's measured rewind correction space is exhausted with no survivor. The
 comparator-engine trigger remains recorded but no comparator is authorized.
 The S6.5d soft candidate and all S9/S10/S11 material candidates are rejected;
 restitution timing is byte-inert on the governed controls.
-Hard/direct manifold-block i2 remains the product. S14 is complete at its
-human checkpoint; no candidate is promoted or authorized for GPU or cross-host
-expansion.
+Hard/direct manifold-block i2 remains the product. S15 initially authorizes
+measurement only; one exact two-float cancellation-path candidate becomes
+eligible solely under its recorded binary64 stillness and precision-margin
+route. No candidate is promoted or authorized for cross-host expansion.
 Awake settling is a prerequisite for broadphase selection and sleeping
 acceptance. No contact-identity policy, soft-contact coefficients, penetration
 deadband, friction anchor, residual band, or sleep threshold is a product
@@ -1101,6 +1103,28 @@ the authority band without crossing every stationary predicate. Hard/direct
 remains selected. Any further soft formulation is a new human-authorized
 study; it may not reuse S14 to change coefficients, bands, authority, product
 selection, or the frozen perturbation result.
+
+S15 human fork resolution, 2026-07-20: human review rejects
+`authority-band-cancellation-robust-v1` and authorizes the bounded
+[exact-recurrence precision-margin tactical](../tactical/015-exact-recurrence-precision-margin.md).
+It first runs the original S12 cancellation DAG alone in binary64 and,
+separately, the complete exact scalar solve in binary64 at depths 11 and 16.
+Both attribution and precision-limit lanes must satisfy the unchanged native
+authority predicates. It then measures a fixed depth-16 absolute-perturbation
+lattice under the seven already frozen sign schedules. This is measurement of
+response margin, not a coefficient or band sweep.
+
+Only a still 4/4 precision result and a study margin strictly greater than a
+conservative error-free-transformation bound may admit one candidate:
+`authority-exact-separation-two-float-v1`, the original expression and branch
+with two-float intermediates only on the diagnosed cancellation path. That
+candidate must pass the unchanged fourteen-row scalar perturbation gate before
+the unchanged S13 GPU response, replay, overflow, fail-closed capacity, and
+32/256/1K timing contract can run. A precision failure or insufficient margin
+returns a decomposition-addendum fork with no candidate. Reformulation arms,
+coefficient sweeps, band changes, comparators, approximate ports, cross-host
+qualification, and promotion remain outside authorization. Hard/direct stays
+selected throughout.
 
 ## Authority corrections
 

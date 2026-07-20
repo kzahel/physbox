@@ -74,6 +74,12 @@ depth-11 lanes pass, but four depth-16 lanes fail the unchanged energy or
 positive-run predicates. The GPU admission gate is closed, so no S14 GPU,
 timing, cross-host, or promotion work ran. Soft contact is not globally ruled
 out, but another formulation requires a new human decision.
+Human review at S14.7 rejects the S14 candidate and authorizes S15: first
+measure the unchanged S12 recurrence's binary64 precision limit and frozen
+depth-16 perturbation margin; admit at most one exact two-float cancellation-
+path candidate only if that measured margin dominates its proved error bound.
+No reformulation, coefficient/band change, comparator, or promotion is
+authorized.
 
 Tactical filenames use a three-digit zero-padded prefix ordered by their first
 Git creation timestamp. This repository starts at `001`. Never renumber an
@@ -98,6 +104,7 @@ This README remains the unnumbered index.
 | S12 | Authority solve-structure decomposition | [012-authority-structure-decomposition.md](012-authority-structure-decomposition.md) | complete; four-axis authority structure qualifies and exact GPU probe recommended, 2026-07-19 |
 | S13 | Exact authority-structure GPU execution probe | [013-authority-structure-gpu-probe.md](013-authority-structure-gpu-probe.md) | manual checkpoint; exact candidate rejected by frozen authority quality, no execution constraint, 2026-07-19 |
 | S14 | Branch-robust authority-band formulation | [014-branch-robust-authority-band-formulation.md](014-branch-robust-authority-band-formulation.md) | complete; sole candidate rejected at 10/14 scalar robustness rows, no GPU admitted, 2026-07-19 |
+| S15 | Exact-recurrence precision margin | [015-exact-recurrence-precision-margin.md](015-exact-recurrence-precision-margin.md) | active; binary64 precision-limit and depth-16 margin contract authorized, 2026-07-20 |
 
 ## Conventions
 

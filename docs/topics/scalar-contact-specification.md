@@ -233,6 +233,28 @@ The conditional GPU port is therefore not admitted. The formula remains
 validation-only, the S12 endpoint and this specification remain unchanged,
 and another formulation requires a new human decision.
 
+## S15 exact-recurrence precision-margin boundary
+
+The [S15 tactical](../tactical/015-exact-recurrence-precision-margin.md)
+does not adopt the rejected S14 rearrangement. It retains the original S12
+authority-separation expression and exact X1-X4/current-X5 recurrence, first
+measuring that cancellation path alone in binary64 and then the complete
+independent solve in binary64 at governed depths 11 and 16. These are
+validation-only precision-limit lanes, not a CPU backend, new authority, or a
+change to the selected scalar equations.
+
+The conditional candidate is limited to error-free-transformation two-float
+evaluation of the original cancellation DAG. It may be admitted only when the
+binary64 lanes are still and a fixed depth-16 perturbation-margin curve
+strictly exceeds its outward-rounded analytic error bound. The original
+operands, grouping, `separation > 0` predicate, coefficients, projection,
+ordering, impulses, cache, and product state remain unchanged. Any
+reformulation, empirical damping, deadband, coefficient/band sweep, or wider
+precision state is outside S15. An admitted candidate still owns authority-
+band response rather than bit identity with the selected specification and
+must pass the existing frozen scalar and GPU gates before returning to human
+review.
+
 ## Reconsideration triggers
 
 Change these equations or ordering only with measured candidate evidence and a
