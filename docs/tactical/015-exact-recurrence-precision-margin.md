@@ -174,12 +174,12 @@ or quality-invalid timing claim is allowed.
 
 ### S15.1 — fork and frozen study contract
 
-- [ ] Record the S14.7 authorization, two precision lanes, fixed margin
+- [x] Record the S14.7 authorization, two precision lanes, fixed margin
   lattice, strict route predicate, sole conditional candidate, unchanged
   scalar/GPU contracts, exclusions, and stops.
-- [ ] Materialize an executable contract that rejects lane, amplitude,
+- [x] Materialize an executable contract that rejects lane, amplitude,
   schedule, candidate, source, band, overflow/capacity, or timing expansion.
-- [ ] Bind the selected product, S12 endpoint, S13 contract, S14 disposition,
+- [x] Bind the selected product, S12 endpoint, S13 contract, S14 disposition,
   retained cancellation derivation, and reference pins.
 
 Artifacts: `evidence/p5.2b-s15.1-precision-margin-contract/`.
