@@ -1136,7 +1136,10 @@ fn product_relative_gate(
             &pinned.lane.physical_envelope,
             &candidate.lane.physical_envelope,
         ) {
-            (Some(left), Some(right)) if candidate.accepted => {
+            (Some(left), Some(right))
+                if candidate.accepted
+                    && candidate.requested_steps == P5_2_SETTLING_EVIDENCE_STEPS =>
+            {
                 let height_delta = (right.final_stack_height - left.final_stack_height).abs();
                 let allowed_height = GEOMETRY_MARGIN.max(left.settled_penetration_max);
                 let penetration_delta =
@@ -1155,7 +1158,11 @@ fn product_relative_gate(
                         && height_delta <= allowed_height,
                 )
             }
-            _ if candidate.accepted => (None, None, None, None, None, false),
+            _ if candidate.accepted
+                && candidate.requested_steps == P5_2_SETTLING_EVIDENCE_STEPS =>
+            {
+                (None, None, None, None, None, false)
+            }
             _ => (None, None, None, None, None, true),
         };
         scene_comparisons.push(SceneComparison {
