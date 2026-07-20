@@ -17,9 +17,9 @@ use crate::branch_robust::{
 };
 use crate::branch_robust_scalar::{BranchRobustPerturbationV1, BranchRobustRunStatisticsV1};
 use crate::event_structure::{
-    EventGraphClassV1, EventLaneV1, EventPairV1, EventPointIdentityV1, EventStreamV1,
-    NormalDecisionEventV1, NormalPassV1, PreparedContactEventV1, PreparedPointEventV1,
-    reference_owner_and_face,
+    EventFamilyV1, EventGraphClassV1, EventLaneV1, EventNormalOrientationV1, EventPairV1,
+    EventPointIdentityV1, EventStreamV1, NormalDecisionEventV1, NormalPassV1, NormalRouteChoiceV1,
+    PreparedContactEventV1, PreparedPointEventV1, reference_owner_and_face,
 };
 use crate::precision_margin::{PrecisionPathStatisticsV1, PrecisionPerturbationV1};
 use crate::scalar::{
@@ -29,7 +29,7 @@ use crate::scalar::{
     maximum_depenetration_velocity, order_authority_contact_points, prepare_contact,
     refresh_authority_separations, refresh_branch_robust_authority_separations,
     refresh_precision_path_authority_separations, refresh_separations, solve_normal,
-    solve_normal_observed, solve_tangent, warm_start,
+    solve_normal_observed, solve_normal_routed, solve_tangent, warm_start,
 };
 
 pub const AUTHORITY_STRUCTURE_POLICY_VERSION: u32 = 1;
@@ -215,6 +215,12 @@ pub struct AuthorityEventSolveResultV1 {
     pub events: EventStreamV1,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct RoutedAuthorityEventSolveResultV1 {
+    pub solve: ScalarObservedSolveResultV1,
+    pub events: EventStreamV1,
+}
+
 pub fn mandatory_authority_structure_configurations_v1() -> Vec<AuthorityStructureConfigurationV1> {
     let mut configurations = vec![
         AuthorityStructureConfigurationV1 {
@@ -369,6 +375,42 @@ pub fn solve_authority_event_stream_v1(
     })
 }
 
+pub fn solve_routed_authority_event_stream_v1(
+    scenario: &ScenarioV1,
+    owner: &EventStreamV1,
+    families: &[EventFamilyV1],
+) -> Result<RoutedAuthorityEventSolveResultV1, ScalarError> {
+    if owner.lane != EventLaneV1::FullSolveF64 {
+        return Err(ScalarError(
+            "routed exact-s12-f32 requires the immutable full-solve-f64 owner stream".to_owned(),
+        ));
+    }
+    if families.is_empty()
+        || families
+            .iter()
+            .any(|family| !EventFamilyV1::ALL.contains(family))
+    {
+        return Err(ScalarError(
+            "routed exact-s12-f32 requires one or more declared event families".to_owned(),
+        ));
+    }
+    let policy = AuthorityStructurePolicyV1::a_minus(AuthorityStructureAxisV1::Restitution);
+    let mut events = EventStreamV1::new(EventLaneV1::ExactS12F32);
+    let mut route = EventRouteState::new(owner, families);
+    let solve = solve_authority_structure_steps_observed_internal(
+        scenario,
+        policy,
+        false,
+        AuthoritySolveDiagnostics {
+            event_stream: Some(&mut events),
+            event_route: Some(&mut route),
+            ..AuthoritySolveDiagnostics::default()
+        },
+    )?;
+    route.finish()?;
+    Ok(RoutedAuthorityEventSolveResultV1 { solve, events })
+}
+
 pub fn solve_authority_structure_one_step_pass_states(
     scenario: &ScenarioV1,
     policy: AuthorityStructurePolicyV1,
@@ -397,8 +439,66 @@ pub fn solve_authority_structure_one_step_pass_states(
     Ok((result, pass_states))
 }
 
+struct EventRouteState<'a> {
+    owner: &'a EventStreamV1,
+    families: Vec<EventFamilyV1>,
+    normal_cursor: usize,
+}
+
+impl<'a> EventRouteState<'a> {
+    fn new(owner: &'a EventStreamV1, families: &[EventFamilyV1]) -> Self {
+        let mut families = families.to_vec();
+        families.sort();
+        families.dedup();
+        Self {
+            owner,
+            families,
+            normal_cursor: 0,
+        }
+    }
+
+    fn routes(&self, family: EventFamilyV1) -> bool {
+        self.families.binary_search(&family).is_ok()
+    }
+
+    fn routes_normal_decisions(&self) -> bool {
+        self.routes(EventFamilyV1::SeparationPositiveAndSpeculativeBranch)
+            || self.routes(EventFamilyV1::UnilateralActiveSetProjection)
+    }
+
+    fn finish(&self) -> Result<(), ScalarError> {
+        if self.routes_normal_decisions() && self.normal_cursor != self.owner.normal_decisions.len()
+        {
+            return Err(owner_choice_unavailable(
+                self.normal_family(),
+                0,
+                "receiving lane ended before consuming the immutable owner normal stream",
+            ));
+        }
+        Ok(())
+    }
+
+    fn normal_family(&self) -> EventFamilyV1 {
+        if self.routes(EventFamilyV1::SeparationPositiveAndSpeculativeBranch) {
+            EventFamilyV1::SeparationPositiveAndSpeculativeBranch
+        } else {
+            EventFamilyV1::UnilateralActiveSetProjection
+        }
+    }
+}
+
+fn owner_choice_unavailable(
+    family: EventFamilyV1,
+    completed_step: u32,
+    reason: &str,
+) -> ScalarError {
+    ScalarError(format!(
+        "owner-choice-unavailable: family={family:?} completed_step={completed_step} reason={reason}"
+    ))
+}
+
 #[derive(Default)]
-struct AuthoritySolveDiagnostics<'a> {
+struct AuthoritySolveDiagnostics<'a, 'owner> {
     pass_states: Option<&'a mut Vec<AuthorityStructurePassStateV1>>,
     branch_robust_perturbation: Option<BranchRobustPerturbationV1>,
     branch_robust_statistics: Option<&'a mut BranchRobustRunStatisticsV1>,
@@ -406,13 +506,14 @@ struct AuthoritySolveDiagnostics<'a> {
     precision_amplitude: f64,
     precision_statistics: Option<&'a mut PrecisionPathStatisticsV1>,
     event_stream: Option<&'a mut EventStreamV1>,
+    event_route: Option<&'a mut EventRouteState<'owner>>,
 }
 
 fn solve_authority_structure_steps_observed_internal(
     scenario: &ScenarioV1,
     policy: AuthorityStructurePolicyV1,
     retain_traces: bool,
-    mut diagnostics: AuthoritySolveDiagnostics<'_>,
+    mut diagnostics: AuthoritySolveDiagnostics<'_, '_>,
 ) -> Result<ScalarObservedSolveResultV1, ScalarError> {
     policy.validate()?;
     scenario
@@ -468,7 +569,15 @@ fn solve_authority_structure_steps_observed_internal(
             } else {
                 &mut refreshed_contacts
             };
-            let visit_schedule = contact_visit_schedule(contacts, &bodies, policy.accumulation);
+            if substep == 0
+                && let Some(route) = diagnostics.event_route.as_deref_mut()
+            {
+                route_prepared_contacts(route, step + 1, contacts, &bodies)?;
+            }
+            let mut visit_schedule = contact_visit_schedule(contacts, &bodies, policy.accumulation);
+            if let Some(route) = diagnostics.event_route.as_deref_mut() {
+                route_visit_schedule(route, step + 1, contacts, &bodies, &mut visit_schedule)?;
+            }
             let visit_order = visit_schedule
                 .iter()
                 .map(|entry| entry.contact_index)
@@ -497,7 +606,46 @@ fn solve_authority_structure_steps_observed_internal(
             );
             for iteration in 0..biased_iterations {
                 for (visit_rank, &contact_index) in visit_order.iter().enumerate() {
-                    if let Some(events) = diagnostics.event_stream.as_deref_mut() {
+                    if let Some(route) = diagnostics.event_route.as_deref_mut() {
+                        let pair = contact_pair(&contacts[contact_index], &bodies);
+                        let choices = routed_normal_choices(
+                            route,
+                            step + 1,
+                            substep,
+                            NormalPassV1::Biased,
+                            visit_rank as u32,
+                            pair,
+                            &contacts[contact_index],
+                        )?;
+                        let mut decisions = Vec::new();
+                        solve_normal_routed(
+                            &mut contacts[contact_index],
+                            &mut bodies,
+                            substep_dt,
+                            scenario.settings.bias_rate.get(),
+                            maximum_depenetration_velocity(scenario),
+                            scenario.settings.mass_coefficient.get(),
+                            scenario.settings.impulse_coefficient.get(),
+                            contact_softness,
+                            true,
+                            iteration,
+                            TraceStageV1::NormalSolve,
+                            &mut traces,
+                            &mut decisions,
+                            &choices,
+                        )?;
+                        if let Some(events) = diagnostics.event_stream.as_deref_mut() {
+                            record_normal_events(
+                                events,
+                                step + 1,
+                                substep,
+                                NormalPassV1::Biased,
+                                visit_rank as u32,
+                                pair,
+                                decisions,
+                            );
+                        }
+                    } else if let Some(events) = diagnostics.event_stream.as_deref_mut() {
                         let pair = contact_pair(&contacts[contact_index], &bodies);
                         let mut decisions = Vec::new();
                         solve_normal_observed(
@@ -606,7 +754,46 @@ fn solve_authority_structure_steps_observed_internal(
                 &bodies,
             );
             for (visit_rank, &contact_index) in visit_order.iter().enumerate() {
-                if let Some(events) = diagnostics.event_stream.as_deref_mut() {
+                if let Some(route) = diagnostics.event_route.as_deref_mut() {
+                    let pair = contact_pair(&contacts[contact_index], &bodies);
+                    let choices = routed_normal_choices(
+                        route,
+                        step + 1,
+                        substep,
+                        NormalPassV1::Relaxation,
+                        visit_rank as u32,
+                        pair,
+                        &contacts[contact_index],
+                    )?;
+                    let mut decisions = Vec::new();
+                    solve_normal_routed(
+                        &mut contacts[contact_index],
+                        &mut bodies,
+                        substep_dt,
+                        scenario.settings.bias_rate.get(),
+                        maximum_depenetration_velocity(scenario),
+                        scenario.settings.mass_coefficient.get(),
+                        scenario.settings.impulse_coefficient.get(),
+                        contact_softness,
+                        false,
+                        0,
+                        TraceStageV1::Relaxation,
+                        &mut traces,
+                        &mut decisions,
+                        &choices,
+                    )?;
+                    if let Some(events) = diagnostics.event_stream.as_deref_mut() {
+                        record_normal_events(
+                            events,
+                            step + 1,
+                            substep,
+                            NormalPassV1::Relaxation,
+                            visit_rank as u32,
+                            pair,
+                            decisions,
+                        );
+                    }
+                } else if let Some(events) = diagnostics.event_stream.as_deref_mut() {
                     let pair = contact_pair(&contacts[contact_index], &bodies);
                     let mut decisions = Vec::new();
                     solve_normal_observed(
@@ -769,6 +956,7 @@ fn record_prepared_events(
             point_count: contact.points.len() as u32,
             reference_owner: contact.event_reference_owner,
             reference_face: contact.event_reference_face,
+            normal_orientation: EventNormalOrientationV1::BodyAToBodyB,
             graph_class,
             visit_rank,
             points: contact
@@ -821,6 +1009,259 @@ fn record_normal_events(
             new_impulse: decision.new_impulse,
             applied_impulse: decision.applied_impulse,
         }));
+}
+
+fn route_prepared_contacts(
+    route: &EventRouteState<'_>,
+    completed_step: u32,
+    contacts: &mut Vec<PreparedContact>,
+    bodies: &[BodyStateV1],
+) -> Result<(), ScalarError> {
+    let owner = route
+        .owner
+        .prepared_contacts
+        .iter()
+        .filter(|event| event.completed_step == completed_step)
+        .collect::<Vec<_>>();
+    if owner.is_empty() && !contacts.is_empty() {
+        return Err(owner_choice_unavailable(
+            EventFamilyV1::ContactAdmissibilityAndPointCount,
+            completed_step,
+            "owner has no prepared-contact events for a non-empty local step",
+        ));
+    }
+
+    if route.routes(EventFamilyV1::ContactAdmissibilityAndPointCount) {
+        for event in &owner {
+            if !event.admitted {
+                continue;
+            }
+            if !contacts
+                .iter()
+                .any(|contact| contact_pair(contact, bodies) == event.pair)
+            {
+                return Err(owner_choice_unavailable(
+                    EventFamilyV1::ContactAdmissibilityAndPointCount,
+                    completed_step,
+                    "owner-admitted pair is not locally generated",
+                ));
+            }
+        }
+        contacts.retain(|contact| {
+            let pair = contact_pair(contact, bodies);
+            owner
+                .iter()
+                .any(|event| event.admitted && event.pair == pair)
+        });
+        for contact in contacts.iter_mut() {
+            let pair = contact_pair(contact, bodies);
+            let event = owner
+                .iter()
+                .find(|event| event.pair == pair && event.admitted)
+                .expect("retained routed contact has an owner event");
+            let point_count = event.point_count as usize;
+            if point_count > contact.points.len() {
+                return Err(owner_choice_unavailable(
+                    EventFamilyV1::ContactAdmissibilityAndPointCount,
+                    completed_step,
+                    "owner point count exceeds locally generated points",
+                ));
+            }
+            contact.points.truncate(point_count);
+        }
+    }
+
+    for contact in contacts.iter_mut() {
+        let pair = contact_pair(contact, bodies);
+        let event = owner.iter().find(|event| event.pair == pair);
+        if route.routes(EventFamilyV1::ReferenceOwnerAndAuthorityFeatureIdentity) {
+            let Some(event) = event else {
+                return Err(owner_choice_unavailable(
+                    EventFamilyV1::ReferenceOwnerAndAuthorityFeatureIdentity,
+                    completed_step,
+                    "local contact has no owner identity event",
+                ));
+            };
+            if event.normal_orientation != EventNormalOrientationV1::BodyAToBodyB {
+                return Err(owner_choice_unavailable(
+                    EventFamilyV1::ReferenceOwnerAndAuthorityFeatureIdentity,
+                    completed_step,
+                    "owner normal orientation has no local body-A-to-body-B choice",
+                ));
+            }
+            let local_points = contact.points.clone();
+            let mut selected = Vec::with_capacity(event.points.len());
+            for owner_point in &event.points {
+                let Some(point) = local_points.iter().find(|point| {
+                    point.feature_a == owner_point.identity.feature_a
+                        && point.feature_b == owner_point.identity.feature_b
+                }) else {
+                    return Err(owner_choice_unavailable(
+                        EventFamilyV1::ReferenceOwnerAndAuthorityFeatureIdentity,
+                        completed_step,
+                        "owner feature pair is not a locally generated point choice",
+                    ));
+                };
+                selected.push(point.clone());
+            }
+            contact.points = selected;
+            contact.event_reference_owner = event.reference_owner;
+            contact.event_reference_face = event.reference_face;
+        }
+
+        if route.routes(EventFamilyV1::WarmCacheMatchAndImpulseOwnership) {
+            let Some(event) = event else {
+                return Err(owner_choice_unavailable(
+                    EventFamilyV1::WarmCacheMatchAndImpulseOwnership,
+                    completed_step,
+                    "local contact has no owner cache event",
+                ));
+            };
+            if event.points.len() != contact.points.len() {
+                return Err(owner_choice_unavailable(
+                    EventFamilyV1::WarmCacheMatchAndImpulseOwnership,
+                    completed_step,
+                    "owner cache point count has no local correspondence",
+                ));
+            }
+            for (point, owner_point) in contact.points.iter_mut().zip(&event.points) {
+                let identity = EventPointIdentityV1 {
+                    feature_a: point.feature_a,
+                    feature_b: point.feature_b,
+                };
+                if identity != owner_point.identity {
+                    return Err(owner_choice_unavailable(
+                        EventFamilyV1::WarmCacheMatchAndImpulseOwnership,
+                        completed_step,
+                        "owner cache key does not match the local point key",
+                    ));
+                }
+                if owner_point.cache_hit {
+                    if !point.cache_hit || owner_point.cache_owner != Some(identity) {
+                        return Err(owner_choice_unavailable(
+                            EventFamilyV1::WarmCacheMatchAndImpulseOwnership,
+                            completed_step,
+                            "owner cache hit has no locally matched impulse record",
+                        ));
+                    }
+                } else {
+                    point.cache_hit = false;
+                    point.normal_impulse = 0.0;
+                    point.tangent_impulse = 0.0;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn route_visit_schedule(
+    route: &EventRouteState<'_>,
+    completed_step: u32,
+    contacts: &[PreparedContact],
+    bodies: &[BodyStateV1],
+    schedule: &mut [ContactVisitScheduleEntry],
+) -> Result<(), ScalarError> {
+    if !route.routes(EventFamilyV1::SupportGraphColorAndOverflowOrder) {
+        return Ok(());
+    }
+    let owner = route
+        .owner
+        .prepared_contacts
+        .iter()
+        .filter(|event| event.completed_step == completed_step)
+        .collect::<Vec<_>>();
+    if owner.len() != contacts.len() {
+        return Err(owner_choice_unavailable(
+            EventFamilyV1::SupportGraphColorAndOverflowOrder,
+            completed_step,
+            "owner and local contact counts differ",
+        ));
+    }
+    let mut ranked = Vec::with_capacity(schedule.len());
+    for entry in schedule.iter().copied() {
+        let pair = contact_pair(&contacts[entry.contact_index], bodies);
+        let Some(event) = owner.iter().find(|event| event.pair == pair) else {
+            return Err(owner_choice_unavailable(
+                EventFamilyV1::SupportGraphColorAndOverflowOrder,
+                completed_step,
+                "owner visit pair is not locally available",
+            ));
+        };
+        if event.graph_class != entry.graph_class {
+            return Err(owner_choice_unavailable(
+                EventFamilyV1::SupportGraphColorAndOverflowOrder,
+                completed_step,
+                "owner graph class is not the locally produced class",
+            ));
+        }
+        ranked.push((event.visit_rank, entry));
+    }
+    ranked.sort_by_key(|(rank, _)| *rank);
+    if ranked.windows(2).any(|pair| pair[0].0 == pair[1].0) {
+        return Err(owner_choice_unavailable(
+            EventFamilyV1::SupportGraphColorAndOverflowOrder,
+            completed_step,
+            "owner visit ranks are not unique",
+        ));
+    }
+    for (target, (_, entry)) in schedule.iter_mut().zip(ranked) {
+        *target = entry;
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn routed_normal_choices(
+    route: &mut EventRouteState<'_>,
+    completed_step: u32,
+    substep: u32,
+    pass: NormalPassV1,
+    visit_rank: u32,
+    pair: EventPairV1,
+    contact: &PreparedContact,
+) -> Result<Vec<NormalRouteChoiceV1>, ScalarError> {
+    if !route.routes_normal_decisions() {
+        return Ok(Vec::new());
+    }
+    let mut choices = Vec::with_capacity(contact.points.len());
+    for (point_ordinal, point) in contact.points.iter().enumerate() {
+        let Some(owner) = route.owner.normal_decisions.get(route.normal_cursor) else {
+            return Err(owner_choice_unavailable(
+                route.normal_family(),
+                completed_step,
+                "owner normal stream ended before the local stream",
+            ));
+        };
+        let identity = EventPointIdentityV1 {
+            feature_a: point.feature_a,
+            feature_b: point.feature_b,
+        };
+        if owner.completed_step != completed_step
+            || owner.substep != substep
+            || owner.pass != pass
+            || owner.visit_rank != visit_rank
+            || owner.pair != pair
+            || owner.point_ordinal != point_ordinal as u32
+            || owner.identity != identity
+        {
+            return Err(owner_choice_unavailable(
+                route.normal_family(),
+                completed_step,
+                "owner normal event key has no exact local event choice",
+            ));
+        }
+        choices.push(NormalRouteChoiceV1 {
+            separation_positive: route
+                .routes(EventFamilyV1::SeparationPositiveAndSpeculativeBranch)
+                .then_some(owner.separation_positive),
+            candidate_selected: route
+                .routes(EventFamilyV1::UnilateralActiveSetProjection)
+                .then_some(owner.candidate_selected),
+        });
+        route.normal_cursor += 1;
+    }
+    Ok(choices)
 }
 
 fn prepare_contacts(

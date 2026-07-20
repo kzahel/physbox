@@ -11,9 +11,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::branch_robust::AuthoritySeparationInputsV1;
 use crate::event_structure::{
-    EventGraphClassV1, EventLaneV1, EventPairV1, EventPointIdentityV1, EventStreamV1,
-    NormalDecisionEventV1, NormalDecisionRawV1, NormalPassV1, PreparedContactEventV1,
-    PreparedPointEventV1, reference_owner_and_face,
+    EventFamilyV1, EventGraphClassV1, EventLaneV1, EventNormalOrientationV1, EventPairV1,
+    EventPointIdentityV1, EventStreamV1, NormalDecisionEventV1, NormalDecisionRawV1, NormalPassV1,
+    NormalRouteChoiceV1, PreparedContactEventV1, PreparedPointEventV1, reference_owner_and_face,
 };
 use crate::scalar::ScalarError;
 
@@ -281,23 +281,115 @@ pub struct FullF64EventSolveResultV1 {
     pub events: EventStreamV1,
 }
 
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RoutedFullF64EventSolveResultV1 {
+    pub solve: FullF64SolveResultV1,
+    pub events: EventStreamV1,
+}
+
 pub fn solve_full_f64_authority_v1(
     scenario: &ScenarioV1,
 ) -> Result<FullF64SolveResultV1, ScalarError> {
-    solve_full_f64_authority_internal(scenario, None)
+    solve_full_f64_authority_internal(scenario, None, None)
 }
 
 pub fn solve_full_f64_authority_events_v1(
     scenario: &ScenarioV1,
 ) -> Result<FullF64EventSolveResultV1, ScalarError> {
     let mut events = EventStreamV1::new(EventLaneV1::FullSolveF64);
-    let solve = solve_full_f64_authority_internal(scenario, Some(&mut events))?;
+    let solve = solve_full_f64_authority_internal(scenario, Some(&mut events), None)?;
     Ok(FullF64EventSolveResultV1 { solve, events })
+}
+
+pub fn solve_routed_full_f64_authority_events_v1(
+    scenario: &ScenarioV1,
+    owner: &EventStreamV1,
+    families: &[EventFamilyV1],
+) -> Result<RoutedFullF64EventSolveResultV1, ScalarError> {
+    if owner.lane != EventLaneV1::ExactS12F32 {
+        return Err(ScalarError(
+            "routed full-solve-f64 requires the immutable exact-s12-f32 owner stream".to_owned(),
+        ));
+    }
+    if families.is_empty()
+        || families
+            .iter()
+            .any(|family| !EventFamilyV1::ALL.contains(family))
+    {
+        return Err(ScalarError(
+            "routed full-solve-f64 requires one or more declared event families".to_owned(),
+        ));
+    }
+    let mut events = EventStreamV1::new(EventLaneV1::FullSolveF64);
+    let mut route = FullEventRouteState::new(owner, families);
+    let solve = solve_full_f64_authority_internal(scenario, Some(&mut events), Some(&mut route))?;
+    route.finish()?;
+    Ok(RoutedFullF64EventSolveResultV1 { solve, events })
+}
+
+struct FullEventRouteState<'a> {
+    owner: &'a EventStreamV1,
+    families: Vec<EventFamilyV1>,
+    normal_cursor: usize,
+}
+
+impl<'a> FullEventRouteState<'a> {
+    fn new(owner: &'a EventStreamV1, families: &[EventFamilyV1]) -> Self {
+        let mut families = families.to_vec();
+        families.sort();
+        families.dedup();
+        Self {
+            owner,
+            families,
+            normal_cursor: 0,
+        }
+    }
+
+    fn routes(&self, family: EventFamilyV1) -> bool {
+        self.families.binary_search(&family).is_ok()
+    }
+
+    fn routes_normal_decisions(&self) -> bool {
+        self.routes(EventFamilyV1::SeparationPositiveAndSpeculativeBranch)
+            || self.routes(EventFamilyV1::UnilateralActiveSetProjection)
+    }
+
+    fn normal_family(&self) -> EventFamilyV1 {
+        if self.routes(EventFamilyV1::SeparationPositiveAndSpeculativeBranch) {
+            EventFamilyV1::SeparationPositiveAndSpeculativeBranch
+        } else {
+            EventFamilyV1::UnilateralActiveSetProjection
+        }
+    }
+
+    fn finish(&self) -> Result<(), ScalarError> {
+        if self.routes_normal_decisions() && self.normal_cursor != self.owner.normal_decisions.len()
+        {
+            return Err(full_owner_choice_unavailable(
+                self.normal_family(),
+                0,
+                "receiving lane ended before consuming the immutable owner normal stream",
+            ));
+        }
+        Ok(())
+    }
+}
+
+fn full_owner_choice_unavailable(
+    family: EventFamilyV1,
+    completed_step: u32,
+    reason: &str,
+) -> ScalarError {
+    ScalarError(format!(
+        "owner-choice-unavailable: family={family:?} completed_step={completed_step} reason={reason}"
+    ))
 }
 
 fn solve_full_f64_authority_internal(
     scenario: &ScenarioV1,
     mut events: Option<&mut EventStreamV1>,
+    mut route: Option<&mut FullEventRouteState<'_>>,
 ) -> Result<FullF64SolveResultV1, ScalarError> {
     scenario
         .validate()
@@ -334,7 +426,19 @@ fn solve_full_f64_authority_internal(
     for step in 0..scenario.requested_steps {
         let mut contacts = prepare_contacts(&bodies, &cache, &settings, &mut statistics)?;
         order_authority_points(&mut contacts);
-        let visit_schedule = authority_visit_schedule(&contacts, &bodies);
+        if let Some(route) = route.as_deref_mut() {
+            route_full_f64_prepared_contacts(route, step + 1, &mut contacts, &bodies)?;
+        }
+        let mut visit_schedule = authority_visit_schedule(&contacts, &bodies);
+        if let Some(route) = route.as_deref_mut() {
+            route_full_f64_visit_schedule(
+                route,
+                step + 1,
+                &contacts,
+                &bodies,
+                &mut visit_schedule,
+            )?;
+        }
         let visit_order = visit_schedule
             .iter()
             .map(|entry| entry.contact_index)
@@ -350,6 +454,19 @@ fn solve_full_f64_authority_internal(
             }
             for (visit_rank, &contact_index) in visit_order.iter().enumerate() {
                 let pair = full_f64_contact_pair(&contacts[contact_index], &bodies);
+                let choices = if let Some(route) = route.as_deref_mut() {
+                    routed_full_f64_normal_choices(
+                        route,
+                        step + 1,
+                        substep,
+                        NormalPassV1::Biased,
+                        visit_rank as u32,
+                        pair,
+                        &contacts[contact_index],
+                    )?
+                } else {
+                    Vec::new()
+                };
                 let mut decisions = Vec::new();
                 solve_normal(
                     &mut contacts[contact_index],
@@ -357,6 +474,7 @@ fn solve_full_f64_authority_internal(
                     &settings,
                     true,
                     events.as_ref().map(|_| &mut decisions),
+                    route.as_ref().map(|_| choices.as_slice()),
                 )?;
                 if let Some(events) = events.as_deref_mut() {
                     record_full_f64_normal_events(
@@ -375,6 +493,19 @@ fn solve_full_f64_authority_internal(
             refresh_separations(&mut contacts, &bodies, &mut statistics);
             for (visit_rank, &contact_index) in visit_order.iter().enumerate() {
                 let pair = full_f64_contact_pair(&contacts[contact_index], &bodies);
+                let choices = if let Some(route) = route.as_deref_mut() {
+                    routed_full_f64_normal_choices(
+                        route,
+                        step + 1,
+                        substep,
+                        NormalPassV1::Relaxation,
+                        visit_rank as u32,
+                        pair,
+                        &contacts[contact_index],
+                    )?
+                } else {
+                    Vec::new()
+                };
                 let mut decisions = Vec::new();
                 solve_normal(
                     &mut contacts[contact_index],
@@ -382,6 +513,7 @@ fn solve_full_f64_authority_internal(
                     &settings,
                     false,
                     events.as_ref().map(|_| &mut decisions),
+                    route.as_ref().map(|_| choices.as_slice()),
                 )?;
                 if let Some(events) = events.as_deref_mut() {
                     record_full_f64_normal_events(
@@ -868,6 +1000,7 @@ fn record_full_f64_prepared_events(
             point_count: contact.points.len() as u32,
             reference_owner: contact.event_reference_owner,
             reference_face: contact.event_reference_face,
+            normal_orientation: EventNormalOrientationV1::BodyAToBodyB,
             graph_class,
             visit_rank,
             points: contact
@@ -920,6 +1053,259 @@ fn record_full_f64_normal_events(
             new_impulse: decision.new_impulse,
             applied_impulse: decision.applied_impulse,
         }));
+}
+
+fn route_full_f64_prepared_contacts(
+    route: &FullEventRouteState<'_>,
+    completed_step: u32,
+    contacts: &mut Vec<DContact>,
+    bodies: &[DBody],
+) -> Result<(), ScalarError> {
+    let owner = route
+        .owner
+        .prepared_contacts
+        .iter()
+        .filter(|event| event.completed_step == completed_step)
+        .collect::<Vec<_>>();
+    if owner.is_empty() && !contacts.is_empty() {
+        return Err(full_owner_choice_unavailable(
+            EventFamilyV1::ContactAdmissibilityAndPointCount,
+            completed_step,
+            "owner has no prepared-contact events for a non-empty local step",
+        ));
+    }
+
+    if route.routes(EventFamilyV1::ContactAdmissibilityAndPointCount) {
+        for event in &owner {
+            if !event.admitted {
+                continue;
+            }
+            if !contacts
+                .iter()
+                .any(|contact| full_f64_contact_pair(contact, bodies) == event.pair)
+            {
+                return Err(full_owner_choice_unavailable(
+                    EventFamilyV1::ContactAdmissibilityAndPointCount,
+                    completed_step,
+                    "owner-admitted pair is not locally generated",
+                ));
+            }
+        }
+        contacts.retain(|contact| {
+            let pair = full_f64_contact_pair(contact, bodies);
+            owner
+                .iter()
+                .any(|event| event.admitted && event.pair == pair)
+        });
+        for contact in contacts.iter_mut() {
+            let pair = full_f64_contact_pair(contact, bodies);
+            let event = owner
+                .iter()
+                .find(|event| event.pair == pair && event.admitted)
+                .expect("retained routed full-f64 contact has an owner event");
+            let point_count = event.point_count as usize;
+            if point_count > contact.points.len() {
+                return Err(full_owner_choice_unavailable(
+                    EventFamilyV1::ContactAdmissibilityAndPointCount,
+                    completed_step,
+                    "owner point count exceeds locally generated points",
+                ));
+            }
+            contact.points.truncate(point_count);
+        }
+    }
+
+    for contact in contacts.iter_mut() {
+        let pair = full_f64_contact_pair(contact, bodies);
+        let event = owner.iter().find(|event| event.pair == pair);
+        if route.routes(EventFamilyV1::ReferenceOwnerAndAuthorityFeatureIdentity) {
+            let Some(event) = event else {
+                return Err(full_owner_choice_unavailable(
+                    EventFamilyV1::ReferenceOwnerAndAuthorityFeatureIdentity,
+                    completed_step,
+                    "local contact has no owner identity event",
+                ));
+            };
+            if event.normal_orientation != EventNormalOrientationV1::BodyAToBodyB {
+                return Err(full_owner_choice_unavailable(
+                    EventFamilyV1::ReferenceOwnerAndAuthorityFeatureIdentity,
+                    completed_step,
+                    "owner normal orientation has no local body-A-to-body-B choice",
+                ));
+            }
+            let local_points = contact.points.clone();
+            let mut selected = Vec::with_capacity(event.points.len());
+            for owner_point in &event.points {
+                let Some(point) = local_points.iter().find(|point| {
+                    point.feature_a == owner_point.identity.feature_a
+                        && point.feature_b == owner_point.identity.feature_b
+                }) else {
+                    return Err(full_owner_choice_unavailable(
+                        EventFamilyV1::ReferenceOwnerAndAuthorityFeatureIdentity,
+                        completed_step,
+                        "owner feature pair is not a locally generated point choice",
+                    ));
+                };
+                selected.push(point.clone());
+            }
+            contact.points = selected;
+            contact.event_reference_owner = event.reference_owner;
+            contact.event_reference_face = event.reference_face;
+        }
+
+        if route.routes(EventFamilyV1::WarmCacheMatchAndImpulseOwnership) {
+            let Some(event) = event else {
+                return Err(full_owner_choice_unavailable(
+                    EventFamilyV1::WarmCacheMatchAndImpulseOwnership,
+                    completed_step,
+                    "local contact has no owner cache event",
+                ));
+            };
+            if event.points.len() != contact.points.len() {
+                return Err(full_owner_choice_unavailable(
+                    EventFamilyV1::WarmCacheMatchAndImpulseOwnership,
+                    completed_step,
+                    "owner cache point count has no local correspondence",
+                ));
+            }
+            for (point, owner_point) in contact.points.iter_mut().zip(&event.points) {
+                let identity = EventPointIdentityV1 {
+                    feature_a: point.feature_a,
+                    feature_b: point.feature_b,
+                };
+                if identity != owner_point.identity {
+                    return Err(full_owner_choice_unavailable(
+                        EventFamilyV1::WarmCacheMatchAndImpulseOwnership,
+                        completed_step,
+                        "owner cache key does not match the local point key",
+                    ));
+                }
+                if owner_point.cache_hit {
+                    if !point.cache_hit || owner_point.cache_owner != Some(identity) {
+                        return Err(full_owner_choice_unavailable(
+                            EventFamilyV1::WarmCacheMatchAndImpulseOwnership,
+                            completed_step,
+                            "owner cache hit has no locally matched impulse record",
+                        ));
+                    }
+                } else {
+                    point.cache_hit = false;
+                    point.normal_impulse = 0.0;
+                    point.tangent_impulse = 0.0;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn route_full_f64_visit_schedule(
+    route: &FullEventRouteState<'_>,
+    completed_step: u32,
+    contacts: &[DContact],
+    bodies: &[DBody],
+    schedule: &mut [FullF64VisitScheduleEntry],
+) -> Result<(), ScalarError> {
+    if !route.routes(EventFamilyV1::SupportGraphColorAndOverflowOrder) {
+        return Ok(());
+    }
+    let owner = route
+        .owner
+        .prepared_contacts
+        .iter()
+        .filter(|event| event.completed_step == completed_step)
+        .collect::<Vec<_>>();
+    if owner.len() != contacts.len() {
+        return Err(full_owner_choice_unavailable(
+            EventFamilyV1::SupportGraphColorAndOverflowOrder,
+            completed_step,
+            "owner and local contact counts differ",
+        ));
+    }
+    let mut ranked = Vec::with_capacity(schedule.len());
+    for entry in schedule.iter().copied() {
+        let pair = full_f64_contact_pair(&contacts[entry.contact_index], bodies);
+        let Some(event) = owner.iter().find(|event| event.pair == pair) else {
+            return Err(full_owner_choice_unavailable(
+                EventFamilyV1::SupportGraphColorAndOverflowOrder,
+                completed_step,
+                "owner visit pair is not locally available",
+            ));
+        };
+        if event.graph_class != entry.graph_class {
+            return Err(full_owner_choice_unavailable(
+                EventFamilyV1::SupportGraphColorAndOverflowOrder,
+                completed_step,
+                "owner graph class is not the locally produced class",
+            ));
+        }
+        ranked.push((event.visit_rank, entry));
+    }
+    ranked.sort_by_key(|(rank, _)| *rank);
+    if ranked.windows(2).any(|pair| pair[0].0 == pair[1].0) {
+        return Err(full_owner_choice_unavailable(
+            EventFamilyV1::SupportGraphColorAndOverflowOrder,
+            completed_step,
+            "owner visit ranks are not unique",
+        ));
+    }
+    for (target, (_, entry)) in schedule.iter_mut().zip(ranked) {
+        *target = entry;
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn routed_full_f64_normal_choices(
+    route: &mut FullEventRouteState<'_>,
+    completed_step: u32,
+    substep: u32,
+    pass: NormalPassV1,
+    visit_rank: u32,
+    pair: EventPairV1,
+    contact: &DContact,
+) -> Result<Vec<NormalRouteChoiceV1>, ScalarError> {
+    if !route.routes_normal_decisions() {
+        return Ok(Vec::new());
+    }
+    let mut choices = Vec::with_capacity(contact.points.len());
+    for (point_ordinal, point) in contact.points.iter().enumerate() {
+        let Some(owner) = route.owner.normal_decisions.get(route.normal_cursor) else {
+            return Err(full_owner_choice_unavailable(
+                route.normal_family(),
+                completed_step,
+                "owner normal stream ended before the local stream",
+            ));
+        };
+        let identity = EventPointIdentityV1 {
+            feature_a: point.feature_a,
+            feature_b: point.feature_b,
+        };
+        if owner.completed_step != completed_step
+            || owner.substep != substep
+            || owner.pass != pass
+            || owner.visit_rank != visit_rank
+            || owner.pair != pair
+            || owner.point_ordinal != point_ordinal as u32
+            || owner.identity != identity
+        {
+            return Err(full_owner_choice_unavailable(
+                route.normal_family(),
+                completed_step,
+                "owner normal event key has no exact local event choice",
+            ));
+        }
+        choices.push(NormalRouteChoiceV1 {
+            separation_positive: route
+                .routes(EventFamilyV1::SeparationPositiveAndSpeculativeBranch)
+                .then_some(owner.separation_positive),
+            candidate_selected: route
+                .routes(EventFamilyV1::UnilateralActiveSetProjection)
+                .then_some(owner.candidate_selected),
+        });
+        route.normal_cursor += 1;
+    }
+    Ok(choices)
 }
 
 fn integrate_velocities(
@@ -977,6 +1363,7 @@ fn solve_normal(
     settings: &DSettings,
     use_bias: bool,
     mut decisions: Option<&mut Vec<NormalDecisionRawV1>>,
+    route_choices: Option<&[NormalRouteChoiceV1]>,
 ) -> Result<(), ScalarError> {
     let static_contact =
         bodies[contact.body_a].inverse_mass == 0.0 || bodies[contact.body_b].inverse_mass == 0.0;
@@ -993,6 +1380,10 @@ fn solve_normal(
     let mass_scale_soft = a2 * impulse_scale_soft;
     let bias_rate_soft = omega / a1;
     for (point_ordinal, point) in contact.points.iter_mut().enumerate() {
+        let route_choice = route_choices
+            .and_then(|choices| choices.get(point_ordinal))
+            .copied()
+            .unwrap_or_default();
         let normal_velocity = relative_velocity(
             bodies,
             contact.body_a,
@@ -1002,7 +1393,10 @@ fn solve_normal(
             contact.normal,
         );
         let old_impulse = point.normal_impulse;
-        let (velocity_bias, mass_scale, impulse_scale) = if point.separation > 0.0 {
+        let selected_separation_positive = route_choice
+            .separation_positive
+            .unwrap_or(point.separation > 0.0);
+        let (velocity_bias, mass_scale, impulse_scale) = if selected_separation_positive {
             (point.separation / settings.substep_dt, 1.0, 0.0)
         } else if use_bias {
             let unclamped = mass_scale_soft * bias_rate_soft * point.separation;
@@ -1018,6 +1412,16 @@ fn solve_normal(
         let increment = -point.normal_mass * (mass_scale * normal_velocity + velocity_bias)
             - impulse_scale * old_impulse;
         let unclamped_impulse = old_impulse + increment;
+        let local_candidate_selected = unclamped_impulse >= 0.0;
+        if route_choice
+            .candidate_selected
+            .is_some_and(|selected| selected != local_candidate_selected)
+        {
+            return Err(ScalarError(
+                "owner-choice-unavailable: routed active-set token has no locally admissible unilateral payload"
+                    .to_owned(),
+            ));
+        }
         point.normal_impulse = unclamped_impulse.max(0.0);
         let applied = point.normal_impulse - old_impulse;
         if let Some(decisions) = decisions.as_deref_mut() {
@@ -1027,7 +1431,7 @@ fn solve_normal(
                     feature_a: point.feature_a,
                     feature_b: point.feature_b,
                 },
-                separation_positive: point.separation > 0.0,
+                separation_positive: selected_separation_positive,
                 candidate_selected: unclamped_impulse >= 0.0,
                 separation: point.separation,
                 old_impulse,

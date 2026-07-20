@@ -68,6 +68,12 @@ pub enum EventGraphClassV1 {
     Unavailable,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum EventNormalOrientationV1 {
+    BodyAToBodyB,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PreparedPointEventV1 {
@@ -89,6 +95,7 @@ pub struct PreparedContactEventV1 {
     pub point_count: u32,
     pub reference_owner: Option<u8>,
     pub reference_face: Option<u32>,
+    pub normal_orientation: EventNormalOrientationV1,
     pub graph_class: EventGraphClassV1,
     pub visit_rank: u32,
     pub points: Vec<PreparedPointEventV1>,
@@ -144,6 +151,12 @@ pub(crate) struct NormalDecisionRawV1 {
     pub unclamped_impulse: f64,
     pub new_impulse: f64,
     pub applied_impulse: f64,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct NormalRouteChoiceV1 {
+    pub separation_positive: Option<bool>,
+    pub candidate_selected: Option<bool>,
 }
 
 pub(crate) fn reference_owner_and_face(

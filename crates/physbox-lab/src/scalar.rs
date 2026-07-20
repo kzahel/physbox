@@ -11,7 +11,7 @@ use crate::{
         BranchRobustPerturbationV1, BranchRobustRunStatisticsV1, evaluate_branch_robust_scalar_v1,
         select_branch_robust_perturbation_v1,
     },
-    event_structure::{EventPointIdentityV1, NormalDecisionRawV1},
+    event_structure::{EventPointIdentityV1, NormalDecisionRawV1, NormalRouteChoiceV1},
     precision_margin::{
         PrecisionPathStatisticsV1, PrecisionPerturbationV1, evaluate_precision_path_v1,
     },
@@ -133,6 +133,14 @@ pub struct Box2dPointNormalUpdate {
 pub fn box2d_point_normal_update(
     input: Box2dPointNormalInput,
 ) -> Result<Box2dPointNormalUpdate, ScalarError> {
+    box2d_point_normal_update_routed(input, None, None)
+}
+
+fn box2d_point_normal_update_routed(
+    input: Box2dPointNormalInput,
+    separation_positive: Option<bool>,
+    candidate_selected: Option<bool>,
+) -> Result<Box2dPointNormalUpdate, ScalarError> {
     let finite = [
         input.separation,
         input.substep_dt,
@@ -156,7 +164,8 @@ pub fn box2d_point_normal_update(
             "Box2D point-normal input is outside the finite unilateral domain".to_owned(),
         ));
     }
-    let (velocity_bias, mass_scale, impulse_scale) = if input.separation > 0.0 {
+    let selected_separation_positive = separation_positive.unwrap_or(input.separation > 0.0);
+    let (velocity_bias, mass_scale, impulse_scale) = if selected_separation_positive {
         (input.separation / input.substep_dt, 1.0, 0.0)
     } else if input.use_bias {
         (
@@ -170,6 +179,13 @@ pub fn box2d_point_normal_update(
     let candidate = -input.normal_mass * (mass_scale * input.normal_velocity + velocity_bias)
         - impulse_scale * input.old_impulse;
     let unclamped_impulse = input.old_impulse + candidate;
+    let local_candidate_selected = unclamped_impulse >= 0.0;
+    if candidate_selected.is_some_and(|selected| selected != local_candidate_selected) {
+        return Err(ScalarError(
+            "owner-choice-unavailable: routed active-set token has no locally admissible unilateral payload"
+                .to_owned(),
+        ));
+    }
     let impulse = unclamped_impulse.max(0.0);
     let update = Box2dPointNormalUpdate {
         velocity_bias,
@@ -853,6 +869,7 @@ pub(crate) fn solve_normal(
         stage,
         traces,
         None,
+        None,
     )
 }
 
@@ -886,6 +903,42 @@ pub(crate) fn solve_normal_observed(
         stage,
         traces,
         Some(decisions),
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn solve_normal_routed(
+    contact: &mut PreparedContact,
+    bodies: &mut [BodyStateV1],
+    substep_dt: f32,
+    bias_rate: f32,
+    max_depenetration_velocity: f32,
+    configured_mass_scale: f32,
+    configured_impulse_scale: f32,
+    contact_softness: Option<ContactSoftnessPolicyV1>,
+    use_bias: bool,
+    iteration: u32,
+    stage: TraceStageV1,
+    traces: &mut Vec<TraceRecordV1>,
+    decisions: &mut Vec<NormalDecisionRawV1>,
+    route_choices: &[NormalRouteChoiceV1],
+) -> Result<(), ScalarError> {
+    solve_normal_internal(
+        contact,
+        bodies,
+        substep_dt,
+        bias_rate,
+        max_depenetration_velocity,
+        configured_mass_scale,
+        configured_impulse_scale,
+        contact_softness,
+        use_bias,
+        iteration,
+        stage,
+        traces,
+        Some(decisions),
+        Some(route_choices),
     )
 }
 
@@ -904,6 +957,7 @@ fn solve_normal_internal(
     stage: TraceStageV1,
     traces: &mut Vec<TraceRecordV1>,
     mut decisions: Option<&mut Vec<NormalDecisionRawV1>>,
+    route_choices: Option<&[NormalRouteChoiceV1]>,
 ) -> Result<(), ScalarError> {
     let (configured_bias_rate, configured_mass_scale, configured_impulse_scale) =
         configured_contact_coefficients(
@@ -916,6 +970,10 @@ fn solve_normal_internal(
             contact_softness,
         )?;
     for (point_index, point) in contact.points.iter_mut().enumerate() {
+        let route_choice = route_choices
+            .and_then(|choices| choices.get(point_index))
+            .copied()
+            .unwrap_or_default();
         let normal_velocity = relative_velocity(
             bodies,
             contact.body_a,
@@ -925,20 +983,24 @@ fn solve_normal_internal(
             contact.normal,
         );
         let old_impulse = point.normal_impulse;
-        let update = box2d_point_normal_update(Box2dPointNormalInput {
-            separation: point.separation,
-            substep_dt,
-            normal_velocity,
-            normal_mass: point.normal_mass,
-            old_impulse,
-            penetration_velocity_bias: clamp_depenetration_bias(
-                configured_bias_rate * point.separation / substep_dt,
-                max_depenetration_velocity,
-            ),
-            penetration_mass_scale: configured_mass_scale,
-            penetration_impulse_scale: configured_impulse_scale,
-            use_bias,
-        })?;
+        let update = box2d_point_normal_update_routed(
+            Box2dPointNormalInput {
+                separation: point.separation,
+                substep_dt,
+                normal_velocity,
+                normal_mass: point.normal_mass,
+                old_impulse,
+                penetration_velocity_bias: clamp_depenetration_bias(
+                    configured_bias_rate * point.separation / substep_dt,
+                    max_depenetration_velocity,
+                ),
+                penetration_mass_scale: configured_mass_scale,
+                penetration_impulse_scale: configured_impulse_scale,
+                use_bias,
+            },
+            route_choice.separation_positive,
+            route_choice.candidate_selected,
+        )?;
         let velocity_bias = update.velocity_bias;
         let mass_scale = update.mass_scale;
         let impulse_scale = update.impulse_scale;
@@ -951,7 +1013,9 @@ fn solve_normal_internal(
                     feature_a: point.feature_a,
                     feature_b: point.feature_b,
                 },
-                separation_positive: point.separation > 0.0,
+                separation_positive: route_choice
+                    .separation_positive
+                    .unwrap_or(point.separation > 0.0),
                 candidate_selected: update.unclamped_impulse >= 0.0,
                 separation: f64::from(point.separation),
                 old_impulse: f64::from(old_impulse),

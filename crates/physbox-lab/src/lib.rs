@@ -5,6 +5,7 @@ use std::fmt::{Display, Formatter};
 use physbox_contracts::{CapacityRecordV1, FiniteF32, Vec2};
 
 pub mod analytic_narrowphase;
+pub mod authority_response;
 pub mod authority_structure;
 pub mod branch_robust;
 pub mod branch_robust_scalar;
