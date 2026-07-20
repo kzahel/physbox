@@ -26,7 +26,7 @@ while (($#)); do
         --baseline) BASELINE="${2:?--baseline requires a value}"; shift 2 ;;
         --skip-build) SKIP_BUILD=1; shift ;;
         *)
-            echo "Usage: $0 (--device|--avd) --mode (baseline|candidate|implementation|benchmark) --output PATH [--baseline BASELINE_MANIFEST] [--serial SERIAL] [--skip-build]" >&2
+            echo "Usage: $0 (--device|--avd) --mode (baseline|candidate|implementation|benchmark|qualification) --output PATH [--baseline BASELINE_MANIFEST] [--serial SERIAL] [--skip-build]" >&2
             exit 2
             ;;
     esac
@@ -35,6 +35,10 @@ done
 case "$EVIDENCE_MODE" in
     baseline|implementation|benchmark) [[ -z "$BASELINE" ]] || { echo "error: --baseline is candidate-only" >&2; exit 2; } ;;
     candidate) [[ -f "$BASELINE" ]] || { echo "error: candidate mode requires a baseline manifest" >&2; exit 2; } ;;
+    qualification)
+        [[ "$TARGET_MODE" = "avd" ]] || { echo "error: qualification mode is AVD-only" >&2; exit 2; }
+        [[ -z "$BASELINE" ]] || { echo "error: qualification mode authors its own baseline" >&2; exit 2; }
+        ;;
     *) echo "error: choose a valid --mode" >&2; exit 2 ;;
 esac
 [[ -n "$OUTPUT" ]] || { echo "error: --output is required" >&2; exit 2; }
@@ -138,29 +142,50 @@ DIRTY=false
 [[ "$DIRTY" = false ]] || { echo "error: S17 Android retained evidence requires a clean tree" >&2; exit 1; }
 HOST=physical-android
 [[ "$TARGET_MODE" = "device" ]] || HOST=android-avd
-SUBMISSION_BATCH_ARGUMENT=""
-if [[ "$TARGET_MODE" = "avd" && "$EVIDENCE_MODE" =~ ^(baseline|candidate)$ ]]; then
-    SUBMISSION_BATCH_ARGUMENT="--submission-batch-steps 8"
-fi
-RUN_ID="s17-$HOST-$EVIDENCE_MODE-$(date +%s)-$$"
-LOG="$(mktemp /tmp/physbox5-s17-android-log.XXXXXX)"
-if ! "$ADB" -s "$SERIAL" shell "$REMOTE_BINARY --mode $EVIDENCE_MODE --run-id $RUN_ID --output $REMOTE_OUTPUT --host $HOST --source-revision $REVISION --source-dirty false $BASELINE_ARGUMENT $SUBMISSION_BATCH_ARGUMENT" | tr -d '\r' >"$LOG"; then
-    cat "$LOG" >&2
-    echo "error: Android S17 $EVIDENCE_MODE process failed; see $LOG" >&2
-    exit 1
-fi
-rg -q "^PHYSBOX5_VALIDATION_SUCCESS host=$HOST scenario=s17-$EVIDENCE_MODE " "$LOG" || {
-    cat "$LOG" >&2
-    echo "error: Android S17 success sentinel missing; see $LOG" >&2
-    exit 1
+
+run_mode() {
+    local mode="$1"
+    local remote_output="$2"
+    local local_output="$3"
+    local baseline_argument="$4"
+    local submission_batch_argument="$5"
+    local run_id="s17-$HOST-$mode-$(date +%s)-$$"
+    local log
+    log="$(mktemp /tmp/physbox5-s17-android-log.XXXXXX)"
+    "$ADB" -s "$SERIAL" shell rm -rf "$remote_output" "$remote_output.partial"
+    if ! "$ADB" -s "$SERIAL" shell "$REMOTE_BINARY --mode $mode --run-id $run_id --output $remote_output --host $HOST --source-revision $REVISION --source-dirty false $baseline_argument $submission_batch_argument" | tr -d '\r' >"$log"; then
+        cat "$log" >&2
+        echo "error: Android S17 $mode process failed; see $log" >&2
+        return 1
+    fi
+    rg -q "^PHYSBOX5_VALIDATION_SUCCESS host=$HOST scenario=s17-$mode " "$log" || {
+        cat "$log" >&2
+        echo "error: Android S17 success sentinel missing; see $log" >&2
+        return 1
+    }
+    "$ADB" -s "$SERIAL" pull "$remote_output" "$local_output.partial" >/dev/null
+    [[ -f "$local_output.partial/manifest.json" ]] || { echo "error: pulled S17 $mode manifest is missing" >&2; return 1; }
+    if [[ "$TARGET_MODE" = "avd" ]]; then
+        node "$ANDROID_DIR/require-hardware-adapter.mjs" <"$local_output.partial/manifest.json"
+    fi
+    mv "$local_output.partial" "$local_output"
+    cat "$log"
+    rm -f "$log"
 }
-"$ADB" -s "$SERIAL" pull "$REMOTE_OUTPUT" "$OUTPUT.partial" >/dev/null
-[[ -f "$OUTPUT.partial/manifest.json" ]] || { echo "error: pulled S17 manifest is missing" >&2; exit 1; }
-if [[ "$TARGET_MODE" = "avd" ]]; then
-    node "$ANDROID_DIR/require-hardware-adapter.mjs" <"$OUTPUT.partial/manifest.json"
+
+if [[ "$EVIDENCE_MODE" = "qualification" ]]; then
+    mkdir "$OUTPUT.partial"
+    QUALIFICATION_BASELINE=/data/local/tmp/physbox5-s17-qualification-baseline
+    run_mode baseline "$QUALIFICATION_BASELINE" "$OUTPUT.partial/baseline" "" "--submission-batch-steps 8"
+    run_mode candidate /data/local/tmp/physbox5-s17-qualification-candidate "$OUTPUT.partial/candidate" "--baseline $QUALIFICATION_BASELINE/manifest.json" "--submission-batch-steps 8"
+    run_mode benchmark /data/local/tmp/physbox5-s17-qualification-benchmark "$OUTPUT.partial/benchmark" "" ""
+    mv "$OUTPUT.partial" "$OUTPUT"
+else
+    SUBMISSION_BATCH_ARGUMENT=""
+    if [[ "$TARGET_MODE" = "avd" && "$EVIDENCE_MODE" =~ ^(baseline|candidate)$ ]]; then
+        SUBMISSION_BATCH_ARGUMENT="--submission-batch-steps 8"
+    fi
+    run_mode "$EVIDENCE_MODE" "$REMOTE_OUTPUT" "$OUTPUT" "$BASELINE_ARGUMENT" "$SUBMISSION_BATCH_ARGUMENT"
 fi
-mv "$OUTPUT.partial" "$OUTPUT"
-cat "$LOG"
-rm -f "$LOG"
 MODEL="$($ADB -s "$SERIAL" shell getprop ro.product.model | tr -d '\r')"
 echo "PHYSBOX5_ANDROID_S17_SUCCESS target=$TARGET_MODE model=$MODEL mode=$EVIDENCE_MODE lock_state=$LOCK_STATE output=$OUTPUT"

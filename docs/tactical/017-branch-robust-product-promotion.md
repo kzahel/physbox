@@ -349,6 +349,17 @@ unchanged. The artifact records the batch explicitly and requires the
 same-host selected/candidate pair to use the same value. Metal and physical
 Android remain at the frozen 64-step batch.
 
+Because this macOS emulator build can remain in unkillable `?E` exit state
+after a clean shutdown, three separately booted AVD commands could require
+three host reboots. The wrapper therefore provides one fail-closed AVD
+qualification command that executes baseline, candidate, and benchmark in
+order on one boot, retains three independent atomic manifests, and invokes
+the mandatory AVD shutdown immediately after that command (or on any failed
+sub-lane). Candidate consumes the just-authored same-process baseline. This
+changes no lane contract; it only makes the three required lanes one
+qualification run so a stopped-QEMU macOS defect cannot strand the work
+between them.
+
 The OOM event rebooted the Pixel rather than merely resetting USB: Android
 records `kernel_panic` with a system-dead/OOM boot reason. The secured device
 therefore requires a human credential for UI access, but this Pixel exposes
