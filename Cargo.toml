@@ -13,6 +13,16 @@ members = [
   "tools/benchmarks/box2d",
   "tools/benchmarks/android-gpu",
 ]
+default-members = [
+  "apps/android",
+  "apps/desktop",
+  "apps/headless",
+  "apps/web",
+  "crates/physbox-engine",
+  "crates/physbox-contracts",
+  "crates/physbox-launch",
+  "crates/physbox-shell",
+]
 resolver = "2"
 
 [workspace.package]

@@ -104,7 +104,7 @@ pub(crate) fn validate_branch_robust_gpu_promotion_runtime_tuple(
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "production-validation")))]
 mod tests {
     use super::*;
     use crate::SelectedGpuSolverPolicySnapshotV1;

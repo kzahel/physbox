@@ -2471,6 +2471,7 @@ mod tests {
         );
     }
 
+    #[cfg(not(feature = "production-validation"))]
     #[test]
     fn p5_2_settling_review_lanes_are_direct_exact_and_policy_separated() {
         for count in 8..=16 {
@@ -2552,6 +2553,7 @@ mod tests {
         assert!(p5_2_settling_review_scenario(4, P5_2SettlingReviewPolicy::HardControl).is_err());
     }
 
+    #[cfg(not(feature = "production-validation"))]
     #[test]
     fn p5_2_soft_stack_matrix_is_shared_exact_and_frozen_to_three_depths() {
         for count in [4, 8, 16] {
@@ -2572,6 +2574,7 @@ mod tests {
         assert!(p5_2_settling_soft_stack_matrix_scenario(32).is_err());
     }
 
+    #[cfg(not(feature = "production-validation"))]
     #[test]
     fn p5_2_s11_soft_depth_sweep_is_shared_exact_and_bounded() {
         for count in [2, 4, 8, 9, 10, 11, 12, 13, 14, 15, 16] {
@@ -2772,6 +2775,7 @@ mod tests {
         assert!(p5_2_generated_performance_scenario(33).is_err());
     }
 
+    #[cfg(not(feature = "production-validation"))]
     #[test]
     fn s13_measurement_repeats_the_two_point_governed_contact_shape() {
         for manifold_count in [32, 256, 1_024] {

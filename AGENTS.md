@@ -167,18 +167,32 @@ template for later subjects.
 
 ## Required gates
 
-For normal shared changes run:
+The workspace `default-members` are the maintained production surface: the
+four app adapters plus `physbox-engine`, `physbox-contracts`, `physbox-launch`,
+and `physbox-shell`. For normal shared changes run the production-scoped Rust
+commands below. Do not add `--workspace`: that opt-in scope includes closed
+solver experiments, evidence generators, native oracles, and benchmark tools
+which are not routine pre-push gates.
 
 ```sh
 cargo fmt --all -- --check
-cargo test --workspace
-cargo clippy --workspace --all-targets -- -D warnings
+cargo test --lib --features physbox-engine/production-validation
+cargo clippy --all-targets --features physbox-engine/production-validation -- -D warnings
 cargo check --target wasm32-unknown-unknown -p physbox-web
 cargo check --target aarch64-linux-android -p physbox-android
 cargo run -p physbox-headless -- --output /tmp/physbox5-smoke.png --report /tmp/physbox5-smoke.json --scenario bootstrap
 npm run check:boundaries
 npm run test:web
 ```
+
+When a change touches `physbox-lab`, a native oracle, or a benchmark tool, run
+the directly affected library, binary, integration test, or evidence command
+by package and target name. Do not sweep unrelated historical candidates.
+`npm run test:rust:full` and `npm run clippy:rust:full` preserve the complete
+workspace audit lanes; run them only for workspace-wide validation-tooling
+changes, a scheduled audit, or an explicit human request. A solver candidate's
+own tactical gates remain mandatory while that candidate is active, but a
+failed or closed candidate is not a routine production gate.
 
 After shared runtime, rendering, shader, launch, or pixel changes, also run
 `npm run android:apk` and the maintained Android device/AVD validation lane

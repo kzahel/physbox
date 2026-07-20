@@ -1565,10 +1565,11 @@ mod tests {
     };
 
     use super::*;
+    #[cfg(not(feature = "production-validation"))]
+    use crate::scenario::{P5_2SettlingReviewPolicy, p5_2_settling_review_scenario};
     use crate::{
         BoundedConstructionIntents, construction_state_from_bytes,
         grab::{GRAB_INTENT_CAPACITY, GRAB_STATE_BYTES, decode_grab_state},
-        scenario::{P5_2SettlingReviewPolicy, p5_2_settling_review_scenario},
     };
 
     fn empty_commands() -> BodyCommandBatchV1 {
@@ -1837,6 +1838,7 @@ mod tests {
         assert!(interactive_body_capacity(u32::MAX).is_err());
     }
 
+    #[cfg(not(feature = "production-validation"))]
     #[test]
     fn contact_policy_comparator_does_not_relax_the_product_constructor() {
         let instance = crate::create_instance();

@@ -14,6 +14,10 @@ a running log.
 - [Performance and scale contract](performance-and-scale.md) — workload and
   scene matrix, CPU/GPU comparison lanes, timing/capacity validity, provisional
   scale expectations, and milestone/regression gates.
+- [Build, validation, and evidence health](build-validation-and-evidence-health.md)
+  — 2026-07-20 repository audit of Cargo target growth, gate latency, local
+  build and evidence storage, failure-recovery cost, and proposed remediation
+  and retention boundaries.
 - [Simulation time and overload](simulation-time-and-overload.md) — fixed-delta
   slow motion under load, zero-or-one interactive steps, permanent wall-time
   slip, explicit-step validation, and scheduler diagnostics.

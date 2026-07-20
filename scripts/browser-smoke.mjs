@@ -20,6 +20,7 @@ const provenancePath = join(captureDirectory, `physbox5-web${captureSuffix}.json
 const scenario = process.env.PHYSBOX5_SCENARIO ?? "bootstrap";
 const viewportWidth = Number.parseInt(process.env.PHYSBOX5_VIEWPORT_WIDTH ?? "960", 10);
 const viewportHeight = Number.parseInt(process.env.PHYSBOX5_VIEWPORT_HEIGHT ?? "600", 10);
+const initialCrashpadPids = chromeCrashpadPids();
 if (!(viewportWidth > 0 && viewportHeight > 0)) throw new Error("browser viewport must be positive");
 await mkdir(captureDirectory, { recursive: true });
 await rm(screenshot, { force: true });
@@ -31,9 +32,10 @@ await rm(provenancePath, { force: true });
 run(process.execPath, [resolve(root, "scripts/build-web.mjs")]);
 
 const server = await startServer(resolve(root, "target", "web"));
+let browserServer;
 let browser;
 try {
-  browser = await chromium.launch({
+  browserServer = await chromium.launchServer({
     channel: process.env.PLAYWRIGHT_CHROME_CHANNEL ?? "chrome",
     headless: process.env.HEADED !== "1",
     args: [
@@ -42,6 +44,7 @@ try {
       ...(process.platform === "darwin" ? ["--use-angle=metal"] : []),
     ],
   });
+  browser = await chromium.connect(browserServer.wsEndpoint());
   const port = server.address().port;
   const page = await browser.newPage({ viewport: { width: viewportWidth, height: viewportHeight } });
   const errors = [];
@@ -274,13 +277,45 @@ try {
   console.log(JSON.stringify({ initialScreenshot, screenshot, menuScreenshot, grabScreenshot: capturedGrab ? grabScreenshot : null, constructionScreenshot: capturedConstruction ? constructionScreenshot : null, provenancePath, frame: final.frame }, null, 2));
   console.log(`PHYSBOX5_VALIDATION_SUCCESS host=web run_id=${provenance.runId}`);
 } finally {
-  await browser?.close();
-  await new Promise((resolveClose) => server.close(resolveClose));
+  const browserKill = browserServer?.kill();
+  terminateNewCrashpadHelpers(initialCrashpadPids);
+  await browserKill;
+  await new Promise((resolveClose) => {
+    server.close(resolveClose);
+    server.closeAllConnections();
+  });
 }
 
 function run(command, args) {
   const result = spawnSync(command, args, { cwd: root, stdio: "inherit" });
   if (result.status !== 0) process.exit(result.status ?? 1);
+}
+
+function chromeCrashpadPids() {
+  if (process.platform !== "darwin") return new Set();
+  const result = spawnSync("ps", ["-axo", "pid=,command="], { encoding: "utf8" });
+  if (result.status !== 0) return new Set();
+  return new Set(
+    result.stdout
+      .split("\n")
+      .filter((line) => line.includes("/Helpers/chrome_crashpad_handler "))
+      .map((line) => Number.parseInt(line.trimStart(), 10))
+      .filter(Number.isSafeInteger),
+  );
+}
+
+function terminateNewCrashpadHelpers(initialPids) {
+  const spawnedPids = [...chromeCrashpadPids()].filter((pid) => !initialPids.has(pid));
+  for (const pid of spawnedPids) {
+    try {
+      process.kill(pid, "SIGTERM");
+    } catch (error) {
+      if (error?.code !== "ESRCH") throw error;
+    }
+  }
+  if (spawnedPids.length) {
+    console.warn(`terminated ${spawnedPids.length} Chrome crashpad helper(s) retained during Playwright shutdown`);
+  }
 }
 
 function git(args) {

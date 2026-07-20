@@ -27,6 +27,10 @@
     "test:desktop": "bash scripts/with-host-env.sh --linux-x11 node scripts/desktop-smoke.mjs",
     "test:host-tools": "node --test scripts/host-env.test.mjs",
     "test:android-tools": "node --test android/*.test.mjs",
+    "test:rust:production": "cargo test --lib --features physbox-engine/production-validation",
+    "test:rust:full": "cargo test --workspace",
+    "clippy:rust:production": "cargo clippy --all-targets --features physbox-engine/production-validation -- -D warnings",
+    "clippy:rust:full": "cargo clippy --workspace --all-targets -- -D warnings",
     "test:web": "node scripts/browser-smoke.mjs",
     "prepare": "bash scripts/install-git-hooks.sh"
   },

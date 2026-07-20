@@ -77,6 +77,29 @@ npm run test:web
 The browser host is a fullscreen canvas. Run `npm run serve:web` after building
 and open the printed local URL.
 
+## Validation tiers
+
+The Cargo workspace defaults to the maintained production surface: desktop,
+headless, web, Android, engine, contracts, launch, and shell. Routine Rust
+validation therefore avoids compiling historical lab, evidence-generator,
+native-oracle, and benchmark targets, and does not execute candidate-only
+engine tests. Validation-only code that still lives in the shared engine
+continues to compile:
+
+```sh
+npm run test:rust:production
+npm run clippy:rust:production
+```
+
+Changes to laboratory or oracle tooling should run only the affected package
+and target. The explicit full-workspace audit remains available, but is not a
+routine pre-push gate:
+
+```sh
+npm run test:rust:full
+npm run clippy:rust:full
+```
+
 ## Production deployment
 
 The Cloudflare deployment target is <https://physbox5.kzahel.com>. Install the

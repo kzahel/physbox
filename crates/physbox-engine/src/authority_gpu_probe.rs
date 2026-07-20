@@ -192,7 +192,7 @@ impl SelectedGpuSolverPolicySnapshotV1 {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "production-validation")))]
 mod tests {
     use super::*;
 

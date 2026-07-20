@@ -5821,9 +5821,12 @@ fn map_range<T: Pod + Copy>(
 mod tests {
     use super::{GpuGeneratedContactRunner, VALIDATION_SNAPSHOTS_PER_READBACK_FLUSH};
     use crate::{
-        GpuRestitutionTimingPolicyV1, GpuSolverExecutionV4, GpuSolverSchedulingPolicyV1,
-        GpuSubstepContactPolicyV1, P5_2SettlingFixtureKind, P5_2SettlingReviewPolicy,
+        GpuRestitutionTimingPolicyV1, GpuSubstepContactPolicyV1, P5_2SettlingFixtureKind,
         p5_2_centered_rectangle_stack_scenario, p5_2_settling_fixture_scenario,
+    };
+    #[cfg(not(feature = "production-validation"))]
+    use crate::{
+        GpuSolverExecutionV4, GpuSolverSchedulingPolicyV1, P5_2SettlingReviewPolicy,
         p5_2_settling_review_scenario,
     };
 
@@ -5946,6 +5949,7 @@ mod tests {
         );
     }
 
+    #[cfg(not(feature = "production-validation"))]
     #[test]
     fn static_late_partitions_contacts_and_matches_both_dispatch_forms_exactly() {
         let scenario =
@@ -6059,6 +6063,7 @@ mod tests {
         );
     }
 
+    #[cfg(not(feature = "production-validation"))]
     #[test]
     fn fused_normal_tangent_replays_and_matches_both_dispatch_forms_exactly() {
         let scenario =
@@ -6148,6 +6153,7 @@ mod tests {
         assert!(error.contains("hard/direct"), "{error}");
     }
 
+    #[cfg(not(feature = "production-validation"))]
     #[test]
     fn static_stiff_hard_replays_and_matches_both_dispatch_forms_exactly() {
         let scenario =
@@ -6254,6 +6260,7 @@ mod tests {
         assert!(error.contains("hard contacts"), "{error}");
     }
 
+    #[cfg(not(feature = "production-validation"))]
     #[test]
     fn fixed_anchor_substeps_replay_and_match_both_dispatch_forms_exactly() {
         let scenario =
@@ -6350,6 +6357,7 @@ mod tests {
         assert!(error.contains("hard/direct manifold-block i2"), "{error}");
     }
 
+    #[cfg(not(feature = "production-validation"))]
     #[test]
     fn retained_impulse_refresh_is_replayable_dispatch_exact_and_product_inert() {
         let scenario =
@@ -6473,6 +6481,7 @@ mod tests {
         assert!(error.contains("standalone unpromoted"), "{error}");
     }
 
+    #[cfg(not(feature = "production-validation"))]
     #[test]
     fn restitution_after_substeps_is_stack_inert_replayable_and_dispatch_exact() {
         let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
@@ -6543,6 +6552,7 @@ mod tests {
         }
     }
 
+    #[cfg(not(feature = "production-validation"))]
     #[test]
     fn restitution_after_substeps_changes_an_eligible_drop_and_rejects_composition() {
         let mut scenario =

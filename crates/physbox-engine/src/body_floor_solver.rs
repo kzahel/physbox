@@ -6531,6 +6531,7 @@ fn storage_empty<T>(
 mod tests {
     use super::*;
 
+    #[cfg(not(feature = "production-validation"))]
     #[test]
     fn accepted_fixed_floor_schedule_is_exactly_sixty_eight_dispatches() {
         let scenario = crate::p5_1_rectangle_floor_scenario(120).unwrap();
@@ -6577,6 +6578,7 @@ mod tests {
         );
     }
 
+    #[cfg(not(feature = "production-validation"))]
     #[test]
     fn soft_feedback_diagnostic_changes_only_second_biased_iteration_parameters() {
         let scenario = crate::p5_2_settling_review_scenario(
@@ -6637,6 +6639,7 @@ mod tests {
         assert!(differences > 0);
     }
 
+    #[cfg(not(feature = "production-validation"))]
     #[test]
     fn relaxation_factorial_arms_change_only_predeclared_normal_passes() {
         let scenario = crate::p5_2_minimized_mixed_pile_energy_scenario().unwrap();
@@ -6834,6 +6837,7 @@ mod tests {
         assert_eq!(scale.dispatches(), 12);
     }
 
+    #[cfg(not(feature = "production-validation"))]
     #[test]
     fn fixed_floor_retains_the_authored_s1_6_control() {
         let mut scenario = crate::p5_1_rectangle_floor_scenario(120).unwrap();
@@ -6850,6 +6854,7 @@ mod tests {
         assert!(validate_authored_settings(&scenario).is_err());
     }
 
+    #[cfg(not(feature = "production-validation"))]
     #[test]
     fn scheduling_comparators_are_versioned_and_limited_to_compact_manifolds() {
         let execution = GpuSolverExecutionV4::manifold_colored_block_experiment(true, true);
@@ -6930,6 +6935,7 @@ mod tests {
         );
     }
 
+    #[cfg(not(feature = "production-validation"))]
     #[test]
     fn static_late_is_named_unpromoted_and_attested_in_colored_passes() {
         assert!(!GpuSolverSchedulingPolicyV1::SELECTED.uses_static_late());
@@ -6978,6 +6984,7 @@ mod tests {
         );
     }
 
+    #[cfg(not(feature = "production-validation"))]
     #[test]
     fn fused_normal_tangent_is_named_unpromoted_and_halves_contact_sweeps() {
         assert!(
@@ -7109,6 +7116,7 @@ mod tests {
         );
     }
 
+    #[cfg(not(feature = "production-validation"))]
     #[test]
     fn static_stiff_hard_changes_only_the_attested_static_coefficient_tuple() {
         let scenario =
@@ -7171,6 +7179,7 @@ mod tests {
         );
     }
 
+    #[cfg(not(feature = "production-validation"))]
     #[test]
     fn authority_transform_storage_is_candidate_only_and_prepared_layout_is_unchanged() {
         assert_eq!(size_of::<PreparedPointRaw>(), 96);
@@ -7204,6 +7213,7 @@ mod tests {
         );
     }
 
+    #[cfg(not(feature = "production-validation"))]
     #[test]
     fn fixed_anchor_substeps_prepare_once_and_refresh_only_separation() {
         assert_eq!(
@@ -7281,6 +7291,7 @@ mod tests {
         );
     }
 
+    #[cfg(not(feature = "production-validation"))]
     #[test]
     fn retained_impulse_refresh_changes_only_inter_substep_reset_words() {
         assert_eq!(
@@ -7373,6 +7384,7 @@ mod tests {
         );
     }
 
+    #[cfg(not(feature = "production-validation"))]
     #[test]
     fn restitution_after_substeps_is_one_standalone_final_stage() {
         assert_eq!(
@@ -7451,6 +7463,7 @@ mod tests {
         );
     }
 
+    #[cfg(not(feature = "production-validation"))]
     #[test]
     fn experiment_schedule_is_bounded_and_dispatch_accounted() {
         let mut scenario = crate::p5_1_rectangle_floor_scenario(120).unwrap();
@@ -7748,6 +7761,7 @@ mod tests {
         );
     }
 
+    #[cfg(not(feature = "production-validation"))]
     #[test]
     fn branch_robust_refresh_changes_only_the_declared_separation_dag() {
         let shader = include_str!("body_floor_solver.wgsl");
