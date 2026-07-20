@@ -497,6 +497,18 @@ fn owner_choice_unavailable(
     ))
 }
 
+fn annotate_routed_normal_error(
+    error: ScalarError,
+    route: &EventRouteState<'_>,
+    completed_step: u32,
+) -> ScalarError {
+    if error.0.starts_with("owner-choice-unavailable:") {
+        owner_choice_unavailable(route.normal_family(), completed_step, &error.0)
+    } else {
+        error
+    }
+}
+
 #[derive(Default)]
 struct AuthoritySolveDiagnostics<'a, 'owner> {
     pass_states: Option<&'a mut Vec<AuthorityStructurePassStateV1>>,
@@ -633,7 +645,8 @@ fn solve_authority_structure_steps_observed_internal(
                             &mut traces,
                             &mut decisions,
                             &choices,
-                        )?;
+                        )
+                        .map_err(|error| annotate_routed_normal_error(error, route, step + 1))?;
                         if let Some(events) = diagnostics.event_stream.as_deref_mut() {
                             record_normal_events(
                                 events,
@@ -781,7 +794,8 @@ fn solve_authority_structure_steps_observed_internal(
                         &mut traces,
                         &mut decisions,
                         &choices,
-                    )?;
+                    )
+                    .map_err(|error| annotate_routed_normal_error(error, route, step + 1))?;
                     if let Some(events) = diagnostics.event_stream.as_deref_mut() {
                         record_normal_events(
                             events,

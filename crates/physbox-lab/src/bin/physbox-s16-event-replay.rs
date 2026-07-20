@@ -273,10 +273,21 @@ fn run_case(case: &S12Case, bands: &AuthorityBandsV1) -> Result<CaseOutput, Stri
     let exact_baseline_result =
         solve_authority_event_stream_v1(&source, EventLaneV1::ExactS12F32).map_err(display)?;
     let full_baseline_result = solve_full_f64_authority_events_v1(&source).map_err(display)?;
-    if exact_baseline_result.events != exact_owner || full_baseline_result.events != full_owner {
+    if !discrete_stream_equal(&exact_baseline_result.events, &exact_owner) {
         return Err(format!(
-            "{} regenerated endpoint differs from A1 owner",
-            case.label
+            "{} regenerated exact endpoint differs from A1 owner: generated={} retained={} first={}",
+            case.label,
+            event_hash(&exact_baseline_result.events)?,
+            event_hash(&exact_owner)?,
+            first_event_mismatch(&exact_baseline_result.events, &exact_owner),
+        ));
+    }
+    if !discrete_stream_equal(&full_baseline_result.events, &full_owner) {
+        return Err(format!(
+            "{} regenerated full-f64 endpoint differs from A1 owner: generated={} retained={}",
+            case.label,
+            event_hash(&full_baseline_result.events)?,
+            event_hash(&full_owner)?,
         ));
     }
     let exact_baseline_output =
@@ -860,6 +871,68 @@ fn event_hash(events: &EventStreamV1) -> Result<String, String> {
     serde_json::to_vec(events)
         .map(|bytes| sha256_bytes(&bytes))
         .map_err(display)
+}
+
+fn first_event_mismatch(left: &EventStreamV1, right: &EventStreamV1) -> String {
+    if let Some((index, (a, b))) = left
+        .prepared_contacts
+        .iter()
+        .zip(&right.prepared_contacts)
+        .enumerate()
+        .find(|(_, (a, b))| a != b)
+    {
+        return format!("prepared[{index}] generated={a:?} retained={b:?}");
+    }
+    if let Some((index, (a, b))) = left
+        .normal_decisions
+        .iter()
+        .zip(&right.normal_decisions)
+        .enumerate()
+        .find(|(_, (a, b))| a != b)
+    {
+        return format!("normal[{index}] generated={a:?} retained={b:?}");
+    }
+    format!(
+        "lengths generated={}/{} retained={}/{}",
+        left.prepared_contacts.len(),
+        left.normal_decisions.len(),
+        right.prepared_contacts.len(),
+        right.normal_decisions.len(),
+    )
+}
+
+fn discrete_stream_equal(left: &EventStreamV1, right: &EventStreamV1) -> bool {
+    left.version == right.version
+        && left.lane == right.lane
+        && left.prepared_contacts.len() == right.prepared_contacts.len()
+        && left.normal_decisions.len() == right.normal_decisions.len()
+        && left
+            .prepared_contacts
+            .iter()
+            .zip(&right.prepared_contacts)
+            .all(|(a, b)| {
+                prepared_key(a) == prepared_key(b)
+                    && prepared_token(EventFamilyV1::ContactAdmissibilityAndPointCount, a)
+                        == prepared_token(EventFamilyV1::ContactAdmissibilityAndPointCount, b)
+                    && prepared_token(EventFamilyV1::ReferenceOwnerAndAuthorityFeatureIdentity, a)
+                        == prepared_token(
+                            EventFamilyV1::ReferenceOwnerAndAuthorityFeatureIdentity,
+                            b,
+                        )
+                    && prepared_token(EventFamilyV1::WarmCacheMatchAndImpulseOwnership, a)
+                        == prepared_token(EventFamilyV1::WarmCacheMatchAndImpulseOwnership, b)
+                    && prepared_token(EventFamilyV1::SupportGraphColorAndOverflowOrder, a)
+                        == prepared_token(EventFamilyV1::SupportGraphColorAndOverflowOrder, b)
+            })
+        && left
+            .normal_decisions
+            .iter()
+            .zip(&right.normal_decisions)
+            .all(|(a, b)| {
+                normal_key(a) == normal_key(b)
+                    && a.separation_positive == b.separation_positive
+                    && a.candidate_selected == b.candidate_selected
+            })
 }
 
 fn scalar_result_hash(

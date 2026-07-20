@@ -386,6 +386,18 @@ fn full_owner_choice_unavailable(
     ))
 }
 
+fn annotate_full_routed_normal_error(
+    error: ScalarError,
+    route: &FullEventRouteState<'_>,
+    completed_step: u32,
+) -> ScalarError {
+    if error.0.starts_with("owner-choice-unavailable:") {
+        full_owner_choice_unavailable(route.normal_family(), completed_step, &error.0)
+    } else {
+        error
+    }
+}
+
 fn solve_full_f64_authority_internal(
     scenario: &ScenarioV1,
     mut events: Option<&mut EventStreamV1>,
@@ -475,7 +487,12 @@ fn solve_full_f64_authority_internal(
                     true,
                     events.as_ref().map(|_| &mut decisions),
                     route.as_ref().map(|_| choices.as_slice()),
-                )?;
+                )
+                .map_err(|error| {
+                    route.as_deref().map_or(error.clone(), |route| {
+                        annotate_full_routed_normal_error(error, route, step + 1)
+                    })
+                })?;
                 if let Some(events) = events.as_deref_mut() {
                     record_full_f64_normal_events(
                         events,
@@ -514,7 +531,12 @@ fn solve_full_f64_authority_internal(
                     false,
                     events.as_ref().map(|_| &mut decisions),
                     route.as_ref().map(|_| choices.as_slice()),
-                )?;
+                )
+                .map_err(|error| {
+                    route.as_deref().map_or(error.clone(), |route| {
+                        annotate_full_routed_normal_error(error, route, step + 1)
+                    })
+                })?;
                 if let Some(events) = events.as_deref_mut() {
                     record_full_f64_normal_events(
                         events,
