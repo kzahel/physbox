@@ -1743,7 +1743,7 @@ fn write_gzip_json_artifact(
     let bytes = serde_json::to_vec(value).map_err(display)?;
     let mut encoder = GzBuilder::new()
         .mtime(0)
-        .write(Vec::new(), Compression::best());
+        .write(Vec::new(), Compression::fast());
     encoder.write_all(&bytes).map_err(display)?;
     let compressed = encoder.finish().map_err(display)?;
     write_artifact(root, relative, &compressed)

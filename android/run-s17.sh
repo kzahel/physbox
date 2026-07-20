@@ -15,6 +15,7 @@ AVD_NAME="${PHYSBOX5_ANDROID_AVD:-jstorrent-tablet}"
 OUTPUT=""
 BASELINE=""
 SKIP_BUILD=0
+EMULATOR_PID=""
 while (($#)); do
     case "$1" in
         --avd|--device) TARGET_MODE="${1#--}"; shift ;;
@@ -45,8 +46,10 @@ if [[ "$TARGET_MODE" = "avd" ]]; then
     if [[ -n "$SERIAL" ]]; then
         RUNNING_AVD="$($ADB -s "$SERIAL" emu avd name 2>/dev/null | head -1 | tr -d '\r')"
         [[ "$RUNNING_AVD" = "$AVD_NAME" ]] || { echo "error: running emulator is $RUNNING_AVD, expected $AVD_NAME" >&2; exit 1; }
+        EMULATOR_PID="$(pgrep -f "[q]emu-system.*-avd $AVD_NAME" | head -1 || true)"
     else
         nohup "$EMULATOR" -avd "$AVD_NAME" -gpu host -no-snapshot-save -no-audio >/tmp/physbox5-s17-emulator.log 2>&1 </dev/null &
+        EMULATOR_PID=$!
         for _ in $(seq 1 120); do
             SERIAL="$($ADB devices | awk '$1 ~ /^emulator-/ && $2 == "device" {print $1; exit}')"
             if [[ -n "$SERIAL" && "$($ADB -s "$SERIAL" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]]; then
@@ -69,16 +72,33 @@ fi
 
 cleanup() {
     if [[ "$TARGET_MODE" = "avd" ]]; then
+        set +e
         "$ADB" -s "$SERIAL" emu kill >/dev/null 2>&1 || true
         for _ in $(seq 1 30); do
-            if ! "$ADB" devices | awk '$1 ~ /^emulator-/ && $2 == "device" {found=1} END {exit found ? 0 : 1}'; then
+            if [[ -z "$EMULATOR_PID" ]] || ! kill -0 "$EMULATOR_PID" 2>/dev/null; then
                 break
             fi
             sleep 1
         done
+        if [[ -n "$EMULATOR_PID" ]] && kill -0 "$EMULATOR_PID" 2>/dev/null; then
+            kill -TERM "$EMULATOR_PID" 2>/dev/null || true
+            sleep 2
+        fi
+        if [[ -n "$EMULATOR_PID" ]] && kill -0 "$EMULATOR_PID" 2>/dev/null; then
+            kill -KILL "$EMULATOR_PID" 2>/dev/null || true
+            sleep 1
+        fi
+        "$ADB" kill-server >/dev/null 2>&1 || true
+        "$ADB" start-server >/dev/null 2>&1 || true
+        if "$ADB" devices | awk '$1 ~ /^emulator-/ && $2 == "device" {found=1} END {exit found ? 0 : 1}'; then
+            echo "error: S17 AVD remained live after shutdown" >&2
+            return 1
+        fi
+        echo "PHYSBOX5_ANDROID_S17_AVD_SHUTDOWN_SUCCESS avd=$AVD_NAME"
     fi
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+trap 'exit 130' INT TERM
 
 ABI="$($ADB -s "$SERIAL" shell getprop ro.product.cpu.abi | tr -d '\r')"
 case "$ABI" in
