@@ -10,6 +10,11 @@ use physbox_contracts::{BodyId, FeatureIdV1, ScenarioV1, ShapeV1, Validate};
 use serde::{Deserialize, Serialize};
 
 use crate::branch_robust::AuthoritySeparationInputsV1;
+use crate::event_structure::{
+    EventGraphClassV1, EventLaneV1, EventPairV1, EventPointIdentityV1, EventStreamV1,
+    NormalDecisionEventV1, NormalDecisionRawV1, NormalPassV1, PreparedContactEventV1,
+    PreparedPointEventV1, reference_owner_and_face,
+};
 use crate::scalar::ScalarError;
 
 pub const PRECISION_MARGIN_VERSION: u32 = 1;
@@ -269,8 +274,30 @@ pub struct FullF64SolveResultV1 {
     pub final_cache: Vec<FullF64CachePointV1>,
 }
 
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FullF64EventSolveResultV1 {
+    pub solve: FullF64SolveResultV1,
+    pub events: EventStreamV1,
+}
+
 pub fn solve_full_f64_authority_v1(
     scenario: &ScenarioV1,
+) -> Result<FullF64SolveResultV1, ScalarError> {
+    solve_full_f64_authority_internal(scenario, None)
+}
+
+pub fn solve_full_f64_authority_events_v1(
+    scenario: &ScenarioV1,
+) -> Result<FullF64EventSolveResultV1, ScalarError> {
+    let mut events = EventStreamV1::new(EventLaneV1::FullSolveF64);
+    let solve = solve_full_f64_authority_internal(scenario, Some(&mut events))?;
+    Ok(FullF64EventSolveResultV1 { solve, events })
+}
+
+fn solve_full_f64_authority_internal(
+    scenario: &ScenarioV1,
+    mut events: Option<&mut EventStreamV1>,
 ) -> Result<FullF64SolveResultV1, ScalarError> {
     scenario
         .validate()
@@ -307,21 +334,66 @@ pub fn solve_full_f64_authority_v1(
     for step in 0..scenario.requested_steps {
         let mut contacts = prepare_contacts(&bodies, &cache, &settings, &mut statistics)?;
         order_authority_points(&mut contacts);
-        let visit_order = authority_visit_order(&contacts, &bodies);
-        for _substep in 0..scenario.settings.substeps {
+        let visit_schedule = authority_visit_schedule(&contacts, &bodies);
+        let visit_order = visit_schedule
+            .iter()
+            .map(|entry| entry.contact_index)
+            .collect::<Vec<_>>();
+        if let Some(events) = events.as_deref_mut() {
+            record_full_f64_prepared_events(events, step + 1, &contacts, &bodies, &visit_schedule);
+        }
+        for substep in 0..scenario.settings.substeps {
             statistics.substeps += 1;
             integrate_velocities(&mut bodies, settings.gravity, settings.substep_dt)?;
             for &contact_index in &visit_order {
                 warm_start(&contacts[contact_index], &mut bodies)?;
             }
-            for &contact_index in &visit_order {
-                solve_normal(&mut contacts[contact_index], &mut bodies, &settings, true)?;
+            for (visit_rank, &contact_index) in visit_order.iter().enumerate() {
+                let pair = full_f64_contact_pair(&contacts[contact_index], &bodies);
+                let mut decisions = Vec::new();
+                solve_normal(
+                    &mut contacts[contact_index],
+                    &mut bodies,
+                    &settings,
+                    true,
+                    events.as_ref().map(|_| &mut decisions),
+                )?;
+                if let Some(events) = events.as_deref_mut() {
+                    record_full_f64_normal_events(
+                        events,
+                        step + 1,
+                        substep,
+                        NormalPassV1::Biased,
+                        visit_rank as u32,
+                        pair,
+                        decisions,
+                    );
+                }
                 solve_tangent(&mut contacts[contact_index], &mut bodies)?;
             }
             integrate_positions(&mut bodies, settings.substep_dt)?;
             refresh_separations(&mut contacts, &bodies, &mut statistics);
-            for &contact_index in &visit_order {
-                solve_normal(&mut contacts[contact_index], &mut bodies, &settings, false)?;
+            for (visit_rank, &contact_index) in visit_order.iter().enumerate() {
+                let pair = full_f64_contact_pair(&contacts[contact_index], &bodies);
+                let mut decisions = Vec::new();
+                solve_normal(
+                    &mut contacts[contact_index],
+                    &mut bodies,
+                    &settings,
+                    false,
+                    events.as_ref().map(|_| &mut decisions),
+                )?;
+                if let Some(events) = events.as_deref_mut() {
+                    record_full_f64_normal_events(
+                        events,
+                        step + 1,
+                        substep,
+                        NormalPassV1::Relaxation,
+                        visit_rank as u32,
+                        pair,
+                        decisions,
+                    );
+                }
                 solve_tangent(&mut contacts[contact_index], &mut bodies)?;
                 apply_restitution(
                     &mut contacts[contact_index],
@@ -514,6 +586,7 @@ struct DPoint {
     normal_impulse: f64,
     tangent_impulse: f64,
     total_normal_impulse: f64,
+    cache_hit: bool,
 }
 
 #[derive(Clone)]
@@ -529,6 +602,8 @@ struct DContact {
     friction: f64,
     restitution: f64,
     points: Vec<DPoint>,
+    event_reference_owner: Option<u8>,
+    event_reference_face: Option<u32>,
 }
 
 #[derive(Clone, PartialEq)]
@@ -572,6 +647,16 @@ fn prepare_contacts(
         let body_b = &bodies[manifold.body_b];
         let tangent = right_perpendicular(manifold.normal);
         let mut points = Vec::with_capacity(manifold.points.len());
+        let (event_reference_owner, event_reference_face) = reference_owner_and_face(
+            &manifold
+                .points
+                .iter()
+                .map(|point| EventPointIdentityV1 {
+                    feature_a: point.feature_a,
+                    feature_b: point.feature_b,
+                })
+                .collect::<Vec<_>>(),
+        );
         for point in manifold.points {
             let anchor_a = rotate(point.local_anchor_a, body_a.angle);
             let anchor_b = rotate(point.local_anchor_b, body_b.angle);
@@ -606,6 +691,7 @@ fn prepare_contacts(
                 normal_impulse: cached.map_or(0.0, |point| point.normal_impulse),
                 tangent_impulse: cached.map_or(0.0, |point| point.tangent_impulse),
                 total_normal_impulse: 0.0,
+                cache_hit: cached.is_some(),
             });
         }
         canonicalize_features(&mut points, manifold.normal, tangent);
@@ -623,6 +709,8 @@ fn prepare_contacts(
             friction: manifold.friction,
             restitution: manifold.restitution,
             points,
+            event_reference_owner,
+            event_reference_face,
         });
     }
     Ok(contacts)
@@ -684,7 +772,16 @@ fn order_authority_points(contacts: &mut [DContact]) {
     }
 }
 
-fn authority_visit_order(contacts: &[DContact], bodies: &[DBody]) -> Vec<usize> {
+#[derive(Clone, Copy)]
+struct FullF64VisitScheduleEntry {
+    contact_index: usize,
+    graph_class: EventGraphClassV1,
+}
+
+fn authority_visit_schedule(
+    contacts: &[DContact],
+    bodies: &[DBody],
+) -> Vec<FullF64VisitScheduleEntry> {
     const DYNAMIC_COLORS: usize = 20;
     const NON_OVERFLOW_COLORS: usize = 23;
     let mut colors = vec![Vec::new(); NON_OVERFLOW_COLORS];
@@ -720,8 +817,109 @@ fn authority_visit_order(contacts: &[DContact], bodies: &[DBody]) -> Vec<usize> 
     }
     overflow
         .into_iter()
-        .chain(colors.into_iter().flatten())
+        .map(|contact_index| FullF64VisitScheduleEntry {
+            contact_index,
+            graph_class: EventGraphClassV1::Overflow,
+        })
+        .chain(
+            colors
+                .into_iter()
+                .enumerate()
+                .flat_map(|(color, contacts)| {
+                    contacts
+                        .into_iter()
+                        .map(move |contact_index| FullF64VisitScheduleEntry {
+                            contact_index,
+                            graph_class: EventGraphClassV1::Color(color as u8),
+                        })
+                }),
+        )
         .collect()
+}
+
+fn full_f64_contact_pair(contact: &DContact, bodies: &[DBody]) -> EventPairV1 {
+    EventPairV1 {
+        body_a: bodies[contact.body_a].id,
+        body_b: bodies[contact.body_b].id,
+    }
+}
+
+fn record_full_f64_prepared_events(
+    events: &mut EventStreamV1,
+    completed_step: u32,
+    contacts: &[DContact],
+    bodies: &[DBody],
+    schedule: &[FullF64VisitScheduleEntry],
+) {
+    for (preparation_ordinal, contact) in contacts.iter().enumerate() {
+        let (visit_rank, graph_class) = schedule
+            .iter()
+            .enumerate()
+            .find(|(_, entry)| entry.contact_index == preparation_ordinal)
+            .map_or(
+                (u32::MAX, EventGraphClassV1::Unavailable),
+                |(rank, entry)| (rank as u32, entry.graph_class),
+            );
+        events.prepared_contacts.push(PreparedContactEventV1 {
+            completed_step,
+            preparation_ordinal: preparation_ordinal as u32,
+            pair: full_f64_contact_pair(contact, bodies),
+            admitted: true,
+            point_count: contact.points.len() as u32,
+            reference_owner: contact.event_reference_owner,
+            reference_face: contact.event_reference_face,
+            graph_class,
+            visit_rank,
+            points: contact
+                .points
+                .iter()
+                .enumerate()
+                .map(|(point_ordinal, point)| {
+                    let identity = EventPointIdentityV1 {
+                        feature_a: point.feature_a,
+                        feature_b: point.feature_b,
+                    };
+                    PreparedPointEventV1 {
+                        point_ordinal: point_ordinal as u32,
+                        identity,
+                        cache_hit: point.cache_hit,
+                        cache_owner: point.cache_hit.then_some(identity),
+                        normal_impulse: point.normal_impulse,
+                        tangent_impulse: point.tangent_impulse,
+                    }
+                })
+                .collect(),
+        });
+    }
+}
+
+fn record_full_f64_normal_events(
+    events: &mut EventStreamV1,
+    completed_step: u32,
+    substep: u32,
+    pass: NormalPassV1,
+    visit_rank: u32,
+    pair: EventPairV1,
+    decisions: Vec<NormalDecisionRawV1>,
+) {
+    events
+        .normal_decisions
+        .extend(decisions.into_iter().map(|decision| NormalDecisionEventV1 {
+            completed_step,
+            substep,
+            pass,
+            visit_rank,
+            pair,
+            point_ordinal: decision.point_ordinal,
+            identity: decision.identity,
+            separation_positive: decision.separation_positive,
+            candidate_selected: decision.candidate_selected,
+            separation: decision.separation,
+            old_impulse: decision.old_impulse,
+            unclamped_impulse: decision.unclamped_impulse,
+            new_impulse: decision.new_impulse,
+            applied_impulse: decision.applied_impulse,
+        }));
 }
 
 fn integrate_velocities(
@@ -778,6 +976,7 @@ fn solve_normal(
     bodies: &mut [DBody],
     settings: &DSettings,
     use_bias: bool,
+    mut decisions: Option<&mut Vec<NormalDecisionRawV1>>,
 ) -> Result<(), ScalarError> {
     let static_contact =
         bodies[contact.body_a].inverse_mass == 0.0 || bodies[contact.body_b].inverse_mass == 0.0;
@@ -793,7 +992,7 @@ fn solve_normal(
     let impulse_scale_soft = 1.0 / (1.0 + a2);
     let mass_scale_soft = a2 * impulse_scale_soft;
     let bias_rate_soft = omega / a1;
-    for point in &mut contact.points {
+    for (point_ordinal, point) in contact.points.iter_mut().enumerate() {
         let normal_velocity = relative_velocity(
             bodies,
             contact.body_a,
@@ -818,8 +1017,25 @@ fn solve_normal(
         };
         let increment = -point.normal_mass * (mass_scale * normal_velocity + velocity_bias)
             - impulse_scale * old_impulse;
-        point.normal_impulse = (old_impulse + increment).max(0.0);
+        let unclamped_impulse = old_impulse + increment;
+        point.normal_impulse = unclamped_impulse.max(0.0);
         let applied = point.normal_impulse - old_impulse;
+        if let Some(decisions) = decisions.as_deref_mut() {
+            decisions.push(NormalDecisionRawV1 {
+                point_ordinal: point_ordinal as u32,
+                identity: EventPointIdentityV1 {
+                    feature_a: point.feature_a,
+                    feature_b: point.feature_b,
+                },
+                separation_positive: point.separation > 0.0,
+                candidate_selected: unclamped_impulse >= 0.0,
+                separation: point.separation,
+                old_impulse,
+                unclamped_impulse,
+                new_impulse: point.normal_impulse,
+                applied_impulse: applied,
+            });
+        }
         point.total_normal_impulse += applied.max(0.0);
         apply_pair_impulse(
             bodies,

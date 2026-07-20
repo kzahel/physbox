@@ -10,6 +10,7 @@ pub mod branch_robust;
 pub mod branch_robust_scalar;
 pub mod collision_candidates;
 pub mod contact_persistence;
+pub mod event_structure;
 pub mod evidence;
 pub mod failure_automation;
 pub mod fixture_contacts;

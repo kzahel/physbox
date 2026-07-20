@@ -16,6 +16,11 @@ use crate::branch_robust::{
     BRANCH_ROBUST_CANDIDATE_ID, BRANCH_ROBUST_ERROR_BOUND_VERSION, BRANCH_ROBUST_FORMULA_VERSION,
 };
 use crate::branch_robust_scalar::{BranchRobustPerturbationV1, BranchRobustRunStatisticsV1};
+use crate::event_structure::{
+    EventGraphClassV1, EventLaneV1, EventPairV1, EventPointIdentityV1, EventStreamV1,
+    NormalDecisionEventV1, NormalPassV1, PreparedContactEventV1, PreparedPointEventV1,
+    reference_owner_and_face,
+};
 use crate::precision_margin::{PrecisionPathStatisticsV1, PrecisionPerturbationV1};
 use crate::scalar::{
     PreparedContact, ScalarError, ScalarObservedSolveResultV1, ScalarSolveResult,
@@ -23,8 +28,8 @@ use crate::scalar::{
     integrate_positions, integrate_positions_authority, integrate_velocities,
     maximum_depenetration_velocity, order_authority_contact_points, prepare_contact,
     refresh_authority_separations, refresh_branch_robust_authority_separations,
-    refresh_precision_path_authority_separations, refresh_separations, solve_normal, solve_tangent,
-    warm_start,
+    refresh_precision_path_authority_separations, refresh_separations, solve_normal,
+    solve_normal_observed, solve_tangent, warm_start,
 };
 
 pub const AUTHORITY_STRUCTURE_POLICY_VERSION: u32 = 1;
@@ -203,6 +208,13 @@ pub struct PrecisionPathAuthoritySolveResultV1 {
     pub solve: ScalarObservedSolveResultV1,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct AuthorityEventSolveResultV1 {
+    pub solve: ScalarObservedSolveResultV1,
+    pub precision_statistics: Option<PrecisionPathStatisticsV1>,
+    pub events: EventStreamV1,
+}
+
 pub fn mandatory_authority_structure_configurations_v1() -> Vec<AuthorityStructureConfigurationV1> {
     let mut configurations = vec![
         AuthorityStructureConfigurationV1 {
@@ -325,6 +337,38 @@ pub fn solve_precision_path_authority_structure_steps_observed(
     })
 }
 
+pub fn solve_authority_event_stream_v1(
+    scenario: &ScenarioV1,
+    lane: EventLaneV1,
+) -> Result<AuthorityEventSolveResultV1, ScalarError> {
+    if lane == EventLaneV1::FullSolveF64 {
+        return Err(ScalarError(
+            "full-solve-f64 events are owned by precision_margin".to_owned(),
+        ));
+    }
+    let policy = AuthorityStructurePolicyV1::a_minus(AuthorityStructureAxisV1::Restitution);
+    let mut events = EventStreamV1::new(lane);
+    let mut statistics = PrecisionPathStatisticsV1::default();
+    let precision =
+        (lane == EventLaneV1::CancellationPathF64).then_some(PrecisionPerturbationV1::Nearest);
+    let solve = solve_authority_structure_steps_observed_internal(
+        scenario,
+        policy,
+        false,
+        AuthoritySolveDiagnostics {
+            precision_perturbation: precision,
+            precision_statistics: precision.map(|_| &mut statistics),
+            event_stream: Some(&mut events),
+            ..AuthoritySolveDiagnostics::default()
+        },
+    )?;
+    Ok(AuthorityEventSolveResultV1 {
+        solve,
+        precision_statistics: precision.map(|_| statistics),
+        events,
+    })
+}
+
 pub fn solve_authority_structure_one_step_pass_states(
     scenario: &ScenarioV1,
     policy: AuthorityStructurePolicyV1,
@@ -361,6 +405,7 @@ struct AuthoritySolveDiagnostics<'a> {
     precision_perturbation: Option<PrecisionPerturbationV1>,
     precision_amplitude: f64,
     precision_statistics: Option<&'a mut PrecisionPathStatisticsV1>,
+    event_stream: Option<&'a mut EventStreamV1>,
 }
 
 fn solve_authority_structure_steps_observed_internal(
@@ -423,7 +468,16 @@ fn solve_authority_structure_steps_observed_internal(
             } else {
                 &mut refreshed_contacts
             };
-            let visit_order = contact_visit_order(contacts, &bodies, policy.accumulation);
+            let visit_schedule = contact_visit_schedule(contacts, &bodies, policy.accumulation);
+            let visit_order = visit_schedule
+                .iter()
+                .map(|entry| entry.contact_index)
+                .collect::<Vec<_>>();
+            if substep == 0
+                && let Some(events) = diagnostics.event_stream.as_deref_mut()
+            {
+                record_prepared_events(events, step + 1, contacts, &bodies, &visit_schedule);
+            }
 
             integrate_velocities(&mut bodies, scenario.settings.gravity, substep_dt)?;
             record_pass_state(
@@ -442,21 +496,50 @@ fn solve_authority_structure_steps_observed_internal(
                 &bodies,
             );
             for iteration in 0..biased_iterations {
-                for &contact_index in &visit_order {
-                    solve_normal(
-                        &mut contacts[contact_index],
-                        &mut bodies,
-                        substep_dt,
-                        scenario.settings.bias_rate.get(),
-                        maximum_depenetration_velocity(scenario),
-                        scenario.settings.mass_coefficient.get(),
-                        scenario.settings.impulse_coefficient.get(),
-                        contact_softness,
-                        true,
-                        iteration,
-                        TraceStageV1::NormalSolve,
-                        &mut traces,
-                    )?;
+                for (visit_rank, &contact_index) in visit_order.iter().enumerate() {
+                    if let Some(events) = diagnostics.event_stream.as_deref_mut() {
+                        let pair = contact_pair(&contacts[contact_index], &bodies);
+                        let mut decisions = Vec::new();
+                        solve_normal_observed(
+                            &mut contacts[contact_index],
+                            &mut bodies,
+                            substep_dt,
+                            scenario.settings.bias_rate.get(),
+                            maximum_depenetration_velocity(scenario),
+                            scenario.settings.mass_coefficient.get(),
+                            scenario.settings.impulse_coefficient.get(),
+                            contact_softness,
+                            true,
+                            iteration,
+                            TraceStageV1::NormalSolve,
+                            &mut traces,
+                            &mut decisions,
+                        )?;
+                        record_normal_events(
+                            events,
+                            step + 1,
+                            substep,
+                            NormalPassV1::Biased,
+                            visit_rank as u32,
+                            pair,
+                            decisions,
+                        );
+                    } else {
+                        solve_normal(
+                            &mut contacts[contact_index],
+                            &mut bodies,
+                            substep_dt,
+                            scenario.settings.bias_rate.get(),
+                            maximum_depenetration_velocity(scenario),
+                            scenario.settings.mass_coefficient.get(),
+                            scenario.settings.impulse_coefficient.get(),
+                            contact_softness,
+                            true,
+                            iteration,
+                            TraceStageV1::NormalSolve,
+                            &mut traces,
+                        )?;
+                    }
                     solve_tangent(
                         &mut contacts[contact_index],
                         &mut bodies,
@@ -522,21 +605,50 @@ fn solve_authority_structure_steps_observed_internal(
                 AuthorityStructurePassKindV1::Refresh,
                 &bodies,
             );
-            for &contact_index in &visit_order {
-                solve_normal(
-                    &mut contacts[contact_index],
-                    &mut bodies,
-                    substep_dt,
-                    scenario.settings.bias_rate.get(),
-                    maximum_depenetration_velocity(scenario),
-                    scenario.settings.mass_coefficient.get(),
-                    scenario.settings.impulse_coefficient.get(),
-                    contact_softness,
-                    false,
-                    0,
-                    TraceStageV1::Relaxation,
-                    &mut traces,
-                )?;
+            for (visit_rank, &contact_index) in visit_order.iter().enumerate() {
+                if let Some(events) = diagnostics.event_stream.as_deref_mut() {
+                    let pair = contact_pair(&contacts[contact_index], &bodies);
+                    let mut decisions = Vec::new();
+                    solve_normal_observed(
+                        &mut contacts[contact_index],
+                        &mut bodies,
+                        substep_dt,
+                        scenario.settings.bias_rate.get(),
+                        maximum_depenetration_velocity(scenario),
+                        scenario.settings.mass_coefficient.get(),
+                        scenario.settings.impulse_coefficient.get(),
+                        contact_softness,
+                        false,
+                        0,
+                        TraceStageV1::Relaxation,
+                        &mut traces,
+                        &mut decisions,
+                    )?;
+                    record_normal_events(
+                        events,
+                        step + 1,
+                        substep,
+                        NormalPassV1::Relaxation,
+                        visit_rank as u32,
+                        pair,
+                        decisions,
+                    );
+                } else {
+                    solve_normal(
+                        &mut contacts[contact_index],
+                        &mut bodies,
+                        substep_dt,
+                        scenario.settings.bias_rate.get(),
+                        maximum_depenetration_velocity(scenario),
+                        scenario.settings.mass_coefficient.get(),
+                        scenario.settings.impulse_coefficient.get(),
+                        contact_softness,
+                        false,
+                        0,
+                        TraceStageV1::Relaxation,
+                        &mut traces,
+                    )?;
+                }
                 solve_tangent(
                     &mut contacts[contact_index],
                     &mut bodies,
@@ -626,6 +738,91 @@ fn record_pass_state(
     }
 }
 
+fn contact_pair(contact: &PreparedContact, bodies: &[BodyStateV1]) -> EventPairV1 {
+    EventPairV1 {
+        body_a: bodies[contact.body_a].id,
+        body_b: bodies[contact.body_b].id,
+    }
+}
+
+fn record_prepared_events(
+    events: &mut EventStreamV1,
+    completed_step: u32,
+    contacts: &[PreparedContact],
+    bodies: &[BodyStateV1],
+    schedule: &[ContactVisitScheduleEntry],
+) {
+    for (preparation_ordinal, contact) in contacts.iter().enumerate() {
+        let (visit_rank, graph_class) = schedule
+            .iter()
+            .enumerate()
+            .find(|(_, entry)| entry.contact_index == preparation_ordinal)
+            .map_or(
+                (u32::MAX, EventGraphClassV1::Unavailable),
+                |(rank, entry)| (rank as u32, entry.graph_class),
+            );
+        events.prepared_contacts.push(PreparedContactEventV1 {
+            completed_step,
+            preparation_ordinal: preparation_ordinal as u32,
+            pair: contact_pair(contact, bodies),
+            admitted: true,
+            point_count: contact.points.len() as u32,
+            reference_owner: contact.event_reference_owner,
+            reference_face: contact.event_reference_face,
+            graph_class,
+            visit_rank,
+            points: contact
+                .points
+                .iter()
+                .enumerate()
+                .map(|(point_ordinal, point)| {
+                    let identity = EventPointIdentityV1 {
+                        feature_a: point.feature_a,
+                        feature_b: point.feature_b,
+                    };
+                    PreparedPointEventV1 {
+                        point_ordinal: point_ordinal as u32,
+                        identity,
+                        cache_hit: point.cache_hit,
+                        cache_owner: point.cache_hit.then_some(identity),
+                        normal_impulse: f64::from(point.normal_impulse),
+                        tangent_impulse: f64::from(point.tangent_impulse),
+                    }
+                })
+                .collect(),
+        });
+    }
+}
+
+fn record_normal_events(
+    events: &mut EventStreamV1,
+    completed_step: u32,
+    substep: u32,
+    pass: NormalPassV1,
+    visit_rank: u32,
+    pair: EventPairV1,
+    decisions: Vec<crate::event_structure::NormalDecisionRawV1>,
+) {
+    events
+        .normal_decisions
+        .extend(decisions.into_iter().map(|decision| NormalDecisionEventV1 {
+            completed_step,
+            substep,
+            pass,
+            visit_rank,
+            pair,
+            point_ordinal: decision.point_ordinal,
+            identity: decision.identity,
+            separation_positive: decision.separation_positive,
+            candidate_selected: decision.candidate_selected,
+            separation: decision.separation,
+            old_impulse: decision.old_impulse,
+            unclamped_impulse: decision.unclamped_impulse,
+            new_impulse: decision.new_impulse,
+            applied_impulse: decision.applied_impulse,
+        }));
+}
+
 fn prepare_contacts(
     scenario: &ScenarioV1,
     bodies: &[BodyStateV1],
@@ -634,12 +831,33 @@ fn prepare_contacts(
     authority_identity: bool,
 ) -> Result<Vec<PreparedContact>, ScalarError> {
     let mut manifolds = generate_portable_contacts(scenario, bodies)?;
+    let reference_metadata = manifolds
+        .iter()
+        .map(|manifold| {
+            reference_owner_and_face(
+                &manifold
+                    .points
+                    .iter()
+                    .map(|point| EventPointIdentityV1 {
+                        feature_a: point.feature_a,
+                        feature_b: point.feature_b,
+                    })
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .collect::<Vec<_>>();
     if authority_identity {
         canonicalize_authority_features(&mut manifolds, bodies)?;
     }
     manifolds
         .iter()
-        .map(|manifold| prepare_contact(bodies, manifold, cache, traces))
+        .zip(reference_metadata)
+        .map(|(manifold, (reference_owner, reference_face))| {
+            let mut contact = prepare_contact(bodies, manifold, cache, traces)?;
+            contact.event_reference_owner = reference_owner;
+            contact.event_reference_face = reference_face;
+            Ok(contact)
+        })
         .collect()
 }
 
@@ -777,8 +995,30 @@ fn contact_visit_order(
     bodies: &[BodyStateV1],
     side: AuthorityStructureSideV1,
 ) -> Vec<usize> {
+    contact_visit_schedule(contacts, bodies, side)
+        .into_iter()
+        .map(|entry| entry.contact_index)
+        .collect()
+}
+
+#[derive(Clone, Copy)]
+struct ContactVisitScheduleEntry {
+    contact_index: usize,
+    graph_class: EventGraphClassV1,
+}
+
+fn contact_visit_schedule(
+    contacts: &[PreparedContact],
+    bodies: &[BodyStateV1],
+    side: AuthorityStructureSideV1,
+) -> Vec<ContactVisitScheduleEntry> {
     if side == AuthorityStructureSideV1::Physbox {
-        return (0..contacts.len()).collect();
+        return (0..contacts.len())
+            .map(|contact_index| ContactVisitScheduleEntry {
+                contact_index,
+                graph_class: EventGraphClassV1::Unavailable,
+            })
+            .collect();
     }
 
     // Box2D has 20 dynamic colors, three non-overflow static-capable colors,
@@ -824,7 +1064,23 @@ fn contact_visit_order(
 
     overflow
         .into_iter()
-        .chain(colors.into_iter().flatten())
+        .map(|contact_index| ContactVisitScheduleEntry {
+            contact_index,
+            graph_class: EventGraphClassV1::Overflow,
+        })
+        .chain(
+            colors
+                .into_iter()
+                .enumerate()
+                .flat_map(|(color, contacts)| {
+                    contacts
+                        .into_iter()
+                        .map(move |contact_index| ContactVisitScheduleEntry {
+                            contact_index,
+                            graph_class: EventGraphClassV1::Color(color as u8),
+                        })
+                }),
+        )
         .collect()
 }
 

@@ -11,6 +11,7 @@ use crate::{
         BranchRobustPerturbationV1, BranchRobustRunStatisticsV1, evaluate_branch_robust_scalar_v1,
         select_branch_robust_perturbation_v1,
     },
+    event_structure::{EventPointIdentityV1, NormalDecisionRawV1},
     precision_margin::{
         PrecisionPathStatisticsV1, PrecisionPerturbationV1, evaluate_precision_path_v1,
     },
@@ -119,6 +120,7 @@ pub struct Box2dPointNormalUpdate {
     pub velocity_bias: f32,
     pub mass_scale: f32,
     pub impulse_scale: f32,
+    pub unclamped_impulse: f32,
     pub impulse: f32,
     pub applied_impulse: f32,
 }
@@ -167,11 +169,13 @@ pub fn box2d_point_normal_update(
     };
     let candidate = -input.normal_mass * (mass_scale * input.normal_velocity + velocity_bias)
         - impulse_scale * input.old_impulse;
-    let impulse = (input.old_impulse + candidate).max(0.0);
+    let unclamped_impulse = input.old_impulse + candidate;
+    let impulse = unclamped_impulse.max(0.0);
     let update = Box2dPointNormalUpdate {
         velocity_bias,
         mass_scale,
         impulse_scale,
+        unclamped_impulse,
         impulse,
         applied_impulse: impulse - input.old_impulse,
     };
@@ -179,6 +183,7 @@ pub fn box2d_point_normal_update(
         update.velocity_bias,
         update.mass_scale,
         update.impulse_scale,
+        update.unclamped_impulse,
         update.impulse,
         update.applied_impulse,
     ]
@@ -249,36 +254,39 @@ pub fn box2d_softness_coefficients(
 
 #[derive(Clone, Debug)]
 pub(crate) struct PreparedContact {
-    manifold_id: u32,
+    pub(crate) manifold_id: u32,
     pub(crate) body_a: usize,
     pub(crate) body_b: usize,
     initial_position_a: Vec2,
     initial_position_b: Vec2,
     initial_angle_a: f32,
     initial_angle_b: f32,
-    normal: Vec2,
+    pub(crate) normal: Vec2,
     tangent: Vec2,
     friction: f32,
     restitution: f32,
-    points: Vec<PreparedPoint>,
+    pub(crate) points: Vec<PreparedPoint>,
+    pub(crate) event_reference_owner: Option<u8>,
+    pub(crate) event_reference_face: Option<u32>,
 }
 
 #[derive(Clone, Debug)]
-struct PreparedPoint {
-    feature_a: physbox_contracts::FeatureIdV1,
-    feature_b: physbox_contracts::FeatureIdV1,
+pub(crate) struct PreparedPoint {
+    pub(crate) feature_a: physbox_contracts::FeatureIdV1,
+    pub(crate) feature_b: physbox_contracts::FeatureIdV1,
     local_anchor_a: Vec2,
     local_anchor_b: Vec2,
     anchor_a: Vec2,
     anchor_b: Vec2,
     input_separation: f32,
     base_separation: f32,
-    separation: f32,
+    pub(crate) separation: f32,
     normal_mass: f32,
     tangent_mass: f32,
     initial_normal_velocity: f32,
-    normal_impulse: f32,
-    tangent_impulse: f32,
+    pub(crate) normal_impulse: f32,
+    pub(crate) tangent_impulse: f32,
+    pub(crate) cache_hit: bool,
     total_normal_impulse: f32,
 }
 
@@ -743,6 +751,7 @@ pub(crate) fn prepare_contact(
             initial_normal_velocity,
             normal_impulse: cached.map_or(0.0, |cached| cached.normal_impulse.get()),
             tangent_impulse: cached.map_or(0.0, |cached| cached.tangent_impulse.get()),
+            cache_hit: cached.is_some(),
             total_normal_impulse: 0.0,
         };
         traces.push(trace(
@@ -776,6 +785,8 @@ pub(crate) fn prepare_contact(
         friction: manifold.material.friction.get(),
         restitution: manifold.material.restitution.get(),
         points,
+        event_reference_owner: None,
+        event_reference_face: None,
     })
 }
 
@@ -828,6 +839,72 @@ pub(crate) fn solve_normal(
     stage: TraceStageV1,
     traces: &mut Vec<TraceRecordV1>,
 ) -> Result<(), ScalarError> {
+    solve_normal_internal(
+        contact,
+        bodies,
+        substep_dt,
+        bias_rate,
+        max_depenetration_velocity,
+        configured_mass_scale,
+        configured_impulse_scale,
+        contact_softness,
+        use_bias,
+        iteration,
+        stage,
+        traces,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn solve_normal_observed(
+    contact: &mut PreparedContact,
+    bodies: &mut [BodyStateV1],
+    substep_dt: f32,
+    bias_rate: f32,
+    max_depenetration_velocity: f32,
+    configured_mass_scale: f32,
+    configured_impulse_scale: f32,
+    contact_softness: Option<ContactSoftnessPolicyV1>,
+    use_bias: bool,
+    iteration: u32,
+    stage: TraceStageV1,
+    traces: &mut Vec<TraceRecordV1>,
+    decisions: &mut Vec<NormalDecisionRawV1>,
+) -> Result<(), ScalarError> {
+    solve_normal_internal(
+        contact,
+        bodies,
+        substep_dt,
+        bias_rate,
+        max_depenetration_velocity,
+        configured_mass_scale,
+        configured_impulse_scale,
+        contact_softness,
+        use_bias,
+        iteration,
+        stage,
+        traces,
+        Some(decisions),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn solve_normal_internal(
+    contact: &mut PreparedContact,
+    bodies: &mut [BodyStateV1],
+    substep_dt: f32,
+    bias_rate: f32,
+    max_depenetration_velocity: f32,
+    configured_mass_scale: f32,
+    configured_impulse_scale: f32,
+    contact_softness: Option<ContactSoftnessPolicyV1>,
+    use_bias: bool,
+    iteration: u32,
+    stage: TraceStageV1,
+    traces: &mut Vec<TraceRecordV1>,
+    mut decisions: Option<&mut Vec<NormalDecisionRawV1>>,
+) -> Result<(), ScalarError> {
     let (configured_bias_rate, configured_mass_scale, configured_impulse_scale) =
         configured_contact_coefficients(
             bodies,
@@ -867,6 +944,22 @@ pub(crate) fn solve_normal(
         let impulse_scale = update.impulse_scale;
         point.normal_impulse = update.impulse;
         let applied_impulse = update.applied_impulse;
+        if let Some(decisions) = decisions.as_deref_mut() {
+            decisions.push(NormalDecisionRawV1 {
+                point_ordinal: point_index as u32,
+                identity: EventPointIdentityV1 {
+                    feature_a: point.feature_a,
+                    feature_b: point.feature_b,
+                },
+                separation_positive: point.separation > 0.0,
+                candidate_selected: update.unclamped_impulse >= 0.0,
+                separation: f64::from(point.separation),
+                old_impulse: f64::from(old_impulse),
+                unclamped_impulse: f64::from(update.unclamped_impulse),
+                new_impulse: f64::from(update.impulse),
+                applied_impulse: f64::from(applied_impulse),
+            });
+        }
         point.total_normal_impulse += applied_impulse.max(0.0);
         apply_pair_impulse(
             bodies,
