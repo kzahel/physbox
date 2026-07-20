@@ -138,9 +138,13 @@ DIRTY=false
 [[ "$DIRTY" = false ]] || { echo "error: S17 Android retained evidence requires a clean tree" >&2; exit 1; }
 HOST=physical-android
 [[ "$TARGET_MODE" = "device" ]] || HOST=android-avd
+SUBMISSION_BATCH_ARGUMENT=""
+if [[ "$TARGET_MODE" = "avd" && "$EVIDENCE_MODE" =~ ^(baseline|candidate)$ ]]; then
+    SUBMISSION_BATCH_ARGUMENT="--submission-batch-steps 8"
+fi
 RUN_ID="s17-$HOST-$EVIDENCE_MODE-$(date +%s)-$$"
 LOG="$(mktemp /tmp/physbox5-s17-android-log.XXXXXX)"
-if ! "$ADB" -s "$SERIAL" shell "$REMOTE_BINARY --mode $EVIDENCE_MODE --run-id $RUN_ID --output $REMOTE_OUTPUT --host $HOST --source-revision $REVISION --source-dirty false $BASELINE_ARGUMENT" | tr -d '\r' >"$LOG"; then
+if ! "$ADB" -s "$SERIAL" shell "$REMOTE_BINARY --mode $EVIDENCE_MODE --run-id $RUN_ID --output $REMOTE_OUTPUT --host $HOST --source-revision $REVISION --source-dirty false $BASELINE_ARGUMENT $SUBMISSION_BATCH_ARGUMENT" | tr -d '\r' >"$LOG"; then
     cat "$LOG" >&2
     echo "error: Android S17 $EVIDENCE_MODE process failed; see $LOG" >&2
     exit 1

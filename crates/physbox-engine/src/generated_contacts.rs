@@ -3524,11 +3524,31 @@ impl GpuGeneratedContactRunner {
         observation_interval_steps: u32,
         completed_steps: u32,
     ) -> Result<GpuGeneratedContactSeriesV1, String> {
-        self.run_observation_series_with_identity_policy(
+        self.run_selected_observation_series_with_submission_batch(
+            scenario,
+            observation_interval_steps,
+            completed_steps,
+            VALIDATION_STEPS_PER_SUBMISSION,
+        )
+    }
+
+    /// Uses the exact selected graph while bounding only command-submission
+    /// duration for slower validation adapters. Product execution and the
+    /// authored step sequence are unchanged.
+    pub fn run_selected_observation_series_with_submission_batch(
+        &self,
+        scenario: &ScenarioV1,
+        observation_interval_steps: u32,
+        completed_steps: u32,
+        submission_batch_steps: u32,
+    ) -> Result<GpuGeneratedContactSeriesV1, String> {
+        validate_selected_settings(scenario)?;
+        self.run_contact_policy_observation_series_with_submission_batch(
             scenario,
             observation_interval_steps,
             completed_steps,
             ContactIdentityPolicyV1::SELECTED,
+            submission_batch_steps,
         )
     }
 
@@ -3795,13 +3815,30 @@ impl GpuGeneratedContactRunner {
         observation_interval_steps: u32,
         completed_steps: u32,
     ) -> Result<GpuGeneratedContactSeriesV1, String> {
+        self.run_branch_robust_gpu_promotion_observation_series_with_submission_batch(
+            scenario,
+            observation_interval_steps,
+            completed_steps,
+            VALIDATION_STEPS_PER_SUBMISSION,
+        )
+    }
+
+    /// Uses the exact unpromoted S17 graph while bounding only validation
+    /// command-submission duration. No candidate parameter is exposed.
+    pub fn run_branch_robust_gpu_promotion_observation_series_with_submission_batch(
+        &self,
+        scenario: &ScenarioV1,
+        observation_interval_steps: u32,
+        completed_steps: u32,
+        submission_batch_steps: u32,
+    ) -> Result<GpuGeneratedContactSeriesV1, String> {
         crate::BranchRobustGpuPromotionPolicyV1::AUTHORIZED.validate_product_selection(false)?;
         self.run_contact_policy_observation_series_with_authority_mode(
             scenario,
             observation_interval_steps,
             completed_steps,
             ContactIdentityPolicyV1::SELECTED,
-            VALIDATION_STEPS_PER_SUBMISSION,
+            submission_batch_steps,
             GpuSolverExecutionV4::AUTHORITY_GPU_PROBE,
             GpuSolverSchedulingPolicyV1::authority_gpu_probe_for_body_capacity(
                 scenario.bodies.len() as u32,
@@ -5832,6 +5869,22 @@ mod tests {
             snapshot.failure.is_none()
                 && snapshot.capacities.iter().all(|capacity| capacity.accepted)
         }));
+    }
+
+    #[test]
+    fn selected_settling_series_is_exact_across_submission_batches() {
+        let scenario = p5_2_centered_rectangle_stack_scenario(4, 4).unwrap();
+        let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
+        let one_step = runner
+            .run_selected_observation_series_with_submission_batch(&scenario, 1, 4, 1)
+            .unwrap();
+        let four_steps = runner
+            .run_selected_observation_series_with_submission_batch(&scenario, 1, 4, 4)
+            .unwrap();
+        assert_eq!(
+            serde_json::to_vec(&one_step).unwrap(),
+            serde_json::to_vec(&four_steps).unwrap()
+        );
     }
 
     #[test]

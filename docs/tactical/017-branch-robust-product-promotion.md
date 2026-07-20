@@ -335,6 +335,20 @@ timestamps are strictly positive, and keeps the GPU timestamp series and
 Metal-only timing gate unchanged. No dispatch, synchronization, sample order,
 warm-up, retained count, solver, or product behavior changes.
 
+The first hardware-backed AVD baseline failed in its first scene because one
+64-step validation submission exceeded wgpu's queue-completion watchdog. The
+runner panicked and macOS again left the stopped QEMU process in `?E` exit
+state at zero CPU and zero resident memory; ADB reports the AVD offline, and
+the required shutdown condition is satisfied, but PID 1 has not reaped the
+process or released the AVD locks. Before a post-reboot retry, the AVD corpus
+lane now uses eight authored steps per command submission. This is the
+existing bounded validation-only submission control: solver operations,
+step/copy order, GPU-resident state, 1-step observations, exact replay,
+final-only comparison, fixtures, metrics, candidate, and product code are
+unchanged. The artifact records the batch explicitly and requires the
+same-host selected/candidate pair to use the same value. Metal and physical
+Android remain at the frozen 64-step batch.
+
 The OOM event rebooted the Pixel rather than merely resetting USB: Android
 records `kernel_panic` with a system-dead/OOM boot reason. The secured device
 therefore requires a human credential for UI access, but this Pixel exposes

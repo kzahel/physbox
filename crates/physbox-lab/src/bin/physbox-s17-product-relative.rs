@@ -43,6 +43,7 @@ const FULL_CHECKPOINTS: [u32; 7] = [1, 60, 180, 600, 900, 1_050, 1_200];
 const BUCKET_CHECKPOINTS: [u32; 7] = [1, 60, 180, 300, 420, 540, 600];
 const IMPLEMENTATION_BAND: f64 = 5.0e-5;
 const GEOMETRY_MARGIN: f32 = 2.0e-4;
+const DEFAULT_SUBMISSION_BATCH_STEPS: u32 = 64;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Mode {
@@ -131,6 +132,7 @@ struct CorpusManifest {
     adapter: physbox_engine::AdapterDiagnostics,
     policy: physbox_contracts::SettlingMeasurementPolicyV2,
     lane: &'static str,
+    submission_batch_steps: u32,
     scenes: Vec<SceneEvidence>,
     response: ResponseEvidence,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -300,6 +302,8 @@ struct BaselineManifest {
     source_revision: String,
     source_dirty: bool,
     host: String,
+    #[serde(default = "default_submission_batch_steps")]
+    submission_batch_steps: u32,
     scenes: Vec<BaselineScene>,
     response: BaselineResponse,
 }
@@ -457,6 +461,9 @@ fn run_corpus(arguments: &Arguments, staging: &Path, provenance: Provenance) -> 
         let bytes = fs::read(path).map_err(display)?;
         let manifest: BaselineManifest = serde_json::from_slice(&bytes).map_err(display)?;
         validate_baseline(&manifest, &arguments.host)?;
+        if manifest.submission_batch_steps != arguments.submission_batch_steps {
+            return Err("S17 baseline and candidate submission batches differ".to_owned());
+        }
         let code_equivalent =
             baseline_code_equivalent(&manifest.source_revision, &provenance.source_revision)?;
         if !code_equivalent {
@@ -486,9 +493,15 @@ fn run_corpus(arguments: &Arguments, staging: &Path, provenance: Provenance) -> 
             if candidate { "candidate" } else { "baseline" },
             input.label
         );
-        scenes.push(evaluate_scene(staging, &mut adapter, input, candidate)?);
+        scenes.push(evaluate_scene(
+            staging,
+            &mut adapter,
+            input,
+            candidate,
+            arguments.submission_batch_steps,
+        )?);
     }
-    let response = response_evidence(&mut adapter, candidate)?;
+    let response = response_evidence(&mut adapter, candidate, arguments.submission_batch_steps)?;
     let product_relative_gate = baseline
         .as_ref()
         .map(|(baseline, _, code_equivalent)| {
@@ -504,6 +517,7 @@ fn run_corpus(arguments: &Arguments, staging: &Path, provenance: Provenance) -> 
         } else {
             "current-selected-product"
         },
+        submission_batch_steps: arguments.submission_batch_steps,
         scenes,
         response,
         baseline: baseline.map(|(_, identity, _)| identity),
@@ -531,6 +545,7 @@ fn evaluate_scene(
     adapter: &mut Option<physbox_engine::AdapterDiagnostics>,
     input: SceneInput,
     candidate: bool,
+    submission_batch_steps: u32,
 ) -> Result<SceneEvidence, String> {
     let mut scenario = input.source.clone();
     if candidate {
@@ -549,6 +564,7 @@ fn evaluate_scene(
         &scenario,
         &projection_hash,
         candidate,
+        submission_batch_steps,
     )?;
     let first_loss_reproducer = lane
         .first_structural_loss_step
@@ -590,11 +606,27 @@ fn evaluate_lane(
     scenario: &ScenarioV1,
     projection_hash: &str,
     candidate: bool,
+    submission_batch_steps: u32,
 ) -> Result<LaneEvidence, String> {
-    let raw = match run_lane_series(adapter, scenario, 1, scenario.requested_steps, candidate) {
+    let raw = match run_lane_series(
+        adapter,
+        scenario,
+        1,
+        scenario.requested_steps,
+        candidate,
+        submission_batch_steps,
+    ) {
         Ok(raw) => raw,
         Err(error) => {
-            return evaluate_failed_lane(staging, adapter, input, scenario, candidate, error);
+            return evaluate_failed_lane(
+                staging,
+                adapter,
+                input,
+                scenario,
+                candidate,
+                submission_batch_steps,
+                error,
+            );
         }
     };
     raw.validate()?;
@@ -674,7 +706,14 @@ fn evaluate_lane(
     let allocated_bytes = raw.allocated_bytes;
     drop(raw);
 
-    let replay = run_lane_series(adapter, scenario, 1, scenario.requested_steps, candidate)?;
+    let replay = run_lane_series(
+        adapter,
+        scenario,
+        1,
+        scenario.requested_steps,
+        candidate,
+        submission_batch_steps,
+    )?;
     replay.validate()?;
     let exact_replay = raw_series_hash == serialized_hash(&replay)?;
     drop(replay);
@@ -684,6 +723,7 @@ fn evaluate_lane(
         scenario.requested_steps,
         scenario.requested_steps,
         candidate,
+        submission_batch_steps,
     )?;
     let separate_final = final_only
         .snapshots
@@ -721,19 +761,22 @@ fn run_lane_series(
     observation_interval_steps: u32,
     completed_steps: u32,
     candidate: bool,
+    submission_batch_steps: u32,
 ) -> Result<physbox_engine::GpuGeneratedContactSeriesV1, String> {
     let runner = corpus_runner(adapter)?;
     if candidate {
-        runner.run_branch_robust_gpu_promotion_observation_series(
+        runner.run_branch_robust_gpu_promotion_observation_series_with_submission_batch(
             scenario,
             observation_interval_steps,
             completed_steps,
+            submission_batch_steps,
         )
     } else {
-        runner.run_selected_observation_series(
+        runner.run_selected_observation_series_with_submission_batch(
             scenario,
             observation_interval_steps,
             completed_steps,
+            submission_batch_steps,
         )
     }
 }
@@ -744,9 +787,11 @@ fn evaluate_failed_lane(
     input: &SceneInput,
     scenario: &ScenarioV1,
     candidate: bool,
+    submission_batch_steps: u32,
     terminal_error: String,
 ) -> Result<LaneEvidence, String> {
-    let first_failure_step = first_invalid_series_step(adapter, scenario, candidate)?;
+    let first_failure_step =
+        first_invalid_series_step(adapter, scenario, candidate, submission_batch_steps)?;
     if first_failure_step <= 1 {
         return Err(format!(
             "S17 {} failed before a retainable prefix: {terminal_error}",
@@ -758,7 +803,14 @@ fn evaluate_failed_lane(
         "S17 {} first invalid execution step {}: {}",
         input.label, first_failure_step, terminal_error
     );
-    let raw = run_lane_series(adapter, scenario, 1, completed_steps, candidate)?;
+    let raw = run_lane_series(
+        adapter,
+        scenario,
+        1,
+        completed_steps,
+        candidate,
+        submission_batch_steps,
+    )?;
     let raw_series_hash = serialized_hash(&raw)?;
     let final_snapshot = raw
         .snapshots
@@ -806,7 +858,14 @@ fn evaluate_failed_lane(
     let allocated_bytes = raw.allocated_bytes;
     drop(raw);
 
-    let replay = run_lane_series(adapter, scenario, 1, completed_steps, candidate)?;
+    let replay = run_lane_series(
+        adapter,
+        scenario,
+        1,
+        completed_steps,
+        candidate,
+        submission_batch_steps,
+    )?;
     let exact_replay = raw_series_hash == serialized_hash(&replay)?;
     drop(replay);
     let final_only = run_lane_series(
@@ -815,6 +874,7 @@ fn evaluate_failed_lane(
         completed_steps,
         completed_steps,
         candidate,
+        submission_batch_steps,
     )?;
     let separate_final = final_only
         .snapshots
@@ -852,18 +912,28 @@ fn first_invalid_series_step(
     adapter: &mut Option<physbox_engine::AdapterDiagnostics>,
     scenario: &ScenarioV1,
     candidate: bool,
+    submission_batch_steps: u32,
 ) -> Result<u32, String> {
     let mut low = 1;
     let mut high = scenario.requested_steps;
     while low < high {
         let middle = low + (high - low) / 2;
-        if run_lane_series(adapter, scenario, 1, middle, candidate).is_ok() {
+        if run_lane_series(
+            adapter,
+            scenario,
+            1,
+            middle,
+            candidate,
+            submission_batch_steps,
+        )
+        .is_ok()
+        {
             low = middle + 1;
         } else {
             high = middle;
         }
     }
-    if run_lane_series(adapter, scenario, 1, low, candidate).is_ok() {
+    if run_lane_series(adapter, scenario, 1, low, candidate, submission_batch_steps).is_ok() {
         return Err("S17 failed series did not reproduce under prefix search".to_owned());
     }
     Ok(low)
@@ -908,6 +978,7 @@ fn physical_envelope(observations: &[SettlingObservationV2]) -> Result<PhysicalE
 fn response_evidence(
     adapter: &mut Option<physbox_engine::AdapterDiagnostics>,
     candidate: bool,
+    submission_batch_steps: u32,
 ) -> Result<ResponseEvidence, String> {
     let inputs = [
         (
@@ -930,8 +1001,22 @@ fn response_evidence(
         if candidate {
             scenario.settings.contact_softness = Some(candidate_softness());
         }
-        let output = run_lane_series(adapter, &scenario, steps, steps, candidate)?;
-        let replay = run_lane_series(adapter, &scenario, steps, steps, candidate)?;
+        let output = run_lane_series(
+            adapter,
+            &scenario,
+            steps,
+            steps,
+            candidate,
+            submission_batch_steps,
+        )?;
+        let replay = run_lane_series(
+            adapter,
+            &scenario,
+            steps,
+            steps,
+            candidate,
+            submission_batch_steps,
+        )?;
         let snapshot = output.snapshots.last().ok_or("empty response output")?;
         let result_hash = serialized_hash(snapshot)?;
         let replay_hash = serialized_hash(replay.snapshots.last().ok_or("empty response replay")?)?;
@@ -1004,6 +1089,10 @@ fn validate_baseline(baseline: &BaselineManifest, host: &str) -> Result<(), Stri
         return Err("S17 baseline is not a complete clean same-host selected corpus".to_owned());
     }
     Ok(())
+}
+
+const fn default_submission_batch_steps() -> u32 {
+    DEFAULT_SUBMISSION_BATCH_STEPS
 }
 
 fn baseline_code_equivalent(
@@ -1892,6 +1981,7 @@ struct Arguments {
     require_clean: bool,
     source_revision: Option<String>,
     source_dirty: bool,
+    submission_batch_steps: u32,
 }
 
 impl Arguments {
@@ -1904,6 +1994,7 @@ impl Arguments {
         let mut require_clean = false;
         let mut source_revision = None;
         let mut source_dirty = false;
+        let mut submission_batch_steps = DEFAULT_SUBMISSION_BATCH_STEPS;
         let mut arguments = std::env::args().skip(1);
         while let Some(argument) = arguments.next() {
             if argument == "--require-clean" {
@@ -1921,8 +2012,16 @@ impl Arguments {
                 "--baseline" => baseline = Some(PathBuf::from(value)),
                 "--source-revision" => source_revision = Some(value),
                 "--source-dirty" => source_dirty = value.parse::<bool>().map_err(display)?,
+                "--submission-batch-steps" => {
+                    submission_batch_steps = value.parse::<u32>().map_err(display)?
+                }
                 _ => return Err(format!("unknown argument {argument}")),
             }
+        }
+        if !(1..=DEFAULT_SUBMISSION_BATCH_STEPS).contains(&submission_batch_steps) {
+            return Err(format!(
+                "S17 submission batch must be between 1 and {DEFAULT_SUBMISSION_BATCH_STEPS}"
+            ));
         }
         Ok(Self {
             mode: mode.ok_or("missing --mode")?,
@@ -1933,6 +2032,7 @@ impl Arguments {
             require_clean,
             source_revision,
             source_dirty,
+            submission_batch_steps,
         })
     }
 }
