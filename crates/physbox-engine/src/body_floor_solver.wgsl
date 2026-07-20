@@ -1187,7 +1187,7 @@ fn refresh_contacts(@builtin(global_invocation_id) id: vec3u) {
         prepared_points[id.x] = fixed;
         return;
     }
-    if (params.uints0.w == 3u) {
+    if (params.uints0.w == 3u || params.uints0.w == 4u) {
         let input = point_inputs[id.x];
         let pose_a = poses[input.ids.x];
         let pose_b = poses[input.ids.y];
@@ -1209,10 +1209,21 @@ fn refresh_contacts(@builtin(global_invocation_id) id: vec3u) {
         let delta_position = delta_position_b - delta_position_a;
         let authority_anchor_a = rotate(fixed.anchor_a, pose_a.z - initial_angle_a);
         let authority_anchor_b = rotate(fixed.anchor_b, pose_b.z - initial_angle_b);
-        let base_separation = input.material.x -
-            dot(fixed.anchor_b - fixed.anchor_a, fixed.normal);
-        fixed.data0.w = base_separation +
-            dot(delta_position + (authority_anchor_b - authority_anchor_a), fixed.normal);
+        if (params.uints0.w == 4u) {
+            let rotation_displacement_a = authority_anchor_a - fixed.anchor_a;
+            let rotation_displacement_b = authority_anchor_b - fixed.anchor_b;
+            let relative_rotation_displacement =
+                rotation_displacement_b - rotation_displacement_a;
+            let robust_motion = delta_position + relative_rotation_displacement;
+            let robust_projection = robust_motion.x * fixed.normal.x +
+                robust_motion.y * fixed.normal.y;
+            fixed.data0.w = input.material.x + robust_projection;
+        } else {
+            let base_separation = input.material.x -
+                dot(fixed.anchor_b - fixed.anchor_a, fixed.normal);
+            fixed.data0.w = base_separation +
+                dot(delta_position + (authority_anchor_b - authority_anchor_a), fixed.normal);
+        }
         prepared_points[id.x] = fixed;
         return;
     }

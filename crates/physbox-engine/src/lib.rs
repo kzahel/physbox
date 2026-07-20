@@ -5,6 +5,7 @@ mod body_benchmark;
 mod body_floor_solver;
 mod body_state;
 mod body_world;
+mod branch_robust_gpu_promotion;
 mod camera;
 mod clock;
 mod collision_candidates;
@@ -51,7 +52,8 @@ pub use body_floor_solver::{
     GpuSolverInstrumentedSampleV4, authority_gpu_probe_capacity_disposition,
     benchmark_gpu_authored_gather_topology, benchmark_gpu_authored_solver_experiment,
     benchmark_gpu_authored_solver_policy_experiment, benchmark_gpu_s13_authority_probe,
-    run_gpu_authored_authority_probe,
+    benchmark_gpu_s17_branch_robust_promotion, branch_robust_gpu_promotion_capacity_disposition,
+    run_gpu_authored_authority_probe, run_gpu_authored_branch_robust_promotion,
 };
 pub use body_floor_solver::{
     GPU_SOLVER_EXECUTION_VERSION, GPU_SOLVER_PASS_TRACE_VERSION,
@@ -70,6 +72,10 @@ pub use body_state::{
     BoundedBodyCommands, GpuBodyStorage, analytic_shape_encoding,
 };
 pub use body_world::GpuConstructionBodySlotEvidence;
+pub use branch_robust_gpu_promotion::{
+    BRANCH_ROBUST_GPU_PROMOTION_CANDIDATE_ID, BRANCH_ROBUST_GPU_PROMOTION_FORMULA_ID,
+    BRANCH_ROBUST_GPU_PROMOTION_POLICY_VERSION, BranchRobustGpuPromotionPolicyV1,
+};
 pub use camera::{
     CAMERA_STATE_VERSION, Camera2d, CameraError, CameraFrame2d, MAX_ORTHOGRAPHIC_HALF_HEIGHT,
     MIN_ORTHOGRAPHIC_HALF_HEIGHT,

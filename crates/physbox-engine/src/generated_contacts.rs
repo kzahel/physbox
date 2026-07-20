@@ -468,6 +468,38 @@ impl GpuGeneratedContactGraph {
         )
     }
 
+    pub(crate) fn new_branch_robust_gpu_promotion(
+        device: &wgpu::Device,
+        storage: &GpuBodyStorage,
+        scenario: &ScenarioV1,
+    ) -> Result<Self, String> {
+        crate::BranchRobustGpuPromotionPolicyV1::AUTHORIZED.validate_product_selection(false)?;
+        crate::branch_robust_gpu_promotion::validate_branch_robust_gpu_promotion_settings(
+            &scenario.settings,
+        )?;
+        Self::new_with_topologies_execution_scheduling_identity_extended_and_authority_mode(
+            device,
+            storage,
+            scenario,
+            GpuContactPersistenceTopology::StablePairSlot,
+            GpuGatherTopology::StableBodyEdge,
+            false,
+            false,
+            u32::MAX,
+            GpuSolverExecutionV4::AUTHORITY_GPU_PROBE,
+            GpuSolverSchedulingPolicyV1::authority_gpu_probe_for_body_capacity(
+                storage.layout().capacity_elements,
+            ),
+            ContactIdentityPolicyV1::SELECTED,
+            crate::GpuSoftFeedbackPolicyV1::EveryBiasedIteration,
+            crate::GpuNormalRelaxationPolicyV1::PointSequential,
+            crate::GpuContactCoefficientPolicyV1::AuthorityCappedSoft,
+            crate::GpuSubstepContactPolicyV1::AuthorityBranchRobustFixedAnchorAnalyticalSeparation,
+            crate::GpuRestitutionTimingPolicyV1::AfterEachSubstep,
+            true,
+        )
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn new_with_topologies_execution_scheduling_identity_extended_and_authority_mode(
         device: &wgpu::Device,
@@ -489,15 +521,29 @@ impl GpuGeneratedContactGraph {
         authority_identity: bool,
     ) -> Result<Self, String> {
         if authority_identity {
-            crate::authority_gpu_probe::validate_authority_gpu_probe_runtime_tuple(
-                execution,
-                scheduling_policy,
-                soft_feedback_policy,
-                normal_relaxation_policy,
-                contact_coefficient_policy,
-                substep_contact_policy,
-                restitution_timing_policy,
-            )?;
+            if substep_contact_policy
+                == crate::GpuSubstepContactPolicyV1::AuthorityBranchRobustFixedAnchorAnalyticalSeparation
+            {
+                crate::branch_robust_gpu_promotion::validate_branch_robust_gpu_promotion_runtime_tuple(
+                    execution,
+                    scheduling_policy,
+                    soft_feedback_policy,
+                    normal_relaxation_policy,
+                    contact_coefficient_policy,
+                    substep_contact_policy,
+                    restitution_timing_policy,
+                )?;
+            } else {
+                crate::authority_gpu_probe::validate_authority_gpu_probe_runtime_tuple(
+                    execution,
+                    scheduling_policy,
+                    soft_feedback_policy,
+                    normal_relaxation_policy,
+                    contact_coefficient_policy,
+                    substep_contact_policy,
+                    restitution_timing_policy,
+                )?;
+            }
         } else if execution == GpuSolverExecutionV4::AUTHORITY_GPU_PROBE {
             return Err(
                 "authority GPU execution requires the versioned midpoint identity path".to_owned(),
@@ -2025,6 +2071,8 @@ pub struct GpuGeneratedContactSeriesV1 {
     pub soft_feedback_policy: crate::GpuSoftFeedbackPolicyV1,
     pub normal_relaxation_policy: crate::GpuNormalRelaxationPolicyV1,
     pub authority_gpu_probe_policy: Option<crate::AuthorityGpuProbePolicyV1>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub branch_robust_gpu_promotion_policy: Option<crate::BranchRobustGpuPromotionPolicyV1>,
     pub authority_identity: bool,
     pub dispatches_per_step: u32,
     pub allocated_bytes: u64,
@@ -2059,6 +2107,11 @@ impl GpuGeneratedContactSeriesV1 {
             self.contact_coefficient_policy,
             self.restitution_timing_policy,
         )?;
+        if self.authority_gpu_probe_policy.is_some()
+            && self.branch_robust_gpu_promotion_policy.is_some()
+        {
+            return Err("generated series names two authority GPU candidates".to_owned());
+        }
         if let Some(policy) = self.authority_gpu_probe_policy {
             policy.validate_product_selection(false)?;
             crate::authority_gpu_probe::validate_authority_gpu_probe_runtime_tuple(
@@ -2072,6 +2125,20 @@ impl GpuGeneratedContactSeriesV1 {
             )?;
             if !self.authority_identity {
                 return Err("authority GPU series omitted authority identity".to_owned());
+            }
+        } else if let Some(policy) = self.branch_robust_gpu_promotion_policy {
+            policy.validate_product_selection(false)?;
+            crate::branch_robust_gpu_promotion::validate_branch_robust_gpu_promotion_runtime_tuple(
+                self.solver_execution,
+                self.solver_scheduling_policy,
+                self.soft_feedback_policy,
+                self.normal_relaxation_policy,
+                self.contact_coefficient_policy,
+                self.substep_contact_policy,
+                self.restitution_timing_policy,
+            )?;
+            if !self.authority_identity {
+                return Err("branch-robust GPU series omitted authority identity".to_owned());
             }
         } else if self.authority_identity
             || self.solver_execution == GpuSolverExecutionV4::AUTHORITY_GPU_PROBE
@@ -3003,6 +3070,31 @@ impl GpuGeneratedContactRunner {
         )
     }
 
+    /// Captures the sole unpromoted S17 branch-robust candidate using the
+    /// exact S13 graph and only the frozen S14 separation expression.
+    pub fn run_branch_robust_gpu_promotion_pass_trace(
+        &self,
+        scenario: &ScenarioV1,
+        target_step: u32,
+    ) -> Result<GpuGeneratedContactPassTraceV3, String> {
+        crate::BranchRobustGpuPromotionPolicyV1::AUTHORIZED.validate_product_selection(false)?;
+        self.run_contact_policy_pass_trace_extended(
+            scenario,
+            target_step,
+            ContactIdentityPolicyV1::SELECTED,
+            GpuSolverExecutionV4::AUTHORITY_GPU_PROBE,
+            GpuSolverSchedulingPolicyV1::authority_gpu_probe_for_body_capacity(
+                scenario.bodies.len() as u32,
+            ),
+            crate::GpuSoftFeedbackPolicyV1::EveryBiasedIteration,
+            crate::GpuNormalRelaxationPolicyV1::PointSequential,
+            crate::GpuContactCoefficientPolicyV1::AuthorityCappedSoft,
+            crate::GpuSubstepContactPolicyV1::AuthorityBranchRobustFixedAnchorAnalyticalSeparation,
+            crate::GpuRestitutionTimingPolicyV1::AfterEachSubstep,
+            true,
+        )
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn run_contact_policy_pass_trace_extended(
         &self,
@@ -3039,7 +3131,21 @@ impl GpuGeneratedContactRunner {
         // retain the scalable per-color form even when the small interactive
         // tier dispatches those colors inside one island pass.
         let graph = if authority_gpu_probe {
-            GpuGeneratedContactGraph::new_authority_gpu_probe(&self.device, &storage, scenario)?
+            if substep_contact_policy
+                == crate::GpuSubstepContactPolicyV1::AuthorityBranchRobustFixedAnchorAnalyticalSeparation
+            {
+                GpuGeneratedContactGraph::new_branch_robust_gpu_promotion(
+                    &self.device,
+                    &storage,
+                    scenario,
+                )?
+            } else {
+                GpuGeneratedContactGraph::new_authority_gpu_probe(
+                    &self.device,
+                    &storage,
+                    scenario,
+                )?
+            }
         } else {
             GpuGeneratedContactGraph::new_with_topologies_execution_scheduling_identity_and_extended_solver_policies(
                 &self.device,
@@ -3662,6 +3768,34 @@ impl GpuGeneratedContactRunner {
         )
     }
 
+    /// Executes the sole unpromoted S17 branch-robust candidate. This entry
+    /// point exposes no policy parameters and cannot change product selection.
+    pub fn run_branch_robust_gpu_promotion_observation_series(
+        &self,
+        scenario: &ScenarioV1,
+        observation_interval_steps: u32,
+        completed_steps: u32,
+    ) -> Result<GpuGeneratedContactSeriesV1, String> {
+        crate::BranchRobustGpuPromotionPolicyV1::AUTHORIZED.validate_product_selection(false)?;
+        self.run_contact_policy_observation_series_with_authority_mode(
+            scenario,
+            observation_interval_steps,
+            completed_steps,
+            ContactIdentityPolicyV1::SELECTED,
+            VALIDATION_STEPS_PER_SUBMISSION,
+            GpuSolverExecutionV4::AUTHORITY_GPU_PROBE,
+            GpuSolverSchedulingPolicyV1::authority_gpu_probe_for_body_capacity(
+                scenario.bodies.len() as u32,
+            ),
+            crate::GpuSoftFeedbackPolicyV1::EveryBiasedIteration,
+            crate::GpuNormalRelaxationPolicyV1::PointSequential,
+            crate::GpuContactCoefficientPolicyV1::AuthorityCappedSoft,
+            crate::GpuSubstepContactPolicyV1::AuthorityBranchRobustFixedAnchorAnalyticalSeparation,
+            crate::GpuRestitutionTimingPolicyV1::AfterEachSubstep,
+            true,
+        )
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn run_contact_policy_observation_series_with_authority_mode(
         &self,
@@ -3704,7 +3838,21 @@ impl GpuGeneratedContactRunner {
             &scenario.bodies,
         )?;
         let graph = if authority_gpu_probe {
-            GpuGeneratedContactGraph::new_authority_gpu_probe(&self.device, &storage, scenario)?
+            if substep_contact_policy
+                == crate::GpuSubstepContactPolicyV1::AuthorityBranchRobustFixedAnchorAnalyticalSeparation
+            {
+                GpuGeneratedContactGraph::new_branch_robust_gpu_promotion(
+                    &self.device,
+                    &storage,
+                    scenario,
+                )?
+            } else {
+                GpuGeneratedContactGraph::new_authority_gpu_probe(
+                    &self.device,
+                    &storage,
+                    scenario,
+                )?
+            }
         } else {
             GpuGeneratedContactGraph::new_with_topologies_execution_scheduling_identity_and_extended_solver_policies(
                 &self.device,
@@ -3966,8 +4114,14 @@ impl GpuGeneratedContactRunner {
             contact_identity_policy: identity_policy,
             soft_feedback_policy,
             normal_relaxation_policy,
-            authority_gpu_probe_policy: authority_gpu_probe
+            authority_gpu_probe_policy: (authority_gpu_probe
+                && substep_contact_policy
+                    == crate::GpuSubstepContactPolicyV1::AuthorityFixedAnchorAnalyticalSeparation)
                 .then_some(crate::AuthorityGpuProbePolicyV1::AUTHORIZED),
+            branch_robust_gpu_promotion_policy: (authority_gpu_probe
+                && substep_contact_policy
+                    == crate::GpuSubstepContactPolicyV1::AuthorityBranchRobustFixedAnchorAnalyticalSeparation)
+                .then_some(crate::BranchRobustGpuPromotionPolicyV1::AUTHORIZED),
             authority_identity: graph.authority_identity,
             dispatches_per_step: graph.dispatches_per_step(),
             allocated_bytes: graph.allocated_bytes(),

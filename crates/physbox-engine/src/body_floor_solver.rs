@@ -77,6 +77,7 @@ pub enum GpuSubstepContactPolicyV1 {
     RefreshAnchorsAndMassRetainImpulses,
     FixedAnchorAnalyticalSeparation,
     AuthorityFixedAnchorAnalyticalSeparation,
+    AuthorityBranchRobustFixedAnchorAnalyticalSeparation,
 }
 
 /// Laboratory-only control over restitution placement relative to substeps.
@@ -149,13 +150,17 @@ impl GpuSubstepContactPolicyV1 {
                     .to_owned(),
             );
         }
-        if self == Self::AuthorityFixedAnchorAnalyticalSeparation
-            && (settings.contact_softness.is_none()
-                || execution != GpuSolverExecutionV4::AUTHORITY_GPU_PROBE
-                || normal_relaxation_policy != GpuNormalRelaxationPolicyV1::PointSequential)
+        if matches!(
+            self,
+            Self::AuthorityFixedAnchorAnalyticalSeparation
+                | Self::AuthorityBranchRobustFixedAnchorAnalyticalSeparation
+        ) && (settings.contact_softness.is_none()
+            || execution != GpuSolverExecutionV4::AUTHORITY_GPU_PROBE
+            || normal_relaxation_policy != GpuNormalRelaxationPolicyV1::PointSequential)
         {
             return Err(
-                "authority fixed-anchor separation requires the exact S13 GPU probe".to_owned(),
+                "authority fixed-anchor separation requires an authorized S13-derived GPU probe"
+                    .to_owned(),
             );
         }
         if self.is_retained_refresh_candidate()
@@ -2164,6 +2169,58 @@ impl GpuFixedFloorSolver {
         Ok(solver)
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
+    fn new_authored_branch_robust_gpu_promotion(
+        device: &wgpu::Device,
+        storage: &GpuBodyStorage,
+        scenario: &ScenarioV1,
+    ) -> Result<Self, String> {
+        crate::BranchRobustGpuPromotionPolicyV1::AUTHORIZED.validate_product_selection(false)?;
+        crate::branch_robust_gpu_promotion::validate_branch_robust_gpu_promotion_settings(
+            &scenario.settings,
+        )?;
+        if scenario.manifolds.is_empty() {
+            return Err(
+                "authored branch-robust promotion probe requires contact manifolds".to_owned(),
+            );
+        }
+        let (points, point_count) = point_inputs(scenario)?;
+        if point_count == 0 {
+            return Err(
+                "authored branch-robust promotion probe requires contact points".to_owned(),
+            );
+        }
+        let usage = wgpu::BufferUsages::STORAGE
+            | wgpu::BufferUsages::COPY_SRC
+            | wgpu::BufferUsages::COPY_DST;
+        let point_buffer = storage_init(
+            device,
+            "physbox5_authored_branch_robust_promotion_points",
+            bytemuck::cast_slice(&points),
+            usage,
+        );
+        let mut solver = Self::new_with_point_buffer_and_extended_solver_policies(
+            device,
+            storage,
+            scenario,
+            &point_buffer,
+            point_count,
+            GpuGatherTopology::StableBodyEdge,
+            false,
+            GpuSolverExecutionV4::AUTHORITY_GPU_PROBE,
+            GpuSolverSchedulingPolicyV1::authority_gpu_probe_for_body_capacity(
+                storage.layout().capacity_elements,
+            ),
+            GpuSoftFeedbackPolicyV1::EveryBiasedIteration,
+            GpuNormalRelaxationPolicyV1::PointSequential,
+            GpuContactCoefficientPolicyV1::AuthorityCappedSoft,
+            GpuSubstepContactPolicyV1::AuthorityBranchRobustFixedAnchorAnalyticalSeparation,
+            GpuRestitutionTimingPolicyV1::AfterEachSubstep,
+        )?;
+        solver._owned_point_input = Some(point_buffer);
+        Ok(solver)
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new_generated_experiment_with_topology_scheduling_and_extended_solver_policies(
         device: &wgpu::Device,
@@ -2333,7 +2390,7 @@ impl GpuFixedFloorSolver {
         substep_contact_policy: GpuSubstepContactPolicyV1,
         restitution_timing_policy: GpuRestitutionTimingPolicyV1,
     ) -> Result<Self, String> {
-        let authority_probe =
+        let exact_authority_probe =
             crate::authority_gpu_probe::validate_authority_gpu_probe_runtime_tuple(
                 execution,
                 scheduling_policy,
@@ -2344,8 +2401,24 @@ impl GpuFixedFloorSolver {
                 restitution_timing_policy,
             )
             .is_ok();
-        if authority_probe {
+        let branch_robust_authority_probe =
+            crate::branch_robust_gpu_promotion::validate_branch_robust_gpu_promotion_runtime_tuple(
+                execution,
+                scheduling_policy,
+                soft_feedback_policy,
+                normal_relaxation_policy,
+                contact_coefficient_policy,
+                substep_contact_policy,
+                restitution_timing_policy,
+            )
+            .is_ok();
+        let authority_probe = exact_authority_probe || branch_robust_authority_probe;
+        if exact_authority_probe {
             crate::authority_gpu_probe::validate_authority_gpu_probe_settings(&scenario.settings)?;
+        } else if branch_robust_authority_probe {
+            crate::branch_robust_gpu_promotion::validate_branch_robust_gpu_promotion_settings(
+                &scenario.settings,
+            )?;
         }
         scheduling_policy.validate(execution)?;
         soft_feedback_policy.validate(&scenario.settings)?;
@@ -3932,6 +4005,28 @@ pub async fn benchmark_gpu_s13_authority_probe(
     warmup_samples: u32,
     retained_samples: u32,
 ) -> Result<GpuS13AuthorityProbeBenchmarkV1, String> {
+    benchmark_gpu_authority_derived_pair(scenario, warmup_samples, retained_samples, false).await
+}
+
+/// Runs the S17 selected/branch-robust timing pair under the unchanged S13
+/// complete-step protocol.
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn benchmark_gpu_s17_branch_robust_promotion(
+    scenario: &ScenarioV1,
+    warmup_samples: u32,
+    retained_samples: u32,
+) -> Result<GpuS13AuthorityProbeBenchmarkV1, String> {
+    crate::BranchRobustGpuPromotionPolicyV1::AUTHORIZED.validate_product_selection(false)?;
+    benchmark_gpu_authority_derived_pair(scenario, warmup_samples, retained_samples, true).await
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+async fn benchmark_gpu_authority_derived_pair(
+    scenario: &ScenarioV1,
+    warmup_samples: u32,
+    retained_samples: u32,
+    branch_robust: bool,
+) -> Result<GpuS13AuthorityProbeBenchmarkV1, String> {
     if warmup_samples == 0 || retained_samples == 0 {
         return Err("S13 benchmark requires nonzero warm-up and retained samples".to_owned());
     }
@@ -3972,8 +4067,11 @@ pub async fn benchmark_gpu_s13_authority_probe(
         selected_scheduling,
         GpuContactCoefficientPolicyV1::SELECTED,
     )?;
-    let candidate_solver =
-        GpuFixedFloorSolver::new_authored_authority_gpu_probe(&device, &storage, scenario)?;
+    let candidate_solver = if branch_robust {
+        GpuFixedFloorSolver::new_authored_branch_robust_gpu_promotion(&device, &storage, scenario)?
+    } else {
+        GpuFixedFloorSolver::new_authored_authority_gpu_probe(&device, &storage, scenario)?
+    };
 
     let (selected_digest, selected_evidence) =
         authored_gather_result_evidence(&device, &queue, &storage, &reset, &selected_solver)?;
@@ -4151,7 +4249,11 @@ pub async fn benchmark_gpu_s13_authority_probe(
             result_digest: selected_digest,
         },
         candidate: GpuS13MeasuredConfigurationV1 {
-            configuration: "authority-x1-x4-current-x5-v1",
+            configuration: if branch_robust {
+                crate::BRANCH_ROBUST_GPU_PROMOTION_CANDIDATE_ID
+            } else {
+                crate::AUTHORITY_GPU_PROBE_CANDIDATE_ID
+            },
             solver_execution: GpuSolverExecutionV4::AUTHORITY_GPU_PROBE,
             solver_scheduling_policy: candidate_solver.scheduling_policy,
             topology: candidate_solver.gather_topology_evidence(),
@@ -4173,9 +4275,33 @@ pub fn authority_gpu_probe_capacity_disposition(
     scenario: &ScenarioV1,
     manifold_capacity: u32,
 ) -> Result<GpuAuthorityProbeCapacityDispositionV1, String> {
+    authority_derived_capacity_disposition(scenario, manifold_capacity, false)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn branch_robust_gpu_promotion_capacity_disposition(
+    scenario: &ScenarioV1,
+    manifold_capacity: u32,
+) -> Result<GpuAuthorityProbeCapacityDispositionV1, String> {
+    authority_derived_capacity_disposition(scenario, manifold_capacity, true)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn authority_derived_capacity_disposition(
+    scenario: &ScenarioV1,
+    manifold_capacity: u32,
+    branch_robust: bool,
+) -> Result<GpuAuthorityProbeCapacityDispositionV1, String> {
     scenario.validate().map_err(|error| error.to_string())?;
-    crate::AuthorityGpuProbePolicyV1::AUTHORIZED.validate_product_selection(false)?;
-    crate::authority_gpu_probe::validate_authority_gpu_probe_settings(&scenario.settings)?;
+    if branch_robust {
+        crate::BranchRobustGpuPromotionPolicyV1::AUTHORIZED.validate_product_selection(false)?;
+        crate::branch_robust_gpu_promotion::validate_branch_robust_gpu_promotion_settings(
+            &scenario.settings,
+        )?;
+    } else {
+        crate::AuthorityGpuProbePolicyV1::AUTHORIZED.validate_product_selection(false)?;
+        crate::authority_gpu_probe::validate_authority_gpu_probe_settings(&scenario.settings)?;
+    }
     let attempted = u32::try_from(scenario.manifolds.len())
         .map_err(|_| "authored authority manifold demand exceeds u32".to_owned())?;
     let rejected = attempted > manifold_capacity;
@@ -4194,6 +4320,22 @@ pub fn authority_gpu_probe_capacity_disposition(
 pub async fn run_gpu_authored_authority_probe(
     scenario: &ScenarioV1,
 ) -> Result<GpuAuthoredAuthorityProbeOutputV1, String> {
+    run_gpu_authored_authority_derived_probe(scenario, false).await
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn run_gpu_authored_branch_robust_promotion(
+    scenario: &ScenarioV1,
+) -> Result<GpuAuthoredAuthorityProbeOutputV1, String> {
+    crate::BranchRobustGpuPromotionPolicyV1::AUTHORIZED.validate_product_selection(false)?;
+    run_gpu_authored_authority_derived_probe(scenario, true).await
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+async fn run_gpu_authored_authority_derived_probe(
+    scenario: &ScenarioV1,
+    branch_robust: bool,
+) -> Result<GpuAuthoredAuthorityProbeOutputV1, String> {
     scenario.validate().map_err(|error| error.to_string())?;
     let body_count = u32::try_from(scenario.bodies.len())
         .map_err(|_| "authored authority body count exceeds u32".to_owned())?;
@@ -4208,8 +4350,11 @@ pub async fn run_gpu_authored_authority_probe(
         &scenario.bodies,
     )?;
     let reset = crate::body_state::GpuBodyResetData::new(body_count, &scenario.bodies)?;
-    let solver =
-        GpuFixedFloorSolver::new_authored_authority_gpu_probe(&device, &storage, scenario)?;
+    let solver = if branch_robust {
+        GpuFixedFloorSolver::new_authored_branch_robust_gpu_promotion(&device, &storage, scenario)?
+    } else {
+        GpuFixedFloorSolver::new_authored_authority_gpu_probe(&device, &storage, scenario)?
+    };
     let first =
         authored_authority_probe_result(&device, &queue, &storage, &reset, &solver, scenario)?;
     let replay =
@@ -5184,6 +5329,11 @@ fn operations_with_extended_solver_policies(
             == GpuSubstepContactPolicyV1::AuthorityFixedAnchorAnalyticalSeparation
         {
             refresh.uints0[3] = 3;
+            refresh.uints0[2] = topology.authority_initial_transforms_base;
+        } else if substep_contact_policy
+            == GpuSubstepContactPolicyV1::AuthorityBranchRobustFixedAnchorAnalyticalSeparation
+        {
+            refresh.uints0[3] = 4;
             refresh.uints0[2] = topology.authority_initial_transforms_base;
         }
         push_operation(
@@ -7578,6 +7728,42 @@ mod tests {
                 GpuSolverExecutionV4::experiment(true, true),
             )
             .is_err()
+        );
+    }
+
+    #[test]
+    fn branch_robust_refresh_changes_only_the_declared_separation_dag() {
+        let shader = include_str!("body_floor_solver.wgsl");
+        assert_eq!(shader.matches("if (params.uints0.w == 4u)").count(), 1);
+        assert_eq!(
+            shader
+                .matches("let rotation_displacement_a = authority_anchor_a - fixed.anchor_a;")
+                .count(),
+            1
+        );
+        assert_eq!(
+            shader
+                .matches("let rotation_displacement_b = authority_anchor_b - fixed.anchor_b;")
+                .count(),
+            1
+        );
+        assert_eq!(
+            shader
+                .matches("rotation_displacement_b - rotation_displacement_a;")
+                .count(),
+            1
+        );
+        assert_eq!(
+            shader
+                .matches("let robust_motion = delta_position + relative_rotation_displacement;")
+                .count(),
+            1
+        );
+        assert_eq!(
+            shader
+                .matches("fixed.data0.w = input.material.x + robust_projection;")
+                .count(),
+            1
         );
     }
 }

@@ -439,6 +439,54 @@ pub fn solve_authority_structure_one_step_pass_states(
     Ok((result, pass_states))
 }
 
+pub fn solve_branch_robust_authority_structure_one_step_pass_states(
+    scenario: &ScenarioV1,
+    policy: AuthorityStructurePolicyV1,
+) -> Result<
+    (
+        BranchRobustAuthoritySolveResultV1,
+        Vec<AuthorityStructurePassStateV1>,
+    ),
+    ScalarError,
+> {
+    if scenario.requested_steps != 1 {
+        return Err(ScalarError(
+            "branch-robust authority pass-state diagnostic requires exactly one outer step"
+                .to_owned(),
+        ));
+    }
+    if policy.preparation != AuthorityStructureSideV1::Authority {
+        return Err(ScalarError(
+            "branch-robust separation requires authority-side preparation".to_owned(),
+        ));
+    }
+    let perturbation = BranchRobustPerturbationV1::Nearest;
+    let mut statistics = BranchRobustRunStatisticsV1::default();
+    let mut pass_states = Vec::new();
+    let solve = solve_authority_structure_steps_observed_internal(
+        scenario,
+        policy,
+        true,
+        AuthoritySolveDiagnostics {
+            pass_states: Some(&mut pass_states),
+            branch_robust_perturbation: Some(perturbation),
+            branch_robust_statistics: Some(&mut statistics),
+            ..AuthoritySolveDiagnostics::default()
+        },
+    )?;
+    Ok((
+        BranchRobustAuthoritySolveResultV1 {
+            candidate_id: BRANCH_ROBUST_CANDIDATE_ID,
+            formula_version: BRANCH_ROBUST_FORMULA_VERSION,
+            error_bound_version: BRANCH_ROBUST_ERROR_BOUND_VERSION,
+            perturbation,
+            statistics,
+            solve,
+        },
+        pass_states,
+    ))
+}
+
 struct EventRouteState<'a> {
     owner: &'a EventStreamV1,
     families: Vec<EventFamilyV1>,
