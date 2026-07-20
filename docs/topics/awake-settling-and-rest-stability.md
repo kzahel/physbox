@@ -1175,6 +1175,21 @@ any product candidate or GPU execution probe. A4 is an authorized static
 representability question held behind the A3 human checkpoint. Hard/direct
 remains selected and no product/default/tolerance/oracle decision changes.
 
+S16 A1 first-event disposition, 2026-07-20: the verified
+[event-divergence package](../../evidence/p5.2b-s16.2-first-event-divergence/README.md)
+records exact replay for all three scalar endpoints at depths 11 and 16. Every
+pairwise scalar comparison first differs on the declared
+separation-positive/speculative-branch token. Exact binary32 versus the
+cancellation-path binary64 lane first splits at step 1, substep 2,
+relaxation, pair 4–5 point 1; exact binary32 versus full binary64 first splits
+at step 1, substep 1, relaxation, pair 8–9 point 0. In each case the first
+downstream impulse delta occurs at the same event. Retained native public
+manifold/cache observations are digest-bound; unavailable native branch,
+active-set, and color internals are not inferred. This assigns the first
+divergence to an authorized family and admits A2 without claiming that the
+family is sufficient or changing any product, recurrence, coefficient, band,
+or authority decision.
+
 ## Authority corrections
 
 Two plausible techniques must not be mislabeled as direct Box2D v3 parity:

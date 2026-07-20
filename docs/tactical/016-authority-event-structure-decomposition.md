@@ -196,18 +196,24 @@ contract are committed on a clean tree before governed event capture.
 
 ### S16.2 / A1 — first event divergence
 
-- [ ] Capture the three scalar endpoint event streams twice at depths 11 and
+- [x] Capture the three scalar endpoint event streams twice at depths 11 and
   16 and align the retained native public stream without inferring unavailable
   internals.
-- [ ] Record the earliest discrete difference for every scalar endpoint pair
+- [x] Record the earliest discrete difference for every scalar endpoint pair
   and its first downstream impulse/body delta.
-- [ ] Stop if the causal first divergence has no declared family owner.
+- [x] Stop if the causal first divergence has no declared family owner.
 
 Artifacts: `evidence/p5.2b-s16.2-first-event-divergence/`.
 
 Completion gate: every endpoint replay is exact and the first causal discrete
 divergence is either assigned to one of the six families or triggers the
 recorded human stop.
+
+Disposition, 2026-07-20: all six scalar endpoint comparisons first diverge in
+the declared separation-positive/speculative-branch family and have an
+immediate downstream impulse delta. The early-stop condition is false; A2 is
+admitted. Native branch, active-set, and color events remain explicitly
+unavailable rather than inferred.
 
 ### S16.3 / A2 — bidirectional event-owner replay
 
