@@ -197,11 +197,11 @@ is retained and does not replace the S17 product-relative quality gate.
 
 ### S17.3 — Metal full-corpus material qualification
 
-- [ ] Run selected and candidate over the complete 15-scene corpus with the
+- [x] Run selected and candidate over the complete 15-scene corpus with the
   frozen observation policy and retain per-step evidence.
-- [ ] Apply the product-relative material, 16-stack, geometry, finite-state,
+- [x] Apply the product-relative material, 16-stack, geometry, finite-state,
   replay, capacity, and diagnostic first-loss predicates mechanically.
-- [ ] Run the five selected/candidate response probes and retain raw outputs.
+- [x] Run the five selected/candidate response probes and retain raw outputs.
 
 Artifacts: `evidence/p5.2b-s17.4-metal-product-relative/`.
 
@@ -209,6 +209,19 @@ Completion gate: every predicate and every per-scene delta is explicit. A
 failed material gate does not authorize another candidate, but cross-host
 execution still runs so the human review receives the complete requested
 better/worse accounting unless execution is unsafe or impossible.
+
+S17.3 checkpoint, 2026-07-20: the clean
+[Metal product-relative package](../../evidence/p5.2b-s17.4-metal-product-relative/README.md)
+records a strong stillness effect—4/8/16 speed improves `87.17% / 91.20% /
+99.07%` and last-quartile energy improves `98.99% / 99.73% / ~100%`—while
+rejecting promotion. The 16-stack loses order at step 407 and violates the
+height/drift response bounds; eight other 1,200-step rows also violate at
+least one geometry margin. The 32/64 diagnostics and accepted rectangle
+bucket reach invalid duplicate/unsorted persistent-key states at exact steps
+300/134/11. Last-valid prefixes replay and match final-only state, capacity is
+clean, and all five response probes pass. Cross-host and timing lanes remain
+active for the complete human decision package, but cannot erase this hard
+Metal failure.
 
 ### S17.4 — complete-step cost
 
