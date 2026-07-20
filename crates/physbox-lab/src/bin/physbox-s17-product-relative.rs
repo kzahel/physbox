@@ -231,6 +231,7 @@ struct ResponseCase {
 struct ProductRelativeGate {
     version: u32,
     baseline_source_revision: String,
+    baseline_code_equivalent: bool,
     full_corpus_identity: bool,
     accepted_structure_clean: bool,
     replay_and_capacity_clean: bool,
@@ -446,13 +447,19 @@ fn run_corpus(arguments: &Arguments, staging: &Path, provenance: Provenance) -> 
             .ok_or_else(|| "S17 candidate mode requires --baseline".to_owned())?;
         let bytes = fs::read(path).map_err(display)?;
         let manifest: BaselineManifest = serde_json::from_slice(&bytes).map_err(display)?;
-        validate_baseline(&manifest, &arguments.host, &provenance.source_revision)?;
+        validate_baseline(&manifest, &arguments.host)?;
+        let code_equivalent =
+            baseline_code_equivalent(&manifest.source_revision, &provenance.source_revision)?;
+        if !code_equivalent {
+            return Err("S17 baseline and candidate physics code differ".to_owned());
+        }
         Some((
             manifest,
             ArtifactIdentity {
                 path: path.to_string_lossy().replace('\\', "/"),
                 sha256: sha256_bytes(&bytes),
             },
+            code_equivalent,
         ))
     } else {
         if arguments.baseline.is_some() {
@@ -475,7 +482,9 @@ fn run_corpus(arguments: &Arguments, staging: &Path, provenance: Provenance) -> 
     let response = response_evidence(&runner, candidate)?;
     let product_relative_gate = baseline
         .as_ref()
-        .map(|(baseline, _)| product_relative_gate(baseline, &scenes, &response))
+        .map(|(baseline, _, code_equivalent)| {
+            product_relative_gate(baseline, *code_equivalent, &scenes, &response)
+        })
         .transpose()?;
     let manifest = CorpusManifest {
         provenance,
@@ -488,7 +497,7 @@ fn run_corpus(arguments: &Arguments, staging: &Path, provenance: Provenance) -> 
         },
         scenes,
         response,
-        baseline: baseline.map(|(_, identity)| identity),
+        baseline: baseline.map(|(_, identity, _)| identity),
         product_relative_gate,
     };
     atomic_json(&staging.join("manifest.json"), &manifest)
@@ -784,16 +793,11 @@ fn response_evidence(
     })
 }
 
-fn validate_baseline(
-    baseline: &BaselineManifest,
-    host: &str,
-    source_revision: &str,
-) -> Result<(), String> {
+fn validate_baseline(baseline: &BaselineManifest, host: &str) -> Result<(), String> {
     if baseline.artifact_kind != "p5.2b-s17-selected-baseline"
         || baseline.mode != "baseline"
         || baseline.source_dirty
         || baseline.host != host
-        || baseline.source_revision != source_revision
         || baseline.scenes.len() != 15
         || baseline
             .scenes
@@ -820,8 +824,36 @@ fn validate_baseline(
     Ok(())
 }
 
+fn baseline_code_equivalent(
+    baseline_revision: &str,
+    candidate_revision: &str,
+) -> Result<bool, String> {
+    if baseline_revision == candidate_revision {
+        return Ok(true);
+    }
+    let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let status = Command::new("git")
+        .args([
+            "diff",
+            "--quiet",
+            baseline_revision,
+            candidate_revision,
+            "--",
+            "Cargo.toml",
+            "Cargo.lock",
+            "crates/physbox-contracts",
+            "crates/physbox-engine",
+            "crates/physbox-lab/src/settling.rs",
+        ])
+        .current_dir(repository)
+        .status()
+        .map_err(display)?;
+    Ok(status.success())
+}
+
 fn product_relative_gate(
     baseline: &BaselineManifest,
+    baseline_code_equivalent: bool,
     candidates: &[SceneEvidence],
     response: &ResponseEvidence,
 ) -> Result<ProductRelativeGate, String> {
@@ -1011,6 +1043,7 @@ fn product_relative_gate(
     Ok(ProductRelativeGate {
         version: 1,
         baseline_source_revision: baseline.source_revision.clone(),
+        baseline_code_equivalent,
         full_corpus_identity,
         accepted_structure_clean,
         replay_and_capacity_clean,
