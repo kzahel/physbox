@@ -11,6 +11,9 @@ use crate::{
         BranchRobustPerturbationV1, BranchRobustRunStatisticsV1, evaluate_branch_robust_scalar_v1,
         select_branch_robust_perturbation_v1,
     },
+    precision_margin::{
+        PrecisionPathStatisticsV1, PrecisionPerturbationV1, evaluate_precision_path_v1,
+    },
 };
 use serde::Serialize;
 
@@ -1206,6 +1209,45 @@ pub(crate) fn refresh_branch_robust_authority_separations(
                 point_index as u32,
                 statistics,
             );
+        }
+    }
+}
+
+pub(crate) fn refresh_precision_path_authority_separations(
+    contacts: &mut [PreparedContact],
+    bodies: &[BodyStateV1],
+    zero_based_step: u32,
+    substep: u32,
+    perturbation: PrecisionPerturbationV1,
+    amplitude: f64,
+    statistics: &mut PrecisionPathStatisticsV1,
+) {
+    for contact in contacts {
+        for (point_index, point) in contact.points.iter_mut().enumerate() {
+            point.separation = evaluate_precision_path_v1(
+                AuthoritySeparationInputsV1 {
+                    normal: contact.normal,
+                    anchor_a: point.anchor_a,
+                    anchor_b: point.anchor_b,
+                    position_a: bodies[contact.body_a].position,
+                    position_b: bodies[contact.body_b].position,
+                    initial_position_a: contact.initial_position_a,
+                    initial_position_b: contact.initial_position_b,
+                    angle_a: bodies[contact.body_a].angle.get(),
+                    angle_b: bodies[contact.body_b].angle.get(),
+                    initial_angle_a: contact.initial_angle_a,
+                    initial_angle_b: contact.initial_angle_b,
+                    input_separation: point.input_separation,
+                },
+                perturbation,
+                amplitude,
+                zero_based_step,
+                substep,
+                contact.manifold_id,
+                point_index as u32,
+                statistics,
+            )
+            .selected_separation;
         }
     }
 }

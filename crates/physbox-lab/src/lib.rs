@@ -17,6 +17,7 @@ pub mod oracle_transport;
 pub mod parallel_normal;
 pub mod pass_energy;
 pub mod playback;
+pub mod precision_margin;
 pub mod scalar;
 pub mod scheduler_benchmark;
 pub mod settling;

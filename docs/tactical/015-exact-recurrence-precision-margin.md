@@ -78,7 +78,9 @@ speed, height, penetration, energy-ratio, and positive-run predicates over
 the frozen 1,200-step, four-substep, sleep-off contract. Candidate admission
 requires all four governed rows to pass. In particular, a passing full-solve
 lane cannot rescue a failing cancellation-path-only lane: that result would
-show that compensation on the identified path is insufficient.
+show that compensation on the identified path is insufficient. Both the
+precision matrix and the margin curve are required measurement-only work; a
+precision failure prevents candidate admission but does not skip the curve.
 
 ## Frozen depth-16 margin curve
 
@@ -193,12 +195,14 @@ are committed before precision response implementation.
   binary64 lanes with scope-attestation controls.
 - [ ] Run depths 11 and 16 twice, retain full observations and predicates, and
   verify exact replay and unchanged authority ownership.
-- [ ] Admit margin measurement only if all four governed rows are still.
+- [ ] Record the candidate-admission precision predicate without using a
+  failed row to skip the separately authorized margin measurement.
 
 Artifacts: `evidence/p5.2b-s15.2-f64-precision-limit/`.
 
-Completion gate: 4/4 governed rows qualify, or close with no candidate and a
-decomposition-addendum fork at the human checkpoint.
+Completion gate: all four rows have verified dispositions and the study
+continues to the required measurement-only margin curve. A failure records
+the no-candidate route but does not stop before S15.3.
 
 ### S15.3 — depth-16 margin and EFT feasibility bound
 
@@ -212,8 +216,9 @@ decomposition-addendum fork at the human checkpoint.
 
 Artifacts: `evidence/p5.2b-s15.3-depth16-margin/`.
 
-Completion gate: the strict margin route is verified, or close with no
-candidate and a decomposition-addendum fork at the human checkpoint.
+Completion gate: the strict candidate route is verified from both S15.2 and
+S15.3, or close with no candidate and a decomposition-addendum fork at the
+human checkpoint.
 
 ### S15.4 — exact two-float derivation and scalar controls
 
@@ -281,7 +286,8 @@ commits, and repository/platform gates.
 
 Stop and return to the human when:
 
-1. either precision-limit lane fails a governed row;
+1. after both measurement-only slices complete, either precision-limit lane
+   has failed a governed row;
 2. the study margin does not strictly exceed the proved compensated bound;
 3. an EFT precondition or unchanged-expression proof fails;
 4. any governed candidate perturbation lane fails after implementation defects

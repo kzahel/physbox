@@ -16,13 +16,15 @@ use crate::branch_robust::{
     BRANCH_ROBUST_CANDIDATE_ID, BRANCH_ROBUST_ERROR_BOUND_VERSION, BRANCH_ROBUST_FORMULA_VERSION,
 };
 use crate::branch_robust_scalar::{BranchRobustPerturbationV1, BranchRobustRunStatisticsV1};
+use crate::precision_margin::{PrecisionPathStatisticsV1, PrecisionPerturbationV1};
 use crate::scalar::{
     PreparedContact, ScalarError, ScalarObservedSolveResultV1, ScalarSolveResult,
     ScalarStepObservationV1, apply_restitution, collect_contact_cache, generate_portable_contacts,
     integrate_positions, integrate_positions_authority, integrate_velocities,
     maximum_depenetration_velocity, order_authority_contact_points, prepare_contact,
     refresh_authority_separations, refresh_branch_robust_authority_separations,
-    refresh_separations, solve_normal, solve_tangent, warm_start,
+    refresh_precision_path_authority_separations, refresh_separations, solve_normal, solve_tangent,
+    warm_start,
 };
 
 pub const AUTHORITY_STRUCTURE_POLICY_VERSION: u32 = 1;
@@ -192,6 +194,15 @@ pub struct BranchRobustAuthoritySolveResultV1 {
     pub solve: ScalarObservedSolveResultV1,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct PrecisionPathAuthoritySolveResultV1 {
+    pub base_candidate_id: &'static str,
+    pub perturbation: PrecisionPerturbationV1,
+    pub amplitude: f64,
+    pub statistics: PrecisionPathStatisticsV1,
+    pub solve: ScalarObservedSolveResultV1,
+}
+
 pub fn mandatory_authority_structure_configurations_v1() -> Vec<AuthorityStructureConfigurationV1> {
     let mut configurations = vec![
         AuthorityStructureConfigurationV1 {
@@ -243,6 +254,9 @@ pub fn solve_authority_structure_steps_observed(
         None,
         None,
         None,
+        None,
+        0.0,
+        None,
     )
 }
 
@@ -265,12 +279,53 @@ pub fn solve_branch_robust_authority_structure_steps_observed(
         None,
         Some(perturbation),
         Some(&mut statistics),
+        None,
+        0.0,
+        None,
     )?;
     Ok(BranchRobustAuthoritySolveResultV1 {
         candidate_id: BRANCH_ROBUST_CANDIDATE_ID,
         formula_version: BRANCH_ROBUST_FORMULA_VERSION,
         error_bound_version: BRANCH_ROBUST_ERROR_BOUND_VERSION,
         perturbation,
+        statistics,
+        solve,
+    })
+}
+
+pub fn solve_precision_path_authority_structure_steps_observed(
+    scenario: &ScenarioV1,
+    policy: AuthorityStructurePolicyV1,
+    perturbation: PrecisionPerturbationV1,
+    amplitude: f64,
+    retain_traces: bool,
+) -> Result<PrecisionPathAuthoritySolveResultV1, ScalarError> {
+    if policy.preparation != AuthorityStructureSideV1::Authority {
+        return Err(ScalarError(
+            "S15 precision path requires authority-side preparation".to_owned(),
+        ));
+    }
+    if !amplitude.is_finite() || amplitude < 0.0 {
+        return Err(ScalarError(
+            "S15 precision amplitude must be finite and non-negative".to_owned(),
+        ));
+    }
+    let mut statistics = PrecisionPathStatisticsV1::default();
+    let solve = solve_authority_structure_steps_observed_internal(
+        scenario,
+        policy,
+        retain_traces,
+        None,
+        None,
+        None,
+        Some(perturbation),
+        amplitude,
+        Some(&mut statistics),
+    )?;
+    Ok(PrecisionPathAuthoritySolveResultV1 {
+        base_candidate_id: crate::precision_margin::PRECISION_BASE_CANDIDATE_ID,
+        perturbation,
+        amplitude,
         statistics,
         solve,
     })
@@ -299,6 +354,9 @@ pub fn solve_authority_structure_one_step_pass_states(
         Some(&mut pass_states),
         None,
         None,
+        None,
+        0.0,
+        None,
     )?;
     Ok((result, pass_states))
 }
@@ -310,6 +368,9 @@ fn solve_authority_structure_steps_observed_internal(
     mut pass_states: Option<&mut Vec<AuthorityStructurePassStateV1>>,
     branch_robust_perturbation: Option<BranchRobustPerturbationV1>,
     mut branch_robust_statistics: Option<&mut BranchRobustRunStatisticsV1>,
+    precision_perturbation: Option<PrecisionPerturbationV1>,
+    precision_amplitude: f64,
+    mut precision_statistics: Option<&mut PrecisionPathStatisticsV1>,
 ) -> Result<ScalarObservedSolveResultV1, ScalarError> {
     policy.validate()?;
     scenario
@@ -427,7 +488,19 @@ fn solve_authority_structure_steps_observed_internal(
                 &bodies,
             );
             if policy.preparation == AuthorityStructureSideV1::Authority {
-                if let (Some(perturbation), Some(statistics)) = (
+                if let (Some(perturbation), Some(statistics)) =
+                    (precision_perturbation, precision_statistics.as_deref_mut())
+                {
+                    refresh_precision_path_authority_separations(
+                        contacts,
+                        &bodies,
+                        step,
+                        substep,
+                        perturbation,
+                        precision_amplitude,
+                        statistics,
+                    );
+                } else if let (Some(perturbation), Some(statistics)) = (
                     branch_robust_perturbation,
                     branch_robust_statistics.as_deref_mut(),
                 ) {
