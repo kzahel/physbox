@@ -35,6 +35,8 @@ use crate::body_floor_solver::{
 
 const WORKGROUP_SIZE: u32 = 64;
 const VALIDATION_STEPS_PER_SUBMISSION: u32 = 64;
+#[cfg(not(target_arch = "wasm32"))]
+const VALIDATION_SNAPSHOTS_PER_READBACK_FLUSH: u32 = 64;
 const CACHE_VALUE_BYTES: u32 = 16;
 const PERSISTENT_RECORD_BYTES: u32 = PERSISTENT_CONTACT_KEY_BYTES + CACHE_VALUE_BYTES;
 const COLLISION_DISPATCHES: u32 = 212;
@@ -3497,8 +3499,9 @@ impl GpuGeneratedContactRunner {
     }
 
     /// Records exact post-step state, narrowphase output, and warm-start state
-    /// for bounded native settling validation. The copies stay GPU ordered and
-    /// are mapped only after the final requested step.
+    /// for bounded native settling validation. The copies stay GPU ordered;
+    /// bounded readback windows are mapped without feeding CPU data back into
+    /// the simulation state.
     pub fn run_selected_observation_series(
         &self,
         scenario: &ScenarioV1,
@@ -3874,38 +3877,107 @@ impl GpuGeneratedContactRunner {
             )?
         };
         let snapshot_count = completed_steps / observation_interval_steps;
-        let readbacks =
-            GeneratedSettlingReadbacks::new(&self.device, &graph, body_count, snapshot_count);
-
+        let source_scenario_hash = canonical_hash(scenario).map_err(|error| error.to_string())?;
+        let mut snapshots = Vec::with_capacity(snapshot_count as usize);
         let mut encoded_steps = 0;
-        let mut snapshot_index = 0;
-        while encoded_steps < completed_steps {
-            let chunk = (completed_steps - encoded_steps).min(submission_batch_steps);
-            let mut encoder = self
-                .device
-                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("physbox5_generated_settling_series"),
-                });
-            for local_step in 0..chunk {
-                graph.encode_step(&mut encoder, false);
-                let step = encoded_steps + local_step + 1;
-                if step.is_multiple_of(observation_interval_steps) {
-                    readbacks.encode_copy(&mut encoder, &storage, &graph, snapshot_index);
-                    snapshot_index += 1;
+        let mut decoded_snapshots = 0;
+        while decoded_snapshots < snapshot_count {
+            let flush_snapshot_count =
+                (snapshot_count - decoded_snapshots).min(VALIDATION_SNAPSHOTS_PER_READBACK_FLUSH);
+            let flush_completed_steps = (decoded_snapshots + flush_snapshot_count)
+                .checked_mul(observation_interval_steps)
+                .ok_or_else(|| "generated settling readback cadence overflowed".to_owned())?;
+            let readbacks = GeneratedSettlingReadbacks::new(
+                &self.device,
+                &graph,
+                body_count,
+                flush_snapshot_count,
+            );
+            let mut flush_snapshot_index = 0;
+            while encoded_steps < flush_completed_steps {
+                let chunk = (flush_completed_steps - encoded_steps).min(submission_batch_steps);
+                let mut encoder =
+                    self.device
+                        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                            label: Some("physbox5_generated_settling_series"),
+                        });
+                for local_step in 0..chunk {
+                    graph.encode_step(&mut encoder, false);
+                    let step = encoded_steps + local_step + 1;
+                    if step.is_multiple_of(observation_interval_steps) {
+                        readbacks.encode_copy(&mut encoder, &storage, &graph, flush_snapshot_index);
+                        flush_snapshot_index += 1;
+                    }
                 }
+                self.queue.submit([encoder.finish()]);
+                encoded_steps += chunk;
             }
-            self.queue.submit([encoder.finish()]);
-            encoded_steps += chunk;
+            if flush_snapshot_index != flush_snapshot_count {
+                return Err(
+                    "generated settling series encoded the wrong flush sample count".to_owned(),
+                );
+            }
+            self.device
+                .poll(wgpu::PollType::Wait)
+                .map_err(|error| format!("generated settling series poll failed: {error}"))?;
+            let mut decoded = self.decode_generated_settling_readbacks(
+                scenario,
+                &graph,
+                &readbacks,
+                decoded_snapshots,
+                observation_interval_steps,
+                &source_scenario_hash,
+            )?;
+            snapshots.append(&mut decoded);
+            decoded_snapshots += flush_snapshot_count;
         }
-        if snapshot_index != snapshot_count {
-            return Err("generated settling series encoded the wrong sample count".to_owned());
+        if encoded_steps != completed_steps || snapshots.len() != snapshot_count as usize {
+            return Err("generated settling series completed the wrong evidence count".to_owned());
         }
-        self.device
-            .poll(wgpu::PollType::Wait)
-            .map_err(|error| format!("generated settling series poll failed: {error}"))?;
+        let series = GpuGeneratedContactSeriesV1 {
+            version: 1,
+            adapter: self.diagnostics.clone(),
+            source_scenario_hash,
+            observation_interval_steps,
+            completed_steps,
+            solver_settings: scenario.settings,
+            solver_execution: execution,
+            solver_scheduling_policy: scheduling_policy,
+            contact_coefficient_policy: graph.contact_coefficient_policy,
+            substep_contact_policy: graph.substep_contact_policy,
+            restitution_timing_policy: graph.restitution_timing_policy,
+            contact_identity_policy: identity_policy,
+            soft_feedback_policy,
+            normal_relaxation_policy,
+            authority_gpu_probe_policy: (authority_gpu_probe
+                && substep_contact_policy
+                    == crate::GpuSubstepContactPolicyV1::AuthorityFixedAnchorAnalyticalSeparation)
+                .then_some(crate::AuthorityGpuProbePolicyV1::AUTHORIZED),
+            branch_robust_gpu_promotion_policy: (authority_gpu_probe
+                && substep_contact_policy
+                    == crate::GpuSubstepContactPolicyV1::AuthorityBranchRobustFixedAnchorAnalyticalSeparation)
+                .then_some(crate::BranchRobustGpuPromotionPolicyV1::AUTHORIZED),
+            authority_identity: graph.authority_identity,
+            dispatches_per_step: graph.dispatches_per_step(),
+            allocated_bytes: graph.allocated_bytes(),
+            snapshots,
+        };
+        series.validate()?;
+        Ok(series)
+    }
 
-        let snapshot_count_usize = snapshot_count as usize;
-        let body_count_usize = body_count as usize;
+    #[allow(clippy::too_many_arguments)]
+    fn decode_generated_settling_readbacks(
+        &self,
+        scenario: &ScenarioV1,
+        graph: &GpuGeneratedContactGraph,
+        readbacks: &GeneratedSettlingReadbacks,
+        first_snapshot_index: u32,
+        observation_interval_steps: u32,
+        source_scenario_hash: &str,
+    ) -> Result<Vec<GpuGeneratedContactSnapshotV1>, String> {
+        let snapshot_count_usize = readbacks.snapshot_count as usize;
+        let body_count_usize = scenario.bodies.len();
         let state = crate::collision_candidates::map_values::<[u32; 4]>(
             &self.device,
             &readbacks.state,
@@ -3984,10 +4056,10 @@ impl GpuGeneratedContactRunner {
             &readbacks.cache,
             pair_graph.pair_capacity as usize * snapshot_count_usize,
         )?;
-        let source_scenario_hash = canonical_hash(scenario).map_err(|error| error.to_string())?;
         let mut snapshots = Vec::with_capacity(snapshot_count_usize);
         for index in 0..snapshot_count_usize {
-            let expected_step = (index as u32 + 1) * observation_interval_steps;
+            let global_snapshot_index = first_snapshot_index + index as u32;
+            let expected_step = (global_snapshot_index + 1) * observation_interval_steps;
             if gpu_steps[index] != expected_step {
                 return Err(format!(
                     "GPU settling completed-step counter {} differed from {expected_step}",
@@ -4071,7 +4143,7 @@ impl GpuGeneratedContactRunner {
                     } else {
                         "narrowphase".to_owned()
                     }),
-                    reproducer_hash: Some(source_scenario_hash.clone()),
+                    reproducer_hash: Some(source_scenario_hash.to_owned()),
                 });
             let cache = if rejected[index] {
                 Vec::new()
@@ -4099,36 +4171,7 @@ impl GpuGeneratedContactRunner {
                 failure,
             });
         }
-        let series = GpuGeneratedContactSeriesV1 {
-            version: 1,
-            adapter: self.diagnostics.clone(),
-            source_scenario_hash,
-            observation_interval_steps,
-            completed_steps,
-            solver_settings: scenario.settings,
-            solver_execution: execution,
-            solver_scheduling_policy: scheduling_policy,
-            contact_coefficient_policy: graph.contact_coefficient_policy,
-            substep_contact_policy: graph.substep_contact_policy,
-            restitution_timing_policy: graph.restitution_timing_policy,
-            contact_identity_policy: identity_policy,
-            soft_feedback_policy,
-            normal_relaxation_policy,
-            authority_gpu_probe_policy: (authority_gpu_probe
-                && substep_contact_policy
-                    == crate::GpuSubstepContactPolicyV1::AuthorityFixedAnchorAnalyticalSeparation)
-                .then_some(crate::AuthorityGpuProbePolicyV1::AUTHORIZED),
-            branch_robust_gpu_promotion_policy: (authority_gpu_probe
-                && substep_contact_policy
-                    == crate::GpuSubstepContactPolicyV1::AuthorityBranchRobustFixedAnchorAnalyticalSeparation)
-                .then_some(crate::BranchRobustGpuPromotionPolicyV1::AUTHORIZED),
-            authority_identity: graph.authority_identity,
-            dispatches_per_step: graph.dispatches_per_step(),
-            allocated_bytes: graph.allocated_bytes(),
-            snapshots,
-        };
-        series.validate()?;
-        Ok(series)
+        Ok(snapshots)
     }
 
     pub fn run(
@@ -5719,7 +5762,7 @@ fn map_range<T: Pod + Copy>(
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
-    use super::GpuGeneratedContactRunner;
+    use super::{GpuGeneratedContactRunner, VALIDATION_SNAPSHOTS_PER_READBACK_FLUSH};
     use crate::{
         GpuRestitutionTimingPolicyV1, GpuSolverExecutionV4, GpuSolverSchedulingPolicyV1,
         GpuSubstepContactPolicyV1, P5_2SettlingFixtureKind, P5_2SettlingReviewPolicy,
@@ -5769,6 +5812,52 @@ mod tests {
             snapshot.failure.is_none()
                 && snapshot.capacities.iter().all(|capacity| capacity.accepted)
         }));
+    }
+
+    #[test]
+    fn selected_settling_series_replays_across_a_readback_flush_boundary() {
+        let scenario = p5_2_settling_fixture_scenario(
+            P5_2SettlingFixtureKind::NearFlatFloorDrop,
+            0x6002,
+            VALIDATION_SNAPSHOTS_PER_READBACK_FLUSH + 1,
+        )
+        .unwrap();
+        let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
+        let first = runner
+            .run_selected_observation_series(
+                &scenario,
+                1,
+                VALIDATION_SNAPSHOTS_PER_READBACK_FLUSH + 1,
+            )
+            .unwrap();
+        let replay = runner
+            .run_selected_observation_series(
+                &scenario,
+                1,
+                VALIDATION_SNAPSHOTS_PER_READBACK_FLUSH + 1,
+            )
+            .unwrap();
+        let final_only = runner
+            .run(&scenario, VALIDATION_SNAPSHOTS_PER_READBACK_FLUSH + 1)
+            .unwrap();
+        assert_eq!(
+            serde_json::to_vec(&first).unwrap(),
+            serde_json::to_vec(&replay).unwrap()
+        );
+        assert_eq!(
+            first.snapshots.len(),
+            (VALIDATION_SNAPSHOTS_PER_READBACK_FLUSH + 1) as usize
+        );
+        assert_eq!(
+            first.snapshots[VALIDATION_SNAPSHOTS_PER_READBACK_FLUSH as usize - 1].completed_steps,
+            VALIDATION_SNAPSHOTS_PER_READBACK_FLUSH
+        );
+        assert_eq!(first.snapshots.last().unwrap().bodies, final_only.bodies);
+        assert_eq!(
+            first.snapshots.last().unwrap().manifolds,
+            final_only.manifolds
+        );
+        assert_eq!(first.snapshots.last().unwrap().cache, final_only.cache);
     }
 
     #[test]

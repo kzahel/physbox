@@ -284,6 +284,18 @@ replay, solver operations, metrics, and gates are unchanged. Focused unit and
 clippy gates pass; full physical qualification is rerunning from a clean
 commit.
 
+The first bounded-JSON rerun was stopped safely at centered-64 before another
+reboot: one raw series alone reached `4.76 GB`. The remaining owner was the
+engine validation readback allocation, which reserved GPU/readback storage for
+all 1,200 observations before the final map. Native bounded validation now
+keeps the same GPU world, authored steps, command submissions, cadence, and
+decoded series while mapping completed readback windows of at most 64
+snapshots. CPU data never advances or changes simulation state. An exact
+65-step test crosses the new boundary and matches replay plus final-only body,
+manifold, and cache state; the existing replay control and focused clippy gate
+also pass. This cuts the centered-64 readback allocation by approximately 19x
+without weakening the evidence contract.
+
 The OOM event rebooted the Pixel rather than merely resetting USB: Android
 records `kernel_panic` with a system-dead/OOM boot reason. The secured device
 therefore requires a human credential for UI access, but this Pixel exposes
