@@ -359,6 +359,7 @@ const fn compact_contact_coefficients(policy: GpuContactCoefficientPolicyV1) -> 
         GpuContactCoefficientPolicyV1::SettingsDerived => 0,
         GpuContactCoefficientPolicyV1::StaticStiffHard => 1,
         GpuContactCoefficientPolicyV1::AuthorityCappedSoft => 2,
+        GpuContactCoefficientPolicyV1::AuthorityTunableSoft => 3,
     }
 }
 

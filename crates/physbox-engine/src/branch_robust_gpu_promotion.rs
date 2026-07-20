@@ -79,6 +79,52 @@ pub(crate) fn validate_branch_robust_gpu_promotion_settings(
     crate::authority_gpu_probe::validate_authority_gpu_probe_settings(settings)
 }
 
+/// Coefficient-exploration lane: the exact branch-robust execution tuple with
+/// the scenario's own soft-contact coefficients. Requires the same four-substep
+/// i2 source shape but no frozen 30 Hz / damping 10 pin. Laboratory-only and
+/// never product-selectable.
+#[cfg_attr(feature = "production-validation", allow(dead_code))]
+pub(crate) fn validate_branch_robust_tunable_settings(
+    settings: &SolverSettingsV1,
+) -> Result<(), String> {
+    let Some(softness) = settings.contact_softness else {
+        return Err("branch-robust tunable lane requires soft contact".to_owned());
+    };
+    if settings.substeps != 4
+        || settings.iterations != 2
+        || softness.version != physbox_contracts::CONTACT_SOFTNESS_POLICY_VERSION
+    {
+        return Err("branch-robust tunable lane requires the four-substep i2 source".to_owned());
+    }
+    Ok(())
+}
+
+#[cfg_attr(feature = "production-validation", allow(dead_code))]
+pub(crate) fn validate_branch_robust_tunable_runtime_tuple(
+    execution: GpuSolverExecutionV4,
+    scheduling: GpuSolverSchedulingPolicyV1,
+    soft_feedback: GpuSoftFeedbackPolicyV1,
+    normal_relaxation: GpuNormalRelaxationPolicyV1,
+    contact_coefficients: GpuContactCoefficientPolicyV1,
+    substep_contacts: GpuSubstepContactPolicyV1,
+    restitution_timing: GpuRestitutionTimingPolicyV1,
+) -> Result<(), String> {
+    BranchRobustGpuPromotionPolicyV1::AUTHORIZED.validate_product_selection(false)?;
+    if execution != GpuSolverExecutionV4::AUTHORITY_GPU_PROBE
+        || (scheduling != GpuSolverSchedulingPolicyV1::AUTHORITY_GPU_PROBE
+            && scheduling != GpuSolverSchedulingPolicyV1::AUTHORITY_GPU_PROBE_SMALL_WORLD)
+        || soft_feedback != GpuSoftFeedbackPolicyV1::EveryBiasedIteration
+        || normal_relaxation != GpuNormalRelaxationPolicyV1::PointSequential
+        || contact_coefficients != GpuContactCoefficientPolicyV1::AuthorityTunableSoft
+        || substep_contacts
+            != GpuSubstepContactPolicyV1::AuthorityBranchRobustFixedAnchorAnalyticalSeparation
+        || restitution_timing != GpuRestitutionTimingPolicyV1::AfterEachSubstep
+    {
+        return Err("GPU runtime tuple differs from the branch-robust tunable lane".to_owned());
+    }
+    Ok(())
+}
+
 pub(crate) fn validate_branch_robust_gpu_promotion_runtime_tuple(
     execution: GpuSolverExecutionV4,
     scheduling: GpuSolverSchedulingPolicyV1,

@@ -104,6 +104,12 @@ product-relative material gate, with full Metal/AVD/physical-Android and cost
 evidence before human promotion review. Track B retains full authority parity
 and its next authority-robustness study in a paused, not closed, status. S17 has
 one candidate and no sleeping work.
+Human review, 2026-07-20, retires the bounded-study chain method and opens
+S18 as a plain engineering loop: a fast solver scoreboard tool, a fix for the
+branch-robust persistent-key corruption, and the first-ever sweep of the
+soft-contact coefficients, with a pre-committed stop that either produces one
+configuration for promotion review or accepts the residual band and closes
+the settling program without a successor study.
 
 Tactical filenames use a three-digit zero-padded prefix ordered by their first
 Git creation timestamp. This repository starts at `001`. Never renumber an
@@ -131,6 +137,7 @@ This README remains the unnumbered index.
 | S15 | Exact-recurrence precision margin | [015-exact-recurrence-precision-margin.md](015-exact-recurrence-precision-margin.md) | complete; precision limit not still, no candidate, event-structure addendum returned to human review, 2026-07-20 |
 | S16 | Authority event-structure decomposition | [016-authority-event-structure-decomposition.md](016-authority-event-structure-decomposition.md) | manual checkpoint; no declared routed event structure, A4 held pending human release, 2026-07-20 |
 | S17 | Branch-robust product-relative promotion study | [017-branch-robust-product-promotion.md](017-branch-robust-product-promotion.md) | active at Android qualification after reboot/unlock; memory-bounded evidence rerun pending, Metal rejects candidate, 2026-07-20 |
+| S18 | Solver check loop and coefficient exploration | [018-solver-check-loop-and-coefficient-exploration.md](018-solver-check-loop-and-coefficient-exploration.md) | active; engine tunable lane implemented, check binary pending, 2026-07-20 |
 
 ## Conventions
 

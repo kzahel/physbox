@@ -57,12 +57,17 @@ pub enum GpuSoftFeedbackPolicyV1 {
 
 /// Laboratory-only control over hard-contact coefficients. Product
 /// construction always derives one uniform tuple from `SolverSettingsV1`.
+/// `AuthorityTunableSoft` is the coefficient-exploration lane: it runs the
+/// branch-robust execution with the scenario's own soft-contact tuple instead
+/// of the frozen 30 Hz / damping 10 / static-x2 values, and is never
+/// product-selectable.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum GpuContactCoefficientPolicyV1 {
     SettingsDerived,
     StaticStiffHard,
     AuthorityCappedSoft,
+    AuthorityTunableSoft,
 }
 
 /// Laboratory-only control over contact preparation across solver substeps.
@@ -225,6 +230,14 @@ impl GpuContactCoefficientPolicyV1 {
                     "authority capped coefficients require the frozen 30 Hz / damping 10 / four-substep source"
                         .to_owned(),
                 );
+            }
+        }
+        if self == Self::AuthorityTunableSoft {
+            if settings.contact_softness.is_none() {
+                return Err("tunable soft coefficients require soft contact".to_owned());
+            }
+            if settings.substeps != 4 {
+                return Err("tunable soft coefficients require the four-substep source".to_owned());
             }
         }
         Ok(())
@@ -5892,8 +5905,9 @@ fn pass_params(
                     scenario.settings.impulse_coefficient.get(),
                     1.0,
                 ],
-                GpuContactCoefficientPolicyV1::AuthorityCappedSoft => {
-                    unreachable!("authority capped coefficients require soft contact")
+                GpuContactCoefficientPolicyV1::AuthorityCappedSoft
+                | GpuContactCoefficientPolicyV1::AuthorityTunableSoft => {
+                    unreachable!("authority soft coefficients require soft contact")
                 }
             },
             |(_, static_contact)| {
