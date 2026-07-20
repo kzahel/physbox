@@ -163,11 +163,11 @@ unchanged at the measured implementation revision.
 
 ### S17.2 — exact branch-robust GPU port
 
-- [ ] Add one unpromoted engine descriptor and runner entry point that reuses
+- [x] Add one unpromoted engine descriptor and runner entry point that reuses
   the S13 pipeline and selects only the frozen S14 expression.
-- [ ] Add WGSL/Rust operation-order controls proving the original and robust
+- [x] Add WGSL/Rust operation-order controls proving the original and robust
   paths differ only at the declared analytical separation DAG.
-- [ ] Rerun the S13 two-step implementation comparison, exact replay, forced-
+- [x] Rerun the S13 two-step implementation comparison, exact replay, forced-
   overflow, one-below-demand capacity rejection, work-vector, allocation, and
   selected-policy negative controls.
 
@@ -177,6 +177,16 @@ Completion gate: the implementation is finite, exact-replay, fail-closed,
 product-inert, and mechanically identical to S13 except for the frozen S14
 formula. An implementation defect is fixed and rerun; a structural or
 capacity failure is a measured candidate rejection.
+
+S17.2 checkpoint, 2026-07-20: the clean Apple M4 Pro Metal
+[implementation package](../../evidence/p5.2b-s17.3-branch-robust-gpu-port/README.md)
+passes exact series/pass/authored replay, final-only equality, the independent
+Rust/WGSL robust-expression bit control, selected-policy negative controls,
+the declared overflow-color schedule, and atomic one-below-demand rejection.
+All 28 mapped first-step scalar/GPU pass states remain inside `5e-5`. The
+two-step endpoint delta is `5.556643e-4`, outside the inherited comparison
+band but below S13's already-recorded `9.260178e-4`; this historical S13 miss
+is retained and does not replace the S17 product-relative quality gate.
 
 ### S17.3 — Metal full-corpus material qualification
 
