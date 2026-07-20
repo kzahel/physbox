@@ -16,6 +16,7 @@ OUTPUT=""
 BASELINE=""
 SKIP_BUILD=0
 EMULATOR_PID=""
+LOCK_STATE="not-applicable"
 while (($#)); do
     case "$1" in
         --avd|--device) TARGET_MODE="${1#--}"; shift ;;
@@ -63,9 +64,15 @@ else
         SERIAL="$($ADB devices | awk '$1 !~ /^emulator-/ && $2 == "device" {print $1; exit}')"
     fi
     [[ -n "$SERIAL" ]] || { echo "error: no connected physical Android device" >&2; exit 1; }
+    LOCK_STATE="unlocked"
     if "$ADB" -s "$SERIAL" shell dumpsys window 2>/dev/null | rg -q 'mDreamingLockscreen=true|mShowingLockscreen=true'; then
-        echo "error: Android device $SERIAL is locked; unlock it before S17 qualification" >&2
-        exit 1
+        LOCK_STATE="locked"
+        LOCK_PROBE="/data/local/tmp/physbox5-s17-lock-probe-$$"
+        if ! "$ADB" -s "$SERIAL" shell "printf %s physbox5 >$LOCK_PROBE && test -s $LOCK_PROBE && rm -f $LOCK_PROBE"; then
+            echo "error: Android device $SERIAL is locked and the headless shell capability probe failed" >&2
+            exit 1
+        fi
+        echo "S17 physical Android device is locked; verified headless shell execution and temporary storage"
     fi
 fi
 [[ -n "$SERIAL" ]] || { echo "error: Android target did not become ready" >&2; exit 1; }
@@ -151,4 +158,4 @@ mv "$OUTPUT.partial" "$OUTPUT"
 cat "$LOG"
 rm -f "$LOG"
 MODEL="$($ADB -s "$SERIAL" shell getprop ro.product.model | tr -d '\r')"
-echo "PHYSBOX5_ANDROID_S17_SUCCESS target=$TARGET_MODE model=$MODEL mode=$EVIDENCE_MODE output=$OUTPUT"
+echo "PHYSBOX5_ANDROID_S17_SUCCESS target=$TARGET_MODE model=$MODEL mode=$EVIDENCE_MODE lock_state=$LOCK_STATE output=$OUTPUT"

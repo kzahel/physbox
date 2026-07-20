@@ -284,6 +284,16 @@ replay, solver operations, metrics, and gates are unchanged. Focused unit and
 clippy gates pass; full physical qualification is rerunning from a clean
 commit.
 
+The OOM event rebooted the Pixel rather than merely resetting USB: Android
+records `kernel_panic` with a system-dead/OOM boot reason. The secured device
+therefore requires a human credential for UI access, but this Pixel exposes
+its previously authorized ADB shell and `/data/local/tmp` before first unlock.
+The physical wrapper no longer treats keyguard visibility alone as a blocker.
+It admits a locked headless lane only after a fail-closed shell execution and
+temporary-storage probe, records the lock state, and still rejects an
+unauthorized, unavailable, or incapable post-reboot device. The runner does
+not access credential-encrypted user data or bypass the keyguard.
+
 ### S17.6 — promotion review
 
 - [ ] Recursively verify the contract, implementation, baseline, Metal,
