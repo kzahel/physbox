@@ -1,6 +1,6 @@
 # S16: authority event-structure decomposition
 
-Status: active, 2026-07-20. Authorized by human decision at the S15.7
+Status: manual checkpoint at S16.4, 2026-07-20. Authorized by human decision at the S15.7
 checkpoint exactly as proposed by
 `authority-event-structure-decomposition-addendum-v1`. This is a
 measurement-only scalar study with zero product candidates. It localizes and
@@ -235,17 +235,23 @@ family set is empty. A3 therefore has an empty authorized subset domain.
 
 ### S16.4 / A3 — minimal event structure
 
-- [ ] Enumerate only subsets of the A2 causal family set in increasing
+- [x] Enumerate only subsets of the A2 causal family set in increasing
   cardinality under the frozen stopping rule.
-- [ ] Return every smallest qualifying set or the verified no-structure result,
+- [x] Return every smallest qualifying set or the verified no-structure result,
   with proper-subset failures and exact replay.
-- [ ] Publish the minimal-event-structure disposition and stop for human
+- [x] Publish the minimal-event-structure disposition and stop for human
   review before A4.
 
 Artifacts: `evidence/p5.2b-s16.4-minimal-event-structure/`.
 
 Completion gate: minimality follows mechanically from the bounded routed
 matrix and the package reaches the mandatory human checkpoint.
+
+Disposition, 2026-07-20: A2 admitted no individually causal families, so the
+only A3 subset is the empty unrouted full-binary64 baseline. It replays exactly
+and fails structure, authority response, and penetration/support at both
+depths. The result is `no-declared-routed-event-structure`. S16 is now stopped
+at the mandatory human checkpoint; A4 remains held.
 
 ### S16.5 / A4 — static colored-GPU representability
 

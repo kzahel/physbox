@@ -1202,6 +1202,18 @@ continuous value is copied and no missing choice is invented. Because no
 individually causal family set is empty. This is negative evidence for
 single-family discrete ownership, not a product or authority change.
 
+S16 A3 minimal-structure disposition, 2026-07-20: the verified
+[minimal event package](../../evidence/p5.2b-s16.4-minimal-event-structure/README.md)
+returns `no-declared-routed-event-structure`. A2's individually causal family
+set is empty, so the only bounded subset is the unrouted full-binary64 control.
+It replays exactly but fails structure, authority response, and
+penetration/support at both governed depths. There is no larger subset A3 may
+open without adding a noncausal family or an undeclared interaction search.
+The workstream is stopped at its mandatory human checkpoint. A4 static GPU
+representability remains authorized but held; no product candidate, GPU
+mapping or execution, source copy, new family, band change, or recurrence
+change is admitted.
+
 ## Authority corrections
 
 Two plausible techniques must not be mislabeled as direct Box2D v3 parity:
