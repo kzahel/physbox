@@ -1,9 +1,12 @@
 import { readFile, readdir } from "node:fs/promises";
+import { execFile } from "node:child_process";
 import { extname, join, resolve, relative } from "node:path";
+import { promisify } from "node:util";
 
 const root = resolve(import.meta.dirname, "..");
 const appRoot = join(root, "apps");
 const failures = [];
+const execFileAsync = promisify(execFile);
 const rules = [
   {
     name: "app-local WGSL or GPU pass encoding",
@@ -19,6 +22,12 @@ const rules = [
   },
 ];
 const scenarioPayloadPattern = /\b(?:worldTarget|linearVelocity|angularVelocity|halfExtents|normalImpulse|biasRate|massCoefficient|impulseCoefficient)\b/;
+const evidencePathPattern = /^evidence(?:\/|$)/;
+
+const { stdout: trackedEvidence } = await execFileAsync("git", ["ls-files", "--", "evidence"], { cwd: root });
+for (const path of trackedEvidence.split("\n").filter(Boolean)) {
+  if (evidencePathPattern.test(path)) failures.push(`${path}: generated evidence must remain outside Git`);
+}
 
 for (const path of await files(appRoot)) {
   if (![".rs", ".toml"].includes(extname(path))) continue;
@@ -73,6 +82,9 @@ for (const rule of rules) {
 }
 if (!scenarioPayloadPattern.test("const worldTarget = [0.4, 0.7];")) {
   failures.push("boundary self-test failed: engine-owned scenario payload");
+}
+if (!evidencePathPattern.test("evidence/accidental-force-add/manifest.json")) {
+  failures.push("boundary self-test failed: tracked evidence path");
 }
 
 if (failures.length) {
