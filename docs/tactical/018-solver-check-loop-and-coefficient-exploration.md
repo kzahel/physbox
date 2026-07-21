@@ -3,7 +3,7 @@
 Status: complete; the fast check loop and validation-only persistent-key fix
 pass, the 30-point sweep has no stands-quiet-valid survivor, the measured
 hard/direct residual band is accepted for sleeping design, and a later
-explicit human request opened a lab-only interactive comparison surface,
+explicit human request opened an interactive comparison surface,
 2026-07-21.
 
 This workstream is deliberately different in character from S9-S17. Human
@@ -170,9 +170,10 @@ Design (validated against existing APIs):
   the active profile, canonical options, scenario hash, execution,
   scheduling, and coefficient policy. The web lab persists only this opt-in
   selection in the versioned `physbox5.solver-lab.v1` local-storage key and
-  synchronizes the URL after changes; production builds neither expose the
-  candidate nor read that key. `npm run inspect:web` is the no-query-parameter
-  entry point. No default changes.
+  synchronizes the URL after changes. The deployed web release deliberately
+  enables this inspection feature, while native production builds remain
+  gated and exclude it. `npm run inspect:web` is the local
+  no-query-parameter entry point. No solver default changes.
 
 Fresh exposure validation on 2026-07-21: `npm run test:web:lab` succeeded on
 Apple M4 Pro Metal with run id `f40dbe1e-cb9e-48de-8397-8f49b9273538`; it

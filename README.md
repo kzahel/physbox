@@ -85,9 +85,11 @@ and open the printed local URL.
 
 ### Interactive solver inspection
 
-Candidate comparison is an explicit laboratory build; candidate profiles stay
-out of ordinary production builds and do not alter the selected solver or its
-defaults. Start the browser lab with:
+The deployed browser includes the explicit solver-inspection surface so a
+candidate can be judged directly on desktop or mobile without editing the URL.
+The selected solver remains the default; candidate profiles activate only
+after an explicit menu choice or restoration of that browser's saved choice.
+For the same surface on a local browser, run:
 
 ```sh
 npm run inspect:web
@@ -113,9 +115,10 @@ cargo run -p physbox-desktop --features solver-lab -- \
   --solver-options hz=30,damping=10,static-scale=8
 ```
 
-Adding a later candidate means registering another lab-only solver profile;
-the menu, launch transport, scene contract, and browser persistence remain the
-common inspection surface.
+Adding a later candidate means registering another explicit inspection
+profile; the menu, launch transport, scene contract, and browser persistence
+remain the common surface. Native production builds remain feature-gated and
+exclude these candidate profiles unless `solver-lab` is requested.
 
 ## Validation tiers
 
