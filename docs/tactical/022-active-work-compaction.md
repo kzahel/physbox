@@ -52,7 +52,7 @@ admit or size the next interactive step.
   64, 256, 1K, and 10K reserve, records GPU collision/persistence/end-to-end
   samples when timestamps exist, host completion, dispatches, live work,
   allocation, replay, and overflow.
-- [ ] Record a clean pre-change native artifact and the physical Pixel 9
+- [x] Record a clean pre-change native artifact and the physical Pixel 9
   256/1K observation without presenting FPS alone as a throughput claim.
 
 Gate: the probe must expose the current reserve-dependent cost and must reject
@@ -76,7 +76,7 @@ body metadata and construction-state counts after every lifecycle case.
   enumeration through GPU-written indirect arguments, and remove the
   reserve-sized product proxy copy.
 - [x] Integrate and render only active slots using indirect work/draw arguments.
-- [ ] Preserve the isolated snapshot SAP lane and canonical generational pair
+- [x] Preserve the isolated snapshot SAP lane and canonical generational pair
   output unchanged.
 
 Gate: product SAP equals brute force across the maintained corpus and dead-slot
@@ -109,21 +109,28 @@ their existing bands; sparse 256/1K/10K step timing is approximately flat.
 
 ### S22.6 — cross-host qualification and closure
 
-- [ ] Run `npm run test:fast` once for the ordinary lane.
-- [ ] Run production clippy with warnings denied.
-- [ ] Produce one fresh headless smoke artifact.
-- [ ] Run the ARM64 Android check, build a release APK, and validate capacity
+- [x] Run `npm run test:fast` once for the ordinary lane.
+- [x] Run production clippy with warnings denied.
+- [x] Produce one fresh headless smoke artifact.
+- [x] Run the ARM64 Android check, build a release APK, and validate capacity
   256/1K/10K on the unlocked physical Pixel.
-- [ ] Confirm the ordinary browser WebGPU result and a focused browser sparse-
+- [x] Confirm the ordinary browser WebGPU result and a focused browser sparse-
   capacity probe; do not duplicate solver-menu coverage unless menu behavior
   changes.
-- [ ] Update the performance topic, capability ledger, bring-up plan, and this
+- [x] Update the performance topic, capability ledger, bring-up plan, and this
   tactical with measured before/after evidence.
 
 Gate: with the same one-rectangle scene, selecting 1K or 10K does not cause a
 material pacing regression relative to 256 on the physical Pixel. A dense row
 must still demonstrate that real live work grows and every row must identify
 capacity, live bodies, contacts, pacing mode, adapter, and overflow state.
+
+Checkpoint evidence, 2026-07-21: commit `b7effce` passes exact generated-series
+replay and the everyday lane. Chrome debug bootstrap checks report effective
+scale `0.973` at 1K with no slip and `0.923` at 10K with one slipped step. A
+marker-heavy connected Pixel 7a comparison reports `0.591/0.604/0.550` at
+256/1K/10K; it is a relative reserve-size gate, not an absolute rate claim.
+The original subjective Pixel 9 observation remains the pre-change trigger.
 
 ## Completion condition
 

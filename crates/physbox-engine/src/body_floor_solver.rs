@@ -6479,7 +6479,7 @@ fn topology_capacities(
     let mut capacities = match topology.kind {
         GpuGatherTopology::CanonicalBodyScan => vec![capacity(
             "solver-topology",
-            topology.element_count - u32::from(topology.has_manifold_counts) * body_count,
+            topology.work_state_base - u32::from(topology.has_manifold_counts) * body_count,
             size_of::<u32>() as u64,
         )],
         GpuGatherTopology::StableBodyEdge => vec![
@@ -6618,6 +6618,13 @@ fn topology_capacities(
                 capacity("solver-island-count", 1, size_of::<u32>() as u64),
             ]);
         }
+    }
+    if topology.element_count > topology.work_state_base {
+        capacities.push(capacity(
+            "solver-active-work",
+            SOLVER_WORK_STATE_WORDS + body_count,
+            size_of::<u32>() as u64,
+        ));
     }
     capacities.sort_by(|left, right| left.class.cmp(&right.class));
     capacities

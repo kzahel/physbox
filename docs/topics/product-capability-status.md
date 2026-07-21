@@ -41,7 +41,7 @@ quality. Known limitations remain part of the row.
 
 | ID | Capability | Status | Current boundary / next gate |
 | --- | --- | --- | --- |
-| BODY-1 | Fixed and dynamic bodies | **Implemented** | GPU-owned generational slots support construction, erase, reset, and reuse. General kinematic bodies are not exposed. |
+| BODY-1 | Fixed and dynamic bodies | **Implemented** | GPU-owned generational slots support construction, erase, reset, reuse, and a deterministic active-slot set for sparse execution. General kinematic bodies are not exposed. |
 | BODY-2 | Circles and oriented rectangles | **Implemented** | Analytic circle/circle, circle/rectangle, and clipped rectangle/rectangle contact are the complete product shape set. |
 | BODY-3 | Capsules, convex polygons, chains, terrain, compounds | **Deferred** | Follow minimal rigid acceptance and a selected scalable broadphase. |
 | COLL-1 | Broadphase candidate generation | **Implemented** | Full-sort GPU SAP owns the ordinary product path under an 8N candidate bound and is qualified on Metal, browser, and physical Pixel Vulkan. Brute force remains an isolated bounded exact oracle with no automatic fallback. |
@@ -54,7 +54,7 @@ quality. Known limitations remain part of the row.
 | COLL-8 | GPU picking | **Limited** | Shared grab/erase selection uses bounded GPU hit selection; it is not a general spatial-query API. |
 | SOLVE-1 | Soft-coupled rigid solver | **Implemented** | Reviewed 60/4/i1, contact 30 Hz/damping 10/static x2 default; quiet feel accepted with visible tall-stack compliance and step-407 16-stack loss. |
 | SOLVE-2 | Hard/direct comparison | **Implemented** | Explicit named comparator only; never an automatic fallback. |
-| SOLVE-3 | Sleeping and waking | **Not implemented** | GPU-owned sleep state, active compaction, island wake propagation, and wake triggers are the next rigid-state milestone after broadphase. |
+| SOLVE-3 | Sleeping and waking | **Not implemented** | Live-body compaction exists; GPU-owned sleep state, awake filtering, island wake propagation, and wake triggers remain the next rigid-state milestone after S22 closes. |
 | JOINT-1 | Grab constraint | **Implemented** | Anchored GPU grab retains collision and bounded release velocity. |
 | JOINT-2 | General joints | **Not implemented** | Distance/revolute or another first authored joint follows accepted free-body rigid behavior. |
 
@@ -76,7 +76,7 @@ quality. Known limitations remain part of the row.
 | SCALE-1 | Small-world rigid scenes | **Implemented** | The safe 64-slot default, authored-scene headroom, and explicit 256/1K/10K opt-ins use selected SAP; the 100-body diagnostic buckets execute correctly but are not sustained-rate claims on every device. |
 | SCALE-2 | Scalable broadphase | **Implemented** | SAP is selected and integrated; exact native 100/1K/10K curves, a zero-slip 100-body browser row, and physical Pixel bootstrap/bucket execution pass. This does not establish a 1K-plus rendered product-world rate. |
 | SCALE-3 | 1K-100K product-world claims | **Not implemented** | Existing authored-contact/isolated-solver measurements are not scalable end-to-end body claims. |
-| SCALE-4 | Mostly-sleeping scale | **Not implemented** | Requires sleeping, active compaction, and selected broadphase integration. |
+| SCALE-4 | Mostly-sleeping scale | **Not implemented** | Selected SAP and live-body compaction exist; sleeping and an awake-work filter are still absent. |
 | QUAL-1 | Box2D process oracle | **Implemented** | Clean pinned native process covers current circle/rectangle projections, public manifolds, selected actions, and deterministic results. |
 | QUAL-2 | Comprehensive rigid acceptance | **Limited** | Core fixtures and extensive research evidence exist; a compact current-default P5.4 acceptance suite is not yet closed. |
 | QUAL-3 | Correctness-qualified CPU/GPU crossover | **Not implemented** | Requires broadphase, sleeping, equivalent-quality worlds, and scoped solver/collision/end-to-end/full-frame curves. |
@@ -94,10 +94,11 @@ quality. Known limitations remain part of the row.
 
 ## Current execution order
 
-1. Add sleeping/waking and close current-default rigid acceptance and scale.
-2. Extend the construction loop with editable selection, scene documents, and
+1. Finish reserve-independent persistence/topology work in S22.
+2. Add sleeping/waking and close current-default rigid acceptance and scale.
+3. Extend the construction loop with editable selection, scene documents, and
    one joint.
-3. Begin bounded liquid and same-step rigid/fluid coupling.
+4. Begin bounded liquid and same-step rigid/fluid coupling.
 
 ## Reconsideration triggers
 

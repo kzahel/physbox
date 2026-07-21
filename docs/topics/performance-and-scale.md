@@ -561,6 +561,24 @@ and settles near `0.61` effective scale during direct inspection. These results
 justify retaining 64 as the cross-host default while making 1K/10K worlds
 available for deliberate scale experiments.
 
+Active-work checkpoint, 2026-07-21: S22 separates allocation capacity from hot
+execution size. A sorted GPU active-slot set now drives integration, rendering,
+SAP, and body solver passes; committed candidate and point counts drive
+narrowphase and contact solver passes through GPU-written indirect arguments.
+This removes the reported 1K sparse-world cliff without a CPU count readback.
+Chrome debug shared-host checks of the same two-body bootstrap report effective
+scale `0.973` at 1K with no slip and `0.923` at 10K with one slipped step. On
+the connected physical Pixel 7a, deliberately expensive per-frame marker runs
+are approximately flat across reserve sizes: `0.591/0.604/0.550` effective
+scale at 256/1K/10K. Those absolute marker-heavy values are not throughput
+claims; the relative result shows no material 1K or 10K reserve penalty.
+
+S22 remains active. Stable pair-slot free-list reconstruction and parts of
+topology clearing still traverse reserved storage, and the durable focused
+sparse-capacity timing artifact is not complete. The current evidence closes
+the user-visible regression, not sleeping, a 10K-at-60 claim, or the broader
+allocation-independent execution contract.
+
 No LBVH arm is admitted from this matrix. Reopen that question only for a
 measured integrated-SAP miss or a specific sparse multiscale/active-window
 workload not resolved by the current corpus.
