@@ -47,6 +47,7 @@ const PERSISTENT_RECORD_BYTES: u32 = PERSISTENT_CONTACT_KEY_BYTES + CACHE_VALUE_
 const COLLISION_DISPATCHES: u32 = 212;
 const PAIR_SLOT_COLLISION_DISPATCHES: u32 = 15 + PAIR_SLOT_DISPATCHES;
 const BRIDGE_DISPATCHES: u32 = 2;
+const PRODUCT_CANDIDATE_PAIRS_PER_BODY: u32 = 8;
 pub const GPU_GENERATED_CONTACT_BODY_HISTORY_VERSION: u32 = 1;
 #[cfg(not(target_arch = "wasm32"))]
 pub const GPU_GENERATED_CONTACT_PASS_TRACE_VERSION: u32 = 3;
@@ -630,11 +631,7 @@ impl GpuGeneratedContactGraph {
                     .to_owned(),
             );
         }
-        let pair_count = body_count
-            .checked_mul(body_count.saturating_sub(1))
-            .map(|value| value / 2)
-            .ok_or_else(|| "generated contact pair count overflowed".to_owned())?;
-        let candidate_capacity = pair_count.min(body_count.saturating_mul(16)).max(1);
+        let candidate_capacity = product_candidate_capacity(body_count)?;
         let broadphase_pipelines = SapPipelines::new(device);
         let broadphase = SapCase::new_with_storage(
             device,
@@ -937,6 +934,16 @@ impl GpuGeneratedContactGraph {
             encoder.copy_buffer_to_buffer(source, 0, destination, index as u64 * stride, stride);
         }
     }
+}
+
+fn product_candidate_capacity(body_count: u32) -> Result<u32, String> {
+    let pair_count = body_count
+        .checked_mul(body_count.saturating_sub(1))
+        .map(|value| value / 2)
+        .ok_or_else(|| "generated contact pair count overflowed".to_owned())?;
+    Ok(pair_count
+        .min(body_count.saturating_mul(PRODUCT_CANDIDATE_PAIRS_PER_BODY))
+        .max(1))
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -5943,7 +5950,10 @@ fn map_range<T: Pod + Copy>(
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
-    use super::{GpuGeneratedContactRunner, VALIDATION_SNAPSHOTS_PER_READBACK_FLUSH};
+    use super::{
+        GpuGeneratedContactRunner, VALIDATION_SNAPSHOTS_PER_READBACK_FLUSH,
+        product_candidate_capacity,
+    };
     use crate::{
         GpuRestitutionTimingPolicyV1, GpuSubstepContactPolicyV1, P5_2SettlingFixtureKind,
         p5_2_centered_rectangle_stack_scenario, p5_2_settling_fixture_scenario,
@@ -5953,6 +5963,14 @@ mod tests {
         GpuSolverExecutionV4, GpuSolverSchedulingPolicyV1, P5_2SettlingReviewPolicy,
         p5_2_settling_review_scenario,
     };
+
+    #[test]
+    fn product_candidate_capacity_is_linear_and_bounded() {
+        assert_eq!(product_candidate_capacity(2).unwrap(), 1);
+        assert_eq!(product_candidate_capacity(100).unwrap(), 800);
+        assert_eq!(product_candidate_capacity(10_000).unwrap(), 80_000);
+        assert!(product_candidate_capacity(u32::MAX).is_err());
+    }
 
     #[test]
     fn selected_settling_series_replays_exact_gpu_manifolds_and_cache() {
