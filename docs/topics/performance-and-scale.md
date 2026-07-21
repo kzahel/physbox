@@ -509,11 +509,11 @@ capacity overflow atomically, and execute through portable WebGPU usage scopes.
 SAP wins every native 10K, 30K, and 100K family while allocating 82.80 MiB at
 100K versus grid's 323.97 MiB under the shared evidence policy. The grid wins
 some fixed-overhead small rows and one 100K browser giant-static row by 2.2%,
-but does not win the complete cost. The evidence therefore recommends SAP and
-rejects grid for product integration, pending the required human selection in
+but does not win the complete cost. Human review therefore selects SAP and
+rejects grid for product integration in
 [S21](../tactical/021-scalable-broadphase.md). No end-to-end product scale,
 CPU crossover, or 60 Hz physics claim follows from this isolated candidate-
-stage evidence, and the product remains all-pairs until selection and S21.5.
+stage evidence, and the product remains all-pairs until S21.5 lands.
 
 No LBVH arm is admitted from this matrix. Reopen that question only for a
 measured integrated-SAP miss or a specific sparse multiscale/active-window

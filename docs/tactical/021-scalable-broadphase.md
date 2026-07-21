@@ -1,7 +1,8 @@
 # S21: scalable broadphase
 
-Status: awaiting human selection, 2026-07-21. The clean candidate bakeoff
-recommends full-sort one-axis SAP; the product still uses all-pairs. This is
+Status: active, SAP selected 2026-07-21. Human review accepted the clean
+candidate bakeoff recommendation; the product still uses all-pairs until
+S21.5 integration completes. This is
 the executable tracker for the S5.5 bakeoff and S5.6 integration milestones;
 the older S5 document remains the umbrella history.
 
@@ -210,5 +211,10 @@ the declared collision-only/product frame envelope on representative adapters,
 or later product scenes demonstrate a specific sparse multiscale or active-
 window problem that this corpus did not resolve.
 
-Human selection remains the gate. No broadphase candidate, fallback, solver
-setting, or physics default has changed in the product graph.
+### Human selection
+
+Human review on 2026-07-21 accepted **full-sort one-axis SAP** for product
+integration. The grid remains rejected lab evidence, brute force remains the
+bounded completeness oracle, and no automatic small-count fallback is
+authorized. This decision opens S21.5; it does not itself change the product
+graph, solver setting, physics default, or scale claim.

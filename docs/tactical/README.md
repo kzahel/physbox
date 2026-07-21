@@ -165,7 +165,7 @@ This README remains the unnumbered index.
 | S18 | Solver check loop and coefficient exploration | [018-solver-check-loop-and-coefficient-exploration.md](018-solver-check-loop-and-coefficient-exploration.md) | complete; key ordering fixed, no coefficient survivor, residual band accepted, opt-in interactive A/B lab delivered, 2026-07-21 |
 | S19 | Soft default and physics configuration | [019-soft-default-and-physics-configuration.md](019-soft-default-and-physics-configuration.md) | complete; soft default/configuration, cross-host evidence, and exact live deployment pass, 2026-07-21 |
 | S20 | Validation diet and feature ledger | [020-validation-diet-and-feature-ledger.md](020-validation-diet-and-feature-ledger.md) | complete; warm everyday lane 7.31 s, production matrices trimmed, exhaustive lanes retained opt-in, 2026-07-21 |
-| S21 | Scalable broadphase | [021-scalable-broadphase.md](021-scalable-broadphase.md) | awaiting human selection; clean bakeoff recommends SAP, product remains all-pairs, 2026-07-21 |
+| S21 | Scalable broadphase | [021-scalable-broadphase.md](021-scalable-broadphase.md) | active; human-selected SAP awaits product integration and qualification, 2026-07-21 |
 
 ## Conventions
 

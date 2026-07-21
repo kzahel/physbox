@@ -26,9 +26,10 @@ comparison rather than an automatic fallback. The scheduler promotion is an
 architecture and latency improvement, not acceptance of the current CPU
 comparison, residual-motion band, or liquid performance.
 S20 then reduced the warm everyday native/browser lane to 7.31 seconds and
-published the current capability ledger. S21 scalable broadphase is the active
-next physics workstream; the present product candidate stage is still
-quadratic all-pairs.
+published the current capability ledger. S21 clean evidence and human review
+select full-sort one-axis SAP as the scalable broadphase; product integration
+is active, and the present product candidate stage remains quadratic all-pairs
+until that slice lands.
 The repository still contains no Rapier or CPU product physics backend, fluid
 solver, legacy settings UI, or PhysBox 4 scene compatibility.
 

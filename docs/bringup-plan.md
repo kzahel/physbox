@@ -399,10 +399,10 @@ Execution tracker:
 [S20 validation diet](tactical/020-validation-diet-and-feature-ledger.md).
 
 Selection checkpoint, 2026-07-21: clean 32-through-100K Metal and Browser
-WebGPU matrices qualify both candidates and recommend full-sort one-axis SAP.
-SAP wins every 10K/30K/100K native row with roughly one quarter of grid's fixed
-evidence allocation. Required human selection precedes integration; the
-product graph still uses all-pairs.
+WebGPU matrices qualify both candidates, and human review selects full-sort
+one-axis SAP. SAP wins every 10K/30K/100K native row with roughly one quarter
+of grid's fixed evidence allocation. S21.5 product integration is active; the
+product graph still uses all-pairs until that slice lands.
 
 - Preserve brute force as pair-completeness oracle.
 - Implement sorted sweep-and-prune and multi-cell grid candidates.
