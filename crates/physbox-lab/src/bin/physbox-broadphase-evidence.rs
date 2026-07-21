@@ -5,9 +5,9 @@ use std::{
 };
 
 use physbox_contracts::{
-    BROADPHASE_CONTRACT_VERSION, BroadphaseAlgorithmV1, BroadphaseEvaluationV1, BroadphaseResultV1,
-    BroadphaseWorkV1, CandidatePairV1, CollisionCapacityV1, FailureV1, SCHEMA_VERSION, Validate,
-    sha256_bytes,
+    BROADPHASE_CONTRACT_VERSION, BroadphaseAlgorithmV1, BroadphaseEvaluationV1, BroadphaseProxyV1,
+    BroadphaseResultV1, BroadphaseSnapshotV1, BroadphaseWorkV1, CandidatePairV1,
+    CollisionCapacityV1, FailureV1, SCHEMA_VERSION, Validate, sha256_bytes,
 };
 use physbox_engine::{
     AdapterDiagnostics, GpuBroadphaseTimingV1, GpuCandidateOutput, GpuCandidateRunner,
@@ -74,6 +74,7 @@ struct CaseEvidenceV1 {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct CandidateEvidenceV1 {
+    input_scope: &'static str,
     result: BroadphaseResultSummaryV1,
     evaluation: Option<BroadphaseEvaluationV1>,
     exact_replay: bool,
@@ -203,14 +204,18 @@ fn run() -> Result<(), String> {
                     arguments.sample_steps,
                 )?;
                 let replay = brute_runner.run(&scenario, Some(brute_capacity))?;
-                let result = broadphase_brute_result(&snapshot, benchmark.correctness)?;
-                let replay = broadphase_brute_result(&snapshot, replay)?;
-                let exact_replay = result == replay;
-                let evaluation = oracle
-                    .as_ref()
-                    .map(|oracle| evaluate_broadphase(oracle, &result, exact_replay))
-                    .transpose()?;
+                let (projected_snapshot, result) =
+                    broadphase_brute_result(&snapshot, benchmark.correctness)?;
+                let (replay_snapshot, replay) = broadphase_brute_result(&snapshot, replay)?;
+                let exact_replay = projected_snapshot == replay_snapshot && result == replay;
+                let projected_oracle = brute_force_broadphase(&projected_snapshot, None)?;
+                let evaluation = Some(evaluate_broadphase(
+                    &projected_oracle,
+                    &result,
+                    exact_replay,
+                )?);
                 Some(candidate_evidence(
+                    "product-generated-aabb-projection",
                     result,
                     evaluation,
                     exact_replay,
@@ -271,6 +276,7 @@ fn run() -> Result<(), String> {
                 });
             let snapshot_hash = sap_result.source_snapshot_hash.clone();
             let sap = candidate_evidence(
+                "canonical-aabb-snapshot",
                 sap_result,
                 sap_evaluation,
                 sap_exact_replay,
@@ -278,6 +284,7 @@ fn run() -> Result<(), String> {
                 None,
             )?;
             let grid = candidate_evidence(
+                "canonical-aabb-snapshot",
                 grid_result,
                 grid_evaluation,
                 grid_exact_replay,
@@ -339,6 +346,7 @@ fn run() -> Result<(), String> {
 }
 
 fn candidate_evidence(
+    input_scope: &'static str,
     result: BroadphaseResultV1,
     evaluation: Option<BroadphaseEvaluationV1>,
     exact_replay: bool,
@@ -381,6 +389,7 @@ fn candidate_evidence(
         failure: result.failure,
     };
     Ok(CandidateEvidenceV1 {
+        input_scope,
         result,
         evaluation,
         exact_replay,
@@ -394,14 +403,41 @@ fn candidate_evidence(
 }
 
 fn broadphase_brute_result(
-    snapshot: &physbox_contracts::BroadphaseSnapshotV1,
+    snapshot: &BroadphaseSnapshotV1,
     output: GpuCandidateOutput,
-) -> Result<BroadphaseResultV1, String> {
+) -> Result<(BroadphaseSnapshotV1, BroadphaseResultV1), String> {
+    if output.aabbs.len() != snapshot.proxies.len() {
+        return Err("GPU all-pairs projection changed the proxy count".to_owned());
+    }
+    let proxies = snapshot
+        .proxies
+        .iter()
+        .zip(&output.aabbs)
+        .map(|(source, aabb)| {
+            if source.aabb.body != aabb.body {
+                return Err("GPU all-pairs projection changed proxy identity ordering".to_owned());
+            }
+            Ok(BroadphaseProxyV1 {
+                aabb: *aabb,
+                mobility: source.mobility,
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let projected_snapshot = BroadphaseSnapshotV1 {
+        schema_version: SCHEMA_VERSION,
+        contract_version: BROADPHASE_CONTRACT_VERSION,
+        id: format!("{}-product-generated-aabbs", snapshot.id),
+        seed: snapshot.seed,
+        proxies,
+    };
+    projected_snapshot
+        .validate()
+        .map_err(|error| error.to_string())?;
     let result = BroadphaseResultV1 {
         schema_version: SCHEMA_VERSION,
         contract_version: BROADPHASE_CONTRACT_VERSION,
         algorithm: BroadphaseAlgorithmV1::BruteForce,
-        source_snapshot_hash: physbox_contracts::canonical_hash(snapshot)
+        source_snapshot_hash: physbox_contracts::canonical_hash(&projected_snapshot)
             .map_err(|error| error.to_string())?,
         pairs: output.candidates,
         work: BroadphaseWorkV1 {
@@ -433,7 +469,7 @@ fn broadphase_brute_result(
         failure: output.failure,
     };
     result.validate().map_err(|error| error.to_string())?;
-    Ok(result)
+    Ok((projected_snapshot, result))
 }
 
 fn timing_summary(samples: &[f64]) -> Result<TimingSummaryV1, String> {
