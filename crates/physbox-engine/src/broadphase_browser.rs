@@ -68,10 +68,16 @@ impl GpuBroadphaseBrowserSession {
         let adapter = request_adapter(&instance, None).await?;
         let diagnostics = AdapterDiagnostics::from_adapter(&adapter);
         let (device, queue) = request_device(&adapter).await?;
+        device.push_error_scope(wgpu::ErrorFilter::Validation);
         let sap_pipelines = SapPipelines::new(&device);
         let sap_case = SapCase::new(&device, &sap_pipelines, &snapshot, candidate_capacity)?;
         let grid_pipelines = GridPipelines::new(&device);
         let grid_case = GridCase::new(&device, &grid_pipelines, &snapshot, grid_configuration)?;
+        if let Some(error) = device.pop_error_scope().await {
+            return Err(format!(
+                "browser broadphase pipeline or resource validation failed: {error}"
+            ));
+        }
         Ok(Self {
             device,
             queue,
@@ -88,7 +94,7 @@ impl GpuBroadphaseBrowserSession {
                 grid_configuration,
                 sap_dispatches: SAP_DISPATCHES,
                 grid_dispatches: GRID_DISPATCHES,
-                completion_method: "mapped-fence-after-submit",
+                completion_method: "mapped-candidate-capacity-readback",
                 qualification_scope: "same-wgsl-browser-portability-execution",
             },
         })
@@ -98,7 +104,9 @@ impl GpuBroadphaseBrowserSession {
         &self.probe
     }
 
-    pub fn submit_sap(&self) {
+    pub async fn submit_sap(&self) -> Result<GpuBroadphaseBrowserCompletion, String> {
+        self.device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let readback = completion_readback(&self.device, "sap", 16);
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -106,10 +114,17 @@ impl GpuBroadphaseBrowserSession {
             });
         self.sap_case
             .encode(&mut encoder, &self.sap_pipelines, None);
+        self.sap_case.copy_capacity_to(&mut encoder, &readback);
         self.queue.submit([encoder.finish()]);
+        if let Some(error) = self.device.pop_error_scope().await {
+            return Err(format!("browser SAP submission validation failed: {error}"));
+        }
+        Ok(GpuBroadphaseBrowserCompletion::new(readback, 1, "SAP"))
     }
 
-    pub fn submit_grid(&self) {
+    pub async fn submit_grid(&self) -> Result<GpuBroadphaseBrowserCompletion, String> {
+        self.device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let readback = completion_readback(&self.device, "grid", 64);
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -117,24 +132,14 @@ impl GpuBroadphaseBrowserSession {
             });
         self.grid_case
             .encode(&mut encoder, &self.grid_pipelines, None);
+        self.grid_case.copy_capacity_to(&mut encoder, &readback);
         self.queue.submit([encoder.finish()]);
-    }
-
-    pub fn begin_completion_fence(&self) -> GpuBroadphaseBrowserCompletion {
-        let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("physbox5_browser_broadphase_fence"),
-            size: 4,
-            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-            mapped_at_creation: false,
-        });
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("physbox5_browser_broadphase_fence_encoder"),
-            });
-        encoder.clear_buffer(&buffer, 0, None);
-        self.queue.submit([encoder.finish()]);
-        GpuBroadphaseBrowserCompletion::new(buffer)
+        if let Some(error) = self.device.pop_error_scope().await {
+            return Err(format!(
+                "browser grid submission validation failed: {error}"
+            ));
+        }
+        Ok(GpuBroadphaseBrowserCompletion::new(readback, 4, "grid"))
     }
 
     pub fn poll(&self) -> Result<(), String> {
@@ -147,11 +152,13 @@ impl GpuBroadphaseBrowserSession {
 
 pub struct GpuBroadphaseBrowserCompletion {
     buffer: wgpu::Buffer,
+    capacity_records: usize,
+    algorithm: &'static str,
     result: Arc<Mutex<Option<Result<(), String>>>>,
 }
 
 impl GpuBroadphaseBrowserCompletion {
-    fn new(buffer: wgpu::Buffer) -> Self {
+    fn new(buffer: wgpu::Buffer, capacity_records: usize, algorithm: &'static str) -> Self {
         let result = Arc::new(Mutex::new(None));
         let callback_result = Arc::clone(&result);
         buffer
@@ -162,7 +169,12 @@ impl GpuBroadphaseBrowserCompletion {
                     .expect("browser broadphase fence callback lock") =
                     Some(mapped.map_err(|error| error.to_string()));
             });
-        Self { buffer, result }
+        Self {
+            buffer,
+            capacity_records,
+            algorithm,
+            result,
+        }
     }
 
     pub fn is_ready(&self) -> bool {
@@ -179,13 +191,48 @@ impl GpuBroadphaseBrowserCompletion {
             .take()
             .ok_or_else(|| "browser broadphase fence is not ready".to_owned())??;
         let view = self.buffer.slice(..).get_mapped_range();
-        if view.len() != 4 {
+        if view.len() != self.capacity_records * 16 {
+            drop(view);
+            self.buffer.unmap();
             return Err("browser broadphase fence size mismatch".to_owned());
         }
+        let rejection = view
+            .chunks_exact(16)
+            .enumerate()
+            .find_map(|(index, record)| {
+                let capacity =
+                    u32::from_le_bytes(record[0..4].try_into().expect("capacity word"));
+                let attempted =
+                    u32::from_le_bytes(record[4..8].try_into().expect("attempted word"));
+                let committed =
+                    u32::from_le_bytes(record[8..12].try_into().expect("committed word"));
+                let overflowed =
+                    u32::from_le_bytes(record[12..16].try_into().expect("overflow word"));
+                (capacity == 0 || overflowed != 0 || committed != attempted).then(|| {
+                    format!(
+                        "browser {} broadphase capacity record {index} rejected {attempted} attempted elements at capacity {capacity}",
+                        self.algorithm,
+                    )
+                })
+            });
         drop(view);
         self.buffer.unmap();
+        if let Some(rejection) = rejection {
+            return Err(rejection);
+        }
         Ok(())
     }
+}
+
+fn completion_readback(device: &wgpu::Device, algorithm: &str, size: u64) -> wgpu::Buffer {
+    device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some(&format!(
+            "physbox5_browser_{algorithm}_broadphase_capacity_readback"
+        )),
+        size,
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    })
 }
 
 fn scaled_capacity(count: u32, multiplier: u32) -> Result<u32, String> {

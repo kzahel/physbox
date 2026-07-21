@@ -228,13 +228,7 @@ impl GridPipelines {
         let cell_radix_layout = layout(
             device,
             "grid_cell_radix_layout",
-            &[
-                (9, false),
-                (10, false),
-                (11, false),
-                (19, false),
-                (21, false),
-            ],
+            &[(9, false), (10, false), (11, false), (19, false)],
         );
         let enumerate_cells_layout = layout(
             device,
@@ -254,13 +248,7 @@ impl GridPipelines {
         let pair_radix_layout = layout(
             device,
             "grid_pair_radix_layout",
-            &[
-                (12, false),
-                (13, false),
-                (14, false),
-                (19, false),
-                (21, false),
-            ],
+            &[(12, false), (13, false), (14, false), (19, false)],
         );
         let mark_unique_layout = layout(
             device,
@@ -270,13 +258,7 @@ impl GridPipelines {
         let unique_scan_layout = layout(
             device,
             "grid_unique_scan_layout",
-            &[
-                (3, false),
-                (15, false),
-                (16, false),
-                (19, false),
-                (21, false),
-            ],
+            &[(3, false), (15, false), (16, false), (19, false)],
         );
         let finalize_unique_layout = layout(
             device,
@@ -762,7 +744,6 @@ impl GridCase {
                     (10, destination),
                     (11, &cell_radix_blocks),
                     (19, &capacity),
-                    (21, &indirect),
                 ],
                 parameters.last().expect("cell radix parameter exists"),
             ));
@@ -817,7 +798,6 @@ impl GridCase {
                     (13, destination),
                     (14, &pair_radix_blocks),
                     (19, &capacity),
-                    (21, &indirect),
                 ],
                 parameters.last().expect("pair radix parameter exists"),
             ));
@@ -836,7 +816,6 @@ impl GridCase {
                 (15, &unique_flags),
                 (16, &unique_offsets),
                 (19, &capacity),
-                (21, &indirect),
             ],
             &parameters[0],
         );
@@ -916,140 +895,188 @@ impl GridCase {
         pipelines: &GridPipelines,
         timestamps: Option<(&wgpu::QuerySet, u32, u32)>,
     ) {
-        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-            label: Some("physbox5_grid_passes"),
-            timestamp_writes: timestamps.map(|(query_set, beginning, end)| {
-                wgpu::ComputePassTimestampWrites {
-                    query_set,
-                    beginning_of_pass_write_index: Some(beginning),
-                    end_of_pass_write_index: Some(end),
-                }
-            }),
-        });
-        dispatch(
-            &mut pass,
+        dispatch_pass(
+            encoder,
+            "physbox5_grid_clear_proxy_pass",
             &pipelines.clear_proxy,
             &self.clear_proxy_group,
             self.proxy_count.max(16).div_ceil(GENERAL_WORKGROUP_SIZE),
+            timestamps.map(|(query_set, beginning, _)| (query_set, Some(beginning), None)),
         );
-        dispatch(
-            &mut pass,
+        dispatch_pass(
+            encoder,
+            "physbox5_grid_classify_pass",
             &pipelines.classify,
             &self.classify_group,
             self.proxy_count.div_ceil(GENERAL_WORKGROUP_SIZE),
+            None,
         );
-        scan(
-            &mut pass,
-            pipelines,
-            &self.cell_scan_group,
-            self.proxy_blocks,
-        );
-        scan(
-            &mut pass,
+        scan_passes(encoder, pipelines, &self.cell_scan_group, self.proxy_blocks);
+        scan_passes(
+            encoder,
             pipelines,
             &self.global_scan_group,
             self.proxy_blocks,
         );
-        dispatch(
-            &mut pass,
+        dispatch_pass(
+            encoder,
+            "physbox5_grid_finalize_inputs_pass",
             &pipelines.finalize_inputs,
             &self.finalize_inputs_group,
             1,
+            None,
         );
-        dispatch(
-            &mut pass,
+        dispatch_pass(
+            encoder,
+            "physbox5_grid_scatter_pass",
             &pipelines.scatter,
             &self.scatter_group,
             self.proxy_count.div_ceil(GENERAL_WORKGROUP_SIZE),
+            None,
         );
         for group in &self.cell_radix_groups {
-            dispatch_indirect(
-                &mut pass,
+            dispatch_indirect_pass(
+                encoder,
+                "physbox5_grid_cell_histogram_pass",
                 &pipelines.cell_histograms,
                 group,
                 &self.indirect,
                 0,
+                None,
             );
-            dispatch(&mut pass, &pipelines.cell_prefix, group, 1);
-            dispatch_indirect(&mut pass, &pipelines.cell_scatter, group, &self.indirect, 0);
+            dispatch_pass(
+                encoder,
+                "physbox5_grid_cell_prefix_pass",
+                &pipelines.cell_prefix,
+                group,
+                1,
+                None,
+            );
+            dispatch_indirect_pass(
+                encoder,
+                "physbox5_grid_cell_scatter_pass",
+                &pipelines.cell_scatter,
+                group,
+                &self.indirect,
+                0,
+                None,
+            );
         }
-        dispatch_indirect(
-            &mut pass,
+        dispatch_indirect_pass(
+            encoder,
+            "physbox5_grid_enumerate_cells_pass",
             &pipelines.enumerate_cells,
             &self.enumerate_cells_group,
             &self.indirect,
             48,
+            None,
         );
-        dispatch_indirect(
-            &mut pass,
+        dispatch_indirect_pass(
+            encoder,
+            "physbox5_grid_enumerate_globals_pass",
             &pipelines.enumerate_globals,
             &self.enumerate_globals_group,
             &self.indirect,
             36,
+            None,
         );
-        dispatch(
-            &mut pass,
+        dispatch_pass(
+            encoder,
+            "physbox5_grid_finalize_emissions_pass",
             &pipelines.finalize_emissions,
             &self.finalize_emissions_group,
             1,
+            None,
         );
         for group in &self.pair_radix_groups {
-            dispatch_indirect(
-                &mut pass,
+            dispatch_indirect_pass(
+                encoder,
+                "physbox5_grid_pair_histogram_pass",
                 &pipelines.pair_histograms,
                 group,
                 &self.indirect,
                 12,
+                None,
             );
-            dispatch(&mut pass, &pipelines.pair_prefix, group, 1);
-            dispatch_indirect(
-                &mut pass,
+            dispatch_pass(
+                encoder,
+                "physbox5_grid_pair_prefix_pass",
+                &pipelines.pair_prefix,
+                group,
+                1,
+                None,
+            );
+            dispatch_indirect_pass(
+                encoder,
+                "physbox5_grid_pair_scatter_pass",
                 &pipelines.pair_scatter,
                 group,
                 &self.indirect,
                 12,
+                None,
             );
         }
-        dispatch_indirect(
-            &mut pass,
+        dispatch_indirect_pass(
+            encoder,
+            "physbox5_grid_mark_unique_pass",
             &pipelines.mark_unique,
             &self.mark_unique_group,
             &self.indirect,
             24,
+            None,
         );
-        dispatch_indirect(
-            &mut pass,
+        dispatch_indirect_pass(
+            encoder,
+            "physbox5_grid_scan_unique_blocks_pass",
             &pipelines.scan_unique_blocks,
             &self.unique_scan_group,
             &self.indirect,
             12,
+            None,
         );
-        dispatch(
-            &mut pass,
+        dispatch_pass(
+            encoder,
+            "physbox5_grid_scan_unique_totals_pass",
             &pipelines.scan_unique_totals,
             &self.unique_scan_group,
             1,
+            None,
         );
-        dispatch_indirect(
-            &mut pass,
+        dispatch_indirect_pass(
+            encoder,
+            "physbox5_grid_add_unique_offsets_pass",
             &pipelines.add_unique_offsets,
             &self.unique_scan_group,
             &self.indirect,
             12,
+            None,
         );
-        dispatch(
-            &mut pass,
+        dispatch_pass(
+            encoder,
+            "physbox5_grid_finalize_unique_pass",
             &pipelines.finalize_unique,
             &self.finalize_unique_group,
             1,
+            None,
         );
-        dispatch_indirect(
-            &mut pass,
+        dispatch_indirect_pass(
+            encoder,
+            "physbox5_grid_materialize_pass",
             &pipelines.materialize,
             &self.materialize_group,
             &self.indirect,
             24,
+            timestamps.map(|(query_set, _, end)| (query_set, None, Some(end))),
         );
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn copy_capacity_to(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        destination: &wgpu::Buffer,
+    ) {
+        encoder.copy_buffer_to_buffer(&self.capacity, 0, destination, 0, 64);
     }
 
     fn capacities(&self, mut dynamic: Vec<CollisionCapacityV1>) -> Vec<CollisionCapacityV1> {
@@ -1357,15 +1384,36 @@ fn scan_parameters<'a>(
     parameters.last().expect("scan parameter exists")
 }
 
-fn scan<'a>(
-    pass: &mut wgpu::ComputePass<'a>,
-    pipelines: &'a GridPipelines,
-    group: &'a wgpu::BindGroup,
+fn scan_passes(
+    encoder: &mut wgpu::CommandEncoder,
+    pipelines: &GridPipelines,
+    group: &wgpu::BindGroup,
     blocks: u32,
 ) {
-    dispatch(pass, &pipelines.scan_blocks, group, blocks);
-    dispatch(pass, &pipelines.scan_totals, group, 1);
-    dispatch(pass, &pipelines.scan_add, group, blocks);
+    dispatch_pass(
+        encoder,
+        "physbox5_grid_scan_blocks_pass",
+        &pipelines.scan_blocks,
+        group,
+        blocks,
+        None,
+    );
+    dispatch_pass(
+        encoder,
+        "physbox5_grid_scan_totals_pass",
+        &pipelines.scan_totals,
+        group,
+        1,
+        None,
+    );
+    dispatch_pass(
+        encoder,
+        "physbox5_grid_scan_add_pass",
+        &pipelines.scan_add,
+        group,
+        blocks,
+        None,
+    );
 }
 
 fn layout(
@@ -1500,24 +1548,48 @@ fn uniform(device: &wgpu::Device, label: &'static str, values: &GridParamsRaw) -
     buffer
 }
 
-fn dispatch<'a>(
-    pass: &mut wgpu::ComputePass<'a>,
-    pipeline: &'a wgpu::ComputePipeline,
-    group: &'a wgpu::BindGroup,
+fn dispatch_pass(
+    encoder: &mut wgpu::CommandEncoder,
+    label: &'static str,
+    pipeline: &wgpu::ComputePipeline,
+    group: &wgpu::BindGroup,
     workgroups: u32,
+    timestamps: Option<(&wgpu::QuerySet, Option<u32>, Option<u32>)>,
 ) {
+    let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+        label: Some(label),
+        timestamp_writes: timestamps.map(|(query_set, beginning, end)| {
+            wgpu::ComputePassTimestampWrites {
+                query_set,
+                beginning_of_pass_write_index: beginning,
+                end_of_pass_write_index: end,
+            }
+        }),
+    });
     pass.set_pipeline(pipeline);
     pass.set_bind_group(0, group, &[]);
     pass.dispatch_workgroups(workgroups, 1, 1);
 }
 
-fn dispatch_indirect<'a>(
-    pass: &mut wgpu::ComputePass<'a>,
-    pipeline: &'a wgpu::ComputePipeline,
-    group: &'a wgpu::BindGroup,
-    indirect: &'a wgpu::Buffer,
+fn dispatch_indirect_pass(
+    encoder: &mut wgpu::CommandEncoder,
+    label: &'static str,
+    pipeline: &wgpu::ComputePipeline,
+    group: &wgpu::BindGroup,
+    indirect: &wgpu::Buffer,
     offset: u64,
+    timestamps: Option<(&wgpu::QuerySet, Option<u32>, Option<u32>)>,
 ) {
+    let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+        label: Some(label),
+        timestamp_writes: timestamps.map(|(query_set, beginning, end)| {
+            wgpu::ComputePassTimestampWrites {
+                query_set,
+                beginning_of_pass_write_index: beginning,
+                end_of_pass_write_index: end,
+            }
+        }),
+    });
     pass.set_pipeline(pipeline);
     pass.set_bind_group(0, group, &[]);
     pass.dispatch_workgroups_indirect(indirect, offset);

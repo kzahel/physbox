@@ -236,21 +236,21 @@ pub async fn run_broadphase_browser_probe(
                 .await
                 .map_err(js_error)?;
             for _ in 0..warmup_steps {
-                session.submit_sap();
-                wait_for_broadphase_submission(&session).await?;
-                session.submit_grid();
-                wait_for_broadphase_submission(&session).await?;
+                let completion = session.submit_sap().await.map_err(js_error)?;
+                wait_for_broadphase_submission(&session, completion).await?;
+                let completion = session.submit_grid().await.map_err(js_error)?;
+                wait_for_broadphase_submission(&session, completion).await?;
             }
             let mut sap_host_completion_seconds = Vec::with_capacity(samples as usize);
             let mut grid_host_completion_seconds = Vec::with_capacity(samples as usize);
             for _ in 0..samples {
                 let started = performance_now()?;
-                session.submit_sap();
-                wait_for_broadphase_submission(&session).await?;
+                let completion = session.submit_sap().await.map_err(js_error)?;
+                wait_for_broadphase_submission(&session, completion).await?;
                 sap_host_completion_seconds.push((performance_now()? - started) * 0.001);
                 let started = performance_now()?;
-                session.submit_grid();
-                wait_for_broadphase_submission(&session).await?;
+                let completion = session.submit_grid().await.map_err(js_error)?;
+                wait_for_broadphase_submission(&session, completion).await?;
                 grid_host_completion_seconds.push((performance_now()? - started) * 0.001);
             }
             rows.push(serde_json::json!({
@@ -315,8 +315,8 @@ async fn wait_for_submission(session: &GpuBodyBenchmarkSession) -> Result<(), Js
 #[cfg(all(target_arch = "wasm32", feature = "solver-lab"))]
 async fn wait_for_broadphase_submission(
     session: &GpuBroadphaseBrowserSession,
+    completion: physbox_engine::GpuBroadphaseBrowserCompletion,
 ) -> Result<(), JsValue> {
-    let completion = session.begin_completion_fence();
     let started = performance_now()?;
     while !completion.is_ready() {
         session.poll().map_err(js_error)?;

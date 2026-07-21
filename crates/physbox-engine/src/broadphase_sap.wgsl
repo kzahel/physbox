@@ -192,8 +192,9 @@ fn pair_radix_histograms(@builtin(global_invocation_id) global: vec3u,
 fn pair_radix_prefix(@builtin(global_invocation_id) invocation: vec3u) {
     if (invocation.x != 0u) { return; }
     var running = 0u;
+    let block_count = (atomicLoad(&capacity[2]) + 255u) / 256u;
     for (var digit = 0u; digit < 16u; digit++) {
-        for (var block = 0u; block < atomicLoad(&indirect[0]); block++) {
+        for (var block = 0u; block < block_count; block++) {
             let index = block * 16u + digit;
             let count = pair_radix_blocks[index];
             pair_radix_blocks[index] = running;

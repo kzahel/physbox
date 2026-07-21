@@ -148,7 +148,7 @@ impl SapPipelines {
         let pair_radix_layout = layout(
             device,
             "sap_pair_radix_layout",
-            &[(4, false), (5, false), (6, false), (9, false), (11, false)],
+            &[(4, false), (5, false), (6, false), (9, false)],
         );
         let materialize_layout = layout(
             device,
@@ -421,7 +421,6 @@ impl SapCase {
                     (5, destination),
                     (6, &pair_blocks),
                     (9, &capacity),
-                    (11, &indirect),
                 ],
                 parameters.last().expect("pair radix parameter exists"),
             ));
@@ -471,57 +470,102 @@ impl SapCase {
             0,
             u64::from(self.proxy_count) * size_of::<ProxyRaw>() as u64,
         );
-        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-            label: Some("physbox5_sap_passes"),
-            timestamp_writes: timestamps.map(|(query_set, beginning, end)| {
-                wgpu::ComputePassTimestampWrites {
-                    query_set,
-                    beginning_of_pass_write_index: Some(beginning),
-                    end_of_pass_write_index: Some(end),
-                }
-            }),
-        });
-        dispatch(&mut pass, &pipelines.clear, &self.clear_group, 1);
+        dispatch_pass(
+            encoder,
+            "physbox5_sap_clear_pass",
+            &pipelines.clear,
+            &self.clear_group,
+            1,
+            timestamps.map(|(query_set, beginning, _)| (query_set, Some(beginning), None)),
+        );
         for group in &self.proxy_radix_groups {
-            dispatch(
-                &mut pass,
+            dispatch_pass(
+                encoder,
+                "physbox5_sap_proxy_histogram_pass",
                 &pipelines.proxy_histograms,
                 group,
                 self.proxy_blocks_count,
+                None,
             );
-            dispatch(&mut pass, &pipelines.proxy_prefix, group, 1);
-            dispatch(
-                &mut pass,
+            dispatch_pass(
+                encoder,
+                "physbox5_sap_proxy_prefix_pass",
+                &pipelines.proxy_prefix,
+                group,
+                1,
+                None,
+            );
+            dispatch_pass(
+                encoder,
+                "physbox5_sap_proxy_scatter_pass",
                 &pipelines.proxy_scatter,
                 group,
                 self.proxy_blocks_count,
+                None,
             );
         }
-        dispatch(
-            &mut pass,
+        dispatch_pass(
+            encoder,
+            "physbox5_sap_enumerate_pass",
             &pipelines.enumerate,
             &self.enumerate_group,
             self.proxy_count.div_ceil(GENERAL_WORKGROUP_SIZE),
+            None,
         );
-        dispatch(&mut pass, &pipelines.finalize, &self.finalize_group, 1);
+        dispatch_pass(
+            encoder,
+            "physbox5_sap_finalize_pass",
+            &pipelines.finalize,
+            &self.finalize_group,
+            1,
+            None,
+        );
         for group in &self.pair_radix_groups {
-            dispatch_indirect(
-                &mut pass,
+            dispatch_indirect_pass(
+                encoder,
+                "physbox5_sap_pair_histogram_pass",
                 &pipelines.pair_histograms,
                 group,
                 &self.indirect,
                 0,
+                None,
             );
-            dispatch(&mut pass, &pipelines.pair_prefix, group, 1);
-            dispatch_indirect(&mut pass, &pipelines.pair_scatter, group, &self.indirect, 0);
+            dispatch_pass(
+                encoder,
+                "physbox5_sap_pair_prefix_pass",
+                &pipelines.pair_prefix,
+                group,
+                1,
+                None,
+            );
+            dispatch_indirect_pass(
+                encoder,
+                "physbox5_sap_pair_scatter_pass",
+                &pipelines.pair_scatter,
+                group,
+                &self.indirect,
+                0,
+                None,
+            );
         }
-        dispatch_indirect(
-            &mut pass,
+        dispatch_indirect_pass(
+            encoder,
+            "physbox5_sap_materialize_pass",
             &pipelines.materialize,
             &self.materialize_group,
             &self.indirect,
             12,
+            timestamps.map(|(query_set, _, end)| (query_set, None, Some(end))),
         );
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn copy_capacity_to(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        destination: &wgpu::Buffer,
+    ) {
+        encoder.copy_buffer_to_buffer(&self.capacity, 0, destination, 0, 16);
     }
 
     fn capacities(&self, candidate: CollisionCapacityV1) -> Vec<CollisionCapacityV1> {
@@ -900,24 +944,48 @@ fn uniform(device: &wgpu::Device, label: &'static str, values: &SapParamsRaw) ->
     buffer
 }
 
-fn dispatch<'a>(
-    pass: &mut wgpu::ComputePass<'a>,
-    pipeline: &'a wgpu::ComputePipeline,
-    group: &'a wgpu::BindGroup,
+fn dispatch_pass(
+    encoder: &mut wgpu::CommandEncoder,
+    label: &'static str,
+    pipeline: &wgpu::ComputePipeline,
+    group: &wgpu::BindGroup,
     workgroups: u32,
+    timestamps: Option<(&wgpu::QuerySet, Option<u32>, Option<u32>)>,
 ) {
+    let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+        label: Some(label),
+        timestamp_writes: timestamps.map(|(query_set, beginning, end)| {
+            wgpu::ComputePassTimestampWrites {
+                query_set,
+                beginning_of_pass_write_index: beginning,
+                end_of_pass_write_index: end,
+            }
+        }),
+    });
     pass.set_pipeline(pipeline);
     pass.set_bind_group(0, group, &[]);
     pass.dispatch_workgroups(workgroups, 1, 1);
 }
 
-fn dispatch_indirect<'a>(
-    pass: &mut wgpu::ComputePass<'a>,
-    pipeline: &'a wgpu::ComputePipeline,
-    group: &'a wgpu::BindGroup,
-    indirect: &'a wgpu::Buffer,
+fn dispatch_indirect_pass(
+    encoder: &mut wgpu::CommandEncoder,
+    label: &'static str,
+    pipeline: &wgpu::ComputePipeline,
+    group: &wgpu::BindGroup,
+    indirect: &wgpu::Buffer,
     offset: u64,
+    timestamps: Option<(&wgpu::QuerySet, Option<u32>, Option<u32>)>,
 ) {
+    let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+        label: Some(label),
+        timestamp_writes: timestamps.map(|(query_set, beginning, end)| {
+            wgpu::ComputePassTimestampWrites {
+                query_set,
+                beginning_of_pass_write_index: beginning,
+                end_of_pass_write_index: end,
+            }
+        }),
+    });
     pass.set_pipeline(pipeline);
     pass.set_bind_group(0, group, &[]);
     pass.dispatch_workgroups_indirect(indirect, offset);

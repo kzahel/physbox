@@ -47,21 +47,29 @@ try {
   await page.goto(`http://127.0.0.1:${server.address().port}/`, { waitUntil: "networkidle" });
   await page.waitForFunction(() => globalThis.__physbox5?.ready, null, { timeout: 30_000 });
   await page.evaluate(() => globalThis.__physbox5FrameControl.pause());
-  const rows = await page.evaluate(
-    async ({ counts, patterns, seed, warmupSteps, samples }) => {
-      const module = await import("./pkg/physbox_web.js");
-      return JSON.parse(
-        await module.runBroadphaseBrowserProbe(
-          counts,
-          patterns,
-          seed,
-          warmupSteps,
-          samples,
-        ),
-      );
-    },
-    { counts, patterns, seed, warmupSteps, samples },
-  );
+  let rows;
+  try {
+    rows = await page.evaluate(
+      async ({ counts, patterns, seed, warmupSteps, samples }) => {
+        const module = await import("./pkg/physbox_web.js");
+        return JSON.parse(
+          await module.runBroadphaseBrowserProbe(
+            counts,
+            patterns,
+            seed,
+            warmupSteps,
+            samples,
+          ),
+        );
+      },
+      { counts, patterns, seed, warmupSteps, samples },
+    );
+  } catch (error) {
+    const diagnostics = [...errors, ...gpuValidationErrors];
+    throw new Error(
+      diagnostics.length ? `${error.message}; ${diagnostics.join("; ")}` : error.message,
+    );
+  }
   if (errors.length) throw new Error(`browser errors: ${errors.join("; ")}`);
   if (gpuValidationErrors.length) {
     throw new Error(`browser WebGPU validation errors: ${gpuValidationErrors.join("; ")}`);
