@@ -1,11 +1,11 @@
 # S19: soft default and physics configuration
 
-Status: active, 2026-07-21. Human review selects the interactively preferred
+Status: active implementation, 2026-07-21. Human review selects the interactively preferred
 soft-coupled family as the product direction, accepts its current compliance
 and tall-stack limitation as a visible starting trade-off, and authorizes a
 bounded product configuration for fixed rate, substeps, iterations, and
-contact response. The current code and ordinary deployed default remain
-hard/direct until the migration slices below make the change truthfully.
+contact response. The code default and complete shared configuration path are
+now soft-coupled; cross-host closure and deployment remain in progress.
 
 Governing topics:
 [physics configuration and solver profiles](../topics/physics-configuration-and-solver-profiles.md)
@@ -108,7 +108,7 @@ agree; no document falsely says that ordinary builds already default to soft.
   fixed rate, substeps, biased iterations, soft contact tuning, and the
   existing contact-recovery policy. Prefer one canonical rate representation
   and derive `dt` exactly once.
-- [ ] Give `physbox-launch` the ordinary soft default, bounded parsing, help,
+- [x] Give `physbox-launch` the ordinary soft default, bounded parsing, help,
   web mappings, and Android JSON argv decoding. Preserve explicit aliases for
   old `selected` and `branch-robust` launches during migration, while reports
   emit canonical ids.
@@ -139,7 +139,7 @@ platform adapters contain no physics defaults.
   30, 60, and 120 Hz.
 - [x] Apply a rate change only through an atomic world restart/rebuild. Never
   mutate `dt` during an encoded step or retain old-rate accumulator debt.
-- [ ] Report requested rate, exact `dt`, effective scale, presentation rate,
+- [x] Report requested rate, exact `dt`, effective scale, presentation rate,
   and whether the host is sustaining the request. A 120 Hz world on a 60 Hz
   presentation host must visibly run slow rather than catch up.
 
@@ -155,14 +155,14 @@ than one outer step.
   fixed-anchor refresh, branch-robust separation, relaxation, restitution
   placement, coloring, persistence, and fail-closed capacity semantics unless
   a separately named profile changes one.
-- [ ] Derive internal substep `dt`, dynamic/static contact-Hz caps, coefficient
+- [x] Derive internal substep `dt`, dynamic/static contact-Hz caps, coefficient
   values, pass count, dispatch count, and allocation from the applied
   configuration. Reject integer overflow and configurations exceeding declared
   pass/capacity limits before work is committed.
-- [ ] Keep the selected soft seed byte-for-byte or metric-identical to the
+- [x] Keep the selected soft seed byte-for-byte or metric-identical to the
   currently reviewed branch-robust 60/4/i1 30/10/staticx2 lane before changing
   its public name/default.
-- [ ] Add exact replay and negative-capacity tests at 1/2/4/8 substeps and
+- [x] Add exact replay and negative-capacity tests at 1/2/4/8 substeps and
   1/2/4 biased iterations, including switch/rebuild tests with no stale cache,
   pass, or parameter state.
 
@@ -172,17 +172,17 @@ work graph and never require simulation-dependent CPU readback.
 
 ### S19.5 — soft product-default migration
 
-- [ ] Rename the canonical public profile to `soft-coupled`, keep the old
+- [x] Rename the canonical public profile to `soft-coupled`, keep the old
   branch-robust id as an input alias, and label the comparison profile
   `HARD DIRECT`.
-- [ ] Make soft-coupled 60/4/i1 30/10/staticx2 the ordinary default in
+- [x] Make soft-coupled 60/4/i1 30/10/staticx2 the ordinary default in
   `physbox-launch`, `EngineConfig`, scenario construction, fresh browser
   storage, native apps, Android, and headless.
-- [ ] Remove the solver-lab feature gate from the selected soft product path.
+- [x] Remove the solver-lab feature gate from the selected soft product path.
   Experimental presets may remain gated; the default physics may not.
-- [ ] Preserve hard/direct as an explicitly requested registry entry and
+- [x] Preserve hard/direct as an explicitly requested registry entry and
   validation control. Prove no runtime failure selects it automatically.
-- [ ] Record measured before/after hard-versus-soft response, penetration,
+- [x] Record measured before/after hard-versus-soft response, penetration,
   first-loss, work, GPU time, memory, and capacity results and the human reason
   for accepting the change in the implementation commit and review artifact.
 
@@ -191,26 +191,59 @@ the exact seed configuration without query parameters, feature flags, or prior
 local storage. Existing stored branch-robust preferences migrate to the same
 canonical profile.
 
+Default-change evidence, Apple M4 Pro Metal: matched 1,200-step stack traces
+measure hard/direct versus the identical soft seed now named soft-coupled.
+Last-quarter maximum speed is `0.038725/0.004970`, `0.181896/0.016011`, and
+`0.824075/0.007701 m/s` for 4/8/16 stacks. Settled maximum penetration is
+`0.001195/0.004163`, `0.004163/0.009743`, and `0.010400/0.004188 m`; the last
+soft value is after its accepted step-407 structural loss. Hard stays ordered
+through 1,200 on the 16-stack, while its 32/64 diagnostics lose structure at
+29/31 versus soft at 225/129. The 16-stack work graph is 195 dispatches and
+211,912 bytes hard versus 68 and 175,048 bytes soft, with exact replay and no
+capacity overflow. Fresh release scoreboard cost per authored step is
+`0.894/0.603`, `1.038/0.649`, `1.232/0.890`, and `7.565/4.054 ms` on stack
+4/8/16 and rectangle bucket.
+
+The retained complete-step 32/256/1K vectors measure hard/soft GPU P50 at
+`2.412/1.801`, `4.779/1.919`, and `5.556/3.413 ms`; P95 is
+`4.095/3.202`, `6.776/2.415`, and `7.498/4.188 ms`. CPU encode/submit P50 is
+`0.157/0.071`, `2.725/0.918`, and `3.015/0.830 ms`; work is
+`168/41`, `1410/411`, `1410/411` dispatches and allocation is
+`102,508/62,048`, `622,104/302,860`, `1,403,160/893,452` bytes. These results
+characterize, rather than erase, the accepted compliance regression. Human
+review explicitly judges the much quieter soft response better enough to
+build forward from it. Frozen trace details live in
+`evidence/p5.2b-s17.2-selected-baseline`,
+`evidence/p5.2b-s17.4-metal-product-relative`, and
+`evidence/p5.2b-s17.5-metal-complete-step`; S19 reruns the maintained paths
+before closure rather than changing those historical artifacts.
+
 ### S19.6 — shared configuration UX
 
-- [ ] Extend the existing n-profile solver menu with `SIM HZ`, `SUBSTEPS`, and
+- [x] Extend the existing n-profile solver menu with `SIM HZ`, `SUBSTEPS`, and
   `ITERATIONS`; retain contact `HZ`, `DAMPING`, and `STATIC SCALE`.
-- [ ] Show requested and effective contact Hz when the substep cap differs,
+- [x] Show requested and effective contact Hz when the substep cap differs,
   internal substep rate or `dt`, preset/custom state, and an honest compact
   cost/pacing warning. Do not leave inert values such as 31-120 requested Hz
   looking effective under 60/4.
-- [ ] Provide one restore-preset action and atomic apply. Preserve camera and
+- [x] Provide one restore-preset action and atomic apply. Preserve camera and
   tool state where safe, close active grabs/construction transactions
   deliberately, and restart scenario/physics state when required.
-- [ ] Version the local-storage schema, migrate `physbox5.solver-lab.v1`, and
+- [x] Version the local-storage schema, migrate `physbox5.solver-lab.v1`, and
   restore complete configuration without requiring query editing. URL
   synchronization remains a reproducibility detail, not the primary UX.
-- [ ] Keep the layout usable with at least six profiles on 456x1024,
+- [x] Keep the layout usable with at least six profiles on 456x1024,
   932x430, 960x600, and 2400x1080 targets.
 
 Gate: browser automation changes rate, resolution, and contact settings;
 verifies the applied scene/configuration contract; switches profiles without
 reload; restores after reload; and captures readable phone/landscape menus.
+
+Fresh browser runs passed the complete edit/switch/reload/migration flow at
+960x600 (run `e6d1c5ff-5b56-4c33-8aef-e78438153672`), 456x1024
+(`768da962-4931-4af1-8ddc-0e1006d6b37c`), and 932x430
+(`2b825de4-2b97-4e13-84e4-ffa99f893fa3`). The renderer layout tests cover
+the same touch bounds with six profiles at those targets and 2400x1080.
 
 ### S19.7 — useful presets and subjective comparison
 
@@ -218,10 +251,10 @@ reload; restores after reload; and captures readable phone/landscape menus.
   and 1/2 biased iterations on 4/8/16 stacks, rectangle bucket, impact,
   friction, restitution, reset/grab, and construction. Do not assume more work
   improves quality.
-- [ ] Ship one `SOFT HIGH QUALITY` preset only if it presents a distinct useful
+- [x] Ship one `SOFT HIGH QUALITY` preset only if it presents a distinct useful
   response/cost trade-off and remains safe/capacity-valid. Otherwise retain
   only editable soft-coupled plus hard/direct.
-- [ ] Re-expose the existing S6 30/10/staticx1 prior-contact soft lane as a
+- [x] Re-expose the existing S6 30/10/staticx1 prior-contact soft lane as a
   named subjective profile only if it can be represented by shared solver and
   identity configuration rather than a special scenario.
 - [ ] Run an explicit human review of the shipped presets on ordinary and tall
@@ -231,6 +264,31 @@ reload; restores after reload; and captures readable phone/landscape menus.
 Gate: every shipped preset has a stable semantic identity, complete applied
 configuration, fresh artifacts, and a human-readable reason to exist. No
 preset is named `Box2D` or claims parity without matched authority evidence.
+
+S19.7 partial result, Apple M4 Pro Metal, 2026-07-21: the default scoreboard
+ran the six 60 Hz soft resolution arms below with contact 30/damping 10/static
+x2. Speed columns are last-quarter maximum linear speed in m/s; cost is release
+wall time per authored step. Every row was finite, replayable, and capacity
+clean.
+
+| Substeps / iterations | stack 4 | stack 8 | stack 16 | bucket | stack 16 / bucket cost |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 2 / 1 | 0.024254 | 0.057218 | loss 141; 0.029877 | 0.036067 | 0.745 / 3.122 ms |
+| 2 / 2 | 0.026646 | 0.058862 | loss 160; 0.031220 | 0.034385 | 0.809 / 3.662 ms |
+| 4 / 1 | 0.004970 | 0.016011 | loss 407; 0.007701 | 0.018204 | 0.890 / 4.054 ms |
+| 4 / 2 | 0.008375 | 0.021893 | loss 469; 0.009513 | 0.013595 | 1.060 / 5.092 ms |
+| 8 / 1 | 0.003602 | 0.007500 | loss 851; 2.211010 | 0.007541 | 1.197 / 6.157 ms |
+| 8 / 2 | 0.005278 | 0.009681 | loss 836; 1.945697 | 0.007812 | 1.510 / 8.240 ms |
+
+This does not justify a **SOFT HIGH QUALITY** preset. Four/i2 has a modestly
+later tall-stack loss and quieter bucket, but slightly more ordinary-stack
+motion and 19-26% more measured cost. Eight substeps delays structural loss
+but produces a much larger post-loss velocity and costs 34-103% more. Two
+substeps is simply worse. The product therefore ships one reviewed editable
+soft preset plus hard/direct; 30/10/staticx1 and every matrix arm remain
+reachable as custom soft configurations without acquiring misleading product
+names. The remaining S19.7 checkbox requires the broader response corpus and
+final live human inspection.
 
 ### S19.8 — cross-host, performance, and closure
 

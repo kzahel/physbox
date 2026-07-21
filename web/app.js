@@ -1,12 +1,24 @@
-import init, { PointerButtonCode, solverLabEnabled, start } from "./pkg/physbox_web.js";
+import init, { PointerButtonCode, start } from "./pkg/physbox_web.js";
 
 const canvas = document.querySelector("#physbox-canvas");
 const fatalError = document.querySelector("#fatal-error");
 globalThis.__physbox5 = { ready: false, ok: false };
 let renderingPaused = false;
-const solverPreferenceKey = "physbox5.solver-lab.v1";
-let solverLab = false;
-let lastSolverPreference = "";
+const physicsPreferenceKey = "physbox5.physics.v2";
+const legacySolverPreferenceKey = "physbox5.solver-lab.v1";
+const physicsQueryKeys = Object.freeze([
+  "solver",
+  "sim-hz",
+  "substeps",
+  "iterations",
+  "contact-hz",
+  "contact-damping",
+  "static-contact-scale",
+  "speculative-distance",
+  "max-depenetration-velocity",
+  "solver-options",
+]);
+let lastPhysicsPreference = "";
 globalThis.__physbox5FrameControl = Object.freeze({
   pause() { renderingPaused = true; },
   resume() {
@@ -19,8 +31,7 @@ globalThis.__physbox5FrameControl = Object.freeze({
 async function boot() {
   if (!navigator.gpu) throw new Error("WebGPU is not available in this browser");
   await init();
-  solverLab = solverLabEnabled();
-  const app = await start(canvas, solverLab ? startupSearch() : location.search);
+  const app = await start(canvas, startupSearch());
   const diagnostics = JSON.parse(app.diagnosticsJson());
   globalThis.__physbox5App = app;
   globalThis.__physbox5 = { ready: false, ok: true, diagnostics };
@@ -86,7 +97,7 @@ function renderFrame(timestamp) {
   if (renderingPaused) return;
   try {
     const report = JSON.parse(globalThis.__physbox5App.render(timestamp));
-    syncSolverPreference(report);
+    syncPhysicsPreference(report);
     globalThis.__physbox5.frame = report;
     globalThis.__physbox5.ready = report.scenario.complete;
     if (!renderingPaused) requestAnimationFrame(renderFrame);
@@ -97,54 +108,133 @@ function renderFrame(timestamp) {
 
 function startupSearch() {
   const params = new URLSearchParams(location.search);
-  if (params.has("solver")) return `?${params}`;
+  if (physicsQueryKeys.some((key) => params.has(key))) return `?${params}`;
   try {
-    const saved = JSON.parse(localStorage.getItem(solverPreferenceKey) ?? "null");
-    if (
-      saved?.version !== 1
-      || !["selected", "branch-robust"].includes(saved.solver)
-      || (saved.options !== null && typeof saved.options !== "string")
-      || (saved.solver === "selected" && saved.options !== null)
-    ) return `?${params}`;
-    params.set("solver", saved.solver);
-    if (typeof saved.options === "string" && saved.options.length > 0) {
-      params.set("solver-options", saved.options);
-    }
+    const saved = loadPhysicsPreference();
+    if (saved) writePhysicsQuery(params, saved);
   } catch (error) {
-    console.warn("Ignoring invalid PhysBox solver preference", error);
+    console.warn("Ignoring invalid PhysBox physics preference", error);
   }
   return `?${params}`;
 }
 
-function syncSolverPreference(report) {
-  if (!solverLab) return;
+function syncPhysicsPreference(report) {
   const contract = report.sceneContract;
   if (!contract || typeof contract.solverProfile !== "string") return;
-  const saved = JSON.stringify({
-    version: 1,
+  const preference = {
+    version: 2,
     solver: contract.solverProfile,
-    options: contract.solverProfileOptions ?? null,
-  });
-  if (saved === lastSolverPreference) return;
-  lastSolverPreference = saved;
+    simHz: contract.fixedStepHz,
+    substeps: contract.solverSubsteps,
+    iterations: contract.solverBiasedIterations,
+    contactHz: contract.requestedContactHz,
+    contactDamping: contract.contactDampingRatio,
+    staticContactScale: contract.requestedStaticContactHz / contract.requestedContactHz,
+    speculativeDistance: contract.speculativeDistance,
+    maxDepenetrationVelocity: contract.maxDepenetrationVelocity,
+  };
+  if (!validPhysicsPreference(preference)) return;
+  const saved = JSON.stringify(preference);
+  if (saved === lastPhysicsPreference) return;
+  lastPhysicsPreference = saved;
   try {
-    localStorage.setItem(solverPreferenceKey, saved);
+    localStorage.setItem(physicsPreferenceKey, saved);
+    localStorage.removeItem(legacySolverPreferenceKey);
   } catch (error) {
-    console.warn("Could not persist PhysBox solver preference", error);
+    console.warn("Could not persist PhysBox physics preference", error);
   }
   const url = new URL(location.href);
-  if (contract.solverProfile === "selected") {
-    url.searchParams.delete("solver");
-    url.searchParams.delete("solver-options");
+  for (const key of physicsQueryKeys) url.searchParams.delete(key);
+  if (isDefaultPhysicsPreference(preference)) {
+    history.replaceState(null, "", url);
   } else {
-    url.searchParams.set("solver", contract.solverProfile);
-    if (contract.solverProfileOptions) {
-      url.searchParams.set("solver-options", contract.solverProfileOptions);
-    } else {
-      url.searchParams.delete("solver-options");
+    writePhysicsQuery(url.searchParams, preference);
+    history.replaceState(null, "", url);
+  }
+}
+
+function loadPhysicsPreference() {
+  const saved = JSON.parse(localStorage.getItem(physicsPreferenceKey) ?? "null");
+  if (validPhysicsPreference(saved)) return saved;
+
+  const legacy = JSON.parse(localStorage.getItem(legacySolverPreferenceKey) ?? "null");
+  if (
+    legacy?.version !== 1
+    || !["selected", "branch-robust"].includes(legacy.solver)
+    || (legacy.options !== null && typeof legacy.options !== "string")
+  ) return null;
+  const migrated = {
+    version: 2,
+    solver: legacy.solver === "selected" ? "hard-direct" : "soft-coupled",
+    simHz: 60,
+    substeps: 4,
+    iterations: legacy.solver === "selected" ? 2 : 1,
+    contactHz: 30,
+    contactDamping: 10,
+    staticContactScale: 2,
+    speculativeDistance: 0.02,
+    maxDepenetrationVelocity: 3,
+  };
+  if (typeof legacy.options === "string") {
+    for (const field of legacy.options.split(",")) {
+      const [name, encoded] = field.split("=", 2);
+      const value = Number(encoded);
+      if (name === "hz") migrated.contactHz = value;
+      else if (name === "damping") migrated.contactDamping = value;
+      else if (name === "static-scale") migrated.staticContactScale = value;
+      else return null;
     }
   }
-  history.replaceState(null, "", url);
+  return validPhysicsPreference(migrated) ? migrated : null;
+}
+
+function validPhysicsPreference(saved) {
+  if (
+    saved?.version !== 2
+    || !["soft-coupled", "hard-direct"].includes(saved.solver)
+  ) return false;
+  const integerBounds = [
+    [saved.simHz, 15, 240],
+    [saved.substeps, 1, 8],
+    [saved.iterations, 1, 4],
+  ];
+  const numberBounds = [
+    [saved.contactHz, 1, 120],
+    [saved.contactDamping, 0.5, 20],
+    [saved.staticContactScale, 0.5, 16],
+    [saved.speculativeDistance, 0, 1],
+    [saved.maxDepenetrationVelocity, 0.1, 100],
+  ];
+  return integerBounds.every(([value, minimum, maximum]) =>
+    Number.isInteger(value) && value >= minimum && value <= maximum
+  ) && numberBounds.every(([value, minimum, maximum]) =>
+    Number.isFinite(value) && value >= minimum && value <= maximum
+  ) && (saved.solver !== "hard-direct"
+    || (saved.simHz === 60 && saved.substeps === 4 && saved.iterations === 2));
+}
+
+function writePhysicsQuery(params, preference) {
+  params.set("solver", preference.solver);
+  params.set("sim-hz", String(preference.simHz));
+  params.set("substeps", String(preference.substeps));
+  params.set("iterations", String(preference.iterations));
+  params.set("contact-hz", String(preference.contactHz));
+  params.set("contact-damping", String(preference.contactDamping));
+  params.set("static-contact-scale", String(preference.staticContactScale));
+  params.set("speculative-distance", String(preference.speculativeDistance));
+  params.set("max-depenetration-velocity", String(preference.maxDepenetrationVelocity));
+}
+
+function isDefaultPhysicsPreference(preference) {
+  return preference.solver === "soft-coupled"
+    && preference.simHz === 60
+    && preference.substeps === 4
+    && preference.iterations === 1
+    && preference.contactHz === 30
+    && preference.contactDamping === 10
+    && preference.staticContactScale === 2
+    && preference.speculativeDistance === 0.02
+    && preference.maxDepenetrationVelocity === 3;
 }
 
 function fail(error) {

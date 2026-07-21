@@ -38,11 +38,11 @@ owns the detailed decision. The initial seed is 60 Hz outer fixed rate, four
 substeps, one biased point-sequential pass plus relaxation, and soft contact
 30 Hz/damping 10/static multiplier 2. Hard/direct remains a named comparison,
 not an automatic fallback. The [S19 tactical](../tactical/019-soft-default-and-physics-configuration.md)
-must make this path the ordinary default and turn fixed rate, substeps,
-iterations, and contact response into one bounded shared configuration.
+has made this path the ordinary code default and turned fixed rate, substeps,
+iterations, contact response, and recovery policy into one bounded shared
+configuration; its remaining work is cross-host closure and exact deployment.
 
-The code and deployed fresh-browser default remain hard/direct during that
-migration. Historical S6-S18 dispositions remain accurate for their frozen
+Historical S6-S18 dispositions remain accurate for their frozen
 questions; they do not override the later human product decision. Invariants,
 capacity safety, exact replay within a configuration, portable WebGPU, one
 GPU-resident state, and honest cost/response reporting remain mandatory.

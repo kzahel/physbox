@@ -1,12 +1,11 @@
 # Physics configuration and solver profiles
 
-Status: active product direction, 2026-07-21. Human review selects the
-soft-coupled solver family as the intended product default and authorizes
-product-owned fixed-step, substep, iteration, and contact-response settings.
-The code and deployed ordinary default remain hard/direct until the ordered
-[S19 migration](../tactical/019-soft-default-and-physics-configuration.md)
-completes; documentation must distinguish that implementation fact from the
-new direction.
+Status: implemented product direction, 2026-07-21. Human review selected the
+soft-coupled solver family, and the shared code now uses its reviewed
+60/4/i1 seed as the fresh ordinary default. Product-owned fixed-step, substep,
+iteration, contact-response, and recovery settings form one versioned bounded
+configuration. [S19](../tactical/019-soft-default-and-physics-configuration.md)
+tracks cross-host closure and deployment.
 
 Governing direction:
 [one GPU-resident 2D physics world](physbox5-unified-gpu-physics.md).
@@ -53,7 +52,7 @@ The soft direction is not an evidence-free preference. Its Box2D-derived
 coefficient equation and authority-structure lineage make it mechanically
 closer to the rigid authority than hard/direct. On the governed 16-stack, the
 60/4 soft lane measured `0.007701 m/s` settled maximum linear speed versus
-`0.824075 m/s` for the current hard/direct product, and its complete-step GPU
+`0.824075 m/s` for the former hard/direct default, and its complete-step GPU
 cost was lower on the recorded 32/256/1K contact vectors.
 
 The current seed is also known to be compliant. Rectangles can visibly overlap
@@ -114,21 +113,23 @@ numeric console:
 - finite positive contact values inside engine-owned limits, always showing
   the effective cap.
 
-The initial profile list is:
+The initial profile list is deliberately small:
 
 1. **SOFT COUPLED** — selected product direction, initially 60/4/i1 and
    30/10/staticx2.
-2. **SOFT HIGH QUALITY** — a measured 60 Hz configuration with more internal
-   work; S19 selects its substep/iteration/contact tuple after direct
-   comparison rather than assuming that more work is monotonic.
-3. **HARD DIRECT** — the existing 60/4/i2 product retained as a comparison and
+2. **HARD DIRECT** — the existing 60/4/i2 product retained as a comparison and
    rollback diagnostic, never selected automatically.
 
-S19 should also make the existing S6 `30/10/staticx1` prior-contact soft lane
-available for bounded subjective comparison if it can reuse the shared
-product path without scene-specific ownership. Additional presets are admitted
-only when they offer a distinct behavior/cost trade-off; a grid cell is not a
-product preset merely because it exists.
+No **SOFT HIGH QUALITY** preset ships initially. The measured 60 Hz matrix
+showed no monotonic winner: 4/i2 delayed the known 16-stack loss from step 407
+to 469 at roughly 19% more 16-stack cost while slightly increasing ordinary
+stack motion; 8/i1 and 8/i2 delayed first loss to 851/836 but became violently
+active after loss and cost substantially more. Two-substep variants were
+plainly worse. The existing 30/10/staticx1 response is representable as an
+ordinary custom soft configuration, so it needs no scene-specific or named
+profile. Additional presets are admitted only when they offer a distinct,
+reviewed behavior/cost trade-off; a grid cell is not a product preset merely
+because it exists.
 
 ## Runtime and pacing semantics
 

@@ -118,11 +118,10 @@ Later rigid/contact work selected hard/direct manifold-block i2 as an interim
 product solver, then exposed the authority-derived soft-coupled path for direct
 inspection. Human review on 2026-07-21 prefers that soft response and selects
 it as the continuing product direction despite known tall-stack compliance.
-S19 migrates the reviewed 60 Hz/four-substep 30/10/staticx2 seed into the
-ordinary default and makes fixed rate, substeps, iterations, and contact
-response one shared bounded configuration. Hard/direct remains a comparison,
-not a fallback. The code default remains hard/direct until that migration is
-complete.
+S19 makes the reviewed 60 Hz/four-substep 30/10/staticx2 seed the ordinary
+default and makes fixed rate, substeps, iterations, and contact response one
+shared bounded configuration. Hard/direct remains a comparison, not a
+fallback.
 
 ## Collision contracts
 

@@ -687,8 +687,8 @@ mod tests {
             let report = renderer.render(FrameInput::exact(120));
             assert!(report.scenario.complete);
             assert_eq!(report.scene_contract.contact_point_count, 2_048);
-            assert_eq!(report.scene_contract.solver_dispatches_per_step, 195);
-            assert_eq!(report.scene_contract.solver_capacity_bytes, 1_290_800);
+            assert_eq!(report.scene_contract.solver_dispatches_per_step, 68);
+            assert_eq!(report.scene_contract.solver_capacity_bytes, 1_234_468);
             assert!(!report.scene_contract.capacity_overflowed);
             renderer.read_capture_state().unwrap()
         };
@@ -696,7 +696,54 @@ mod tests {
         let replay = run();
         assert_eq!(first, replay);
         assert!(first.into_iter().all(f32::is_finite));
-        assert!((first[1] - 0.2).abs() <= 1.0e-5);
+        assert!(
+            (first[1] - 0.2).abs() <= 2.0e-4,
+            "soft-coupled floor rest height was {}",
+            first[1]
+        );
+    }
+
+    #[test]
+    fn bounded_soft_resolution_matrix_replays_and_reports_its_work_graph() {
+        for substeps in [1, 2, 4, 8] {
+            let mut previous_dispatches = 0;
+            for iterations in [1, 2, 4] {
+                let mut physics = physbox_launch::PhysicsConfigurationV1::SOFT_COUPLED;
+                physics.substeps = substeps;
+                physics.biased_iterations = iterations;
+                let config = EngineConfig {
+                    scenario: ValidationScenario::Bootstrap,
+                    solver_profile: crate::SolverProfileConfig::from_physics(physics).unwrap(),
+                };
+                let run = || {
+                    let mut renderer =
+                        pollster::block_on(OffscreenRenderer::new(320, 200, config.clone()))
+                            .expect("bounded soft configuration initializes");
+                    let report = renderer.render(FrameInput::exact(3));
+                    let state = renderer.read_capture_state().unwrap();
+                    (report, state)
+                };
+                let (first_report, first_state) = run();
+                let (replay_report, replay_state) = run();
+                assert_eq!(first_state, replay_state);
+                assert!(first_state.into_iter().all(f32::is_finite));
+                assert_eq!(first_report.scene_contract, replay_report.scene_contract);
+                assert_eq!(first_report.scene_contract.solver_substeps, substeps);
+                assert_eq!(
+                    first_report.scene_contract.solver_biased_iterations,
+                    iterations
+                );
+                assert_eq!(
+                    first_report.scene_contract.internal_substep_hz,
+                    60 * substeps
+                );
+                assert!(!first_report.scene_contract.capacity_overflowed);
+                assert!(
+                    first_report.scene_contract.solver_dispatches_per_step > previous_dispatches
+                );
+                previous_dispatches = first_report.scene_contract.solver_dispatches_per_step;
+            }
+        }
     }
 
     #[test]
@@ -1282,7 +1329,7 @@ mod tests {
             unchanged.ui.parameter_writes_total,
             initial.ui.parameter_writes_total
         );
-        assert_eq!(initial.ui.allocated_bytes, 31_760);
+        assert_eq!(initial.ui.allocated_bytes, 39_952);
 
         renderer.render(FrameInput::exact(0).with_input_events(vec![
             crate::InputEvent::Pointer(crate::PointerEvent {
@@ -1396,7 +1443,7 @@ mod tests {
         );
         let switched = renderer.render(
             FrameInput::exact(0)
-                .with_input_events(click(41, layout.center_normalized("scenario", 6))),
+                .with_input_events(click(41, layout.center_normalized("scenario", 8))),
         );
         assert_eq!(switched.scene_contract.scenario, "bootstrap");
         assert_eq!(switched.scene_contract.solver_profile, "soft-coupled");
@@ -1414,7 +1461,7 @@ mod tests {
             200,
             EngineConfig {
                 scenario: ValidationScenario::SolverManifoldI2,
-                ..Default::default()
+                solver_profile: crate::SolverProfileConfig::hard_direct(),
             },
         ))
         .unwrap();
@@ -1449,7 +1496,7 @@ mod tests {
             200,
             EngineConfig {
                 scenario: ValidationScenario::SolverParallelColoring,
-                ..Default::default()
+                solver_profile: crate::SolverProfileConfig::hard_direct(),
             },
         ))
         .unwrap();

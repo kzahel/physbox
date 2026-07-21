@@ -50,7 +50,7 @@ mod tests {
         let config = EngineConfig::try_from(&options).unwrap();
         assert_eq!(config.solver_profile.name(), "soft-coupled");
 
-        options.scenario = ValidationScenario::BodyFreeFlight;
+        options.scenario = ValidationScenario::SolverManifoldI2;
         let error = EngineConfig::try_from(&options).unwrap_err();
         assert!(error.contains("does not support"));
     }

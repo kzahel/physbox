@@ -3,10 +3,11 @@ use physbox_contracts::{
     ScenarioV1, Validate,
 };
 use physbox_launch::{
-    MAX_BIASED_ITERATIONS, MAX_CONTACT_DAMPING_RATIO, MAX_CONTACT_HZ, MAX_SOLVER_SUBSTEPS,
-    MAX_STATIC_CONTACT_HZ_MULTIPLIER, MIN_BIASED_ITERATIONS, MIN_CONTACT_DAMPING_RATIO,
-    MIN_CONTACT_HZ, MIN_SOLVER_SUBSTEPS, MIN_STATIC_CONTACT_HZ_MULTIPLIER, PhysicsConfigurationV1,
-    SolverProfileName, ValidationScenario,
+    MAX_BIASED_ITERATIONS, MAX_CONTACT_DAMPING_RATIO, MAX_CONTACT_HZ, MAX_FIXED_STEP_HZ,
+    MAX_SOLVER_SUBSTEPS, MAX_STATIC_CONTACT_HZ_MULTIPLIER, MIN_BIASED_ITERATIONS,
+    MIN_CONTACT_DAMPING_RATIO, MIN_CONTACT_HZ, MIN_FIXED_STEP_HZ, MIN_SOLVER_SUBSTEPS,
+    MIN_STATIC_CONTACT_HZ_MULTIPLIER, PhysicsConfigurationV1, SolverProfileName,
+    ValidationScenario,
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -16,17 +17,30 @@ pub struct SolverProfileConfig {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum SolverParameter {
-    Hertz,
+    SimHertz,
+    Substeps,
+    Iterations,
+    ContactHertz,
     Damping,
     StaticScale,
 }
 
 impl SolverParameter {
-    pub(crate) const ALL: [Self; 3] = [Self::Hertz, Self::Damping, Self::StaticScale];
+    pub(crate) const ALL: [Self; 6] = [
+        Self::SimHertz,
+        Self::Substeps,
+        Self::Iterations,
+        Self::ContactHertz,
+        Self::Damping,
+        Self::StaticScale,
+    ];
 
     pub(crate) const fn label(self) -> &'static str {
         match self {
-            Self::Hertz => "HZ",
+            Self::SimHertz => "SIM HZ",
+            Self::Substeps => "SUBSTEPS",
+            Self::Iterations => "ITERATIONS",
+            Self::ContactHertz => "CONTACT HZ",
             Self::Damping => "DAMPING",
             Self::StaticScale => "STATIC SCALE",
         }
@@ -85,6 +99,19 @@ impl SolverProfileConfig {
         matches!(self.physics.solver_profile, SolverProfileName::SoftCoupled)
     }
 
+    pub fn is_preset(&self) -> bool {
+        self.physics == PhysicsConfigurationV1::for_profile(self.physics.solver_profile)
+    }
+
+    pub(crate) fn restore_preset(&mut self) {
+        self.physics = PhysicsConfigurationV1::for_profile(self.physics.solver_profile);
+    }
+
+    pub(crate) fn effective_dynamic_contact_hz(&self) -> f32 {
+        let substep_dt = self.physics.fixed_dt_seconds() / self.physics.substeps as f32;
+        self.physics.contact_hertz.min(0.125 / substep_dt)
+    }
+
     pub fn options_string(&self) -> Option<String> {
         self.is_soft_coupled().then(|| {
             format!(
@@ -96,8 +123,23 @@ impl SolverProfileConfig {
         })
     }
 
+    pub(crate) fn configuration_key(&self) -> String {
+        format!(
+            "{}:{}:{}:{}:{}:{}:{}:{}:{}",
+            self.name(),
+            self.physics.fixed_step_hz,
+            self.physics.substeps,
+            self.physics.biased_iterations,
+            self.physics.contact_hertz,
+            self.physics.contact_damping_ratio,
+            self.physics.static_contact_hertz_multiplier,
+            self.physics.speculative_distance,
+            self.physics.max_depenetration_velocity,
+        )
+    }
+
     pub fn available() -> Vec<Self> {
-        vec![Self::hard_direct(), Self::soft_coupled()]
+        vec![Self::soft_coupled(), Self::hard_direct()]
     }
 
     pub fn supports_scenario(&self, scenario: ValidationScenario) -> bool {
@@ -107,6 +149,7 @@ impl SolverProfileConfig {
                 let product = matches!(
                     scenario,
                     ValidationScenario::Bootstrap
+                        | ValidationScenario::BodyFreeFlight
                         | ValidationScenario::RigidFloor
                         | ValidationScenario::RigidStack
                         | ValidationScenario::RectangleStack
@@ -138,7 +181,10 @@ impl SolverProfileConfig {
 
     pub(crate) fn parameter_value(&self, parameter: SolverParameter) -> Option<f32> {
         self.is_soft_coupled().then_some(match parameter {
-            SolverParameter::Hertz => self.physics.contact_hertz,
+            SolverParameter::SimHertz => self.physics.fixed_step_hz as f32,
+            SolverParameter::Substeps => self.physics.substeps as f32,
+            SolverParameter::Iterations => self.physics.biased_iterations as f32,
+            SolverParameter::ContactHertz => self.physics.contact_hertz,
             SolverParameter::Damping => self.physics.contact_damping_ratio,
             SolverParameter::StaticScale => self.physics.static_contact_hertz_multiplier,
         })
@@ -148,27 +194,57 @@ impl SolverProfileConfig {
         if !self.is_soft_coupled() {
             return;
         }
-        let (value, step, minimum, maximum) = match parameter {
-            SolverParameter::Hertz => (
+        let direction = direction.signum();
+        match parameter {
+            SolverParameter::SimHertz => {
+                self.physics.fixed_step_hz = adjust_u32(
+                    self.physics.fixed_step_hz,
+                    direction,
+                    15,
+                    MIN_FIXED_STEP_HZ,
+                    MAX_FIXED_STEP_HZ,
+                );
+            }
+            SolverParameter::Substeps => {
+                self.physics.substeps = adjust_u32(
+                    self.physics.substeps,
+                    direction,
+                    1,
+                    MIN_SOLVER_SUBSTEPS,
+                    MAX_SOLVER_SUBSTEPS,
+                );
+            }
+            SolverParameter::Iterations => {
+                self.physics.biased_iterations = adjust_u32(
+                    self.physics.biased_iterations,
+                    direction,
+                    1,
+                    MIN_BIASED_ITERATIONS,
+                    MAX_BIASED_ITERATIONS,
+                );
+            }
+            SolverParameter::ContactHertz => adjust_f32(
                 &mut self.physics.contact_hertz,
+                direction,
                 1.0,
                 MIN_CONTACT_HZ,
                 MAX_CONTACT_HZ,
             ),
-            SolverParameter::Damping => (
+            SolverParameter::Damping => adjust_f32(
                 &mut self.physics.contact_damping_ratio,
+                direction,
                 0.5,
                 MIN_CONTACT_DAMPING_RATIO,
                 MAX_CONTACT_DAMPING_RATIO,
             ),
-            SolverParameter::StaticScale => (
+            SolverParameter::StaticScale => adjust_f32(
                 &mut self.physics.static_contact_hertz_multiplier,
+                direction,
                 0.5,
                 MIN_STATIC_CONTACT_HZ_MULTIPLIER,
                 MAX_STATIC_CONTACT_HZ_MULTIPLIER,
             ),
-        };
-        *value = (*value + direction.signum() as f32 * step).clamp(minimum, maximum);
+        }
     }
 
     pub(crate) fn apply_to_scenario(&self, scenario: &mut ScenarioV1) -> Result<(), String> {
@@ -232,6 +308,18 @@ fn finite(label: &str, value: f32) -> Result<FiniteF32, String> {
     FiniteF32::new(value).map_err(|error| format!("invalid {label}: {error}"))
 }
 
+fn adjust_u32(value: u32, direction: i32, step: u32, minimum: u32, maximum: u32) -> u32 {
+    if direction < 0 {
+        value.saturating_sub(step).max(minimum)
+    } else {
+        value.saturating_add(step).min(maximum)
+    }
+}
+
+fn adjust_f32(value: &mut f32, direction: i32, step: f32, minimum: f32, maximum: f32) {
+    *value = (*value + direction as f32 * step).clamp(minimum, maximum);
+}
+
 pub(crate) fn display_number_for_ui(value: f32) -> String {
     let encoded = format!("{value:.3}");
     encoded
@@ -245,11 +333,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn hard_direct_profile_is_canonical() {
+    fn soft_coupled_profile_is_the_canonical_fresh_default() {
         let profile = SolverProfileConfig::default();
-        assert_eq!(profile.name(), "hard-direct");
-        assert_eq!(profile.label(), "HARD DIRECT");
-        assert_eq!(profile.options_string(), None);
+        assert_eq!(profile.name(), "soft-coupled");
+        assert_eq!(profile.label(), "SOFT COUPLED");
+        assert_eq!(
+            profile.options_string().as_deref(),
+            Some("hz=30,damping=10,static-scale=2")
+        );
     }
 
     #[test]
@@ -266,7 +357,7 @@ mod tests {
         assert!(profile.supports_scenario(ValidationScenario::RectangleStack));
         #[cfg(feature = "solver-lab")]
         assert!(profile.supports_scenario(ValidationScenario::SolverLabStack16));
-        assert!(!profile.supports_scenario(ValidationScenario::BodyFreeFlight));
+        assert!(profile.supports_scenario(ValidationScenario::BodyFreeFlight));
         assert!(!profile.supports_scenario(ValidationScenario::SolverManifoldI2));
     }
 

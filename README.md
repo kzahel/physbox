@@ -19,11 +19,10 @@ validation-only authority-key ordering fix, all 30 coefficient tuples remained
 valid, and none preserved the 16-stack. Direct interactive review then made a
 new product decision: the quieter, Box2D-derived soft-coupled family is the
 intended default, with its visible tall-stack compliance accepted as the
-starting trade-off. S19 is active to migrate that family into the ordinary
-product path and make fixed rate, substeps, iterations, and contact response
-one bounded shared configuration. The current code and fresh ordinary launch
-remain hard/direct until that migration is complete; hard/direct will then
-remain an explicit comparison rather than an automatic fallback. The scheduler promotion is
+starting trade-off. S19 is implementing that decision: soft-coupled 60/4/i1
+is now the fresh ordinary default, and fixed rate, substeps, iterations, and
+contact response are one bounded shared configuration. Hard/direct remains an
+explicit comparison rather than an automatic fallback. The scheduler promotion is
 an architecture and latency improvement, not acceptance of the current CPU
 comparison, residual-motion band, or liquid performance.
 The repository still contains no Rapier or CPU product physics backend, fluid
@@ -92,11 +91,10 @@ and open the printed local URL.
 
 The deployed browser includes the explicit solver-inspection surface so a
 candidate can be judged directly on desktop or mobile without editing the URL.
-The currently implemented hard/direct solver remains the fresh-browser default
-while S19 migrates the newly selected soft-coupled product direction. Candidate
-profiles activate only after an explicit menu choice or restoration of that
-browser's saved choice. This paragraph describes deployed behavior, not the
-post-S19 default.
+The fresh-browser default is **SOFT COUPLED** at 60 Hz, four substeps, one
+biased iteration plus relaxation, and contact 30 Hz/damping 10/static x2.
+Other profiles or edited settings activate only after an explicit menu choice
+or restoration of that browser's saved configuration.
 For the same surface on a local browser, run:
 
 ```sh
@@ -104,16 +102,17 @@ npm run inspect:web
 ```
 
 Open **MENU → SOLVERS** on the engine-rendered canvas. The menu names the
-active solver and lists every registered profile; choose **PRODUCT HARD** or
-**BRANCH ROBUST**, adjust the selected candidate's hertz, damping, and
-static-contact scale, then use **STACK 8**, **STACK 16**, or **USE SOLVER**.
+active solver and lists every registered profile; choose **SOFT COUPLED** or
+**HARD DIRECT**, adjust simulation Hz, substeps, iterations, contact Hz,
+damping, and static-contact scale, then use **STACK 8**, **STACK 16**, or
+**APPLY**. **RESET PRESET** restores the selected profile's reviewed tuple.
 The list grows and reflows as profiles are registered; there is no pairwise
 A/B slot. A change rebuilds the shared GPU world immediately without reloading
 the page; camera position and tool selection are retained. The browser stores
 the active profile and coefficients
-under `physbox5.solver-lab.v1`, restores them on the next lab launch, and keeps
-the URL synchronized automatically for reproducibility. No query-string
-editing is required.
+under `physbox5.physics.v2`, migrates the older solver-only key, restores the
+complete configuration on the next launch, and keeps the URL synchronized
+automatically for reproducibility. No query-string editing is required.
 
 The same opt-in profile is available to the shared desktop host when direct
 launch control is useful:
@@ -121,8 +120,9 @@ launch control is useful:
 ```sh
 cargo run -p physbox-desktop --features solver-lab -- \
   --scenario solver-lab-stack-16 \
-  --solver branch-robust \
-  --solver-options hz=30,damping=10,static-scale=8
+  --solver soft-coupled \
+  --sim-hz 60 --substeps 4 --iterations 1 \
+  --contact-hz 30 --contact-damping 10 --static-contact-scale 8
 ```
 
 Adding a later candidate means registering another explicit inspection

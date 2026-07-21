@@ -16,8 +16,8 @@ use crate::{
     },
 };
 
-pub(crate) const UI_CONTRACT_VERSION: u32 = 4;
-const STATIC_INSTANCE_CAPACITY: usize = 256;
+pub(crate) const UI_CONTRACT_VERSION: u32 = 5;
+const STATIC_INSTANCE_CAPACITY: usize = 384;
 const DYNAMIC_INSTANCE_CAPACITY: usize = 192;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -32,7 +32,6 @@ pub(crate) enum UiAction {
     Recenter,
 }
 
-#[cfg_attr(not(feature = "solver-lab"), allow(dead_code))]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 enum MenuPage {
     #[default]
@@ -267,6 +266,9 @@ fn route_events(
                     UiHit::SolverParameter(parameter, direction) => {
                         draft_solver_profile.adjust(parameter, direction);
                     }
+                    UiHit::RestoreSolverPreset => {
+                        draft_solver_profile.restore_preset();
+                    }
                     UiHit::ApplySolver => {
                         *menu_open = false;
                         action = Some(UiAction::ActivateSolverProfile(
@@ -320,6 +322,7 @@ enum UiHit {
     SolverProfile(SolverProfileName),
     SolverParameter(crate::solver_profile::SolverParameter, i32),
     SolverScene(ValidationScenario),
+    RestoreSolverPreset,
     ApplySolver,
     Panel,
 }
@@ -361,7 +364,6 @@ impl UiLayout {
         if !menu_open {
             return None;
         }
-        #[cfg(feature = "solver-lab")]
         for page in [MenuPage::Scenes, MenuPage::Solvers] {
             if contains(self.menu_tab(page), pixel) {
                 return Some(UiHit::MenuPage(page));
@@ -409,6 +411,9 @@ impl UiLayout {
                         return Some(UiHit::SolverScene(ValidationScenario::SolverLabStack16));
                     }
                 }
+                if contains(self.restore_solver_button(profile_count), pixel) {
+                    return Some(UiHit::RestoreSolverPreset);
+                }
                 if contains(self.apply_solver_button(profile_count), pixel) {
                     return Some(UiHit::ApplySolver);
                 }
@@ -446,7 +451,8 @@ impl UiLayout {
             MenuPage::Scenes => self.restart_y_logical() + 50.0,
             MenuPage::Solvers => {
                 let apply = self.apply_solver_button(solver_profile_count);
-                (apply[1] + apply[3]) / self.scale + 8.0
+                (apply[1] + apply[3]) / self.scale
+                    + if self.compact_landscape() { 4.0 } else { 8.0 }
             }
         };
         let wide = self.compact_landscape()
@@ -459,7 +465,6 @@ impl UiLayout {
         logical.map(|value| value * self.scale)
     }
 
-    #[cfg_attr(not(feature = "solver-lab"), allow(dead_code))]
     fn menu_tab(self, page: MenuPage) -> [f32; 4] {
         let (x, width) = match page {
             MenuPage::Scenes => (24.0, 162.0),
@@ -541,9 +546,14 @@ impl UiLayout {
 
     fn solver_parameter_minus(self, index: usize, profile_count: usize) -> [f32; 4] {
         let (base, stride, height) = self.solver_parameter_metrics(profile_count);
+        let (column, row) = self.solver_parameter_grid_position(index);
         [
-            238.0 * self.scale,
-            (base + index as f32 * stride) * self.scale,
+            (if self.compact_landscape() {
+                190.0 + column as f32 * 298.0
+            } else {
+                238.0
+            }) * self.scale,
+            (base + row as f32 * stride) * self.scale,
             52.0 * self.scale,
             height * self.scale,
         ]
@@ -551,18 +561,60 @@ impl UiLayout {
 
     fn solver_parameter_plus(self, index: usize, profile_count: usize) -> [f32; 4] {
         let (base, stride, height) = self.solver_parameter_metrics(profile_count);
+        let (column, row) = self.solver_parameter_grid_position(index);
         [
-            308.0 * self.scale,
-            (base + index as f32 * stride) * self.scale,
+            (if self.compact_landscape() {
+                244.0 + column as f32 * 298.0
+            } else {
+                308.0
+            }) * self.scale,
+            (base + row as f32 * stride) * self.scale,
             52.0 * self.scale,
             height * self.scale,
         ]
     }
 
+    fn solver_parameter_text_origins(
+        self,
+        index: usize,
+        profile_count: usize,
+    ) -> ([f32; 2], [f32; 2]) {
+        let (base, stride, _) = self.solver_parameter_metrics(profile_count);
+        let (column, row) = self.solver_parameter_grid_position(index);
+        let column_offset = if self.compact_landscape() {
+            column as f32 * 298.0
+        } else {
+            0.0
+        };
+        let y = (base + 8.0 + row as f32 * stride) * self.scale;
+        (
+            [(28.0 + column_offset) * self.scale, y],
+            [
+                (if self.compact_landscape() {
+                    135.0 + column_offset
+                } else {
+                    170.0
+                }) * self.scale,
+                y,
+            ],
+        )
+    }
+
+    fn solver_parameter_grid_position(self, index: usize) -> (usize, usize) {
+        let columns = if self.compact_landscape() { 2 } else { 1 };
+        (index % columns, index / columns)
+    }
+
     #[cfg_attr(not(feature = "solver-lab"), allow(dead_code))]
     fn solver_scene_button(self, index: usize, profile_count: usize) -> [f32; 4] {
         let (base, stride, height) = self.solver_parameter_metrics(profile_count);
-        let y = base + 3.0 * stride + if self.compact_landscape() { 2.0 } else { 10.0 };
+        let parameter_columns = if self.compact_landscape() { 2 } else { 1 };
+        let parameter_rows = crate::solver_profile::SolverParameter::ALL
+            .len()
+            .div_ceil(parameter_columns);
+        let y = base
+            + parameter_rows as f32 * stride
+            + if self.compact_landscape() { 2.0 } else { 10.0 };
         [
             (24.0 + index as f32 * 174.0) * self.scale,
             y * self.scale,
@@ -575,16 +627,26 @@ impl UiLayout {
         let scene = self.solver_scene_button(0, profile_count);
         let compact = self.compact_landscape();
         [
-            24.0 * self.scale,
-            scene[1] + scene[3] + if compact { 6.0 } else { 14.0 } * self.scale,
-            336.0 * self.scale,
+            198.0 * self.scale,
+            scene[1] + scene[3] + if compact { 4.0 } else { 14.0 } * self.scale,
+            162.0 * self.scale,
             if compact { 32.0 } else { 38.0 } * self.scale,
         ]
     }
 
+    fn restore_solver_button(self, profile_count: usize) -> [f32; 4] {
+        let apply = self.apply_solver_button(profile_count);
+        [24.0 * self.scale, apply[1], 162.0 * self.scale, apply[3]]
+    }
+
     fn solver_profile_columns(self, profile_count: usize) -> usize {
-        usize::from(self.compact_landscape() || (profile_count > 4 && self.target_size[0] >= 720))
-            + 1
+        if self.compact_landscape() && profile_count > 4 {
+            3
+        } else {
+            usize::from(
+                self.compact_landscape() || (profile_count > 4 && self.target_size[0] >= 720),
+            ) + 1
+        }
     }
 
     fn solver_profile_metrics(self) -> (f32, f32, f32) {
@@ -600,13 +662,26 @@ impl UiLayout {
         let rows = profile_count.div_ceil(columns);
         let (start_y, profile_stride, profile_height) = self.solver_profile_metrics();
         let compact = self.compact_landscape();
+        let dense = rows > 2;
         (
             start_y
                 + rows.saturating_sub(1) as f32 * profile_stride
                 + profile_height
                 + if compact { 4.0 } else { 10.0 },
-            if compact { 30.0 } else { 38.0 },
-            if compact { 28.0 } else { 34.0 },
+            if compact {
+                30.0
+            } else if dense {
+                32.0
+            } else {
+                38.0
+            },
+            if compact {
+                28.0
+            } else if dense {
+                30.0
+            } else {
+                34.0
+            },
         )
     }
 
@@ -641,6 +716,7 @@ impl UiLayout {
                 self.solver_parameter_plus(index, SolverProfileConfig::available().len())
             }
             "apply-solver" => self.apply_solver_button(SolverProfileConfig::available().len()),
+            "restore-solver" => self.restore_solver_button(SolverProfileConfig::available().len()),
             _ => panic!("unknown UI test target"),
         };
         [
@@ -934,11 +1010,7 @@ impl UiRenderer {
             menu_open,
             menu_page,
             selected_tool,
-            solver_profile_key: format!(
-                "{}:{}",
-                draft_solver_profile.name(),
-                draft_solver_profile.options_string().unwrap_or_default()
-            ),
+            solver_profile_key: draft_solver_profile.configuration_key(),
             active_solver_profile: model.solver_profile.profile_name(),
             solver_profile_count: solver_profiles.len(),
         };
@@ -1155,7 +1227,6 @@ fn static_batch(target_size: [u32; 2], model: StaticBatchModel<'_>) -> Batch {
     }
     if menu_open {
         batch.push_quad(layout.menu_panel(menu_page, solver_profiles.len()), panel);
-        #[cfg(feature = "solver-lab")]
         for page in [MenuPage::Scenes, MenuPage::Solvers] {
             let bounds = layout.menu_tab(page);
             batch.push_quad(bounds, if page == menu_page { selected } else { button });
@@ -1169,8 +1240,6 @@ fn static_batch(target_size: [u32; 2], model: StaticBatchModel<'_>) -> Batch {
                 if page == menu_page { accent } else { text },
             );
         }
-        #[cfg(not(feature = "solver-lab"))]
-        batch.push_text("SCENES", [28.0 * scale, 98.0 * scale], 2.4 * scale, accent);
         match menu_page {
             MenuPage::Scenes => {
                 for (index, candidate) in ValidationScenario::MENU.iter().copied().enumerate() {
@@ -1210,7 +1279,15 @@ fn static_batch(target_size: [u32; 2], model: StaticBatchModel<'_>) -> Batch {
             MenuPage::Solvers => {
                 let profile_count = solver_profiles.len();
                 batch.push_text(
-                    &format!("ACTIVE {}", active_solver_profile.label()),
+                    &format!(
+                        "ACTIVE {} {}",
+                        active_solver_profile.label(),
+                        if draft_solver_profile.is_preset() {
+                            "PRESET"
+                        } else {
+                            "CUSTOM"
+                        }
+                    ),
                     [28.0 * scale, 128.0 * scale],
                     1.5 * scale,
                     accent,
@@ -1237,16 +1314,26 @@ fn static_batch(target_size: [u32; 2], model: StaticBatchModel<'_>) -> Batch {
                     .copied()
                     .enumerate()
                 {
-                    let (base, stride, _) = layout.solver_parameter_metrics(profile_count);
-                    let y = (base + 8.0 + index as f32 * stride) * scale;
-                    batch.push_text(parameter.label(), [28.0 * scale, y], 1.7 * scale, text);
+                    let (label_origin, value_origin) =
+                        layout.solver_parameter_text_origins(index, profile_count);
+                    batch.push_text(parameter.label(), label_origin, 1.7 * scale, text);
                     if let Some(value) = draft_solver_profile.parameter_value(parameter) {
-                        batch.push_text(
-                            &crate::solver_profile::display_number_for_ui(value),
-                            [170.0 * scale, y],
-                            1.7 * scale,
-                            accent,
-                        );
+                        let value =
+                            if parameter == crate::solver_profile::SolverParameter::ContactHertz {
+                                let effective = draft_solver_profile.effective_dynamic_contact_hz();
+                                if (effective - value).abs() > 0.001 {
+                                    format!(
+                                        "{}>{}",
+                                        crate::solver_profile::display_number_for_ui(value),
+                                        crate::solver_profile::display_number_for_ui(effective)
+                                    )
+                                } else {
+                                    crate::solver_profile::display_number_for_ui(value)
+                                }
+                            } else {
+                                crate::solver_profile::display_number_for_ui(value)
+                            };
+                        batch.push_text(&value, value_origin, 1.7 * scale, accent);
                         for (bounds, label) in [
                             (layout.solver_parameter_minus(index, profile_count), "-"),
                             (layout.solver_parameter_plus(index, profile_count), "+"),
@@ -1273,9 +1360,17 @@ fn static_batch(target_size: [u32; 2], model: StaticBatchModel<'_>) -> Batch {
                     );
                 }
                 let apply = layout.apply_solver_button(profile_count);
+                let restore = layout.restore_solver_button(profile_count);
+                batch.push_quad(restore, button);
+                batch.push_text(
+                    "RESET PRESET",
+                    [restore[0] + 10.0 * scale, restore[1] + 10.0 * scale],
+                    1.6 * scale,
+                    text,
+                );
                 batch.push_quad(apply, button);
                 batch.push_text(
-                    "USE SOLVER",
+                    "APPLY",
                     [apply[0] + 10.0 * scale, apply[1] + 10.0 * scale],
                     1.8 * scale,
                     text,
@@ -1298,7 +1393,7 @@ fn dynamic_batch(
         return batch;
     }
     let width = 310.0 * scale;
-    let height = 196.0 * scale;
+    let height = 236.0 * scale;
     let logical_width = target_size[0] as f32 / scale;
     let origin = [
         target_size[0] as f32 - width - 12.0 * scale,
@@ -1334,21 +1429,53 @@ fn dynamic_batch(
     let live_bodies = model
         .construction_state
         .map_or(model.body_count, |state| state.live_bodies);
+    let physics = model.solver_profile.physics();
+    let contact = if model.solver_profile.is_soft_coupled() {
+        let effective = model.solver_profile.effective_dynamic_contact_hz();
+        if (physics.contact_hertz - effective).abs() > 0.0005 {
+            format!(
+                "CONTACT {}>{}HZ",
+                crate::solver_profile::display_number_for_ui(physics.contact_hertz),
+                crate::solver_profile::display_number_for_ui(effective)
+            )
+        } else {
+            format!(
+                "CONTACT {}HZ",
+                crate::solver_profile::display_number_for_ui(effective)
+            )
+        }
+    } else {
+        "CONTACT HARD".to_owned()
+    };
+    let simulation_status = if model.pacing.effective_simulation_scale >= 0.95 {
+        "OK"
+    } else {
+        "SLOW"
+    };
     let lines = [
         format!("SCENE {}", model.scenario.name()),
-        format!("SOLVER {}", model.solver_profile.name()),
+        format!("SOLVER {}", model.solver_profile.label()),
+        format!(
+            "CFG {}HZ DT{:.2}MS",
+            physics.fixed_step_hz,
+            physics.fixed_dt_seconds() * 1_000.0
+        ),
+        contact,
         format!(
             "FPS {:.0}",
             model.pacing.presented_frame_hz.clamp(0.0, 999.0)
         ),
         format!(
-            "SIM {:.0}% SLIP {:.0}MS",
+            "SIM {:.0}% {} SLIP {:.0}MS",
             (model.pacing.effective_simulation_scale * 100.0).clamp(0.0, 999.0),
+            simulation_status,
             (model.pacing.overload_slipped_wall_seconds_total * 1000.0).clamp(0.0, 999_999.0)
         ),
         format!(
-            "STEP {} TOTAL {}",
-            model.pacing.completed_outer_steps_this_frame, model.pacing.completed_outer_steps_total
+            "INNER {}HZ X{} I{}",
+            physics.fixed_step_hz * physics.substeps,
+            physics.substeps,
+            physics.biased_iterations
         ),
         format!("BODY {} CONTACT {}", live_bodies, model.contact_count),
         format!(
@@ -1536,8 +1663,13 @@ mod tests {
         let mut draft = SolverProfileConfig::default();
 
         for (id, position) in [
-            (1, layout.center_normalized("solver-profile", 1)),
-            (2, layout.center_normalized("solver-plus", 2)),
+            (1, layout.center_normalized("solver-profile", 0)),
+            (2, layout.center_normalized("solver-plus", 0)),
+            (3, layout.center_normalized("solver-plus", 1)),
+            (4, layout.center_normalized("solver-plus", 2)),
+            (5, layout.center_normalized("solver-plus", 3)),
+            (6, layout.center_normalized("solver-plus", 4)),
+            (7, layout.center_normalized("solver-plus", 5)),
         ] {
             let routed = route_events(
                 UiRouteState {
@@ -1568,7 +1700,7 @@ mod tests {
                 captured_pointers: &mut captured,
             },
             &[pointer(
-                3,
+                8,
                 PointerPhase::Down,
                 PointerButton::Primary,
                 layout.center_normalized("apply-solver", 0),
@@ -1580,9 +1712,38 @@ mod tests {
         };
         assert_eq!(
             profile.options_string().as_deref(),
-            Some("hz=30,damping=10,static-scale=2.5")
+            Some("hz=31,damping=10.5,static-scale=2.5")
         );
+        let physics = profile.physics();
+        assert_eq!(physics.fixed_step_hz, 75);
+        assert_eq!(physics.substeps, 5);
+        assert_eq!(physics.biased_iterations, 2);
         assert!(!menu_open);
+
+        menu_open = true;
+        let restored = route_events(
+            UiRouteState {
+                menu_open: &mut menu_open,
+                menu_page: &mut menu_page,
+                selected_tool: &mut selected_tool,
+                solver_profiles: &mut profiles,
+                draft_solver_profile: &mut draft,
+                captured_pointers: &mut captured,
+            },
+            &[pointer(
+                9,
+                PointerPhase::Down,
+                PointerButton::Primary,
+                layout.center_normalized("restore-solver", 0),
+            )],
+            target,
+        );
+        assert!(restored.action.is_none());
+        assert!(draft.is_preset());
+        assert_eq!(
+            draft.physics(),
+            physbox_launch::PhysicsConfigurationV1::SOFT_COUPLED
+        );
     }
 
     #[test]

@@ -65,6 +65,20 @@ try {
   if (!before.ok || !before.frame?.scenario?.passed) throw new Error(`shared scenario failed: ${JSON.stringify(before)}`);
   if (before.frame.scenario.name !== scenario) throw new Error(`wrong shared scenario: ${JSON.stringify(before.frame.scenario)}`);
   if (before.frame.fixedStepsTotal < 1) throw new Error(`browser scenario passed without a fixed step: ${JSON.stringify(before.frame.pacing)}`);
+  if (before.frame.sceneContract?.solverProfile !== "soft-coupled") {
+    throw new Error(`fresh browser did not use soft-coupled: ${JSON.stringify(before.frame.sceneContract)}`);
+  }
+  await requirePhysicsPreference(page, {
+    solver: "soft-coupled",
+    simHz: 60,
+    substeps: 4,
+    iterations: 1,
+    contactHz: 30,
+    contactDamping: 10,
+    staticContactScale: 2,
+    speculativeDistance: 0.02,
+    maxDepenetrationVelocity: 3,
+  }, true);
   requireNoGpuValidationErrors(consoleErrors, "browser initial fixed-step presentation");
   await captureCompleteScreenshot(page, initialScreenshot, "browser initial no-input", consoleErrors);
   const bounds = await page.locator("#physbox-canvas").boundingBox();
@@ -72,6 +86,36 @@ try {
     throw new Error(`canvas does not fill viewport: ${JSON.stringify(bounds)}`);
   }
   const uiScale = Math.max(1, Math.min(2, Math.min(viewportWidth, viewportHeight) / 600));
+  const compactLandscape = viewportHeight < 520 && viewportWidth > viewportHeight;
+  const solverProfileCenter = (index) => {
+    const columns = compactLandscape ? 2 : 1;
+    const column = index % columns;
+    const row = Math.floor(index / columns);
+    const width = columns === 1 ? 336 : 286;
+    const startY = compactLandscape ? 144 : 154;
+    const stride = compactLandscape ? 30 : 38;
+    const height = compactLandscape ? 28 : 34;
+    return [
+      (24 + column * 298 + width / 2) * uiScale,
+      (startY + row * stride + height / 2) * uiScale,
+    ];
+  };
+  const solverParameterPlusCenter = (index) => {
+    const baseY = compactLandscape ? 176 : 236;
+    const column = compactLandscape ? index % 2 : 0;
+    const row = compactLandscape ? Math.floor(index / 2) : index;
+    const stride = compactLandscape ? 30 : 38;
+    const height = compactLandscape ? 28 : 34;
+    return [
+      (compactLandscape ? 270 + column * 298 : 334) * uiScale,
+      (baseY + row * stride + height / 2) * uiScale,
+    ];
+  };
+  const solverSceneCenter = (index) => [
+    (105 + index * 174) * uiScale,
+    (compactLandscape ? 282 : 491) * uiScale,
+  ];
+  const solverApplyCenter = [279 * uiScale, (compactLandscape ? 316 : 541) * uiScale];
   await page.mouse.click(62 * uiScale, 50 * uiScale);
   await page.waitForFunction(() => globalThis.__physbox5?.frame?.ui?.menuOpen, null, { timeout: 10_000 });
   await page.evaluate(() => new Promise((resolveFrame) => {
@@ -84,59 +128,102 @@ try {
     await page.evaluate(() => new Promise((resolveFrame) => {
       requestAnimationFrame(() => requestAnimationFrame(resolveFrame));
     }));
-    await page.mouse.click(192 * uiScale, 209 * uiScale);
-    await page.mouse.click(334 * uiScale, 329 * uiScale);
+    await page.mouse.click(...solverProfileCenter(0));
+    await page.mouse.click(...solverParameterPlusCenter(0));
+    await page.mouse.click(...solverParameterPlusCenter(1));
+    await page.mouse.click(...solverParameterPlusCenter(2));
+    await page.mouse.click(...solverParameterPlusCenter(5));
     await page.evaluate(() => new Promise((resolveFrame) => {
       requestAnimationFrame(() => requestAnimationFrame(resolveFrame));
     }));
     await captureCompleteScreenshot(page, menuScreenshot, "browser solver menu");
-    await page.mouse.click(279 * uiScale, 377 * uiScale);
+    await page.mouse.click(...solverSceneCenter(1));
     activeScenario = "solver-lab-stack-16";
-    await page.waitForFunction(
-      ({ scenarioName }) => {
-        const frame = globalThis.__physbox5?.frame;
-        return frame?.sceneContract?.scenario === scenarioName
-          && frame?.sceneContract?.solverProfile === "branch-robust"
-          && frame?.sceneContract?.solverProfileOptions === "hz=30,damping=10,static-scale=2.5"
-          && frame?.sceneContract?.generatedContactCoefficientPolicy === "authority-tunable-soft"
-          && !frame?.ui?.menuOpen;
-      },
-      { scenarioName: activeScenario },
-      { timeout: 10_000 },
-    );
-    await requireSolverPreference(page, "branch-robust", "hz=30,damping=10,static-scale=2.5");
+    try {
+      await page.waitForFunction(
+        ({ scenarioName }) => {
+          const frame = globalThis.__physbox5?.frame;
+          return frame?.sceneContract?.scenario === scenarioName && !frame?.ui?.menuOpen;
+        },
+        { scenarioName: activeScenario },
+        { timeout: 10_000 },
+      );
+    } catch (error) {
+      const state = await page.evaluate(() => globalThis.__physbox5);
+      throw new Error(`configured solver scene did not activate: ${JSON.stringify(state)}; console=${consoleErrors.join("; ")}`, { cause: error });
+    }
+    const appliedPhysics = await page.evaluate(() => globalThis.__physbox5?.frame?.sceneContract);
+    if (
+      appliedPhysics?.solverProfile !== "soft-coupled"
+      || appliedPhysics?.solverProfileOptions !== "hz=30,damping=10,static-scale=2.5"
+      || appliedPhysics?.fixedStepHz !== 75
+      || appliedPhysics?.solverSubsteps !== 5
+      || appliedPhysics?.solverBiasedIterations !== 2
+      || appliedPhysics?.generatedContactCoefficientPolicy !== "authority-tunable-soft"
+    ) throw new Error(`wrong applied physics configuration: ${JSON.stringify(appliedPhysics)}`);
+    await requirePhysicsPreference(page, {
+      solver: "soft-coupled",
+      simHz: 75,
+      substeps: 5,
+      iterations: 2,
+      contactHz: 30,
+      contactDamping: 10,
+      staticContactScale: 2.5,
+      speculativeDistance: 0.02,
+      maxDepenetrationVelocity: 3,
+    });
 
     await page.mouse.click(62 * uiScale, 50 * uiScale);
     await page.mouse.click(279 * uiScale, 104 * uiScale);
-    await page.mouse.click(192 * uiScale, 171 * uiScale);
-    await page.mouse.click(192 * uiScale, 427 * uiScale);
+    await page.mouse.click(...solverProfileCenter(1));
+    await page.mouse.click(...solverApplyCenter);
     await page.waitForFunction(
       ({ scenarioName }) => {
         const frame = globalThis.__physbox5?.frame;
         return frame?.sceneContract?.scenario === scenarioName
-          && frame?.sceneContract?.solverProfile === "selected"
+          && frame?.sceneContract?.solverProfile === "hard-direct"
           && !frame?.ui?.menuOpen;
       },
       { scenarioName: activeScenario },
       { timeout: 10_000 },
     );
-    await requireSolverPreference(page, "selected", null);
+    await requirePhysicsPreference(page, {
+      solver: "hard-direct",
+      simHz: 60,
+      substeps: 4,
+      iterations: 2,
+      contactHz: 30,
+      contactDamping: 10,
+      staticContactScale: 2,
+      speculativeDistance: 0.02,
+      maxDepenetrationVelocity: 3,
+    });
 
     await page.mouse.click(62 * uiScale, 50 * uiScale);
     await page.mouse.click(279 * uiScale, 104 * uiScale);
-    await page.mouse.click(192 * uiScale, 209 * uiScale);
-    await page.mouse.click(192 * uiScale, 427 * uiScale);
+    await page.mouse.click(...solverProfileCenter(0));
+    await page.mouse.click(...solverApplyCenter);
     await page.waitForFunction(
       ({ scenarioName }) => {
         const frame = globalThis.__physbox5?.frame;
         return frame?.sceneContract?.scenario === scenarioName
-          && frame?.sceneContract?.solverProfile === "branch-robust"
+          && frame?.sceneContract?.solverProfile === "soft-coupled"
           && !frame?.ui?.menuOpen;
       },
       { scenarioName: activeScenario },
       { timeout: 10_000 },
     );
-    await requireSolverPreference(page, "branch-robust", "hz=30,damping=10,static-scale=2.5");
+    await requirePhysicsPreference(page, {
+      solver: "soft-coupled",
+      simHz: 75,
+      substeps: 5,
+      iterations: 2,
+      contactHz: 30,
+      contactDamping: 10,
+      staticContactScale: 2.5,
+      speculativeDistance: 0.02,
+      maxDepenetrationVelocity: 3,
+    });
     await page.evaluate(() => new Promise((resolveFrame) => {
       requestAnimationFrame(() => requestAnimationFrame(resolveFrame));
     }));
@@ -144,8 +231,9 @@ try {
 
     await page.evaluate(() => {
       const url = new URL(location.href);
-      url.searchParams.delete("solver");
-      url.searchParams.delete("solver-options");
+      for (const key of [...url.searchParams.keys()]) {
+        if (key !== "scenario") url.searchParams.delete(key);
+      }
       history.replaceState(null, "", url);
     });
     await page.reload({ waitUntil: "networkidle" });
@@ -154,13 +242,59 @@ try {
         const frame = globalThis.__physbox5?.frame;
         return globalThis.__physbox5?.ready
           && frame?.sceneContract?.scenario === initialScenario
-          && frame?.sceneContract?.solverProfile === "branch-robust"
+          && frame?.sceneContract?.solverProfile === "soft-coupled"
           && frame?.sceneContract?.solverProfileOptions === "hz=30,damping=10,static-scale=2.5";
       },
       { initialScenario: scenario },
       { timeout: 30_000 },
     );
-    await requireSolverPreference(page, "branch-robust", "hz=30,damping=10,static-scale=2.5");
+    await requirePhysicsPreference(page, {
+      solver: "soft-coupled",
+      simHz: 75,
+      substeps: 5,
+      iterations: 2,
+      contactHz: 30,
+      contactDamping: 10,
+      staticContactScale: 2.5,
+      speculativeDistance: 0.02,
+      maxDepenetrationVelocity: 3,
+    });
+    await page.evaluate(() => {
+      localStorage.removeItem("physbox5.physics.v2");
+      localStorage.setItem("physbox5.solver-lab.v1", JSON.stringify({
+        version: 1,
+        solver: "branch-robust",
+        options: "hz=30,damping=10,static-scale=8",
+      }));
+      const url = new URL(location.href);
+      for (const key of [...url.searchParams.keys()]) {
+        if (key !== "scenario") url.searchParams.delete(key);
+      }
+      history.replaceState(null, "", url);
+    });
+    await page.reload({ waitUntil: "networkidle" });
+    await page.waitForFunction(
+      ({ initialScenario }) => {
+        const frame = globalThis.__physbox5?.frame;
+        return globalThis.__physbox5?.ready
+          && frame?.sceneContract?.scenario === initialScenario
+          && frame?.sceneContract?.solverProfile === "soft-coupled"
+          && frame?.sceneContract?.solverProfileOptions === "hz=30,damping=10,static-scale=8";
+      },
+      { initialScenario: scenario },
+      { timeout: 30_000 },
+    );
+    await requirePhysicsPreference(page, {
+      solver: "soft-coupled",
+      simHz: 60,
+      substeps: 4,
+      iterations: 1,
+      contactHz: 30,
+      contactDamping: 10,
+      staticContactScale: 8,
+      speculativeDistance: 0.02,
+      maxDepenetrationVelocity: 3,
+    });
     activeScenario = scenario;
   }
   const menuScenarios = [
@@ -416,21 +550,40 @@ function requireNoGpuValidationErrors(messages, label) {
   if (failures.length) throw new Error(`${label} reported WebGPU validation errors: ${failures.join("; ")}`);
 }
 
-async function requireSolverPreference(page, solver, options) {
+async function requirePhysicsPreference(page, expected, expectClean = false) {
   await page.waitForFunction(
-    ({ expectedSolver, expectedOptions }) => {
-      const saved = JSON.parse(localStorage.getItem("physbox5.solver-lab.v1") ?? "null");
+    ({ expectedPhysics, clean }) => {
+      const saved = JSON.parse(localStorage.getItem("physbox5.physics.v2") ?? "null");
       const url = new URL(location.href);
-      const stored = saved?.version === 1
-        && saved.solver === expectedSolver
-        && saved.options === expectedOptions;
-      const addressed = expectedSolver === "selected"
-        ? !url.searchParams.has("solver") && !url.searchParams.has("solver-options")
-        : url.searchParams.get("solver") === expectedSolver
-          && url.searchParams.get("solver-options") === expectedOptions;
+      const stored = saved?.version === 2
+        && Object.entries(expectedPhysics).every(([key, value]) => saved[key] === value);
+      const keys = [
+        "solver",
+        "sim-hz",
+        "substeps",
+        "iterations",
+        "contact-hz",
+        "contact-damping",
+        "static-contact-scale",
+        "speculative-distance",
+        "max-depenetration-velocity",
+        "solver-options",
+      ];
+      const addressed = clean
+        ? keys.every((key) => !url.searchParams.has(key))
+        : url.searchParams.get("solver") === expectedPhysics.solver
+          && url.searchParams.get("sim-hz") === String(expectedPhysics.simHz)
+          && url.searchParams.get("substeps") === String(expectedPhysics.substeps)
+          && url.searchParams.get("iterations") === String(expectedPhysics.iterations)
+          && url.searchParams.get("contact-hz") === String(expectedPhysics.contactHz)
+          && url.searchParams.get("contact-damping") === String(expectedPhysics.contactDamping)
+          && url.searchParams.get("static-contact-scale") === String(expectedPhysics.staticContactScale)
+          && url.searchParams.get("speculative-distance") === String(expectedPhysics.speculativeDistance)
+          && url.searchParams.get("max-depenetration-velocity") === String(expectedPhysics.maxDepenetrationVelocity)
+          && !url.searchParams.has("solver-options");
       return stored && addressed;
     },
-    { expectedSolver: solver, expectedOptions: options },
+    { expectedPhysics: expected, clean: expectClean },
     { timeout: 10_000 },
   );
 }

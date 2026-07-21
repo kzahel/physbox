@@ -60,8 +60,8 @@ pub enum FrameMarkerMode {
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum SolverProfileName {
-    #[default]
     HardDirect,
+    #[default]
     SoftCoupled,
 }
 
@@ -189,7 +189,7 @@ impl PhysicsConfigurationV1 {
 
 impl Default for PhysicsConfigurationV1 {
     fn default() -> Self {
-        Self::HARD_DIRECT
+        Self::SOFT_COUPLED
     }
 }
 
@@ -734,7 +734,7 @@ mod tests {
 
     #[test]
     fn hard_direct_rejects_legacy_soft_options() {
-        let error = parse_web_query("?solver-options=hz%3D30").unwrap_err();
+        let error = parse_web_query("?solver=hard-direct&solver-options=hz%3D30").unwrap_err();
         assert!(
             error
                 .to_string()
@@ -753,6 +753,19 @@ mod tests {
         assert_eq!(
             soft.options.physics.solver_profile,
             SolverProfileName::SoftCoupled
+        );
+    }
+
+    #[test]
+    fn fresh_launch_uses_the_reviewed_soft_coupled_seed() {
+        let request = parse_tokens(LaunchHost::Desktop, std::iter::empty::<&str>()).unwrap();
+        assert_eq!(
+            request.options.physics,
+            PhysicsConfigurationV1::SOFT_COUPLED
+        );
+        assert_eq!(
+            request.options.physics.solver_profile.name(),
+            "soft-coupled"
         );
     }
 
