@@ -1346,9 +1346,9 @@ pub fn p5_2_generated_reset_grab_scenario() -> Result<BodyCommandScenarioV1, Sce
 pub fn p5_2_generated_performance_scenario(
     body_count: u32,
 ) -> Result<ScenarioV1, ScenarioBuildError> {
-    if !(2..=1024).contains(&body_count) || !body_count.is_multiple_of(2) {
+    if !(2..=10_000).contains(&body_count) || !body_count.is_multiple_of(2) {
         return Err(ScenarioBuildError(
-            "P5.2 generated performance scenario requires an even 2-1024 body count".to_owned(),
+            "generated performance scenario requires an even 2-10000 body count".to_owned(),
         ));
     }
     let pair_count = body_count / 2;
@@ -3076,7 +3076,7 @@ mod tests {
 
     #[test]
     fn p5_2_generated_performance_scenarios_are_sparse_and_replayable() {
-        for body_count in [32, 256, 1024] {
+        for body_count in [32, 256, 1024, 10_000] {
             let scenario = p5_2_generated_performance_scenario(body_count).unwrap();
             scenario.validate().unwrap();
             assert_eq!(scenario.bodies.len(), body_count as usize);
