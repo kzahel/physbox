@@ -18,6 +18,9 @@ a running log.
   — 2026-07-20 repository audit of Cargo target growth, gate latency, local
   build and evidence storage, failure-recovery cost, and proposed remediation
   and retention boundaries.
+- [Product capability status](product-capability-status.md) — compact current
+  ledger of implemented, limited, missing, and deferred engine features plus
+  the next execution order.
 - [Simulation time and overload](simulation-time-and-overload.md) — fixed-delta
   slow motion under load, zero-or-one interactive steps, permanent wall-time
   slip, explicit-step validation, and scheduler diagnostics.

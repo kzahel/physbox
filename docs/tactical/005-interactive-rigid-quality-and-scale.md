@@ -908,6 +908,15 @@ churn/performance rankings, final selection, and integration wait for the
 [S6 awake gate](006-awake-settling-stabilization.md). This prevents persistent
 solver motion from contaminating the workload used to choose a broadphase.
 
+Sequencing revision, 2026-07-21: S6-S19 have closed the solver-selection loop
+with soft-coupled as the accepted configurable product default. Human review
+orders the [S20 validation diet](020-validation-diet-and-feature-ledger.md)
+before broadphase implementation, then assigns this bakeoff and S5.6
+integration to the focused
+[S21 execution tracker](021-scalable-broadphase.md). Product-scene inputs must
+still use frozen snapshots so the known awake residual cannot bias candidate
+ranking.
+
 - [ ] Keep brute force as the complete pair oracle and implement portable
   sorted sweep-and-prune plus multi-cell grid candidates over the same shape
   AABBs and canonical output contract.

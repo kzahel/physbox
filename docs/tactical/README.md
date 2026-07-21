@@ -128,6 +128,11 @@ explicit comparison, and validates and deploys the migration. This does not
 rewrite S18's frozen no-survivor result; it supersedes its authority to choose
 the continuing product direction. The reviewed soft seed is now the ordinary
 code default on every maintained host.
+S20 is complete: the validation-health remediation now has a measured
+7.31-second warm everyday native/browser lane, minimal high-signal GPU
+configuration coverage, targeted performance smoke, proportional platform
+triggers, and one durable product-capability ledger. S21 is active next for the
+SAP/grid scalable broadphase bakeoff and winner integration.
 
 Tactical filenames use a three-digit zero-padded prefix ordered by their first
 Git creation timestamp. This repository starts at `001`. Never renumber an
@@ -142,7 +147,7 @@ This README remains the unnumbered index.
 | S2 | GPU body state and fixed-floor contact | [002-gpu-body-state.md](002-gpu-body-state.md) | complete 2026-07-15; limited body core accepted |
 | S3 | Small-world collision and contact persistence | [003-small-world-collision-persistence.md](003-small-world-collision-persistence.md) | combined representation gate passed; S5.4a quality experiment authorized, 2026-07-16 |
 | S4 | Interactive evaluation workbench | [004-basic-scene-navigation-camera.md](004-basic-scene-navigation-camera.md) | S4.4 complete; S4.5 construction-feel review ready, 2026-07-16 |
-| S5 | Interactive rigid quality, construction, and scale | [005-interactive-rigid-quality-and-scale.md](005-interactive-rigid-quality-and-scale.md) | S5.4c scheduler integrated; S5.5 waits for S6 awake gate, 2026-07-17 |
+| S5 | Interactive rigid quality, construction, and scale | [005-interactive-rigid-quality-and-scale.md](005-interactive-rigid-quality-and-scale.md) | S5.4c scheduler integrated; S5.5/S5.6 continue in S21 after S20 validation cleanup, 2026-07-21 |
 | S6 | Awake settling stabilization | [006-awake-settling-stabilization.md](006-awake-settling-stabilization.md) | S6.5 closed; soft settling deferred by human review, 2026-07-18 |
 | S7 | Box3D planar stability investigation | [007-box3d-planar-stability-investigation.md](007-box3d-planar-stability-investigation.md) | complete; static-late arm later rejected by S9, 2026-07-18 |
 | S8 | Physical mobile frame pacing | [008-physical-mobile-frame-pacing.md](008-physical-mobile-frame-pacing.md) | complete; Pixel 7a bootstrap sustains rendering and physics cadence, 2026-07-18 |
@@ -157,6 +162,8 @@ This README remains the unnumbered index.
 | S17 | Branch-robust product-relative promotion study | [017-branch-robust-product-promotion.md](017-branch-robust-product-promotion.md) | superseded by S18 after Metal rejected the sole candidate; Android/review work intentionally incomplete, 2026-07-20 |
 | S18 | Solver check loop and coefficient exploration | [018-solver-check-loop-and-coefficient-exploration.md](018-solver-check-loop-and-coefficient-exploration.md) | complete; key ordering fixed, no coefficient survivor, residual band accepted, opt-in interactive A/B lab delivered, 2026-07-21 |
 | S19 | Soft default and physics configuration | [019-soft-default-and-physics-configuration.md](019-soft-default-and-physics-configuration.md) | complete; soft default/configuration, cross-host evidence, and exact live deployment pass, 2026-07-21 |
+| S20 | Validation diet and feature ledger | [020-validation-diet-and-feature-ledger.md](020-validation-diet-and-feature-ledger.md) | complete; warm everyday lane 7.31 s, production matrices trimmed, exhaustive lanes retained opt-in, 2026-07-21 |
+| S21 | Scalable broadphase | [021-scalable-broadphase.md](021-scalable-broadphase.md) | active next; SAP/grid bakeoff and selected-winner integration, 2026-07-21 |
 
 ## Conventions
 

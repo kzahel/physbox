@@ -25,6 +25,10 @@ response are one bounded shared configuration. Hard/direct remains an explicit
 comparison rather than an automatic fallback. The scheduler promotion is an
 architecture and latency improvement, not acceptance of the current CPU
 comparison, residual-motion band, or liquid performance.
+S20 then reduced the warm everyday native/browser lane to 7.31 seconds and
+published the current capability ledger. S21 scalable broadphase is the active
+next physics workstream; the present product candidate stage is still
+quadratic all-pairs.
 The repository still contains no Rapier or CPU product physics backend, fluid
 solver, legacy settings UI, or PhysBox 4 scene compatibility.
 
@@ -34,6 +38,7 @@ Read:
 - [Performance and scale contract](docs/topics/performance-and-scale.md)
 - [Simulation time and overload contract](docs/topics/simulation-time-and-overload.md)
 - [Physics configuration and solver profiles](docs/topics/physics-configuration-and-solver-profiles.md)
+- [Current product capability status](docs/topics/product-capability-status.md)
 - [Vision summary](docs/vision.md)
 - [Bring-up plan](docs/bringup-plan.md)
 - [Platform architecture](docs/platform-architecture.md)
@@ -134,24 +139,24 @@ requested.
 
 ## Validation tiers
 
-The Cargo workspace defaults to the maintained production surface: desktop,
-headless, web, Android, engine, contracts, launch, and shell. Routine Rust
-validation therefore avoids historical lab, evidence-generator,
-native-oracle, and benchmark targets and does not execute candidate-only
-engine tests. Native experiment APIs require the `physbox-engine/solver-lab`
-feature, enabled by the opt-in `physbox-lab` and Android GPU benchmark
-packages. Cargo automatic binary discovery is disabled in the lab; eight
-maintained commands remain registered and closed study sources are retained
-without being compile targets:
+The everyday lane is budgeted and includes the maintained native tests, two
+small performance-smoke probes, tooling tests, platform boundaries, and a real
+browser WebGPU smoke:
 
 ```sh
-npm run test:rust:production
-npm run clippy:rust:production
+npm run test:fast
 ```
 
-Changes to laboratory or oracle tooling should run only the affected package
-and target. The explicit full-workspace audit remains available, but is not a
-routine pre-push gate:
+It has a 120-second hard limit and currently finishes in 7.31 seconds on the
+primary warm development host. `npm run test:perf:smoke` reruns only the
+body-pipeline timing and exact soft-floor work/capacity probes; these already
+run once inside `test:fast`.
+
+The Cargo workspace still defaults to desktop, headless, web, Android, engine,
+contracts, launch, and shell. Historical lab, native-oracle, benchmark, long
+600/1,200-step, and exhaustive configuration matrices are opt-in. Run only the
+affected package/target while changing those tools. The complete audit remains
+available for scheduled or explicitly requested use:
 
 ```sh
 npm run test:rust:full

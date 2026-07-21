@@ -169,21 +169,43 @@ template for later subjects.
 
 The workspace `default-members` are the maintained production surface: the
 four app adapters plus `physbox-engine`, `physbox-contracts`, `physbox-launch`,
-and `physbox-shell`. For normal shared changes run the production-scoped Rust
-commands below. Do not add `--workspace`: that opt-in scope includes closed
-solver experiments, evidence generators, native oracles, and benchmark tools
-which are not routine pre-push gates.
+and `physbox-shell`. The ordinary code-change lane is:
 
 ```sh
-cargo fmt --all -- --check
-cargo test --lib --features physbox-engine/production-validation
-cargo clippy --all-targets --features physbox-engine/production-validation -- -D warnings
-cargo check --target wasm32-unknown-unknown -p physbox-web
-cargo check --target aarch64-linux-android -p physbox-android
-cargo run -p physbox-headless -- --output /tmp/physbox5-smoke.png --report /tmp/physbox5-smoke.json --scenario bootstrap
-npm run check:boundaries
-npm run test:web
+npm run test:fast
 ```
+
+It runs format, maintained native library tests including the bounded
+performance smoke, host-tool tests, platform-boundary negatives, and one real
+browser WebGPU smoke under a 120-second hard budget. It already compiles the
+WASM product and must not be followed by duplicate standalone Rust/browser
+commands merely to repeat the same scope. Use `npm run test:perf:smoke` only
+when iterating on the two focused performance probes; those probes are already
+included once in `test:fast`.
+
+Add gates in proportion to the changed boundary:
+
+- Shared Rust behavior or public contracts: run production clippy with
+  warnings denied before handoff.
+- Simulation, scenario, report, or offscreen-render changes: add one headless
+  smoke with fresh `/tmp` artifacts.
+- Android adapter, target dependencies, native argument transport, or
+  Android-specific `cfg`: add the ARM64 Android check. Build/install an APK and
+  use one physical device for Android behavior or pixels; do not duplicate a
+  passing physical lane on an AVD without a platform-specific question.
+- Intentional physics-default, solver/shader/buffer-layout, pacing, or
+  user-visible cross-host changes: add the ARM64 check, release APK, and one
+  physical Android validation. The everyday browser result is the browser
+  representative. Use an AVD only when no device is available or the failure
+  requires it.
+- Solver-menu/configuration interaction changes: add `npm run test:web:lab`;
+  it is not an ordinary smoke.
+- If Chrome/WebGPU is unavailable, record that limitation and run the
+  standalone WASM check rather than silently substituting a CPU path.
+
+Do not add `--workspace` to an ordinary command: that opt-in scope includes
+closed solver experiments, evidence generators, native oracles, and benchmark
+tools which are not routine pre-push gates.
 
 When a change touches `physbox-lab`, a native oracle, or a benchmark tool, run
 the directly affected library, binary, integration test, or evidence command
@@ -194,13 +216,13 @@ changes, a scheduled audit, or an explicit human request. A solver candidate's
 own tactical gates remain mandatory while that candidate is active, but a
 failed or closed candidate is not a routine production gate.
 
-After shared runtime, rendering, shader, launch, or pixel changes, also run
-`npm run android:apk` and the maintained Android device/AVD validation lane
-when its environment is available. Visually inspect fresh pixel artifacts.
-Prefer an attached physical Android device over starting an AVD for Android
-validation and benchmarks. When an AVD is used, shut it down immediately after
-the run, including after failed or interrupted runs; do not leave an emulator
-running in the background.
+Long 600/1,200-step scripts, coefficient/configuration matrices, full oracle
+process suites, multi-host evidence, APK/device/AVD matrices, and complete
+performance samples belong to acceptance, promotion, release, or explicitly
+scheduled audits. A hard authoritative rejection stops later expensive lanes
+unless the user requests characterization. When an AVD is used, shut it down
+immediately after the run, including after failed or interrupted runs; do not
+leave an emulator running in the background.
 
 Never weaken a gate to accommodate platform-local engine behavior. Add a
 negative fixture when a new duplication shape is discovered.

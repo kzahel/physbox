@@ -20,6 +20,7 @@ const constructionScreenshot = join(captureDirectory, `physbox5-web-construction
 const provenancePath = join(captureDirectory, `physbox5-web${captureSuffix}.json`);
 const scenario = process.env.PHYSBOX5_SCENARIO ?? "bootstrap";
 const solverLab = process.env.PHYSBOX5_SOLVER_LAB === "1";
+const conciseOutput = process.env.PHYSBOX5_CONCISE === "1";
 const viewportWidth = Number.parseInt(process.env.PHYSBOX5_VIEWPORT_WIDTH ?? "960", 10);
 const viewportHeight = Number.parseInt(process.env.PHYSBOX5_VIEWPORT_HEIGHT ?? "600", 10);
 if (!(viewportWidth > 0 && viewportHeight > 0)) throw new Error("browser viewport must be positive");
@@ -500,7 +501,33 @@ try {
     report: final.frame,
   };
   await writeFile(provenancePath, `${JSON.stringify(provenance, null, 2)}\n`);
-  console.log(JSON.stringify({ initialScreenshot, screenshot, menuScreenshot, grabScreenshot: capturedGrab ? grabScreenshot : null, constructionScreenshot: capturedConstruction ? constructionScreenshot : null, provenancePath, frame: final.frame }, null, 2));
+  const output = conciseOutput
+    ? {
+      provenancePath,
+      scenario: final.frame.scenario,
+      physics: {
+        profile: final.frame.sceneContract?.solverProfile,
+        configurationHash: final.frame.sceneContract?.physicsConfigurationHash,
+        fixedStepHz: final.frame.sceneContract?.fixedStepHz,
+        substeps: final.frame.sceneContract?.solverSubsteps,
+        iterations: final.frame.sceneContract?.solverBiasedIterations,
+      },
+      pacing: {
+        completedSteps: final.frame.pacing?.completedOuterStepsTotal,
+        effectiveScale: final.frame.pacing?.effectiveSimulationScale,
+        slippedSeconds: final.frame.pacing?.overloadSlippedWallSecondsTotal,
+      },
+    }
+    : {
+      initialScreenshot,
+      screenshot,
+      menuScreenshot,
+      grabScreenshot: capturedGrab ? grabScreenshot : null,
+      constructionScreenshot: capturedConstruction ? constructionScreenshot : null,
+      provenancePath,
+      frame: final.frame,
+    };
+  console.log(JSON.stringify(output, null, 2));
   console.log(`PHYSBOX5_VALIDATION_SUCCESS host=web run_id=${provenance.runId}`);
 } finally {
   await closeManagedBrowser(browserSession);

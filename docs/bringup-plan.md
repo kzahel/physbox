@@ -10,6 +10,12 @@ the first time scale is measured. Interactive scheduling follows the
 fixed `dt`, at most one outer step per engine frame, and permanent wall-time
 slip instead of catch-up.
 
+The compact [product capability ledger](topics/product-capability-status.md)
+records what is implemented, limited, missing, and deferred without requiring
+the historical tacticals to be reconstructed. S20 owns the validation diet;
+S21 is the next physics workstream and owns the P5.3 broadphase bakeoff and
+winner integration.
+
 Active cross-milestone execution from the remaining P5.2/S4 closure through
 P5.4 is tracked by
 [S5 interactive rigid quality, construction, and scale](tactical/005-interactive-rigid-quality-and-scale.md).
@@ -387,6 +393,10 @@ fallback; and fresh response/performance artifacts plus subjective review are
 recorded. Detailed ordering, measurements, and closure evidence are in S19.
 
 ## P5.3 — scalable broadphase bake-off
+
+Execution tracker:
+[S21 scalable broadphase](tactical/021-scalable-broadphase.md), after
+[S20 validation diet](tactical/020-validation-diet-and-feature-ledger.md).
 
 - Preserve brute force as pair-completeness oracle.
 - Implement sorted sweep-and-prune and multi-cell grid candidates.

@@ -83,6 +83,69 @@ gate graph; it does not delete their source, weaken an active candidate's own
 tactical gates, or exempt the selected product solver from engine, headless,
 browser, WASM, and Android validation.
 
+## Budgeted everyday-lane decision, 2026-07-21
+
+S20 completes the next remediation step. `npm run test:fast` is the ordinary
+code-change lane. One invocation runs, in order:
+
+1. repository formatting;
+2. maintained default-member Rust library tests with
+   `physbox-engine/production-validation`, including two bounded performance
+   smoke probes;
+3. host and Android validation-tool unit tests;
+4. platform-boundary checks and negative fixtures; and
+5. one Chrome WebGPU product smoke, which also compiles the WASM product.
+
+The command emits start/success markers and elapsed seconds per lane, writes
+the complete browser provenance under `/tmp`, uses concise terminal output,
+and fails if total wall time exceeds 120 seconds. The M4 Pro warm target is
+under 30 seconds. The hard limit is deliberately much larger than the warm
+target so a valid clean incremental build does not masquerade as a hang.
+
+The performance smoke is intentionally small and non-authoritative. The
+32-body free-flight probe reports finite host/CPU/GPU timing, validates every
+body after sampling, and checks exact work/allocation/capacity. The 120-step
+soft-floor probe checks deterministic replay plus exact dispatch, allocation,
+and capacity facts through the current product solver. `npm run
+test:perf:smoke` reruns only those two probes for performance-oriented edits;
+they already execute once inside `test:fast`, so the commands are alternatives
+rather than cumulative gates. Hardware-specific regression bands still belong
+to governed benchmark evidence.
+
+Production configuration coverage is now representative rather than
+factorial. It retains min/default/max resolution replay, 30/60/120 Hz replay,
+one maximum-resolution grab/construction boundary, the full default
+reset/grab script, deterministic soft-floor settling, capacity failures, and
+the readback-flush boundary. The exhaustive 12-arm resolution replay and
+six-arm interaction matrix remain compiled and runnable without
+`production-validation`; they are focused audit tests for solver/configuration
+changes, not ordinary repetitions.
+
+Cross-host additions are risk-based:
+
+- shared Rust behavior receives production clippy before handoff;
+- simulation/offscreen/report changes receive one headless artifact smoke;
+- Android-specific code receives the Android compile check and, when behavior
+  or pixels matter, one physical device;
+- intentional default, solver/shader/layout, pacing, or product-pixel changes
+  receive browser plus one physical Android qualification; and
+- an AVD is used only when no device is available or an Android-specific
+  distinction requires it.
+
+Long 600/1,200-step worlds, full workspace/oracle sweeps, multi-host evidence,
+and APK/device/AVD matrices are acceptance, promotion, release, or scheduled
+audit lanes. A blocking authoritative failure stops later expensive
+qualification unless human review explicitly requests characterization.
+
+The first completed warm run after the S20 trim takes 7.31 seconds total:
+format 0.40, maintained Rust plus performance smoke 2.17, tooling tests 2.76,
+boundaries 0.07, and browser WebGPU 1.91 seconds. The directly comparable
+production Rust command fell from 6.44 to 2.18 seconds; its engine portion fell
+from 5.83 to 2.07 seconds. The retained exhaustive resolution/interaction
+tests pass in 5.26 seconds of test execution outside `production-validation`.
+These are local M4 Pro/Metal measurements, not cross-machine performance
+thresholds.
+
 ## Architecture and target inventory
 
 The four product hosts are intentional and share the same engine:

@@ -676,7 +676,7 @@ mod tests {
     }
 
     #[test]
-    fn exact_generated_floor_landing_is_finite_and_deterministic() {
+    fn soft_floor_pipeline_performance_smoke_is_finite_and_deterministic() {
         let config = EngineConfig {
             scenario: ValidationScenario::RigidFloor,
             ..Default::default()
@@ -690,58 +690,78 @@ mod tests {
             assert_eq!(report.scene_contract.solver_dispatches_per_step, 68);
             assert_eq!(report.scene_contract.solver_capacity_bytes, 1_234_468);
             assert!(!report.scene_contract.capacity_overflowed);
-            renderer.read_capture_state().unwrap()
+            (report, renderer.read_capture_state().unwrap())
         };
-        let first = run();
-        let replay = run();
+        let (first_report, first) = run();
+        let (replay_report, replay) = run();
         assert_eq!(first, replay);
+        assert_eq!(first_report.scene_contract, replay_report.scene_contract);
         assert!(first.into_iter().all(f32::is_finite));
         assert!(
             (first[1] - 0.2).abs() <= 2.0e-4,
             "soft-coupled floor rest height was {}",
             first[1]
         );
+        println!(
+            "PHYSBOX5_PERF_SMOKE scope=soft-floor exact_steps=120 dispatches_per_step={} allocated_bytes={} replay=exact capacity=clean",
+            first_report.scene_contract.solver_dispatches_per_step,
+            first_report.scene_contract.solver_capacity_bytes,
+        );
     }
 
+    fn assert_soft_resolution_replays(substeps: u32, iterations: u32) -> u32 {
+        let mut physics = physbox_launch::PhysicsConfigurationV1::SOFT_COUPLED;
+        physics.substeps = substeps;
+        physics.biased_iterations = iterations;
+        let config = EngineConfig {
+            scenario: ValidationScenario::Bootstrap,
+            solver_profile: crate::SolverProfileConfig::from_physics(physics).unwrap(),
+        };
+        let run = || {
+            let mut renderer = pollster::block_on(OffscreenRenderer::new(320, 200, config.clone()))
+                .expect("bounded soft configuration initializes");
+            let report = renderer.render(FrameInput::exact(3));
+            let state = renderer.read_capture_state().unwrap();
+            (report, state)
+        };
+        let (first_report, first_state) = run();
+        let (replay_report, replay_state) = run();
+        assert_eq!(first_state, replay_state);
+        assert!(first_state.into_iter().all(f32::is_finite));
+        assert_eq!(first_report.scene_contract, replay_report.scene_contract);
+        assert_eq!(first_report.scene_contract.solver_substeps, substeps);
+        assert_eq!(
+            first_report.scene_contract.solver_biased_iterations,
+            iterations
+        );
+        assert_eq!(
+            first_report.scene_contract.internal_substep_hz,
+            60 * substeps
+        );
+        assert!(!first_report.scene_contract.capacity_overflowed);
+        first_report.scene_contract.solver_dispatches_per_step
+    }
+
+    #[cfg(feature = "production-validation")]
     #[test]
-    fn bounded_soft_resolution_matrix_replays_and_reports_its_work_graph() {
+    fn soft_resolution_boundaries_replay_and_report_their_work_graph() {
+        let mut previous_dispatches = 0;
+        for (substeps, iterations) in [(1, 1), (4, 1), (8, 4)] {
+            let dispatches = assert_soft_resolution_replays(substeps, iterations);
+            assert!(dispatches > previous_dispatches);
+            previous_dispatches = dispatches;
+        }
+    }
+
+    #[cfg(not(feature = "production-validation"))]
+    #[test]
+    fn exhaustive_soft_resolution_matrix_replays_and_reports_its_work_graph() {
         for substeps in [1, 2, 4, 8] {
             let mut previous_dispatches = 0;
             for iterations in [1, 2, 4] {
-                let mut physics = physbox_launch::PhysicsConfigurationV1::SOFT_COUPLED;
-                physics.substeps = substeps;
-                physics.biased_iterations = iterations;
-                let config = EngineConfig {
-                    scenario: ValidationScenario::Bootstrap,
-                    solver_profile: crate::SolverProfileConfig::from_physics(physics).unwrap(),
-                };
-                let run = || {
-                    let mut renderer =
-                        pollster::block_on(OffscreenRenderer::new(320, 200, config.clone()))
-                            .expect("bounded soft configuration initializes");
-                    let report = renderer.render(FrameInput::exact(3));
-                    let state = renderer.read_capture_state().unwrap();
-                    (report, state)
-                };
-                let (first_report, first_state) = run();
-                let (replay_report, replay_state) = run();
-                assert_eq!(first_state, replay_state);
-                assert!(first_state.into_iter().all(f32::is_finite));
-                assert_eq!(first_report.scene_contract, replay_report.scene_contract);
-                assert_eq!(first_report.scene_contract.solver_substeps, substeps);
-                assert_eq!(
-                    first_report.scene_contract.solver_biased_iterations,
-                    iterations
-                );
-                assert_eq!(
-                    first_report.scene_contract.internal_substep_hz,
-                    60 * substeps
-                );
-                assert!(!first_report.scene_contract.capacity_overflowed);
-                assert!(
-                    first_report.scene_contract.solver_dispatches_per_step > previous_dispatches
-                );
-                previous_dispatches = first_report.scene_contract.solver_dispatches_per_step;
+                let dispatches = assert_soft_resolution_replays(substeps, iterations);
+                assert!(dispatches > previous_dispatches);
+                previous_dispatches = dispatches;
             }
         }
     }
@@ -780,8 +800,7 @@ mod tests {
         }
     }
 
-    #[test]
-    fn soft_resolution_matrix_preserves_scripted_grab_entry_and_construction() {
+    fn assert_soft_resolutions_preserve_grab_and_construction(configurations: &[(u32, u32)]) {
         let target_size = [960, 600];
         let layout = crate::ui::UiLayout::for_target(target_size);
         let click = |id, at| {
@@ -802,7 +821,7 @@ mod tests {
             .unwrap()
             .world_to_screen([-0.8, 0.72]);
 
-        for (substeps, iterations) in [(2, 1), (2, 2), (4, 1), (4, 2), (8, 1), (8, 2)] {
+        for &(substeps, iterations) in configurations {
             let mut physics = physbox_launch::PhysicsConfigurationV1::SOFT_COUPLED;
             physics.substeps = substeps;
             physics.biased_iterations = iterations;
@@ -854,6 +873,25 @@ mod tests {
                 1
             );
         }
+    }
+
+    #[cfg(feature = "production-validation")]
+    #[test]
+    fn soft_resolution_boundary_preserves_grab_entry_and_construction() {
+        assert_soft_resolutions_preserve_grab_and_construction(&[(8, 4)]);
+    }
+
+    #[cfg(not(feature = "production-validation"))]
+    #[test]
+    fn exhaustive_soft_resolution_matrix_preserves_grab_entry_and_construction() {
+        assert_soft_resolutions_preserve_grab_and_construction(&[
+            (2, 1),
+            (2, 2),
+            (4, 1),
+            (4, 2),
+            (8, 1),
+            (8, 2),
+        ]);
     }
 
     #[test]

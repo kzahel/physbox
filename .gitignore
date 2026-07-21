@@ -3,6 +3,7 @@
 /node_modules/
 /.wrangler/
 /.DS_Store
+/.attachments/
 /android/.gradle/
 /android/.kotlin/
 /android/app/build/

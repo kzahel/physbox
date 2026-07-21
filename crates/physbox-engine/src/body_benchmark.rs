@@ -819,7 +819,7 @@ mod tests {
     }
 
     #[test]
-    fn small_body_benchmark_validates_complete_state_after_measurement() {
+    fn body_pipeline_performance_smoke_validates_state_and_reports_timing() {
         let result =
             pollster::block_on(benchmark_gpu_body_free_flight(32, 0x5eed, [320, 200], 1, 3))
                 .unwrap();
@@ -839,6 +839,13 @@ mod tests {
                 .capacities
                 .iter()
                 .all(|capacity| !capacity.overflowed)
+        );
+        println!(
+            "PHYSBOX5_PERF_SMOKE scope=body-free-flight bodies=32 host_p50_ms={:.3} host_p95_ms={:.3} cpu_p50_ms={:.3} gpu_status={:?} replay=validated capacity=clean",
+            result.host_completion.p50_seconds * 1_000.0,
+            result.host_completion.p95_seconds * 1_000.0,
+            result.cpu_encode_submit.p50_seconds * 1_000.0,
+            result.gpu_timestamp_status,
         );
     }
 }
