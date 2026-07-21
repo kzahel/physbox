@@ -1,14 +1,14 @@
 # Contact solver parallelism and scheduling
 
 Status: bounded parallel scheduler selected and qualified; updated 2026-07-21
-for the soft-default direction. Forward manifold-block i2 remains the current
-implementation default while S19 migrates the authority-derived,
-point-sequential soft-coupled execution into the product default. Product
-constructors currently select bounded speculative parallel coloring. The
+for the completed soft-default migration. The authority-derived,
+point-sequential soft-coupled 60/4/i1 path is now the product default;
+forward manifold-block i2 remains the explicit hard/direct comparison. Product
+constructors select bounded speculative parallel coloring. The
 64-body interactive capacity tier uses one workgroup-per-island dispatch while
 larger capacities retain per-color indirect dispatch; serial full
-rebuild/per-color remains an explicit control. S19 must preserve bounded
-GPU-owned coloring and capacity semantics while changing solver execution.
+rebuild/per-color remains an explicit control. S19 preserved bounded GPU-owned
+coloring and capacity semantics while changing solver execution.
 
 Governing direction:
 [one GPU-resident 2D physics world](physbox5-unified-gpu-physics.md).

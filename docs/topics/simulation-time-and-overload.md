@@ -290,10 +290,11 @@ Deterministic tests cover the required cadence, stall, time-scale, pause,
 single-step, and suspend/resume sequences. The 250 ms discontinuity bound is
 engine-owned rather than applied by a platform adapter.
 
-The implementation still hardcodes 60 Hz in `SimulationClock`, frame
-parameters, and reports. `SolverSettingsV1` carries `fixed_dt`, but selected
-constructors also validate the exact 1/60 value. These are known S19 migration
-defects, not the final configuration contract.
+The implementation constructs `SimulationClock`, frame parameters, and reports
+from the applied bounded fixed rate. `physbox-launch` owns the same 15-240 Hz
+parsing and defaults for native, web, and Android transport. Exact Metal replay
+tests cover 30, 60, and 120 Hz, and solver construction no longer requires the
+historical 1/60 value.
 
 Headless capture may either feed nominal wall intervals through interactive
 mode or request an explicit positive step count. Exact mode encodes the

@@ -40,7 +40,8 @@ substeps, one biased point-sequential pass plus relaxation, and soft contact
 not an automatic fallback. The [S19 tactical](../tactical/019-soft-default-and-physics-configuration.md)
 has made this path the ordinary code default and turned fixed rate, substeps,
 iterations, contact response, and recovery policy into one bounded shared
-configuration; its remaining work is cross-host closure and exact deployment.
+configuration. Its cross-host qualification and exact live deployment are
+complete.
 
 Historical S6-S18 dispositions remain accurate for their frozen
 questions; they do not override the later human product decision. Invariants,

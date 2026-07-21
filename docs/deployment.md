@@ -8,10 +8,10 @@ push that updates `refs/heads/main`, the hook starts a detached scheduler. It
 waits until the pushed SHA is readable from the remote, settles quick
 successive pushes, checks out that exact SHA into a clean sibling worktree,
 builds the release web bundle, uploads assets, and deploys the Worker. The web
-release deliberately includes the engine-rendered solver inspection menu; the
-selected solver remains the default and an alternate profile requires an
-explicit or browser-saved choice. Logs and state stay under
-`.git/physbox5-deploy/`.
+release deliberately includes the engine-rendered physics configuration menu;
+soft-coupled is the fresh default, while hard/direct or a custom bounded
+configuration requires an explicit or browser-saved choice. Logs and state
+stay under `.git/physbox5-deploy/`.
 
 This design matters: a push never deploys uncommitted files or a newer local
 commit than the SHA that actually reached the remote. Failed pushes do not

@@ -1,12 +1,12 @@
 # S19: soft default and physics configuration
 
-Status: active closure, 2026-07-21. Human review selects the interactively preferred
+Status: complete, 2026-07-21. Human review selects the interactively preferred
 soft-coupled family as the product direction, accepts its current compliance
 and tall-stack limitation as a visible starting trade-off, and authorizes a
 bounded product configuration for fixed rate, substeps, iterations, and
 contact response. The code default and complete shared configuration path are
-now soft-coupled; maintained host validation is clean and exact deployment
-remains in progress.
+soft-coupled; maintained host validation, exact deployment, public-asset
+comparison, and desktop/phone live inspection are clean.
 
 Governing topics:
 [physics configuration and solver profiles](../topics/physics-configuration-and-solver-profiles.md)
@@ -311,7 +311,7 @@ new preset was admitted after that review.
 - [x] Update all current-status documentation, examples, screenshots, labels,
   and deployment assertions to the canonical soft default; preserve S6-S18 as
   historical evidence rather than rewriting them.
-- [ ] Commit and push the exact validated change, deploy the exact pushed SHA,
+- [x] Commit and push the exact validated change, deploy the exact pushed SHA,
   verify public asset hashes, and inspect the live configuration UI at phone
   and desktop sizes.
 
@@ -347,6 +347,17 @@ contracts/launch/shell/web; production clippy with warnings denied; focused
 Metal smoke; platform boundaries; ordinary and solver-lab browser smokes;
 APK build; physical Pixel 7a validation and pacing; responsive phone and
 landscape captures; and the tracked evidence verifier.
+
+Implementation and qualification SHA
+`de47e667f12f30d3ed155fafa1e9a2a5e6b2088a` was pushed to `origin/main`,
+checked out by the exact-SHA deployment worker, and recorded in
+`completed.tsv` on 2026-07-21. All seven public release objects, including the
+WebAssembly module, byte-match that clean worktree build. Fresh live sessions
+at 960x600 and 456x1024 select the canonical soft configuration and hash with
+no physics query parameters, persist `physbox5.physics.v2`, render the complete
+configuration menu, and switch hard/direct to soft-coupled without reload or
+browser errors. The closure-only documentation successor is also required to
+pass the same exact-SHA hook and ledger check before handoff.
 
 ## Required implementation gates
 

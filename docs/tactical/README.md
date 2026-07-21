@@ -122,12 +122,12 @@ the rejected candidate.
 Later human review on 2026-07-21 uses that interactive evidence to make a new
 product decision: the soft-coupled family is subjectively preferred and is now
 the intended default despite its known compliant tall-stack behavior. S19 is
-active to productize that decision, make fixed rate/substeps/iterations/contact
-tuning one bounded shared configuration, preserve hard/direct as an explicit
-comparison, and validate/deploy the migration. This does not rewrite S18's
-frozen no-survivor result; it supersedes its authority to choose the continuing
-product direction. S19 now makes the reviewed soft seed the ordinary code
-default and is completing cross-host validation and exact deployment.
+complete: it productizes that decision, makes fixed rate/substeps/iterations/
+contact tuning one bounded shared configuration, preserves hard/direct as an
+explicit comparison, and validates and deploys the migration. This does not
+rewrite S18's frozen no-survivor result; it supersedes its authority to choose
+the continuing product direction. The reviewed soft seed is now the ordinary
+code default on every maintained host.
 
 Tactical filenames use a three-digit zero-padded prefix ordered by their first
 Git creation timestamp. This repository starts at `001`. Never renumber an
@@ -156,7 +156,7 @@ This README remains the unnumbered index.
 | S16 | Authority event-structure decomposition | [016-authority-event-structure-decomposition.md](016-authority-event-structure-decomposition.md) | manual checkpoint; no declared routed event structure, A4 held pending human release, 2026-07-20 |
 | S17 | Branch-robust product-relative promotion study | [017-branch-robust-product-promotion.md](017-branch-robust-product-promotion.md) | superseded by S18 after Metal rejected the sole candidate; Android/review work intentionally incomplete, 2026-07-20 |
 | S18 | Solver check loop and coefficient exploration | [018-solver-check-loop-and-coefficient-exploration.md](018-solver-check-loop-and-coefficient-exploration.md) | complete; key ordering fixed, no coefficient survivor, residual band accepted, opt-in interactive A/B lab delivered, 2026-07-21 |
-| S19 | Soft default and physics configuration | [019-soft-default-and-physics-configuration.md](019-soft-default-and-physics-configuration.md) | active closure; soft default/configuration and cross-host evidence pass, exact deployment pending, 2026-07-21 |
+| S19 | Soft default and physics configuration | [019-soft-default-and-physics-configuration.md](019-soft-default-and-physics-configuration.md) | complete; soft default/configuration, cross-host evidence, and exact live deployment pass, 2026-07-21 |
 
 ## Conventions
 

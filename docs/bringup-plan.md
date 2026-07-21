@@ -359,7 +359,7 @@ Construction feel remains part of the combined S5.4 human checkpoint.
 - Prove that camera/UI state does not affect physics, pacing, scenario hashes,
   or cross-host outcomes, and that construction owns no CPU body mirror.
 
-## P5.2b — soft default and configurable product physics (active)
+## P5.2b — soft default and configurable product physics (complete 2026-07-21)
 
 Human review on 2026-07-21 selects the soft-coupled point-sequential family as
 the product direction. Its initial 60 Hz/four-substep/one-biased-plus-
@@ -384,7 +384,7 @@ Exit: the exact deployed ordinary build selects soft-coupled from a fresh
 launch; all hosts project the same configuration; supported rate/resolution/
 contact settings replay and report honestly; hard/direct never activates as a
 fallback; and fresh response/performance artifacts plus subjective review are
-recorded. Detailed ordering and gates are in S19.
+recorded. Detailed ordering, measurements, and closure evidence are in S19.
 
 ## P5.3 — scalable broadphase bake-off
 

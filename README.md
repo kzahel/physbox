@@ -19,11 +19,11 @@ validation-only authority-key ordering fix, all 30 coefficient tuples remained
 valid, and none preserved the 16-stack. Direct interactive review then made a
 new product decision: the quieter, Box2D-derived soft-coupled family is the
 intended default, with its visible tall-stack compliance accepted as the
-starting trade-off. S19 is implementing that decision: soft-coupled 60/4/i1
-is now the fresh ordinary default, and fixed rate, substeps, iterations, and
-contact response are one bounded shared configuration. Hard/direct remains an
-explicit comparison rather than an automatic fallback. The scheduler promotion is
-an architecture and latency improvement, not acceptance of the current CPU
+starting trade-off. S19 completed that decision: soft-coupled 60/4/i1 is the
+fresh ordinary default, and fixed rate, substeps, iterations, and contact
+response are one bounded shared configuration. Hard/direct remains an explicit
+comparison rather than an automatic fallback. The scheduler promotion is an
+architecture and latency improvement, not acceptance of the current CPU
 comparison, residual-motion band, or liquid performance.
 The repository still contains no Rapier or CPU product physics backend, fluid
 solver, legacy settings UI, or PhysBox 4 scene compatibility.

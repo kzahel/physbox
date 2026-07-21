@@ -5,7 +5,7 @@ soft-coupled solver family, and the shared code now uses its reviewed
 60/4/i1 seed as the fresh ordinary default. Product-owned fixed-step, substep,
 iteration, contact-response, and recovery settings form one versioned bounded
 configuration. [S19](../tactical/019-soft-default-and-physics-configuration.md)
-tracks cross-host closure and deployment.
+records the completed cross-host qualification and exact live deployment.
 
 Governing direction:
 [one GPU-resident 2D physics world](physbox5-unified-gpu-physics.md).
@@ -38,8 +38,8 @@ direction is:
   engine-rendered UI and `physbox-launch`, with the same configuration and
   results on every host.
 
-The human selection is a product-quality decision. S19 validates and
-characterizes it; it does not rerun the old promotion vote or silently return
+The human selection is a product-quality decision. S19 validated and
+characterized it; it did not rerun the old promotion vote or silently return
 to hard/direct because one historic candidate gate was not met. Invariants,
 finite state, capacity safety, deterministic replay, portable execution, and
 honest reporting remain blocking. A failure of one soft configuration may
@@ -86,9 +86,10 @@ help, web mappings, and Android JSON argv. Platform adapters transport the
 selection unchanged. They may not own rates, profile defaults, parameter
 limits, or rebuild behavior.
 
-`SolverSettingsV1` already represents `fixed_dt`, `substeps`, and `iterations`.
-S19 may evolve or wrap that schema, but it must not create a second platform-
-local settings model. The scene contract and validation artifacts record:
+`PhysicsConfigurationV1` now owns `fixed_step_hz`, `substeps`, `iterations`,
+and the contact values projected into `SolverSettingsV1`; there is no second
+platform-local settings model. The scene contract and validation artifacts
+record:
 
 - selected profile id and human label;
 - outer fixed-step Hz and exact `dt`;
