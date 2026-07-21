@@ -137,6 +137,11 @@ full-sort SAP product path. Clean Metal/browser selection and integrated
 100/1K/10K product evidence pass. S21 is complete after the integrated product
 also passed physical Pixel 7a Vulkan bootstrap pacing and 103-body bucket
 execution, with the bucket's measured slow-time limitation retained explicitly.
+S22 is active after a physical Pixel 9 run exposed that unused reserved slots
+still size the hot graph: 256 slots sustain 60 Hz with 256 awake rectangles,
+while a 1K reserve misses 60 Hz with one rectangle. S22 makes live GPU counts,
+not reserve capacity, own broadphase, narrowphase, persistence, solve,
+integration, and render execution before sleeping is added.
 
 Tactical filenames use a three-digit zero-padded prefix ordered by their first
 Git creation timestamp. This repository starts at `001`. Never renumber an
@@ -168,6 +173,7 @@ This README remains the unnumbered index.
 | S19 | Soft default and physics configuration | [019-soft-default-and-physics-configuration.md](019-soft-default-and-physics-configuration.md) | complete; soft default/configuration, cross-host evidence, and exact live deployment pass, 2026-07-21 |
 | S20 | Validation diet and feature ledger | [020-validation-diet-and-feature-ledger.md](020-validation-diet-and-feature-ledger.md) | complete; warm everyday lane 7.31 s, production matrices trimmed, exhaustive lanes retained opt-in, 2026-07-21 |
 | S21 | Scalable broadphase | [021-scalable-broadphase.md](021-scalable-broadphase.md) | complete; SAP integrated and qualified on Metal, browser, and physical Pixel 7a Vulkan, 2026-07-21 |
+| S22 | Active-work compaction | [022-active-work-compaction.md](022-active-work-compaction.md) | active; sparse reserve-dependent cost reproduced and execution contract frozen, 2026-07-21 |
 
 ## Conventions
 
