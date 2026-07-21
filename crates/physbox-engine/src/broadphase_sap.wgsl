@@ -80,7 +80,7 @@ fn compute_sap_body_aabbs(@builtin(global_invocation_id) invocation: vec3u) {
     let flags = identity.y;
     if ((flags & FLAG_LIVE) == 0u) {
         input_proxies[index].identity_mobility = vec4u(index, identity.x, 0u, index);
-        input_proxies[index].lower_upper = vec4f(bitcast<f32>(0x7f800000u));
+        input_proxies[index].lower_upper = vec4f(bitcast<f32>(0x7f7fffffu));
         return;
     }
     let pose = poses[index];
