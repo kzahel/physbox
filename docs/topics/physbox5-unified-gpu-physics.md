@@ -1024,9 +1024,12 @@ rejected alternative and no LBVH addendum is justified. S21.5 now wires SAP
 into the shared product graph: live GPU body buffers produce speculative AABBs
 and sorted canonical generational pairs under an 8N candidate bound, while
 all-pairs remains an isolated bounded oracle with no automatic fallback.
-Integrated Metal and Browser WebGPU qualification passes; physical Android is
-the remaining closure gate. The measured record and reconsideration triggers
-are in [S21](../tactical/021-scalable-broadphase.md).
+Integrated Metal, Browser WebGPU, and physical Pixel 7a Vulkan qualification
+passes, closing S21. The physical 103-body bucket remains deliberately reported
+as a correct slow-time result rather than a sustained-rate claim. The measured
+record, configurable 64/256/1K/10K capacity policy, and reconsideration
+triggers are in [S21](../tactical/021-scalable-broadphase.md) and the
+[performance topic](performance-and-scale.md#interactive-world-capacity-policy).
 
 ## What to learn from existing engines
 

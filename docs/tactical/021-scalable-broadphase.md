@@ -1,10 +1,10 @@
 # S21: scalable broadphase
 
-Status: active, SAP selected and integrated 2026-07-21. Human review accepted
-the clean candidate bakeoff recommendation; native and browser product
-qualification pass, while physical Android remains before S21.5 closes. This
-is the executable tracker for the S5.5 bakeoff and S5.6 integration milestones;
-the older S5 document remains the umbrella history.
+Status: complete 2026-07-21. Human review accepted the clean candidate bakeoff
+recommendation; full-sort SAP is integrated and qualified on native Metal,
+Browser WebGPU, and physical Pixel 7a Vulkan. This is the executable tracker
+for the S5.5 bakeoff and S5.6 integration milestones; the older S5 document
+remains the umbrella history.
 
 Governing topics:
 [one GPU-resident 2D physics world](../topics/physbox5-unified-gpu-physics.md#broadphase-development-contract),
@@ -93,7 +93,7 @@ brute force on the scale families it claims to improve.
   retain brute force as a bounded validation option without automatic fallback.
 - [x] Re-run collision-only, complete physics, and full-frame curves plus
   effective simulation scale/slip and memory high-water.
-- [ ] Qualify the integrated winner on browser and one physical Android device.
+- [x] Qualify the integrated winner on browser and one physical Android device.
 
 ## Completion condition
 
@@ -256,6 +256,26 @@ scale execution but exceeds the 16.67 ms 60 Hz GPU budget; it is not a 10K-at-
 Chrome 150 Browser WebGPU runs the maintained 100-dynamic-body circle bucket
 for 10.27 simulated seconds with `0.993` effective simulation scale, zero slip,
 and a visually correct final frame. This is a real full-frame product row;
-there is no claim of a 1K-plus rendered curve yet. Physical Pixel 7a Vulkan
-qualification remains outstanding because the connected device was locked at
-this checkpoint.
+there is no claim of a 1K-plus rendered curve yet.
+
+Clean physical Pixel 7a Vulkan qualification closes S21.5. At revision
+`c799861`, the default 64-slot bootstrap presents at `60.031 FPS` mean with
+`16.735 ms` P95, completes `60.016` fixed steps per second, measures `1.0003`
+effective simulation scale with zero measurement-window slip, and remains
+capacity-clean. The same APK completes the 103-body circle-bucket scenario
+with requested capacity 64, effective authored-scene headroom 128, 2,048
+contact-point slots, 1,293,080 allocated bytes, and no overflow.
+
+The bucket is a correctness/execution qualifier, not a sustained-rate claim:
+its final report advances 10.633 simulated seconds at `0.591` effective scale
+and records 6.567 slipped seconds. This measured limitation is why the ordinary
+interactive default stays at 64 slots. Larger worlds are explicit 256, 1K,
+and 10K opt-ins rather than a platform-specific fallback or an inflated
+default.
+
+The shared in-engine WORLD menu was also exercised directly on the same Pixel.
+Selecting 256 rebuilds the bootstrap world and reports requested/effective
+capacity 256, 4,096 contact-point slots, 2,479,976 allocated bytes, and no
+overflow. The UI closes after selection and the scene restarts as declared.
+This confirms the new capacity surface uses the same product graph on physical
+Android; it does not turn the opt-in tier into a performance claim.

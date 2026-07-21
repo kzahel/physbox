@@ -522,11 +522,44 @@ median complete GPU physics is `7.290/8.338/22.622 ms`; allocation is
 `1.25/9.42/91.05 MiB`. The sparse paired-contact work is exactly 50/500/5,000
 candidates rather than quadratic. The 10K row proves bounded useful-scale
 execution but misses a 16.67 ms frame budget and is not a 10K-at-60 claim.
-Chrome 150 runs the maintained 103-slot/100-dynamic-body bucket for 10.27
+Chrome 150 runs the maintained 103-body/100-dynamic-body bucket for 10.27
 simulated seconds at `0.993` effective scale with zero slip. This browser row
 is the current full-frame product qualifier; it is not a 1K-plus rendering
-curve. Physical Android remains outstanding in S21.5, and CPU crossover still
+curve. Clean physical Pixel 7a Vulkan at revision `c799861` sustains the default
+64-slot bootstrap at `60.031 FPS` mean, `16.735 ms` presentation P95, and
+`1.0003` effective scale with zero measurement-window slip. Its 103-body bucket
+is capacity-clean and correct but advances at only `0.591` effective scale with
+6.567 seconds of slip over 10.633 simulated seconds. Physical execution is
+qualified; no sustained 100-body Pixel claim follows. CPU crossover still
 belongs to P5.4.
+
+### Interactive world-capacity policy
+
+World capacity is now an explicit shared product setting rather than a web
+placement limit. The shipped presets are 64 (default), 256, 1K, and 10K body
+slots. A scenario whose initial authored body count does not fit the requested
+preset receives the next power-of-two headroom above that count; requested and
+effective values are both reported. Thus the 103-body bucket requests the
+ordinary 64 tier but constructs 128 effective slots instead of failing at
+startup. Runtime placement still fails closed when the effective capacity is
+exhausted.
+
+Changing capacity is an atomic world rebuild: the current scenario restarts,
+camera and tool state are retained, and no simulation-dependent readback or
+automatic growth path is introduced. The engine-rendered WORLD menu exposes
+all four presets on every interactive host. The browser persists the choice in
+the separate versioned `physbox5.world.v1` record and mirrors non-default
+selection into `body-capacity` launch state for reproducibility. Native launch
+uses the same `--body-capacity` contract.
+
+The larger choices are capability opt-ins, not recommended quality tiers or
+rate claims. A native empty-bootstrap 10K graph allocates 92,777,276 bytes
+(`88.48 MiB`) and executes without overflow; the corresponding unoptimized
+Browser WebGPU validation ran at roughly `0.14` effective scale. On the
+physical Pixel, even the empty 256-slot graph reports 2,479,976 allocated bytes
+and settles near `0.61` effective scale during direct inspection. These results
+justify retaining 64 as the cross-host default while making 1K/10K worlds
+available for deliberate scale experiments.
 
 No LBVH arm is admitted from this matrix. Reopen that question only for a
 measured integrated-SAP miss or a specific sparse multiscale/active-window

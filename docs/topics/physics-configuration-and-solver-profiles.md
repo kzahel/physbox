@@ -100,6 +100,22 @@ record:
 - passes, dispatches, work, and allocation implied by the configuration; and
 - configuration version/hash so a screenshot or metric is reproducible.
 
+World capacity is a separate engine setting because it changes fixed GPU
+storage and broadphase work rather than the solver equation. The shared launch
+contract and engine-rendered WORLD page expose only four reviewed presets: 64
+(default), 256, 1K, and 10K slots. Applying one atomically rebuilds and restarts
+the current scenario while preserving camera and tool state. If the authored
+initial body count does not fit the requested preset, the effective capacity
+is the next power of two above that count; both requested and effective values
+are reported. There is no automatic runtime growth or platform fallback.
+
+Browser world preference is versioned independently as `physbox5.world.v1` so
+solver-profile migration cannot silently change storage scale. Non-default
+capacity is mirrored into the shared `body-capacity` launch state for
+reproducibility. The complete cost and physical-device rationale for the safe
+64-slot default live in the
+[performance topic](performance-and-scale.md#interactive-world-capacity-policy).
+
 ## Initial bounds and presets
 
 The first product surface is deliberately bounded rather than an arbitrary

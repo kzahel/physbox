@@ -34,7 +34,7 @@ quality. Known limitations remain part of the row.
 | TIME-1 | Fixed simulation rate | **Implemented** | Bounded 15-240 Hz configuration; 60 Hz is the reviewed default. Variable `dt` is not supported. |
 | TIME-2 | Overload policy | **Implemented** | Zero or one outer step per interactive frame; excess whole-step wall time slips permanently instead of catching up. |
 | TIME-3 | Solver resolution | **Implemented** | One to eight substeps and one to four biased iterations, with requested/effective rates reported. |
-| DIAG-1 | Capacity and pacing diagnostics | **Implemented** | Scene contract exposes configuration, work, allocation, overflow, effective scale, and slip. |
+| DIAG-1 | Capacity and pacing diagnostics | **Implemented** | Scene contract exposes requested/effective body and contact capacity, configuration, work, allocation, overflow, effective scale, and slip. |
 | DIAG-2 | General profiling/event stream | **Limited** | Detailed laboratory traces exist; compact product diagnostics and durable performance history remain incomplete. |
 
 ## Rigid bodies, collision, and constraints
@@ -44,7 +44,7 @@ quality. Known limitations remain part of the row.
 | BODY-1 | Fixed and dynamic bodies | **Implemented** | GPU-owned generational slots support construction, erase, reset, and reuse. General kinematic bodies are not exposed. |
 | BODY-2 | Circles and oriented rectangles | **Implemented** | Analytic circle/circle, circle/rectangle, and clipped rectangle/rectangle contact are the complete product shape set. |
 | BODY-3 | Capsules, convex polygons, chains, terrain, compounds | **Deferred** | Follow minimal rigid acceptance and a selected scalable broadphase. |
-| COLL-1 | Broadphase candidate generation | **Limited** | Full-sort GPU SAP owns the ordinary product path under an 8N candidate bound. Brute force remains an isolated bounded exact oracle with no automatic fallback; physical-Android qualification is the remaining S21 gate. |
+| COLL-1 | Broadphase candidate generation | **Implemented** | Full-sort GPU SAP owns the ordinary product path under an 8N candidate bound and is qualified on Metal, browser, and physical Pixel Vulkan. Brute force remains an isolated bounded exact oracle with no automatic fallback. |
 | COLL-2 | Contact persistence and warm start | **Implemented** | Stable generational pair slots and body-edge views retain impulses and fail closed on capacity overflow. |
 | COLL-3 | Friction and restitution | **Implemented** | Coulomb friction and a distinct restitution stage are exercised by shared fixtures; broader parity remains P5.4 work. |
 | COLL-4 | Speculative contacts and overlap recovery | **Implemented** | Bounded speculative distance and depenetration velocity are configurable; deep/tall overlap remains a known limitation. |
@@ -64,7 +64,7 @@ quality. Known limitations remain part of the row.
 | --- | --- | --- | --- |
 | TOOL-1 | Camera and direct manipulation | **Implemented** | Shared pan, zoom, recenter, grab, touch policy, and visible tether. |
 | TOOL-2 | Circle/rectangle place and erase | **Implemented** | Fixed-size placement and erase exercise the real GPU construction path. |
-| TOOL-3 | Solver/configuration inspection | **Implemented** | Engine-rendered responsive menu selects any registered profile and bounded settings; browser choice persists locally. |
+| TOOL-3 | Solver/configuration inspection | **Implemented** | Engine-rendered responsive menu selects any registered solver profile, bounded physics settings, and 64/256/1K/10K world-capacity presets. Browser choices persist locally. |
 | TOOL-4 | Selection and property editing | **Not implemented** | No persistent user selection, transform/material editor, or deliberate drag-to-size authoring. |
 | TOOL-5 | Scene document and save/load | **Not implemented** | Validation scenarios are reproducible contracts, not an authored product document format. |
 | TOOL-6 | Undo/redo and broader sandbox tools | **Deferred** | Follow a minimal scene document and stable construction semantics. |
@@ -73,8 +73,8 @@ quality. Known limitations remain part of the row.
 
 | ID | Capability | Status | Current boundary / next gate |
 | --- | --- | --- | --- |
-| SCALE-1 | Small-world rigid scenes | **Implemented** | Selected SAP supports the maintained small interactive tier and 100-body diagnostic buckets with explicit capacity; brute force is validation-only. |
-| SCALE-2 | Scalable broadphase | **In progress** | SAP is selected and integrated; exact native 100/1K/10K product curves and a zero-slip 100-body browser row pass. Physical-Android qualification remains before S21 closure. |
+| SCALE-1 | Small-world rigid scenes | **Implemented** | The safe 64-slot default, authored-scene headroom, and explicit 256/1K/10K opt-ins use selected SAP; the 100-body diagnostic buckets execute correctly but are not sustained-rate claims on every device. |
+| SCALE-2 | Scalable broadphase | **Implemented** | SAP is selected and integrated; exact native 100/1K/10K curves, a zero-slip 100-body browser row, and physical Pixel bootstrap/bucket execution pass. This does not establish a 1K-plus rendered product-world rate. |
 | SCALE-3 | 1K-100K product-world claims | **Not implemented** | Existing authored-contact/isolated-solver measurements are not scalable end-to-end body claims. |
 | SCALE-4 | Mostly-sleeping scale | **Not implemented** | Requires sleeping, active compaction, and selected broadphase integration. |
 | QUAL-1 | Box2D process oracle | **Implemented** | Clean pinned native process covers current circle/rectangle projections, public manifolds, selected actions, and deterministic results. |
@@ -94,12 +94,10 @@ quality. Known limitations remain part of the row.
 
 ## Current execution order
 
-1. Finish physical-Android qualification of the integrated scalable
-   broadphase in [S21](../tactical/021-scalable-broadphase.md).
-2. Add sleeping/waking and close current-default rigid acceptance and scale.
-3. Extend the construction loop with editable selection, scene documents, and
+1. Add sleeping/waking and close current-default rigid acceptance and scale.
+2. Extend the construction loop with editable selection, scene documents, and
    one joint.
-4. Begin bounded liquid and same-step rigid/fluid coupling.
+3. Begin bounded liquid and same-step rigid/fluid coupling.
 
 ## Reconsideration triggers
 

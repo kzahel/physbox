@@ -31,7 +31,10 @@ selected full-sort one-axis SAP as the scalable broadphase. SAP now owns
 ordinary product candidate generation, with brute force retained only as a
 bounded exact validation oracle and no automatic fallback. Clean native
 100/1K/10K integrated curves and the 100-body Browser WebGPU product scene
-pass; physical-Android qualification is the remaining S21 gate.
+pass. Physical Pixel 7a bootstrap and 103-body bucket execution close S21;
+the bucket's `0.591` effective scale remains an explicit limitation rather
+than a sustained-rate claim. Interactive world capacity is now a shared
+64/256/1K/10K preset, with 64 retained as the safe default.
 The repository still contains no Rapier or CPU product physics backend, fluid
 solver, legacy settings UI, or PhysBox 4 scene compatibility.
 
@@ -95,7 +98,7 @@ npm run test:web
 The browser host is a fullscreen canvas. Run `npm run serve:web` after building
 and open the printed local URL.
 
-### Interactive solver inspection
+### Interactive solver and capacity inspection
 
 The deployed browser includes the explicit solver-inspection surface so a
 candidate can be judged directly on desktop or mobile without editing the URL.
@@ -122,12 +125,24 @@ under `physbox5.physics.v2`, migrates the older solver-only key, restores the
 complete configuration on the next launch, and keeps the URL synchronized
 automatically for reproducibility. No query-string editing is required.
 
+Open **MENU → WORLD** to choose **64 SLOTS**, **256 SLOTS**, **1K SLOTS**, or
+**10K SLOTS**. Selection rebuilds and restarts the current scenario immediately
+while retaining camera and tool state. The HUD reports live/effective body
+slots, point capacity, allocated bytes, and overflow. The browser stores this
+choice separately under `physbox5.world.v1` and restores it on the next launch.
+The higher tiers are deliberately labeled as potentially slow: 10K proves that
+the real product graph can be constructed and executed, not that every device
+can simulate or render 10K bodies at 60 Hz. The cross-host default remains 64;
+an authored scenario that starts larger receives the minimum power-of-two
+headroom needed to load and reports both requested and effective capacity.
+
 The same opt-in profile is available to the shared desktop host when direct
 launch control is useful:
 
 ```sh
 cargo run -p physbox-desktop --features solver-lab -- \
   --scenario solver-lab-stack-16 \
+  --body-capacity 256 \
   --solver soft-coupled \
   --sim-hz 60 --substeps 4 --iterations 1 \
   --contact-hz 30 --contact-damping 10 --static-contact-scale 8

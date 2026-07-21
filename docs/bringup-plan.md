@@ -13,8 +13,9 @@ slip instead of catch-up.
 The compact [product capability ledger](topics/product-capability-status.md)
 records what is implemented, limited, missing, and deferred without requiring
 the historical tacticals to be reconstructed. S20 owns the validation diet;
-S21 is the current physics workstream and owns the P5.3 broadphase bakeoff,
-winner integration, and remaining physical-Android qualification.
+S21 owns the now-complete P5.3 broadphase bakeoff, winner integration, and
+physical-Android qualification. Sleeping/waking and current-default rigid
+acceptance are the next engine milestones.
 
 Active cross-milestone execution from the remaining P5.2/S4 closure through
 P5.4 is tracked by
@@ -405,7 +406,11 @@ of grid's fixed evidence allocation. S21.5 now integrates SAP into the one
 shared product graph with an 8N candidate bound and no automatic fallback.
 Clean integrated 100/1K/10K Metal curves replay exactly and remain capacity
 safe; the maintained 100-body Browser WebGPU scene sustains `0.993` effective
-scale with zero slip. Physical-Android qualification remains before closure.
+scale with zero slip. Physical Pixel 7a Vulkan closes S21: default bootstrap
+pacing sustains `1.0003` effective scale, and the 103-body bucket executes
+correctly and capacity-clean while honestly reporting `0.591` slow time.
+Shared 64/256/1K/10K world-capacity presets make larger graphs explicit
+opt-ins; they are not additional sustained-rate claims.
 
 - Preserve brute force as pair-completeness oracle.
 - Implement sorted sweep-and-prune and multi-cell grid candidates.
