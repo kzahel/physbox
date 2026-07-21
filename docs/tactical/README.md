@@ -156,7 +156,7 @@ This README remains the unnumbered index.
 | S16 | Authority event-structure decomposition | [016-authority-event-structure-decomposition.md](016-authority-event-structure-decomposition.md) | manual checkpoint; no declared routed event structure, A4 held pending human release, 2026-07-20 |
 | S17 | Branch-robust product-relative promotion study | [017-branch-robust-product-promotion.md](017-branch-robust-product-promotion.md) | superseded by S18 after Metal rejected the sole candidate; Android/review work intentionally incomplete, 2026-07-20 |
 | S18 | Solver check loop and coefficient exploration | [018-solver-check-loop-and-coefficient-exploration.md](018-solver-check-loop-and-coefficient-exploration.md) | complete; key ordering fixed, no coefficient survivor, residual band accepted, opt-in interactive A/B lab delivered, 2026-07-21 |
-| S19 | Soft default and physics configuration | [019-soft-default-and-physics-configuration.md](019-soft-default-and-physics-configuration.md) | active; soft-coupled is the code default with shared rate/resolution/contact configuration, cross-host closure pending, 2026-07-21 |
+| S19 | Soft default and physics configuration | [019-soft-default-and-physics-configuration.md](019-soft-default-and-physics-configuration.md) | active closure; soft default/configuration and cross-host evidence pass, exact deployment pending, 2026-07-21 |
 
 ## Conventions
 

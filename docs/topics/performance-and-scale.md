@@ -1,6 +1,6 @@
 # Performance and scale contract
 
-Status: active contract with provisional targets, 2026-07-14.
+Status: active contract with provisional targets, updated 2026-07-21.
 
 Governing direction:
 [one GPU-resident 2D physics world](physbox5-unified-gpu-physics.md).
@@ -927,16 +927,19 @@ at `13.51 FPS` (`74.03 ms` mean, `94.83 ms` P95); markers on measured `13.31
 FPS`, so serialization/logging was not the controlling cost. The shared
 free-flight control on the same device held `60.07 FPS` and `16.72 ms` P95.
 
-The product now chooses the previously measured workgroup-per-island reserve
-only for the 64-body interactive capacity tier, reducing bootstrap from 1,434
-to 195 dispatches. Larger tiers keep the S6.1 scalable per-color schedule
-because the island implementation regresses the same-Metal generated 1K P50
-from `8.781` to `21.884 ms`. `android/validate-pacing.sh` is the maintained
+The former hard/direct product chose the previously measured
+workgroup-per-island reserve only for the 64-body interactive capacity tier,
+reducing bootstrap from 1,434 to 195 dispatches. Larger hard/direct tiers keep
+the S6.1 scalable per-color schedule because the island implementation
+regresses the same-Metal generated 1K P50 from `8.781` to `21.884 ms`. The
+soft-coupled default uses its own authority-source schedule and reports 68
+bootstrap dispatches. `android/validate-pacing.sh` is the maintained
 physical regression lane: it requires a passing free-flight device control,
 then independently gates marker-off bootstrap presentation and marker-derived
 fixed-step pacing. The Pixel 7a result is `60.06 FPS`, `16.75 ms` presentation
 P95, `59.38` steps/s, `0.990` effective scale, and `0.067 s` slipped during the
-six-second all-marker observation. This is a named-device small-world gate,
+six-second all-marker observation for the former hard default. This is a
+named-device small-world gate,
 not a 3K-10K mobile scale claim or a heterogeneous-CI threshold.
 
 S9 cost disposition, 2026-07-18: the
@@ -1008,7 +1011,19 @@ internal interval while performing different outer contact-generation and
 presentation work. A higher-quality preset may cost more, but slow-time pacing
 cannot turn that cost into a sustained-rate claim. Default-soft and
 hard-comparison curves must be freshly paired on the same revision and named
-adapter when S19 changes the ordinary default.
+adapter for the S19 ordinary-default change.
+
+S19.8 now supplies that fresh pairing in the
+[Metal complete-step package](../../evidence/p5.2b-s19.8-metal-complete-step/README.md).
+For hard/soft at 32/256/1K manifolds, GPU P50 is `1.005/0.772`,
+`6.212/2.145`, and `6.420/3.384 ms`; GPU P95 is `1.050/0.829`,
+`6.262/2.174`, and `6.512/3.478 ms`. The package records whole-host and CPU
+encode/submit distributions, dispatch/allocation vectors, exact replay,
+capacity state, and cost per simulated second. On the physical Pixel 7a, the
+soft default presents `60.01 FPS` at `16.91 ms` P95 and advances `55.77`
+steps/s with effective scale `0.930`; `0.433 s` slips during the six-second
+sample instead of being caught up. This replaces the former-default mobile
+number for current small-world gating, not for a 3K-10K scale claim.
 
 ## Regression and claim gates
 

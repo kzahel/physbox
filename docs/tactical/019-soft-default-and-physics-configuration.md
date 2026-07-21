@@ -1,11 +1,12 @@
 # S19: soft default and physics configuration
 
-Status: active implementation, 2026-07-21. Human review selects the interactively preferred
+Status: active closure, 2026-07-21. Human review selects the interactively preferred
 soft-coupled family as the product direction, accepts its current compliance
 and tall-stack limitation as a visible starting trade-off, and authorizes a
 bounded product configuration for fixed rate, substeps, iterations, and
 contact response. The code default and complete shared configuration path are
-now soft-coupled; cross-host closure and deployment remain in progress.
+now soft-coupled; maintained host validation is clean and exact deployment
+remains in progress.
 
 Governing topics:
 [physics configuration and solver profiles](../topics/physics-configuration-and-solver-profiles.md)
@@ -247,7 +248,7 @@ the same touch bounds with six profiles at those targets and 2400x1080.
 
 ### S19.7 — useful presets and subjective comparison
 
-- [ ] Measure a small 60 Hz soft resolution matrix containing 2/4/8 substeps
+- [x] Measure a small 60 Hz soft resolution matrix containing 2/4/8 substeps
   and 1/2 biased iterations on 4/8/16 stacks, rectangle bucket, impact,
   friction, restitution, reset/grab, and construction. Do not assume more work
   improves quality.
@@ -257,7 +258,7 @@ the same touch bounds with six profiles at those targets and 2400x1080.
 - [x] Re-expose the existing S6 30/10/staticx1 prior-contact soft lane as a
   named subjective profile only if it can be represented by shared solver and
   identity configuration rather than a special scenario.
-- [ ] Run an explicit human review of the shipped presets on ordinary and tall
+- [x] Run an explicit human review of the shipped presets on ordinary and tall
   stacks, piles, impacts, frictional motion, and direct manipulation. Record
   preferred feel and visible drawbacks beside objective metrics.
 
@@ -287,22 +288,27 @@ but produces a much larger post-loss velocity and costs 34-103% more. Two
 substeps is simply worse. The product therefore ships one reviewed editable
 soft preset plus hard/direct; 30/10/staticx1 and every matrix arm remain
 reachable as custom soft configurations without acquiring misleading product
-names. The remaining S19.7 checkbox requires the broader response corpus and
-final live human inspection.
+names. All six arms also pass bilateral impact, off-center response, friction,
+restitution, and short-stack predicates. Focused Metal tests cover exact
+30/60/120 Hz replay and every arm's scripted-grab entry and GPU construction;
+the maintained default completes the full reset/grab script. Human review
+already selected the shipped soft seed over hard/direct, explicitly preferred
+its ordinary and tall-stack feel, and accepted visible tall-stack overlap. No
+new preset was admitted after that review.
 
 ### S19.8 — cross-host, performance, and closure
 
-- [ ] Run the production Rust gates plus focused solver-lab/configuration tests,
+- [x] Run the production Rust gates plus focused solver-lab/configuration tests,
   wasm and Android checks, boundary checks, browser smoke, release APK, and
   physical Android validation. Use an AVD only when available and shut it down
   immediately afterward.
-- [ ] Record default-soft and hard-comparison 32/256/1K complete-step work,
+- [x] Record default-soft and hard-comparison 32/256/1K complete-step work,
   P50/P95 GPU time, CPU encode/submit, allocation, and capacity on the named
   Metal adapter; record useful browser and Pixel 7a interactive pacing.
-- [ ] Report cost per outer step and per simulated second for every shipped
+- [x] Report cost per outer step and per simulated second for every shipped
   preset, including effective scale/slip. Do not call slow-time execution
   sustained real-time performance.
-- [ ] Update all current-status documentation, examples, screenshots, labels,
+- [x] Update all current-status documentation, examples, screenshots, labels,
   and deployment assertions to the canonical soft default; preserve S6-S18 as
   historical evidence rather than rewriting them.
 - [ ] Commit and push the exact validated change, deploy the exact pushed SHA,
@@ -313,6 +319,34 @@ Gate: the deployed ordinary site and all maintained app defaults select the
 same soft configuration; hard/direct remains explicitly selectable; fresh
 artifacts expose known limitations and complete cost; no pending deployment or
 undocumented platform difference remains.
+
+Fresh S19.8 Metal evidence at source
+`ecc18617fdfca1cc7c887ee9c07d80e7137a890a` is recorded in
+[the complete-step package](../../evidence/p5.2b-s19.8-metal-complete-step/README.md).
+At 32/256/1K manifolds hard/soft GPU P50 is `1.005/0.772`,
+`6.212/2.145`, and `6.420/3.384 ms`; GPU P95 is `1.050/0.829`,
+`6.262/2.174`, and `6.512/3.478 ms`. All twenty retained samples per lane are
+finite, exact-replay and capacity clean. The package reports whole-host and
+CPU encode/submit distributions, dispatch/allocation vectors, and 60 Hz cost
+per simulated second.
+
+The ordinary browser smoke run `c046e9d1-ab53-4311-bdde-8f178c500474`
+reports the canonical soft configuration hash
+`42c9e256d6c684148edd79ca18ddb7f569b53e745edfef0592842ce8ca783e9f`,
+one-step maximum admission, zero slip, and effective scale `1.0`. The physical
+Pixel 7a/Vulkan APK reports the same profile/hash and a clean 1080x2400 frame.
+Its maintained six-second pacing sample presents `60.01 FPS` at `16.91 ms`
+P95 and advances `55.77` steps/s with effective scale `0.930`; `0.433 s` of
+overload is honestly slipped rather than caught up. Artifacts are
+`/tmp/physbox5-web.json`, `/tmp/physbox5-android-device.png.json`, and
+`/tmp/physbox5-android-pacing.json`.
+
+Final pre-deployment gates pass: formatting; 97 production engine tests plus
+contracts/launch/shell/web; production clippy with warnings denied; focused
+`physbox-check` test and clippy; wasm32 and arm64 Android checks; headless
+Metal smoke; platform boundaries; ordinary and solver-lab browser smokes;
+APK build; physical Pixel 7a validation and pacing; responsive phone and
+landscape captures; and the tracked evidence verifier.
 
 ## Required implementation gates
 
