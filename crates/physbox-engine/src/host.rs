@@ -1386,9 +1386,9 @@ impl EngineHost {
                     complete,
                     passed: complete,
                     reason: if complete {
-                        "100-body GPU bucket completed the declared all-pairs baseline"
+                        "100-body GPU bucket completed the selected broadphase path"
                     } else {
-                        "waiting for 600 all-pairs bucket steps"
+                        "waiting for 600 GPU broadphase bucket steps"
                     },
                 }
             }
