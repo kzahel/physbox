@@ -1016,6 +1016,16 @@ correctness failure. Record candidate amplification, duplicate count, maximum
 cell occupancy or traversal depth, capacity high-water, and every overflow.
 No capacity failure may discard a pair silently.
 
+S21 evidence checkpoint, 2026-07-21: clean Metal and Browser WebGPU matrices
+qualify both declared candidates through 100K and recommend full-sort one-axis
+SAP. SAP wins every native scale row at 10K and above with roughly one quarter
+of grid's fixed evidence allocation. Grid is the recorded rejected alternative
+and no LBVH addendum is justified. This is a recommendation awaiting the
+required human selection, not a product decision: all-pairs remains wired into
+the shared graph until S21.5 integrates only the selected winner and qualifies
+it on browser and physical Android. The measured record and reconsideration
+triggers are in [S21](../tactical/021-scalable-broadphase.md).
+
 ## What to learn from existing engines
 
 ### Box2D rigid oracle

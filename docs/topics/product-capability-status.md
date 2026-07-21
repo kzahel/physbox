@@ -44,7 +44,7 @@ quality. Known limitations remain part of the row.
 | BODY-1 | Fixed and dynamic bodies | **Implemented** | GPU-owned generational slots support construction, erase, reset, and reuse. General kinematic bodies are not exposed. |
 | BODY-2 | Circles and oriented rectangles | **Implemented** | Analytic circle/circle, circle/rectangle, and clipped rectangle/rectangle contact are the complete product shape set. |
 | BODY-3 | Capsules, convex polygons, chains, terrain, compounds | **Deferred** | Follow minimal rigid acceptance and a selected scalable broadphase. |
-| COLL-1 | Broadphase candidate generation | **Limited** | Product path remains complete all-pairs. Versioned brute-force authority plus unintegrated GPU SAP/grid candidates now exist for S21 evidence; no automatic fallback or winner is selected. |
+| COLL-1 | Broadphase candidate generation | **Limited** | Product path remains complete all-pairs. Clean S21 evidence recommends the unintegrated GPU SAP candidate over grid; human selection is required and no automatic fallback exists. |
 | COLL-2 | Contact persistence and warm start | **Implemented** | Stable generational pair slots and body-edge views retain impulses and fail closed on capacity overflow. |
 | COLL-3 | Friction and restitution | **Implemented** | Coulomb friction and a distinct restitution stage are exercised by shared fixtures; broader parity remains P5.4 work. |
 | COLL-4 | Speculative contacts and overlap recovery | **Implemented** | Bounded speculative distance and depenetration velocity are configurable; deep/tall overlap remains a known limitation. |
@@ -74,7 +74,7 @@ quality. Known limitations remain part of the row.
 | ID | Capability | Status | Current boundary / next gate |
 | --- | --- | --- | --- |
 | SCALE-1 | Small-world rigid scenes | **Implemented** | Current all-pairs path supports the maintained small interactive tier and 100-body diagnostic buckets with explicit capacity. |
-| SCALE-2 | Scalable broadphase | **In progress** | Canonical corpus, exact brute authority, capacity-safe SAP/grid candidates, and focused Metal/browser lanes exist. Clean comparative evidence, human selection, and product integration remain. |
+| SCALE-2 | Scalable broadphase | **In progress** | Clean 32-through-100K Metal/browser evidence qualifies both candidates and recommends SAP. Human selection, product integration, complete curves, and selected-winner Android qualification remain. |
 | SCALE-3 | 1K-100K product-world claims | **Not implemented** | Existing authored-contact/isolated-solver measurements are not scalable end-to-end body claims. |
 | SCALE-4 | Mostly-sleeping scale | **Not implemented** | Requires sleeping, active compaction, and selected broadphase integration. |
 | QUAL-1 | Box2D process oracle | **Implemented** | Clean pinned native process covers current circle/rectangle projections, public manifolds, selected actions, and deterministic results. |
