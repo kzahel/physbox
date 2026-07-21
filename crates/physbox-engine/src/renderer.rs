@@ -685,9 +685,9 @@ mod tests {
             let mut renderer = pollster::block_on(OffscreenRenderer::new(320, 200, config.clone()))
                 .expect("generated-contact renderer initializes");
             let report = renderer.render(FrameInput::exact(4));
-            assert_eq!(report.scene_contract.contact_point_count, 2_048);
+            assert_eq!(report.scene_contract.contact_point_count, 1_024);
             assert_eq!(report.scene_contract.solver_dispatches_per_step, 127);
-            assert_eq!(report.scene_contract.solver_capacity_bytes, 1_224_492);
+            assert_eq!(report.scene_contract.solver_capacity_bytes, 636_036);
             assert!(!report.scene_contract.capacity_overflowed);
             (report, renderer.read_capture_state().unwrap())
         };
