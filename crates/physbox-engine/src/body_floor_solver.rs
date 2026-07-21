@@ -5058,9 +5058,6 @@ fn validate_experiment_settings(
     execution: GpuSolverExecutionV4,
 ) -> Result<(), String> {
     execution.validate()?;
-    if settings.fixed_dt.get().to_bits() != (1.0_f32 / 60.0).to_bits() {
-        return Err("GPU solver experiments retain the governed 60 Hz fixed dt".to_owned());
-    }
     if !(1..=16).contains(&settings.substeps) || !(1..=8).contains(&settings.iterations) {
         return Err(
             "GPU solver experiments require 1..=16 substeps and 1..=8 iterations".to_owned(),
@@ -7594,6 +7591,8 @@ mod tests {
         .unwrap();
         let block_execution =
             GpuSolverExecutionV4::normal_experiment(GpuNormalSolverV4::ManifoldBlock, true, true);
+        validate_experiment_settings(&scenario.settings, block_execution).unwrap();
+        scenario.settings.fixed_dt = physbox_contracts::FiniteF32::new(1.0 / 75.0).unwrap();
         validate_experiment_settings(&scenario.settings, block_execution).unwrap();
         let block_topology = TopologyLayout::new(
             GpuGatherTopology::StableBodyEdge,

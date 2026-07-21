@@ -14,6 +14,9 @@ use physbox_lab::settling::centered_stack_structure;
 const DEFAULT_HERTZ: f32 = 30.0;
 const DEFAULT_DAMPING: f32 = 10.0;
 const DEFAULT_STATIC_SCALE: f32 = 2.0;
+const DEFAULT_SIM_HERTZ: u32 = 60;
+const DEFAULT_SUBSTEPS: u32 = 4;
+const DEFAULT_ITERATIONS: u32 = 1;
 const SUBMISSION_BATCH_STEPS: u32 = 64;
 const QUIET_SPEED_LIMIT: f32 = 0.025;
 
@@ -144,6 +147,9 @@ impl Scene {
 
 #[derive(Debug)]
 struct Arguments {
+    sim_hertz: u32,
+    substeps: u32,
+    iterations: u32,
     hertz: f32,
     damping: f32,
     static_scale: f32,
@@ -155,6 +161,9 @@ struct Arguments {
 impl Default for Arguments {
     fn default() -> Self {
         Self {
+            sim_hertz: DEFAULT_SIM_HERTZ,
+            substeps: DEFAULT_SUBSTEPS,
+            iterations: DEFAULT_ITERATIONS,
             hertz: DEFAULT_HERTZ,
             damping: DEFAULT_DAMPING,
             static_scale: DEFAULT_STATIC_SCALE,
@@ -185,6 +194,9 @@ impl Arguments {
                 .get(index + 1)
                 .ok_or_else(|| format!("{flag} requires a value"))?;
             match flag.as_str() {
+                "--sim-hz" => arguments.sim_hertz = parse_bounded_u32(flag, value, 15, 240)?,
+                "--substeps" => arguments.substeps = parse_bounded_u32(flag, value, 1, 8)?,
+                "--iterations" => arguments.iterations = parse_bounded_u32(flag, value, 1, 4)?,
                 "--hz" => arguments.hertz = parse_f32(flag, value)?,
                 "--damping" => arguments.damping = parse_f32(flag, value)?,
                 "--static-scale" => arguments.static_scale = parse_f32(flag, value)?,
@@ -276,6 +288,9 @@ fn run(arguments: Arguments) -> Result<(), String> {
         for lane in arguments.lane.lanes().iter().copied() {
             let mut scenario = base.clone();
             if lane == Lane::Candidate {
+                scenario.settings.fixed_dt = finite("--sim-hz", 1.0 / arguments.sim_hertz as f32)?;
+                scenario.settings.substeps = arguments.substeps;
+                scenario.settings.iterations = arguments.iterations;
                 scenario.settings.contact_softness = Some(softness);
             }
             let row = run_row(&runner, scene, lane, &scenario)?;
@@ -470,15 +485,18 @@ fn print_coefficients(
     arguments: &Arguments,
     softness: ContactSoftnessPolicyV1,
 ) -> Result<(), String> {
-    let fixed_dt = 1.0 / 60.0;
-    let substep_dt = fixed_dt / 4.0;
+    let fixed_dt = 1.0 / arguments.sim_hertz as f32;
+    let substep_dt = fixed_dt / arguments.substeps as f32;
     let effective_dynamic_hertz = softness.contact_hertz.get().min(0.125 / substep_dt);
     let effective_static_hertz =
         effective_dynamic_hertz * softness.static_contact_hertz_multiplier.get();
     let dynamic = gpu_contact_softness_coefficients(softness, substep_dt, false)?;
     let static_contact = gpu_contact_softness_coefficients(softness, substep_dt, true)?;
     println!(
-        "physbox-check requested hz={:.6} damping={:.6} static-scale={:.6}; effective dynamic-hz={:.6} static-hz={:.6}",
+        "physbox-check sim-hz={} substeps={} iterations={}; requested hz={:.6} damping={:.6} static-scale={:.6}; effective dynamic-hz={:.6} static-hz={:.6}",
+        arguments.sim_hertz,
+        arguments.substeps,
+        arguments.iterations,
         arguments.hertz,
         arguments.damping,
         arguments.static_scale,
@@ -578,6 +596,16 @@ fn parse_f32(flag: &str, value: &str) -> Result<f32, String> {
     Ok(parsed)
 }
 
+fn parse_bounded_u32(flag: &str, value: &str, minimum: u32, maximum: u32) -> Result<u32, String> {
+    let parsed = value
+        .parse::<u32>()
+        .map_err(|error| format!("invalid {flag} {value}: {error}"))?;
+    if !(minimum..=maximum).contains(&parsed) {
+        return Err(format!("{flag} must be in {minimum}..={maximum}"));
+    }
+    Ok(parsed)
+}
+
 fn finite(label: &str, value: f32) -> Result<FiniteF32, String> {
     FiniteF32::new(value).map_err(|error| format!("invalid {label}: {error}"))
 }
@@ -588,10 +616,12 @@ fn display(error: impl std::fmt::Display) -> String {
 
 fn print_help() {
     println!(
-        "physbox-check [--hz N] [--damping N] [--static-scale N] \
+        "physbox-check [--sim-hz N] [--substeps N] [--iterations N] \
+         [--hz N] [--damping N] [--static-scale N] \
          [--lane both|selected|candidate] \
          [--scenes stack4,stack8,stack16,bucket] [--steps N]\n\n\
-         Defaults: --hz 30 --damping 10 --static-scale 2 --lane both \
+         Defaults: --sim-hz 60 --substeps 4 --iterations 1 --hz 30 \
+         --damping 10 --static-scale 2 --lane both \
          --scenes stack4,stack8,stack16,bucket. Stacks run 1200 steps and the \
          rectangle bucket runs 600; --steps overrides every selected scene. \
          stack32 and stack64 are available as optional diagnostics."
