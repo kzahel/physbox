@@ -1,4 +1,4 @@
-use std::mem::size_of;
+use std::{mem::size_of, sync::Arc};
 
 use bytemuck::{Pod, Zeroable};
 use physbox_contracts::{
@@ -12,6 +12,11 @@ use wgpu::util::DeviceExt;
 pub const BODY_BYTES_PER_SLOT: u32 = 64;
 pub const BODY_COMMAND_BYTES: u32 = 48;
 pub const BODY_COMMAND_CAPACITY: u32 = 64;
+pub(crate) const ACTIVE_BODY_STATE_WORDS: u32 = 20;
+pub(crate) const ACTIVE_BODY_DISPATCH_64_OFFSET: u64 = 4 * size_of::<u32>() as u64;
+pub(crate) const ACTIVE_BODY_DISPATCH_256_OFFSET: u64 = 7 * size_of::<u32>() as u64;
+pub(crate) const ACTIVE_BODY_WINNER_DISPATCH_OFFSET: u64 = 10 * size_of::<u32>() as u64;
+pub(crate) const ACTIVE_BODY_DRAW_OFFSET: u64 = 13 * size_of::<u32>() as u64;
 
 const FLAG_LIVE: u32 = 1 << 0;
 const FLAG_SLEEPING: u32 = 1 << 1;
@@ -48,6 +53,12 @@ struct BodyMetadataRaw {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod, Zeroable)]
+struct ActiveBodyStateRaw {
+    values: [u32; ACTIVE_BODY_STATE_WORDS as usize],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Pod, Zeroable)]
 struct BodyCommandRaw {
     kind_slot_generation_sequence: [u32; 4],
     data0: [f32; 4],
@@ -58,6 +69,7 @@ pub(crate) struct GpuBodyResetData {
     poses: Vec<BodyPoseRaw>,
     motions: Vec<BodyMotionRaw>,
     metadata: Vec<BodyMetadataRaw>,
+    active_bodies: Vec<u32>,
 }
 
 struct PackedBodies {
@@ -66,12 +78,14 @@ struct PackedBodies {
     motions: Vec<BodyMotionRaw>,
     properties: Vec<BodyPropertiesRaw>,
     metadata: Vec<BodyMetadataRaw>,
+    active_bodies: Vec<u32>,
 }
 
 const _: () = assert!(size_of::<BodyPoseRaw>() == 16);
 const _: () = assert!(size_of::<BodyMotionRaw>() == 16);
 const _: () = assert!(size_of::<BodyPropertiesRaw>() == 16);
 const _: () = assert!(size_of::<BodyMetadataRaw>() == 16);
+const _: () = assert!(size_of::<ActiveBodyStateRaw>() == 80);
 const _: () = assert!(size_of::<BodyCommandRaw>() == BODY_COMMAND_BYTES as usize);
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -259,6 +273,7 @@ pub struct GpuBodyStorage {
     motion: wgpu::Buffer,
     properties: wgpu::Buffer,
     metadata: wgpu::Buffer,
+    active_bodies: Arc<wgpu::Buffer>,
     commands: wgpu::Buffer,
     layout: BodyLayoutV1,
     command_capacity: u32,
@@ -287,6 +302,11 @@ impl GpuBodyStorage {
         check_buffer_limits::<BodyMotionRaw>(device, capacity, "body motion")?;
         check_buffer_limits::<BodyPropertiesRaw>(device, capacity, "body properties")?;
         check_buffer_limits::<BodyMetadataRaw>(device, capacity, "body metadata")?;
+        check_buffer_limits::<u32>(
+            device,
+            capacity + ACTIVE_BODY_STATE_WORDS,
+            "active body data",
+        )?;
         check_buffer_limits::<BodyCommandRaw>(device, command_capacity, "body commands")?;
 
         let usage = wgpu::BufferUsages::STORAGE
@@ -301,6 +321,12 @@ impl GpuBodyStorage {
             usage,
         );
         let metadata = storage_init(device, "physbox5_body_metadata", &packed.metadata, usage);
+        let active_bodies = Arc::new(storage_init(
+            device,
+            "physbox5_active_body_data",
+            &packed.active_bodies,
+            usage | wgpu::BufferUsages::INDIRECT,
+        ));
         let commands = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("physbox5_body_commands"),
             size: u64::from(command_capacity) * u64::from(BODY_COMMAND_BYTES),
@@ -315,6 +341,7 @@ impl GpuBodyStorage {
             motion,
             properties,
             metadata,
+            active_bodies,
             commands,
             layout,
             command_capacity,
@@ -348,6 +375,14 @@ impl GpuBodyStorage {
 
     pub fn metadata_buffer(&self) -> &wgpu::Buffer {
         &self.metadata
+    }
+
+    pub(crate) fn active_body_buffer(&self) -> &wgpu::Buffer {
+        &self.active_bodies
+    }
+
+    pub(crate) fn active_body_handle(&self) -> Arc<wgpu::Buffer> {
+        Arc::clone(&self.active_bodies)
     }
 
     pub fn command_buffer(&self) -> &wgpu::Buffer {
@@ -405,6 +440,11 @@ impl GpuBodyStorage {
         queue.write_buffer(&self.pose, 0, bytemuck::cast_slice(&data.poses));
         queue.write_buffer(&self.motion, 0, bytemuck::cast_slice(&data.motions));
         queue.write_buffer(&self.metadata, 0, bytemuck::cast_slice(&data.metadata));
+        queue.write_buffer(
+            &self.active_bodies,
+            0,
+            bytemuck::cast_slice(&data.active_bodies),
+        );
     }
 }
 
@@ -415,6 +455,7 @@ impl GpuBodyResetData {
             poses: packed.poses,
             motions: packed.motions,
             metadata: packed.metadata,
+            active_bodies: packed.active_bodies,
         })
     }
 }
@@ -464,6 +505,8 @@ fn pack_bodies(capacity: u32, bodies: &[BodyStateV1]) -> Result<PackedBodies, St
         };
         capacity as usize
     ];
+    let mut active_slots = Vec::with_capacity(capacity as usize);
+    let mut fixed_count = 0;
     for body in bodies {
         body.validate().map_err(|error| error.to_string())?;
         slots.reserve(body.id)?;
@@ -494,6 +537,7 @@ fn pack_bodies(capacity: u32, bodies: &[BodyStateV1]) -> Result<PackedBodies, St
         }
         if body.inverse_mass.get() == 0.0 {
             flags |= FLAG_FIXED;
+            fixed_count += 1;
         }
         metadata[index] = BodyMetadataRaw {
             generation_flags_material: [
@@ -503,14 +547,36 @@ fn pack_bodies(capacity: u32, bodies: &[BodyStateV1]) -> Result<PackedBodies, St
                 body.material.restitution.get().to_bits(),
             ],
         };
+        active_slots.push(body.id.slot);
     }
+    active_slots.sort_unstable();
+    let live_count = active_slots.len() as u32;
+    active_slots.resize(capacity as usize, 0);
+    let active_state = active_body_state(live_count, fixed_count);
+    let mut active_bodies =
+        Vec::with_capacity(ACTIVE_BODY_STATE_WORDS as usize + active_slots.len());
+    active_bodies.extend_from_slice(&active_state.values);
+    active_bodies.extend_from_slice(&active_slots);
     Ok(PackedBodies {
         slots,
         poses,
         motions,
         properties,
         metadata,
+        active_bodies,
     })
+}
+
+fn active_body_state(live_count: u32, fixed_count: u32) -> ActiveBodyStateRaw {
+    let mut values = [0; ACTIVE_BODY_STATE_WORDS as usize];
+    values[0] = live_count;
+    values[1] = live_count - fixed_count;
+    values[2] = fixed_count;
+    values[4..7].copy_from_slice(&[live_count.div_ceil(64), 1, 1]);
+    values[7..10].copy_from_slice(&[live_count.div_ceil(256), 1, 1]);
+    values[10..13].copy_from_slice(&[live_count.saturating_mul(32).div_ceil(64), 1, 1]);
+    values[13..17].copy_from_slice(&[6, live_count, 0, 0]);
+    ActiveBodyStateRaw { values }
 }
 
 fn layout_artifact(capacity: u32, attempted: u64, live: u32) -> Result<BodyLayoutV1, String> {

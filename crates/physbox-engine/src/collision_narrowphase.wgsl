@@ -62,6 +62,7 @@ struct ClipSegment {
 @group(0) @binding(14) var<uniform> params: NarrowParams;
 @group(0) @binding(15) var<storage, read> previous_pairs: array<PairRecord>;
 @group(0) @binding(16) var<storage, read_write> previous_pair_capacity: array<atomic<u32>>;
+@group(0) @binding(17) var<storage, read_write> narrow_indirect: array<atomic<u32>>;
 
 const FLAG_RECTANGLE: u32 = 1u << 8u;
 const FLAG_CIRCLE: u32 = 1u << 9u;
@@ -583,28 +584,27 @@ fn stabilize_narrowphase_identity(@builtin(global_invocation_id) invocation: vec
     if (point_count == 2u) { points[current.point_range.x + 1u] = stabilized.point1; }
 }
 
-@compute @workgroup_size(64)
-fn clear_narrowphase(@builtin(global_invocation_id) invocation: vec3u) {
-    let index = invocation.x;
-    if (index < params.counts.x) {
-        manifold_flags[index] = 0u;
-        manifold_offsets[index] = 0u;
-    }
-    if (index < 4u) {
+@compute @workgroup_size(1)
+fn prepare_narrowphase(@builtin(global_invocation_id) invocation: vec3u) {
+    if (invocation.x != 0u) { return; }
+    for (var index = 0u; index < 4u; index += 1u) {
         atomicStore(&manifold_capacity[index], 0u);
         atomicStore(&point_capacity[index], 0u);
     }
+    let candidate_count = atomicLoad(&candidate_capacity[2]);
+    atomicStore(&narrow_indirect[0], (candidate_count + 63u) / 64u);
+    atomicStore(&narrow_indirect[1], 1u);
+    atomicStore(&narrow_indirect[2], 1u);
+    atomicStore(&narrow_indirect[3], (candidate_count + 255u) / 256u);
+    atomicStore(&narrow_indirect[4], 1u);
+    atomicStore(&narrow_indirect[5], 1u);
 }
 
 @compute @workgroup_size(64)
 fn generate_narrowphase(@builtin(global_invocation_id) invocation: vec3u) {
     let index = invocation.x;
-    if (index >= params.counts.x) { return; }
     let candidate_count = atomicLoad(&candidate_capacity[2]);
-    if (index >= candidate_count) {
-        manifold_flags[index] = 0u;
-        return;
-    }
+    if (index >= candidate_count) { return; }
     let pair = candidates[index];
     let flags_a = metadata[pair.identities.x].y;
     let flags_b = metadata[pair.identities.z].y;
@@ -631,7 +631,8 @@ fn scan_manifold_blocks(@builtin(global_invocation_id) global: vec3u,
                         @builtin(workgroup_id) group: vec3u) {
     let index = global.x;
     var value = 0u;
-    if (index < params.counts.x) { value = manifold_flags[index]; }
+    let candidate_count = atomicLoad(&candidate_capacity[2]);
+    if (index < candidate_count) { value = manifold_flags[index]; }
     scan_values[local.x] = value;
     workgroupBarrier();
     var offset = 1u;
@@ -644,7 +645,7 @@ fn scan_manifold_blocks(@builtin(global_invocation_id) global: vec3u,
         workgroupBarrier();
         offset *= 2u;
     }
-    if (index < params.counts.x) {
+    if (index < candidate_count) {
         manifold_offsets[index] = scan_values[local.x] - value;
     }
     if (local.x == 255u) { scan_blocks[group.x] = scan_values[local.x]; }
@@ -654,7 +655,8 @@ fn scan_manifold_blocks(@builtin(global_invocation_id) global: vec3u,
 fn scan_manifold_block_totals(@builtin(global_invocation_id) invocation: vec3u) {
     if (invocation.x != 0u) { return; }
     var running = 0u;
-    for (var block = 0u; block < params.counts.w; block++) {
+    let block_count = (atomicLoad(&candidate_capacity[2]) + 255u) / 256u;
+    for (var block = 0u; block < block_count; block++) {
         let value = scan_blocks[block];
         scan_blocks[block] = running;
         running += value;
@@ -664,15 +666,19 @@ fn scan_manifold_block_totals(@builtin(global_invocation_id) invocation: vec3u) 
 @compute @workgroup_size(256)
 fn add_manifold_block_offsets(@builtin(global_invocation_id) global: vec3u,
                               @builtin(workgroup_id) group: vec3u) {
-    if (global.x >= params.counts.x) { return; }
+    if (global.x >= atomicLoad(&candidate_capacity[2])) { return; }
     manifold_offsets[global.x] += scan_blocks[group.x];
 }
 
 @compute @workgroup_size(1)
 fn finalize_narrowphase(@builtin(global_invocation_id) invocation: vec3u) {
     if (invocation.x != 0u) { return; }
-    let last = params.counts.x - 1u;
-    let manifold_attempted = manifold_offsets[last] + manifold_flags[last];
+    let candidate_count = atomicLoad(&candidate_capacity[2]);
+    var manifold_attempted = 0u;
+    if (candidate_count > 0u) {
+        let last = candidate_count - 1u;
+        manifold_attempted = manifold_offsets[last] + manifold_flags[last];
+    }
     let point_attempted = atomicLoad(&point_capacity[1]);
     let manifold_overflowed = manifold_attempted > params.counts.y;
     let point_overflowed = point_attempted > params.counts.z;
@@ -686,6 +692,18 @@ fn finalize_narrowphase(@builtin(global_invocation_id) invocation: vec3u) {
     atomicStore(&point_capacity[0], params.counts.z);
     atomicStore(&point_capacity[2], point_committed);
     atomicStore(&point_capacity[3], select(0u, 1u, point_overflowed));
+    atomicStore(&point_capacity[4], (point_committed + 63u) / 64u);
+    atomicStore(&point_capacity[5], 1u);
+    atomicStore(&point_capacity[6], 1u);
+    atomicStore(&point_capacity[7], (point_committed + 255u) / 256u);
+    atomicStore(&point_capacity[8], 1u);
+    atomicStore(&point_capacity[9], 1u);
+    atomicStore(&point_capacity[10], (point_committed * 2u + 63u) / 64u);
+    atomicStore(&point_capacity[11], 1u);
+    atomicStore(&point_capacity[12], 1u);
+    atomicStore(&point_capacity[13], (point_committed * 2u + 255u) / 256u);
+    atomicStore(&point_capacity[14], 1u);
+    atomicStore(&point_capacity[15], 1u);
     atomicStore(&work[5], atomicLoad(&candidate_capacity[2]));
     atomicStore(&work[6], manifold_attempted);
     atomicStore(&work[7], point_attempted);
@@ -695,7 +713,7 @@ fn finalize_narrowphase(@builtin(global_invocation_id) invocation: vec3u) {
 @compute @workgroup_size(64)
 fn scatter_narrowphase(@builtin(global_invocation_id) invocation: vec3u) {
     let index = invocation.x;
-    if (index >= params.counts.x || manifold_flags[index] == 0u ||
+    if (index >= atomicLoad(&candidate_capacity[2]) || manifold_flags[index] == 0u ||
         atomicLoad(&manifold_capacity[3]) != 0u || atomicLoad(&point_capacity[3]) != 0u) {
         return;
     }

@@ -38,6 +38,10 @@ struct PassParams {
     uints1: vec4u,
 };
 
+struct SolverWorkParams {
+    values: vec4u,
+};
+
 struct BlockSolution {
     impulses: vec2f,
     active_set: u32,
@@ -58,12 +62,55 @@ struct NormalEquation {
 @group(0) @binding(7) var<storage, read_write> topology: array<atomic<u32>>;
 @group(0) @binding(8) var<uniform> params: PassParams;
 @group(0) @binding(9) var<storage, read_write> color_dispatches: array<atomic<u32>>;
+@group(0) @binding(10) var<uniform> work_params: SolverWorkParams;
+@group(0) @binding(11) var<storage, read> point_work_state: array<u32>;
+@group(0) @binding(12) var<storage, read> active_body_state: array<u32>;
 
 var<workgroup> edge_radix_digits: array<u32, 256>;
 var<workgroup> edge_radix_histogram: array<atomic<u32>, 16>;
 var<workgroup> color_block_histogram: array<atomic<u32>, 32>;
 var<workgroup> color_block_assignments: array<u32, 64>;
 var<workgroup> color_range_scan: array<u32, 32>;
+
+const SOLVER_WORK_STATE_WORDS: u32 = 16u;
+const ACTIVE_BODY_STATE_WORDS: u32 = 20u;
+
+fn solver_point_count() -> u32 {
+    if (work_params.values.x != 0u) {
+        return atomicLoad(&topology[work_params.values.y]);
+    }
+    return params.uints0.y;
+}
+
+fn solver_body_count() -> u32 {
+    if (work_params.values.x != 0u) {
+        return atomicLoad(&topology[work_params.values.y + 1u]);
+    }
+    return params.uints0.x;
+}
+
+fn solver_body_slot(dense_index: u32) -> u32 {
+    if (work_params.values.x != 0u) {
+        return atomicLoad(&topology[
+            work_params.values.y + SOLVER_WORK_STATE_WORDS + dense_index]);
+    }
+    return dense_index;
+}
+
+@compute @workgroup_size(64)
+fn prepare_solver_work(@builtin(global_invocation_id) id: vec3u) {
+    let point_count = point_work_state[2];
+    let body_count = active_body_state[0];
+    if (id.x == 0u) {
+        atomicStore(&topology[work_params.values.y], point_count);
+        atomicStore(&topology[work_params.values.y + 1u], body_count);
+    }
+    if (id.x < body_count) {
+        atomicStore(&topology[
+            work_params.values.y + SOLVER_WORK_STATE_WORDS + id.x],
+            active_body_state[ACTIVE_BODY_STATE_WORDS + id.x]);
+    }
+}
 
 fn rotate(vector: vec2f, angle: f32) -> vec2f {
     let c = cos(angle);
@@ -184,7 +231,7 @@ fn clear_topology(@builtin(global_invocation_id) id: vec3u) {
 @compute @workgroup_size(64)
 fn count_edges(@builtin(global_invocation_id) id: vec3u) {
     let point_index = id.x;
-    if (point_index >= params.uints0.y) { return; }
+    if (point_index >= solver_point_count()) { return; }
     let point = point_inputs[point_index];
     if (!valid_point(point)) { return; }
     atomicAdd(&topology[point.ids.x * 2u + 1u], 1u);
@@ -194,7 +241,7 @@ fn count_edges(@builtin(global_invocation_id) id: vec3u) {
 @compute @workgroup_size(64)
 fn count_manifolds(@builtin(global_invocation_id) id: vec3u) {
     let point_index = id.x;
-    if (point_index >= params.uints0.y) { return; }
+    if (point_index >= solver_point_count()) { return; }
     let point = point_inputs[point_index];
     if (!valid_point(point) || point.ids.w != 0u) { return; }
     atomicAdd(&topology[params.uints0.z + point.ids.x], 1u);
@@ -213,7 +260,7 @@ fn color_contacts(@builtin(global_invocation_id) id: vec3u) {
     let cursors_base = offsets_base + params.uints1.z + 1u;
     let indices_base = cursors_base + params.uints1.z;
     var color_count = 0u;
-    for (var point_index = 0u; point_index < params.uints0.y; point_index += 1u) {
+    for (var point_index = 0u; point_index < solver_point_count(); point_index += 1u) {
         let point = point_inputs[point_index];
         if (!valid_point(point)) {
             atomicStore(&topology[params.uints0.z + point_index], 0xffffffffu);
@@ -258,7 +305,7 @@ fn color_contacts(@builtin(global_invocation_id) id: vec3u) {
                 }
             }
             atomicStore(&topology[params.uints0.z + point_index], color);
-            if (manifold_units && point_index + 1u < params.uints0.y) {
+            if (manifold_units && point_index + 1u < solver_point_count()) {
                 let next = point_inputs[point_index + 1u];
                 if (valid_point(next) && next.ids.x == point.ids.x &&
                         next.ids.y == point.ids.y && next.ids.z == point.ids.z &&
@@ -293,7 +340,7 @@ fn color_contacts(@builtin(global_invocation_id) id: vec3u) {
         } else {
             let color_bit = 1u << color;
             atomicStore(&topology[params.uints0.z + point_index], color);
-            if (manifold_units && point_index + 1u < params.uints0.y) {
+            if (manifold_units && point_index + 1u < solver_point_count()) {
                 let next = point_inputs[point_index + 1u];
                 if (valid_point(next) && next.ids.x == point.ids.x &&
                         next.ids.y == point.ids.y && next.ids.z == point.ids.z &&
@@ -336,7 +383,7 @@ fn parallel_contact_is_static(point: PointInput) -> bool {
 @compute @workgroup_size(64)
 fn initialize_parallel_colors(@builtin(global_invocation_id) id: vec3u) {
     let point_index = id.x;
-    if (point_index >= params.uints0.y) { return; }
+    if (point_index >= solver_point_count()) { return; }
     let point = point_inputs[point_index];
     let manifold_units = (params.uints1.w & 2u) != 0u;
     if (!valid_point(point)) {
@@ -360,16 +407,21 @@ fn initialize_parallel_colors(@builtin(global_invocation_id) id: vec3u) {
 
 @compute @workgroup_size(64)
 fn clear_parallel_color_winners(@builtin(global_invocation_id) id: vec3u) {
-    let winner_count = params.uints0.x * params.uints1.z;
+    let winner_count = solver_body_count() * params.uints1.z;
     if (id.x >= winner_count) { return; }
     let winners_base = bitcast<u32>(params.floats0.x);
-    atomicStore(&topology[winners_base + id.x], 0xffffffffu);
+    let dense_body = id.x / params.uints1.z;
+    let color = id.x % params.uints1.z;
+    let body = solver_body_slot(dense_body);
+    atomicStore(
+        &topology[winners_base + body * params.uints1.z + color],
+        0xffffffffu);
 }
 
 @compute @workgroup_size(64)
 fn propose_parallel_colors(@builtin(global_invocation_id) id: vec3u) {
     let point_index = id.x;
-    if (point_index >= params.uints0.y) { return; }
+    if (point_index >= solver_point_count()) { return; }
     let point = point_inputs[point_index];
     let manifold_units = (params.uints1.w & 2u) != 0u;
     if (!valid_point(point) || (manifold_units && point.ids.w != 0u)) { return; }
@@ -406,7 +458,7 @@ fn propose_parallel_colors(@builtin(global_invocation_id) id: vec3u) {
 @compute @workgroup_size(64)
 fn resolve_parallel_colors(@builtin(global_invocation_id) id: vec3u) {
     let point_index = id.x;
-    if (point_index >= params.uints0.y) { return; }
+    if (point_index >= solver_point_count()) { return; }
     let point = point_inputs[point_index];
     let manifold_units = (params.uints1.w & 2u) != 0u;
     if (!valid_point(point) || (manifold_units && point.ids.w != 0u)) { return; }
@@ -426,7 +478,7 @@ fn resolve_parallel_colors(@builtin(global_invocation_id) id: vec3u) {
     let stats_base = bitcast<u32>(params.floats0.y);
     if (winner_a == point_index && winner_b == point_index) {
         atomicStore(&topology[assignment_index], color);
-        if (manifold_units && point_index + 1u < params.uints0.y) {
+        if (manifold_units && point_index + 1u < solver_point_count()) {
             let next = point_inputs[point_index + 1u];
             if (valid_point(next) && next.ids.x == point.ids.x &&
                     next.ids.y == point.ids.y && next.ids.z == point.ids.z &&
@@ -448,7 +500,7 @@ fn resolve_parallel_colors(@builtin(global_invocation_id) id: vec3u) {
 @compute @workgroup_size(64)
 fn finalize_parallel_colors(@builtin(global_invocation_id) id: vec3u) {
     let point_index = id.x;
-    if (point_index >= params.uints0.y) { return; }
+    if (point_index >= solver_point_count()) { return; }
     let point = point_inputs[point_index];
     let manifold_units = (params.uints1.w & 2u) != 0u;
     if (!valid_point(point) || (manifold_units && point.ids.w != 0u)) { return; }
@@ -525,7 +577,7 @@ fn paired_manifold_representative(point_index: u32, point: PointInput) -> bool {
 fn store_incremental_color(point_index: u32, point: PointInput, color: u32,
                            color_base: u32, manifold_units: bool) {
     atomicStore(&topology[color_base + point_index], color);
-    if (manifold_units && point_index + 1u < params.uints0.y) {
+    if (manifold_units && point_index + 1u < solver_point_count()) {
         let next = point_inputs[point_index + 1u];
         if (valid_point(next) && next.ids.x == point.ids.x &&
                 next.ids.y == point.ids.y && next.ids.z == point.ids.z &&
@@ -558,11 +610,12 @@ fn color_contacts_incremental(@builtin(global_invocation_id) id: vec3u) {
     let previous_table = identity_base + previous_parity * identity_capacity * 6u;
     let next_table = identity_base + next_parity * identity_capacity * 6u;
     let previous_count = atomicLoad(&topology[state_base + 1u]);
-    let body_count = status_index - mask_base;
+    let body_count = solver_body_count();
 
     atomicStore(&topology[status_index], 0u);
     atomicStore(&topology[color_count_index], 0u);
-    for (var body = 0u; body < body_count; body += 1u) {
+    for (var dense_body = 0u; dense_body < body_count; dense_body += 1u) {
+        let body = solver_body_slot(dense_body);
         atomicStore(&topology[mask_base + body], 0u);
     }
     for (var color = 0u; color < params.uints1.z; color += 1u) {
@@ -575,13 +628,13 @@ fn color_contacts_incremental(@builtin(global_invocation_id) id: vec3u) {
     for (var slot = 0u; slot < identity_capacity; slot += 1u) {
         atomicStore(&topology[next_table + slot * 6u], 0u);
     }
-    for (var point_index = 0u; point_index < params.uints0.y; point_index += 1u) {
+    for (var point_index = 0u; point_index < solver_point_count(); point_index += 1u) {
         atomicStore(&topology[color_base + point_index], 0xffffffffu);
     }
 
     var color_count = 0u;
     var inserted_count = 0u;
-    for (var point_index = 0u; point_index < params.uints0.y; point_index += 1u) {
+    for (var point_index = 0u; point_index < solver_point_count(); point_index += 1u) {
         let point = point_inputs[point_index];
         if (!valid_point(point)) { continue; }
         if (manifold_units && point.ids.w != 0u) {
@@ -614,7 +667,7 @@ fn color_contacts_incremental(@builtin(global_invocation_id) id: vec3u) {
         }
     }
 
-    for (var point_index = 0u; point_index < params.uints0.y; point_index += 1u) {
+    for (var point_index = 0u; point_index < solver_point_count(); point_index += 1u) {
         let point = point_inputs[point_index];
         if (!valid_point(point) || (manifold_units && point.ids.w != 0u) ||
                 atomicLoad(&topology[color_base + point_index]) != 0xffffffffu) {
@@ -680,7 +733,7 @@ fn compact_colors(@builtin(global_invocation_id) id: vec3u) {
         running += count;
     }
     atomicStore(&topology[offsets_base + params.uints1.z], running);
-    for (var point_index = 0u; point_index < params.uints0.y; point_index += 1u) {
+    for (var point_index = 0u; point_index < solver_point_count(); point_index += 1u) {
         if (manifold_units && point_inputs[point_index].ids.w != 0u) { continue; }
         let color = atomicLoad(&topology[params.uints0.z + point_index]);
         if (color < params.uints1.z) {
@@ -701,7 +754,7 @@ fn count_color_blocks(@builtin(global_invocation_id) global: vec3u,
     }
     var color = 0xffffffffu;
     let point_index = global.x;
-    if (point_index < params.uints0.x) {
+    if (point_index < solver_point_count()) {
         let point = point_inputs[point_index];
         let manifold_units = bitcast<u32>(params.floats0.w) != 0u;
         if (valid_point(point) && (!manifold_units || point.ids.w == 0u)) {
@@ -769,8 +822,8 @@ fn prefix_color_ranges(@builtin(local_invocation_id) local: vec3u) {
     let total = color_range_scan[31u];
     let status_index = bitcast<u32>(params.floats0.y);
     let overflowed = atomicLoad(&topology[status_index]) != 0u ||
-        total > params.uints0.x;
-    if (total > params.uints0.x) {
+        total > solver_point_count();
+    if (total > solver_point_count()) {
         atomicStore(&topology[status_index], 1u);
     }
     atomicStore(&topology[params.uints1.z + color], exclusive);
@@ -786,7 +839,7 @@ fn prefix_color_ranges(@builtin(local_invocation_id) local: vec3u) {
 @compute @workgroup_size(64)
 fn scatter_color_blocks(@builtin(global_invocation_id) id: vec3u) {
     let point_index = id.x;
-    if (point_index >= params.uints0.x) { return; }
+    if (point_index >= solver_point_count()) { return; }
     let point = point_inputs[point_index];
     let manifold_units = bitcast<u32>(params.floats0.w) != 0u;
     if (!valid_point(point) || (manifold_units && point.ids.w != 0u)) { return; }
@@ -799,7 +852,7 @@ fn scatter_color_blocks(@builtin(global_invocation_id) id: vec3u) {
     let color_offset = atomicLoad(&topology[params.uints1.z + color]);
     let slot = color_offset + block_offset + local_rank;
     let indices_base = bitcast<u32>(params.floats0.x);
-    if (slot < params.uints0.x) {
+    if (slot < solver_point_count()) {
         atomicStore(&topology[indices_base + slot], point_index);
     } else {
         atomicStore(&topology[bitcast<u32>(params.floats0.y)], 1u);
@@ -827,8 +880,8 @@ fn island_root(parent_base: u32, body_index: u32) -> u32 {
 @compute @workgroup_size(1)
 fn build_solver_islands(@builtin(global_invocation_id) id: vec3u) {
     if (id.x != 0u) { return; }
-    let body_count = params.uints0.x;
-    let point_count = params.uints0.y;
+    let body_count = solver_body_count();
+    let point_count = solver_point_count();
     let parent_base = params.uints0.z;
     let body_island_base = params.uints0.w;
     let color_base = params.uints1.x;
@@ -843,7 +896,8 @@ fn build_solver_islands(@builtin(global_invocation_id) id: vec3u) {
     let island_count_index = bitcast<u32>(params.floats1.y);
     let bin_capacity = body_count * 32u;
 
-    for (var body = 0u; body < body_count; body += 1u) {
+    for (var dense_body = 0u; dense_body < body_count; dense_body += 1u) {
+        let body = solver_body_slot(dense_body);
         atomicStore(&topology[parent_base + body], 0xffffffffu);
         atomicStore(&topology[body_island_base + body], 0xffffffffu);
         atomicStore(&topology[roots_base + body], 0xffffffffu);
@@ -886,7 +940,8 @@ fn build_solver_islands(@builtin(global_invocation_id) id: vec3u) {
     }
 
     var island_count = 0u;
-    for (var body = 0u; body < body_count; body += 1u) {
+    for (var dense_body = 0u; dense_body < body_count; dense_body += 1u) {
+        let body = solver_body_slot(dense_body);
         if (atomicLoad(&topology[parent_base + body]) == 0xffffffffu) { continue; }
         let root = island_root(parent_base, body);
         atomicStore(&topology[parent_base + body], root);
@@ -896,7 +951,8 @@ fn build_solver_islands(@builtin(global_invocation_id) id: vec3u) {
             island_count += 1u;
         }
     }
-    for (var body = 0u; body < body_count; body += 1u) {
+    for (var dense_body = 0u; dense_body < body_count; dense_body += 1u) {
+        let body = solver_body_slot(dense_body);
         let root = atomicLoad(&topology[parent_base + body]);
         if (root == 0xffffffffu) { continue; }
         let island = atomicLoad(&topology[body_island_base + root]);
@@ -951,7 +1007,8 @@ fn build_solver_islands(@builtin(global_invocation_id) id: vec3u) {
 fn prefix_edges(@builtin(global_invocation_id) id: vec3u) {
     if (id.x != 0u) { return; }
     var running = 0u;
-    for (var body = 0u; body < params.uints0.x; body += 1u) {
+    for (var dense_body = 0u; dense_body < solver_body_count(); dense_body += 1u) {
+        let body = solver_body_slot(dense_body);
         let count = atomicLoad(&topology[body * 2u + 1u]);
         atomicStore(&topology[body * 2u], running);
         atomicStore(&topology[params.uints0.w + body], running);
@@ -961,11 +1018,11 @@ fn prefix_edges(@builtin(global_invocation_id) id: vec3u) {
 
 @compute @workgroup_size(64)
 fn scatter_edges(@builtin(global_invocation_id) id: vec3u) {
-    let body_index = id.x;
-    if (body_index >= params.uints0.x) { return; }
+    if (id.x >= solver_body_count()) { return; }
+    let body_index = solver_body_slot(id.x);
     let start = atomicLoad(&topology[body_index * 2u]);
     var written = 0u;
-    for (var point_index = 0u; point_index < params.uints0.y; point_index += 1u) {
+    for (var point_index = 0u; point_index < solver_point_count(); point_index += 1u) {
         let point = point_inputs[point_index];
         if (!valid_point(point)) { continue; }
         if (point.ids.x == body_index) {
@@ -982,10 +1039,11 @@ fn scatter_edges(@builtin(global_invocation_id) id: vec3u) {
 @compute @workgroup_size(64)
 fn build_stable_edges(@builtin(global_invocation_id) id: vec3u) {
     let scheduled_index = id.x;
-    if (scheduled_index >= params.uints0.y) { return; }
+    let point_count = solver_point_count();
+    if (scheduled_index >= point_count) { return; }
     let point_index = select(
         scheduled_index,
-        params.uints0.y - 1u - scheduled_index,
+        point_count - 1u - scheduled_index,
         params.uints1.y != 0u);
     let point = point_inputs[point_index];
     let edge_a = point_index * 2u;
@@ -1010,7 +1068,7 @@ fn edge_radix_histograms(@builtin(global_invocation_id) global: vec3u,
         atomicStore(&edge_radix_histogram[local.x], 0u);
     }
     workgroupBarrier();
-    if (global.x < params.uints0.x) {
+    if (global.x < solver_point_count() * 2u) {
         let key = atomicLoad(&topology[params.uints0.z + global.x * 2u]);
         let digit = (key >> params.uints1.y) & 15u;
         atomicAdd(&edge_radix_histogram[digit], 1u);
@@ -1028,7 +1086,8 @@ fn edge_radix_prefix(@builtin(global_invocation_id) id: vec3u) {
     if (id.x != 0u) { return; }
     var running = 0u;
     for (var digit = 0u; digit < 16u; digit++) {
-        for (var block = 0u; block < params.uints0.y; block++) {
+        let block_count = (solver_point_count() * 2u + 255u) / 256u;
+        for (var block = 0u; block < block_count; block++) {
             let index = params.uints1.x + block * 16u + digit;
             let count = atomicLoad(&topology[index]);
             atomicStore(&topology[index], running);
@@ -1042,13 +1101,14 @@ fn edge_radix_scatter(@builtin(global_invocation_id) global: vec3u,
                       @builtin(local_invocation_id) local: vec3u,
                       @builtin(workgroup_id) group_id: vec3u) {
     var digit = 16u;
-    if (global.x < params.uints0.x) {
+    let edge_count = solver_point_count() * 2u;
+    if (global.x < edge_count) {
         let key = atomicLoad(&topology[params.uints0.z + global.x * 2u]);
         digit = (key >> params.uints1.y) & 15u;
     }
     edge_radix_digits[local.x] = digit;
     workgroupBarrier();
-    if (global.x >= params.uints0.x) { return; }
+    if (global.x >= edge_count) { return; }
     var local_rank = 0u;
     for (var lane = 0u; lane < local.x; lane++) {
         local_rank += select(0u, 1u, edge_radix_digits[lane] == digit);
@@ -1064,14 +1124,15 @@ fn edge_radix_scatter(@builtin(global_invocation_id) global: vec3u,
 @compute @workgroup_size(64)
 fn build_edge_ranges(@builtin(global_invocation_id) id: vec3u) {
     let edge_index = id.x;
-    if (edge_index >= params.uints0.x) { return; }
+    let edge_count = solver_point_count() * 2u;
+    if (edge_index >= edge_count) { return; }
     let body = atomicLoad(&topology[params.uints0.z + edge_index * 2u]);
     if (body >= params.uints0.y) { return; }
     if (edge_index == 0u ||
         atomicLoad(&topology[params.uints0.z + (edge_index - 1u) * 2u]) != body) {
         atomicStore(&topology[params.uints0.w + body * 2u], edge_index);
     }
-    if (edge_index + 1u == params.uints0.x ||
+    if (edge_index + 1u == edge_count ||
         atomicLoad(&topology[params.uints0.z + (edge_index + 1u) * 2u]) != body) {
         atomicStore(&topology[params.uints0.w + body * 2u + 1u], edge_index + 1u);
     }
@@ -1079,8 +1140,9 @@ fn build_edge_ranges(@builtin(global_invocation_id) id: vec3u) {
 
 @compute @workgroup_size(64)
 fn integrate_velocity(@builtin(global_invocation_id) id: vec3u) {
-    let body_index = id.x;
-    if (body_index >= params.uints0.x || properties[body_index].z <= 0.0) { return; }
+    if (id.x >= solver_body_count()) { return; }
+    let body_index = solver_body_slot(id.x);
+    if (properties[body_index].z <= 0.0) { return; }
     let dt = params.floats0.x;
     var motion = motions_source[body_index];
     motion.x += params.floats1.y * dt;
@@ -1090,8 +1152,8 @@ fn integrate_velocity(@builtin(global_invocation_id) id: vec3u) {
 
 @compute @workgroup_size(64)
 fn integrate_position(@builtin(global_invocation_id) id: vec3u) {
-    let body_index = id.x;
-    if (body_index >= params.uints0.x) { return; }
+    if (id.x >= solver_body_count()) { return; }
+    let body_index = solver_body_slot(id.x);
     var motion = motions_source[body_index];
     var pose = poses[body_index];
     if (params.uints1.z != 0u && params.uints1.w != 0u) {
@@ -1154,7 +1216,7 @@ fn refreshed_point(input: PointInput, previous: PreparedPoint, reset: bool) -> P
 
 @compute @workgroup_size(64)
 fn prepare(@builtin(global_invocation_id) id: vec3u) {
-    if (id.x >= params.uints0.y) { return; }
+    if (id.x >= solver_point_count()) { return; }
     if (!valid_point(point_inputs[id.x])) {
         prepared_points[id.x] = invalid_prepared_point();
         return;
@@ -1170,7 +1232,7 @@ fn prepare(@builtin(global_invocation_id) id: vec3u) {
 
 @compute @workgroup_size(64)
 fn refresh_contacts(@builtin(global_invocation_id) id: vec3u) {
-    if (id.x >= params.uints0.y) { return; }
+    if (id.x >= solver_point_count()) { return; }
     if (!valid_point(point_inputs[id.x])) {
         prepared_points[id.x] = invalid_prepared_point();
         return;
@@ -1238,7 +1300,7 @@ fn refresh_contacts(@builtin(global_invocation_id) id: vec3u) {
 
 @compute @workgroup_size(64)
 fn emit_warm(@builtin(global_invocation_id) id: vec3u) {
-    if (id.x >= params.uints0.y) { return; }
+    if (id.x >= solver_point_count()) { return; }
     if (!valid_point(point_inputs[id.x])) { return; }
     let point = prepared_points[id.x];
     emit_pair(id.x, point, point.normal * point.data1.z + point.tangent * point.data1.w);
@@ -1246,7 +1308,7 @@ fn emit_warm(@builtin(global_invocation_id) id: vec3u) {
 
 @compute @workgroup_size(64)
 fn emit_normal(@builtin(global_invocation_id) id: vec3u) {
-    if (id.x >= params.uints0.y) { return; }
+    if (id.x >= solver_point_count()) { return; }
     if (!valid_point(point_inputs[id.x])) { return; }
     var point = prepared_points[id.x];
     let normal_velocity = relative_velocity(point, point.normal);
@@ -1386,7 +1448,7 @@ fn solve_normal_block(matrix: vec4f, base: vec2f, old: vec2f,
 fn store_block_trace(point_index: u32, matrix: vec4f, active_set: u32) {
     contributions[point_index * 2u].padding = bitcast<u32>(matrix.x);
     contributions[point_index * 2u + 1u].padding = bitcast<u32>(matrix.y);
-    if (point_index + 1u < params.uints0.y) {
+    if (point_index + 1u < solver_point_count()) {
         contributions[(point_index + 1u) * 2u].padding = bitcast<u32>(matrix.w);
         contributions[(point_index + 1u) * 2u + 1u].padding = active_set;
     }
@@ -1394,13 +1456,13 @@ fn store_block_trace(point_index: u32, matrix: vec4f, active_set: u32) {
 
 @compute @workgroup_size(64)
 fn emit_normal_block(@builtin(global_invocation_id) id: vec3u) {
-    if (id.x >= params.uints0.y) { return; }
+    if (id.x >= solver_point_count()) { return; }
     let input0 = point_inputs[id.x];
     if (!valid_point(input0) || input0.ids.w != 0u) { return; }
     var point0 = prepared_points[id.x];
     var point1 = point0;
     var point_count = 1u;
-    if (id.x + 1u < params.uints0.y) {
+    if (id.x + 1u < solver_point_count()) {
         let input1 = point_inputs[id.x + 1u];
         if (valid_point(input1) && input1.ids.x == input0.ids.x &&
                 input1.ids.y == input0.ids.y && input1.ids.z == input0.ids.z &&
@@ -1455,7 +1517,7 @@ fn emit_normal_block(@builtin(global_invocation_id) id: vec3u) {
 
 @compute @workgroup_size(64)
 fn emit_tangent(@builtin(global_invocation_id) id: vec3u) {
-    if (id.x >= params.uints0.y) { return; }
+    if (id.x >= solver_point_count()) { return; }
     if (!valid_point(point_inputs[id.x])) { return; }
     var point = prepared_points[id.x];
     let tangent_velocity = relative_velocity(point, point.tangent);
@@ -1469,7 +1531,7 @@ fn emit_tangent(@builtin(global_invocation_id) id: vec3u) {
 
 @compute @workgroup_size(64)
 fn emit_restitution(@builtin(global_invocation_id) id: vec3u) {
-    if (id.x >= params.uints0.y) { return; }
+    if (id.x >= solver_point_count()) { return; }
     if (!valid_point(point_inputs[id.x])) { return; }
     var point = prepared_points[id.x];
     let normal_velocity = relative_velocity(point, point.normal);
@@ -1487,8 +1549,8 @@ fn emit_restitution(@builtin(global_invocation_id) id: vec3u) {
 
 @compute @workgroup_size(64)
 fn gather(@builtin(global_invocation_id) id: vec3u) {
-    let body_index = id.x;
-    if (body_index >= params.uints0.x) { return; }
+    if (id.x >= solver_body_count()) { return; }
+    let body_index = solver_body_slot(id.x);
     var motion = motions_source[body_index];
     var start = atomicLoad(&topology[body_index * 2u]);
     var end = start + atomicLoad(&topology[body_index * 2u + 1u]);
@@ -1513,7 +1575,7 @@ fn solve_colored_manifold(point_index: u32, preserve_static_motion: bool) {
     var point0 = prepared_points[point_index];
     var point1 = point0;
     var point_count = 1u;
-    if (point_index + 1u < params.uints0.y) {
+    if (point_index + 1u < solver_point_count()) {
         let input1 = point_inputs[point_index + 1u];
         if (valid_point(input1) && input1.ids.x == input0.ids.x &&
                 input1.ids.y == input0.ids.y && input1.ids.z == input0.ids.z &&
@@ -1730,7 +1792,7 @@ fn colored_stage(@builtin(global_invocation_id) id: vec3u) {
         if (id.x >= count) { return; }
         let offset = atomicLoad(&topology[params.uints1.z + params.uints0.w]);
         point_index = atomicLoad(&topology[params.uints0.z + offset + id.x]);
-    } else if (point_index >= params.uints0.y ||
+    } else if (point_index >= solver_point_count() ||
                atomicLoad(&topology[params.uints0.z + point_index]) != params.uints0.w) {
         return;
     }

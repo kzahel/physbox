@@ -671,6 +671,7 @@ impl GpuGeneratedContactGraph {
                 storage,
                 scenario,
                 &solver_points,
+                narrowphase.point_capacity_handle(),
                 point_capacity,
                 gather_topology,
                 permute_edge_build,

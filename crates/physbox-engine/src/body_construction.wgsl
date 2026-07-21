@@ -33,6 +33,7 @@ struct ConstructionParams {
 @group(0) @binding(5) var<storage, read_write> state: ConstructionState;
 @group(0) @binding(6) var<storage, read_write> grab: GrabState;
 @group(0) @binding(7) var<uniform> params: ConstructionParams;
+@group(0) @binding(8) var<storage, read_write> active_bodies: array<u32>;
 
 const FLAG_LIVE: u32 = 1u << 0u;
 const FLAG_FIXED: u32 = 1u << 2u;
@@ -50,6 +51,7 @@ const RESULT_CAPACITY_FULL: u32 = 3u;
 const RESULT_DEEP_OVERLAP: u32 = 4u;
 const RESULT_ERASE_MISS: u32 = 5u;
 const RESULT_GENERATION_EXHAUSTED: u32 = 6u;
+const ACTIVE_SLOT_BASE: u32 = 20u;
 
 fn inverse_rotate(vector: vec2f, angle: f32) -> vec2f {
     let c = cos(angle);
@@ -82,6 +84,59 @@ fn candidate_before(distance: f32, slot: u32, generation: u32,
 
 fn increment(value: u32) -> u32 {
     return select(value + 1u, value, value == 0xffffffffu);
+}
+
+fn insert_active_slot(slot: u32, count: u32) {
+    var insertion = 0u;
+    loop {
+        if (insertion >= count || active_bodies[ACTIVE_SLOT_BASE + insertion] > slot) { break; }
+        insertion += 1u;
+    }
+    var cursor = count;
+    loop {
+        if (cursor <= insertion) { break; }
+        active_bodies[ACTIVE_SLOT_BASE + cursor] =
+            active_bodies[ACTIVE_SLOT_BASE + cursor - 1u];
+        cursor -= 1u;
+    }
+    active_bodies[ACTIVE_SLOT_BASE + insertion] = slot;
+    active_bodies[3] = increment(active_bodies[3]);
+}
+
+fn remove_active_slot(slot: u32, count: u32) {
+    var removal = count;
+    for (var index = 0u; index < count; index += 1u) {
+        if (active_bodies[ACTIVE_SLOT_BASE + index] == slot) {
+            removal = index;
+            break;
+        }
+    }
+    if (removal == count) { return; }
+    for (var index = removal; index + 1u < count; index += 1u) {
+        active_bodies[ACTIVE_SLOT_BASE + index] =
+            active_bodies[ACTIVE_SLOT_BASE + index + 1u];
+    }
+    active_bodies[ACTIVE_SLOT_BASE + count - 1u] = 0u;
+    active_bodies[3] = increment(active_bodies[3]);
+}
+
+fn update_active_arguments(live_count: u32) {
+    let fixed_count = active_bodies[2];
+    active_bodies[0] = live_count;
+    active_bodies[1] = live_count - fixed_count;
+    active_bodies[4] = (live_count + 63u) / 64u;
+    active_bodies[5] = 1u;
+    active_bodies[6] = 1u;
+    active_bodies[7] = (live_count + 255u) / 256u;
+    active_bodies[8] = 1u;
+    active_bodies[9] = 1u;
+    active_bodies[10] = (live_count * 32u + 63u) / 64u;
+    active_bodies[11] = 1u;
+    active_bodies[12] = 1u;
+    active_bodies[13] = 6u;
+    active_bodies[14] = live_count;
+    active_bodies[15] = 0u;
+    active_bodies[16] = 0u;
 }
 
 fn begin_result(current: ConstructionState, kind: u32,
@@ -158,6 +213,7 @@ fn place_body(current: ConstructionState, kind: u32,
         bitcast<u32>(params.circle_material.w),
         bitcast<u32>(params.material_padding.x),
     );
+    insert_active_slot(free_slot, output.header.y);
     output.header.y = increment(output.header.y);
     output.header.w = RESULT_PLACED;
     output.last_identity_kind = vec4u(free_slot, generation, kind, 0u);
@@ -202,6 +258,7 @@ fn erase_body(current: ConstructionState, kind: u32,
     motions[best_slot] = vec4f(0.0);
     properties[best_slot] = vec4f(0.0);
     metadata[best_slot] = vec4u(best_generation + 1u, 0u, 0u, 0u);
+    remove_active_slot(best_slot, output.header.y);
     output.header.y -= 1u;
     output.header.w = RESULT_ERASED;
     output.last_identity_kind = vec4u(best_slot, best_generation, kind, 0u);
@@ -225,5 +282,6 @@ fn apply_construction_intents(@builtin(global_invocation_id) id: vec3u) {
             current = erase_body(current, kind, intent.target_padding.xy);
         }
     }
+    update_active_arguments(current.header.y);
     state = current;
 }

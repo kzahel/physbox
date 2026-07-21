@@ -1,6 +1,6 @@
 #![cfg_attr(not(feature = "solver-lab"), allow(dead_code, unused_imports))]
 
-use std::mem::size_of;
+use std::{mem::size_of, sync::Arc};
 
 use bytemuck::{Pod, Zeroable};
 use physbox_contracts::{
@@ -390,14 +390,14 @@ impl GpuNarrowphaseRunner {
 }
 
 pub(crate) struct NarrowphasePipelines {
-    clear: wgpu::ComputePipeline,
+    prepare: wgpu::ComputePipeline,
     generate: wgpu::ComputePipeline,
     scan_blocks: wgpu::ComputePipeline,
     scan_totals: wgpu::ComputePipeline,
     add_offsets: wgpu::ComputePipeline,
     finalize: wgpu::ComputePipeline,
     scatter: wgpu::ComputePipeline,
-    clear_layout: wgpu::BindGroupLayout,
+    prepare_layout: wgpu::BindGroupLayout,
     generate_layout: wgpu::BindGroupLayout,
     scan_layout: wgpu::BindGroupLayout,
     finalize_layout: wgpu::BindGroupLayout,
@@ -406,10 +406,10 @@ pub(crate) struct NarrowphasePipelines {
 
 impl NarrowphasePipelines {
     pub(crate) fn new(device: &wgpu::Device) -> Self {
-        let clear_layout = layout(
+        let prepare_layout = layout(
             device,
-            "narrowphase_clear_layout",
-            &[(6, false), (7, false), (11, false), (12, false)],
+            "narrowphase_prepare_layout",
+            &[(4, false), (11, false), (12, false), (17, false)],
         );
         let generate_layout = layout(
             device,
@@ -428,7 +428,7 @@ impl NarrowphasePipelines {
         let scan_layout = layout(
             device,
             "narrowphase_scan_layout",
-            &[(6, false), (7, false), (8, false)],
+            &[(4, false), (6, false), (7, false), (8, false)],
         );
         let finalize_layout = layout(
             device,
@@ -447,6 +447,7 @@ impl NarrowphasePipelines {
             "narrowphase_scatter_layout",
             &[
                 (5, false),
+                (4, false),
                 (6, false),
                 (7, false),
                 (9, false),
@@ -478,10 +479,10 @@ impl NarrowphasePipelines {
             })
         };
         Self {
-            clear: pipeline(
-                "narrowphase_clear_pipeline",
-                "clear_narrowphase",
-                &clear_layout,
+            prepare: pipeline(
+                "narrowphase_prepare_pipeline",
+                "prepare_narrowphase",
+                &prepare_layout,
             ),
             generate: pipeline(
                 "narrowphase_generate_pipeline",
@@ -513,7 +514,7 @@ impl NarrowphasePipelines {
                 "scatter_narrowphase",
                 &scatter_layout,
             ),
-            clear_layout,
+            prepare_layout,
             generate_layout,
             scan_layout,
             finalize_layout,
@@ -530,13 +531,14 @@ pub(crate) struct NarrowphaseCase {
     manifolds: wgpu::Buffer,
     points: wgpu::Buffer,
     manifold_capacity_buffer: wgpu::Buffer,
-    point_capacity_buffer: wgpu::Buffer,
+    point_capacity_buffer: Arc<wgpu::Buffer>,
     params: wgpu::Buffer,
-    clear_group: wgpu::BindGroup,
+    prepare_group: wgpu::BindGroup,
     generate_group: wgpu::BindGroup,
     scan_group: wgpu::BindGroup,
     finalize_group: wgpu::BindGroup,
     scatter_group: wgpu::BindGroup,
+    indirect: wgpu::Buffer,
     candidate_capacity: u32,
     manifold_capacity: u32,
     point_capacity: u32,
@@ -663,7 +665,20 @@ impl NarrowphaseCase {
         let points =
             storage::<ContactPointRaw>(device, "collision_contact_points", point_capacity)?;
         let manifold_capacity_buffer = storage::<CapacityRaw>(device, "manifold_capacity", 1)?;
-        let point_capacity_buffer = storage::<CapacityRaw>(device, "point_capacity", 1)?;
+        let point_capacity_buffer = Arc::new(device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("point_capacity_and_indirect"),
+            size: 16 * size_of::<u32>() as u64,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::INDIRECT,
+            mapped_at_creation: false,
+        }));
+        let indirect = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("narrowphase_indirect"),
+            size: 6 * size_of::<u32>() as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::INDIRECT,
+            mapped_at_creation: false,
+        });
         let params = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("collision_narrowphase_params"),
             size: size_of::<NarrowParamsRaw>() as u64,
@@ -698,14 +713,14 @@ impl NarrowphaseCase {
             }));
         }
         params.unmap();
-        let clear_group = group(
+        let prepare_group = group(
             device,
-            &pipelines.clear_layout,
+            &pipelines.prepare_layout,
             &[
-                (6, &flags),
-                (7, &offsets),
+                (4, candidate.candidate_capacity_buffer()),
                 (11, &manifold_capacity_buffer),
                 (12, &point_capacity_buffer),
+                (17, &indirect),
             ],
             &params,
         );
@@ -727,7 +742,12 @@ impl NarrowphaseCase {
         let scan_group = group(
             device,
             &pipelines.scan_layout,
-            &[(6, &flags), (7, &offsets), (8, &scan_blocks)],
+            &[
+                (4, candidate.candidate_capacity_buffer()),
+                (6, &flags),
+                (7, &offsets),
+                (8, &scan_blocks),
+            ],
             &params,
         );
         let finalize_group = group(
@@ -747,6 +767,7 @@ impl NarrowphaseCase {
             device,
             &pipelines.scatter_layout,
             &[
+                (4, candidate.candidate_capacity_buffer()),
                 (5, &scratch),
                 (6, &flags),
                 (7, &offsets),
@@ -767,11 +788,12 @@ impl NarrowphaseCase {
             manifold_capacity_buffer,
             point_capacity_buffer,
             params,
-            clear_group,
+            prepare_group,
             generate_group,
             scan_group,
             finalize_group,
             scatter_group,
+            indirect,
             candidate_capacity,
             manifold_capacity,
             point_capacity,
@@ -784,41 +806,45 @@ impl NarrowphaseCase {
         encoder: &mut wgpu::CommandEncoder,
         pipelines: &NarrowphasePipelines,
     ) {
+        let mut prepare = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("physbox5_collision_narrowphase_prepare"),
+            timestamp_writes: None,
+        });
+        dispatch(&mut prepare, &pipelines.prepare, &self.prepare_group, 1);
+        drop(prepare);
         let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some("physbox5_collision_narrowphase_passes"),
             timestamp_writes: None,
         });
-        dispatch(
-            &mut pass,
-            &pipelines.clear,
-            &self.clear_group,
-            self.candidate_capacity.max(4).div_ceil(WORKGROUP_SIZE),
-        );
-        dispatch(
+        dispatch_indirect(
             &mut pass,
             &pipelines.generate,
             &self.generate_group,
-            self.candidate_capacity.div_ceil(WORKGROUP_SIZE),
+            &self.indirect,
+            0,
         );
-        dispatch(
+        dispatch_indirect(
             &mut pass,
             &pipelines.scan_blocks,
             &self.scan_group,
-            self.block_count,
+            &self.indirect,
+            3 * size_of::<u32>() as u64,
         );
         dispatch(&mut pass, &pipelines.scan_totals, &self.scan_group, 1);
-        dispatch(
+        dispatch_indirect(
             &mut pass,
             &pipelines.add_offsets,
             &self.scan_group,
-            self.block_count,
+            &self.indirect,
+            3 * size_of::<u32>() as u64,
         );
         dispatch(&mut pass, &pipelines.finalize, &self.finalize_group, 1);
-        dispatch(
+        dispatch_indirect(
             &mut pass,
             &pipelines.scatter,
             &self.scatter_group,
-            self.candidate_capacity.div_ceil(WORKGROUP_SIZE),
+            &self.indirect,
+            0,
         );
     }
 
@@ -883,6 +909,10 @@ impl NarrowphaseCase {
 
     pub(crate) fn point_capacity_buffer(&self) -> &wgpu::Buffer {
         &self.point_capacity_buffer
+    }
+
+    pub(crate) fn point_capacity_handle(&self) -> Arc<wgpu::Buffer> {
+        Arc::clone(&self.point_capacity_buffer)
     }
 
     pub(crate) fn manifold_capacity(&self) -> u32 {
@@ -1276,4 +1306,16 @@ fn dispatch<'a>(
     pass.set_pipeline(pipeline);
     pass.set_bind_group(0, group, &[]);
     pass.dispatch_workgroups(workgroups, 1, 1);
+}
+
+fn dispatch_indirect<'a>(
+    pass: &mut wgpu::ComputePass<'a>,
+    pipeline: &'a wgpu::ComputePipeline,
+    group: &'a wgpu::BindGroup,
+    indirect: &'a wgpu::Buffer,
+    offset: u64,
+) {
+    pass.set_pipeline(pipeline);
+    pass.set_bind_group(0, group, &[]);
+    pass.dispatch_workgroups_indirect(indirect, offset);
 }

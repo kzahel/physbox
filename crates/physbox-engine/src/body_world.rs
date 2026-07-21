@@ -12,7 +12,10 @@ use wgpu::util::DeviceExt;
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::body_floor_solver::FixedFloorEvidenceLayout;
-use crate::body_state::{BODY_COMMAND_BYTES, BODY_COMMAND_CAPACITY, GpuBodyResetData};
+use crate::body_state::{
+    ACTIVE_BODY_DISPATCH_64_OFFSET, ACTIVE_BODY_DRAW_OFFSET, BODY_COMMAND_BYTES,
+    BODY_COMMAND_CAPACITY, GpuBodyResetData,
+};
 use crate::construction::{
     CONSTRUCTION_CIRCLE_RADIUS, CONSTRUCTION_FRICTION, CONSTRUCTION_INTENT_BYTES,
     CONSTRUCTION_INTENT_CAPACITY, CONSTRUCTION_RECTANGLE_HALF_EXTENTS, CONSTRUCTION_RESTITUTION,
@@ -29,7 +32,6 @@ use crate::{
     body_floor_solver::GpuFixedFloorSolver, generated_contacts::GpuGeneratedContactGraph,
 };
 
-const WORKGROUP_SIZE: u32 = 64;
 const COMMAND_PARAMETER_STRIDE: usize = 256;
 const CONSTRUCTION_PARAMETER_STRIDE: usize = 256;
 const GRAB_RENDER_VERTEX_COUNT: u32 = 12;
@@ -339,6 +341,7 @@ impl GpuBodyWorld {
                     storage_entry(2, true, wgpu::ShaderStages::COMPUTE),
                     storage_entry(3, true, wgpu::ShaderStages::COMPUTE),
                     uniform_entry(4, wgpu::ShaderStages::COMPUTE),
+                    storage_entry(5, true, wgpu::ShaderStages::COMPUTE),
                 ],
             });
         let integration_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -364,6 +367,10 @@ impl GpuBodyWorld {
                 wgpu::BindGroupEntry {
                     binding: 4,
                     resource: integration_params.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: storage.active_body_buffer().as_entire_binding(),
                 },
             ],
         });
@@ -573,6 +580,7 @@ impl GpuBodyWorld {
                         },
                         count: None,
                     },
+                    storage_entry(8, false, wgpu::ShaderStages::COMPUTE),
                 ],
             });
         let construction_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -614,6 +622,10 @@ impl GpuBodyWorld {
                         offset: 0,
                         size: wgpu::BufferSize::new(size_of::<ConstructionParamsRaw>() as u64),
                     }),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 8,
+                    resource: storage.active_body_buffer().as_entire_binding(),
                 },
             ],
         });
@@ -713,6 +725,7 @@ impl GpuBodyWorld {
                 storage_entry(1, true, wgpu::ShaderStages::VERTEX),
                 storage_entry(2, true, wgpu::ShaderStages::VERTEX),
                 uniform_entry(3, wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT),
+                storage_entry(4, true, wgpu::ShaderStages::VERTEX),
             ],
         });
         let render_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -734,6 +747,10 @@ impl GpuBodyWorld {
                 wgpu::BindGroupEntry {
                     binding: 3,
                     resource: render_params.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: storage.active_body_buffer().as_entire_binding(),
                 },
             ],
         });
@@ -1113,7 +1130,10 @@ impl GpuBodyWorld {
                 });
                 pass.set_pipeline(&self.integration_pipeline);
                 pass.set_bind_group(0, &self.integration_bind_group, &[]);
-                pass.dispatch_workgroups(self.body_count.div_ceil(WORKGROUP_SIZE), 1, 1);
+                pass.dispatch_workgroups_indirect(
+                    self.storage.active_body_buffer(),
+                    ACTIVE_BODY_DISPATCH_64_OFFSET,
+                );
             }
         }
         Ok(capacity)
@@ -1201,7 +1221,7 @@ impl GpuBodyWorld {
         pass.set_pipeline(&self.background_pipeline);
         pass.draw(0..3, 0..1);
         pass.set_pipeline(&self.body_pipeline);
-        pass.draw(0..6, 0..self.body_count);
+        pass.draw_indirect(self.storage.active_body_buffer(), ACTIVE_BODY_DRAW_OFFSET);
         if plan.grab_pointer_active {
             pass.set_pipeline(&self.grab_pipeline);
             pass.set_vertex_buffer(0, self.grab_render_vertices.slice(..));
@@ -1382,6 +1402,18 @@ impl GpuBodyWorld {
                 high_water_bytes: size_of::<RenderParamsRaw>() as u64,
                 overflowed: false,
             },
+            CapacityRecordV1 {
+                class: "active-body-data".to_owned(),
+                capacity_elements: u64::from(self.body_count),
+                used_elements: u64::from(self.initial_live_count),
+                allocated_bytes: u64::from(
+                    self.body_count + crate::body_state::ACTIVE_BODY_STATE_WORDS,
+                ) * size_of::<u32>() as u64,
+                high_water_bytes: u64::from(
+                    self.initial_live_count + crate::body_state::ACTIVE_BODY_STATE_WORDS,
+                ) * size_of::<u32>() as u64,
+                overflowed: false,
+            },
             self.storage.body_capacity_record(),
             CapacityRecordV1 {
                 class: "render-target-rgba8-logical".to_owned(),
@@ -1416,6 +1448,22 @@ impl GpuBodyWorld {
             destination,
             lane_bytes * 2,
             lane_bytes,
+        );
+    }
+
+    #[cfg(test)]
+    fn copy_active_body_data(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        destination: &wgpu::Buffer,
+    ) {
+        encoder.copy_buffer_to_buffer(
+            self.storage.active_body_buffer(),
+            0,
+            destination,
+            0,
+            u64::from(self.body_count + crate::body_state::ACTIVE_BODY_STATE_WORDS)
+                * size_of::<u32>() as u64,
         );
     }
 
@@ -1754,6 +1802,26 @@ mod tests {
         construction_state_from_bytes(&read_buffer(device, &buffer)).unwrap()
     }
 
+    fn read_active_bodies(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        world: &GpuBodyWorld,
+    ) -> Vec<u32> {
+        let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("active_body_test_readback"),
+            size: u64::from(world.body_count + crate::body_state::ACTIVE_BODY_STATE_WORDS)
+                * size_of::<u32>() as u64,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("active_body_test_copy"),
+        });
+        world.copy_active_body_data(&mut encoder, &buffer);
+        queue.submit([encoder.finish()]);
+        bytemuck::cast_slice(&read_buffer(device, &buffer)).to_vec()
+    }
+
     #[test]
     fn gpu_construction_reuses_generations_clears_grab_and_rejects_failures() {
         let instance = crate::create_instance();
@@ -1842,6 +1910,11 @@ mod tests {
         assert_eq!(state.deep_overlap_failures, 1);
         assert_eq!(state.erase_miss_failures, 1);
         assert_eq!(state.grab_invalidations, 1);
+        let active = read_active_bodies(&device, &queue, &world);
+        assert_eq!(&active[..4], &[3, 2, 1, 3]);
+        assert_eq!(&active[4..10], &[1, 1, 1, 1, 1, 1]);
+        assert_eq!(&active[13..17], &[6, 3, 0, 0]);
+        assert_eq!(&active[20..23], &[0, 1, 2]);
 
         let lane_bytes = u64::from(world.body_count) * size_of::<[u32; 4]>() as u64;
         let validation = device.create_buffer(&wgpu::BufferDescriptor {
@@ -1902,6 +1975,9 @@ mod tests {
         assert_eq!(full.live_bodies, 64);
         assert_eq!(full.succeeded_intents, 62);
         assert_eq!(full.capacity_failures, 1);
+        let active = read_active_bodies(&device, &queue, &world);
+        assert_eq!(&active[..3], &[64, 63, 1]);
+        assert_eq!(&active[20..84], &(0..64).collect::<Vec<_>>());
 
         let exhausted = GpuBodyWorld::new_generated(
             &device,
@@ -1910,6 +1986,7 @@ mod tests {
             WorldCapacityPreset::default(),
         )
         .unwrap();
+        let active_before = read_active_bodies(&device, &queue, &exhausted);
         exhausted.overwrite_body_generation_for_test(&queue, 0, u32::MAX);
         let mut erase = BoundedConstructionIntents::new(CONSTRUCTION_INTENT_CAPACITY).unwrap();
         erase
@@ -1929,6 +2006,10 @@ mod tests {
         assert_eq!(generation.live_bodies, 2);
         assert_eq!(generation.succeeded_intents, 0);
         assert_eq!(generation.generation_failures, 1);
+        assert_eq!(
+            read_active_bodies(&device, &queue, &exhausted),
+            active_before
+        );
     }
 
     #[test]

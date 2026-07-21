@@ -60,11 +60,11 @@ stale, overflowed, non-replaying, or differently configured rows.
 
 ### S22.2 — deterministic live-body set
 
-- [ ] Add a capacity-accounted GPU active-slot list, live/dynamic/fixed counts,
+- [x] Add a capacity-accounted GPU active-slot list, live/dynamic/fixed counts,
   and indirect compute/render arguments initialized from authored bodies.
-- [ ] Update the set transactionally on successful place/erase and restore it
+- [x] Update the set transactionally on successful place/erase and restore it
   on authored reset; failed construction intents leave it byte-unchanged.
-- [ ] Cover sparse authored slots, slot reuse/generation advance, fixed-body
+- [x] Cover sparse authored slots, slot reuse/generation advance, fixed-body
   protection, capacity-full, deep-overlap, erase miss, reset, and exact replay.
 
 Gate: readback validation proves sorted unique live slots agree exactly with
@@ -72,10 +72,10 @@ body metadata and construction-state counts after every lifecycle case.
 
 ### S22.3 — live-count broadphase and presentation
 
-- [ ] Build SAP proxies densely from the active-slot list, size proxy radix and
+- [x] Build SAP proxies densely from the active-slot list, size proxy radix and
   enumeration through GPU-written indirect arguments, and remove the
   reserve-sized product proxy copy.
-- [ ] Integrate and render only active slots using indirect work/draw arguments.
+- [x] Integrate and render only active slots using indirect work/draw arguments.
 - [ ] Preserve the isolated snapshot SAP lane and canonical generational pair
   output unchanged.
 
@@ -84,11 +84,11 @@ reuse; sparse 256/1K/10K rows report identical live proxy/sort work.
 
 ### S22.4 — live-count narrowphase and persistence
 
-- [ ] Size narrowphase generate/scan/scatter from committed candidates without
+- [x] Size narrowphase generate/scan/scatter from committed candidates without
   clearing or scanning unused candidate capacity.
 - [ ] Size persistence preparation/matching/retirement from committed current
   and previous pair/point lists while retaining fail-closed capacity behavior.
-- [ ] Publish GPU point-count indirect arguments for the solver.
+- [x] Publish GPU point-count indirect arguments for the solver.
 
 Gate: zero-candidate and one-contact rows do bounded constant work across
 reserve presets; contact lifecycle, feature identity, cache expiry, replay,
@@ -96,12 +96,12 @@ and overflow tests remain exact.
 
 ### S22.5 — live-count solve and integration
 
-- [ ] Dispatch body passes over active slots and contact passes over committed
+- [x] Dispatch body passes over active slots and contact passes over committed
   solver points.
 - [ ] Remove reserve-sized topology/color scans from the hot path, including
   the `body_capacity * 32` color-winner clear; retain explicit allocation
   capacities and stale-state safety for reused slots.
-- [ ] Keep every solver profile on the shared operation graph and preserve
+- [x] Keep every solver profile on the shared operation graph and preserve
   selected soft-product results.
 
 Gate: structural/energy/penetration validation and exact replay remain within

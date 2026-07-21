@@ -34,6 +34,7 @@ struct CandidatePair {
 @group(0) @binding(13) var<storage, read> poses: array<vec4f>;
 @group(0) @binding(14) var<storage, read> properties: array<vec4f>;
 @group(0) @binding(15) var<storage, read> metadata: array<vec4u>;
+@group(0) @binding(16) var<storage, read> active_bodies: array<u32>;
 
 const MOBILITY_FIXED: u32 = 1u;
 const MOBILITY_LIVE: u32 = 2u;
@@ -55,6 +56,14 @@ fn pair_key(pair: PairIndex) -> u32 {
     return select(pair.values.y, pair.values.x, params.radix.x != 0u);
 }
 
+fn proxy_count() -> u32 {
+    return select(params.counts.x, active_bodies[0], params.execution.w != 0u);
+}
+
+fn proxy_block_count() -> u32 {
+    return (proxy_count() + 255u) / 256u;
+}
+
 @compute @workgroup_size(64)
 fn clear_sap_state(@builtin(global_invocation_id) invocation: vec3u) {
     let index = invocation.x;
@@ -74,15 +83,11 @@ fn clear_sap_state(@builtin(global_invocation_id) invocation: vec3u) {
 
 @compute @workgroup_size(64)
 fn compute_sap_body_aabbs(@builtin(global_invocation_id) invocation: vec3u) {
-    let index = invocation.x;
-    if (index >= params.counts.x) { return; }
+    let active_index = invocation.x;
+    if (active_index >= proxy_count()) { return; }
+    let index = active_bodies[20u + active_index];
     let identity = metadata[index];
     let flags = identity.y;
-    if ((flags & FLAG_LIVE) == 0u) {
-        input_proxies[index].identity_mobility = vec4u(index, identity.x, 0u, index);
-        input_proxies[index].lower_upper = vec4f(bitcast<f32>(0x7f7fffffu));
-        return;
-    }
     let pose = poses[index];
     let shape = properties[index].xy;
     var extent = shape;
@@ -99,8 +104,9 @@ fn compute_sap_body_aabbs(@builtin(global_invocation_id) invocation: vec3u) {
     let upper = pose.xy + expanded_extent;
     let mobility = MOBILITY_LIVE |
         select(0u, MOBILITY_FIXED, (flags & FLAG_FIXED) != 0u);
-    input_proxies[index].identity_mobility = vec4u(index, identity.x, mobility, index);
-    input_proxies[index].lower_upper = vec4f(lower, upper);
+    let proxy = Proxy(vec4u(index, identity.x, mobility, active_index), vec4f(lower, upper));
+    input_proxies[active_index] = proxy;
+    proxies_source[active_index] = proxy;
 }
 
 @compute @workgroup_size(256)
@@ -111,7 +117,7 @@ fn proxy_radix_histograms(@builtin(global_invocation_id) global: vec3u,
         atomicStore(&radix_histogram[local.x], 0u);
     }
     workgroupBarrier();
-    if (global.x < params.counts.x) {
+    if (global.x < proxy_count()) {
         let key = ordered_float_key(proxies_source[global.x].lower_upper.x);
         atomicAdd(&radix_histogram[(key >> params.radix.y) & 15u], 1u);
     }
@@ -127,7 +133,7 @@ fn proxy_radix_prefix(@builtin(global_invocation_id) invocation: vec3u) {
     if (invocation.x != 0u) { return; }
     var running = 0u;
     for (var digit = 0u; digit < 16u; digit++) {
-        for (var block = 0u; block < params.counts.y; block++) {
+        for (var block = 0u; block < proxy_block_count(); block++) {
             let index = block * 16u + digit;
             let count = proxy_radix_blocks[index];
             proxy_radix_blocks[index] = running;
@@ -141,13 +147,13 @@ fn proxy_radix_scatter(@builtin(global_invocation_id) global: vec3u,
                        @builtin(local_invocation_id) local: vec3u,
                        @builtin(workgroup_id) group: vec3u) {
     var digit = 16u;
-    if (global.x < params.counts.x) {
+    if (global.x < proxy_count()) {
         let key = ordered_float_key(proxies_source[global.x].lower_upper.x);
         digit = (key >> params.radix.y) & 15u;
     }
     radix_digits[local.x] = digit;
     workgroupBarrier();
-    if (global.x >= params.counts.x) { return; }
+    if (global.x >= proxy_count()) { return; }
     var local_rank = 0u;
     for (var lane = 0u; lane < local.x; lane++) {
         local_rank += select(0u, 1u, radix_digits[lane] == digit);
@@ -159,11 +165,12 @@ fn proxy_radix_scatter(@builtin(global_invocation_id) global: vec3u,
 @compute @workgroup_size(64)
 fn enumerate_sap_pairs(@builtin(global_invocation_id) invocation: vec3u) {
     let index_a = invocation.x;
-    if (index_a >= params.counts.x) { return; }
+    let count = proxy_count();
+    if (index_a >= count) { return; }
     let proxy_a = proxies_source[index_a];
     if ((proxy_a.identity_mobility.z & MOBILITY_LIVE) == 0u) { return; }
     var window_count = 0u;
-    for (var index_b = index_a + 1u; index_b < params.counts.x; index_b++) {
+    for (var index_b = index_a + 1u; index_b < count; index_b++) {
         let proxy_b = proxies_source[index_b];
         if (proxy_b.lower_upper.x > proxy_a.lower_upper.z) { break; }
         window_count += 1u;
@@ -203,17 +210,18 @@ fn finalize_sap_counts(@builtin(global_invocation_id) invocation: vec3u) {
     atomicStore(&indirect[3], (committed + 63u) / 64u);
     atomicStore(&indirect[4], 1u);
     atomicStore(&indirect[5], 1u);
-    atomicStore(&work[0], params.counts.x);
-    atomicStore(&work[1], params.execution.x);
-    atomicStore(&work[2], params.execution.y);
+    let count = proxy_count();
+    atomicStore(&work[0], count);
+    atomicStore(&work[1], select(params.execution.x, active_bodies[1], params.execution.w != 0u));
+    atomicStore(&work[2], select(params.execution.y, active_bodies[2], params.execution.w != 0u));
     atomicStore(&work[6], 0u);
     atomicStore(&work[7], attempted);
-    atomicStore(&work[8], params.counts.x + committed);
+    atomicStore(&work[8], count + committed);
     atomicStore(&work[9], params.radix.z + params.radix.w);
     atomicStore(&work[14], params.execution.z);
     let pair_tests = atomicLoad(&work[3]);
     let fixed_fixed = atomicLoad(&work[4]);
-    atomicStore(&collision_work[0], params.execution.x + params.execution.y);
+    atomicStore(&collision_work[0], count);
     atomicStore(&collision_work[1], pair_tests);
     atomicStore(&collision_work[2], fixed_fixed);
     atomicStore(&collision_work[3], pair_tests - fixed_fixed - attempted);

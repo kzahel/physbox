@@ -20,6 +20,7 @@ struct GrabVertexOutput {
 @group(0) @binding(1) var<storage, read> properties: array<vec4f>;
 @group(0) @binding(2) var<storage, read> metadata: array<vec4u>;
 @group(0) @binding(3) var<uniform> params: RenderParams;
+@group(0) @binding(4) var<storage, read> active_bodies: array<u32>;
 
 const FLAG_LIVE: u32 = 1u << 0u;
 const FLAG_FIXED: u32 = 1u << 2u;
@@ -57,14 +58,15 @@ fn body_vertex(
         vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(-1.0, 1.0),
         vec2f(-1.0, 1.0), vec2f(1.0, -1.0), vec2f(1.0, 1.0),
     );
-    let identity = metadata[instance_index];
+    let body_index = active_bodies[20u + instance_index];
+    let identity = metadata[body_index];
     let flags = identity.y;
     let local = corners[vertex_index];
     if ((flags & FLAG_LIVE) == 0u) {
         return BodyVertexOutput(vec4f(2.0, 2.0, 0.0, 1.0), local, flags);
     }
-    let pose = poses[instance_index];
-    let half_extents = properties[instance_index].xy;
+    let pose = poses[body_index];
+    let half_extents = properties[body_index].xy;
     let scaled = local * half_extents;
     let c = cos(pose.z);
     let s = sin(pose.z);

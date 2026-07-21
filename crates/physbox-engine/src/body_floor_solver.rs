@@ -2,7 +2,7 @@
 // They intentionally disappear from the product API when `solver-lab` is off.
 #![cfg_attr(not(feature = "solver-lab"), allow(dead_code, unused_imports))]
 
-use std::mem::size_of;
+use std::{mem::size_of, sync::Arc};
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
@@ -17,6 +17,7 @@ use serde::Serialize;
 use wgpu::util::DeviceExt;
 
 use crate::GpuBodyStorage;
+use crate::body_state::{ACTIVE_BODY_DISPATCH_64_OFFSET, ACTIVE_BODY_WINNER_DISPATCH_OFFSET};
 use crate::gpu_solver::GpuContributionEvidence;
 
 const WORKGROUP_SIZE: u32 = 64;
@@ -29,7 +30,11 @@ const COLOR_OFFSET_COUNT: u32 = MAX_COLORS + 1;
 const COLOR_INDIRECT_WORDS: u32 = MAX_COLORS * 3;
 const PARALLEL_COLOR_ROUNDS: u32 = MAX_COLORS;
 const ISLAND_INDIRECT_WORDS: u32 = 3;
+const SOLVER_WORK_STATE_WORDS: u32 = 16;
 const ISLAND_INDIRECT_OFFSET: u64 = COLOR_INDIRECT_WORDS as u64 * size_of::<u32>() as u64;
+const POINT_DISPATCH_64_OFFSET: u64 = 4 * size_of::<u32>() as u64;
+const DOUBLE_POINT_DISPATCH_64_OFFSET: u64 = 10 * size_of::<u32>() as u64;
+const DOUBLE_POINT_DISPATCH_256_OFFSET: u64 = 13 * size_of::<u32>() as u64;
 #[cfg(not(target_arch = "wasm32"))]
 const MAX_INSTRUMENTED_QUERIES_PER_SET: u32 = 4_096;
 
@@ -1390,6 +1395,12 @@ struct PassParamsRaw {
     uints1: [u32; 4],
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct SolverWorkParamsRaw {
+    values: [u32; 4],
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum GpuSolverPassKindV1 {
@@ -1554,6 +1565,22 @@ struct Operation {
     color: Option<u32>,
 }
 
+struct DynamicSolverWork {
+    pipeline: wgpu::ComputePipeline,
+    bind_group: wgpu::BindGroup,
+    point_indirect: Arc<wgpu::Buffer>,
+    body_indirect: Arc<wgpu::Buffer>,
+}
+
+#[derive(Clone, Copy)]
+enum DynamicDispatch {
+    Point64,
+    DoublePoint64,
+    DoublePoint256,
+    Body64,
+    Winner64,
+}
+
 #[derive(Clone, Copy)]
 struct TopologyLayout {
     kind: GpuGatherTopology,
@@ -1608,10 +1635,21 @@ struct TopologyLayout {
     has_island_dispatch: bool,
     has_authority_initial_transforms: bool,
     static_late: bool,
+    work_state_base: u32,
     element_count: u32,
 }
 
 impl TopologyLayout {
+    fn enable_dynamic_work(&mut self, body_capacity: u32) -> Result<(), String> {
+        self.work_state_base = self.element_count;
+        self.element_count = self
+            .element_count
+            .checked_add(SOLVER_WORK_STATE_WORDS)
+            .and_then(|end| end.checked_add(body_capacity))
+            .ok_or_else(|| "solver active-work range overflowed".to_owned())?;
+        Ok(())
+    }
+
     fn new(
         kind: GpuGatherTopology,
         body_count: u32,
@@ -1804,6 +1842,7 @@ impl TopologyLayout {
                 layout.has_authority_initial_transforms = true;
             }
         }
+        layout.work_state_base = layout.element_count;
         Ok(layout)
     }
 
@@ -1874,6 +1913,7 @@ impl TopologyLayout {
             has_island_dispatch: false,
             has_authority_initial_transforms: false,
             static_late: false,
+            work_state_base: 0,
             element_count,
         })
     }
@@ -1964,6 +2004,7 @@ impl TopologyLayout {
             has_island_dispatch: false,
             has_authority_initial_transforms: false,
             static_late: false,
+            work_state_base: 0,
             element_count,
         })
     }
@@ -2004,10 +2045,12 @@ pub(crate) struct GpuFixedFloorSolver {
     _topology: wgpu::Buffer,
     _color_indirect: Option<wgpu::Buffer>,
     _parameter_buffer: wgpu::Buffer,
+    _work_parameter_buffer: wgpu::Buffer,
     parameters: Vec<PassParamsRaw>,
     bind_ab: wgpu::BindGroup,
     bind_ba: wgpu::BindGroup,
     color_bind_ab: Option<wgpu::BindGroup>,
+    dynamic_work: Option<DynamicSolverWork>,
     topology_clear_pipeline: wgpu::ComputePipeline,
     topology_count_pipeline: wgpu::ComputePipeline,
     manifold_count_pipeline: Option<wgpu::ComputePipeline>,
@@ -2177,6 +2220,7 @@ impl GpuFixedFloorSolver {
             GpuContactCoefficientPolicyV1::AuthorityCappedSoft,
             GpuSubstepContactPolicyV1::AuthorityFixedAnchorAnalyticalSeparation,
             GpuRestitutionTimingPolicyV1::AfterEachSubstep,
+            None,
         )?;
         solver._owned_point_input = Some(point_buffer);
         Ok(solver)
@@ -2229,6 +2273,7 @@ impl GpuFixedFloorSolver {
             GpuContactCoefficientPolicyV1::AuthorityCappedSoft,
             GpuSubstepContactPolicyV1::AuthorityBranchRobustFixedAnchorAnalyticalSeparation,
             GpuRestitutionTimingPolicyV1::AfterEachSubstep,
+            None,
         )?;
         solver._owned_point_input = Some(point_buffer);
         Ok(solver)
@@ -2240,6 +2285,7 @@ impl GpuFixedFloorSolver {
         storage: &GpuBodyStorage,
         scenario: &ScenarioV1,
         point_buffer: &wgpu::Buffer,
+        point_work_state: Arc<wgpu::Buffer>,
         point_capacity: u32,
         topology: GpuGatherTopology,
         permute_edge_build: bool,
@@ -2293,6 +2339,7 @@ impl GpuFixedFloorSolver {
             contact_coefficient_policy,
             substep_contact_policy,
             restitution_timing_policy,
+            Some(point_work_state),
         )
     }
 
@@ -2383,6 +2430,7 @@ impl GpuFixedFloorSolver {
             contact_coefficient_policy,
             GpuSubstepContactPolicyV1::SELECTED,
             GpuRestitutionTimingPolicyV1::SELECTED,
+            None,
         )
     }
 
@@ -2402,6 +2450,7 @@ impl GpuFixedFloorSolver {
         contact_coefficient_policy: GpuContactCoefficientPolicyV1,
         substep_contact_policy: GpuSubstepContactPolicyV1,
         restitution_timing_policy: GpuRestitutionTimingPolicyV1,
+        point_work_state: Option<Arc<wgpu::Buffer>>,
     ) -> Result<Self, String> {
         let exact_authority_probe =
             crate::authority_gpu_probe::validate_authority_gpu_probe_runtime_tuple(
@@ -2480,7 +2529,7 @@ impl GpuFixedFloorSolver {
             );
         }
         let body_count = storage.layout().capacity_elements;
-        let topology_layout = TopologyLayout::new(
+        let mut topology_layout = TopologyLayout::new(
             topology,
             body_count,
             point_count,
@@ -2489,6 +2538,9 @@ impl GpuFixedFloorSolver {
             execution.color_unit,
             scheduling_policy,
         )?;
+        if point_work_state.is_some() {
+            topology_layout.enable_dynamic_work(body_count)?;
+        }
         if execution.uses_colored_in_place() && topology != GpuGatherTopology::StableBodyEdge {
             return Err(
                 "colored generated-contact comparison requires the stable body-edge view"
@@ -2585,6 +2637,18 @@ impl GpuFixedFloorSolver {
             contents: &parameter_bytes,
             usage: wgpu::BufferUsages::UNIFORM,
         });
+        let work_parameter_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("physbox5_floor_work_parameters"),
+            contents: bytemuck::bytes_of(&SolverWorkParamsRaw {
+                values: [
+                    u32::from(point_work_state.is_some()),
+                    topology_layout.work_state_base,
+                    0,
+                    0,
+                ],
+            }),
+            usage: wgpu::BufferUsages::UNIFORM,
+        });
         let layout_entries = [
             storage_entry(0, false),
             storage_entry(1, false),
@@ -2604,6 +2668,16 @@ impl GpuFixedFloorSolver {
                 },
                 count: None,
             },
+            wgpu::BindGroupLayoutEntry {
+                binding: 10,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: wgpu::BufferSize::new(size_of::<SolverWorkParamsRaw>() as u64),
+                },
+                count: None,
+            },
         ];
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("physbox5_floor_solver_layout"),
@@ -2619,6 +2693,7 @@ impl GpuFixedFloorSolver {
                         storage_entry(7, false),
                         layout_entries[8],
                         storage_entry(9, false),
+                        layout_entries[9],
                     ],
                 }),
             )
@@ -2637,6 +2712,7 @@ impl GpuFixedFloorSolver {
             &contributions,
             &topology,
             &parameter_buffer,
+            &work_parameter_buffer,
             None,
         );
         let bind_ba = bind_group(
@@ -2651,6 +2727,7 @@ impl GpuFixedFloorSolver {
             &contributions,
             &topology,
             &parameter_buffer,
+            &work_parameter_buffer,
             None,
         );
         let color_bind_ab = match (&color_layout, &color_indirect) {
@@ -2662,6 +2739,7 @@ impl GpuFixedFloorSolver {
                 point_buffer,
                 &topology,
                 &parameter_buffer,
+                &work_parameter_buffer,
                 indirect,
             )),
             (None, None) => None,
@@ -2671,6 +2749,62 @@ impl GpuFixedFloorSolver {
             label: Some("physbox5_floor_solver_shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("body_floor_solver.wgsl").into()),
         });
+        let dynamic_work = if let Some(point_indirect) = point_work_state {
+            let body_indirect = storage.active_body_handle();
+            let work_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("physbox5_floor_dynamic_work_layout"),
+                entries: &[
+                    storage_entry(7, false),
+                    layout_entries[9],
+                    storage_entry(11, true),
+                    storage_entry(12, true),
+                ],
+            });
+            let work_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("physbox5_floor_dynamic_work_bind_group"),
+                layout: &work_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 7,
+                        resource: topology.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 10,
+                        resource: work_parameter_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 11,
+                        resource: point_indirect.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 12,
+                        resource: body_indirect.as_entire_binding(),
+                    },
+                ],
+            });
+            let work_pipeline_layout =
+                device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("physbox5_floor_dynamic_work_pipeline_layout"),
+                    bind_group_layouts: &[&work_layout],
+                    push_constant_ranges: &[],
+                });
+            let work_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("physbox5_floor_prepare_dynamic_work"),
+                layout: Some(&work_pipeline_layout),
+                module: &shader,
+                entry_point: Some("prepare_solver_work"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                cache: None,
+            });
+            Some(DynamicSolverWork {
+                pipeline: work_pipeline,
+                bind_group: work_bind_group,
+                point_indirect,
+                body_indirect,
+            })
+        } else {
+            None
+        };
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("physbox5_floor_solver_pipeline_layout"),
             bind_group_layouts: &[&layout],
@@ -2859,10 +2993,12 @@ impl GpuFixedFloorSolver {
             _topology: topology,
             _color_indirect: color_indirect,
             _parameter_buffer: parameter_buffer,
+            _work_parameter_buffer: work_parameter_buffer,
             parameters,
             bind_ab,
             bind_ba,
             color_bind_ab,
+            dynamic_work,
             topology_clear_pipeline: pipeline("floor_topology_clear", "clear_topology"),
             topology_count_pipeline: pipeline("floor_topology_count", "count_edges"),
             manifold_count_pipeline: execution
@@ -2924,6 +3060,7 @@ impl GpuFixedFloorSolver {
     }
 
     pub(crate) fn encode_step(&self, encoder: &mut wgpu::CommandEncoder) {
+        self.encode_dynamic_work(encoder);
         if let Some(split) = self
             .operations
             .iter()
@@ -2962,6 +3099,7 @@ impl GpuFixedFloorSolver {
         storage: &GpuBodyStorage,
         destination: &wgpu::Buffer,
     ) -> Result<Vec<GpuSolverPassDescriptorV1>, String> {
+        self.encode_dynamic_work(encoder);
         let descriptors = self.pass_trace_descriptors();
         let first_operation = descriptors
             .first()
@@ -3016,6 +3154,7 @@ impl GpuFixedFloorSolver {
         destination: &wgpu::Buffer,
         destination_offset: u64,
     ) -> Result<Vec<GpuSolverPassDescriptorV1>, String> {
+        self.encode_dynamic_work(encoder);
         let descriptors = self.pass_trace_descriptors();
         let first_operation = descriptors
             .first()
@@ -3133,6 +3272,53 @@ impl GpuFixedFloorSolver {
 
     fn encode_operation<'a>(&'a self, pass: &mut wgpu::ComputePass<'a>, operation: &Operation) {
         self.encode_operation_with_dispatch(pass, operation, false);
+    }
+
+    fn encode_dynamic_work(&self, encoder: &mut wgpu::CommandEncoder) {
+        let Some(work) = &self.dynamic_work else {
+            return;
+        };
+        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("physbox5_floor_prepare_dynamic_work"),
+            timestamp_writes: None,
+        });
+        pass.set_pipeline(&work.pipeline);
+        pass.set_bind_group(0, &work.bind_group, &[]);
+        pass.dispatch_workgroups_indirect(&work.body_indirect, ACTIVE_BODY_DISPATCH_64_OFFSET);
+    }
+
+    fn dynamic_dispatch(&self, operation: &Operation) -> Option<DynamicDispatch> {
+        self.dynamic_work.as_ref()?;
+        match operation.pipeline {
+            PipelineKind::TopologyScatter
+            | PipelineKind::IntegrateVelocity
+            | PipelineKind::IntegratePosition
+            | PipelineKind::Gather => Some(DynamicDispatch::Body64),
+            PipelineKind::TopologyCount
+            | PipelineKind::ManifoldCount
+            | PipelineKind::EdgeBuild
+            | PipelineKind::ColorPropose
+            | PipelineKind::ColorResolve
+            | PipelineKind::ColorFinalize
+            | PipelineKind::ColorBlockCount
+            | PipelineKind::ColorBlockScatter
+            | PipelineKind::Prepare
+            | PipelineKind::Refresh
+            | PipelineKind::Warm
+            | PipelineKind::Normal
+            | PipelineKind::NormalBlock
+            | PipelineKind::Tangent
+            | PipelineKind::Restitution => Some(DynamicDispatch::Point64),
+            PipelineKind::Color if self.topology_layout.has_parallel_coloring => {
+                Some(DynamicDispatch::Point64)
+            }
+            PipelineKind::EdgeRanges => Some(DynamicDispatch::DoublePoint64),
+            PipelineKind::EdgeRadixHistograms | PipelineKind::EdgeRadixScatter => {
+                Some(DynamicDispatch::DoublePoint256)
+            }
+            PipelineKind::ColorConflictClear => Some(DynamicDispatch::Winner64),
+            _ => None,
+        }
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -3271,6 +3457,25 @@ impl GpuFixedFloorSolver {
                     .expect("indirect color operations require the argument buffer"),
                 offset,
             );
+        } else if let Some(dispatch) = self.dynamic_dispatch(operation) {
+            let work = self
+                .dynamic_work
+                .as_ref()
+                .expect("dynamic dispatch requires active-work resources");
+            let (buffer, offset) = match dispatch {
+                DynamicDispatch::Point64 => (&work.point_indirect, POINT_DISPATCH_64_OFFSET),
+                DynamicDispatch::DoublePoint64 => {
+                    (&work.point_indirect, DOUBLE_POINT_DISPATCH_64_OFFSET)
+                }
+                DynamicDispatch::DoublePoint256 => {
+                    (&work.point_indirect, DOUBLE_POINT_DISPATCH_256_OFFSET)
+                }
+                DynamicDispatch::Body64 => (&work.body_indirect, ACTIVE_BODY_DISPATCH_64_OFFSET),
+                DynamicDispatch::Winner64 => {
+                    (&work.body_indirect, ACTIVE_BODY_WINNER_DISPATCH_OFFSET)
+                }
+            };
+            pass.dispatch_workgroups_indirect(buffer, offset);
         } else {
             pass.dispatch_workgroups(operation.workgroups, 1, 1);
         }
@@ -3284,6 +3489,7 @@ impl GpuFixedFloorSolver {
         beginning: u32,
         end: u32,
     ) {
+        self.encode_dynamic_work(encoder);
         if let Some(split) = self
             .operations
             .iter()
@@ -3333,6 +3539,7 @@ impl GpuFixedFloorSolver {
         encoder: &mut wgpu::CommandEncoder,
         query_sets: &[&wgpu::QuerySet],
     ) -> Result<(), String> {
+        self.encode_dynamic_work(encoder);
         let query_counts = self.instrumented_query_counts()?;
         if query_sets.len() != query_counts.len() {
             return Err("solver instrumented query-set partition is incomplete".to_owned());
@@ -3460,6 +3667,7 @@ impl GpuFixedFloorSolver {
         query_sets: &[&wgpu::QuerySet],
         color_occupancy: &[u32],
     ) -> Result<(), String> {
+        self.encode_dynamic_work(encoder);
         let groups = self.solver_instrumented_groups(color_occupancy);
         let query_counts = self.solver_phase_instrumented_query_counts(color_occupancy)?;
         if query_sets.len() != query_counts.len() {
@@ -4581,9 +4789,32 @@ pub(crate) fn decode_pass_evidence(
         &bytes[contribution_start..contribution_end],
     )
     .map_err(|error| format!("decode fixed-floor contributions: {error}"))?;
-    let contacts = decode_prepared_contacts(prepared);
+    let active_point_count = if layout.topology_layout.element_count
+        > layout.topology_layout.work_state_base
+        && layout.coloring_bytes != 0
+    {
+        let work_offset = contribution_end
+            + (layout.topology_layout.work_state_base - layout.topology_layout.color_base) as usize
+                * size_of::<u32>();
+        let work_end = work_offset + size_of::<u32>();
+        let count = u32::from_le_bytes(
+            bytes
+                .get(work_offset..work_end)
+                .ok_or_else(|| "solver active point count was outside evidence".to_owned())?
+                .try_into()
+                .map_err(|_| "solver active point count had the wrong width".to_owned())?,
+        );
+        count.min(layout.point_count) as usize
+    } else {
+        layout.point_count as usize
+    };
+    let mut contacts = decode_prepared_contacts(prepared);
+    for contact in &mut contacts[active_point_count..] {
+        contact.valid = false;
+    }
     let manifold_blocks = prepared
         .iter()
+        .take(active_point_count)
         .enumerate()
         .filter_map(|(index, point)| {
             if point.ids[0] == u32::MAX || point.ids[1] == u32::MAX || point.ids[3] != 0 {
@@ -4700,7 +4931,9 @@ pub(crate) fn decode_pass_evidence(
             let offsets = &raw[offsets_start..cursors_start];
             let cursors = &raw[cursors_start..indices_start];
             if counts != full_occupancy || cursors != counts {
-                return Err("compact color counts disagree with assignments".to_owned());
+                return Err(format!(
+                    "compact color counts disagree with assignments: occupancy={full_occupancy:?} counts={counts:?} cursors={cursors:?}"
+                ));
             }
             let mut running = 0_u32;
             for (color, &count) in counts.iter().enumerate() {
@@ -5567,7 +5800,7 @@ fn topology_operations(
         if scheduling_policy.color_maintenance == GpuColorMaintenanceV1::StablePairIncremental {
             topology.color_base
         } else {
-            topology.element_count
+            topology.work_state_base
         };
     let clear = PassParamsRaw {
         floats0: [0.0; 4],
@@ -6428,6 +6661,7 @@ fn bind_group(
     contributions: &wgpu::Buffer,
     topology: &wgpu::Buffer,
     parameters: &wgpu::Buffer,
+    work_parameters: &wgpu::Buffer,
     color_indirect: Option<&wgpu::Buffer>,
 ) -> wgpu::BindGroup {
     let mut entries = vec![
@@ -6471,6 +6705,10 @@ fn bind_group(
                 size: wgpu::BufferSize::new(size_of::<PassParamsRaw>() as u64),
             }),
         },
+        wgpu::BindGroupEntry {
+            binding: 10,
+            resource: work_parameters.as_entire_binding(),
+        },
     ];
     if let Some(indirect) = color_indirect {
         entries.push(wgpu::BindGroupEntry {
@@ -6494,6 +6732,7 @@ fn color_bind_group(
     points: &wgpu::Buffer,
     topology: &wgpu::Buffer,
     parameters: &wgpu::Buffer,
+    work_parameters: &wgpu::Buffer,
     color_indirect: &wgpu::Buffer,
 ) -> wgpu::BindGroup {
     device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -6523,6 +6762,10 @@ fn color_bind_group(
             wgpu::BindGroupEntry {
                 binding: 9,
                 resource: color_indirect.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 10,
+                resource: work_parameters.as_entire_binding(),
             },
         ],
     })

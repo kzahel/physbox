@@ -1,6 +1,6 @@
 #![cfg_attr(not(feature = "solver-lab"), allow(dead_code, unused_imports))]
 
-use std::mem::size_of;
+use std::{mem::size_of, sync::Arc};
 
 use bytemuck::{Pod, Zeroable};
 use physbox_contracts::{
@@ -13,6 +13,7 @@ use physbox_contracts::{
 
 use crate::{
     AdapterDiagnostics, BODY_COMMAND_CAPACITY, GpuBodyStorage,
+    body_state::{ACTIVE_BODY_DISPATCH_64_OFFSET, ACTIVE_BODY_DISPATCH_256_OFFSET},
     broadphase_benchmark::GpuBroadphaseTimingV1,
     collision_candidates::{CandidateSource, GpuCandidateOutput},
     gpu_context::{create_instance, request_adapter, request_device_with_features},
@@ -143,7 +144,14 @@ impl SapPipelines {
         let body_aabb_layout = layout(
             device,
             "sap_body_aabb_layout",
-            &[(0, false), (13, true), (14, true), (15, true)],
+            &[
+                (0, false),
+                (1, false),
+                (13, true),
+                (14, true),
+                (15, true),
+                (16, true),
+            ],
         );
         let clear_layout = layout(
             device,
@@ -153,17 +161,17 @@ impl SapPipelines {
         let proxy_radix_layout = layout(
             device,
             "sap_proxy_radix_layout",
-            &[(1, false), (2, false), (3, false)],
+            &[(1, false), (2, false), (3, false), (16, true)],
         );
         let enumerate_layout = layout(
             device,
             "sap_enumerate_layout",
-            &[(1, false), (4, false), (8, false)],
+            &[(1, false), (4, false), (8, false), (16, true)],
         );
         let finalize_layout = layout(
             device,
             "sap_finalize_layout",
-            &[(8, false), (9, false), (11, false), (12, false)],
+            &[(8, false), (9, false), (11, false), (12, false), (16, true)],
         );
         let pair_radix_layout = layout(
             device,
@@ -287,6 +295,7 @@ pub(crate) struct SapCase {
     finalize_group: wgpu::BindGroup,
     pair_radix_groups: Vec<wgpu::BindGroup>,
     materialize_group: wgpu::BindGroup,
+    active_state: Option<Arc<wgpu::Buffer>>,
     proxy_count: u32,
     proxy_blocks_count: u32,
     candidate_capacity: u32,
@@ -470,6 +479,19 @@ impl SapCase {
             storage::<CapacityRaw>(device, "sap_capacity", 1, wgpu::BufferUsages::COPY_SRC)?;
         let indirect = storage::<u32>(device, "sap_indirect", 6, wgpu::BufferUsages::INDIRECT)?;
 
+        let mut fixed_active_values = vec![0_u32; 20 + proxy_count as usize];
+        fixed_active_values[0] = proxy_count;
+        fixed_active_values[1] = dynamic_count;
+        fixed_active_values[2] = fixed_count;
+        for slot in 0..proxy_count {
+            fixed_active_values[20 + slot as usize] = slot;
+        }
+        let fixed_active =
+            initialized_storage(device, "sap_fixed_active_bodies", &fixed_active_values)?;
+        let active_bodies = body_storage
+            .map(GpuBodyStorage::active_body_buffer)
+            .unwrap_or(&fixed_active);
+
         let base = SapParamsRaw {
             counts: [
                 proxy_count,
@@ -478,7 +500,12 @@ impl SapCase {
                 pair_blocks_count,
             ],
             radix: [0, 0, PROXY_RADIX_PASSES, PAIR_RADIX_PASSES],
-            execution: [dynamic_count, fixed_count, dispatches, 0],
+            execution: [
+                dynamic_count,
+                fixed_count,
+                dispatches,
+                u32::from(body_storage.is_some()),
+            ],
             policy: [speculative_distance, 0.0, 0.0, 0.0],
         };
         let mut parameters =
@@ -501,9 +528,11 @@ impl SapCase {
                 &pipelines.body_aabb_layout,
                 &[
                     (0, &input),
+                    (1, &proxies_a),
                     (13, storage.pose_buffer()),
                     (14, storage.properties_buffer()),
                     (15, storage.metadata_buffer()),
+                    (16, active_bodies),
                 ],
                 &parameters[0],
             )
@@ -521,14 +550,24 @@ impl SapCase {
             proxy_radix_groups.push(group(
                 device,
                 &pipelines.proxy_radix_layout,
-                &[(1, source), (2, destination), (3, &proxy_blocks)],
+                &[
+                    (1, source),
+                    (2, destination),
+                    (3, &proxy_blocks),
+                    (16, active_bodies),
+                ],
                 parameters.last().expect("proxy radix parameter exists"),
             ));
         }
         let enumerate_group = group(
             device,
             &pipelines.enumerate_layout,
-            &[(1, &proxies_a), (4, &pairs_a), (8, &work)],
+            &[
+                (1, &proxies_a),
+                (4, &pairs_a),
+                (8, &work),
+                (16, active_bodies),
+            ],
             &parameters[0],
         );
         let finalize_group = group(
@@ -539,6 +578,7 @@ impl SapCase {
                 (9, &capacity),
                 (11, &indirect),
                 (12, &collision_work),
+                (16, active_bodies),
             ],
             &parameters[0],
         );
@@ -592,6 +632,7 @@ impl SapCase {
             finalize_group,
             pair_radix_groups,
             materialize_group,
+            active_state: body_storage.map(GpuBodyStorage::active_body_handle),
             proxy_count,
             proxy_blocks_count,
             candidate_capacity,
@@ -643,32 +684,46 @@ impl SapCase {
                 beginning.map(|beginning| (query_set, Some(beginning), None))
             }),
         );
-        if let Some(group) = &self.body_aabb_group {
-            dispatch_pass(
+        if let (Some(group), Some(active_state)) = (&self.body_aabb_group, &self.active_state) {
+            dispatch_indirect_pass(
                 encoder,
                 "physbox5_sap_body_aabb_pass",
                 &pipelines.body_aabb,
                 group,
-                self.proxy_count.div_ceil(GENERAL_WORKGROUP_SIZE),
+                active_state,
+                ACTIVE_BODY_DISPATCH_64_OFFSET,
                 None,
+            );
+        } else {
+            encoder.copy_buffer_to_buffer(
+                &self.input,
+                0,
+                &self.proxies_a,
+                0,
+                u64::from(self.proxy_count) * size_of::<ProxyRaw>() as u64,
             );
         }
-        encoder.copy_buffer_to_buffer(
-            &self.input,
-            0,
-            &self.proxies_a,
-            0,
-            u64::from(self.proxy_count) * size_of::<ProxyRaw>() as u64,
-        );
         for group in &self.proxy_radix_groups {
-            dispatch_pass(
-                encoder,
-                "physbox5_sap_proxy_histogram_pass",
-                &pipelines.proxy_histograms,
-                group,
-                self.proxy_blocks_count,
-                None,
-            );
+            if let Some(active_state) = &self.active_state {
+                dispatch_indirect_pass(
+                    encoder,
+                    "physbox5_sap_proxy_histogram_pass",
+                    &pipelines.proxy_histograms,
+                    group,
+                    active_state,
+                    ACTIVE_BODY_DISPATCH_256_OFFSET,
+                    None,
+                );
+            } else {
+                dispatch_pass(
+                    encoder,
+                    "physbox5_sap_proxy_histogram_pass",
+                    &pipelines.proxy_histograms,
+                    group,
+                    self.proxy_blocks_count,
+                    None,
+                );
+            }
             dispatch_pass(
                 encoder,
                 "physbox5_sap_proxy_prefix_pass",
@@ -677,23 +732,47 @@ impl SapCase {
                 1,
                 None,
             );
+            if let Some(active_state) = &self.active_state {
+                dispatch_indirect_pass(
+                    encoder,
+                    "physbox5_sap_proxy_scatter_pass",
+                    &pipelines.proxy_scatter,
+                    group,
+                    active_state,
+                    ACTIVE_BODY_DISPATCH_256_OFFSET,
+                    None,
+                );
+            } else {
+                dispatch_pass(
+                    encoder,
+                    "physbox5_sap_proxy_scatter_pass",
+                    &pipelines.proxy_scatter,
+                    group,
+                    self.proxy_blocks_count,
+                    None,
+                );
+            }
+        }
+        if let Some(active_state) = &self.active_state {
+            dispatch_indirect_pass(
+                encoder,
+                "physbox5_sap_enumerate_pass",
+                &pipelines.enumerate,
+                &self.enumerate_group,
+                active_state,
+                ACTIVE_BODY_DISPATCH_64_OFFSET,
+                None,
+            );
+        } else {
             dispatch_pass(
                 encoder,
-                "physbox5_sap_proxy_scatter_pass",
-                &pipelines.proxy_scatter,
-                group,
-                self.proxy_blocks_count,
+                "physbox5_sap_enumerate_pass",
+                &pipelines.enumerate,
+                &self.enumerate_group,
+                self.proxy_count.div_ceil(GENERAL_WORKGROUP_SIZE),
                 None,
             );
         }
-        dispatch_pass(
-            encoder,
-            "physbox5_sap_enumerate_pass",
-            &pipelines.enumerate,
-            &self.enumerate_group,
-            self.proxy_count.div_ceil(GENERAL_WORKGROUP_SIZE),
-            None,
-        );
         dispatch_pass(
             encoder,
             "physbox5_sap_finalize_pass",
