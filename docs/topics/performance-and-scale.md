@@ -985,6 +985,31 @@ and bounded GPU execution are not the reason the exact route is rejected. They
 are named-adapter authored-solver measurements, not a CPU crossover,
 representative-hardware band, liquid projection, or public scale claim.
 
+## Configurable physics work vectors
+
+The 2026-07-21 product direction makes outer fixed rate, solver substeps,
+family-specific iterations, and contact tuning configurable. A benchmark must
+therefore bind its result to the complete applied physics configuration. Body
+count and scene name are insufficient.
+
+Every shipped preset reports:
+
+- outer-step Hz and `dt`;
+- contact-generation rate;
+- substeps, internal substep `dt`, biased iterations, and relaxation passes;
+- requested and effective contact Hz plus damping/static multiplier;
+- work, dispatches, active contacts, allocation, capacity, and overflow;
+- GPU time and CPU encode/submit per outer step;
+- GPU time and CPU encode/submit per simulated second; and
+- interactive presentation cadence, effective scale, and slipped wall time.
+
+Comparisons such as 60/8 versus 120/4 must state that both have a `1/480 s`
+internal interval while performing different outer contact-generation and
+presentation work. A higher-quality preset may cost more, but slow-time pacing
+cannot turn that cost into a sustained-rate claim. Default-soft and
+hard-comparison curves must be freshly paired on the same revision and named
+adapter when S19 changes the ordinary default.
+
 ## Regression and claim gates
 
 Before representative hardware is selected, store named measurements and
@@ -1019,7 +1044,8 @@ The first implementation work must resolve:
 - the named integrated, discrete, browser, and Android reference adapters;
   the Android device is named during P5.0a and measured before the solver
   decision rather than deferred to P5.4;
-- the product physics-time envelope within a 60 Hz frame;
+- the product physics-time envelopes for the selected 60 Hz default and each
+  shipped quality/rate preset;
 - warmup length, measurement-window length, repetition count, and noise model;
 - the first optimized Box2D worker-count policy for cross-engine reports;
 - compact asynchronous timestamp/counter transport on hosts without identical

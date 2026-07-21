@@ -1,16 +1,21 @@
 # Simulation time and overload
 
-Status: decided and implemented default contract, 2026-07-18.
+Status: decided pacing contract with configurable-fixed-delta migration active,
+updated 2026-07-21.
 
 Governing direction:
 [one GPU-resident 2D physics world](physbox5-unified-gpu-physics.md).
 Related measurement contract:
 [performance and scale](performance-and-scale.md).
+Configuration ownership:
+[physics configuration and solver profiles](physics-configuration-and-solver-profiles.md).
 
 ## Decision
 
-PhysBox 5 preserves a fixed outer physics delta, normally `1 / 60` simulation
-seconds, but does not try to keep simulation time synchronized with wall time
+PhysBox 5 preserves a selected fixed outer physics delta for the lifetime of a
+running world. The initial and currently implemented value is `1 / 60`
+simulation seconds, but the product direction admits bounded configured fixed
+rates. It does not try to keep simulation time synchronized with wall time
 when an interactive host falls behind. The default response to overload is for
 the entire simulated world to run in slow motion.
 
@@ -251,6 +256,31 @@ quality reduction, and optional strict real-time modes. Those remain evidence,
 not inherited requirements. PhysBox 5 initially selects fixed-delta slow time
 with no interactive catch-up and measures it before considering more policy.
 
+## Configurable fixed-delta decision, 2026-07-21
+
+Human review authorizes 30, 60, and 120 Hz as the initial named outer-rate
+surface under S19. This changes which fixed delta a world may select; it does
+not authorize variable `dt`, an adaptive controller, or catch-up.
+
+The shared clock is constructed from the applied engine configuration. A rate
+change is an atomic world restart/rebuild that clears the old accumulator
+phase and never changes `dt` inside an encoded step. All simulated-world
+systems use the same selected `dt`. Reports include selected Hz, exact `dt`,
+presentation cadence, effective simulation scale, and slip.
+
+At a requested outer rate above presentation cadence, the zero-or-one rule
+still wins. For example, a 120 Hz world presented at 60 Hz advances at roughly
+0.5x effective scale rather than executing two outer steps per frame. Solver
+substeps remain independent internal work. This makes 60 Hz with eight
+substeps materially different from 120 Hz with four: both use a `1/480 s`
+internal interval, but the latter regenerates contacts and advances outer-world
+time twice as often when the host can sustain it.
+
+Explicit-step validation may advance any declared number of configured fixed
+steps independent of presentation, exactly as before. Performance results
+must report cost per outer step and per simulated second so different rates
+cannot be compared as equivalent work accidentally.
+
 ## Current implementation status
 
 The shared engine clock now admits zero or one interactive step, keeps only a
@@ -259,6 +289,11 @@ permanent overload slip, and accounts for lifecycle/clamp discard separately.
 Deterministic tests cover the required cadence, stall, time-scale, pause,
 single-step, and suspend/resume sequences. The 250 ms discontinuity bound is
 engine-owned rather than applied by a platform adapter.
+
+The implementation still hardcodes 60 Hz in `SimulationClock`, frame
+parameters, and reports. `SolverSettingsV1` carries `fixed_dt`, but selected
+constructors also validate the exact 1/60 value. These are known S19 migration
+defects, not the final configuration contract.
 
 Headless capture may either feed nominal wall intervals through interactive
 mode or request an explicit positive step count. Exact mode encodes the

@@ -1,6 +1,6 @@
 # PhysBox 5: One GPU-Resident 2D Physics World
 
-Status: active direction, 2026-07-15. The lean bootstrap and P5.0a solver
+Status: active direction, updated 2026-07-21. The lean bootstrap and P5.0a solver
 laboratory are complete at `~/code/physbox5`; the fresh-history root is commit
 `3de0b12001b2246e3966f7d1264225dd4da903f4`, and
 <https://physbox5.kzahel.com>. PhysBox 4 remains the preserved snapshot of the
@@ -22,6 +22,30 @@ engine on native desktop, browser WebGPU through `wasm32-unknown-unknown`,
 Android, and headless validation. Native-only float atomics, subgroups, or
 larger limits may accelerate the same algorithms, but the portable WebGPU path
 defines the product contract.
+
+### Product physics decision, 2026-07-21
+
+Direct interactive review selects the soft-coupled, point-sequential GPU
+family as the continuing product direction. Its quiet Box2D-derived response
+is preferred to the visibly active hard/direct manifold-block solver even
+though the current 60 Hz/four-substep seed permits more penetration and loses
+the governed 16-stack. Those limitations remain measured and visible; they are
+accepted as a foundation to improve rather than used to keep the subjectively
+worse solver by default.
+
+[Physics configuration and solver profiles](physics-configuration-and-solver-profiles.md)
+owns the detailed decision. The initial seed is 60 Hz outer fixed rate, four
+substeps, one biased point-sequential pass plus relaxation, and soft contact
+30 Hz/damping 10/static multiplier 2. Hard/direct remains a named comparison,
+not an automatic fallback. The [S19 tactical](../tactical/019-soft-default-and-physics-configuration.md)
+must make this path the ordinary default and turn fixed rate, substeps,
+iterations, and contact response into one bounded shared configuration.
+
+The code and deployed fresh-browser default remain hard/direct during that
+migration. Historical S6-S18 dispositions remain accurate for their frozen
+questions; they do not override the later human product decision. Invariants,
+capacity safety, exact replay within a configuration, portable WebGPU, one
+GPU-resident state, and honest cost/response reporting remain mandatory.
 
 The first simulation slice is a rigid-only foundation:
 

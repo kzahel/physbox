@@ -1,12 +1,14 @@
 # Contact solver parallelism and scheduling
 
-Status: bounded parallel scheduler selected and qualified; the bounded S9
-schedule-differential study closed with no survivor, 2026-07-18. Forward
-manifold-block i2 remains the selected shared solver. Product constructors
-select bounded speculative parallel coloring. The 64-body interactive capacity
-tier uses one workgroup-per-island dispatch while larger capacities retain
-per-color indirect dispatch; serial full rebuild/per-color remains an explicit
-control.
+Status: bounded parallel scheduler selected and qualified; updated 2026-07-21
+for the soft-default direction. Forward manifold-block i2 remains the current
+implementation default while S19 migrates the authority-derived,
+point-sequential soft-coupled execution into the product default. Product
+constructors currently select bounded speculative parallel coloring. The
+64-body interactive capacity tier uses one workgroup-per-island dispatch while
+larger capacities retain per-color indirect dispatch; serial full
+rebuild/per-color remains an explicit control. S19 must preserve bounded
+GPU-owned coloring and capacity semantics while changing solver execution.
 
 Governing direction:
 [one GPU-resident 2D physics world](physbox5-unified-gpu-physics.md).
@@ -16,7 +18,9 @@ Cost and scale claims are owned by
 [performance and scale](performance-and-scale.md); pacing and any frame-rate
 retarget are owned by
 [simulation time and overload](simulation-time-and-overload.md); stage math is
-owned by the [scalar contact specification](scalar-contact-specification.md).
+owned by the [scalar contact specification](scalar-contact-specification.md),
+and the new profile/configuration decision is owned by
+[physics configuration and solver profiles](physics-configuration-and-solver-profiles.md).
 Primary evidence:
 [S5.4 awake settling bakeoff](../../evidence/p5.2b-s5.4/README.md) and
 [S5.4a parallel-normal factorial](../../evidence/p5.2b-s5.4a/README.md), with
@@ -702,10 +706,12 @@ for rigid contacts, relaxed Jacobi-style iteration for later particle/liquid
 and coupling constraints, which tolerate it well (the FleX precedent chose
 Jacobi for everything and accepted soft rigid stacking; PhysBox 5 does not).
 The product bar comes from the PhysBox 3 oracle, which is built on Box2D:
-crisp stacking is required sandbox behavior, and a structure that collapses
-at feasible iteration budgets is a product regression, not an aesthetic
-trade. This section is exploratory context for P5.6 planning, not a decision;
-liquid remains downstream of accepted rigid quality.
+crisp stacking remains the aspiration. Human review on 2026-07-21 nevertheless
+accepts the current soft-coupled seed's tall-stack compliance as a visible
+early-product trade because its ordinary response is strongly preferred to
+hard/direct. The first-loss and penetration results remain regressions to
+characterize and improve, not successes to hide. This section is exploratory
+context for P5.6 planning; liquid remains downstream of accepted rigid quality.
 
 ## Prior art and references
 
@@ -769,6 +775,7 @@ Revisit this topic's direction only with fresh governed evidence showing:
 - a genuine invariant-versus-Box2D conflict requires authority review under
   the declared oracle precedence.
 
-Do not reconsider by widening tolerances, accepting toppled or transient
-structural failures, hiding unused color passes, or extrapolating rigid
-small-fixture timings to liquid-heavy scenes.
+Do not reconsider by widening tolerances, hiding structural failures or unused
+color passes, or extrapolating rigid small-fixture timings to liquid-heavy
+scenes. The explicitly accepted soft seed must report its known loss honestly;
+future changes may not refresh that baseline to a worse result silently.

@@ -16,10 +16,14 @@ through S17 record the closed settling investigations and rejected candidate
 chain; none changed the selected hard/direct manifold-block product solver.
 S18 is complete: its 15-second solver scoreboard exposed and verified the
 validation-only authority-key ordering fix, all 30 coefficient tuples remained
-valid, and none preserved the 16-stack. The measured hard/direct residual band
-is therefore accepted as the state against which broadphase selection and
-sleeping design proceed, without reclassifying the awake solver as still. The
-scheduler promotion is
+valid, and none preserved the 16-stack. Direct interactive review then made a
+new product decision: the quieter, Box2D-derived soft-coupled family is the
+intended default, with its visible tall-stack compliance accepted as the
+starting trade-off. S19 is active to migrate that family into the ordinary
+product path and make fixed rate, substeps, iterations, and contact response
+one bounded shared configuration. The current code and fresh ordinary launch
+remain hard/direct until that migration is complete; hard/direct will then
+remain an explicit comparison rather than an automatic fallback. The scheduler promotion is
 an architecture and latency improvement, not acceptance of the current CPU
 comparison, residual-motion band, or liquid performance.
 The repository still contains no Rapier or CPU product physics backend, fluid
@@ -30,6 +34,7 @@ Read:
 - [Authoritative GPU-physics direction](docs/topics/physbox5-unified-gpu-physics.md)
 - [Performance and scale contract](docs/topics/performance-and-scale.md)
 - [Simulation time and overload contract](docs/topics/simulation-time-and-overload.md)
+- [Physics configuration and solver profiles](docs/topics/physics-configuration-and-solver-profiles.md)
 - [Vision summary](docs/vision.md)
 - [Bring-up plan](docs/bringup-plan.md)
 - [Platform architecture](docs/platform-architecture.md)
@@ -87,8 +92,11 @@ and open the printed local URL.
 
 The deployed browser includes the explicit solver-inspection surface so a
 candidate can be judged directly on desktop or mobile without editing the URL.
-The selected solver remains the default; candidate profiles activate only
-after an explicit menu choice or restoration of that browser's saved choice.
+The currently implemented hard/direct solver remains the fresh-browser default
+while S19 migrates the newly selected soft-coupled product direction. Candidate
+profiles activate only after an explicit menu choice or restoration of that
+browser's saved choice. This paragraph describes deployed behavior, not the
+post-S19 default.
 For the same surface on a local browser, run:
 
 ```sh

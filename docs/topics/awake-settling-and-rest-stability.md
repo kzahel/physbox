@@ -1503,11 +1503,35 @@ sleep thresholds. A materially different solver family, accumulation
 architecture, CPU fallback, native-only path, simulation-dependent readback,
 or portability loss is an early stop rather than an autonomous extension.
 
+### Soft-default direction, 2026-07-21
+
+Explicit human review now supersedes S18's authority to choose the continuing
+product solver. Interactive comparison finds the soft-coupled response
+materially preferable to hard/direct and good enough to build on. The reviewed
+60 Hz/four-substep 30/10/staticx2 branch-robust lane becomes the seed for the
+intended **SOFT COUPLED** product default under
+[S19](../tactical/019-soft-default-and-physics-configuration.md).
+
+This decision accepts rather than erases the known trade: the seed is quiet
+but compliant, allows visible interpenetration in tall towers, and loses the
+governed 16-stack at step 407. The 16-stack remains a required diagnostic and
+reconsideration fixture, but its old all-or-nothing promotion predicate no
+longer vetoes the early product-family selection. Finite state, persistence
+invariants, capacity, replay, response probes, ordinary structures, cross-host
+portability, and honest penetration/first-loss reporting remain blocking.
+
+Hard/direct remains a named comparison. It may not become an automatic
+fallback, and sleeping may not conceal the soft seed's awake limitations.
+S6-S18 remain the historical evidence explaining this choice and its risks;
+none is rewritten as a passing soft-parity result.
+
 ## Reconsideration triggers
 
-S18 closes this formulation program without a successor. Reopening requires
-an explicit human decision that supersedes that stop plus fresh evidence that
-was not already measured by S6-S18, such as:
+S18 closed its formulation program without an autonomous successor. The
+explicit 2026-07-21 human decision now authorizes S19 productization and
+configuration, not an unbounded successor formulation search. Reopening a new
+solver formula still requires another explicit decision plus fresh evidence
+that was not already measured by S6-S18, such as:
 
 - an accepted shape, joint, material, or scheduler change that materially
   changes the resting-contact recurrence;

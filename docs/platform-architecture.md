@@ -8,6 +8,10 @@ adapters, not alternate implementations.
 compute/render pipelines, shaders, input semantics, scenarios, reports, and
 scene contracts.
 `physbox-launch` owns every option name/default/parser and host projection.
+The versioned product physics configuration follows
+[physics configuration and solver profiles](topics/physics-configuration-and-solver-profiles.md):
+launch owns its external names/defaults, while the engine owns validation,
+application, atomic world rebuild, pacing, effective values, and reporting.
 `physbox-shell` translates raw `winit` lifecycle and pointer events into the
 neutral frame contract. Apps own only their event loop, target/surface,
 argument transport, logging, packaging, and presentation.
@@ -44,9 +48,11 @@ input targets UI or the active world tool. The engine owns gesture arbitration,
 screen/world projection, GPU body-hit requests, and bounded construction
 commands. Adapters may forward raw pointer, touch, wheel, resize, and lifecycle
 facts, but may not own menu contents, scene-selection meaning, camera state,
-tool behavior, debug content, or per-host control defaults. Camera and UI
-changes are presentation and input-projection state only; they may not affect
-physics, fixed-step admission, or scenario outcomes.
+tool behavior, debug content, or per-host control defaults. Camera, tool, and
+ordinary menu state are presentation/input-projection state only. A physics-
+configuration action is distinct and explicit: the shared engine validates it
+and atomically rebuilds/restarts the one world. No adapter or DOM state may
+alter physics, fixed-step admission, or scenario outcomes implicitly.
 
 S4.3 live grab input is a body-free begin/target/end stream. The GPU selects
 and retains the generational body-local anchor; the CPU knows only pointer
@@ -57,11 +63,12 @@ diagnostic readback, does not gate the next frame, and is owned identically by
 surface and offscreen hosts.
 
 Interactive hosts forward elapsed wall time but never catch up locally. The
-shared clock executes zero or one fixed outer step per interactive engine
-frame and permanently slips excess whole-step wall time, so the simulated world
-slows under load. Explicit headless validation may request a declared number of
-steps independent of wall time; that is an engine-owned execution mode rather
-than a platform scheduler.
+shared clock executes zero or one selected fixed outer step per interactive
+engine frame and permanently slips excess whole-step wall time, so the
+simulated world slows under load. The fixed value is configuration, but it
+cannot change inside a running step and remains engine-owned. Explicit
+headless validation may request a declared number of steps independent of wall
+time; that is an engine-owned execution mode rather than a platform scheduler.
 
 No app crate may contain WGSL, pipeline/pass encoding, engine settings,
 physics structures, scenario expectations, or numeric scene behavior.

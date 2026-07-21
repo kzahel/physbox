@@ -18,6 +18,13 @@ contact graph, circle/rectangle authoring, settling review, broadphase
 selection, scalable buckets, and sleeping without changing the milestone
 dependencies below.
 
+The selected physics direction and configuration migration are tracked by
+[S19 soft default and physics configuration](tactical/019-soft-default-and-physics-configuration.md).
+S19 promotes the interactively preferred soft-coupled family into the one
+ordinary shared path and removes hardcoded fixed-rate/resolution assumptions
+before broadphase or sleeping can normalize the old hard trajectory as the
+continuing product baseline.
+
 ## P5.0 — lean shared-host bootstrap (complete)
 
 - Fresh Git history and PhysBox 4 provenance.
@@ -351,6 +358,33 @@ Construction feel remains part of the combined S5.4 human checkpoint.
 - Preserve direct URL/argument launches for validation and deep links.
 - Prove that camera/UI state does not affect physics, pacing, scenario hashes,
   or cross-host outcomes, and that construction owns no CPU body mirror.
+
+## P5.2b — soft default and configurable product physics (active)
+
+Human review on 2026-07-21 selects the soft-coupled point-sequential family as
+the product direction. Its initial 60 Hz/four-substep/one-biased-plus-
+relaxation 30/10/staticx2 seed is much quieter and subjectively closer to
+Box2D than hard/direct. Its visible tall-stack penetration and step-407
+16-stack loss are accepted starting limitations, not hidden successes.
+
+- Make soft-coupled the ordinary default on desktop, browser, Android, and
+  headless; retain hard/direct as an explicit comparison only.
+- Give fixed rate, substeps, family-specific iterations, and contact response
+  one bounded versioned configuration owned by shared launch/engine code.
+- Parameterize the shared clock and soft GPU pass graph while preserving
+  zero-or-one interactive outer steps, permanent slip, GPU residency,
+  portability, replay, and fail-closed capacity.
+- Expose named presets and advanced values through the engine-rendered menu,
+  with requested/effective values, internal rate, cost, and pacing visible.
+- Characterize ordinary structures and the known tall-stack limitation across
+  Metal, browser, and physical Android; match Box2D configuration whenever a
+  parity claim is made.
+
+Exit: the exact deployed ordinary build selects soft-coupled from a fresh
+launch; all hosts project the same configuration; supported rate/resolution/
+contact settings replay and report honestly; hard/direct never activates as a
+fallback; and fresh response/performance artifacts plus subjective review are
+recorded. Detailed ordering and gates are in S19.
 
 ## P5.3 — scalable broadphase bake-off
 

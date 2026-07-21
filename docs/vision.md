@@ -1,6 +1,6 @@
 # Vision: one GPU-resident 2D physics world
 
-Status: active direction, 2026-07-15.
+Status: active direction, updated 2026-07-21.
 
 This is the compact entry point. The authoritative, research-backed direction
 is [PhysBox 5: one GPU-resident 2D physics world](topics/physbox5-unified-gpu-physics.md),
@@ -9,6 +9,8 @@ contracts. The sibling [performance and scale contract](topics/performance-and-s
 owns benchmark workloads, CPU/GPU comparison, timing validity, capacity, and
 scale claims. The [simulation time and overload contract](topics/simulation-time-and-overload.md)
 owns fixed-step pacing and the default slow-motion response to missed budgets.
+The [physics configuration and solver-profile topic](topics/physics-configuration-and-solver-profiles.md)
+owns the selected soft-coupled direction and bounded product settings.
 
 PhysBox 5 is a small, purpose-built 2D physics world whose live mechanical
 state stays on the GPU. It should eventually feel like a deliberately
@@ -69,7 +71,8 @@ delayed diagnostics. No GPU result may be required to advance the next
 interactive step. Bounded validation may flush complete state only after its
 last step.
 
-Interactive pacing admits zero or one outer 60 Hz fixed step per engine frame.
+Interactive pacing admits zero or one outer configured fixed step per engine
+frame. The initial and currently implemented rate is 60 Hz.
 If wall time advances faster than the engine can present frames, excess time is
 slipped permanently and the entire world runs in slow motion; later frames do
 not batch steps to catch up. Exact-count headless validation remains independent
@@ -110,6 +113,16 @@ rejected alternative, and reconsideration triggers.
 The selected initial behavior uses Box2D Soft-Step-like velocity impulses:
 locally anchored contacts retained across substeps, accumulated projected
 impulses, a biased solve, and unbiased relaxation.
+
+Later rigid/contact work selected hard/direct manifold-block i2 as an interim
+product solver, then exposed the authority-derived soft-coupled path for direct
+inspection. Human review on 2026-07-21 prefers that soft response and selects
+it as the continuing product direction despite known tall-stack compliance.
+S19 migrates the reviewed 60 Hz/four-substep 30/10/staticx2 seed into the
+ordinary default and makes fixed rate, substeps, iterations, and contact
+response one shared bounded configuration. Hard/direct remains a comparison,
+not a fallback. The code default remains hard/direct until that migration is
+complete.
 
 ## Collision contracts
 
