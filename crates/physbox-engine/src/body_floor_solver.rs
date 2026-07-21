@@ -236,13 +236,8 @@ impl GpuContactCoefficientPolicyV1 {
                 );
             }
         }
-        if self == Self::AuthorityTunableSoft {
-            if settings.contact_softness.is_none() {
-                return Err("tunable soft coefficients require soft contact".to_owned());
-            }
-            if settings.substeps != 4 {
-                return Err("tunable soft coefficients require the four-substep source".to_owned());
-            }
+        if self == Self::AuthorityTunableSoft && settings.contact_softness.is_none() {
+            return Err("tunable soft coefficients require soft contact".to_owned());
         }
         Ok(())
     }
@@ -5208,7 +5203,9 @@ fn operations_with_extended_solver_policies(
     let mut parameters = Vec::new();
     let mut operations = Vec::new();
     let authority_probe = execution == GpuSolverExecutionV4::AUTHORITY_GPU_PROBE;
-    let iterations_per_substep = if authority_probe {
+    let iterations_per_substep = if authority_probe
+        && contact_coefficient_policy != GpuContactCoefficientPolicyV1::AuthorityTunableSoft
+    {
         1
     } else {
         scenario.settings.iterations
@@ -6564,6 +6561,59 @@ fn storage_empty<T>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn soft_coupled_graph_uses_configured_substeps_and_biased_iterations() {
+        let operation_count = |substeps, iterations| {
+            let mut scenario = crate::p5_2_centered_rectangle_stack_scenario(4, 120).unwrap();
+            let mut physics = physbox_launch::PhysicsConfigurationV1::SOFT_COUPLED;
+            physics.substeps = substeps;
+            physics.biased_iterations = iterations;
+            crate::SolverProfileConfig::from_physics(physics)
+                .unwrap()
+                .apply_to_scenario(&mut scenario)
+                .unwrap();
+            let body_count = scenario.bodies.len() as u32;
+            let point_capacity = body_count * (body_count - 1);
+            let scheduling =
+                GpuSolverSchedulingPolicyV1::authority_gpu_probe_for_body_capacity(body_count);
+            let topology = TopologyLayout::new(
+                GpuGatherTopology::StableBodyEdge,
+                body_count,
+                point_capacity,
+                false,
+                GpuColorScheduleV4::CompactIndirect,
+                GpuColorUnitV4::Manifold,
+                scheduling,
+            )
+            .unwrap();
+            let (parameters, operations) = operations_with_extended_solver_policies(
+                &scenario,
+                body_count,
+                point_capacity,
+                topology,
+                false,
+                GpuSolverExecutionV4::AUTHORITY_GPU_PROBE,
+                scheduling,
+                GpuSoftFeedbackPolicyV1::EveryBiasedIteration,
+                GpuNormalRelaxationPolicyV1::PointSequential,
+                GpuContactCoefficientPolicyV1::AuthorityTunableSoft,
+                GpuSubstepContactPolicyV1::AuthorityBranchRobustFixedAnchorAnalyticalSeparation,
+                GpuRestitutionTimingPolicyV1::AfterEachSubstep,
+            );
+            assert_eq!(parameters.len(), operations.len());
+            operations.len()
+        };
+
+        let one_by_one = operation_count(1, 1);
+        let two_by_one = operation_count(2, 1);
+        let four_by_one = operation_count(4, 1);
+        let four_by_two = operation_count(4, 2);
+        let eight_by_four = operation_count(8, 4);
+        assert!(one_by_one < two_by_one && two_by_one < four_by_one);
+        assert!(four_by_one < four_by_two && four_by_two < eight_by_four);
+        assert_eq!(four_by_two - four_by_one, 8);
+    }
 
     #[cfg(not(feature = "production-validation"))]
     #[test]

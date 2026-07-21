@@ -2,11 +2,12 @@ use std::collections::VecDeque;
 
 use serde::Serialize;
 
-pub const FIXED_STEP_HZ: u32 = 60;
-pub const FIXED_STEP_SECONDS: f64 = 1.0 / FIXED_STEP_HZ as f64;
+pub const DEFAULT_FIXED_STEP_HZ: u32 = 60;
+#[cfg(test)]
+pub const DEFAULT_FIXED_STEP_SECONDS: f64 = 1.0 / DEFAULT_FIXED_STEP_HZ as f64;
 pub const MAX_ACTIVE_WALL_SECONDS: f64 = 0.25;
 const EFFECTIVE_SCALE_WINDOW_SECONDS: f64 = 1.0;
-const ADMISSION_PHASE_TOLERANCE_SECONDS: f64 = FIXED_STEP_SECONDS * 0.05;
+const ADMISSION_PHASE_TOLERANCE_FRACTION: f64 = 0.05;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum InteractiveClockAction {
@@ -57,6 +58,9 @@ pub(crate) struct InteractiveClockInput {
 }
 
 pub(crate) struct SimulationClock {
+    fixed_step_hz: u32,
+    fixed_step_seconds: f64,
+    admission_phase_tolerance_seconds: f64,
     retained_fraction_seconds: f64,
     requested_time_scale: f64,
     completed_outer_steps_total: u64,
@@ -74,7 +78,19 @@ pub(crate) struct SimulationClock {
 
 impl Default for SimulationClock {
     fn default() -> Self {
+        Self::new(DEFAULT_FIXED_STEP_HZ)
+    }
+}
+
+impl SimulationClock {
+    pub(crate) fn new(fixed_step_hz: u32) -> Self {
+        assert!(fixed_step_hz > 0, "fixed-step hertz must be positive");
+        let fixed_step_seconds = 1.0 / f64::from(fixed_step_hz);
         Self {
+            fixed_step_hz,
+            fixed_step_seconds,
+            admission_phase_tolerance_seconds: fixed_step_seconds
+                * ADMISSION_PHASE_TOLERANCE_FRACTION,
             retained_fraction_seconds: 0.0,
             requested_time_scale: 1.0,
             completed_outer_steps_total: 0,
@@ -90,9 +106,11 @@ impl Default for SimulationClock {
             scale_window_simulated_seconds: 0.0,
         }
     }
-}
 
-impl SimulationClock {
+    pub(crate) const fn fixed_step_seconds(&self) -> f64 {
+        self.fixed_step_seconds
+    }
+
     pub(crate) fn admit(&mut self, input: InteractiveClockInput) -> (u32, PacingReport) {
         let elapsed_seconds = finite_nonnegative(input.elapsed_seconds);
         let requested_time_scale = finite_nonnegative(input.requested_time_scale).clamp(0.0, 1.0);
@@ -133,33 +151,34 @@ impl SimulationClock {
 
                 let eligible_steps = if requested_time_scale > 0.0
                     && self.retained_fraction_seconds
-                        >= FIXED_STEP_SECONDS - ADMISSION_PHASE_TOLERANCE_SECONDS
-                    && self.retained_fraction_seconds < FIXED_STEP_SECONDS
+                        >= self.fixed_step_seconds - self.admission_phase_tolerance_seconds
+                    && self.retained_fraction_seconds < self.fixed_step_seconds
                 {
                     1
                 } else {
-                    (self.retained_fraction_seconds / FIXED_STEP_SECONDS).floor() as u64
+                    (self.retained_fraction_seconds / self.fixed_step_seconds).floor() as u64
                 };
                 if eligible_steps > 0 {
                     steps = 1;
                     let slipped_simulated_seconds =
-                        (eligible_steps - 1) as f64 * FIXED_STEP_SECONDS;
+                        (eligible_steps - 1) as f64 * self.fixed_step_seconds;
                     slipped = if requested_time_scale > 0.0 {
                         slipped_simulated_seconds / requested_time_scale
                     } else {
                         0.0
                     };
-                    self.retained_fraction_seconds -= eligible_steps as f64 * FIXED_STEP_SECONDS;
+                    self.retained_fraction_seconds -=
+                        eligible_steps as f64 * self.fixed_step_seconds;
                     self.retained_fraction_seconds = self.retained_fraction_seconds.clamp(
-                        -ADMISSION_PHASE_TOLERANCE_SECONDS,
-                        FIXED_STEP_SECONDS.next_down(),
+                        -self.admission_phase_tolerance_seconds,
+                        self.fixed_step_seconds.next_down(),
                     );
                 }
             }
         }
 
         self.completed_outer_steps_total += u64::from(steps);
-        let simulated_this_frame = f64::from(steps) * FIXED_STEP_SECONDS;
+        let simulated_this_frame = f64::from(steps) * self.fixed_step_seconds;
         self.simulated_seconds_total += simulated_this_frame;
         self.admitted_active_wall_seconds_total += admitted;
         self.overload_slipped_wall_seconds_total += slipped;
@@ -181,8 +200,8 @@ impl SimulationClock {
             steps,
             PacingReport {
                 mode: PacingMode::InteractiveSlowClock,
-                fixed_step_hz: FIXED_STEP_HZ,
-                fixed_dt_seconds: FIXED_STEP_SECONDS,
+                fixed_step_hz: self.fixed_step_hz,
+                fixed_dt_seconds: self.fixed_step_seconds,
                 requested_time_scale,
                 completed_outer_steps_this_frame: steps,
                 completed_outer_steps_total: self.completed_outer_steps_total,
@@ -205,11 +224,11 @@ impl SimulationClock {
 
     pub(crate) fn admit_exact(&mut self, steps: u32) -> PacingReport {
         self.completed_outer_steps_total += u64::from(steps);
-        self.simulated_seconds_total += f64::from(steps) * FIXED_STEP_SECONDS;
+        self.simulated_seconds_total += f64::from(steps) * self.fixed_step_seconds;
         PacingReport {
             mode: PacingMode::ExplicitStep,
-            fixed_step_hz: FIXED_STEP_HZ,
-            fixed_dt_seconds: FIXED_STEP_SECONDS,
+            fixed_step_hz: self.fixed_step_hz,
+            fixed_dt_seconds: self.fixed_step_seconds,
             requested_time_scale: self.requested_time_scale,
             completed_outer_steps_this_frame: steps,
             completed_outer_steps_total: self.completed_outer_steps_total,
@@ -261,18 +280,18 @@ fn finite_nonnegative(value: f64) -> f64 {
 mod tests {
     use super::*;
 
-    fn run_sequence(hz: u32, frames: u32) -> PacingReport {
+    fn run_sequence(presentation_hz: u32, frames: u32) -> PacingReport {
         let mut clock = SimulationClock::default();
         let mut report = None;
         for _ in 0..frames {
             let (steps, next) = clock.admit(InteractiveClockInput {
-                elapsed_seconds: 1.0 / f64::from(hz),
+                elapsed_seconds: 1.0 / f64::from(presentation_hz),
                 requested_time_scale: 1.0,
                 action: InteractiveClockAction::Run,
             });
             assert!(steps <= 1);
-            assert!(next.retained_fraction_seconds >= -ADMISSION_PHASE_TOLERANCE_SECONDS);
-            assert!(next.retained_fraction_seconds < FIXED_STEP_SECONDS);
+            assert!(next.retained_fraction_seconds >= -clock.admission_phase_tolerance_seconds);
+            assert!(next.retained_fraction_seconds < clock.fixed_step_seconds);
             report = Some(next);
         }
         report.unwrap()
@@ -284,6 +303,29 @@ mod tests {
         for (hz, steps) in expected {
             let report = run_sequence(hz, hz * 2);
             assert_eq!(report.completed_outer_steps_total, steps);
+        }
+    }
+
+    #[test]
+    fn configured_rates_preserve_zero_or_one_step_and_report_slow_time() {
+        for (fixed_hz, expected_steps, expected_scale) in
+            [(30, 30, 1.0), (60, 60, 1.0), (120, 60, 0.5)]
+        {
+            let mut clock = SimulationClock::new(fixed_hz);
+            let mut report = None;
+            for _ in 0..60 {
+                let (steps, next) = clock.admit(InteractiveClockInput {
+                    elapsed_seconds: 1.0 / 60.0,
+                    requested_time_scale: 1.0,
+                    action: InteractiveClockAction::Run,
+                });
+                assert!(steps <= 1);
+                report = Some(next);
+            }
+            let report = report.unwrap();
+            assert_eq!(report.fixed_step_hz, fixed_hz);
+            assert_eq!(report.completed_outer_steps_total, expected_steps);
+            assert!((report.effective_simulation_scale - expected_scale).abs() < 1.0e-12);
         }
     }
 
@@ -309,7 +351,7 @@ mod tests {
     fn early_admission_does_not_forgive_real_multi_step_overload() {
         let mut clock = SimulationClock::default();
         let (early_steps, early) = clock.admit(InteractiveClockInput {
-            elapsed_seconds: FIXED_STEP_SECONDS * 0.96,
+            elapsed_seconds: DEFAULT_FIXED_STEP_SECONDS * 0.96,
             requested_time_scale: 1.0,
             action: InteractiveClockAction::Run,
         });
@@ -317,14 +359,14 @@ mod tests {
         assert!(early.retained_fraction_seconds < 0.0);
 
         let (overload_steps, overload) = clock.admit(InteractiveClockInput {
-            elapsed_seconds: FIXED_STEP_SECONDS * 3.0,
+            elapsed_seconds: DEFAULT_FIXED_STEP_SECONDS * 3.0,
             requested_time_scale: 1.0,
             action: InteractiveClockAction::Run,
         });
         assert_eq!(overload_steps, 1);
         assert_eq!(
             overload.overload_slipped_wall_seconds_this_frame,
-            FIXED_STEP_SECONDS
+            DEFAULT_FIXED_STEP_SECONDS
         );
     }
 

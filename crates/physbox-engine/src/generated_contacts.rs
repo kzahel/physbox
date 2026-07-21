@@ -512,7 +512,6 @@ impl GpuGeneratedContactGraph {
         storage: &GpuBodyStorage,
         scenario: &ScenarioV1,
     ) -> Result<Self, String> {
-        crate::BranchRobustGpuPromotionPolicyV1::AUTHORIZED.validate_product_selection(false)?;
         crate::branch_robust_gpu_promotion::validate_branch_robust_tunable_settings(
             &scenario.settings,
         )?;

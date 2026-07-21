@@ -1366,16 +1366,14 @@ mod tests {
 
     #[cfg(feature = "solver-lab")]
     #[test]
-    fn scene_menu_drops_an_incompatible_candidate_without_false_provenance() {
+    fn scene_menu_rejects_an_incompatible_scene_without_automatic_hard_fallback() {
         let target = [960, 600];
         let mut renderer = pollster::block_on(OffscreenRenderer::new(
             target[0],
             target[1],
             EngineConfig {
                 scenario: ValidationScenario::Bootstrap,
-                solver_profile: crate::SolverProfileConfig::BranchRobust(
-                    crate::BranchRobustInteractiveOptions::default(),
-                ),
+                solver_profile: crate::SolverProfileConfig::soft_coupled(),
             },
         ))
         .unwrap();
@@ -1400,10 +1398,13 @@ mod tests {
             FrameInput::exact(0)
                 .with_input_events(click(41, layout.center_normalized("scenario", 6))),
         );
-        assert_eq!(switched.scene_contract.scenario, "body-free-flight");
-        assert_eq!(switched.scene_contract.solver_profile, "selected");
-        assert_eq!(switched.scene_contract.solver_profile_options, None);
-        assert_eq!(switched.scene_contract.generated_solver_execution, None);
+        assert_eq!(switched.scene_contract.scenario, "bootstrap");
+        assert_eq!(switched.scene_contract.solver_profile, "soft-coupled");
+        assert_eq!(
+            switched.scene_contract.solver_profile_options.as_deref(),
+            Some("hz=30,damping=10,static-scale=2")
+        );
+        assert_eq!(switched.ui.scenario_activations_total, 0);
     }
 
     #[test]

@@ -197,7 +197,6 @@ impl GpuBodyWorld {
         )
     }
 
-    #[cfg(feature = "solver-lab")]
     pub(crate) fn new_generated_with_solver_profile(
         device: &wgpu::Device,
         color_format: wgpu::TextureFormat,

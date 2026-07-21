@@ -9,9 +9,9 @@ use crate::{
     GpuSolverAccumulationV4, GpuSolverExecutionV4, GpuSolverSchedulingPolicyV1,
 };
 
-pub const SCENE_CONTRACT_VERSION: u32 = 6;
+pub const SCENE_CONTRACT_VERSION: u32 = 7;
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SceneContract {
     pub version: u32,
@@ -27,7 +27,20 @@ pub struct SceneContract {
     pub generated_contact_coefficient_policy: Option<GpuContactCoefficientPolicyV1>,
     pub solver_profile: &'static str,
     pub solver_profile_options: Option<String>,
+    pub physics_configuration_version: u32,
+    pub physics_configuration_hash: String,
     pub fixed_step_hz: u32,
+    pub fixed_dt_seconds: f32,
+    pub solver_substeps: u32,
+    pub solver_biased_iterations: u32,
+    pub internal_substep_hz: u32,
+    pub requested_contact_hz: f32,
+    pub effective_dynamic_contact_hz: f32,
+    pub requested_static_contact_hz: f32,
+    pub effective_static_contact_hz: f32,
+    pub contact_damping_ratio: f32,
+    pub speculative_distance: f32,
+    pub max_depenetration_velocity: f32,
     pub scenario: &'static str,
     pub scenario_hash: String,
 }
@@ -202,6 +215,8 @@ impl FrameReport {
             solver_profile: &'static str,
             #[serde(rename = "r", skip_serializing_if = "Option::is_none")]
             solver_profile_options: Option<&'a str>,
+            #[serde(rename = "k")]
+            physics_configuration_hash: &'a str,
             #[serde(rename = "n")]
             scenario: &'static str,
             #[serde(rename = "h")]
@@ -296,6 +311,7 @@ impl FrameReport {
                     .map(compact_contact_coefficients),
                 solver_profile: self.scene_contract.solver_profile,
                 solver_profile_options: self.scene_contract.solver_profile_options.as_deref(),
+                physics_configuration_hash: &self.scene_contract.physics_configuration_hash,
                 scenario: self.scene_contract.scenario,
                 scenario_hash: &self.scene_contract.scenario_hash,
             },
@@ -487,7 +503,20 @@ mod tests {
                 generated_contact_coefficient_policy: Some(GpuContactCoefficientPolicyV1::SELECTED),
                 solver_profile: "selected",
                 solver_profile_options: None,
+                physics_configuration_version: 1,
+                physics_configuration_hash: "e".repeat(64),
                 fixed_step_hz: 60,
+                fixed_dt_seconds: 1.0 / 60.0,
+                solver_substeps: 4,
+                solver_biased_iterations: 2,
+                internal_substep_hz: 240,
+                requested_contact_hz: 30.0,
+                effective_dynamic_contact_hz: 30.0,
+                requested_static_contact_hz: 60.0,
+                effective_static_contact_hz: 60.0,
+                contact_damping_ratio: 10.0,
+                speculative_distance: 0.02,
+                max_depenetration_velocity: 3.0,
                 scenario: "bootstrap",
                 scenario_hash: "f".repeat(64),
             },

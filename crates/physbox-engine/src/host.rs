@@ -10,7 +10,7 @@ use crate::{
     AdapterDiagnostics, BODY_COMMAND_CAPACITY, BoundedBodyCommands, Camera2d, EngineConfig,
     FrameInput, GpuSolverSchedulingPolicyV1, InputEvent, PointerButton, PointerPhase, StepRequest,
     body_world::{BodyCommandStepRange, BodyStepPlan, GpuBodyWorld},
-    clock::{FIXED_STEP_HZ, FIXED_STEP_SECONDS, InteractiveClockInput, SimulationClock},
+    clock::{InteractiveClockInput, SimulationClock},
     construction::{
         BoundedConstructionIntents, CONSTRUCTION_INTENT_CAPACITY, empty_construction_intent_batch,
     },
@@ -74,9 +74,6 @@ fn profiled_generated_world(
     scenario: &ScenarioV1,
     profile: &crate::SolverProfileConfig,
 ) -> Result<GpuBodyWorld, String> {
-    #[cfg(not(feature = "solver-lab"))]
-    let _ = profile;
-    #[cfg(feature = "solver-lab")]
     if !profile.is_selected() {
         return GpuBodyWorld::new_generated_with_solver_profile(
             device,
@@ -95,9 +92,6 @@ fn profiled_generated_world_with_scheduling(
     profile: &crate::SolverProfileConfig,
     scheduling: GpuSolverSchedulingPolicyV1,
 ) -> Result<GpuBodyWorld, String> {
-    #[cfg(not(feature = "solver-lab"))]
-    let _ = profile;
-    #[cfg(feature = "solver-lab")]
     if !profile.is_selected() {
         return GpuBodyWorld::new_generated_with_solver_profile(
             device,
@@ -116,9 +110,6 @@ fn profiled_generated_world_with_contact_policy(
     profile: &crate::SolverProfileConfig,
     identity: physbox_contracts::ContactIdentityPolicyV1,
 ) -> Result<GpuBodyWorld, String> {
-    #[cfg(not(feature = "solver-lab"))]
-    let _ = profile;
-    #[cfg(feature = "solver-lab")]
     if !profile.is_selected() {
         return GpuBodyWorld::new_generated_with_solver_profile(
             device,
@@ -523,6 +514,7 @@ pub struct EngineHost {
     fixed_steps_total: u64,
     pointer_events_total: u64,
     scenario_hash: String,
+    physics_configuration_hash: String,
     body_interaction: Option<BodyInteractionState>,
     ui: WorkbenchUi,
     scenario_activations_total: u64,
@@ -940,6 +932,7 @@ impl EngineHost {
             ValidationScenario::SolverJacobi | ValidationScenario::SolverColored => None,
         };
 
+        let physics_configuration_hash = config.physics_configuration_hash();
         let mut solver_profiles = crate::SolverProfileConfig::available();
         crate::ui::remember_solver_profile(&mut solver_profiles, config.solver_profile.clone());
         let ui = WorkbenchUi::new(
@@ -949,6 +942,7 @@ impl EngineHost {
             config.solver_profile.clone(),
             solver_profiles.clone(),
         );
+        let clock = SimulationClock::new(config.solver_profile.physics().fixed_step_hz);
         Self {
             config,
             color_format,
@@ -959,13 +953,14 @@ impl EngineHost {
             solver_bind_group,
             solver_executed: false,
             body_world,
-            clock: SimulationClock::default(),
+            clock,
             camera: Camera2d::fixed(),
             input: SharedInputState::default(),
             frame_index: 0,
             fixed_steps_total: 0,
             pointer_events_total: 0,
             scenario_hash,
+            physics_configuration_hash,
             body_interaction,
             ui,
             scenario_activations_total: 0,
@@ -1033,27 +1028,23 @@ impl EngineHost {
                     routing.events.push(InputEvent::Recenter);
                 }
                 UiAction::ActivateScenario(scenario) => {
-                    let compatible = self.config.solver_profile.supports_scenario(scenario);
-                    let solver_profile = if compatible {
-                        self.config.solver_profile.clone()
-                    } else {
-                        crate::SolverProfileConfig::Selected
-                    };
-                    self.replace_configuration(
-                        context.device,
-                        context.queue,
-                        ConfigurationReplacement {
-                            config: EngineConfig {
-                                scenario,
-                                solver_profile,
+                    if self.config.solver_profile.supports_scenario(scenario) {
+                        self.replace_configuration(
+                            context.device,
+                            context.queue,
+                            ConfigurationReplacement {
+                                config: EngineConfig {
+                                    scenario,
+                                    solver_profile: self.config.solver_profile.clone(),
+                                },
+                                selected_tool: routing.selected_tool,
+                                scenario_activation: true,
+                                scenario_restart: false,
+                                preserve_camera: false,
+                                solver_profiles: self.solver_profiles.clone(),
                             },
-                            selected_tool: routing.selected_tool,
-                            scenario_activation: true,
-                            scenario_restart: false,
-                            preserve_camera: false,
-                            solver_profiles: self.solver_profiles.clone(),
-                        },
-                    );
+                        );
+                    }
                 }
                 UiAction::RestartScenario => {
                     self.replace_configuration(
@@ -1149,7 +1140,7 @@ impl EngineHost {
             .expect("nonzero frame target resolves the shared camera");
         let params = FrameParams {
             dt_frame: [
-                FIXED_STEP_SECONDS as f32,
+                self.clock.fixed_step_seconds() as f32,
                 self.frame_index as f32,
                 context.target.size[0] as f32,
                 context.target.size[1] as f32,
@@ -1243,6 +1234,24 @@ impl EngineHost {
 
         self.frame_index += 1;
         self.fixed_steps_total += u64::from(steps);
+        let physics = self.config.solver_profile.physics();
+        let internal_substep_hz = physics
+            .fixed_step_hz
+            .checked_mul(physics.substeps)
+            .expect("validated product physics bounds cannot overflow substep hertz");
+        let substep_dt = physics.fixed_dt_seconds() / physics.substeps as f32;
+        let effective_dynamic_contact_hz = if self.config.solver_profile.is_soft_coupled() {
+            physics.contact_hertz.min(0.125 / substep_dt)
+        } else {
+            0.0
+        };
+        let requested_static_contact_hz =
+            physics.contact_hertz * physics.static_contact_hertz_multiplier;
+        let effective_static_contact_hz = if self.config.solver_profile.is_soft_coupled() {
+            effective_dynamic_contact_hz * physics.static_contact_hertz_multiplier
+        } else {
+            0.0
+        };
         let contract = SceneContract {
             version: SCENE_CONTRACT_VERSION,
             engine: "physbox5",
@@ -1287,7 +1296,20 @@ impl EngineHost {
                 .and_then(GpuBodyWorld::generated_contact_coefficient_policy),
             solver_profile: self.config.solver_profile.name(),
             solver_profile_options: self.config.solver_profile.options_string(),
-            fixed_step_hz: FIXED_STEP_HZ,
+            physics_configuration_version: physics.version,
+            physics_configuration_hash: self.physics_configuration_hash.clone(),
+            fixed_step_hz: physics.fixed_step_hz,
+            fixed_dt_seconds: physics.fixed_dt_seconds(),
+            solver_substeps: physics.substeps,
+            solver_biased_iterations: physics.biased_iterations,
+            internal_substep_hz,
+            requested_contact_hz: physics.contact_hertz,
+            effective_dynamic_contact_hz,
+            requested_static_contact_hz,
+            effective_static_contact_hz,
+            contact_damping_ratio: physics.contact_damping_ratio,
+            speculative_distance: physics.speculative_distance,
+            max_depenetration_velocity: physics.max_depenetration_velocity,
             scenario: self.config.scenario.name(),
             scenario_hash: self.scenario_hash.clone(),
         };

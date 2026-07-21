@@ -179,6 +179,4 @@ pub use scenario::{
     p5_2_settling_soft_i1_comparator_scenario, p5_2_settling_soft_stack_matrix_scenario,
     p5_2_stale_reseed_reproducer_scenario,
 };
-#[cfg(feature = "solver-lab")]
-pub use solver_profile::BranchRobustInteractiveOptions;
 pub use solver_profile::SolverProfileConfig;

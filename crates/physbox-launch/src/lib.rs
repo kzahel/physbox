@@ -3,6 +3,7 @@
 use std::ffi::OsString;
 use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
+use std::{collections::BTreeSet, str::FromStr};
 
 use serde::Serialize;
 
@@ -12,6 +13,23 @@ pub const DEFAULT_WIDTH: u32 = 960;
 pub const DEFAULT_HEIGHT: u32 = 600;
 pub const DEFAULT_CAPTURE_FRAMES: u32 = 12;
 pub const DEFAULT_CAPTURE_FPS: u32 = 60;
+pub const PHYSICS_CONFIGURATION_VERSION: u32 = 1;
+pub const MIN_FIXED_STEP_HZ: u32 = 15;
+pub const MAX_FIXED_STEP_HZ: u32 = 240;
+pub const MIN_SOLVER_SUBSTEPS: u32 = 1;
+pub const MAX_SOLVER_SUBSTEPS: u32 = 8;
+pub const MIN_BIASED_ITERATIONS: u32 = 1;
+pub const MAX_BIASED_ITERATIONS: u32 = 4;
+pub const MIN_CONTACT_HZ: f32 = 1.0;
+pub const MAX_CONTACT_HZ: f32 = 120.0;
+pub const MIN_CONTACT_DAMPING_RATIO: f32 = 0.5;
+pub const MAX_CONTACT_DAMPING_RATIO: f32 = 20.0;
+pub const MIN_STATIC_CONTACT_HZ_MULTIPLIER: f32 = 0.5;
+pub const MAX_STATIC_CONTACT_HZ_MULTIPLIER: f32 = 16.0;
+pub const MIN_SPECULATIVE_DISTANCE: f32 = 0.0;
+pub const MAX_SPECULATIVE_DISTANCE: f32 = 1.0;
+pub const MIN_MAX_DEPENETRATION_VELOCITY: f32 = 0.1;
+pub const MAX_MAX_DEPENETRATION_VELOCITY: f32 = 100.0;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LaunchHost {
@@ -43,36 +61,136 @@ pub enum FrameMarkerMode {
 #[serde(rename_all = "kebab-case")]
 pub enum SolverProfileName {
     #[default]
-    Selected,
-    #[cfg(feature = "solver-lab")]
-    BranchRobust,
+    HardDirect,
+    SoftCoupled,
 }
 
 impl SolverProfileName {
     pub const fn name(self) -> &'static str {
         match self {
-            Self::Selected => "selected",
-            #[cfg(feature = "solver-lab")]
-            Self::BranchRobust => "branch-robust",
+            Self::HardDirect => "hard-direct",
+            Self::SoftCoupled => "soft-coupled",
         }
     }
 
-    #[cfg(feature = "solver-lab")]
     fn parse(value: &str) -> Result<Self, LaunchError> {
         match value {
-            "selected" => Ok(Self::Selected),
-            #[cfg(feature = "solver-lab")]
-            "branch-robust" => Ok(Self::BranchRobust),
+            "hard-direct" | "selected" => Ok(Self::HardDirect),
+            "soft-coupled" | "branch-robust" => Ok(Self::SoftCoupled),
             _ => Err(LaunchError(format!("unknown solver profile: {value}"))),
         }
     }
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SolverSelection {
-    pub profile: SolverProfileName,
-    pub options: Option<String>,
+pub struct PhysicsConfigurationV1 {
+    pub version: u32,
+    pub solver_profile: SolverProfileName,
+    pub fixed_step_hz: u32,
+    pub substeps: u32,
+    pub biased_iterations: u32,
+    pub contact_hertz: f32,
+    pub contact_damping_ratio: f32,
+    pub static_contact_hertz_multiplier: f32,
+    pub speculative_distance: f32,
+    pub max_depenetration_velocity: f32,
+}
+
+impl PhysicsConfigurationV1 {
+    pub const HARD_DIRECT: Self = Self {
+        version: PHYSICS_CONFIGURATION_VERSION,
+        solver_profile: SolverProfileName::HardDirect,
+        fixed_step_hz: 60,
+        substeps: 4,
+        biased_iterations: 2,
+        contact_hertz: 30.0,
+        contact_damping_ratio: 10.0,
+        static_contact_hertz_multiplier: 2.0,
+        speculative_distance: 0.02,
+        max_depenetration_velocity: 3.0,
+    };
+
+    pub const SOFT_COUPLED: Self = Self {
+        solver_profile: SolverProfileName::SoftCoupled,
+        biased_iterations: 1,
+        ..Self::HARD_DIRECT
+    };
+
+    pub const fn for_profile(profile: SolverProfileName) -> Self {
+        match profile {
+            SolverProfileName::HardDirect => Self::HARD_DIRECT,
+            SolverProfileName::SoftCoupled => Self::SOFT_COUPLED,
+        }
+    }
+
+    pub fn fixed_dt_seconds(self) -> f32 {
+        1.0 / self.fixed_step_hz as f32
+    }
+
+    pub fn validate(self) -> Result<(), LaunchError> {
+        if self.version != PHYSICS_CONFIGURATION_VERSION {
+            return Err(LaunchError(format!(
+                "unsupported physics configuration version {}, expected {PHYSICS_CONFIGURATION_VERSION}",
+                self.version
+            )));
+        }
+        bounded_integer(
+            "--sim-hz",
+            self.fixed_step_hz,
+            MIN_FIXED_STEP_HZ,
+            MAX_FIXED_STEP_HZ,
+        )?;
+        bounded_integer(
+            "--substeps",
+            self.substeps,
+            MIN_SOLVER_SUBSTEPS,
+            MAX_SOLVER_SUBSTEPS,
+        )?;
+        bounded_integer(
+            "--iterations",
+            self.biased_iterations,
+            MIN_BIASED_ITERATIONS,
+            MAX_BIASED_ITERATIONS,
+        )?;
+        bounded_float(
+            "--contact-hz",
+            self.contact_hertz,
+            MIN_CONTACT_HZ,
+            MAX_CONTACT_HZ,
+        )?;
+        bounded_float(
+            "--contact-damping",
+            self.contact_damping_ratio,
+            MIN_CONTACT_DAMPING_RATIO,
+            MAX_CONTACT_DAMPING_RATIO,
+        )?;
+        bounded_float(
+            "--static-contact-scale",
+            self.static_contact_hertz_multiplier,
+            MIN_STATIC_CONTACT_HZ_MULTIPLIER,
+            MAX_STATIC_CONTACT_HZ_MULTIPLIER,
+        )?;
+        bounded_float(
+            "--speculative-distance",
+            self.speculative_distance,
+            MIN_SPECULATIVE_DISTANCE,
+            MAX_SPECULATIVE_DISTANCE,
+        )?;
+        bounded_float(
+            "--max-depenetration-velocity",
+            self.max_depenetration_velocity,
+            MIN_MAX_DEPENETRATION_VELOCITY,
+            MAX_MAX_DEPENETRATION_VELOCITY,
+        )?;
+        Ok(())
+    }
+}
+
+impl Default for PhysicsConfigurationV1 {
+    fn default() -> Self {
+        Self::HARD_DIRECT
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
@@ -171,7 +289,7 @@ impl ValidationScenario {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct LaunchOptions {
     pub width: u32,
     pub height: u32,
@@ -181,7 +299,7 @@ pub struct LaunchOptions {
     pub output: Option<PathBuf>,
     pub report: Option<PathBuf>,
     pub scenario: ValidationScenario,
-    pub solver: SolverSelection,
+    pub physics: PhysicsConfigurationV1,
     pub frame_markers: FrameMarkerMode,
 }
 
@@ -196,13 +314,13 @@ impl Default for LaunchOptions {
             output: None,
             report: None,
             scenario: ValidationScenario::Bootstrap,
-            solver: SolverSelection::default(),
+            physics: PhysicsConfigurationV1::default(),
             frame_markers: FrameMarkerMode::Milestones,
         }
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct LaunchRequest {
     pub options: LaunchOptions,
     pub help_requested: bool,
@@ -238,9 +356,15 @@ where
     I: IntoIterator<Item = S>,
     S: Into<String>,
 {
-    let mut options = LaunchOptions::default();
+    let args = args.into_iter().map(Into::into).collect::<Vec<_>>();
+    let solver_profile = preparse_solver_profile(&args)?.unwrap_or_default();
+    let mut options = LaunchOptions {
+        physics: PhysicsConfigurationV1::for_profile(solver_profile),
+        ..LaunchOptions::default()
+    };
     let mut help_requested = false;
-    let mut args = args.into_iter().map(Into::into);
+    let mut seen_physics_fields = BTreeSet::new();
+    let mut args = args.into_iter();
     while let Some(argument) = args.next() {
         if argument == "--help" || argument == "-h" {
             help_requested = true;
@@ -249,7 +373,13 @@ where
         let value = args
             .next()
             .ok_or_else(|| LaunchError(format!("missing value for {argument}")))?;
-        apply_option(host, &mut options, &argument, value)?;
+        apply_option(
+            host,
+            &mut options,
+            &mut seen_physics_fields,
+            &argument,
+            value,
+        )?;
     }
     validate(host, &options)?;
     Ok(LaunchRequest {
@@ -265,10 +395,16 @@ pub fn parse_web_query(query: &str) -> Result<LaunchRequest, LaunchError> {
             "width" => "--width",
             "height" => "--height",
             "scenario" => "--scenario",
-            #[cfg(feature = "solver-lab")]
             "solver" => "--solver",
-            #[cfg(feature = "solver-lab")]
             "solver-options" => "--solver-options",
+            "sim-hz" => "--sim-hz",
+            "substeps" => "--substeps",
+            "iterations" => "--iterations",
+            "contact-hz" => "--contact-hz",
+            "contact-damping" => "--contact-damping",
+            "static-contact-scale" => "--static-contact-scale",
+            "speculative-distance" => "--speculative-distance",
+            "max-depenetration-velocity" => "--max-depenetration-velocity",
             unknown => return Err(LaunchError(format!("unknown web query option: {unknown}"))),
         };
         tokens.push(argument.to_owned());
@@ -294,11 +430,7 @@ pub fn usage(program: &str, host: LaunchHost) -> String {
     } else {
         ""
     };
-    let solver = if cfg!(feature = "solver-lab") {
-        "\n  --solver NAME    selected or branch-robust\n  --solver-options LIST  profile-owned comma-separated key=value settings"
-    } else {
-        ""
-    };
+    let solver = "\n  --solver NAME    soft-coupled or hard-direct (aliases: branch-robust, selected)\n  --sim-hz N       outer fixed rate, 15..=240 (default 60)\n  --substeps N     solver substeps, 1..=8 (default 4)\n  --iterations N   biased iterations, 1..=4 (soft default 1, hard default 2)\n  --contact-hz N   requested soft contact hertz, 1..=120\n  --contact-damping N  soft damping ratio, 0.5..=20\n  --static-contact-scale N  static contact hertz multiplier, 0.5..=16\n  --speculative-distance N  contact anticipation distance, 0..=1\n  --max-depenetration-velocity N  overlap recovery speed, 0.1..=100";
     format!(
         "Usage: {program} [options]\n\n  --width PX       viewport width (default 960)\n  --height PX      viewport height (default 600)\n  --scenario NAME  bootstrap, body-free-flight, rigid-floor, rigid-stack, rectangle-stack, circle-bucket-100, rectangle-bucket-100, reset-grab, solver-jacobi, solver-colored, solver-manifold-i2, solver-parallel-coloring, settling-hard-8, settling-candidate-8, settling-hard-16, settling-identity-16, settling-softness-16, settling-candidate-16{}{solver}{frame_markers}{capture}\n  -h, --help       print this help",
         if cfg!(feature = "solver-lab") {
@@ -312,6 +444,7 @@ pub fn usage(program: &str, host: LaunchHost) -> String {
 fn apply_option(
     host: LaunchHost,
     options: &mut LaunchOptions,
+    seen_physics_fields: &mut BTreeSet<&'static str>,
     argument: &str,
     value: String,
 ) -> Result<(), LaunchError> {
@@ -345,14 +478,47 @@ fn apply_option(
                 _ => return Err(LaunchError(format!("unknown scenario: {value}"))),
             }
         }
-        #[cfg(feature = "solver-lab")]
-        "--solver" => options.solver.profile = SolverProfileName::parse(&value)?,
-        #[cfg(feature = "solver-lab")]
+        "--solver" => {
+            mark_physics_field(seen_physics_fields, "solver")?;
+            options.physics.solver_profile = SolverProfileName::parse(&value)?;
+        }
         "--solver-options" => {
             if value.is_empty() {
                 return Err(LaunchError("--solver-options cannot be empty".to_owned()));
             }
-            options.solver.options = Some(value);
+            apply_legacy_solver_options(&mut options.physics, seen_physics_fields, &value)?;
+        }
+        "--sim-hz" => {
+            mark_physics_field(seen_physics_fields, "sim-hz")?;
+            options.physics.fixed_step_hz = parse_integer(argument, &value)?;
+        }
+        "--substeps" => {
+            mark_physics_field(seen_physics_fields, "substeps")?;
+            options.physics.substeps = parse_integer(argument, &value)?;
+        }
+        "--iterations" => {
+            mark_physics_field(seen_physics_fields, "iterations")?;
+            options.physics.biased_iterations = parse_integer(argument, &value)?;
+        }
+        "--contact-hz" => {
+            mark_physics_field(seen_physics_fields, "contact-hz")?;
+            options.physics.contact_hertz = parse_float(argument, &value)?;
+        }
+        "--contact-damping" => {
+            mark_physics_field(seen_physics_fields, "contact-damping")?;
+            options.physics.contact_damping_ratio = parse_float(argument, &value)?;
+        }
+        "--static-contact-scale" => {
+            mark_physics_field(seen_physics_fields, "static-contact-scale")?;
+            options.physics.static_contact_hertz_multiplier = parse_float(argument, &value)?;
+        }
+        "--speculative-distance" => {
+            mark_physics_field(seen_physics_fields, "speculative-distance")?;
+            options.physics.speculative_distance = parse_float(argument, &value)?;
+        }
+        "--max-depenetration-velocity" => {
+            mark_physics_field(seen_physics_fields, "max-depenetration-velocity")?;
+            options.physics.max_depenetration_velocity = parse_float(argument, &value)?;
         }
         "--frame-markers" if host.supports_frame_markers() => {
             options.frame_markers = match value.as_str() {
@@ -380,23 +546,125 @@ fn apply_option(
     Ok(())
 }
 
+fn preparse_solver_profile(args: &[String]) -> Result<Option<SolverProfileName>, LaunchError> {
+    let mut profile = None;
+    let mut index = 0;
+    while index < args.len() {
+        let argument = &args[index];
+        if argument == "--help" || argument == "-h" {
+            index += 1;
+            continue;
+        }
+        let value = args
+            .get(index + 1)
+            .ok_or_else(|| LaunchError(format!("missing value for {argument}")))?;
+        if argument == "--solver" {
+            if profile.is_some() {
+                return Err(LaunchError("duplicate physics option: solver".to_owned()));
+            }
+            profile = Some(SolverProfileName::parse(value)?);
+        }
+        index += 2;
+    }
+    Ok(profile)
+}
+
+fn mark_physics_field(
+    seen: &mut BTreeSet<&'static str>,
+    field: &'static str,
+) -> Result<(), LaunchError> {
+    if !seen.insert(field) {
+        return Err(LaunchError(format!("duplicate physics option: {field}")));
+    }
+    Ok(())
+}
+
+fn apply_legacy_solver_options(
+    physics: &mut PhysicsConfigurationV1,
+    seen: &mut BTreeSet<&'static str>,
+    encoded: &str,
+) -> Result<(), LaunchError> {
+    if physics.solver_profile != SolverProfileName::SoftCoupled {
+        return Err(LaunchError(
+            "hard-direct solver does not accept legacy --solver-options".to_owned(),
+        ));
+    }
+    for field in encoded.split(',') {
+        let (name, value) = field.split_once('=').ok_or_else(|| {
+            LaunchError(format!("solver option {field} must use key=value syntax"))
+        })?;
+        match name {
+            "hz" => {
+                mark_physics_field(seen, "contact-hz")?;
+                physics.contact_hertz = parse_float("solver option hz", value)?;
+            }
+            "damping" => {
+                mark_physics_field(seen, "contact-damping")?;
+                physics.contact_damping_ratio = parse_float("solver option damping", value)?;
+            }
+            "static-scale" => {
+                mark_physics_field(seen, "static-contact-scale")?;
+                physics.static_contact_hertz_multiplier =
+                    parse_float("solver option static-scale", value)?;
+            }
+            _ => return Err(LaunchError(format!("unknown legacy solver option: {name}"))),
+        }
+    }
+    Ok(())
+}
+
+fn bounded_integer(
+    argument: &str,
+    value: u32,
+    minimum: u32,
+    maximum: u32,
+) -> Result<(), LaunchError> {
+    if !(minimum..=maximum).contains(&value) {
+        return Err(LaunchError(format!(
+            "{argument} must be between {minimum} and {maximum}"
+        )));
+    }
+    Ok(())
+}
+
+fn bounded_float(
+    argument: &str,
+    value: f32,
+    minimum: f32,
+    maximum: f32,
+) -> Result<(), LaunchError> {
+    if !value.is_finite() || !(minimum..=maximum).contains(&value) {
+        return Err(LaunchError(format!(
+            "{argument} must be finite and between {minimum} and {maximum}"
+        )));
+    }
+    Ok(())
+}
+
 fn parse_positive(argument: &str, value: &str) -> Result<u32, LaunchError> {
-    let parsed = value
-        .parse::<u32>()
-        .map_err(|_| LaunchError(format!("{argument} must be a positive integer")))?;
+    let parsed = parse_integer(argument, value)?;
     if parsed == 0 {
         return Err(LaunchError(format!("{argument} must be greater than zero")));
     }
     Ok(parsed)
 }
 
-fn validate(host: LaunchHost, options: &LaunchOptions) -> Result<(), LaunchError> {
-    #[cfg(feature = "solver-lab")]
-    if options.solver.profile == SolverProfileName::Selected && options.solver.options.is_some() {
-        return Err(LaunchError(
-            "selected solver does not accept --solver-options".to_owned(),
-        ));
+fn parse_integer(argument: &str, value: &str) -> Result<u32, LaunchError> {
+    u32::from_str(value)
+        .map_err(|_| LaunchError(format!("{argument} must be a nonnegative integer")))
+}
+
+fn parse_float(argument: &str, value: &str) -> Result<f32, LaunchError> {
+    let parsed = f32::from_str(value)
+        .map_err(|_| LaunchError(format!("{argument} must be a finite number")))?;
+    if !parsed.is_finite() {
+        return Err(LaunchError(format!("{argument} must be finite")));
     }
+    Ok(parsed)
+}
+
+fn validate(host: LaunchHost, options: &LaunchOptions) -> Result<(), LaunchError> {
+    options.physics.validate()?;
     if host.supports_capture() && options.output.is_none() {
         return Err(LaunchError("headless capture requires --output".to_owned()));
     }
@@ -464,22 +732,28 @@ mod tests {
         assert!(error.to_string().contains("unknown web query"));
     }
 
-    #[cfg(feature = "solver-lab")]
     #[test]
-    fn selected_solver_rejects_candidate_options() {
+    fn hard_direct_rejects_legacy_soft_options() {
         let error = parse_web_query("?solver-options=hz%3D30").unwrap_err();
         assert!(
             error
                 .to_string()
-                .contains("selected solver does not accept")
+                .contains("hard-direct solver does not accept")
         );
     }
 
-    #[cfg(not(feature = "solver-lab"))]
     #[test]
-    fn production_launch_does_not_expose_solver_profiles() {
-        let error = parse_web_query("?solver=selected").unwrap_err();
-        assert!(error.to_string().contains("unknown web query"));
+    fn production_launch_exposes_canonical_profiles_and_migration_aliases() {
+        let hard = parse_web_query("?solver=selected").unwrap();
+        assert_eq!(
+            hard.options.physics.solver_profile,
+            SolverProfileName::HardDirect
+        );
+        let soft = parse_web_query("?solver=branch-robust").unwrap();
+        assert_eq!(
+            soft.options.physics.solver_profile,
+            SolverProfileName::SoftCoupled
+        );
     }
 
     #[cfg(feature = "solver-lab")]
@@ -494,14 +768,88 @@ mod tests {
             ValidationScenario::SolverLabStack16
         );
         assert_eq!(
-            request.options.solver.profile,
-            SolverProfileName::BranchRobust
+            request.options.physics.solver_profile,
+            SolverProfileName::SoftCoupled
         );
-        assert_eq!(
-            request.options.solver.options.as_deref(),
-            Some("hz=30,damping=10,static-scale=8")
-        );
+        assert_eq!(request.options.physics.contact_hertz, 30.0);
+        assert_eq!(request.options.physics.contact_damping_ratio, 10.0);
+        assert_eq!(request.options.physics.static_contact_hertz_multiplier, 8.0);
         assert!(!ValidationScenario::MENU.contains(&ValidationScenario::SolverLabStack16));
+    }
+
+    #[test]
+    fn every_transport_produces_the_same_complete_physics_configuration() {
+        let native = parse_tokens(
+            LaunchHost::Desktop,
+            [
+                "--solver",
+                "soft-coupled",
+                "--sim-hz",
+                "120",
+                "--substeps",
+                "8",
+                "--iterations",
+                "2",
+                "--contact-hz",
+                "45.5",
+                "--contact-damping",
+                "8",
+                "--static-contact-scale",
+                "3",
+                "--speculative-distance",
+                "0.03",
+                "--max-depenetration-velocity",
+                "4",
+            ],
+        )
+        .unwrap();
+        let web = parse_web_query(
+            "?solver=soft-coupled&sim-hz=120&substeps=8&iterations=2&contact-hz=45.5&contact-damping=8&static-contact-scale=3&speculative-distance=0.03&max-depenetration-velocity=4",
+        )
+        .unwrap();
+        let android = parse_android_json(
+            r#"["--solver","soft-coupled","--sim-hz","120","--substeps","8","--iterations","2","--contact-hz","45.5","--contact-damping","8","--static-contact-scale","3","--speculative-distance","0.03","--max-depenetration-velocity","4"]"#,
+        )
+        .unwrap();
+        assert_eq!(native.options.physics, web.options.physics);
+        assert_eq!(native.options.physics, android.options.physics);
+        assert_eq!(native.options.physics.fixed_dt_seconds(), 1.0 / 120.0);
+    }
+
+    #[test]
+    fn solver_selection_is_order_independent_and_applies_profile_defaults() {
+        let request = parse_tokens(
+            LaunchHost::Desktop,
+            ["--iterations", "3", "--solver", "soft-coupled"],
+        )
+        .unwrap();
+        assert_eq!(
+            request.options.physics.solver_profile,
+            SolverProfileName::SoftCoupled
+        );
+        assert_eq!(request.options.physics.biased_iterations, 3);
+
+        let seed = parse_tokens(LaunchHost::Desktop, ["--solver", "soft-coupled"]).unwrap();
+        assert_eq!(seed.options.physics, PhysicsConfigurationV1::SOFT_COUPLED);
+    }
+
+    #[test]
+    fn physics_parser_rejects_duplicate_unknown_nonfinite_and_out_of_range_fields() {
+        for (arguments, expected) in [
+            (
+                vec!["--substeps", "4", "--substeps", "8"],
+                "duplicate physics option",
+            ),
+            (vec!["--contact-hz", "NaN"], "must be finite"),
+            (vec!["--sim-hz", "241"], "between 15 and 240"),
+            (
+                vec!["--solver", "soft-coupled", "--solver-options", "wat=1"],
+                "unknown legacy solver option",
+            ),
+        ] {
+            let error = parse_tokens(LaunchHost::Desktop, arguments).unwrap_err();
+            assert!(error.to_string().contains(expected), "{error}");
+        }
     }
 
     #[test]

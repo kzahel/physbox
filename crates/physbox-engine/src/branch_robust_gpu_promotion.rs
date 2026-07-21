@@ -7,7 +7,7 @@ use crate::body_floor_solver::{
     GpuSoftFeedbackPolicyV1, GpuSolverExecutionV4, GpuSolverSchedulingPolicyV1,
     GpuSubstepContactPolicyV1,
 };
-use physbox_contracts::SolverSettingsV1;
+use physbox_contracts::{SolverSettingsV1, Validate};
 
 pub const BRANCH_ROBUST_GPU_PROMOTION_POLICY_VERSION: u32 = 1;
 pub const BRANCH_ROBUST_GPU_PROMOTION_CANDIDATE_ID: &str = "branch-robust-product-promotion-v1";
@@ -81,23 +81,26 @@ pub(crate) fn validate_branch_robust_gpu_promotion_settings(
     crate::authority_gpu_probe::validate_authority_gpu_probe_settings(settings)
 }
 
-/// Coefficient-exploration lane: the exact branch-robust execution tuple with
-/// the scenario's own soft-contact coefficients. Requires the same four-substep
-/// i2 source shape but no frozen 30 Hz / damping 10 pin. Laboratory-only and
-/// never product-selectable.
+/// Shared soft-coupled execution with scenario-owned resolution and contact
+/// coefficients. The historical branch-robust name remains in this module for
+/// provenance, but this validator now owns the bounded parametric product path.
 #[cfg_attr(feature = "production-validation", allow(dead_code))]
 pub(crate) fn validate_branch_robust_tunable_settings(
     settings: &SolverSettingsV1,
 ) -> Result<(), String> {
     let Some(softness) = settings.contact_softness else {
-        return Err("branch-robust tunable lane requires soft contact".to_owned());
+        return Err("soft-coupled solver requires soft contact".to_owned());
     };
-    if settings.substeps != 4
-        || settings.iterations != 2
+    settings.validate().map_err(|error| error.to_string())?;
+    if !(1..=16).contains(&settings.substeps)
+        || !(1..=8).contains(&settings.iterations)
         || softness.version != physbox_contracts::CONTACT_SOFTNESS_POLICY_VERSION
     {
-        return Err("branch-robust tunable lane requires the four-substep i2 source".to_owned());
+        return Err(
+            "soft-coupled solver requires 1..=16 substeps and 1..=8 biased iterations".to_owned(),
+        );
     }
+    softness.validate().map_err(|error| error.to_string())?;
     Ok(())
 }
 
@@ -111,7 +114,6 @@ pub(crate) fn validate_branch_robust_tunable_runtime_tuple(
     substep_contacts: GpuSubstepContactPolicyV1,
     restitution_timing: GpuRestitutionTimingPolicyV1,
 ) -> Result<(), String> {
-    BranchRobustGpuPromotionPolicyV1::AUTHORIZED.validate_product_selection(false)?;
     if execution != GpuSolverExecutionV4::AUTHORITY_GPU_PROBE
         || (scheduling != GpuSolverSchedulingPolicyV1::AUTHORITY_GPU_PROBE
             && scheduling != GpuSolverSchedulingPolicyV1::AUTHORITY_GPU_PROBE_SMALL_WORLD)

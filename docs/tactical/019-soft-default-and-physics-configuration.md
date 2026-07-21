@@ -104,7 +104,7 @@ agree; no document falsely says that ordinary builds already default to soft.
 
 ### S19.2 — canonical configuration and launch ownership
 
-- [ ] Add one versioned engine configuration carrying solver profile, outer
+- [x] Add one versioned engine configuration carrying solver profile, outer
   fixed rate, substeps, biased iterations, soft contact tuning, and the
   existing contact-recovery policy. Prefer one canonical rate representation
   and derive `dt` exactly once.
@@ -112,9 +112,9 @@ agree; no document falsely says that ordinary builds already default to soft.
   web mappings, and Android JSON argv decoding. Preserve explicit aliases for
   old `selected` and `branch-robust` launches during migration, while reports
   emit canonical ids.
-- [ ] Project launch configuration into `EngineConfig` once and into the
+- [x] Project launch configuration into `EngineConfig` once and into the
   neutral scenario once. Remove constructor-local replacement of those values.
-- [ ] Version/hash the complete applied configuration in scene contracts and
+- [x] Version/hash the complete applied configuration in scene contracts and
   validation provenance; reject duplicate, unknown, non-finite, zero, or out-
   of-range fields before GPU allocation.
 
@@ -131,13 +131,13 @@ platform adapters contain no physics defaults.
 
 ### S19.3 — configurable fixed clock
 
-- [ ] Construct `SimulationClock` from configured fixed `dt`; remove
+- [x] Construct `SimulationClock` from configured fixed `dt`; remove
   `FIXED_STEP_HZ`/`FIXED_STEP_SECONDS` as behavioral constants from admission,
   exact stepping, reporting, frame parameters, and simulated-time accounting.
-- [ ] Preserve pause, resume, rebase, single-step, lifecycle discard, at-most-
+- [x] Preserve pause, resume, rebase, single-step, lifecycle discard, at-most-
   one interactive step, fractional retention, and permanent whole-step slip at
   30, 60, and 120 Hz.
-- [ ] Apply a rate change only through an atomic world restart/rebuild. Never
+- [x] Apply a rate change only through an atomic world restart/rebuild. Never
   mutate `dt` during an encoded step or retain old-rate accumulator debt.
 - [ ] Report requested rate, exact `dt`, effective scale, presentation rate,
   and whether the host is sustaining the request. A 120 Hz world on a 60 Hz
@@ -149,7 +149,7 @@ than one outer step.
 
 ### S19.4 — parametric soft GPU execution
 
-- [ ] Generalize the soft-coupled constructor and pass graph so allowed
+- [x] Generalize the soft-coupled constructor and pass graph so allowed
   substep and biased-iteration counts are configuration, not validation-only
   source pins. Preserve point-sequential normal/friction ownership, warm start,
   fixed-anchor refresh, branch-robust separation, relaxation, restitution

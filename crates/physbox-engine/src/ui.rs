@@ -1461,8 +1461,7 @@ mod tests {
     #[cfg(feature = "solver-lab")]
     #[test]
     fn solver_menu_batch_is_bounded() {
-        let active =
-            SolverProfileConfig::BranchRobust(crate::BranchRobustInteractiveOptions::default());
+        let active = SolverProfileConfig::soft_coupled();
         let profiles = SolverProfileConfig::available();
         let batch = static_batch(
             [960, 600],
