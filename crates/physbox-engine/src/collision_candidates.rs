@@ -11,7 +11,8 @@ use physbox_contracts::{
 
 use crate::{
     AdapterDiagnostics, BODY_COMMAND_CAPACITY, GpuBodyStorage,
-    gpu_context::{create_instance, request_adapter, request_device},
+    broadphase_benchmark::GpuBroadphaseTimingV1,
+    gpu_context::{create_instance, request_adapter, request_device_with_features},
 };
 
 const AABB_WORKGROUP_SIZE: u32 = 64;
@@ -118,6 +119,25 @@ impl GpuCandidateOutput {
             || self.candidates.len() as u64 != self.work.candidate_pairs && !overflowed
         {
             return Err("GPU candidate output failure/count state is inconsistent".to_owned());
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GpuCandidateBenchmarkOutput {
+    pub correctness: GpuCandidateOutput,
+    pub timing: GpuBroadphaseTimingV1,
+    pub allocated_bytes: u64,
+}
+
+impl GpuCandidateBenchmarkOutput {
+    pub fn validate(&self) -> Result<(), String> {
+        self.correctness.validate()?;
+        self.timing.validate()?;
+        if self.allocated_bytes == 0 {
+            return Err("GPU all-pairs benchmark omitted allocation bytes".to_owned());
         }
         Ok(())
     }
@@ -322,6 +342,17 @@ impl CandidateCase {
             ));
         }
         let block_count = pair_count.div_ceil(SCAN_WORKGROUP_SIZE);
+        let maximum_dispatch = device.limits().max_compute_workgroups_per_dimension;
+        let required_dispatch = pair_count
+            .max(32)
+            .div_ceil(AABB_WORKGROUP_SIZE)
+            .max(block_count)
+            .max(slot_capacity.div_ceil(PAIR_WORKGROUP_SIZE));
+        if required_dispatch > maximum_dispatch {
+            return Err(format!(
+                "GPU all-pairs candidate stage requires {required_dispatch} workgroups in one dimension, above adapter limit {maximum_dispatch}"
+            ));
+        }
         let speculative_distance = scenario
             .settings
             .contact_policy
@@ -454,13 +485,39 @@ impl CandidateCase {
         pipelines: &CandidatePipelines,
         beginning_timestamp: Option<(&wgpu::QuerySet, u32)>,
     ) {
+        self.encode_with_timestamp_range(
+            encoder,
+            pipelines,
+            beginning_timestamp.map(|(query_set, beginning)| (query_set, Some(beginning), None)),
+        );
+    }
+
+    pub(crate) fn encode_with_timestamps(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        pipelines: &CandidatePipelines,
+        timestamps: Option<(&wgpu::QuerySet, u32, u32)>,
+    ) {
+        self.encode_with_timestamp_range(
+            encoder,
+            pipelines,
+            timestamps.map(|(query_set, beginning, end)| (query_set, Some(beginning), Some(end))),
+        );
+    }
+
+    fn encode_with_timestamp_range(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        pipelines: &CandidatePipelines,
+        timestamps: Option<(&wgpu::QuerySet, Option<u32>, Option<u32>)>,
+    ) {
         let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some("physbox5_collision_candidate_passes"),
-            timestamp_writes: beginning_timestamp.map(|(query_set, beginning)| {
+            timestamp_writes: timestamps.map(|(query_set, beginning, end)| {
                 wgpu::ComputePassTimestampWrites {
                     query_set,
-                    beginning_of_pass_write_index: Some(beginning),
-                    end_of_pass_write_index: None,
+                    beginning_of_pass_write_index: beginning,
+                    end_of_pass_write_index: end,
                 }
             }),
         });
@@ -615,6 +672,7 @@ pub struct GpuCandidateRunner {
     queue: wgpu::Queue,
     diagnostics: AdapterDiagnostics,
     pipelines: CandidatePipelines,
+    timestamps_available: bool,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -623,13 +681,20 @@ impl GpuCandidateRunner {
         let instance = create_instance();
         let adapter = request_adapter(&instance, None).await?;
         let diagnostics = AdapterDiagnostics::from_adapter(&adapter);
-        let (device, queue) = request_device(&adapter).await?;
+        let timestamps_available = adapter.features().contains(wgpu::Features::TIMESTAMP_QUERY);
+        let required_features = if timestamps_available {
+            wgpu::Features::TIMESTAMP_QUERY
+        } else {
+            wgpu::Features::empty()
+        };
+        let (device, queue) = request_device_with_features(&adapter, required_features).await?;
         let pipelines = CandidatePipelines::new(&device);
         Ok(Self {
             device,
             queue,
             diagnostics,
             pipelines,
+            timestamps_available,
         })
     }
 
@@ -790,6 +855,34 @@ impl GpuCandidateRunner {
             work,
             capacities: case.capacities(candidate_capacity),
             failure,
+        };
+        output.validate()?;
+        Ok(output)
+    }
+
+    pub fn benchmark(
+        &self,
+        scenario: &ScenarioV1,
+        candidate_capacity: Option<u32>,
+        warmup_steps: u32,
+        sample_steps: u32,
+    ) -> Result<GpuCandidateBenchmarkOutput, String> {
+        let case = CandidateCase::new(&self.device, &self.pipelines, scenario, candidate_capacity)?;
+        let allocated_bytes = case.allocated_bytes();
+        let timing = crate::broadphase_benchmark::benchmark_gpu_case(
+            &self.device,
+            &self.queue,
+            self.timestamps_available,
+            warmup_steps,
+            sample_steps,
+            |encoder, timestamps| {
+                case.encode_with_timestamps(encoder, &self.pipelines, timestamps);
+            },
+        )?;
+        let output = GpuCandidateBenchmarkOutput {
+            correctness: self.run(scenario, candidate_capacity)?,
+            timing,
+            allocated_bytes,
         };
         output.validate()?;
         Ok(output)

@@ -7,6 +7,8 @@ use physbox_engine::{
     EngineConfig, FrameInput, GpuBodyBenchmarkSession, InputEvent, PointerEvent, PointerPhase,
     StepRequest, SurfaceRenderer, WheelEvent, create_instance,
 };
+#[cfg(all(target_arch = "wasm32", feature = "solver-lab"))]
+use physbox_engine::{GpuBroadphaseBrowserSession, P5_3BroadphasePattern};
 #[cfg(target_arch = "wasm32")]
 use physbox_launch::parse_web_query;
 #[cfg(target_arch = "wasm32")]
@@ -207,6 +209,80 @@ pub async fn run_body_benchmark(
     serde_json::to_string(&lanes).map_err(|error| js_error(error.to_string()))
 }
 
+#[cfg(all(target_arch = "wasm32", feature = "solver-lab"))]
+#[wasm_bindgen(js_name = runBroadphaseBrowserProbe)]
+pub async fn run_broadphase_browser_probe(
+    counts_csv: String,
+    patterns_csv: String,
+    seed: u32,
+    warmup_steps: u32,
+    samples: u32,
+) -> Result<String, JsValue> {
+    let counts = parse_body_counts(&counts_csv).map_err(js_error)?;
+    if counts.iter().any(|count| *count < 2) || warmup_steps == 0 || samples == 0 {
+        return Err(js_error(
+            "browser broadphase probe requires at least two proxies and positive sample counts",
+        ));
+    }
+    let patterns = parse_broadphase_patterns(&patterns_csv).map_err(js_error)?;
+    let mut rows = Vec::new();
+    for count in counts {
+        for pattern in patterns.iter().copied() {
+            if pattern == P5_3BroadphasePattern::CompleteOverlap && count > 32 {
+                continue;
+            }
+            let case_seed = u64::from(seed) + u64::from(count) * 17 + pattern as u64;
+            let session = GpuBroadphaseBrowserSession::new(pattern, count, case_seed)
+                .await
+                .map_err(js_error)?;
+            for _ in 0..warmup_steps {
+                session.submit_sap();
+                wait_for_broadphase_submission(&session).await?;
+                session.submit_grid();
+                wait_for_broadphase_submission(&session).await?;
+            }
+            let mut sap_host_completion_seconds = Vec::with_capacity(samples as usize);
+            let mut grid_host_completion_seconds = Vec::with_capacity(samples as usize);
+            for _ in 0..samples {
+                let started = performance_now()?;
+                session.submit_sap();
+                wait_for_broadphase_submission(&session).await?;
+                sap_host_completion_seconds.push((performance_now()? - started) * 0.001);
+                let started = performance_now()?;
+                session.submit_grid();
+                wait_for_broadphase_submission(&session).await?;
+                grid_host_completion_seconds.push((performance_now()? - started) * 0.001);
+            }
+            rows.push(serde_json::json!({
+                "probe": session.probe(),
+                "warmupSteps": warmup_steps,
+                "samples": samples,
+                "sapHostCompletionSeconds": sap_host_completion_seconds,
+                "gridHostCompletionSeconds": grid_host_completion_seconds,
+                "completed": true,
+            }));
+        }
+    }
+    serde_json::to_string(&rows).map_err(|error| js_error(error.to_string()))
+}
+
+#[cfg(all(target_arch = "wasm32", feature = "solver-lab"))]
+fn parse_broadphase_patterns(value: &str) -> Result<Vec<P5_3BroadphasePattern>, String> {
+    let patterns = value
+        .split(',')
+        .map(|name| {
+            P5_3BroadphasePattern::ALL
+                .into_iter()
+                .find(|pattern| pattern.name() == name)
+                .ok_or_else(|| format!("unknown broadphase pattern: {name}"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if patterns.is_empty() {
+        return Err("browser broadphase patterns must be nonempty".to_owned());
+    }
+    Ok(patterns)
+}
+
 #[cfg(any(target_arch = "wasm32", test))]
 fn parse_body_counts(value: &str) -> Result<Vec<u32>, String> {
     let mut counts = value
@@ -233,6 +309,22 @@ fn parse_body_counts(value: &str) -> Result<Vec<u32>, String> {
 async fn wait_for_submission(session: &GpuBodyBenchmarkSession) -> Result<(), JsValue> {
     let completion = session.begin_completion_fence();
     wait_for_mapping(session, || completion.is_ready()).await?;
+    completion.finish().map_err(js_error)
+}
+
+#[cfg(all(target_arch = "wasm32", feature = "solver-lab"))]
+async fn wait_for_broadphase_submission(
+    session: &GpuBroadphaseBrowserSession,
+) -> Result<(), JsValue> {
+    let completion = session.begin_completion_fence();
+    let started = performance_now()?;
+    while !completion.is_ready() {
+        session.poll().map_err(js_error)?;
+        if performance_now()? - started > 60_000.0 {
+            return Err(js_error("browser broadphase probe timed out"));
+        }
+        yield_browser().await?;
+    }
     completion.finish().map_err(js_error)
 }
 

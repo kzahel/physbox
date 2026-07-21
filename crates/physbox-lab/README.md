@@ -11,6 +11,8 @@ Cargo automatic binary discovery is disabled. The maintained commands are:
   projection and playback;
 - `physbox-solver-evidence` and `physbox-scheduler-benchmark`: selected-solver
   evidence and scheduling cost;
+- `physbox-broadphase-evidence`: focused brute/SAP/grid completeness, capacity,
+  work, memory, and steady-state timing matrices;
 - `physbox-settling-backend-trace`: current settling diagnostics; and
 - `physbox-s17-product-relative`: the retained S17 runner reused by the S18
   coefficient loop and any later promotion review.
@@ -20,3 +22,7 @@ deliberately absent from Cargo metadata, workspace tests, and clippy. To
 reopen one, first obtain the technical authorization required by its tactical,
 then add an explicit `[[bin]]` entry here with `test = false`. Do not restore
 automatic discovery.
+
+The Browser WebGPU portability companion is
+`npm run benchmark:broadphase-browser`. Both broadphase lanes are opt-in and
+remain outside the everyday smoke suite.

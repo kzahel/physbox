@@ -6,6 +6,7 @@ use crate::{
 };
 
 pub const COLLISION_LAYOUT_VERSION: u32 = 1;
+pub const BROADPHASE_CONTRACT_VERSION: u32 = 1;
 pub const ANALYTIC_SHAPE_LAYOUT_VERSION: u32 = 1;
 pub const ANALYTIC_SHAPE_FLAG_RECTANGLE: u32 = 1 << 8;
 pub const ANALYTIC_SHAPE_FLAG_CIRCLE: u32 = 1 << 9;
@@ -205,6 +206,225 @@ impl Validate for BodyAabbV1 {
 pub struct CandidatePairV1 {
     pub body_a: BodyId,
     pub body_b: BodyId,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum BroadphaseAlgorithmV1 {
+    BruteForce,
+    SweepAndPrune,
+    MultiCellGrid,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum BroadphaseMobilityV1 {
+    Dynamic,
+    Fixed,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BroadphaseProxyV1 {
+    pub aabb: BodyAabbV1,
+    pub mobility: BroadphaseMobilityV1,
+}
+
+impl Validate for BroadphaseProxyV1 {
+    fn validate(&self) -> Result<(), ContractError> {
+        self.aabb.validate()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BroadphaseSnapshotV1 {
+    pub schema_version: u32,
+    pub contract_version: u32,
+    pub id: String,
+    pub seed: u64,
+    pub proxies: Vec<BroadphaseProxyV1>,
+}
+
+impl Validate for BroadphaseSnapshotV1 {
+    fn validate(&self) -> Result<(), ContractError> {
+        version(self.schema_version)?;
+        if self.contract_version != BROADPHASE_CONTRACT_VERSION {
+            return Err(ContractError(format!(
+                "unsupported broadphase contract version {}",
+                self.contract_version
+            )));
+        }
+        if self.id.is_empty() || self.proxies.len() < 2 {
+            return Err(ContractError(
+                "broadphase snapshot requires an id and at least two proxies".to_owned(),
+            ));
+        }
+        sorted_unique_by(&self.proxies, |proxy| proxy.aabb.body, "broadphase proxies")?;
+        for proxy in &self.proxies {
+            proxy.validate()?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BroadphaseWorkV1 {
+    pub proxies: u64,
+    pub dynamic_proxies: u64,
+    pub fixed_proxies: u64,
+    pub pair_tests: u64,
+    pub fixed_fixed_rejected: u64,
+    pub candidate_emissions: u64,
+    pub duplicate_emissions: u64,
+    pub unique_candidates: u64,
+    pub sort_elements: u64,
+    pub sort_passes: u64,
+    pub cell_records: u64,
+    pub global_statics: u64,
+    pub maximum_active: u64,
+    pub maximum_cell_occupancy: u64,
+    pub dispatches: u64,
+}
+
+impl Validate for BroadphaseWorkV1 {
+    fn validate(&self) -> Result<(), ContractError> {
+        let classified = self
+            .dynamic_proxies
+            .checked_add(self.fixed_proxies)
+            .ok_or_else(|| ContractError("broadphase proxy accounting overflowed".to_owned()))?;
+        let emitted = self
+            .duplicate_emissions
+            .checked_add(self.unique_candidates)
+            .ok_or_else(|| ContractError("broadphase emission accounting overflowed".to_owned()))?;
+        if classified != self.proxies
+            || emitted != self.candidate_emissions
+            || self.fixed_fixed_rejected > self.pair_tests
+            || self.candidate_emissions > self.pair_tests
+            || self.global_statics > self.fixed_proxies
+            || self.maximum_active > self.proxies
+            || self.maximum_cell_occupancy > self.cell_records
+        {
+            return Err(ContractError(
+                "broadphase work counters are internally inconsistent".to_owned(),
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BroadphaseResultV1 {
+    pub schema_version: u32,
+    pub contract_version: u32,
+    pub algorithm: BroadphaseAlgorithmV1,
+    pub source_snapshot_hash: String,
+    pub pairs: Vec<CandidatePairV1>,
+    pub work: BroadphaseWorkV1,
+    pub capacities: Vec<CollisionCapacityV1>,
+    pub failure: Option<FailureV1>,
+}
+
+impl Validate for BroadphaseResultV1 {
+    fn validate(&self) -> Result<(), ContractError> {
+        version(self.schema_version)?;
+        if self.contract_version != BROADPHASE_CONTRACT_VERSION
+            || !is_sha256(&self.source_snapshot_hash)
+        {
+            return Err(ContractError(
+                "invalid broadphase result identity or version".to_owned(),
+            ));
+        }
+        sorted_unique(&self.pairs, "broadphase pairs")?;
+        for pair in &self.pairs {
+            pair.validate()?;
+        }
+        self.work.validate()?;
+        sorted_unique_by(
+            &self.capacities,
+            |capacity| capacity.class.clone(),
+            "broadphase capacities",
+        )?;
+        for capacity in &self.capacities {
+            capacity.validate()?;
+        }
+        if let Some(failure) = &self.failure {
+            failure.validate()?;
+        }
+        let overflowed = self.capacities.iter().any(|capacity| capacity.overflowed);
+        if overflowed
+            != self
+                .failure
+                .as_ref()
+                .is_some_and(|failure| failure.kind == FailureKindV1::CapacityOverflow)
+            || (overflowed && !self.pairs.is_empty())
+            || (!overflowed && self.pairs.len() as u64 != self.work.unique_candidates)
+        {
+            return Err(ContractError(
+                "broadphase result failure/count state is inconsistent".to_owned(),
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BroadphaseEvaluationV1 {
+    pub schema_version: u32,
+    pub contract_version: u32,
+    pub algorithm: BroadphaseAlgorithmV1,
+    pub oracle_pairs: u64,
+    pub candidate_pairs: u64,
+    pub missing_pairs: u64,
+    pub unexpected_pairs: u64,
+    pub first_missing_pair: Option<CandidatePairV1>,
+    pub first_unexpected_pair: Option<CandidatePairV1>,
+    pub candidate_amplification: FiniteF32,
+    pub capacity_clean: bool,
+    pub exact_replay: bool,
+    pub accepted: bool,
+}
+
+impl Validate for BroadphaseEvaluationV1 {
+    fn validate(&self) -> Result<(), ContractError> {
+        version(self.schema_version)?;
+        if self.contract_version != BROADPHASE_CONTRACT_VERSION {
+            return Err(ContractError(format!(
+                "unsupported broadphase evaluation version {}",
+                self.contract_version
+            )));
+        }
+        self.candidate_amplification.validate()?;
+        if let Some(pair) = self.first_missing_pair {
+            pair.validate()?;
+        }
+        if let Some(pair) = self.first_unexpected_pair {
+            pair.validate()?;
+        }
+        let shared_from_oracle = self.oracle_pairs.checked_sub(self.missing_pairs);
+        let shared_from_candidate = self.candidate_pairs.checked_sub(self.unexpected_pairs);
+        let expected_amplification = self.candidate_pairs as f32 / self.oracle_pairs.max(1) as f32;
+        let first_missing_consistent =
+            (self.missing_pairs == 0) == self.first_missing_pair.is_none();
+        let first_unexpected_consistent =
+            (self.unexpected_pairs == 0) == self.first_unexpected_pair.is_none();
+        let expected_accepted = self.missing_pairs == 0 && self.capacity_clean && self.exact_replay;
+        if shared_from_oracle.is_none()
+            || shared_from_oracle != shared_from_candidate
+            || !first_missing_consistent
+            || !first_unexpected_consistent
+            || (self.candidate_amplification.get() - expected_amplification).abs() > 1.0e-6
+            || self.accepted != expected_accepted
+        {
+            return Err(ContractError(
+                "broadphase evaluation is internally inconsistent".to_owned(),
+            ));
+        }
+        Ok(())
+    }
 }
 
 impl Validate for CandidatePairV1 {
@@ -876,6 +1096,88 @@ mod tests {
         assert_eq!(decoded, artifact);
         assert_eq!(decoded.layout, collision_layout_v1());
         assert_eq!(decoded.layout.records.len(), 8);
+    }
+
+    #[test]
+    fn broadphase_contract_round_trips_and_requires_first_difference_records() {
+        let snapshot = BroadphaseSnapshotV1 {
+            schema_version: SCHEMA_VERSION,
+            contract_version: BROADPHASE_CONTRACT_VERSION,
+            id: "broadphase-contract-test".to_owned(),
+            seed: 7,
+            proxies: vec![
+                BroadphaseProxyV1 {
+                    aabb: BodyAabbV1 {
+                        body: id(0, 3),
+                        lower: Vec2::new(-1.0, -1.0),
+                        upper: Vec2::new(1.0, 1.0),
+                    },
+                    mobility: BroadphaseMobilityV1::Fixed,
+                },
+                BroadphaseProxyV1 {
+                    aabb: BodyAabbV1 {
+                        body: id(1, 2),
+                        lower: Vec2::new(0.0, 0.0),
+                        upper: Vec2::new(2.0, 2.0),
+                    },
+                    mobility: BroadphaseMobilityV1::Dynamic,
+                },
+            ],
+        };
+        snapshot.validate().unwrap();
+        let result = BroadphaseResultV1 {
+            schema_version: SCHEMA_VERSION,
+            contract_version: BROADPHASE_CONTRACT_VERSION,
+            algorithm: BroadphaseAlgorithmV1::BruteForce,
+            source_snapshot_hash: "3".repeat(64),
+            pairs: vec![pair()],
+            work: BroadphaseWorkV1 {
+                proxies: 2,
+                dynamic_proxies: 1,
+                fixed_proxies: 1,
+                pair_tests: 1,
+                candidate_emissions: 1,
+                unique_candidates: 1,
+                ..Default::default()
+            },
+            capacities: vec![CollisionCapacityV1 {
+                class: "candidate-pairs".to_owned(),
+                stride_bytes: CANDIDATE_PAIR_BYTES,
+                capacity_elements: 4,
+                attempted_elements: 1,
+                committed_elements: 1,
+                allocated_bytes: 64,
+                high_water_bytes: 16,
+                overflowed: false,
+                accepted: true,
+            }],
+            failure: None,
+        };
+        result.validate().unwrap();
+        let bytes = canonical_json(&result).unwrap();
+        assert_eq!(
+            serde_json::from_slice::<BroadphaseResultV1>(&bytes).unwrap(),
+            result
+        );
+
+        let mut evaluation = BroadphaseEvaluationV1 {
+            schema_version: SCHEMA_VERSION,
+            contract_version: BROADPHASE_CONTRACT_VERSION,
+            algorithm: BroadphaseAlgorithmV1::SweepAndPrune,
+            oracle_pairs: 1,
+            candidate_pairs: 0,
+            missing_pairs: 1,
+            unexpected_pairs: 0,
+            first_missing_pair: Some(pair()),
+            first_unexpected_pair: None,
+            candidate_amplification: finite(0.0),
+            capacity_clean: true,
+            exact_replay: true,
+            accepted: false,
+        };
+        evaluation.validate().unwrap();
+        evaluation.first_missing_pair = None;
+        assert!(evaluation.validate().is_err());
     }
 
     #[test]

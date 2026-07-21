@@ -1,10 +1,12 @@
 use std::fmt::{Display, Formatter};
 
 use physbox_contracts::{
-    AuthoredContactPointV1, AuthoredManifoldV1, BodyCommandScenarioV1, BodyCommandV1, BodyId,
-    BodyStateV1, CONTACT_SOFTNESS_POLICY_VERSION, ContactIdentityPolicyV1, ContactPolicyV1,
-    ContactSoftnessPolicyV1, FeatureIdV1, FiniteF32, MaterialV1, SCHEMA_VERSION, ScenarioV1,
-    ScheduledBodyCommandV1, ShapeV1, SolverSettingsV1, Validate, Vec2,
+    AuthoredContactPointV1, AuthoredManifoldV1, BROADPHASE_CONTRACT_VERSION, BodyAabbV1,
+    BodyCommandScenarioV1, BodyCommandV1, BodyId, BodyStateV1, BroadphaseMobilityV1,
+    BroadphaseProxyV1, BroadphaseSnapshotV1, CONTACT_SOFTNESS_POLICY_VERSION,
+    ContactIdentityPolicyV1, ContactPolicyV1, ContactSoftnessPolicyV1, FeatureIdV1, FiniteF32,
+    MaterialV1, SCHEMA_VERSION, ScenarioV1, ScheduledBodyCommandV1, ShapeV1, SolverSettingsV1,
+    Validate, Vec2,
 };
 
 pub const P5_2_CENTERED_STACK_EVIDENCE_STEPS: u32 = 1_200;
@@ -213,6 +215,51 @@ impl P5_2CandidatePattern {
             Self::RotatedThin => "rotated-thin",
             Self::Coincident => "coincident",
             Self::FixedOnly => "fixed-only",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum P5_3BroadphasePattern {
+    UniformRandom,
+    SkewedSize,
+    SparseMovingGrid,
+    Packed,
+    MixedAspect,
+    Rain,
+    Bucket,
+    GiantStatic,
+    HighSpeedCrossing,
+    CompleteOverlap,
+}
+
+impl P5_3BroadphasePattern {
+    pub const ALL: [Self; 10] = [
+        Self::UniformRandom,
+        Self::SkewedSize,
+        Self::SparseMovingGrid,
+        Self::Packed,
+        Self::MixedAspect,
+        Self::Rain,
+        Self::Bucket,
+        Self::GiantStatic,
+        Self::HighSpeedCrossing,
+        Self::CompleteOverlap,
+    ];
+
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::UniformRandom => "uniform-random",
+            Self::SkewedSize => "skewed-size",
+            Self::SparseMovingGrid => "sparse-moving-grid",
+            Self::Packed => "packed",
+            Self::MixedAspect => "mixed-aspect",
+            Self::Rain => "rain",
+            Self::Bucket => "bucket",
+            Self::GiantStatic => "giant-static",
+            Self::HighSpeedCrossing => "high-speed-crossing",
+            Self::CompleteOverlap => "complete-overlap",
         }
     }
 }
@@ -1695,6 +1742,253 @@ pub fn p5_2_candidate_scenario(
     })
 }
 
+pub fn p5_3_broadphase_snapshot(
+    pattern: P5_3BroadphasePattern,
+    proxy_count: u32,
+    seed: u64,
+) -> Result<BroadphaseSnapshotV1, ScenarioBuildError> {
+    if !(2..=100_000).contains(&proxy_count) {
+        return Err(ScenarioBuildError(
+            "P5.3 broadphase snapshot requires between 2 and 100000 proxies".to_owned(),
+        ));
+    }
+    let mut random = StableRandom::new(seed);
+    let columns = (proxy_count as f32).sqrt().ceil() as u32;
+    let rows = proxy_count.div_ceil(columns);
+    let generation = |slot: u32| {
+        1 + slot
+            .wrapping_mul(17)
+            .wrapping_add(seed as u32)
+            .wrapping_rem(7)
+    };
+    let proxy = |slot: u32, center: Vec2, half: Vec2, fixed: bool| BroadphaseProxyV1 {
+        aabb: BodyAabbV1 {
+            body: BodyId {
+                slot,
+                generation: generation(slot),
+            },
+            lower: Vec2::new(center.x - half.x, center.y - half.y),
+            upper: Vec2::new(center.x + half.x, center.y + half.y),
+        },
+        mobility: if fixed {
+            BroadphaseMobilityV1::Fixed
+        } else {
+            BroadphaseMobilityV1::Dynamic
+        },
+    };
+    let mut proxies = Vec::with_capacity(proxy_count as usize);
+    for slot in 0..proxy_count {
+        let column = slot % columns;
+        let row = slot / columns;
+        let centered_grid = |spacing: f32| {
+            Vec2::new(
+                (column as f32 - (columns - 1) as f32 * 0.5) * spacing,
+                (row as f32 - (rows - 1) as f32 * 0.5) * spacing,
+            )
+        };
+        let value = match pattern {
+            P5_3BroadphasePattern::UniformRandom => {
+                let center = centered_grid(0.72);
+                proxy(
+                    slot,
+                    Vec2::new(
+                        center.x + random.signed(0.18),
+                        center.y + random.signed(0.18),
+                    ),
+                    Vec2::new(0.18 + random.unit() * 0.10, 0.18 + random.unit() * 0.10),
+                    slot % 41 == 0,
+                )
+            }
+            P5_3BroadphasePattern::SkewedSize => {
+                let large = slot % 29 == 0;
+                let center = centered_grid(0.85);
+                let half = if large {
+                    Vec2::new(1.8 + random.unit() * 1.2, 1.4 + random.unit() * 1.0)
+                } else {
+                    Vec2::new(0.08 + random.unit() * 0.12, 0.08 + random.unit() * 0.12)
+                };
+                proxy(slot, center, half, large && slot % 58 == 0)
+            }
+            P5_3BroadphasePattern::SparseMovingGrid => proxy(
+                slot,
+                centered_grid(3.0),
+                Vec2::new(0.20, 0.20),
+                slot % 53 == 0,
+            ),
+            P5_3BroadphasePattern::Packed => proxy(
+                slot,
+                centered_grid(0.31),
+                Vec2::new(0.22, 0.22),
+                slot % 47 == 0,
+            ),
+            P5_3BroadphasePattern::MixedAspect => {
+                let half = match slot % 3 {
+                    0 => Vec2::new(0.72, 0.08),
+                    1 => Vec2::new(0.08, 0.72),
+                    _ => Vec2::new(0.24, 0.24),
+                };
+                proxy(slot, centered_grid(0.48), half, slot % 43 == 0)
+            }
+            P5_3BroadphasePattern::Rain => {
+                if slot == 0 {
+                    proxy(
+                        slot,
+                        Vec2::new(0.0, -1.0),
+                        Vec2::new(columns as f32 * 0.28 + 1.0, 0.20),
+                        true,
+                    )
+                } else {
+                    let rain_slot = slot - 1;
+                    let rain_column = rain_slot % columns;
+                    let rain_row = rain_slot / columns;
+                    proxy(
+                        slot,
+                        Vec2::new(
+                            (rain_column as f32 - (columns - 1) as f32 * 0.5) * 0.52
+                                + random.signed(0.08),
+                            rain_row as f32 * 0.42 + random.signed(0.08),
+                        ),
+                        Vec2::new(0.16 + random.unit() * 0.08, 0.16 + random.unit() * 0.08),
+                        false,
+                    )
+                }
+            }
+            P5_3BroadphasePattern::Bucket => {
+                let bucket_half_width = columns as f32 * 0.24 + 0.5;
+                match slot {
+                    0 => proxy(
+                        slot,
+                        Vec2::new(0.0, -0.4),
+                        Vec2::new(bucket_half_width, 0.18),
+                        true,
+                    ),
+                    1 => proxy(
+                        slot,
+                        Vec2::new(-bucket_half_width, rows as f32 * 0.20),
+                        Vec2::new(0.18, rows as f32 * 0.20 + 0.8),
+                        true,
+                    ),
+                    2 => proxy(
+                        slot,
+                        Vec2::new(bucket_half_width, rows as f32 * 0.20),
+                        Vec2::new(0.18, rows as f32 * 0.20 + 0.8),
+                        true,
+                    ),
+                    _ => {
+                        let dynamic_slot = slot - 3;
+                        proxy(
+                            slot,
+                            Vec2::new(
+                                (dynamic_slot % columns) as f32 * 0.38
+                                    - (columns - 1) as f32 * 0.19,
+                                (dynamic_slot / columns) as f32 * 0.36,
+                            ),
+                            Vec2::new(0.22, 0.22),
+                            false,
+                        )
+                    }
+                }
+            }
+            P5_3BroadphasePattern::GiantStatic => {
+                if slot == 0 {
+                    proxy(
+                        slot,
+                        Vec2::ZERO,
+                        Vec2::new(columns as f32 * 1.8, rows as f32 * 1.8),
+                        true,
+                    )
+                } else {
+                    proxy(slot, centered_grid(2.4), Vec2::new(0.20, 0.20), false)
+                }
+            }
+            P5_3BroadphasePattern::HighSpeedCrossing => {
+                let side = if slot % 2 == 0 { -1.0 } else { 1.0 };
+                proxy(
+                    slot,
+                    Vec2::new(side * (column as f32 * 0.15), row as f32 * 0.34),
+                    Vec2::new(1.2 + random.unit() * 0.8, 0.12),
+                    false,
+                )
+            }
+            P5_3BroadphasePattern::CompleteOverlap => proxy(
+                slot,
+                Vec2::new(random.signed(0.001), random.signed(0.001)),
+                Vec2::new(1.0, 1.0),
+                slot % 17 == 0,
+            ),
+        };
+        proxies.push(value);
+    }
+    let snapshot = BroadphaseSnapshotV1 {
+        schema_version: SCHEMA_VERSION,
+        contract_version: BROADPHASE_CONTRACT_VERSION,
+        id: format!("p5.3-broadphase-{}-{proxy_count}", pattern.name()),
+        seed,
+        proxies,
+    };
+    snapshot
+        .validate()
+        .map_err(|error| ScenarioBuildError(error.to_string()))?;
+    Ok(snapshot)
+}
+
+pub fn p5_3_broadphase_scenario(
+    pattern: P5_3BroadphasePattern,
+    body_count: u32,
+    seed: u64,
+) -> Result<ScenarioV1, ScenarioBuildError> {
+    let snapshot = p5_3_broadphase_snapshot(pattern, body_count, seed)?;
+    let bodies = snapshot
+        .proxies
+        .into_iter()
+        .map(|proxy| {
+            let half_extents = Vec2::new(
+                (proxy.aabb.upper.x - proxy.aabb.lower.x) * 0.5,
+                (proxy.aabb.upper.y - proxy.aabb.lower.y) * 0.5,
+            );
+            let fixed = proxy.mobility == BroadphaseMobilityV1::Fixed;
+            BodyStateV1 {
+                id: proxy.aabb.body,
+                shape: ShapeV1::Rectangle { half_extents },
+                position: Vec2::new(
+                    (proxy.aabb.lower.x + proxy.aabb.upper.x) * 0.5,
+                    (proxy.aabb.lower.y + proxy.aabb.upper.y) * 0.5,
+                ),
+                angle: FiniteF32::new(0.0).expect("zero is finite"),
+                linear_velocity: Vec2::ZERO,
+                angular_velocity: FiniteF32::new(0.0).expect("zero is finite"),
+                inverse_mass: FiniteF32::new(if fixed { 0.0 } else { 1.0 })
+                    .expect("broadphase mass is finite"),
+                inverse_inertia: FiniteF32::new(if fixed { 0.0 } else { 1.0 })
+                    .expect("broadphase inertia is finite"),
+                material: MaterialV1 {
+                    friction: FiniteF32::new(0.5).expect("broadphase friction is finite"),
+                    restitution: FiniteF32::new(0.0).expect("zero is finite"),
+                },
+                sleeping: false,
+            }
+        })
+        .collect();
+    let mut settings = default_settings();
+    settings.gravity = Vec2::ZERO;
+    settings.contact_policy = None;
+    let scenario = ScenarioV1 {
+        schema_version: SCHEMA_VERSION,
+        id: format!("p5.3-broadphase-brute-{}-{body_count}", pattern.name()),
+        seed,
+        requested_steps: 1,
+        settings,
+        bodies,
+        manifolds: Vec::new(),
+        contact_cache: Vec::new(),
+        actions: Vec::new(),
+    };
+    scenario
+        .validate()
+        .map_err(|error| ScenarioBuildError(error.to_string()))?;
+    Ok(scenario)
+}
+
 pub fn p5_2_narrowphase_pair_scenario(
     kind: P5_2CollisionScenarioKind,
     seed: u64,
@@ -2377,6 +2671,30 @@ mod tests {
         }
         assert!(p5_2_candidate_scenario(P5_2CandidatePattern::Random, 1, 0).is_err());
         assert!(p5_2_candidate_scenario(P5_2CandidatePattern::Random, 129, 0).is_err());
+    }
+
+    #[test]
+    fn p5_3_broadphase_corpus_is_shared_valid_and_replayable() {
+        for pattern in P5_3BroadphasePattern::ALL {
+            let snapshot = p5_3_broadphase_snapshot(pattern, 32, 0x5030).unwrap();
+            snapshot.validate().unwrap();
+            assert_eq!(snapshot.proxies.len(), 32);
+            assert_eq!(
+                canonical_json(&snapshot).unwrap(),
+                canonical_json(&p5_3_broadphase_snapshot(pattern, 32, 0x5030).unwrap()).unwrap()
+            );
+        }
+        assert!(p5_3_broadphase_snapshot(P5_3BroadphasePattern::Packed, 1, 0).is_err());
+        assert!(p5_3_broadphase_snapshot(P5_3BroadphasePattern::Packed, 100_001, 0).is_err());
+    }
+
+    #[cfg(not(feature = "production-validation"))]
+    #[test]
+    fn p5_3_broadphase_sparse_frontier_builds_at_100k() {
+        let snapshot =
+            p5_3_broadphase_snapshot(P5_3BroadphasePattern::SparseMovingGrid, 100_000, 91).unwrap();
+        snapshot.validate().unwrap();
+        assert_eq!(snapshot.proxies.len(), 100_000);
     }
 
     #[test]

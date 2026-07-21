@@ -10,6 +10,11 @@ mod body_floor_solver;
 mod body_state;
 mod body_world;
 mod branch_robust_gpu_promotion;
+mod broadphase_benchmark;
+#[cfg(all(feature = "solver-lab", target_arch = "wasm32"))]
+mod broadphase_browser;
+mod broadphase_grid;
+mod broadphase_sap;
 mod camera;
 mod clock;
 mod collision_candidates;
@@ -87,6 +92,21 @@ pub use branch_robust_gpu_promotion::{
     BRANCH_ROBUST_GPU_PROMOTION_CANDIDATE_ID, BRANCH_ROBUST_GPU_PROMOTION_FORMULA_ID,
     BRANCH_ROBUST_GPU_PROMOTION_POLICY_VERSION, BranchRobustGpuPromotionPolicyV1,
 };
+#[cfg(all(feature = "solver-lab", not(target_arch = "wasm32")))]
+pub use broadphase_benchmark::GpuBroadphaseTimingV1;
+#[cfg(all(feature = "solver-lab", target_arch = "wasm32"))]
+pub use broadphase_browser::{
+    GpuBroadphaseBrowserCompletion, GpuBroadphaseBrowserProbeV1, GpuBroadphaseBrowserSession,
+};
+#[cfg(all(feature = "solver-lab", not(target_arch = "wasm32")))]
+pub use broadphase_grid::{
+    GpuGridConfigurationV1, GpuMultiCellGridBenchmarkOutput, GpuMultiCellGridOutput,
+    GpuMultiCellGridRunner,
+};
+#[cfg(all(feature = "solver-lab", not(target_arch = "wasm32")))]
+pub use broadphase_sap::{
+    GpuSweepAndPruneBenchmarkOutput, GpuSweepAndPruneOutput, GpuSweepAndPruneRunner,
+};
 pub use camera::{
     CAMERA_STATE_VERSION, Camera2d, CameraError, CameraFrame2d, MAX_ORTHOGRAPHIC_HALF_HEIGHT,
     MIN_ORTHOGRAPHIC_HALF_HEIGHT,
@@ -94,7 +114,9 @@ pub use camera::{
 pub use clock::{InteractiveClockAction, PacingMode, PacingReport};
 pub use collision_candidates::GpuCandidateOutput;
 #[cfg(all(feature = "solver-lab", not(target_arch = "wasm32")))]
-pub use collision_candidates::{GpuCandidateRunner, run_gpu_collision_candidates};
+pub use collision_candidates::{
+    GpuCandidateBenchmarkOutput, GpuCandidateRunner, run_gpu_collision_candidates,
+};
 #[cfg(all(feature = "solver-lab", not(target_arch = "wasm32")))]
 pub use collision_narrowphase::{GpuNarrowphaseOutput, GpuNarrowphaseRunner};
 #[cfg(all(feature = "solver-lab", not(target_arch = "wasm32")))]
@@ -162,7 +184,7 @@ pub use scenario::{
     P5_2_SELECTED_SOLVER_ITERATIONS, P5_2_SETTLING_EVIDENCE_STEPS, P5_2BucketShape,
     P5_2CandidatePattern, P5_2CollisionScenarioKind, P5_2ColoringChurnSnapshotV1,
     P5_2GeneratedScenarioKind, P5_2SettlingFixtureKind, P5_2SettlingReviewPolicy,
-    ScenarioBuildError, analytic_fixture_scenario, authored_chain_scenario,
+    P5_3BroadphasePattern, ScenarioBuildError, analytic_fixture_scenario, authored_chain_scenario,
     authored_one_contact_scenario, p5_1_free_flight_scenario, p5_1_rectangle_floor_scenario,
     p5_1_reset_grab_scenario, p5_2_box2d_narrowphase_projection, p5_2_box2d_world_projection,
     p5_2_bucket_scenario, p5_2_candidate_scenario, p5_2_centered_rectangle_stack_scenario,
@@ -177,6 +199,6 @@ pub use scenario::{
     p5_2_s13_authority_overflow_scenario, p5_2_settling_fixture_scenario,
     p5_2_settling_review_scenario, p5_2_settling_soft_fixture_scenario,
     p5_2_settling_soft_i1_comparator_scenario, p5_2_settling_soft_stack_matrix_scenario,
-    p5_2_stale_reseed_reproducer_scenario,
+    p5_2_stale_reseed_reproducer_scenario, p5_3_broadphase_scenario, p5_3_broadphase_snapshot,
 };
 pub use solver_profile::SolverProfileConfig;

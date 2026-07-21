@@ -398,6 +398,11 @@ Execution tracker:
 [S21 scalable broadphase](tactical/021-scalable-broadphase.md), after
 [S20 validation diet](tactical/020-validation-diet-and-feature-ledger.md).
 
+Active checkpoint, 2026-07-21: the canonical corpus and brute-force authority
+are implemented, and portable SAP/grid candidates run in focused Metal and
+Browser WebGPU lanes without changing the product all-pairs graph. Comparative
+evidence and the required human selection precede integration.
+
 - Preserve brute force as pair-completeness oracle.
 - Implement sorted sweep-and-prune and multi-cell grid candidates.
 - Run the shared randomized/adversarial completeness corpus and applicable

@@ -1,6 +1,6 @@
 use physbox_engine::{
-    GpuCandidateRunner, P5_2CandidatePattern, P5_2CollisionScenarioKind, p5_2_candidate_scenario,
-    p5_2_collision_scenario,
+    GpuCandidateRunner, P5_2CandidatePattern, P5_2CollisionScenarioKind, P5_3BroadphasePattern,
+    p5_2_candidate_scenario, p5_2_collision_scenario, p5_3_broadphase_scenario,
 };
 use physbox_lab::collision_candidates::{compare_gpu_candidates, enumerate_scalar_candidates};
 
@@ -58,4 +58,13 @@ fn candidate_overflow_rejects_the_whole_prefix() {
     assert_eq!(capacity.committed_elements, 0);
     assert!(output.candidates.is_empty());
     assert!(output.failure.is_some());
+}
+
+#[test]
+fn all_pairs_rejects_an_unrepresentable_dispatch_before_encoding() {
+    let scenario =
+        p5_3_broadphase_scenario(P5_3BroadphasePattern::SparseMovingGrid, 3_000, 7).unwrap();
+    let runner = pollster::block_on(GpuCandidateRunner::new()).unwrap();
+    let error = runner.run(&scenario, Some(96_000)).unwrap_err();
+    assert!(error.contains("above adapter limit"), "{error}");
 }

@@ -9,6 +9,7 @@ pub mod authority_response;
 pub mod authority_structure;
 pub mod branch_robust;
 pub mod branch_robust_scalar;
+pub mod broadphase;
 pub mod collision_candidates;
 pub mod contact_persistence;
 pub mod event_structure;

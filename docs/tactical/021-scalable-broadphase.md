@@ -1,8 +1,8 @@
 # S21: scalable broadphase
 
-Status: active next workstream, 2026-07-21. S20 is complete. This is the
-executable tracker for the S5.5 bakeoff and S5.6 integration milestones; the
-older S5 document remains the umbrella history.
+Status: active evidence and selection workstream, 2026-07-21. S20 is complete.
+This is the executable tracker for the S5.5 bakeoff and S5.6 integration
+milestones; the older S5 document remains the umbrella history.
 
 Governing topics:
 [one GPU-resident 2D physics world](../topics/physbox5-unified-gpu-physics.md#broadphase-development-contract),
@@ -50,24 +50,24 @@ curves.
 
 ### S21.1 — canonical corpus and brute-force authority
 
-- [ ] Freeze canonical AABB input/output, work, amplification, duplicate,
+- [x] Freeze canonical AABB input/output, work, amplification, duplicate,
   capacity, overflow, and first-missing-pair records.
-- [ ] Add randomized and adversarial uniform/skewed-size, sparse-motion,
+- [x] Add randomized and adversarial uniform/skewed-size, sparse-motion,
   packed, mixed, rain, bucket, giant-static, high-speed-crossing, and complete-
   overlap snapshots.
-- [ ] Keep everyday checks small; place count/seed sweeps in the focused
+- [x] Keep everyday checks small; place count/seed sweeps in the focused
   broadphase lane.
 
 ### S21.2 — sorted sweep-and-prune
 
-- [ ] Implement portable GPU endpoint/key generation, stable sort, interval
+- [x] Implement portable GPU endpoint/key generation, stable sort, interval
   enumeration, canonical pair output, and atomic overflow.
 - [ ] Prove exact pair completeness and record active-window amplification,
   dispatches, allocation, and timing.
 
 ### S21.3 — multi-cell grid
 
-- [ ] Implement AABB/cell counts, prefix scan, scatter, cell-key sort, pair
+- [x] Implement AABB/cell counts, prefix scan, scatter, cell-key sort, pair
   enumeration, canonical sort/unique, and bounded global statics.
 - [ ] Prove exact pair completeness and record duplicate amplification,
   maximum occupancy, dispatches, allocation, and timing.
@@ -99,3 +99,29 @@ brute force remains a bounded exact oracle, all candidate and product lanes are
 complete/capacity-safe/replayable, scale claims distinguish sparse from dense
 worlds, and the feature ledger advances `SCALE-2` without changing the solver
 or silently accepting a fallback.
+
+## Active checkpoint
+
+The candidate implementation is deliberately outside the product graph. The
+shared contract now owns versioned AABB snapshots, canonical generational
+pairs, work/amplification records, capacity failure, replay, and first-pair
+differences. The focused corpus contains all ten required families. CPU brute
+force is the bounded exact authority; the existing GPU all-pairs path is also
+measured through its portable dispatch boundary.
+
+The two GPU-resident candidates are executable from the same immutable input:
+
+- full-sort one-axis SAP uses an eight-pass lower-X sort, exact active-window
+  filtering, bounded atomic emission, indirect sizing, and a ten-pass
+  canonical pair sort (58 dispatches);
+- the multi-cell grid uses count/scan/scatter, bounded global fixed shapes,
+  indirect cell and emission sizing, cell and pair sort/unique, and atomic
+  capacity rejection (73 dispatches).
+
+`physbox-broadphase-evidence` is the native focused lane. It retains raw timing
+series plus compact pair digests instead of multi-gigabyte stress outputs.
+`npm run benchmark:broadphase-browser` executes the identical candidate WGSL
+and capacities through Browser WebGPU and retains mapped-fence completion
+timings. Neither lane selects or integrates a winner by itself. S21.2/S21.3
+proof checkboxes remain open until clean Metal and browser artifacts are
+recorded; S21.4 remains the human selection checkpoint.
