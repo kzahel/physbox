@@ -16,7 +16,7 @@ use crate::{
     },
 };
 
-pub(crate) const UI_CONTRACT_VERSION: u32 = 3;
+pub(crate) const UI_CONTRACT_VERSION: u32 = 4;
 const STATIC_INSTANCE_CAPACITY: usize = 256;
 const DYNAMIC_INSTANCE_CAPACITY: usize = 192;
 
@@ -28,7 +28,6 @@ pub(crate) enum UiAction {
         profile: SolverProfileConfig,
         scenario: ValidationScenario,
     },
-    ToggleSolverProfile,
     RestartScenario,
     Recenter,
 }
@@ -98,6 +97,7 @@ struct UiViewState<'a> {
     menu_open: bool,
     menu_page: MenuPage,
     selected_tool: WorkbenchTool,
+    solver_profiles: &'a [SolverProfileConfig],
     draft_solver_profile: &'a SolverProfileConfig,
 }
 
@@ -113,6 +113,7 @@ pub(crate) struct WorkbenchUi {
     menu_open: bool,
     menu_page: MenuPage,
     selected_tool: WorkbenchTool,
+    solver_profiles: Vec<SolverProfileConfig>,
     draft_solver_profile: SolverProfileConfig,
     captured_pointers: BTreeSet<u64>,
 }
@@ -123,12 +124,14 @@ impl WorkbenchUi {
         queue: &wgpu::Queue,
         color_format: wgpu::TextureFormat,
         solver_profile: SolverProfileConfig,
+        solver_profiles: Vec<SolverProfileConfig>,
     ) -> Self {
         Self {
             renderer: UiRenderer::new(device, queue, color_format),
             menu_open: false,
             menu_page: MenuPage::default(),
             selected_tool: WorkbenchTool::default(),
+            solver_profiles,
             draft_solver_profile: solver_profile,
             captured_pointers: BTreeSet::new(),
         }
@@ -140,11 +143,14 @@ impl WorkbenchUi {
         target_size: [u32; 2],
     ) -> UiRouting {
         route_events(
-            &mut self.menu_open,
-            &mut self.menu_page,
-            &mut self.selected_tool,
-            &mut self.draft_solver_profile,
-            &mut self.captured_pointers,
+            UiRouteState {
+                menu_open: &mut self.menu_open,
+                menu_page: &mut self.menu_page,
+                selected_tool: &mut self.selected_tool,
+                solver_profiles: &mut self.solver_profiles,
+                draft_solver_profile: &mut self.draft_solver_profile,
+                captured_pointers: &mut self.captured_pointers,
+            },
             events,
             target_size,
         )
@@ -152,6 +158,15 @@ impl WorkbenchUi {
 
     pub(crate) fn select_tool(&mut self, tool: WorkbenchTool) {
         self.selected_tool = tool;
+    }
+
+    pub(crate) fn set_solver_profiles(
+        &mut self,
+        solver_profiles: Vec<SolverProfileConfig>,
+        active: SolverProfileConfig,
+    ) {
+        self.solver_profiles = solver_profiles;
+        self.draft_solver_profile = active;
     }
 
     pub(crate) fn encode(
@@ -170,21 +185,35 @@ impl WorkbenchUi {
                 menu_open: self.menu_open,
                 menu_page: self.menu_page,
                 selected_tool: self.selected_tool,
+                solver_profiles: &self.solver_profiles,
                 draft_solver_profile: &self.draft_solver_profile,
             },
         )
     }
 }
 
+struct UiRouteState<'a> {
+    menu_open: &'a mut bool,
+    menu_page: &'a mut MenuPage,
+    selected_tool: &'a mut WorkbenchTool,
+    solver_profiles: &'a mut Vec<SolverProfileConfig>,
+    draft_solver_profile: &'a mut SolverProfileConfig,
+    captured_pointers: &'a mut BTreeSet<u64>,
+}
+
 fn route_events(
-    menu_open: &mut bool,
-    menu_page: &mut MenuPage,
-    selected_tool: &mut WorkbenchTool,
-    draft_solver_profile: &mut SolverProfileConfig,
-    captured_pointers: &mut BTreeSet<u64>,
+    state: UiRouteState<'_>,
     events: &[InputEvent],
     target_size: [u32; 2],
 ) -> UiRouting {
+    let UiRouteState {
+        menu_open,
+        menu_page,
+        selected_tool,
+        solver_profiles,
+        draft_solver_profile,
+        captured_pointers,
+    } = state;
     let mut forwarded = Vec::with_capacity(events.len());
     let mut action = None;
     for event in events.iter().copied() {
@@ -204,8 +233,12 @@ fn route_events(
         ) && pointer.phase == PointerPhase::Down;
         if activates_ui {
             let layout = UiLayout::for_target(target_size);
-            if let Some(hit) = layout.hit_test(pointer.normalized_position, *menu_open, *menu_page)
-            {
+            if let Some(hit) = layout.hit_test(
+                pointer.normalized_position,
+                *menu_open,
+                *menu_page,
+                solver_profiles,
+            ) {
                 captured_pointers.insert(pointer.id);
                 match hit {
                     UiHit::Menu => *menu_open = !*menu_open,
@@ -224,7 +257,12 @@ fn route_events(
                         action = Some(UiAction::Recenter);
                     }
                     UiHit::SolverProfile(profile) => {
-                        *draft_solver_profile = SolverProfileConfig::select(profile);
+                        remember_solver_profile(solver_profiles, draft_solver_profile.clone());
+                        *draft_solver_profile = solver_profiles
+                            .iter()
+                            .find(|candidate| candidate.profile_name() == profile)
+                            .cloned()
+                            .unwrap_or_else(|| SolverProfileConfig::select(profile));
                     }
                     UiHit::SolverParameter(parameter, direction) => {
                         draft_solver_profile.adjust(parameter, direction);
@@ -242,10 +280,6 @@ fn route_events(
                             scenario,
                         });
                     }
-                    UiHit::ToggleSolver => {
-                        *menu_open = false;
-                        action = Some(UiAction::ToggleSolverProfile);
-                    }
                     UiHit::Panel => {}
                 }
                 continue;
@@ -257,6 +291,20 @@ fn route_events(
         events: forwarded,
         action,
         selected_tool: *selected_tool,
+    }
+}
+
+pub(crate) fn remember_solver_profile(
+    profiles: &mut Vec<SolverProfileConfig>,
+    profile: SolverProfileConfig,
+) {
+    if let Some(existing) = profiles
+        .iter_mut()
+        .find(|candidate| candidate.profile_name() == profile.profile_name())
+    {
+        *existing = profile;
+    } else {
+        profiles.push(profile);
     }
 }
 
@@ -273,7 +321,6 @@ enum UiHit {
     SolverParameter(crate::solver_profile::SolverParameter, i32),
     SolverScene(ValidationScenario),
     ApplySolver,
-    ToggleSolver,
     Panel,
 }
 
@@ -292,7 +339,13 @@ impl UiLayout {
         }
     }
 
-    fn hit_test(self, normalized: [f32; 2], menu_open: bool, menu_page: MenuPage) -> Option<UiHit> {
+    fn hit_test(
+        self,
+        normalized: [f32; 2],
+        menu_open: bool,
+        menu_page: MenuPage,
+        solver_profiles: &[SolverProfileConfig],
+    ) -> Option<UiHit> {
         let pixel = [
             normalized[0] * self.target_size[0] as f32,
             normalized[1] * self.target_size[1] as f32,
@@ -329,8 +382,9 @@ impl UiLayout {
                 }
             }
             MenuPage::Solvers => {
-                for (index, profile) in SolverProfileConfig::available().iter().enumerate() {
-                    if contains(self.solver_profile_button(index), pixel) {
+                let profile_count = solver_profiles.len();
+                for (index, profile) in solver_profiles.iter().enumerate() {
+                    if contains(self.solver_profile_button(index, profile_count), pixel) {
                         return Some(UiHit::SolverProfile(profile.profile_name()));
                     }
                 }
@@ -339,31 +393,28 @@ impl UiLayout {
                     .copied()
                     .enumerate()
                 {
-                    if contains(self.solver_parameter_minus(index), pixel) {
+                    if contains(self.solver_parameter_minus(index, profile_count), pixel) {
                         return Some(UiHit::SolverParameter(parameter, -1));
                     }
-                    if contains(self.solver_parameter_plus(index), pixel) {
+                    if contains(self.solver_parameter_plus(index, profile_count), pixel) {
                         return Some(UiHit::SolverParameter(parameter, 1));
                     }
                 }
                 #[cfg(feature = "solver-lab")]
                 {
-                    if contains(self.solver_scene_button(0), pixel) {
+                    if contains(self.solver_scene_button(0, profile_count), pixel) {
                         return Some(UiHit::SolverScene(ValidationScenario::SolverLabStack8));
                     }
-                    if contains(self.solver_scene_button(1), pixel) {
+                    if contains(self.solver_scene_button(1, profile_count), pixel) {
                         return Some(UiHit::SolverScene(ValidationScenario::SolverLabStack16));
                     }
                 }
-                if contains(self.apply_solver_button(), pixel) {
+                if contains(self.apply_solver_button(profile_count), pixel) {
                     return Some(UiHit::ApplySolver);
-                }
-                if contains(self.toggle_solver_button(), pixel) {
-                    return Some(UiHit::ToggleSolver);
                 }
             }
         }
-        contains(self.menu_panel(menu_page), pixel).then_some(UiHit::Panel)
+        contains(self.menu_panel(menu_page, solver_profiles.len()), pixel).then_some(UiHit::Panel)
     }
 
     fn menu_button(self) -> [f32; 4] {
@@ -390,12 +441,17 @@ impl UiLayout {
         ]
     }
 
-    fn menu_panel(self, page: MenuPage) -> [f32; 4] {
+    fn menu_panel(self, page: MenuPage, solver_profile_count: usize) -> [f32; 4] {
         let bottom = match page {
             MenuPage::Scenes => self.restart_y_logical() + 50.0,
-            MenuPage::Solvers => self.apply_solver_button()[1] / self.scale + 46.0,
+            MenuPage::Solvers => {
+                let apply = self.apply_solver_button(solver_profile_count);
+                (apply[1] + apply[3]) / self.scale + 8.0
+            }
         };
-        let logical = if self.compact_landscape() {
+        let wide = self.compact_landscape()
+            || (page == MenuPage::Solvers && self.solver_profile_columns(solver_profile_count) > 1);
+        let logical = if wide {
             [12.0, 84.0, 620.0, bottom - 84.0]
         } else {
             [12.0, 84.0, 360.0, bottom - 84.0]
@@ -470,59 +526,88 @@ impl UiLayout {
         ]
     }
 
-    fn solver_profile_button(self, index: usize) -> [f32; 4] {
+    fn solver_profile_button(self, index: usize, profile_count: usize) -> [f32; 4] {
+        let columns = self.solver_profile_columns(profile_count);
+        let column = index % columns;
+        let row = index / columns;
+        let (start_y, stride, height) = self.solver_profile_metrics();
         [
-            24.0 * self.scale,
-            (126.0 + index as f32 * 38.0) * self.scale,
-            336.0 * self.scale,
-            34.0 * self.scale,
+            (24.0 + column as f32 * 298.0) * self.scale,
+            (start_y + row as f32 * stride) * self.scale,
+            if columns == 1 { 336.0 } else { 286.0 } * self.scale,
+            height * self.scale,
         ]
     }
 
-    fn solver_parameter_minus(self, index: usize) -> [f32; 4] {
+    fn solver_parameter_minus(self, index: usize, profile_count: usize) -> [f32; 4] {
+        let (base, stride, height) = self.solver_parameter_metrics(profile_count);
         [
             238.0 * self.scale,
-            (212.0 + index as f32 * 38.0) * self.scale,
+            (base + index as f32 * stride) * self.scale,
             52.0 * self.scale,
-            34.0 * self.scale,
+            height * self.scale,
         ]
     }
 
-    fn solver_parameter_plus(self, index: usize) -> [f32; 4] {
+    fn solver_parameter_plus(self, index: usize, profile_count: usize) -> [f32; 4] {
+        let (base, stride, height) = self.solver_parameter_metrics(profile_count);
         [
             308.0 * self.scale,
-            (212.0 + index as f32 * 38.0) * self.scale,
+            (base + index as f32 * stride) * self.scale,
             52.0 * self.scale,
-            34.0 * self.scale,
+            height * self.scale,
         ]
     }
 
     #[cfg_attr(not(feature = "solver-lab"), allow(dead_code))]
-    fn solver_scene_button(self, index: usize) -> [f32; 4] {
+    fn solver_scene_button(self, index: usize, profile_count: usize) -> [f32; 4] {
+        let (base, stride, height) = self.solver_parameter_metrics(profile_count);
+        let y = base + 3.0 * stride + if self.compact_landscape() { 2.0 } else { 10.0 };
         [
             (24.0 + index as f32 * 174.0) * self.scale,
-            336.0 * self.scale,
+            y * self.scale,
             162.0 * self.scale,
-            34.0 * self.scale,
+            height * self.scale,
         ]
     }
 
-    fn apply_solver_button(self) -> [f32; 4] {
+    fn apply_solver_button(self, profile_count: usize) -> [f32; 4] {
+        let scene = self.solver_scene_button(0, profile_count);
+        let compact = self.compact_landscape();
         [
             24.0 * self.scale,
-            384.0 * self.scale,
-            162.0 * self.scale,
-            38.0 * self.scale,
+            scene[1] + scene[3] + if compact { 6.0 } else { 14.0 } * self.scale,
+            336.0 * self.scale,
+            if compact { 32.0 } else { 38.0 } * self.scale,
         ]
     }
 
-    fn toggle_solver_button(self) -> [f32; 4] {
-        [
-            198.0 * self.scale,
-            384.0 * self.scale,
-            162.0 * self.scale,
-            38.0 * self.scale,
-        ]
+    fn solver_profile_columns(self, profile_count: usize) -> usize {
+        usize::from(self.compact_landscape() || (profile_count > 4 && self.target_size[0] >= 720))
+            + 1
+    }
+
+    fn solver_profile_metrics(self) -> (f32, f32, f32) {
+        if self.compact_landscape() {
+            (144.0, 30.0, 28.0)
+        } else {
+            (154.0, 38.0, 34.0)
+        }
+    }
+
+    fn solver_parameter_metrics(self, profile_count: usize) -> (f32, f32, f32) {
+        let columns = self.solver_profile_columns(profile_count);
+        let rows = profile_count.div_ceil(columns);
+        let (start_y, profile_stride, profile_height) = self.solver_profile_metrics();
+        let compact = self.compact_landscape();
+        (
+            start_y
+                + rows.saturating_sub(1) as f32 * profile_stride
+                + profile_height
+                + if compact { 4.0 } else { 10.0 },
+            if compact { 30.0 } else { 38.0 },
+            if compact { 28.0 } else { 34.0 },
+        )
     }
 
     fn compact_landscape(self) -> bool {
@@ -546,11 +631,16 @@ impl UiLayout {
             "scenario" => self.scenario_button(index),
             "restart" => self.restart_button(),
             "recenter" => self.recenter_button(),
-            "solver-profile" => self.solver_profile_button(index),
-            "solver-minus" => self.solver_parameter_minus(index),
-            "solver-plus" => self.solver_parameter_plus(index),
-            "apply-solver" => self.apply_solver_button(),
-            "toggle-solver" => self.toggle_solver_button(),
+            "solver-profile" => {
+                self.solver_profile_button(index, SolverProfileConfig::available().len())
+            }
+            "solver-minus" => {
+                self.solver_parameter_minus(index, SolverProfileConfig::available().len())
+            }
+            "solver-plus" => {
+                self.solver_parameter_plus(index, SolverProfileConfig::available().len())
+            }
+            "apply-solver" => self.apply_solver_button(SolverProfileConfig::available().len()),
             _ => panic!("unknown UI test target"),
         };
         [
@@ -620,6 +710,8 @@ struct StaticKey {
     menu_page: MenuPage,
     selected_tool: WorkbenchTool,
     solver_profile_key: String,
+    active_solver_profile: SolverProfileName,
+    solver_profile_count: usize,
 }
 
 struct UiRenderer {
@@ -821,6 +913,7 @@ impl UiRenderer {
             menu_open,
             menu_page,
             selected_tool,
+            solver_profiles,
             draft_solver_profile,
         } = view;
         if self.last_target_size != Some(target.size) {
@@ -846,15 +939,21 @@ impl UiRenderer {
                 draft_solver_profile.name(),
                 draft_solver_profile.options_string().unwrap_or_default()
             ),
+            active_solver_profile: model.solver_profile.profile_name(),
+            solver_profile_count: solver_profiles.len(),
         };
         if self.static_key.as_ref() != Some(&key) {
             let batch = static_batch(
                 target.size,
-                model.scenario,
-                menu_open,
-                menu_page,
-                selected_tool,
-                draft_solver_profile,
+                StaticBatchModel {
+                    scenario: model.scenario,
+                    menu_open,
+                    menu_page,
+                    selected_tool,
+                    active_solver_profile: model.solver_profile,
+                    solver_profiles,
+                    draft_solver_profile,
+                },
             );
             if !batch.instances.is_empty() {
                 let bytes = bytemuck::cast_slice(&batch.instances);
@@ -1004,14 +1103,26 @@ impl Batch {
     }
 }
 
-fn static_batch(
-    target_size: [u32; 2],
+struct StaticBatchModel<'a> {
     scenario: ValidationScenario,
     menu_open: bool,
     menu_page: MenuPage,
     selected_tool: WorkbenchTool,
-    draft_solver_profile: &SolverProfileConfig,
-) -> Batch {
+    active_solver_profile: &'a SolverProfileConfig,
+    solver_profiles: &'a [SolverProfileConfig],
+    draft_solver_profile: &'a SolverProfileConfig,
+}
+
+fn static_batch(target_size: [u32; 2], model: StaticBatchModel<'_>) -> Batch {
+    let StaticBatchModel {
+        scenario,
+        menu_open,
+        menu_page,
+        selected_tool,
+        active_solver_profile,
+        solver_profiles,
+        draft_solver_profile,
+    } = model;
     let layout = UiLayout::for_target(target_size);
     let scale = layout.scale;
     let mut batch = Batch::new(STATIC_INSTANCE_CAPACITY);
@@ -1043,7 +1154,7 @@ fn static_batch(
         );
     }
     if menu_open {
-        batch.push_quad(layout.menu_panel(menu_page), panel);
+        batch.push_quad(layout.menu_panel(menu_page, solver_profiles.len()), panel);
         #[cfg(feature = "solver-lab")]
         for page in [MenuPage::Scenes, MenuPage::Solvers] {
             let bounds = layout.menu_tab(page);
@@ -1097,8 +1208,15 @@ fn static_batch(
                 );
             }
             MenuPage::Solvers => {
-                for (index, profile) in SolverProfileConfig::available().iter().enumerate() {
-                    let bounds = layout.solver_profile_button(index);
+                let profile_count = solver_profiles.len();
+                batch.push_text(
+                    &format!("ACTIVE {}", active_solver_profile.label()),
+                    [28.0 * scale, 128.0 * scale],
+                    1.5 * scale,
+                    accent,
+                );
+                for (index, profile) in solver_profiles.iter().enumerate() {
+                    let bounds = layout.solver_profile_button(index, profile_count);
                     batch.push_quad(
                         bounds,
                         if profile.profile_name() == draft_solver_profile.profile_name() {
@@ -1119,7 +1237,8 @@ fn static_batch(
                     .copied()
                     .enumerate()
                 {
-                    let y = (220.0 + index as f32 * 38.0) * scale;
+                    let (base, stride, _) = layout.solver_parameter_metrics(profile_count);
+                    let y = (base + 8.0 + index as f32 * stride) * scale;
                     batch.push_text(parameter.label(), [28.0 * scale, y], 1.7 * scale, text);
                     if let Some(value) = draft_solver_profile.parameter_value(parameter) {
                         batch.push_text(
@@ -1129,8 +1248,8 @@ fn static_batch(
                             accent,
                         );
                         for (bounds, label) in [
-                            (layout.solver_parameter_minus(index), "-"),
-                            (layout.solver_parameter_plus(index), "+"),
+                            (layout.solver_parameter_minus(index, profile_count), "-"),
+                            (layout.solver_parameter_plus(index, profile_count), "+"),
                         ] {
                             batch.push_quad(bounds, button);
                             batch.push_text(
@@ -1144,7 +1263,7 @@ fn static_batch(
                 }
                 #[cfg(feature = "solver-lab")]
                 for (index, label) in ["STACK 8", "STACK 16"].iter().enumerate() {
-                    let bounds = layout.solver_scene_button(index);
+                    let bounds = layout.solver_scene_button(index, profile_count);
                     batch.push_quad(bounds, button);
                     batch.push_text(
                         label,
@@ -1153,20 +1272,12 @@ fn static_batch(
                         text,
                     );
                 }
-                let apply = layout.apply_solver_button();
-                let toggle = layout.toggle_solver_button();
+                let apply = layout.apply_solver_button(profile_count);
                 batch.push_quad(apply, button);
-                batch.push_quad(toggle, button);
                 batch.push_text(
-                    "APPLY",
+                    "USE SOLVER",
                     [apply[0] + 10.0 * scale, apply[1] + 10.0 * scale],
                     1.8 * scale,
-                    text,
-                );
-                batch.push_text(
-                    "SWITCH A/B",
-                    [toggle[0] + 10.0 * scale, toggle[1] + 10.0 * scale],
-                    1.7 * scale,
                     text,
                 );
             }
@@ -1290,7 +1401,7 @@ mod tests {
             let layout = UiLayout::for_target(target);
             for bounds in [
                 layout.menu_button(),
-                layout.menu_panel(MenuPage::Scenes),
+                layout.menu_panel(MenuPage::Scenes, 0),
                 layout.restart_button(),
                 layout.recenter_button(),
             ]
@@ -1315,21 +1426,31 @@ mod tests {
 
     #[test]
     fn batches_are_bounded_and_use_one_instance_per_visible_glyph() {
+        let active = SolverProfileConfig::default();
+        let profiles = SolverProfileConfig::available();
         let static_closed = static_batch(
             [960, 600],
-            ValidationScenario::Bootstrap,
-            false,
-            MenuPage::Scenes,
-            WorkbenchTool::Grab,
-            &SolverProfileConfig::default(),
+            StaticBatchModel {
+                scenario: ValidationScenario::Bootstrap,
+                menu_open: false,
+                menu_page: MenuPage::Scenes,
+                selected_tool: WorkbenchTool::Grab,
+                active_solver_profile: &active,
+                solver_profiles: &profiles,
+                draft_solver_profile: &active,
+            },
         );
         let static_open = static_batch(
             [960, 600],
-            ValidationScenario::Bootstrap,
-            true,
-            MenuPage::Scenes,
-            WorkbenchTool::Rectangle,
-            &SolverProfileConfig::default(),
+            StaticBatchModel {
+                scenario: ValidationScenario::Bootstrap,
+                menu_open: true,
+                menu_page: MenuPage::Scenes,
+                selected_tool: WorkbenchTool::Rectangle,
+                active_solver_profile: &active,
+                solver_profiles: &profiles,
+                draft_solver_profile: &active,
+            },
         );
         assert!(!static_closed.overflowed && !static_open.overflowed);
         assert!(static_open.instances.len() > static_closed.instances.len());
@@ -1340,13 +1461,20 @@ mod tests {
     #[cfg(feature = "solver-lab")]
     #[test]
     fn solver_menu_batch_is_bounded() {
+        let active =
+            SolverProfileConfig::BranchRobust(crate::BranchRobustInteractiveOptions::default());
+        let profiles = SolverProfileConfig::available();
         let batch = static_batch(
             [960, 600],
-            ValidationScenario::SolverLabStack16,
-            true,
-            MenuPage::Solvers,
-            WorkbenchTool::Grab,
-            &SolverProfileConfig::BranchRobust(crate::BranchRobustInteractiveOptions::default()),
+            StaticBatchModel {
+                scenario: ValidationScenario::SolverLabStack16,
+                menu_open: true,
+                menu_page: MenuPage::Solvers,
+                selected_tool: WorkbenchTool::Grab,
+                active_solver_profile: &active,
+                solver_profiles: &profiles,
+                draft_solver_profile: &active,
+            },
         );
         assert!(!batch.overflowed);
         assert!(batch.instances.len() <= STATIC_INSTANCE_CAPACITY);
@@ -1355,26 +1483,44 @@ mod tests {
     #[cfg(feature = "solver-lab")]
     #[test]
     fn solver_menu_touch_targets_fit_phone_desktop_and_landscape() {
+        let profile_count = 2;
         for target in [[960, 600], [600, 960], [430, 932], [2400, 1080], [932, 430]] {
             let layout = UiLayout::for_target(target);
             let bounds = [
-                layout.menu_panel(MenuPage::Solvers),
+                layout.menu_panel(MenuPage::Solvers, profile_count),
                 layout.menu_tab(MenuPage::Scenes),
                 layout.menu_tab(MenuPage::Solvers),
-                layout.solver_profile_button(0),
-                layout.solver_profile_button(1),
-                layout.solver_parameter_minus(0),
-                layout.solver_parameter_plus(2),
-                layout.solver_scene_button(0),
-                layout.solver_scene_button(1),
-                layout.apply_solver_button(),
-                layout.toggle_solver_button(),
+                layout.solver_profile_button(0, profile_count),
+                layout.solver_profile_button(1, profile_count),
+                layout.solver_parameter_minus(0, profile_count),
+                layout.solver_parameter_plus(2, profile_count),
+                layout.solver_scene_button(0, profile_count),
+                layout.solver_scene_button(1, profile_count),
+                layout.apply_solver_button(profile_count),
             ];
             for bounds in bounds {
                 assert!(bounds[0] >= 0.0 && bounds[1] >= 0.0);
                 assert!(bounds[0] + bounds[2] <= target[0] as f32);
                 assert!(bounds[1] + bounds[3] <= target[1] as f32);
             }
+        }
+    }
+
+    #[cfg(feature = "solver-lab")]
+    #[test]
+    fn solver_menu_layout_scales_beyond_a_pair() {
+        let profile_count = 6;
+        for target in [[960, 600], [600, 960], [430, 932], [2400, 1080], [932, 430]] {
+            let layout = UiLayout::for_target(target);
+            for index in 0..profile_count {
+                let bounds = layout.solver_profile_button(index, profile_count);
+                assert!(bounds[0] >= 0.0 && bounds[1] >= 0.0);
+                assert!(bounds[0] + bounds[2] <= target[0] as f32);
+                assert!(bounds[1] + bounds[3] <= target[1] as f32);
+            }
+            let panel = layout.menu_panel(MenuPage::Solvers, profile_count);
+            assert!(panel[0] + panel[2] <= target[0] as f32);
+            assert!(panel[1] + panel[3] <= target[1] as f32);
         }
     }
 
@@ -1387,6 +1533,7 @@ mod tests {
         let mut menu_open = true;
         let mut menu_page = MenuPage::Solvers;
         let mut selected_tool = WorkbenchTool::Grab;
+        let mut profiles = SolverProfileConfig::available();
         let mut draft = SolverProfileConfig::default();
 
         for (id, position) in [
@@ -1394,11 +1541,14 @@ mod tests {
             (2, layout.center_normalized("solver-plus", 2)),
         ] {
             let routed = route_events(
-                &mut menu_open,
-                &mut menu_page,
-                &mut selected_tool,
-                &mut draft,
-                &mut captured,
+                UiRouteState {
+                    menu_open: &mut menu_open,
+                    menu_page: &mut menu_page,
+                    selected_tool: &mut selected_tool,
+                    solver_profiles: &mut profiles,
+                    draft_solver_profile: &mut draft,
+                    captured_pointers: &mut captured,
+                },
                 &[pointer(
                     id,
                     PointerPhase::Down,
@@ -1410,11 +1560,14 @@ mod tests {
             assert!(routed.action.is_none());
         }
         let routed = route_events(
-            &mut menu_open,
-            &mut menu_page,
-            &mut selected_tool,
-            &mut draft,
-            &mut captured,
+            UiRouteState {
+                menu_open: &mut menu_open,
+                menu_page: &mut menu_page,
+                selected_tool: &mut selected_tool,
+                solver_profiles: &mut profiles,
+                draft_solver_profile: &mut draft,
+                captured_pointers: &mut captured,
+            },
             &[pointer(
                 3,
                 PointerPhase::Down,
@@ -1442,6 +1595,7 @@ mod tests {
         let mut menu_open = false;
         let mut menu_page = MenuPage::Scenes;
         let mut selected_tool = WorkbenchTool::Grab;
+        let mut profiles = SolverProfileConfig::available();
         let mut solver_profile = SolverProfileConfig::default();
         let events = [
             pointer(1, PointerPhase::Down, PointerButton::Primary, menu),
@@ -1453,11 +1607,14 @@ mod tests {
             }),
         ];
         let routed = route_events(
-            &mut menu_open,
-            &mut menu_page,
-            &mut selected_tool,
-            &mut solver_profile,
-            &mut captured,
+            UiRouteState {
+                menu_open: &mut menu_open,
+                menu_page: &mut menu_page,
+                selected_tool: &mut selected_tool,
+                solver_profiles: &mut profiles,
+                draft_solver_profile: &mut solver_profile,
+                captured_pointers: &mut captured,
+            },
             &events,
             target,
         );
@@ -1476,13 +1633,17 @@ mod tests {
         let mut menu_open = false;
         let mut menu_page = MenuPage::Scenes;
         let mut selected_tool = WorkbenchTool::Grab;
+        let mut profiles = SolverProfileConfig::available();
         let mut solver_profile = SolverProfileConfig::default();
         let routed = route_events(
-            &mut menu_open,
-            &mut menu_page,
-            &mut selected_tool,
-            &mut solver_profile,
-            &mut captured,
+            UiRouteState {
+                menu_open: &mut menu_open,
+                menu_page: &mut menu_page,
+                selected_tool: &mut selected_tool,
+                solver_profiles: &mut profiles,
+                draft_solver_profile: &mut solver_profile,
+                captured_pointers: &mut captured,
+            },
             &[
                 pointer(7, PointerPhase::Down, PointerButton::Contact, rectangle),
                 pointer(7, PointerPhase::Up, PointerButton::Contact, rectangle),

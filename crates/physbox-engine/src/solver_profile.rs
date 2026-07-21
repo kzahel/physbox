@@ -102,7 +102,7 @@ impl SolverProfileConfig {
 
     pub const fn label(&self) -> &'static str {
         match self {
-            Self::Selected => "SELECTED",
+            Self::Selected => "PRODUCT HARD",
             #[cfg(feature = "solver-lab")]
             Self::BranchRobust(_) => "BRANCH ROBUST",
         }

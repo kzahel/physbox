@@ -145,7 +145,7 @@ struct ConfigurationReplacement {
     scenario_activation: bool,
     scenario_restart: bool,
     preserve_camera: bool,
-    previous_solver_profile: Option<crate::SolverProfileConfig>,
+    solver_profiles: Vec<crate::SolverProfileConfig>,
 }
 
 struct BodyInteractionState {
@@ -527,7 +527,7 @@ pub struct EngineHost {
     ui: WorkbenchUi,
     scenario_activations_total: u64,
     scenario_restarts_total: u64,
-    previous_solver_profile: Option<crate::SolverProfileConfig>,
+    solver_profiles: Vec<crate::SolverProfileConfig>,
     construction_diagnostic: Option<(ConstructionStateV1, u64)>,
 }
 
@@ -940,7 +940,15 @@ impl EngineHost {
             ValidationScenario::SolverJacobi | ValidationScenario::SolverColored => None,
         };
 
-        let ui = WorkbenchUi::new(device, queue, color_format, config.solver_profile.clone());
+        let mut solver_profiles = crate::SolverProfileConfig::available();
+        crate::ui::remember_solver_profile(&mut solver_profiles, config.solver_profile.clone());
+        let ui = WorkbenchUi::new(
+            device,
+            queue,
+            color_format,
+            config.solver_profile.clone(),
+            solver_profiles.clone(),
+        );
         Self {
             config,
             color_format,
@@ -962,7 +970,7 @@ impl EngineHost {
             ui,
             scenario_activations_total: 0,
             scenario_restarts_total: 0,
-            previous_solver_profile: None,
+            solver_profiles,
             construction_diagnostic: None,
         }
     }
@@ -979,7 +987,7 @@ impl EngineHost {
             scenario_activation,
             scenario_restart,
             preserve_camera,
-            previous_solver_profile,
+            solver_profiles,
         } = replacement;
         let camera = self.camera;
         let mut replacement = Self::new(
@@ -995,7 +1003,10 @@ impl EngineHost {
         replacement.scenario_restarts_total = self
             .scenario_restarts_total
             .saturating_add(u64::from(scenario_restart));
-        replacement.previous_solver_profile = previous_solver_profile;
+        replacement.solver_profiles = solver_profiles.clone();
+        replacement
+            .ui
+            .set_solver_profiles(solver_profiles, replacement.config.solver_profile.clone());
         replacement.ui.select_tool(selected_tool);
         if preserve_camera {
             replacement.camera = camera;
@@ -1028,11 +1039,6 @@ impl EngineHost {
                     } else {
                         crate::SolverProfileConfig::Selected
                     };
-                    let previous_solver_profile = if compatible {
-                        self.previous_solver_profile.clone()
-                    } else {
-                        Some(self.config.solver_profile.clone())
-                    };
                     self.replace_configuration(
                         context.device,
                         context.queue,
@@ -1045,7 +1051,7 @@ impl EngineHost {
                             scenario_activation: true,
                             scenario_restart: false,
                             preserve_camera: false,
-                            previous_solver_profile,
+                            solver_profiles: self.solver_profiles.clone(),
                         },
                     );
                 }
@@ -1059,7 +1065,7 @@ impl EngineHost {
                             scenario_activation: false,
                             scenario_restart: true,
                             preserve_camera: false,
-                            previous_solver_profile: self.previous_solver_profile.clone(),
+                            solver_profiles: self.solver_profiles.clone(),
                         },
                     );
                 }
@@ -1076,9 +1082,8 @@ impl EngineHost {
                             self.config.scenario
                         }
                     };
-                    let previous = (profile != self.config.solver_profile)
-                        .then(|| self.config.solver_profile.clone())
-                        .or_else(|| self.previous_solver_profile.clone());
+                    let mut solver_profiles = self.solver_profiles.clone();
+                    crate::ui::remember_solver_profile(&mut solver_profiles, profile.clone());
                     self.replace_configuration(
                         context.device,
                         context.queue,
@@ -1091,15 +1096,14 @@ impl EngineHost {
                             scenario_activation: scenario != self.config.scenario,
                             scenario_restart: false,
                             preserve_camera: true,
-                            previous_solver_profile: previous,
+                            solver_profiles,
                         },
                     );
                 }
                 UiAction::ActivateSolverProfileForScenario { profile, scenario } => {
                     assert!(profile.supports_scenario(scenario));
-                    let previous = (profile != self.config.solver_profile)
-                        .then(|| self.config.solver_profile.clone())
-                        .or_else(|| self.previous_solver_profile.clone());
+                    let mut solver_profiles = self.solver_profiles.clone();
+                    crate::ui::remember_solver_profile(&mut solver_profiles, profile.clone());
                     self.replace_configuration(
                         context.device,
                         context.queue,
@@ -1112,41 +1116,9 @@ impl EngineHost {
                             scenario_activation: scenario != self.config.scenario,
                             scenario_restart: false,
                             preserve_camera: true,
-                            previous_solver_profile: previous,
+                            solver_profiles,
                         },
                     );
-                }
-                UiAction::ToggleSolverProfile => {
-                    let target = self
-                        .previous_solver_profile
-                        .clone()
-                        .filter(|profile| profile.supports_scenario(self.config.scenario))
-                        .or_else(|| {
-                            crate::SolverProfileConfig::available()
-                                .into_iter()
-                                .find(|profile| {
-                                    profile != &self.config.solver_profile
-                                        && profile.supports_scenario(self.config.scenario)
-                                })
-                        });
-                    if let Some(profile) = target {
-                        let previous = Some(self.config.solver_profile.clone());
-                        self.replace_configuration(
-                            context.device,
-                            context.queue,
-                            ConfigurationReplacement {
-                                config: EngineConfig {
-                                    scenario: self.config.scenario,
-                                    solver_profile: profile,
-                                },
-                                selected_tool: routing.selected_tool,
-                                scenario_activation: false,
-                                scenario_restart: false,
-                                preserve_camera: true,
-                                previous_solver_profile: previous,
-                            },
-                        );
-                    }
                 }
             }
         }

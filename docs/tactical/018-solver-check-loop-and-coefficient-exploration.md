@@ -163,10 +163,13 @@ Design (validated against existing APIs):
   product. Delivered as the `solver-lab` feature shared by engine, launch, and
   all four host adapters. The engine-rendered **SOLVERS** menu
   selects the product or branch-robust profile, edits all three swept
-  coefficients, loads governed 8/16-stack scenes, applies changes without a
-  page reload, and swaps the active/previous profiles with one **SWITCH A/B**
-  action. Rebuilding remains inside `EngineHost`, so all hosts keep one state
-  owner, renderer, input path, and pacing policy. Scene contract v6 reports
+  coefficients, loads governed 8/16-stack scenes, and applies changes without
+  a page reload. A later UX correction replaces the ambiguous pairwise A/B
+  action with an explicit active-solver label, a dynamically laid-out registry
+  of profiles, and one **USE SOLVER** action; each registered profile retains
+  its last in-session configuration. Rebuilding remains inside `EngineHost`,
+  so all hosts keep one state owner, renderer, input path, and pacing policy.
+  Scene contract v6 reports
   the active profile, canonical options, scenario hash, execution,
   scheduling, and coefficient policy. The web lab persists only this opt-in
   selection in the versioned `physbox5.solver-lab.v1` local-storage key and

@@ -95,12 +95,14 @@ For the same surface on a local browser, run:
 npm run inspect:web
 ```
 
-Open **MENU → SOLVERS** on the engine-rendered canvas. Choose **SELECTED** or
-**BRANCH ROBUST**, adjust the candidate's hertz, damping, and static-contact
-scale, then use **STACK 8**, **STACK 16**, or **APPLY**. **SWITCH A/B** swaps
-between the active and previous profile. A change rebuilds the shared GPU
-world immediately without reloading the page; camera position and tool
-selection are retained. The browser stores the active profile and coefficients
+Open **MENU → SOLVERS** on the engine-rendered canvas. The menu names the
+active solver and lists every registered profile; choose **PRODUCT HARD** or
+**BRANCH ROBUST**, adjust the selected candidate's hertz, damping, and
+static-contact scale, then use **STACK 8**, **STACK 16**, or **USE SOLVER**.
+The list grows and reflows as profiles are registered; there is no pairwise
+A/B slot. A change rebuilds the shared GPU world immediately without reloading
+the page; camera position and tool selection are retained. The browser stores
+the active profile and coefficients
 under `physbox5.solver-lab.v1`, restores them on the next lab launch, and keeps
 the URL synchronized automatically for reproducibility. No query-string
 editing is required.
@@ -116,9 +118,11 @@ cargo run -p physbox-desktop --features solver-lab -- \
 ```
 
 Adding a later candidate means registering another explicit inspection
-profile; the menu, launch transport, scene contract, and browser persistence
-remain the common surface. Native production builds remain feature-gated and
-exclude these candidate profiles unless `solver-lab` is requested.
+profile; it joins the same selection list and retains its last configuration
+during the session. The menu, launch transport, scene contract, and browser
+persistence remain the common surface. Native production builds remain
+feature-gated and exclude these candidate profiles unless `solver-lab` is
+requested.
 
 ## Validation tiers
 

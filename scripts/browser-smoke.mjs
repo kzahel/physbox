@@ -84,13 +84,13 @@ try {
     await page.evaluate(() => new Promise((resolveFrame) => {
       requestAnimationFrame(() => requestAnimationFrame(resolveFrame));
     }));
-    await page.mouse.click(192 * uiScale, 181 * uiScale);
-    await page.mouse.click(334 * uiScale, 305 * uiScale);
+    await page.mouse.click(192 * uiScale, 209 * uiScale);
+    await page.mouse.click(334 * uiScale, 329 * uiScale);
     await page.evaluate(() => new Promise((resolveFrame) => {
       requestAnimationFrame(() => requestAnimationFrame(resolveFrame));
     }));
     await captureCompleteScreenshot(page, menuScreenshot, "browser solver menu");
-    await page.mouse.click(279 * uiScale, 353 * uiScale);
+    await page.mouse.click(279 * uiScale, 377 * uiScale);
     activeScenario = "solver-lab-stack-16";
     await page.waitForFunction(
       ({ scenarioName }) => {
@@ -108,7 +108,8 @@ try {
 
     await page.mouse.click(62 * uiScale, 50 * uiScale);
     await page.mouse.click(279 * uiScale, 104 * uiScale);
-    await page.mouse.click(279 * uiScale, 403 * uiScale);
+    await page.mouse.click(192 * uiScale, 171 * uiScale);
+    await page.mouse.click(192 * uiScale, 427 * uiScale);
     await page.waitForFunction(
       ({ scenarioName }) => {
         const frame = globalThis.__physbox5?.frame;
@@ -123,7 +124,8 @@ try {
 
     await page.mouse.click(62 * uiScale, 50 * uiScale);
     await page.mouse.click(279 * uiScale, 104 * uiScale);
-    await page.mouse.click(279 * uiScale, 403 * uiScale);
+    await page.mouse.click(192 * uiScale, 209 * uiScale);
+    await page.mouse.click(192 * uiScale, 427 * uiScale);
     await page.waitForFunction(
       ({ scenarioName }) => {
         const frame = globalThis.__physbox5?.frame;
