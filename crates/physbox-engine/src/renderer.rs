@@ -710,6 +710,7 @@ mod tests {
         physics.biased_iterations = iterations;
         let config = EngineConfig {
             scenario: ValidationScenario::Bootstrap,
+            world_capacity: Default::default(),
             solver_profile: crate::SolverProfileConfig::from_physics(physics).unwrap(),
         };
         let run = || {
@@ -768,6 +769,7 @@ mod tests {
             physics.fixed_step_hz = fixed_step_hz;
             let config = EngineConfig {
                 scenario: ValidationScenario::Bootstrap,
+                world_capacity: Default::default(),
                 solver_profile: crate::SolverProfileConfig::from_physics(physics).unwrap(),
             };
             let run = || {
@@ -827,6 +829,7 @@ mod tests {
                 target_size[1],
                 EngineConfig {
                     scenario: ValidationScenario::ResetGrab,
+                    world_capacity: Default::default(),
                     solver_profile: profile.clone(),
                 },
             ))
@@ -848,6 +851,7 @@ mod tests {
                 target_size[1],
                 EngineConfig {
                     scenario: ValidationScenario::Bootstrap,
+                    world_capacity: Default::default(),
                     solver_profile: profile,
                 },
             ))
@@ -1556,6 +1560,60 @@ mod tests {
         assert!(!restarted.ui.overflowed);
     }
 
+    #[test]
+    fn world_capacity_menu_rebuilds_the_shared_graph_and_preserves_tool() {
+        let target = [960, 600];
+        let mut renderer = pollster::block_on(OffscreenRenderer::new(
+            target[0],
+            target[1],
+            EngineConfig::default(),
+        ))
+        .unwrap();
+        let click = |id, at| {
+            [crate::PointerPhase::Down, crate::PointerPhase::Up]
+                .into_iter()
+                .map(|phase| {
+                    crate::InputEvent::Pointer(crate::PointerEvent {
+                        id,
+                        phase,
+                        button: crate::PointerButton::Primary,
+                        normalized_position: at,
+                    })
+                })
+                .collect::<Vec<_>>()
+        };
+        let layout = crate::ui::UiLayout::for_target(target);
+        let initial = renderer.render(FrameInput::exact(0));
+        assert_eq!(initial.scene_contract.requested_body_capacity, 64);
+        assert_eq!(initial.scene_contract.body_capacity, 64);
+
+        renderer.render(
+            FrameInput::exact(0).with_input_events(click(1, layout.center_normalized("tool", 1))),
+        );
+        renderer.render(
+            FrameInput::exact(0).with_input_events(click(2, layout.center_normalized("menu", 0))),
+        );
+        renderer.render(
+            FrameInput::exact(0)
+                .with_input_events(click(3, layout.center_normalized("world-tab", 0))),
+        );
+        let changed = renderer.render(
+            FrameInput::exact(0)
+                .with_input_events(click(4, layout.center_normalized("world-capacity", 1))),
+        );
+        assert_eq!(changed.scene_contract.requested_body_capacity, 256);
+        assert_eq!(changed.scene_contract.body_capacity, 256);
+        assert_eq!(changed.scene_contract.body_count, 2);
+        assert!(
+            changed.scene_contract.solver_capacity_bytes
+                > initial.scene_contract.solver_capacity_bytes
+        );
+        assert!(!changed.scene_contract.capacity_overflowed);
+        assert_eq!(changed.ui.current_tool, "circle");
+        assert_eq!(changed.ui.scenario_restarts_total, 1);
+        assert!(!changed.ui.menu_open);
+    }
+
     #[cfg(feature = "solver-lab")]
     #[test]
     fn scene_menu_rejects_an_incompatible_scene_without_automatic_hard_fallback() {
@@ -1606,6 +1664,7 @@ mod tests {
             200,
             EngineConfig {
                 scenario: ValidationScenario::SolverManifoldI2,
+                world_capacity: Default::default(),
                 solver_profile: crate::SolverProfileConfig::hard_direct(),
             },
         ))
@@ -1641,6 +1700,7 @@ mod tests {
             200,
             EngineConfig {
                 scenario: ValidationScenario::SolverParallelColoring,
+                world_capacity: Default::default(),
                 solver_profile: crate::SolverProfileConfig::hard_direct(),
             },
         ))

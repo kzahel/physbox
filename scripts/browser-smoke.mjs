@@ -19,6 +19,10 @@ const grabScreenshot = join(captureDirectory, `physbox5-web-grab${captureSuffix}
 const constructionScreenshot = join(captureDirectory, `physbox5-web-construction${captureSuffix}.png`);
 const provenancePath = join(captureDirectory, `physbox5-web${captureSuffix}.json`);
 const scenario = process.env.PHYSBOX5_SCENARIO ?? "bootstrap";
+const requestedBodyCapacity = Number.parseInt(process.env.PHYSBOX5_BODY_CAPACITY ?? "64", 10);
+if (![64, 256, 1000, 10000].includes(requestedBodyCapacity)) {
+  throw new Error("PHYSBOX5_BODY_CAPACITY must be 64, 256, 1000, or 10000");
+}
 const solverLab = process.env.PHYSBOX5_SOLVER_LAB === "1";
 const conciseOutput = process.env.PHYSBOX5_CONCISE === "1";
 const viewportWidth = Number.parseInt(process.env.PHYSBOX5_VIEWPORT_WIDTH ?? "960", 10);
@@ -60,7 +64,11 @@ try {
       consoleErrors.push(`${message.type()}: ${message.text()}`);
     }
   });
-  await page.goto(`http://127.0.0.1:${port}/?scenario=${encodeURIComponent(scenario)}`, { waitUntil: "networkidle" });
+  const startupParams = new URLSearchParams({ scenario });
+  if (requestedBodyCapacity !== 64) {
+    startupParams.set("body-capacity", String(requestedBodyCapacity));
+  }
+  await page.goto(`http://127.0.0.1:${port}/?${startupParams}`, { waitUntil: "networkidle" });
   await page.waitForFunction(() => globalThis.__physbox5?.ready, null, { timeout: 30_000 });
   const before = await page.evaluate(() => globalThis.__physbox5);
   if (!before.ok || !before.frame?.scenario?.passed) throw new Error(`shared scenario failed: ${JSON.stringify(before)}`);
@@ -68,6 +76,9 @@ try {
   if (before.frame.fixedStepsTotal < 1) throw new Error(`browser scenario passed without a fixed step: ${JSON.stringify(before.frame.pacing)}`);
   if (before.frame.sceneContract?.solverProfile !== "soft-coupled") {
     throw new Error(`fresh browser did not use soft-coupled: ${JSON.stringify(before.frame.sceneContract)}`);
+  }
+  if (before.frame.sceneContract?.requestedBodyCapacity !== requestedBodyCapacity) {
+    throw new Error(`browser did not use requested world preset ${requestedBodyCapacity}: ${JSON.stringify(before.frame.sceneContract)}`);
   }
   await requirePhysicsPreference(page, {
     solver: "soft-coupled",
@@ -124,8 +135,40 @@ try {
   }));
   await captureCompleteScreenshot(page, menuScreenshot, "browser menu");
   let activeScenario = scenario;
+  if (!solverLab && scenario === "bootstrap" && requestedBodyCapacity === 64) {
+    const restarts = before.frame.ui.scenarioRestartsTotal;
+    await page.mouse.click(300 * uiScale, 104 * uiScale);
+    await page.evaluate(() => new Promise((resolveFrame) => {
+      requestAnimationFrame(() => requestAnimationFrame(resolveFrame));
+    }));
+    await captureCompleteScreenshot(page, menuScreenshot, "browser world-capacity menu");
+    await page.mouse.click(192 * uiScale, 209 * uiScale);
+    await page.waitForFunction(
+      ({ previousRestarts }) => {
+        const frame = globalThis.__physbox5?.frame;
+        return frame?.sceneContract?.requestedBodyCapacity === 256
+          && frame?.sceneContract?.bodyCapacity === 256
+          && frame?.ui?.scenarioRestartsTotal > previousRestarts
+          && !frame?.ui?.menuOpen;
+      },
+      { previousRestarts: restarts },
+      { timeout: 30_000 },
+    );
+    await requireWorldPreference(page, 256);
+    await page.reload({ waitUntil: "networkidle" });
+    await page.waitForFunction(
+      () => globalThis.__physbox5?.ready
+        && globalThis.__physbox5?.frame?.sceneContract?.requestedBodyCapacity === 256
+        && globalThis.__physbox5?.frame?.sceneContract?.bodyCapacity === 256,
+      null,
+      { timeout: 30_000 },
+    );
+    await requireWorldPreference(page, 256);
+    await page.mouse.click(62 * uiScale, 50 * uiScale);
+    await page.waitForFunction(() => globalThis.__physbox5?.frame?.ui?.menuOpen, null, { timeout: 10_000 });
+  }
   if (solverLab) {
-    await page.mouse.click(279 * uiScale, 104 * uiScale);
+    await page.mouse.click(188 * uiScale, 104 * uiScale);
     await page.evaluate(() => new Promise((resolveFrame) => {
       requestAnimationFrame(() => requestAnimationFrame(resolveFrame));
     }));
@@ -175,7 +218,7 @@ try {
     });
 
     await page.mouse.click(62 * uiScale, 50 * uiScale);
-    await page.mouse.click(279 * uiScale, 104 * uiScale);
+    await page.mouse.click(188 * uiScale, 104 * uiScale);
     await page.mouse.click(...solverProfileCenter(1));
     await page.mouse.click(...solverApplyCenter);
     await page.waitForFunction(
@@ -201,7 +244,7 @@ try {
     });
 
     await page.mouse.click(62 * uiScale, 50 * uiScale);
-    await page.mouse.click(279 * uiScale, 104 * uiScale);
+    await page.mouse.click(188 * uiScale, 104 * uiScale);
     await page.mouse.click(...solverProfileCenter(0));
     await page.mouse.click(...solverApplyCenter);
     await page.waitForFunction(
@@ -512,6 +555,10 @@ try {
         substeps: final.frame.sceneContract?.solverSubsteps,
         iterations: final.frame.sceneContract?.solverBiasedIterations,
       },
+      world: {
+        requestedBodyCapacity: final.frame.sceneContract?.requestedBodyCapacity,
+        bodyCapacity: final.frame.sceneContract?.bodyCapacity,
+      },
       pacing: {
         completedSteps: final.frame.pacing?.completedOuterStepsTotal,
         effectiveScale: final.frame.pacing?.effectiveSimulationScale,
@@ -611,6 +658,22 @@ async function requirePhysicsPreference(page, expected, expectClean = false) {
       return stored && addressed;
     },
     { expectedPhysics: expected, clean: expectClean },
+    { timeout: 10_000 },
+  );
+}
+
+async function requireWorldPreference(page, bodyCapacity) {
+  await page.waitForFunction(
+    ({ expectedCapacity }) => {
+      const saved = JSON.parse(localStorage.getItem("physbox5.world.v1") ?? "null");
+      const url = new URL(location.href);
+      return saved?.version === 1
+        && saved.bodyCapacity === expectedCapacity
+        && (expectedCapacity === 64
+          ? !url.searchParams.has("body-capacity")
+          : url.searchParams.get("body-capacity") === String(expectedCapacity));
+    },
+    { expectedCapacity: bodyCapacity },
     { timeout: 10_000 },
   );
 }

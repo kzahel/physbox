@@ -9,7 +9,7 @@ use crate::{
     GpuSolverAccumulationV4, GpuSolverExecutionV4, GpuSolverSchedulingPolicyV1,
 };
 
-pub const SCENE_CONTRACT_VERSION: u32 = 7;
+pub const SCENE_CONTRACT_VERSION: u32 = 8;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -18,6 +18,8 @@ pub struct SceneContract {
     pub engine: &'static str,
     pub state_owner: &'static str,
     pub body_count: u32,
+    pub requested_body_capacity: u32,
+    pub body_capacity: u32,
     pub contact_point_count: u32,
     pub solver_dispatches_per_step: u32,
     pub solver_capacity_bytes: u64,
@@ -197,6 +199,10 @@ impl FrameReport {
             version: u32,
             #[serde(rename = "b")]
             body_count: u32,
+            #[serde(rename = "a")]
+            requested_body_capacity: u32,
+            #[serde(rename = "z")]
+            body_capacity: u32,
             #[serde(rename = "c")]
             contact_point_count: u32,
             #[serde(rename = "d")]
@@ -293,6 +299,8 @@ impl FrameReport {
             scene_contract: CompactSceneContract {
                 version: self.scene_contract.version,
                 body_count: self.scene_contract.body_count,
+                requested_body_capacity: self.scene_contract.requested_body_capacity,
+                body_capacity: self.scene_contract.body_capacity,
                 contact_point_count: self.scene_contract.contact_point_count,
                 solver_dispatches_per_step: self.scene_contract.solver_dispatches_per_step,
                 solver_capacity_bytes: self.scene_contract.solver_capacity_bytes,
@@ -494,6 +502,8 @@ mod tests {
                 engine: "physbox5",
                 state_owner: "gpu",
                 body_count: u32::MAX,
+                requested_body_capacity: 10_000,
+                body_capacity: 10_000,
                 contact_point_count: 2,
                 solver_dispatches_per_step: 68,
                 solver_capacity_bytes: 512,

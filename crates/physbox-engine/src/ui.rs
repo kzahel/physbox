@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use bytemuck::{Pod, Zeroable};
 use physbox_contracts::{ConstructionResultV1, ConstructionStateV1};
-use physbox_launch::{SolverProfileName, ValidationScenario};
+use physbox_launch::{SolverProfileName, ValidationScenario, WorldCapacityPreset};
 use wgpu::util::DeviceExt;
 
 use crate::{
@@ -28,6 +28,7 @@ pub(crate) enum UiAction {
         profile: SolverProfileConfig,
         scenario: ValidationScenario,
     },
+    ActivateWorldCapacity(WorldCapacityPreset),
     RestartScenario,
     Recenter,
 }
@@ -37,6 +38,7 @@ enum MenuPage {
     #[default]
     Scenes,
     Solvers,
+    World,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -81,6 +83,8 @@ pub(crate) struct UiFrameModel<'a> {
     pub solver_profile: &'a SolverProfileConfig,
     pub pacing: &'a PacingReport,
     pub body_count: u32,
+    pub world_capacity: WorldCapacityPreset,
+    pub body_capacity: u32,
     pub contact_count: u32,
     pub capacity_bytes: u64,
     pub overflowed: bool,
@@ -282,6 +286,10 @@ fn route_events(
                             scenario,
                         });
                     }
+                    UiHit::WorldCapacity(capacity) => {
+                        *menu_open = false;
+                        action = Some(UiAction::ActivateWorldCapacity(capacity));
+                    }
                     UiHit::Panel => {}
                 }
                 continue;
@@ -322,6 +330,7 @@ enum UiHit {
     SolverProfile(SolverProfileName),
     SolverParameter(crate::solver_profile::SolverParameter, i32),
     SolverScene(ValidationScenario),
+    WorldCapacity(WorldCapacityPreset),
     RestoreSolverPreset,
     ApplySolver,
     Panel,
@@ -364,7 +373,7 @@ impl UiLayout {
         if !menu_open {
             return None;
         }
-        for page in [MenuPage::Scenes, MenuPage::Solvers] {
+        for page in [MenuPage::Scenes, MenuPage::Solvers, MenuPage::World] {
             if contains(self.menu_tab(page), pixel) {
                 return Some(UiHit::MenuPage(page));
             }
@@ -418,6 +427,13 @@ impl UiLayout {
                     return Some(UiHit::ApplySolver);
                 }
             }
+            MenuPage::World => {
+                for (index, capacity) in WorldCapacityPreset::ALL.into_iter().enumerate() {
+                    if contains(self.world_capacity_button(index), pixel) {
+                        return Some(UiHit::WorldCapacity(capacity));
+                    }
+                }
+            }
         }
         contains(self.menu_panel(menu_page, solver_profiles.len()), pixel).then_some(UiHit::Panel)
     }
@@ -454,6 +470,10 @@ impl UiLayout {
                 (apply[1] + apply[3]) / self.scale
                     + if self.compact_landscape() { 4.0 } else { 8.0 }
             }
+            MenuPage::World => {
+                let last = self.world_capacity_button(WorldCapacityPreset::ALL.len() - 1);
+                (last[1] + last[3]) / self.scale + 58.0
+            }
         };
         let wide = self.compact_landscape()
             || (page == MenuPage::Solvers && self.solver_profile_columns(solver_profile_count) > 1);
@@ -467,8 +487,9 @@ impl UiLayout {
 
     fn menu_tab(self, page: MenuPage) -> [f32; 4] {
         let (x, width) = match page {
-            MenuPage::Scenes => (24.0, 162.0),
-            MenuPage::Solvers => (198.0, 162.0),
+            MenuPage::Scenes => (24.0, 104.0),
+            MenuPage::Solvers => (136.0, 104.0),
+            MenuPage::World => (248.0, 104.0),
         };
         [
             x * self.scale,
@@ -492,6 +513,15 @@ impl UiLayout {
         [
             24.0 * self.scale,
             (126.0 + index as f32 * 38.0) * self.scale,
+            336.0 * self.scale,
+            34.0 * self.scale,
+        ]
+    }
+
+    fn world_capacity_button(self, index: usize) -> [f32; 4] {
+        [
+            24.0 * self.scale,
+            (154.0 + index as f32 * 38.0) * self.scale,
             336.0 * self.scale,
             34.0 * self.scale,
         ]
@@ -717,6 +747,8 @@ impl UiLayout {
             }
             "apply-solver" => self.apply_solver_button(SolverProfileConfig::available().len()),
             "restore-solver" => self.restore_solver_button(SolverProfileConfig::available().len()),
+            "world-tab" => self.menu_tab(MenuPage::World),
+            "world-capacity" => self.world_capacity_button(index),
             _ => panic!("unknown UI test target"),
         };
         [
@@ -788,6 +820,7 @@ struct StaticKey {
     solver_profile_key: String,
     active_solver_profile: SolverProfileName,
     solver_profile_count: usize,
+    world_capacity: WorldCapacityPreset,
 }
 
 struct UiRenderer {
@@ -1013,6 +1046,7 @@ impl UiRenderer {
             solver_profile_key: draft_solver_profile.configuration_key(),
             active_solver_profile: model.solver_profile.profile_name(),
             solver_profile_count: solver_profiles.len(),
+            world_capacity: model.world_capacity,
         };
         if self.static_key.as_ref() != Some(&key) {
             let batch = static_batch(
@@ -1025,6 +1059,7 @@ impl UiRenderer {
                     active_solver_profile: model.solver_profile,
                     solver_profiles,
                     draft_solver_profile,
+                    world_capacity: model.world_capacity,
                 },
             );
             if !batch.instances.is_empty() {
@@ -1183,6 +1218,7 @@ struct StaticBatchModel<'a> {
     active_solver_profile: &'a SolverProfileConfig,
     solver_profiles: &'a [SolverProfileConfig],
     draft_solver_profile: &'a SolverProfileConfig,
+    world_capacity: WorldCapacityPreset,
 }
 
 fn static_batch(target_size: [u32; 2], model: StaticBatchModel<'_>) -> Batch {
@@ -1194,6 +1230,7 @@ fn static_batch(target_size: [u32; 2], model: StaticBatchModel<'_>) -> Batch {
         active_solver_profile,
         solver_profiles,
         draft_solver_profile,
+        world_capacity,
     } = model;
     let layout = UiLayout::for_target(target_size);
     let scale = layout.scale;
@@ -1227,13 +1264,14 @@ fn static_batch(target_size: [u32; 2], model: StaticBatchModel<'_>) -> Batch {
     }
     if menu_open {
         batch.push_quad(layout.menu_panel(menu_page, solver_profiles.len()), panel);
-        for page in [MenuPage::Scenes, MenuPage::Solvers] {
+        for page in [MenuPage::Scenes, MenuPage::Solvers, MenuPage::World] {
             let bounds = layout.menu_tab(page);
             batch.push_quad(bounds, if page == menu_page { selected } else { button });
             batch.push_text(
                 match page {
                     MenuPage::Scenes => "SCENES",
                     MenuPage::Solvers => "SOLVERS",
+                    MenuPage::World => "WORLD",
                 },
                 [bounds[0] + 9.0 * scale, bounds[1] + 6.0 * scale],
                 1.8 * scale,
@@ -1376,6 +1414,44 @@ fn static_batch(target_size: [u32; 2], model: StaticBatchModel<'_>) -> Batch {
                     text,
                 );
             }
+            MenuPage::World => {
+                batch.push_text(
+                    &format!("ACTIVE {}", world_capacity.label()),
+                    [28.0 * scale, 128.0 * scale],
+                    1.5 * scale,
+                    accent,
+                );
+                for (index, capacity) in WorldCapacityPreset::ALL.into_iter().enumerate() {
+                    let bounds = layout.world_capacity_button(index);
+                    batch.push_quad(
+                        bounds,
+                        if capacity == world_capacity {
+                            selected
+                        } else {
+                            button
+                        },
+                    );
+                    batch.push_text(
+                        capacity.label(),
+                        [bounds[0] + 10.0 * scale, bounds[1] + 9.0 * scale],
+                        1.8 * scale,
+                        text,
+                    );
+                }
+                let last = layout.world_capacity_button(WorldCapacityPreset::ALL.len() - 1);
+                batch.push_text(
+                    "HIGH TIERS MAY RUN SLOW",
+                    [28.0 * scale, last[1] + last[3] + 12.0 * scale],
+                    1.35 * scale,
+                    text,
+                );
+                batch.push_text(
+                    "SELECTING RESTARTS SCENE",
+                    [28.0 * scale, last[1] + last[3] + 28.0 * scale],
+                    1.35 * scale,
+                    text,
+                );
+            }
         }
     }
     batch
@@ -1477,7 +1553,10 @@ fn dynamic_batch(
             physics.substeps,
             physics.biased_iterations
         ),
-        format!("BODY {} CONTACT {}", live_bodies, model.contact_count),
+        format!(
+            "BODY {}/{} POINTCAP {}",
+            live_bodies, model.body_capacity, model.contact_count
+        ),
         format!(
             "CAP {}KB OVERFLOW {}",
             model.capacity_bytes.div_ceil(1024),
@@ -1529,6 +1608,7 @@ mod tests {
             for bounds in [
                 layout.menu_button(),
                 layout.menu_panel(MenuPage::Scenes, 0),
+                layout.menu_panel(MenuPage::World, 0),
                 layout.restart_button(),
                 layout.recenter_button(),
             ]
@@ -1548,7 +1628,57 @@ mod tests {
                 assert!(bounds[0] + bounds[2] <= target[0] as f32);
                 assert!(bounds[1] + bounds[3] <= target[1] as f32);
             }
+            for bounds in [
+                layout.menu_tab(MenuPage::Scenes),
+                layout.menu_tab(MenuPage::Solvers),
+                layout.menu_tab(MenuPage::World),
+                layout.world_capacity_button(0),
+                layout.world_capacity_button(1),
+                layout.world_capacity_button(2),
+                layout.world_capacity_button(3),
+            ] {
+                assert!(bounds[0] >= 0.0 && bounds[1] >= 0.0);
+                assert!(bounds[0] + bounds[2] <= target[0] as f32);
+                assert!(bounds[1] + bounds[3] <= target[1] as f32);
+            }
         }
+    }
+
+    #[test]
+    fn world_menu_emits_one_explicit_capacity_restart_action() {
+        let target = [960, 600];
+        let layout = UiLayout::for_target(target);
+        let mut captured = BTreeSet::new();
+        let mut menu_open = true;
+        let mut menu_page = MenuPage::World;
+        let mut selected_tool = WorkbenchTool::Circle;
+        let mut profiles = SolverProfileConfig::available();
+        let mut draft = SolverProfileConfig::default();
+        let routed = route_events(
+            UiRouteState {
+                menu_open: &mut menu_open,
+                menu_page: &mut menu_page,
+                selected_tool: &mut selected_tool,
+                solver_profiles: &mut profiles,
+                draft_solver_profile: &mut draft,
+                captured_pointers: &mut captured,
+            },
+            &[pointer(
+                1,
+                PointerPhase::Down,
+                PointerButton::Primary,
+                layout.center_normalized("world-capacity", 3),
+            )],
+            target,
+        );
+        assert_eq!(
+            routed.action,
+            Some(UiAction::ActivateWorldCapacity(
+                WorldCapacityPreset::Slots10000
+            ))
+        );
+        assert_eq!(routed.selected_tool, WorkbenchTool::Circle);
+        assert!(!menu_open);
     }
 
     #[test]
@@ -1565,6 +1695,7 @@ mod tests {
                 active_solver_profile: &active,
                 solver_profiles: &profiles,
                 draft_solver_profile: &active,
+                world_capacity: WorldCapacityPreset::Slots64,
             },
         );
         let static_open = static_batch(
@@ -1577,12 +1708,27 @@ mod tests {
                 active_solver_profile: &active,
                 solver_profiles: &profiles,
                 draft_solver_profile: &active,
+                world_capacity: WorldCapacityPreset::Slots64,
             },
         );
-        assert!(!static_closed.overflowed && !static_open.overflowed);
+        let static_world = static_batch(
+            [960, 600],
+            StaticBatchModel {
+                scenario: ValidationScenario::Bootstrap,
+                menu_open: true,
+                menu_page: MenuPage::World,
+                selected_tool: WorkbenchTool::Rectangle,
+                active_solver_profile: &active,
+                solver_profiles: &profiles,
+                draft_solver_profile: &active,
+                world_capacity: WorldCapacityPreset::Slots10000,
+            },
+        );
+        assert!(!static_closed.overflowed && !static_open.overflowed && !static_world.overflowed);
         assert!(static_open.instances.len() > static_closed.instances.len());
         assert!(static_open.glyph_count > 0);
         assert!(static_open.instances.len() <= STATIC_INSTANCE_CAPACITY);
+        assert!(static_world.instances.len() <= STATIC_INSTANCE_CAPACITY);
     }
 
     #[cfg(feature = "solver-lab")]
@@ -1600,6 +1746,7 @@ mod tests {
                 active_solver_profile: &active,
                 solver_profiles: &profiles,
                 draft_solver_profile: &active,
+                world_capacity: WorldCapacityPreset::Slots64,
             },
         );
         assert!(!batch.overflowed);

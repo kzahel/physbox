@@ -4,7 +4,7 @@ use physbox_contracts::{
     ConstructionStateV1, GrabIntentBatchV1, GrabIntentV1, SCHEMA_VERSION, ScenarioV1,
     ScheduledBodyCommandV1, Vec2, canonical_hash,
 };
-use physbox_launch::ValidationScenario;
+use physbox_launch::{ValidationScenario, WorldCapacityPreset};
 
 use crate::{
     AdapterDiagnostics, BODY_COMMAND_CAPACITY, BoundedBodyCommands, Camera2d, EngineConfig,
@@ -73,16 +73,18 @@ fn profiled_generated_world(
     color_format: wgpu::TextureFormat,
     scenario: &ScenarioV1,
     profile: &crate::SolverProfileConfig,
+    world_capacity: WorldCapacityPreset,
 ) -> Result<GpuBodyWorld, String> {
     if !profile.is_selected() {
         return GpuBodyWorld::new_generated_with_solver_profile(
             device,
             color_format,
             scenario,
+            world_capacity,
             profile,
         );
     }
-    GpuBodyWorld::new_generated(device, color_format, scenario)
+    GpuBodyWorld::new_generated(device, color_format, scenario, world_capacity)
 }
 
 fn profiled_generated_world_with_scheduling(
@@ -90,6 +92,7 @@ fn profiled_generated_world_with_scheduling(
     color_format: wgpu::TextureFormat,
     scenario: &ScenarioV1,
     profile: &crate::SolverProfileConfig,
+    world_capacity: WorldCapacityPreset,
     scheduling: GpuSolverSchedulingPolicyV1,
 ) -> Result<GpuBodyWorld, String> {
     if !profile.is_selected() {
@@ -97,10 +100,17 @@ fn profiled_generated_world_with_scheduling(
             device,
             color_format,
             scenario,
+            world_capacity,
             profile,
         );
     }
-    GpuBodyWorld::new_generated_with_scheduling(device, color_format, scenario, scheduling)
+    GpuBodyWorld::new_generated_with_scheduling(
+        device,
+        color_format,
+        scenario,
+        world_capacity,
+        scheduling,
+    )
 }
 
 fn profiled_generated_world_with_contact_policy(
@@ -108,6 +118,7 @@ fn profiled_generated_world_with_contact_policy(
     color_format: wgpu::TextureFormat,
     scenario: &ScenarioV1,
     profile: &crate::SolverProfileConfig,
+    world_capacity: WorldCapacityPreset,
     identity: physbox_contracts::ContactIdentityPolicyV1,
 ) -> Result<GpuBodyWorld, String> {
     if !profile.is_selected() {
@@ -115,10 +126,17 @@ fn profiled_generated_world_with_contact_policy(
             device,
             color_format,
             scenario,
+            world_capacity,
             profile,
         );
     }
-    GpuBodyWorld::new_generated_with_contact_policy(device, color_format, scenario, identity)
+    GpuBodyWorld::new_generated_with_contact_policy(
+        device,
+        color_format,
+        scenario,
+        world_capacity,
+        identity,
+    )
 }
 
 struct PreparedBodyCommands {
@@ -673,6 +691,7 @@ impl EngineHost {
                         color_format,
                         &scenario,
                         &config.solver_profile,
+                        config.world_capacity,
                     )
                     .expect("engine-owned generated-contact GPU world is valid"),
                 )
@@ -687,6 +706,7 @@ impl EngineHost {
                         color_format,
                         &scenario,
                         &config.solver_profile,
+                        config.world_capacity,
                     )
                     .expect("engine-owned generated reset/grab GPU world is valid"),
                 )
@@ -703,6 +723,7 @@ impl EngineHost {
                         color_format,
                         &scenario,
                         &config.solver_profile,
+                        config.world_capacity,
                     )
                     .expect("engine-owned generated stack GPU world is valid"),
                 )
@@ -719,6 +740,7 @@ impl EngineHost {
                         color_format,
                         &scenario,
                         &config.solver_profile,
+                        config.world_capacity,
                     )
                     .expect("engine-owned centered rectangle stack GPU world is valid"),
                 )
@@ -740,6 +762,7 @@ impl EngineHost {
                         color_format,
                         &scenario,
                         &config.solver_profile,
+                        config.world_capacity,
                     )
                     .expect("engine-owned all-pairs bucket GPU world is valid"),
                 )
@@ -761,6 +784,7 @@ impl EngineHost {
                     color_format,
                     &scenario,
                     &config.solver_profile,
+                    config.world_capacity,
                     scheduling_policy,
                 );
                 Some(world.expect("engine-owned manifold-color validation world is valid"))
@@ -784,6 +808,7 @@ impl EngineHost {
                         color_format,
                         &scenario,
                         &config.solver_profile,
+                        config.world_capacity,
                         policy.identity_policy(),
                     )
                     .expect("engine-owned settling review GPU world is valid"),
@@ -810,6 +835,7 @@ impl EngineHost {
                         color_format,
                         &scenario,
                         &config.solver_profile,
+                        config.world_capacity,
                     )
                     .expect("engine-owned solver-lab GPU world is valid"),
                 )
@@ -1035,12 +1061,33 @@ impl EngineHost {
                             ConfigurationReplacement {
                                 config: EngineConfig {
                                     scenario,
+                                    world_capacity: self.config.world_capacity,
                                     solver_profile: self.config.solver_profile.clone(),
                                 },
                                 selected_tool: routing.selected_tool,
                                 scenario_activation: true,
                                 scenario_restart: false,
                                 preserve_camera: false,
+                                solver_profiles: self.solver_profiles.clone(),
+                            },
+                        );
+                    }
+                }
+                UiAction::ActivateWorldCapacity(world_capacity) => {
+                    if world_capacity != self.config.world_capacity {
+                        self.replace_configuration(
+                            context.device,
+                            context.queue,
+                            ConfigurationReplacement {
+                                config: EngineConfig {
+                                    scenario: self.config.scenario,
+                                    world_capacity,
+                                    solver_profile: self.config.solver_profile.clone(),
+                                },
+                                selected_tool: routing.selected_tool,
+                                scenario_activation: false,
+                                scenario_restart: true,
+                                preserve_camera: true,
                                 solver_profiles: self.solver_profiles.clone(),
                             },
                         );
@@ -1081,6 +1128,7 @@ impl EngineHost {
                         ConfigurationReplacement {
                             config: EngineConfig {
                                 scenario,
+                                world_capacity: self.config.world_capacity,
                                 solver_profile: profile,
                             },
                             selected_tool: routing.selected_tool,
@@ -1101,6 +1149,7 @@ impl EngineHost {
                         ConfigurationReplacement {
                             config: EngineConfig {
                                 scenario,
+                                world_capacity: self.config.world_capacity,
                                 solver_profile: profile,
                             },
                             selected_tool: routing.selected_tool,
@@ -1259,6 +1308,11 @@ impl EngineHost {
             body_count: self.body_world.as_ref().map_or_else(
                 || if self.solver_lab.is_some() { 64 } else { 1 },
                 GpuBodyWorld::initial_body_count,
+            ),
+            requested_body_capacity: self.config.world_capacity.slots(),
+            body_capacity: self.body_world.as_ref().map_or_else(
+                || self.config.world_capacity.slots(),
+                GpuBodyWorld::body_capacity,
             ),
             contact_point_count: self
                 .body_world
@@ -1523,6 +1577,8 @@ impl EngineHost {
                 solver_profile: &self.config.solver_profile,
                 pacing: &pacing,
                 body_count: contract.body_count,
+                world_capacity: self.config.world_capacity,
+                body_capacity: contract.body_capacity,
                 contact_count: contract.contact_point_count,
                 capacity_bytes: contract.solver_capacity_bytes,
                 overflowed: contract.capacity_overflowed,

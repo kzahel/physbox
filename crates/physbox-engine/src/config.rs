@@ -1,4 +1,4 @@
-use physbox_launch::{LaunchOptions, ValidationScenario};
+use physbox_launch::{LaunchOptions, ValidationScenario, WorldCapacityPreset};
 use sha2::{Digest, Sha256};
 
 use crate::SolverProfileConfig;
@@ -6,6 +6,7 @@ use crate::SolverProfileConfig;
 #[derive(Clone, Debug, Default)]
 pub struct EngineConfig {
     pub scenario: ValidationScenario,
+    pub world_capacity: WorldCapacityPreset,
     pub solver_profile: SolverProfileConfig,
 }
 
@@ -23,6 +24,7 @@ impl TryFrom<&LaunchOptions> for EngineConfig {
         }
         Ok(Self {
             scenario: options.scenario,
+            world_capacity: options.world_capacity,
             solver_profile,
         })
     }
@@ -49,6 +51,7 @@ mod tests {
         };
         let config = EngineConfig::try_from(&options).unwrap();
         assert_eq!(config.solver_profile.name(), "soft-coupled");
+        assert_eq!(config.world_capacity, WorldCapacityPreset::Slots64);
 
         options.scenario = ValidationScenario::SolverManifoldI2;
         let error = EngineConfig::try_from(&options).unwrap_err();

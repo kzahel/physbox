@@ -5,7 +5,9 @@ const fatalError = document.querySelector("#fatal-error");
 globalThis.__physbox5 = { ready: false, ok: false };
 let renderingPaused = false;
 const physicsPreferenceKey = "physbox5.physics.v2";
+const worldPreferenceKey = "physbox5.world.v1";
 const legacySolverPreferenceKey = "physbox5.solver-lab.v1";
+const worldCapacityQueryKey = "body-capacity";
 const physicsQueryKeys = Object.freeze([
   "solver",
   "sim-hz",
@@ -19,6 +21,7 @@ const physicsQueryKeys = Object.freeze([
   "solver-options",
 ]);
 let lastPhysicsPreference = "";
+let lastWorldPreference = "";
 globalThis.__physbox5FrameControl = Object.freeze({
   pause() { renderingPaused = true; },
   resume() {
@@ -98,6 +101,7 @@ function renderFrame(timestamp) {
   try {
     const report = JSON.parse(globalThis.__physbox5App.render(timestamp));
     syncPhysicsPreference(report);
+    syncWorldPreference(report);
     globalThis.__physbox5.frame = report;
     globalThis.__physbox5.ready = report.scenario.complete;
     if (!renderingPaused) requestAnimationFrame(renderFrame);
@@ -108,14 +112,53 @@ function renderFrame(timestamp) {
 
 function startupSearch() {
   const params = new URLSearchParams(location.search);
-  if (physicsQueryKeys.some((key) => params.has(key))) return `?${params}`;
   try {
-    const saved = loadPhysicsPreference();
-    if (saved) writePhysicsQuery(params, saved);
+    if (!physicsQueryKeys.some((key) => params.has(key))) {
+      const saved = loadPhysicsPreference();
+      if (saved) writePhysicsQuery(params, saved);
+    }
+    if (!params.has(worldCapacityQueryKey)) {
+      const saved = loadWorldPreference();
+      if (saved) params.set(worldCapacityQueryKey, String(saved.bodyCapacity));
+    }
   } catch (error) {
-    console.warn("Ignoring invalid PhysBox physics preference", error);
+    console.warn("Ignoring invalid PhysBox preference", error);
   }
   return `?${params}`;
+}
+
+function syncWorldPreference(report) {
+  const contract = report.sceneContract;
+  const preference = {
+    version: 1,
+    bodyCapacity: contract?.requestedBodyCapacity,
+  };
+  if (!validWorldPreference(preference)) return;
+  const saved = JSON.stringify(preference);
+  if (saved === lastWorldPreference) return;
+  lastWorldPreference = saved;
+  try {
+    localStorage.setItem(worldPreferenceKey, saved);
+  } catch (error) {
+    console.warn("Could not persist PhysBox world preference", error);
+  }
+  const url = new URL(location.href);
+  if (preference.bodyCapacity === 64) {
+    url.searchParams.delete(worldCapacityQueryKey);
+  } else {
+    url.searchParams.set(worldCapacityQueryKey, String(preference.bodyCapacity));
+  }
+  history.replaceState(null, "", url);
+}
+
+function loadWorldPreference() {
+  const saved = JSON.parse(localStorage.getItem(worldPreferenceKey) ?? "null");
+  return validWorldPreference(saved) ? saved : null;
+}
+
+function validWorldPreference(saved) {
+  return saved?.version === 1
+    && [64, 256, 1000, 10000].includes(saved.bodyCapacity);
 }
 
 function syncPhysicsPreference(report) {

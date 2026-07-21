@@ -7,6 +7,7 @@ use physbox_contracts::{
     BodyCommandBatchV1, BodyLayoutV1, CapacityRecordV1, ConstructionIntentBatchV1,
     ContactIdentityPolicyV1, GrabIntentBatchV1, ScenarioV1, Validate,
 };
+use physbox_launch::WorldCapacityPreset;
 use wgpu::util::DeviceExt;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -128,6 +129,33 @@ pub(crate) struct GpuBodyWorld {
     initial_live_count: u32,
 }
 
+struct GeneratedContactBuildOptions {
+    solver_configuration: Option<(GpuSolverExecutionV4, GpuSolverSchedulingPolicyV1)>,
+    identity_policy: ContactIdentityPolicyV1,
+    use_contact_policy_comparator: bool,
+    branch_robust_tunable: bool,
+}
+
+impl GeneratedContactBuildOptions {
+    fn disabled() -> Self {
+        Self {
+            solver_configuration: None,
+            identity_policy: ContactIdentityPolicyV1::SELECTED,
+            use_contact_policy_comparator: false,
+            branch_robust_tunable: false,
+        }
+    }
+
+    fn selected(scheduling_policy: GpuSolverSchedulingPolicyV1) -> Self {
+        Self {
+            solver_configuration: Some((GpuSolverExecutionV4::SELECTED, scheduling_policy)),
+            identity_policy: ContactIdentityPolicyV1::SELECTED,
+            use_contact_policy_comparator: false,
+            branch_robust_tunable: false,
+        }
+    }
+}
+
 impl GpuBodyWorld {
     pub(crate) fn new(
         device: &wgpu::Device,
@@ -138,10 +166,8 @@ impl GpuBodyWorld {
             device,
             color_format,
             scenario,
-            None,
-            ContactIdentityPolicyV1::SELECTED,
-            false,
-            false,
+            WorldCapacityPreset::default(),
+            GeneratedContactBuildOptions::disabled(),
         )
     }
 
@@ -149,16 +175,15 @@ impl GpuBodyWorld {
         device: &wgpu::Device,
         color_format: wgpu::TextureFormat,
         scenario: &ScenarioV1,
+        world_capacity: WorldCapacityPreset,
     ) -> Result<Self, String> {
-        let scheduling_policy = selected_interactive_scheduling(scenario)?;
+        let scheduling_policy = selected_interactive_scheduling(scenario, world_capacity)?;
         Self::new_with_generated_contacts(
             device,
             color_format,
             scenario,
-            Some((GpuSolverExecutionV4::SELECTED, scheduling_policy)),
-            ContactIdentityPolicyV1::SELECTED,
-            false,
-            false,
+            world_capacity,
+            GeneratedContactBuildOptions::selected(scheduling_policy),
         )
     }
 
@@ -166,16 +191,15 @@ impl GpuBodyWorld {
         device: &wgpu::Device,
         color_format: wgpu::TextureFormat,
         scenario: &ScenarioV1,
+        world_capacity: WorldCapacityPreset,
         scheduling_policy: GpuSolverSchedulingPolicyV1,
     ) -> Result<Self, String> {
         Self::new_with_generated_contacts(
             device,
             color_format,
             scenario,
-            Some((GpuSolverExecutionV4::SELECTED, scheduling_policy)),
-            ContactIdentityPolicyV1::SELECTED,
-            false,
-            false,
+            world_capacity,
+            GeneratedContactBuildOptions::selected(scheduling_policy),
         )
     }
 
@@ -183,17 +207,20 @@ impl GpuBodyWorld {
         device: &wgpu::Device,
         color_format: wgpu::TextureFormat,
         scenario: &ScenarioV1,
+        world_capacity: WorldCapacityPreset,
         identity_policy: ContactIdentityPolicyV1,
     ) -> Result<Self, String> {
-        let scheduling_policy = selected_interactive_scheduling(scenario)?;
+        let scheduling_policy = selected_interactive_scheduling(scenario, world_capacity)?;
         Self::new_with_generated_contacts(
             device,
             color_format,
             scenario,
-            Some((GpuSolverExecutionV4::SELECTED, scheduling_policy)),
-            identity_policy,
-            true,
-            false,
+            world_capacity,
+            GeneratedContactBuildOptions {
+                identity_policy,
+                use_contact_policy_comparator: true,
+                ..GeneratedContactBuildOptions::selected(scheduling_policy)
+            },
         )
     }
 
@@ -201,24 +228,31 @@ impl GpuBodyWorld {
         device: &wgpu::Device,
         color_format: wgpu::TextureFormat,
         scenario: &ScenarioV1,
+        world_capacity: WorldCapacityPreset,
         profile: &crate::SolverProfileConfig,
     ) -> Result<Self, String> {
         if profile.is_selected() {
-            return Self::new_generated(device, color_format, scenario);
+            return Self::new_generated(device, color_format, scenario, world_capacity);
         }
         let initial_body_count = u32::try_from(scenario.bodies.len())
             .map_err(|_| "GPU body count exceeds u32".to_owned())?;
         let scheduling_policy = GpuSolverSchedulingPolicyV1::authority_gpu_probe_for_body_capacity(
-            interactive_body_capacity(initial_body_count)?,
+            interactive_body_capacity(initial_body_count, world_capacity)?,
         );
         Self::new_with_generated_contacts(
             device,
             color_format,
             scenario,
-            Some((GpuSolverExecutionV4::AUTHORITY_GPU_PROBE, scheduling_policy)),
-            ContactIdentityPolicyV1::SELECTED,
-            false,
-            true,
+            world_capacity,
+            GeneratedContactBuildOptions {
+                solver_configuration: Some((
+                    GpuSolverExecutionV4::AUTHORITY_GPU_PROBE,
+                    scheduling_policy,
+                )),
+                identity_policy: ContactIdentityPolicyV1::SELECTED,
+                use_contact_policy_comparator: false,
+                branch_robust_tunable: true,
+            },
         )
     }
 
@@ -226,11 +260,15 @@ impl GpuBodyWorld {
         device: &wgpu::Device,
         color_format: wgpu::TextureFormat,
         scenario: &ScenarioV1,
-        generated_solver_configuration: Option<(GpuSolverExecutionV4, GpuSolverSchedulingPolicyV1)>,
-        identity_policy: ContactIdentityPolicyV1,
-        use_contact_policy_comparator: bool,
-        branch_robust_tunable: bool,
+        world_capacity: WorldCapacityPreset,
+        options: GeneratedContactBuildOptions,
     ) -> Result<Self, String> {
+        let GeneratedContactBuildOptions {
+            solver_configuration: generated_solver_configuration,
+            identity_policy,
+            use_contact_policy_comparator,
+            branch_robust_tunable,
+        } = options;
         scenario.validate().map_err(|error| error.to_string())?;
         let initial_live_count = u32::try_from(scenario.bodies.len())
             .map_err(|_| "GPU body count exceeds u32".to_owned())?;
@@ -238,7 +276,7 @@ impl GpuBodyWorld {
             return Err("GPU body world requires at least one body".to_owned());
         }
         let body_count = if generated_solver_configuration.is_some() {
-            interactive_body_capacity(initial_live_count)?
+            interactive_body_capacity(initial_live_count, world_capacity)?
         } else {
             initial_live_count
         };
@@ -1554,20 +1592,24 @@ impl GpuBodyWorld {
     }
 }
 
-fn interactive_body_capacity(initial_live_count: u32) -> Result<u32, String> {
+fn interactive_body_capacity(
+    initial_live_count: u32,
+    world_capacity: WorldCapacityPreset,
+) -> Result<u32, String> {
     initial_live_count
         .checked_add(1)
         .and_then(u32::checked_next_power_of_two)
-        .map(|capacity| capacity.max(64))
+        .map(|minimum| minimum.max(world_capacity.slots()))
         .ok_or_else(|| "interactive body capacity overflowed".to_owned())
 }
 
 fn selected_interactive_scheduling(
     scenario: &ScenarioV1,
+    world_capacity: WorldCapacityPreset,
 ) -> Result<GpuSolverSchedulingPolicyV1, String> {
     let initial_live_count = u32::try_from(scenario.bodies.len())
         .map_err(|_| "GPU body count exceeds u32".to_owned())?;
-    let body_capacity = interactive_body_capacity(initial_live_count)?;
+    let body_capacity = interactive_body_capacity(initial_live_count, world_capacity)?;
     Ok(GpuSolverSchedulingPolicyV1::selected_for_body_capacity(
         body_capacity,
     ))
@@ -1720,9 +1762,13 @@ mod tests {
         let (device, queue) =
             pollster::block_on(crate::gpu_context::request_device(&adapter)).unwrap();
         let scenario = crate::p5_2_generated_floor_scenario(8).unwrap();
-        let world =
-            GpuBodyWorld::new_generated(&device, wgpu::TextureFormat::Rgba8Unorm, &scenario)
-                .unwrap();
+        let world = GpuBodyWorld::new_generated(
+            &device,
+            wgpu::TextureFormat::Rgba8Unorm,
+            &scenario,
+            WorldCapacityPreset::default(),
+        )
+        .unwrap();
         assert_eq!(world.body_count, 64);
 
         encode(
@@ -1830,9 +1876,13 @@ mod tests {
         let (device, queue) =
             pollster::block_on(crate::gpu_context::request_device(&adapter)).unwrap();
         let scenario = crate::p5_2_generated_floor_scenario(2).unwrap();
-        let world =
-            GpuBodyWorld::new_generated(&device, wgpu::TextureFormat::Rgba8Unorm, &scenario)
-                .unwrap();
+        let world = GpuBodyWorld::new_generated(
+            &device,
+            wgpu::TextureFormat::Rgba8Unorm,
+            &scenario,
+            WorldCapacityPreset::default(),
+        )
+        .unwrap();
         let mut fill = BoundedConstructionIntents::new(CONSTRUCTION_INTENT_CAPACITY).unwrap();
         for index in 0..63_u32 {
             fill.push(ConstructionIntentV1::PlaceCircle {
@@ -1853,9 +1903,13 @@ mod tests {
         assert_eq!(full.succeeded_intents, 62);
         assert_eq!(full.capacity_failures, 1);
 
-        let exhausted =
-            GpuBodyWorld::new_generated(&device, wgpu::TextureFormat::Rgba8Unorm, &scenario)
-                .unwrap();
+        let exhausted = GpuBodyWorld::new_generated(
+            &device,
+            wgpu::TextureFormat::Rgba8Unorm,
+            &scenario,
+            WorldCapacityPreset::default(),
+        )
+        .unwrap();
         exhausted.overwrite_body_generation_for_test(&queue, 0, u32::MAX);
         let mut erase = BoundedConstructionIntents::new(CONSTRUCTION_INTENT_CAPACITY).unwrap();
         erase
@@ -1879,11 +1933,31 @@ mod tests {
 
     #[test]
     fn interactive_capacity_tiers_are_bounded_and_leave_current_scene_headroom() {
-        assert_eq!(interactive_body_capacity(2).unwrap(), 64);
-        assert_eq!(interactive_body_capacity(5).unwrap(), 64);
-        assert_eq!(interactive_body_capacity(64).unwrap(), 128);
-        assert_eq!(interactive_body_capacity(103).unwrap(), 128);
-        assert!(interactive_body_capacity(u32::MAX).is_err());
+        assert_eq!(
+            interactive_body_capacity(2, WorldCapacityPreset::Slots64).unwrap(),
+            64
+        );
+        assert_eq!(
+            interactive_body_capacity(5, WorldCapacityPreset::Slots256).unwrap(),
+            256
+        );
+        assert_eq!(
+            interactive_body_capacity(64, WorldCapacityPreset::Slots64).unwrap(),
+            128
+        );
+        assert_eq!(
+            interactive_body_capacity(103, WorldCapacityPreset::Slots64).unwrap(),
+            128
+        );
+        assert_eq!(
+            interactive_body_capacity(2, WorldCapacityPreset::Slots1000).unwrap(),
+            1_000
+        );
+        assert_eq!(
+            interactive_body_capacity(2, WorldCapacityPreset::Slots10000).unwrap(),
+            10_000
+        );
+        assert!(interactive_body_capacity(u32::MAX, WorldCapacityPreset::Slots64).is_err());
     }
 
     #[cfg(not(feature = "production-validation"))]
@@ -1896,8 +1970,12 @@ mod tests {
         let scenario =
             p5_2_settling_review_scenario(16, P5_2SettlingReviewPolicy::SoftnessOnly).unwrap();
 
-        let product =
-            GpuBodyWorld::new_generated(&device, wgpu::TextureFormat::Rgba8Unorm, &scenario);
+        let product = GpuBodyWorld::new_generated(
+            &device,
+            wgpu::TextureFormat::Rgba8Unorm,
+            &scenario,
+            WorldCapacityPreset::default(),
+        );
         assert!(
             product.as_ref().is_err_and(
                 |error| error == "solver settings differ from the accepted S5.4 baseline"
@@ -1908,6 +1986,7 @@ mod tests {
             &device,
             wgpu::TextureFormat::Rgba8Unorm,
             &scenario,
+            WorldCapacityPreset::default(),
             ContactIdentityPolicyV1::DirectMaximumSeparation,
         )
         .expect("explicit contact-policy comparator accepts laboratory softness");

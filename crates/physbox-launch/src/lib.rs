@@ -31,6 +31,55 @@ pub const MAX_SPECULATIVE_DISTANCE: f32 = 1.0;
 pub const MIN_MAX_DEPENETRATION_VELOCITY: f32 = 0.1;
 pub const MAX_MAX_DEPENETRATION_VELOCITY: f32 = 100.0;
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum WorldCapacityPreset {
+    #[default]
+    Slots64,
+    Slots256,
+    Slots1000,
+    Slots10000,
+}
+
+impl WorldCapacityPreset {
+    pub const ALL: [Self; 4] = [
+        Self::Slots64,
+        Self::Slots256,
+        Self::Slots1000,
+        Self::Slots10000,
+    ];
+
+    pub const fn slots(self) -> u32 {
+        match self {
+            Self::Slots64 => 64,
+            Self::Slots256 => 256,
+            Self::Slots1000 => 1_000,
+            Self::Slots10000 => 10_000,
+        }
+    }
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Slots64 => "64 SLOTS",
+            Self::Slots256 => "256 SLOTS",
+            Self::Slots1000 => "1K SLOTS",
+            Self::Slots10000 => "10K SLOTS",
+        }
+    }
+
+    fn parse(value: &str) -> Result<Self, LaunchError> {
+        match value {
+            "64" => Ok(Self::Slots64),
+            "256" => Ok(Self::Slots256),
+            "1000" | "1k" => Ok(Self::Slots1000),
+            "10000" | "10k" => Ok(Self::Slots10000),
+            _ => Err(LaunchError(format!(
+                "--body-capacity must be one of 64, 256, 1000, or 10000; received {value}"
+            ))),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LaunchHost {
     Desktop,
@@ -299,6 +348,7 @@ pub struct LaunchOptions {
     pub output: Option<PathBuf>,
     pub report: Option<PathBuf>,
     pub scenario: ValidationScenario,
+    pub world_capacity: WorldCapacityPreset,
     pub physics: PhysicsConfigurationV1,
     pub frame_markers: FrameMarkerMode,
 }
@@ -314,6 +364,7 @@ impl Default for LaunchOptions {
             output: None,
             report: None,
             scenario: ValidationScenario::Bootstrap,
+            world_capacity: WorldCapacityPreset::default(),
             physics: PhysicsConfigurationV1::default(),
             frame_markers: FrameMarkerMode::Milestones,
         }
@@ -395,6 +446,7 @@ pub fn parse_web_query(query: &str) -> Result<LaunchRequest, LaunchError> {
             "width" => "--width",
             "height" => "--height",
             "scenario" => "--scenario",
+            "body-capacity" => "--body-capacity",
             "solver" => "--solver",
             "solver-options" => "--solver-options",
             "sim-hz" => "--sim-hz",
@@ -430,7 +482,7 @@ pub fn usage(program: &str, host: LaunchHost) -> String {
     } else {
         ""
     };
-    let solver = "\n  --solver NAME    soft-coupled or hard-direct (aliases: branch-robust, selected)\n  --sim-hz N       outer fixed rate, 15..=240 (default 60)\n  --substeps N     solver substeps, 1..=8 (default 4)\n  --iterations N   biased iterations, 1..=4 (soft default 1, hard default 2)\n  --contact-hz N   requested soft contact hertz, 1..=120\n  --contact-damping N  soft damping ratio, 0.5..=20\n  --static-contact-scale N  static contact hertz multiplier, 0.5..=16\n  --speculative-distance N  contact anticipation distance, 0..=1\n  --max-depenetration-velocity N  overlap recovery speed, 0.1..=100";
+    let solver = "\n  --body-capacity N  interactive slots: 64 (default), 256, 1000, or 10000\n  --solver NAME    soft-coupled or hard-direct (aliases: branch-robust, selected)\n  --sim-hz N       outer fixed rate, 15..=240 (default 60)\n  --substeps N     solver substeps, 1..=8 (default 4)\n  --iterations N   biased iterations, 1..=4 (soft default 1, hard default 2)\n  --contact-hz N   requested soft contact hertz, 1..=120\n  --contact-damping N  soft damping ratio, 0.5..=20\n  --static-contact-scale N  static contact hertz multiplier, 0.5..=16\n  --speculative-distance N  contact anticipation distance, 0..=1\n  --max-depenetration-velocity N  overlap recovery speed, 0.1..=100";
     format!(
         "Usage: {program} [options]\n\n  --width PX       viewport width (default 960)\n  --height PX      viewport height (default 600)\n  --scenario NAME  bootstrap, body-free-flight, rigid-floor, rigid-stack, rectangle-stack, circle-bucket-100, rectangle-bucket-100, reset-grab, solver-jacobi, solver-colored, solver-manifold-i2, solver-parallel-coloring, settling-hard-8, settling-candidate-8, settling-hard-16, settling-identity-16, settling-softness-16, settling-candidate-16{}{solver}{frame_markers}{capture}\n  -h, --help       print this help",
         if cfg!(feature = "solver-lab") {
@@ -478,6 +530,7 @@ fn apply_option(
                 _ => return Err(LaunchError(format!("unknown scenario: {value}"))),
             }
         }
+        "--body-capacity" => options.world_capacity = WorldCapacityPreset::parse(&value)?,
         "--solver" => {
             mark_physics_field(seen_physics_fields, "solver")?;
             options.physics.solver_profile = SolverProfileName::parse(&value)?;
@@ -767,6 +820,26 @@ mod tests {
             request.options.physics.solver_profile.name(),
             "soft-coupled"
         );
+        assert_eq!(request.options.world_capacity, WorldCapacityPreset::Slots64);
+    }
+
+    #[test]
+    fn world_capacity_presets_share_every_transport_and_reject_arbitrary_sizes() {
+        let native = parse_tokens(LaunchHost::Desktop, ["--body-capacity", "10000"]).unwrap();
+        let web = parse_web_query("?body-capacity=10k").unwrap();
+        let android = parse_android_json(r#"["--body-capacity","10000"]"#).unwrap();
+        assert_eq!(
+            native.options.world_capacity,
+            WorldCapacityPreset::Slots10000
+        );
+        assert_eq!(native.options.world_capacity, web.options.world_capacity);
+        assert_eq!(
+            native.options.world_capacity,
+            android.options.world_capacity
+        );
+
+        let error = parse_tokens(LaunchHost::Desktop, ["--body-capacity", "4096"]).unwrap_err();
+        assert!(error.to_string().contains("one of 64, 256, 1000, or 10000"));
     }
 
     #[cfg(feature = "solver-lab")]
