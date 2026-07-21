@@ -15,6 +15,8 @@
     "android:device": "bash android/validate-device.sh",
     "android:env": "bash android/check-env.sh",
     "build:web": "node scripts/build-web.mjs",
+    "build:web:lab": "node scripts/build-web.mjs --solver-lab",
+    "inspect:web": "npm run build:web:lab && npm run serve:web",
     "bundle:web": "node scripts/build-web.mjs --release --output dist-web",
     "benchmark:bodies-browser": "node scripts/browser-body-benchmark.mjs",
     "check:boundaries": "node scripts/check-platform-boundaries.mjs",
@@ -32,6 +34,7 @@
     "clippy:rust:production": "cargo clippy --all-targets --features physbox-engine/production-validation -- -D warnings",
     "clippy:rust:full": "cargo clippy --workspace --all-targets -- -D warnings",
     "test:web": "node scripts/browser-smoke.mjs",
+    "test:web:lab": "PHYSBOX5_SOLVER_LAB=1 PHYSBOX5_CAPTURE_SUFFIX=solver-lab node scripts/browser-smoke.mjs",
     "prepare": "bash scripts/install-git-hooks.sh"
   },
   "devDependencies": {

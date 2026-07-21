@@ -5,6 +5,9 @@ edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 
+[features]
+solver-lab = ["physbox-engine/solver-lab", "physbox-launch/solver-lab"]
+
 [lib]
 crate-type = ["cdylib", "rlib"]
 name = "physbox_android"

@@ -5,6 +5,9 @@ edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 
+[features]
+solver-lab = []
+
 [dependencies]
 form_urlencoded.workspace = true
 serde.workspace = true

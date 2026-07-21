@@ -397,6 +397,7 @@ fn run_gpu(case: GrabCase, completed_steps: u32) -> Result<GpuRun, String> {
         VIEWPORT[1],
         EngineConfig {
             scenario: ValidationScenario::RigidFloor,
+            ..Default::default()
         },
     ))?;
     let frame = physbox_engine::Camera2d::fixed()

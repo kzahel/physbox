@@ -1,15 +1,15 @@
 # Awake settling and rest stability
 
-Status: S6.5 and S9-S16 retain their recorded dispositions. The program is now
-split into two explicit tracks, 2026-07-20. Track A resumed at S17.5 after the
-recorded required-device blocker was cleared by reboot/unlock in the
-[S17 product-relative promotion study](../tactical/017-branch-robust-product-promotion.md):
-GPU-port the S14 branch-robust formulation on the proven S13 pipeline and
-compare it with the current hard/direct product under the recorded material-
-effect gate. Metal rejects the sole candidate on structure, geometry, and
-persistent-contact validity despite large stillness and timing wins; Android
-qualification is rerunning with a memory-bounded evidence harness.
-Track B owns full authority parity; its next authority-robustness
+Status: S6.5 and S9-S18 retain their recorded dispositions; the settling
+formulation program is closed without a promoted candidate, 2026-07-20.
+S18 fixed the validation-only authority-key ordering defect and swept 30
+branch-robust soft coefficient tuples. Every tuple is valid, but every tuple
+loses the governed 16-stack. The measured hard/direct residual-motion envelope
+is accepted as the state against which broadphase selection and sleeping
+design proceed. This does not make the awake gate pass, create a new numerical
+tolerance, authorize sleeping as evidence of awake stillness, or open a
+successor formulation study.
+Track B continues to own full authority parity; its next authority-robustness
 study is paused, not closed, and its authority bands remain unchanged.
 S12's coupled soft scalar authority endpoint qualifies, S13 rejects its one
 exact GPU execution candidate on frozen authority response quality, and S14
@@ -19,12 +19,11 @@ S11's measured rewind correction space is exhausted with no survivor. The
 comparator-engine trigger remains recorded but no comparator is authorized.
 The S6.5d soft candidate and all S9/S10/S11 material candidates are rejected;
 restitution timing is byte-inert on the governed controls.
-Hard/direct manifold-block i2 remains the product until the S17 human
-promotion decision. No sleeping change is authorized.
-Awake settling is a prerequisite for broadphase selection and sleeping
-acceptance. No contact-identity policy, soft-contact coefficients, penetration
-deadband, friction anchor, residual band, or sleep threshold is a product
-default by virtue of this document.
+Hard/direct manifold-block i2 remains the product. Sleeping is not implemented
+by this decision; its design must begin from the measured awake motion and
+must report rather than erase that provenance. No contact-identity policy,
+soft-contact coefficient, penetration deadband, friction anchor, or sleep
+threshold is a product default by virtue of this document.
 
 Governing direction:
 [one GPU-resident 2D physics world](physbox5-unified-gpu-physics.md).
@@ -1251,6 +1250,45 @@ remain authoritative inputs. The next authority-robustness study is paused,
 not rejected or closed; S17 cannot modify or satisfy it by product-relative
 success. Resuming Track B requires a new human authorization.
 
+## S18 residual-band disposition
+
+The completed
+[S18 engineering loop](../tactical/018-solver-check-loop-and-coefficient-exploration.md)
+replaced the study-chain method with one release scoreboard over centered
+4/8/16 stacks and the rectangle bucket. The default selected rows reproduce
+maximum last-quartile linear speeds of `0.038725`, `0.181896`, and
+`0.824075 m/s` for the 4/8/16 stacks while preserving all three structures.
+These are the current measured awake residuals, not Box2D parity or a newly
+permitted regression ceiling.
+
+The branch-robust validation path first reproduced its persistent-key failure
+at rectangle-bucket step 11. Authority identity had geometrically ordered the
+two points before rewriting feature tuples; a wrapped vertex index could then
+reverse the rewritten key order. Pair-slot persistence already canonicalized
+the same tuples before solving. Canonicalizing the mapped authority manifold
+after that rewrite fixes the validation invariant without changing product
+collision, pair-slot, or solver behavior. The full rectangle bucket and
+32/64-stack diagnostics then remain finite, capacity-clean, and VALID.
+
+The frozen grid crossed `15/30 Hz`, damping `2/4/6/8/10`, and static
+multipliers `2/4/8`. All 30 tuples are VALID. None is stands-quiet-valid
+because every tuple loses the 16-stack. The best structural frontier is
+`30 Hz / damping 10 / static×8`, which keeps every row under the
+`0.025 m/s` quiet threshold but loses the 16-stack at step 439. The frozen
+`30/10/2` point loses it at step 407; lowering hertz or damping does not
+cross the structure gate.
+
+The pre-committed no-survivor branch is therefore taken. Hard/direct remains
+selected, no soft tuple or residual value becomes a product default, and no
+S19 formulation study is opened. A later explicit human request added an
+opt-in interactive A/B surface for subjective inspection of this already
+rejected candidate; access does not change its disposition. This stop also
+supersedes S17's unfinished Android qualification and promotion package; its
+Metal rejection remains the final disposition of that sole candidate.
+Broadphase selection may measure the product's actual awake churn, and
+sleeping design may proceed only if it exposes its relationship to this awake
+envelope rather than claiming the underlying motion disappeared.
+
 ## Authority corrections
 
 Two plausible techniques must not be mislabeled as direct Box2D v3 parity:
@@ -1433,6 +1471,9 @@ window arithmetic before candidate measurements. The blocking product gate is:
 Approaching Box2D's low-microvelocity residual is a recorded aspiration rather
 than the blocking band. The complete GPU cost is always reported; fitting
 under 16.67 ms does not establish a CPU crossover or liquid headroom.
+S18 does not claim this gate passed. Its pre-committed no-survivor decision
+accepts the measured product residual as an explicit program disposition and
+retires further formulation work under the current scope.
 
 ## Sequencing with scheduler, broadphase, and sleeping
 
@@ -1441,22 +1482,20 @@ baseline once separately promoted under the S5.4c decision. The serial
 full-rebuild scheduler remains a direct comparison lane so a changed
 Gauss-Seidel order cannot be confused with a contact-policy improvement.
 
-Broadphase contract work and pair-completeness tests can proceed without
-product trajectories. Product-scene churn rankings, end-to-end timing, final
-broadphase selection, and integration wait for the awake gate because
-persistent jitter changes the candidate-pair workload being compared.
-Sleeping and awake-fraction performance wait for the same gate.
+Broadphase contract work, product-scene churn rankings, end-to-end timing,
+selection, and integration may now proceed against the actual selected
+trajectory. The residual jitter remains part of the measured broadphase
+workload rather than being normalized away. Sleeping design and awake-fraction
+performance may also proceed, but every result must distinguish the measured
+awake envelope from motion hidden by a sleep transition.
 
 ## Human decisions and autonomous work
 
-After explicit approval to begin, instrumentation, shared fixtures, reversible
+The completed program allowed instrumentation, shared fixtures, reversible
 laboratory candidates, failure minimization, exact replay, oracle runs,
-cross-host validation, performance accounting, and per-slice commits are
-autonomous. The first mandatory review occurs after the identity and softness
-factorial, before any candidate becomes a product physical default. That
-package must make the change visible without source inspection: synchronized
-baseline/candidate/Box2D playback, direct launch controls, settled traces,
-costs, minimized failures, and a specific recommendation.
+cross-host validation, and performance accounting inside each authorized
+slice. Its candidate reviews never changed the selected product. S18's
+no-survivor stop removes autonomous authority for another formulation study.
 
 Human review is also required before accepting a penetration deadband,
 friction-anchor policy, new quality band, changed authority interpretation, or
@@ -1466,19 +1505,16 @@ or portability loss is an early stop rather than an autonomous extension.
 
 ## Reconsideration triggers
 
-Reopen this direction when fresh evidence shows any of the following:
+S18 closes this formulation program without a successor. Reopening requires
+an explicit human decision that supersedes that stop plus fresh evidence that
+was not already measured by S6-S18, such as:
 
-- feature/reference churn is not correlated with warm-cache loss or residual
-  motion after direct instrumentation;
-- contact softness cannot meet the awake band without unacceptable sag,
-  penetration, impact response, or complete-step cost;
-- the accepted scheduler changes the best contact policy or produces a
-  material quality regression against the serial control;
-- realistic seeded drops expose a failure absent from ideal stacks;
-- the gate cannot be met inside the selected colored manifold-block family;
-  or
-- invariant and pinned-Box2D conclusions genuinely conflict.
+- an accepted shape, joint, material, or scheduler change that materially
+  changes the resting-contact recurrence;
+- sleeping/wake design exposing a new unsafe cycle attributable to awake
+  solver motion rather than merely observing the accepted residual; or
+- a genuine invariant-versus-pinned-Box2D conflict.
 
 Do not reconsider by hiding motion with sleeping, weakening the structural or
-capacity gates, refreshing baselines to a worse result, or averaging away a
-failed seed.
+capacity gates, refreshing baselines to a worse result, averaging away a
+failed seed, or repeating the exhausted coefficient grid.

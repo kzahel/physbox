@@ -1,8 +1,8 @@
 use bytemuck::{Pod, Zeroable};
 use physbox_contracts::{
     BodyCommandBatchV1, BodyCommandV1, ConstructionIntentBatchV1, ConstructionIntentV1,
-    ConstructionStateV1, GrabIntentBatchV1, GrabIntentV1, SCHEMA_VERSION, ScheduledBodyCommandV1,
-    Vec2, canonical_hash,
+    ConstructionStateV1, GrabIntentBatchV1, GrabIntentV1, SCHEMA_VERSION, ScenarioV1,
+    ScheduledBodyCommandV1, Vec2, canonical_hash,
 };
 use physbox_launch::ValidationScenario;
 
@@ -60,6 +60,76 @@ fn settling_review_lane(scenario: ValidationScenario) -> Option<(u32, P5_2Settli
     }
 }
 
+fn configured_solver_scenario(config: &EngineConfig, mut scenario: ScenarioV1) -> ScenarioV1 {
+    config
+        .solver_profile
+        .apply_to_scenario(&mut scenario)
+        .expect("interactive solver profile accepts the shared scenario");
+    scenario
+}
+
+fn profiled_generated_world(
+    device: &wgpu::Device,
+    color_format: wgpu::TextureFormat,
+    scenario: &ScenarioV1,
+    profile: &crate::SolverProfileConfig,
+) -> Result<GpuBodyWorld, String> {
+    #[cfg(not(feature = "solver-lab"))]
+    let _ = profile;
+    #[cfg(feature = "solver-lab")]
+    if !profile.is_selected() {
+        return GpuBodyWorld::new_generated_with_solver_profile(
+            device,
+            color_format,
+            scenario,
+            profile,
+        );
+    }
+    GpuBodyWorld::new_generated(device, color_format, scenario)
+}
+
+fn profiled_generated_world_with_scheduling(
+    device: &wgpu::Device,
+    color_format: wgpu::TextureFormat,
+    scenario: &ScenarioV1,
+    profile: &crate::SolverProfileConfig,
+    scheduling: GpuSolverSchedulingPolicyV1,
+) -> Result<GpuBodyWorld, String> {
+    #[cfg(not(feature = "solver-lab"))]
+    let _ = profile;
+    #[cfg(feature = "solver-lab")]
+    if !profile.is_selected() {
+        return GpuBodyWorld::new_generated_with_solver_profile(
+            device,
+            color_format,
+            scenario,
+            profile,
+        );
+    }
+    GpuBodyWorld::new_generated_with_scheduling(device, color_format, scenario, scheduling)
+}
+
+fn profiled_generated_world_with_contact_policy(
+    device: &wgpu::Device,
+    color_format: wgpu::TextureFormat,
+    scenario: &ScenarioV1,
+    profile: &crate::SolverProfileConfig,
+    identity: physbox_contracts::ContactIdentityPolicyV1,
+) -> Result<GpuBodyWorld, String> {
+    #[cfg(not(feature = "solver-lab"))]
+    let _ = profile;
+    #[cfg(feature = "solver-lab")]
+    if !profile.is_selected() {
+        return GpuBodyWorld::new_generated_with_solver_profile(
+            device,
+            color_format,
+            scenario,
+            profile,
+        );
+    }
+    GpuBodyWorld::new_generated_with_contact_policy(device, color_format, scenario, identity)
+}
+
 struct PreparedBodyCommands {
     batch: BodyCommandBatchV1,
     ranges: Vec<BodyCommandStepRange>,
@@ -67,6 +137,15 @@ struct PreparedBodyCommands {
     grab_ranges: Vec<BodyCommandStepRange>,
     construction_batch: ConstructionIntentBatchV1,
     construction_ranges: Vec<BodyCommandStepRange>,
+}
+
+struct ConfigurationReplacement {
+    config: EngineConfig,
+    selected_tool: WorkbenchTool,
+    scenario_activation: bool,
+    scenario_restart: bool,
+    preserve_camera: bool,
+    previous_solver_profile: Option<crate::SolverProfileConfig>,
 }
 
 struct BodyInteractionState {
@@ -448,6 +527,7 @@ pub struct EngineHost {
     ui: WorkbenchUi,
     scenario_activations_total: u64,
     scenario_restarts_total: u64,
+    previous_solver_profile: Option<crate::SolverProfileConfig>,
     construction_diagnostic: Option<(ConstructionStateV1, u64)>,
 }
 
@@ -459,6 +539,12 @@ impl EngineHost {
         config: EngineConfig,
         adapter: AdapterDiagnostics,
     ) -> Self {
+        assert!(
+            config.solver_profile.supports_scenario(config.scenario),
+            "solver profile {} does not support scenario {}",
+            config.solver_profile.name(),
+            config.scenario.name(),
+        );
         let params_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("physbox5_frame_params"),
             size: std::mem::size_of::<FrameParams>() as u64,
@@ -541,6 +627,8 @@ impl EngineHost {
             | ValidationScenario::SettlingIdentity16
             | ValidationScenario::SettlingSoftness16
             | ValidationScenario::SettlingCandidate16 => None,
+            #[cfg(feature = "solver-lab")]
+            ValidationScenario::SolverLabStack8 | ValidationScenario::SolverLabStack16 => None,
             ValidationScenario::SolverJacobi => Some(GpuSolverCandidate::JacobiGather),
             ValidationScenario::SolverColored => Some(GpuSolverCandidate::ColoredSoftTgs),
         };
@@ -582,36 +670,65 @@ impl EngineHost {
                 } else {
                     120
                 };
-                let scenario = p5_2_generated_floor_scenario(expected_steps)
-                    .expect("engine-owned generated-floor scenario is valid");
+                let scenario = configured_solver_scenario(
+                    &config,
+                    p5_2_generated_floor_scenario(expected_steps)
+                        .expect("engine-owned generated-floor scenario is valid"),
+                );
                 Some(
-                    GpuBodyWorld::new_generated(device, color_format, &scenario)
-                        .expect("engine-owned generated-contact GPU world is valid"),
+                    profiled_generated_world(
+                        device,
+                        color_format,
+                        &scenario,
+                        &config.solver_profile,
+                    )
+                    .expect("engine-owned generated-contact GPU world is valid"),
                 )
             }
             ValidationScenario::ResetGrab => {
                 let script = p5_2_generated_reset_grab_scenario()
                     .expect("engine-owned generated reset/grab scenario is valid");
+                let scenario = configured_solver_scenario(&config, script.scenario);
                 Some(
-                    GpuBodyWorld::new_generated(device, color_format, &script.scenario)
-                        .expect("engine-owned generated reset/grab GPU world is valid"),
+                    profiled_generated_world(
+                        device,
+                        color_format,
+                        &scenario,
+                        &config.solver_profile,
+                    )
+                    .expect("engine-owned generated reset/grab GPU world is valid"),
                 )
             }
             ValidationScenario::RigidStack => {
-                let scenario = p5_2_generated_scenario(P5_2GeneratedScenarioKind::SmallStack, 180)
-                    .expect("engine-owned generated stack scenario is valid");
+                let scenario = configured_solver_scenario(
+                    &config,
+                    p5_2_generated_scenario(P5_2GeneratedScenarioKind::SmallStack, 180)
+                        .expect("engine-owned generated stack scenario is valid"),
+                );
                 Some(
-                    GpuBodyWorld::new_generated(device, color_format, &scenario)
-                        .expect("engine-owned generated stack GPU world is valid"),
+                    profiled_generated_world(
+                        device,
+                        color_format,
+                        &scenario,
+                        &config.solver_profile,
+                    )
+                    .expect("engine-owned generated stack GPU world is valid"),
                 )
             }
             ValidationScenario::RectangleStack => {
-                let scenario =
+                let scenario = configured_solver_scenario(
+                    &config,
                     p5_2_centered_rectangle_stack_scenario(4, P5_2_CENTERED_STACK_EVIDENCE_STEPS)
-                        .expect("engine-owned centered rectangle stack scenario is valid");
+                        .expect("engine-owned centered rectangle stack scenario is valid"),
+                );
                 Some(
-                    GpuBodyWorld::new_generated(device, color_format, &scenario)
-                        .expect("engine-owned centered rectangle stack GPU world is valid"),
+                    profiled_generated_world(
+                        device,
+                        color_format,
+                        &scenario,
+                        &config.solver_profile,
+                    )
+                    .expect("engine-owned centered rectangle stack GPU world is valid"),
                 )
             }
             ValidationScenario::CircleBucket100 | ValidationScenario::RectangleBucket100 => {
@@ -620,26 +737,38 @@ impl EngineHost {
                 } else {
                     P5_2BucketShape::Rectangle
                 };
-                let scenario = p5_2_bucket_scenario(shape, 100, P5_2_BUCKET_EVIDENCE_STEPS)
-                    .expect("engine-owned all-pairs bucket scenario is valid");
+                let scenario = configured_solver_scenario(
+                    &config,
+                    p5_2_bucket_scenario(shape, 100, P5_2_BUCKET_EVIDENCE_STEPS)
+                        .expect("engine-owned all-pairs bucket scenario is valid"),
+                );
                 Some(
-                    GpuBodyWorld::new_generated(device, color_format, &scenario)
-                        .expect("engine-owned all-pairs bucket GPU world is valid"),
+                    profiled_generated_world(
+                        device,
+                        color_format,
+                        &scenario,
+                        &config.solver_profile,
+                    )
+                    .expect("engine-owned all-pairs bucket GPU world is valid"),
                 )
             }
             ValidationScenario::SolverManifoldI2 | ValidationScenario::SolverParallelColoring => {
-                let scenario = p5_2_manifold_color_validation_scenario()
-                    .expect("engine-owned manifold-color validation scenario is valid");
+                let scenario = configured_solver_scenario(
+                    &config,
+                    p5_2_manifold_color_validation_scenario()
+                        .expect("engine-owned manifold-color validation scenario is valid"),
+                );
                 let scheduling_policy =
                     if config.scenario == ValidationScenario::SolverParallelColoring {
                         GpuSolverSchedulingPolicyV1::SELECTED
                     } else {
                         GpuSolverSchedulingPolicyV1::SERIAL_CONTROL
                     };
-                let world = GpuBodyWorld::new_generated_with_scheduling(
+                let world = profiled_generated_world_with_scheduling(
                     device,
                     color_format,
                     &scenario,
+                    &config.solver_profile,
                     scheduling_policy,
                 );
                 Some(world.expect("engine-owned manifold-color validation world is valid"))
@@ -652,16 +781,45 @@ impl EngineHost {
             | ValidationScenario::SettlingCandidate16 => {
                 let (rectangle_count, policy) = settling_review_lane(config.scenario)
                     .expect("settling review launch scenario maps to a shared policy");
-                let scenario = p5_2_settling_review_scenario(rectangle_count, policy)
-                    .expect("engine-owned settling review scenario is valid");
+                let scenario = configured_solver_scenario(
+                    &config,
+                    p5_2_settling_review_scenario(rectangle_count, policy)
+                        .expect("engine-owned settling review scenario is valid"),
+                );
                 Some(
-                    GpuBodyWorld::new_generated_with_contact_policy(
+                    profiled_generated_world_with_contact_policy(
                         device,
                         color_format,
                         &scenario,
+                        &config.solver_profile,
                         policy.identity_policy(),
                     )
                     .expect("engine-owned settling review GPU world is valid"),
+                )
+            }
+            #[cfg(feature = "solver-lab")]
+            ValidationScenario::SolverLabStack8 | ValidationScenario::SolverLabStack16 => {
+                let count = if config.scenario == ValidationScenario::SolverLabStack8 {
+                    8
+                } else {
+                    16
+                };
+                let scenario = configured_solver_scenario(
+                    &config,
+                    p5_2_centered_rectangle_stack_scenario(
+                        count,
+                        P5_2_CENTERED_STACK_EVIDENCE_STEPS,
+                    )
+                    .expect("engine-owned solver-lab stack scenario is valid"),
+                );
+                Some(
+                    profiled_generated_world(
+                        device,
+                        color_format,
+                        &scenario,
+                        &config.solver_profile,
+                    )
+                    .expect("engine-owned solver-lab GPU world is valid"),
                 )
             }
             _ => None,
@@ -671,42 +829,48 @@ impl EngineHost {
                 &p5_1_direct_render_scenario(3)
                     .expect("engine-owned body free-flight scenario is valid"),
             ),
-            ValidationScenario::Bootstrap => canonical_hash(
-                &p5_2_generated_floor_scenario(3)
+            ValidationScenario::Bootstrap => canonical_hash(&configured_solver_scenario(
+                &config,
+                p5_2_generated_floor_scenario(3)
                     .expect("engine-owned bootstrap generated scenario is valid"),
-            ),
-            ValidationScenario::RigidFloor => canonical_hash(
-                &p5_2_generated_floor_scenario(120)
+            )),
+            ValidationScenario::RigidFloor => canonical_hash(&configured_solver_scenario(
+                &config,
+                p5_2_generated_floor_scenario(120)
                     .expect("engine-owned generated-floor scenario is valid"),
-            ),
-            ValidationScenario::RigidStack => canonical_hash(
-                &p5_2_generated_scenario(P5_2GeneratedScenarioKind::SmallStack, 180)
+            )),
+            ValidationScenario::RigidStack => canonical_hash(&configured_solver_scenario(
+                &config,
+                p5_2_generated_scenario(P5_2GeneratedScenarioKind::SmallStack, 180)
                     .expect("engine-owned generated stack scenario is valid"),
-            ),
-            ValidationScenario::RectangleStack => canonical_hash(
-                &p5_2_centered_rectangle_stack_scenario(4, P5_2_CENTERED_STACK_EVIDENCE_STEPS)
+            )),
+            ValidationScenario::RectangleStack => canonical_hash(&configured_solver_scenario(
+                &config,
+                p5_2_centered_rectangle_stack_scenario(4, P5_2_CENTERED_STACK_EVIDENCE_STEPS)
                     .expect("engine-owned centered rectangle stack scenario is valid"),
-            ),
+            )),
             ValidationScenario::CircleBucket100 | ValidationScenario::RectangleBucket100 => {
                 let shape = if config.scenario == ValidationScenario::CircleBucket100 {
                     P5_2BucketShape::Circle
                 } else {
                     P5_2BucketShape::Rectangle
                 };
-                canonical_hash(
-                    &p5_2_bucket_scenario(shape, 100, P5_2_BUCKET_EVIDENCE_STEPS)
+                canonical_hash(&configured_solver_scenario(
+                    &config,
+                    p5_2_bucket_scenario(shape, 100, P5_2_BUCKET_EVIDENCE_STEPS)
                         .expect("engine-owned all-pairs bucket scenario is valid"),
-                )
+                ))
             }
             ValidationScenario::ResetGrab => canonical_hash(
                 &p5_2_generated_reset_grab_scenario()
                     .expect("engine-owned generated reset/grab scenario is valid"),
             ),
             ValidationScenario::SolverManifoldI2 | ValidationScenario::SolverParallelColoring => {
-                canonical_hash(
-                    &p5_2_manifold_color_validation_scenario()
+                canonical_hash(&configured_solver_scenario(
+                    &config,
+                    p5_2_manifold_color_validation_scenario()
                         .expect("engine-owned manifold-color validation scenario is valid"),
-                )
+                ))
             }
             ValidationScenario::SettlingHard8
             | ValidationScenario::SettlingCandidate8
@@ -716,16 +880,33 @@ impl EngineHost {
             | ValidationScenario::SettlingCandidate16 => {
                 let (rectangle_count, policy) = settling_review_lane(config.scenario)
                     .expect("settling review launch scenario maps to a shared policy");
-                canonical_hash(
-                    &p5_2_settling_review_scenario(rectangle_count, policy)
+                canonical_hash(&configured_solver_scenario(
+                    &config,
+                    p5_2_settling_review_scenario(rectangle_count, policy)
                         .expect("engine-owned settling review scenario is valid"),
-                )
+                ))
             }
             ValidationScenario::SolverJacobi | ValidationScenario::SolverColored => {
                 let mut scenario = authored_chain_scenario(64, 91)
                     .expect("engine-owned solver validation scenario is valid");
                 scenario.settings.gravity = Vec2::ZERO;
                 canonical_hash(&scenario)
+            }
+            #[cfg(feature = "solver-lab")]
+            ValidationScenario::SolverLabStack8 | ValidationScenario::SolverLabStack16 => {
+                let count = if config.scenario == ValidationScenario::SolverLabStack8 {
+                    8
+                } else {
+                    16
+                };
+                canonical_hash(&configured_solver_scenario(
+                    &config,
+                    p5_2_centered_rectangle_stack_scenario(
+                        count,
+                        P5_2_CENTERED_STACK_EVIDENCE_STEPS,
+                    )
+                    .expect("engine-owned solver-lab stack scenario is valid"),
+                ))
             }
         }
         .expect("engine-owned scenario hash is valid");
@@ -747,6 +928,10 @@ impl EngineHost {
             | ValidationScenario::SettlingCandidate16 => {
                 Some(BodyInteractionState::new(Vec::new(), true))
             }
+            #[cfg(feature = "solver-lab")]
+            ValidationScenario::SolverLabStack8 | ValidationScenario::SolverLabStack16 => {
+                Some(BodyInteractionState::new(Vec::new(), true))
+            }
             ValidationScenario::ResetGrab => {
                 let script = p5_2_generated_reset_grab_scenario()
                     .expect("engine-owned generated reset/grab scenario is valid");
@@ -755,7 +940,7 @@ impl EngineHost {
             ValidationScenario::SolverJacobi | ValidationScenario::SolverColored => None,
         };
 
-        let ui = WorkbenchUi::new(device, queue, color_format);
+        let ui = WorkbenchUi::new(device, queue, color_format, config.solver_profile.clone());
         Self {
             config,
             color_format,
@@ -777,8 +962,45 @@ impl EngineHost {
             ui,
             scenario_activations_total: 0,
             scenario_restarts_total: 0,
+            previous_solver_profile: None,
             construction_diagnostic: None,
         }
+    }
+
+    fn replace_configuration(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        replacement: ConfigurationReplacement,
+    ) {
+        let ConfigurationReplacement {
+            config,
+            selected_tool,
+            scenario_activation,
+            scenario_restart,
+            preserve_camera,
+            previous_solver_profile,
+        } = replacement;
+        let camera = self.camera;
+        let mut replacement = Self::new(
+            device,
+            queue,
+            self.color_format,
+            config,
+            self.adapter.clone(),
+        );
+        replacement.scenario_activations_total = self
+            .scenario_activations_total
+            .saturating_add(u64::from(scenario_activation));
+        replacement.scenario_restarts_total = self
+            .scenario_restarts_total
+            .saturating_add(u64::from(scenario_restart));
+        replacement.previous_solver_profile = previous_solver_profile;
+        replacement.ui.select_tool(selected_tool);
+        if preserve_camera {
+            replacement.camera = camera;
+        }
+        *self = replacement;
     }
 
     pub fn render_frame(
@@ -799,33 +1021,132 @@ impl EngineHost {
                 UiAction::Recenter => {
                     routing.events.push(InputEvent::Recenter);
                 }
-                UiAction::ActivateScenario(_) | UiAction::RestartScenario => {
-                    let activations = self.scenario_activations_total.saturating_add(matches!(
-                        action,
-                        UiAction::ActivateScenario(_)
-                    )
-                        as u64);
-                    let restarts = self.scenario_restarts_total.saturating_add(matches!(
-                        action,
-                        UiAction::RestartScenario
-                    )
-                        as u64);
-                    let scenario = match action {
-                        UiAction::ActivateScenario(scenario) => scenario,
-                        UiAction::RestartScenario => self.config.scenario,
-                        UiAction::Recenter => unreachable!(),
+                UiAction::ActivateScenario(scenario) => {
+                    let compatible = self.config.solver_profile.supports_scenario(scenario);
+                    let solver_profile = if compatible {
+                        self.config.solver_profile.clone()
+                    } else {
+                        crate::SolverProfileConfig::Selected
                     };
-                    let mut replacement = Self::new(
+                    let previous_solver_profile = if compatible {
+                        self.previous_solver_profile.clone()
+                    } else {
+                        Some(self.config.solver_profile.clone())
+                    };
+                    self.replace_configuration(
                         context.device,
                         context.queue,
-                        self.color_format,
-                        EngineConfig { scenario },
-                        self.adapter.clone(),
+                        ConfigurationReplacement {
+                            config: EngineConfig {
+                                scenario,
+                                solver_profile,
+                            },
+                            selected_tool: routing.selected_tool,
+                            scenario_activation: true,
+                            scenario_restart: false,
+                            preserve_camera: false,
+                            previous_solver_profile,
+                        },
                     );
-                    replacement.scenario_activations_total = activations;
-                    replacement.scenario_restarts_total = restarts;
-                    replacement.ui.select_tool(routing.selected_tool);
-                    *self = replacement;
+                }
+                UiAction::RestartScenario => {
+                    self.replace_configuration(
+                        context.device,
+                        context.queue,
+                        ConfigurationReplacement {
+                            config: self.config.clone(),
+                            selected_tool: routing.selected_tool,
+                            scenario_activation: false,
+                            scenario_restart: true,
+                            preserve_camera: false,
+                            previous_solver_profile: self.previous_solver_profile.clone(),
+                        },
+                    );
+                }
+                UiAction::ActivateSolverProfile(profile) => {
+                    let scenario = if profile.supports_scenario(self.config.scenario) {
+                        self.config.scenario
+                    } else {
+                        #[cfg(feature = "solver-lab")]
+                        {
+                            ValidationScenario::SolverLabStack16
+                        }
+                        #[cfg(not(feature = "solver-lab"))]
+                        {
+                            self.config.scenario
+                        }
+                    };
+                    let previous = (profile != self.config.solver_profile)
+                        .then(|| self.config.solver_profile.clone())
+                        .or_else(|| self.previous_solver_profile.clone());
+                    self.replace_configuration(
+                        context.device,
+                        context.queue,
+                        ConfigurationReplacement {
+                            config: EngineConfig {
+                                scenario,
+                                solver_profile: profile,
+                            },
+                            selected_tool: routing.selected_tool,
+                            scenario_activation: scenario != self.config.scenario,
+                            scenario_restart: false,
+                            preserve_camera: true,
+                            previous_solver_profile: previous,
+                        },
+                    );
+                }
+                UiAction::ActivateSolverProfileForScenario { profile, scenario } => {
+                    assert!(profile.supports_scenario(scenario));
+                    let previous = (profile != self.config.solver_profile)
+                        .then(|| self.config.solver_profile.clone())
+                        .or_else(|| self.previous_solver_profile.clone());
+                    self.replace_configuration(
+                        context.device,
+                        context.queue,
+                        ConfigurationReplacement {
+                            config: EngineConfig {
+                                scenario,
+                                solver_profile: profile,
+                            },
+                            selected_tool: routing.selected_tool,
+                            scenario_activation: scenario != self.config.scenario,
+                            scenario_restart: false,
+                            preserve_camera: true,
+                            previous_solver_profile: previous,
+                        },
+                    );
+                }
+                UiAction::ToggleSolverProfile => {
+                    let target = self
+                        .previous_solver_profile
+                        .clone()
+                        .filter(|profile| profile.supports_scenario(self.config.scenario))
+                        .or_else(|| {
+                            crate::SolverProfileConfig::available()
+                                .into_iter()
+                                .find(|profile| {
+                                    profile != &self.config.solver_profile
+                                        && profile.supports_scenario(self.config.scenario)
+                                })
+                        });
+                    if let Some(profile) = target {
+                        let previous = Some(self.config.solver_profile.clone());
+                        self.replace_configuration(
+                            context.device,
+                            context.queue,
+                            ConfigurationReplacement {
+                                config: EngineConfig {
+                                    scenario: self.config.scenario,
+                                    solver_profile: profile,
+                                },
+                                selected_tool: routing.selected_tool,
+                                scenario_activation: false,
+                                scenario_restart: false,
+                                preserve_camera: true,
+                                previous_solver_profile: previous,
+                            },
+                        );
+                    }
                 }
             }
         }
@@ -991,8 +1312,9 @@ impl EngineHost {
             generated_contact_coefficient_policy: self
                 .body_world
                 .as_ref()
-                .and_then(GpuBodyWorld::generated_solver_configuration)
-                .map(|_| crate::GpuContactCoefficientPolicyV1::SELECTED),
+                .and_then(GpuBodyWorld::generated_contact_coefficient_policy),
+            solver_profile: self.config.solver_profile.name(),
+            solver_profile_options: self.config.solver_profile.options_string(),
             fixed_step_hz: FIXED_STEP_HZ,
             scenario: self.config.scenario.name(),
             scenario_hash: self.scenario_hash.clone(),
@@ -1179,6 +1501,23 @@ impl EngineHost {
                     },
                 }
             }
+            #[cfg(feature = "solver-lab")]
+            ValidationScenario::SolverLabStack8 | ValidationScenario::SolverLabStack16 => {
+                let complete =
+                    self.fixed_steps_total >= u64::from(P5_2_CENTERED_STACK_EVIDENCE_STEPS);
+                ScenarioResult {
+                    name: self.config.scenario.name(),
+                    complete,
+                    passed: complete && !contract.capacity_overflowed,
+                    reason: if complete && !contract.capacity_overflowed {
+                        "interactive solver-lab stack completed its exact step contract"
+                    } else if complete {
+                        "interactive solver-lab stack reported capacity overflow"
+                    } else {
+                        "waiting for 1200 interactive solver-lab steps"
+                    },
+                }
+            }
         };
         let construction_diagnostic = self.construction_diagnostic_report();
         let ui = self.ui.encode(
@@ -1187,6 +1526,7 @@ impl EngineHost {
             context.target,
             UiFrameModel {
                 scenario: self.config.scenario,
+                solver_profile: &self.config.solver_profile,
                 pacing: &pacing,
                 body_count: contract.body_count,
                 contact_count: contract.contact_point_count,

@@ -26,6 +26,11 @@ pub enum PointerButtonCode {
     Auxiliary = 3,
 }
 
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen(js_name = solverLabEnabled))]
+pub fn solver_lab_enabled() -> bool {
+    cfg!(feature = "solver-lab")
+}
+
 #[cfg(any(target_arch = "wasm32", test))]
 fn decode_pointer_button(code: u8) -> Result<PointerButton, String> {
     match code {
@@ -129,7 +134,7 @@ pub async fn start(canvas: HtmlCanvasElement, search: String) -> Result<WebApp, 
         surface,
         options.width,
         options.height,
-        EngineConfig::from(&options),
+        EngineConfig::try_from(&options).map_err(js_error)?,
     )
     .await
     .map_err(js_error)?;

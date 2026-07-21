@@ -59,7 +59,7 @@ fn run() -> Result<(), String> {
     let mut renderer = pollster::block_on(OffscreenRenderer::new(
         options.width,
         options.height,
-        EngineConfig::from(&options),
+        EngineConfig::try_from(&options)?,
     ))?;
     println!(
         "PHYSBOX5_MARK_ADAPTER {}",

@@ -14,10 +14,12 @@ const captureDirectory = resolve(process.env.PHYSBOX5_CAPTURE_DIRECTORY ?? "/tmp
 const screenshot = join(captureDirectory, `physbox5-web${captureSuffix}.png`);
 const initialScreenshot = join(captureDirectory, `physbox5-web-initial${captureSuffix}.png`);
 const menuScreenshot = join(captureDirectory, `physbox5-web-menu${captureSuffix}.png`);
+const solverScreenshot = join(captureDirectory, `physbox5-web-solver${captureSuffix}.png`);
 const grabScreenshot = join(captureDirectory, `physbox5-web-grab${captureSuffix}.png`);
 const constructionScreenshot = join(captureDirectory, `physbox5-web-construction${captureSuffix}.png`);
 const provenancePath = join(captureDirectory, `physbox5-web${captureSuffix}.json`);
 const scenario = process.env.PHYSBOX5_SCENARIO ?? "bootstrap";
+const solverLab = process.env.PHYSBOX5_SOLVER_LAB === "1";
 const viewportWidth = Number.parseInt(process.env.PHYSBOX5_VIEWPORT_WIDTH ?? "960", 10);
 const viewportHeight = Number.parseInt(process.env.PHYSBOX5_VIEWPORT_HEIGHT ?? "600", 10);
 if (!(viewportWidth > 0 && viewportHeight > 0)) throw new Error("browser viewport must be positive");
@@ -25,10 +27,14 @@ await mkdir(captureDirectory, { recursive: true });
 await rm(screenshot, { force: true });
 await rm(initialScreenshot, { force: true });
 await rm(menuScreenshot, { force: true });
+await rm(solverScreenshot, { force: true });
 await rm(grabScreenshot, { force: true });
 await rm(constructionScreenshot, { force: true });
 await rm(provenancePath, { force: true });
-run(process.execPath, [resolve(root, "scripts/build-web.mjs")]);
+run(process.execPath, [
+  resolve(root, "scripts/build-web.mjs"),
+  ...(solverLab ? ["--solver-lab"] : []),
+]);
 
 const server = await startServer(resolve(root, "target", "web"));
 let browserSession;
@@ -72,6 +78,89 @@ try {
     requestAnimationFrame(() => requestAnimationFrame(resolveFrame));
   }));
   await captureCompleteScreenshot(page, menuScreenshot, "browser menu");
+  let activeScenario = scenario;
+  if (solverLab) {
+    await page.mouse.click(279 * uiScale, 104 * uiScale);
+    await page.evaluate(() => new Promise((resolveFrame) => {
+      requestAnimationFrame(() => requestAnimationFrame(resolveFrame));
+    }));
+    await page.mouse.click(192 * uiScale, 181 * uiScale);
+    await page.mouse.click(334 * uiScale, 305 * uiScale);
+    await page.evaluate(() => new Promise((resolveFrame) => {
+      requestAnimationFrame(() => requestAnimationFrame(resolveFrame));
+    }));
+    await captureCompleteScreenshot(page, menuScreenshot, "browser solver menu");
+    await page.mouse.click(279 * uiScale, 353 * uiScale);
+    activeScenario = "solver-lab-stack-16";
+    await page.waitForFunction(
+      ({ scenarioName }) => {
+        const frame = globalThis.__physbox5?.frame;
+        return frame?.sceneContract?.scenario === scenarioName
+          && frame?.sceneContract?.solverProfile === "branch-robust"
+          && frame?.sceneContract?.solverProfileOptions === "hz=30,damping=10,static-scale=2.5"
+          && frame?.sceneContract?.generatedContactCoefficientPolicy === "authority-tunable-soft"
+          && !frame?.ui?.menuOpen;
+      },
+      { scenarioName: activeScenario },
+      { timeout: 10_000 },
+    );
+    await requireSolverPreference(page, "branch-robust", "hz=30,damping=10,static-scale=2.5");
+
+    await page.mouse.click(62 * uiScale, 50 * uiScale);
+    await page.mouse.click(279 * uiScale, 104 * uiScale);
+    await page.mouse.click(279 * uiScale, 403 * uiScale);
+    await page.waitForFunction(
+      ({ scenarioName }) => {
+        const frame = globalThis.__physbox5?.frame;
+        return frame?.sceneContract?.scenario === scenarioName
+          && frame?.sceneContract?.solverProfile === "selected"
+          && !frame?.ui?.menuOpen;
+      },
+      { scenarioName: activeScenario },
+      { timeout: 10_000 },
+    );
+    await requireSolverPreference(page, "selected", null);
+
+    await page.mouse.click(62 * uiScale, 50 * uiScale);
+    await page.mouse.click(279 * uiScale, 104 * uiScale);
+    await page.mouse.click(279 * uiScale, 403 * uiScale);
+    await page.waitForFunction(
+      ({ scenarioName }) => {
+        const frame = globalThis.__physbox5?.frame;
+        return frame?.sceneContract?.scenario === scenarioName
+          && frame?.sceneContract?.solverProfile === "branch-robust"
+          && !frame?.ui?.menuOpen;
+      },
+      { scenarioName: activeScenario },
+      { timeout: 10_000 },
+    );
+    await requireSolverPreference(page, "branch-robust", "hz=30,damping=10,static-scale=2.5");
+    await page.evaluate(() => new Promise((resolveFrame) => {
+      requestAnimationFrame(() => requestAnimationFrame(resolveFrame));
+    }));
+    await captureCompleteScreenshot(page, solverScreenshot, "browser solver candidate");
+
+    await page.evaluate(() => {
+      const url = new URL(location.href);
+      url.searchParams.delete("solver");
+      url.searchParams.delete("solver-options");
+      history.replaceState(null, "", url);
+    });
+    await page.reload({ waitUntil: "networkidle" });
+    await page.waitForFunction(
+      ({ initialScenario }) => {
+        const frame = globalThis.__physbox5?.frame;
+        return globalThis.__physbox5?.ready
+          && frame?.sceneContract?.scenario === initialScenario
+          && frame?.sceneContract?.solverProfile === "branch-robust"
+          && frame?.sceneContract?.solverProfileOptions === "hz=30,damping=10,static-scale=2.5";
+      },
+      { initialScenario: scenario },
+      { timeout: 30_000 },
+    );
+    await requireSolverPreference(page, "branch-robust", "hz=30,damping=10,static-scale=2.5");
+    activeScenario = scenario;
+  }
   const menuScenarios = [
     "bootstrap",
     "rigid-floor",
@@ -95,7 +184,9 @@ try {
     "settling-candidate-16",
   ]);
   const scenarioIndex = menuScenarios.indexOf(scenario);
-  if (scenarioIndex >= 0) {
+  if (solverLab) {
+    // The solver flow above already exercised scene activation, closed the menu, and reloaded.
+  } else if (scenarioIndex >= 0) {
     const compactLandscape = viewportHeight < 520 && viewportWidth > viewportHeight;
     const scenarioColumn = compactLandscape ? scenarioIndex % 3 : 0;
     const scenarioRow = compactLandscape ? Math.floor(scenarioIndex / 3) : scenarioIndex;
@@ -248,8 +339,8 @@ try {
   await page.waitForFunction(
     (name) => globalThis.__physbox5?.frame?.scenario?.name === name
       && globalThis.__physbox5?.frame?.scenario?.passed,
-    scenario,
-    { timeout: 10_000 },
+    activeScenario,
+    { timeout: solverLab ? 30_000 : 10_000 },
   );
   await page.waitForTimeout(200);
   await captureCompleteScreenshot(page, screenshot, "browser final", consoleErrors);
@@ -260,11 +351,12 @@ try {
     sourceRevision: git(["rev-parse", "HEAD"]) ?? "unknown",
     sourceDirty: (git(["status", "--porcelain"]) ?? "unknown") !== "",
     host: "web",
-    capturePhase: `${scenario}-pointer-transport`,
+    capturePhase: `${activeScenario}-pointer-transport`,
     adapter: final.diagnostics,
     viewport: final.viewport,
     initialScreenshot,
     menuScreenshot,
+    solverScreenshot: solverLab ? solverScreenshot : null,
     grabScreenshot: capturedGrab ? grabScreenshot : null,
     grabFrame: capturedGrab,
     constructionScreenshot: capturedConstruction ? constructionScreenshot : null,
@@ -320,6 +412,25 @@ function requireNoGpuValidationErrors(messages, label) {
     /invalid (?:shader|compute|render|command)|while (?:calling|encoding).*create(?:shader|compute|render)|must only be called from uniform control flow|queue\].submit/i.test(message)
   );
   if (failures.length) throw new Error(`${label} reported WebGPU validation errors: ${failures.join("; ")}`);
+}
+
+async function requireSolverPreference(page, solver, options) {
+  await page.waitForFunction(
+    ({ expectedSolver, expectedOptions }) => {
+      const saved = JSON.parse(localStorage.getItem("physbox5.solver-lab.v1") ?? "null");
+      const url = new URL(location.href);
+      const stored = saved?.version === 1
+        && saved.solver === expectedSolver
+        && saved.options === expectedOptions;
+      const addressed = expectedSolver === "selected"
+        ? !url.searchParams.has("solver") && !url.searchParams.has("solver-options")
+        : url.searchParams.get("solver") === expectedSolver
+          && url.searchParams.get("solver-options") === expectedOptions;
+      return stored && addressed;
+    },
+    { expectedSolver: solver, expectedOptions: options },
+    { timeout: 10_000 },
+  );
 }
 
 function requireGrabEndpoint(image, targetX, targetY) {

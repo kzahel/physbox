@@ -650,6 +650,7 @@ mod tests {
             200,
             EngineConfig {
                 scenario: ValidationScenario::BodyFreeFlight,
+                ..Default::default()
             },
         ))
         .unwrap();
@@ -678,6 +679,7 @@ mod tests {
     fn exact_generated_floor_landing_is_finite_and_deterministic() {
         let config = EngineConfig {
             scenario: ValidationScenario::RigidFloor,
+            ..Default::default()
         };
         let run = || {
             let mut renderer = pollster::block_on(OffscreenRenderer::new(320, 200, config.clone()))
@@ -704,6 +706,7 @@ mod tests {
             200,
             EngineConfig {
                 scenario: ValidationScenario::ResetGrab,
+                ..Default::default()
             },
         ))
         .unwrap();
@@ -755,6 +758,7 @@ mod tests {
             200,
             EngineConfig {
                 scenario: ValidationScenario::RigidFloor,
+                ..Default::default()
             },
         ))
         .unwrap();
@@ -769,6 +773,7 @@ mod tests {
             600,
             EngineConfig {
                 scenario: ValidationScenario::RigidFloor,
+                ..Default::default()
             },
         ))
         .unwrap();
@@ -894,6 +899,7 @@ mod tests {
             target_size[1],
             EngineConfig {
                 scenario: ValidationScenario::RigidFloor,
+                ..Default::default()
             },
         ))
         .unwrap();
@@ -940,6 +946,7 @@ mod tests {
                 target_size[1],
                 EngineConfig {
                     scenario: ValidationScenario::RigidStack,
+                    ..Default::default()
                 },
             ))
             .unwrap();
@@ -962,6 +969,7 @@ mod tests {
             target_size[1],
             EngineConfig {
                 scenario: ValidationScenario::RigidFloor,
+                ..Default::default()
             },
         ))
         .unwrap();
@@ -982,6 +990,7 @@ mod tests {
             target_size[1],
             EngineConfig {
                 scenario: ValidationScenario::RigidStack,
+                ..Default::default()
             },
         ))
         .unwrap();
@@ -1022,6 +1031,7 @@ mod tests {
             target_size[1],
             EngineConfig {
                 scenario: ValidationScenario::RigidFloor,
+                ..Default::default()
             },
         ))
         .unwrap();
@@ -1073,6 +1083,7 @@ mod tests {
             target_size[1],
             EngineConfig {
                 scenario: ValidationScenario::RigidFloor,
+                ..Default::default()
             },
         ))
         .unwrap();
@@ -1124,6 +1135,7 @@ mod tests {
             target_size[1],
             EngineConfig {
                 scenario: ValidationScenario::RigidFloor,
+                ..Default::default()
             },
         ))
         .unwrap();
@@ -1151,6 +1163,7 @@ mod tests {
             200,
             EngineConfig {
                 scenario: ValidationScenario::RigidFloor,
+                ..Default::default()
             },
         ))
         .unwrap();
@@ -1184,6 +1197,7 @@ mod tests {
             200,
             EngineConfig {
                 scenario: ValidationScenario::RigidFloor,
+                ..Default::default()
             },
         ))
         .unwrap();
@@ -1236,6 +1250,7 @@ mod tests {
             target[1],
             EngineConfig {
                 scenario: ValidationScenario::Bootstrap,
+                ..Default::default()
             },
         ))
         .unwrap();
@@ -1349,6 +1364,48 @@ mod tests {
         assert!(!restarted.ui.overflowed);
     }
 
+    #[cfg(feature = "solver-lab")]
+    #[test]
+    fn scene_menu_drops_an_incompatible_candidate_without_false_provenance() {
+        let target = [960, 600];
+        let mut renderer = pollster::block_on(OffscreenRenderer::new(
+            target[0],
+            target[1],
+            EngineConfig {
+                scenario: ValidationScenario::Bootstrap,
+                solver_profile: crate::SolverProfileConfig::BranchRobust(
+                    crate::BranchRobustInteractiveOptions::default(),
+                ),
+            },
+        ))
+        .unwrap();
+        let click = |id, at| {
+            [crate::PointerPhase::Down, crate::PointerPhase::Up]
+                .into_iter()
+                .map(|phase| {
+                    crate::InputEvent::Pointer(crate::PointerEvent {
+                        id,
+                        phase,
+                        button: crate::PointerButton::Primary,
+                        normalized_position: at,
+                    })
+                })
+                .collect::<Vec<_>>()
+        };
+        let layout = crate::ui::UiLayout::for_target(target);
+        renderer.render(
+            FrameInput::exact(0).with_input_events(click(40, layout.center_normalized("menu", 0))),
+        );
+        let switched = renderer.render(
+            FrameInput::exact(0)
+                .with_input_events(click(41, layout.center_normalized("scenario", 6))),
+        );
+        assert_eq!(switched.scene_contract.scenario, "body-free-flight");
+        assert_eq!(switched.scene_contract.solver_profile, "selected");
+        assert_eq!(switched.scene_contract.solver_profile_options, None);
+        assert_eq!(switched.scene_contract.generated_solver_execution, None);
+    }
+
     #[test]
     fn manifold_i2_validation_reports_the_exact_selected_execution() {
         let mut renderer = pollster::block_on(OffscreenRenderer::new(
@@ -1356,6 +1413,7 @@ mod tests {
             200,
             EngineConfig {
                 scenario: ValidationScenario::SolverManifoldI2,
+                ..Default::default()
             },
         ))
         .unwrap();
@@ -1390,6 +1448,7 @@ mod tests {
             200,
             EngineConfig {
                 scenario: ValidationScenario::SolverParallelColoring,
+                ..Default::default()
             },
         ))
         .unwrap();
@@ -1425,6 +1484,7 @@ mod tests {
             target_size[1],
             EngineConfig {
                 scenario: ValidationScenario::Bootstrap,
+                ..Default::default()
             },
         ))
         .unwrap();
@@ -1593,6 +1653,7 @@ mod tests {
             target_size[1],
             EngineConfig {
                 scenario: ValidationScenario::RigidFloor,
+                ..Default::default()
             },
         ))
         .unwrap();
@@ -1676,6 +1737,7 @@ mod tests {
             600,
             EngineConfig {
                 scenario: ValidationScenario::RigidFloor,
+                ..Default::default()
             },
         ))
         .unwrap();

@@ -276,6 +276,7 @@ fn run_script(script: &ConstructionValidationScriptV1) -> Result<TraceRun, Strin
         script.target_size[1],
         EngineConfig {
             scenario: script.initial_scenario,
+            ..Default::default()
         },
     ))?;
     let adapter = renderer.diagnostics().clone();
@@ -337,6 +338,7 @@ fn capture_checkpoints(
             script.target_size[1],
             EngineConfig {
                 scenario: script.initial_scenario,
+                ..Default::default()
             },
         ))?;
         let mut found = false;

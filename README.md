@@ -12,12 +12,14 @@ qualified combined product graph, shared camera/menu/grab and construction
 tools, and the human-accepted colored in-place manifold-block solver. Human
 review also accepted bounded parallel scheduler construction as the product
 schedule; its serial predecessor remains an explicit validation control. S6
-through S17 now record the closed settling investigations and rejected
-candidate chain; none changed the selected hard/direct manifold-block product
-solver. S18 is the active engineering loop: fix the branch-robust
-persistent-key corruption, sweep its soft coefficients cheaply, and either
-present one survivor for promotion review or accept the residual-motion band
-before broadphase selection and sleeping proceed. The scheduler promotion is
+through S17 record the closed settling investigations and rejected candidate
+chain; none changed the selected hard/direct manifold-block product solver.
+S18 is complete: its 15-second solver scoreboard exposed and verified the
+validation-only authority-key ordering fix, all 30 coefficient tuples remained
+valid, and none preserved the 16-stack. The measured hard/direct residual band
+is therefore accepted as the state against which broadphase selection and
+sleeping design proceed, without reclassifying the awake solver as still. The
+scheduler promotion is
 an architecture and latency improvement, not acceptance of the current CPU
 comparison, residual-motion band, or liquid performance.
 The repository still contains no Rapier or CPU product physics backend, fluid
@@ -81,6 +83,40 @@ npm run test:web
 The browser host is a fullscreen canvas. Run `npm run serve:web` after building
 and open the printed local URL.
 
+### Interactive solver inspection
+
+Candidate comparison is an explicit laboratory build; candidate profiles stay
+out of ordinary production builds and do not alter the selected solver or its
+defaults. Start the browser lab with:
+
+```sh
+npm run inspect:web
+```
+
+Open **MENU → SOLVERS** on the engine-rendered canvas. Choose **SELECTED** or
+**BRANCH ROBUST**, adjust the candidate's hertz, damping, and static-contact
+scale, then use **STACK 8**, **STACK 16**, or **APPLY**. **SWITCH A/B** swaps
+between the active and previous profile. A change rebuilds the shared GPU
+world immediately without reloading the page; camera position and tool
+selection are retained. The browser stores the active profile and coefficients
+under `physbox5.solver-lab.v1`, restores them on the next lab launch, and keeps
+the URL synchronized automatically for reproducibility. No query-string
+editing is required.
+
+The same opt-in profile is available to the shared desktop host when direct
+launch control is useful:
+
+```sh
+cargo run -p physbox-desktop --features solver-lab -- \
+  --scenario solver-lab-stack-16 \
+  --solver branch-robust \
+  --solver-options hz=30,damping=10,static-scale=8
+```
+
+Adding a later candidate means registering another lab-only solver profile;
+the menu, launch transport, scene contract, and browser persistence remain the
+common inspection surface.
+
 ## Validation tiers
 
 The Cargo workspace defaults to the maintained production surface: desktop,
@@ -89,7 +125,7 @@ validation therefore avoids historical lab, evidence-generator,
 native-oracle, and benchmark targets and does not execute candidate-only
 engine tests. Native experiment APIs require the `physbox-engine/solver-lab`
 feature, enabled by the opt-in `physbox-lab` and Android GPU benchmark
-packages. Cargo automatic binary discovery is disabled in the lab; seven
+packages. Cargo automatic binary discovery is disabled in the lab; eight
 maintained commands remain registered and closed study sources are retained
 without being compile targets:
 

@@ -66,6 +66,7 @@ fn glyph_rows(code: u8) -> [u8; 7] {
     match code.to_ascii_uppercase() {
         b'#' => [10, 31, 10, 10, 31, 10, 0],
         b'%' => [17, 2, 4, 8, 16, 8, 17],
+        b'+' => [0, 4, 4, 31, 4, 4, 0],
         b'-' => [0, 0, 0, 14, 0, 0, 0],
         b'.' => [0, 0, 0, 0, 0, 0, 4],
         b'/' => [1, 2, 4, 8, 16, 0, 0],
@@ -122,5 +123,6 @@ mod tests {
         assert_eq!(atlas.len() as u64, glyph_atlas_bytes());
         assert!(atlas.contains(&255));
         assert_eq!(glyph_atlas_bytes(), 3_072);
+        assert_ne!(glyph_rows(b'+'), [0; 7]);
     }
 }

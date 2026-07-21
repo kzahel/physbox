@@ -308,6 +308,7 @@ fn product_generated_floor_landing_stays_bounded_and_preserves_invariants() {
         200,
         EngineConfig {
             scenario: ValidationScenario::RigidFloor,
+            ..Default::default()
         },
     ))
     .unwrap();

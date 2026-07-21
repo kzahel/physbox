@@ -123,6 +123,7 @@ pub(crate) struct GpuBodyWorld {
     floor_solver: Option<GpuFixedFloorSolver>,
     generated_contacts: Option<GpuGeneratedContactGraph>,
     generated_solver_configuration: Option<(GpuSolverExecutionV4, GpuSolverSchedulingPolicyV1)>,
+    generated_contact_coefficient_policy: Option<crate::GpuContactCoefficientPolicyV1>,
     body_count: u32,
     initial_live_count: u32,
 }
@@ -140,6 +141,7 @@ impl GpuBodyWorld {
             None,
             ContactIdentityPolicyV1::SELECTED,
             false,
+            false,
         )
     }
 
@@ -156,6 +158,7 @@ impl GpuBodyWorld {
             Some((GpuSolverExecutionV4::SELECTED, scheduling_policy)),
             ContactIdentityPolicyV1::SELECTED,
             false,
+            false,
         )
     }
 
@@ -171,6 +174,7 @@ impl GpuBodyWorld {
             scenario,
             Some((GpuSolverExecutionV4::SELECTED, scheduling_policy)),
             ContactIdentityPolicyV1::SELECTED,
+            false,
             false,
         )
     }
@@ -189,6 +193,33 @@ impl GpuBodyWorld {
             Some((GpuSolverExecutionV4::SELECTED, scheduling_policy)),
             identity_policy,
             true,
+            false,
+        )
+    }
+
+    #[cfg(feature = "solver-lab")]
+    pub(crate) fn new_generated_with_solver_profile(
+        device: &wgpu::Device,
+        color_format: wgpu::TextureFormat,
+        scenario: &ScenarioV1,
+        profile: &crate::SolverProfileConfig,
+    ) -> Result<Self, String> {
+        if profile.is_selected() {
+            return Self::new_generated(device, color_format, scenario);
+        }
+        let initial_body_count = u32::try_from(scenario.bodies.len())
+            .map_err(|_| "GPU body count exceeds u32".to_owned())?;
+        let scheduling_policy = GpuSolverSchedulingPolicyV1::authority_gpu_probe_for_body_capacity(
+            interactive_body_capacity(initial_body_count)?,
+        );
+        Self::new_with_generated_contacts(
+            device,
+            color_format,
+            scenario,
+            Some((GpuSolverExecutionV4::AUTHORITY_GPU_PROBE, scheduling_policy)),
+            ContactIdentityPolicyV1::SELECTED,
+            false,
+            true,
         )
     }
 
@@ -199,6 +230,7 @@ impl GpuBodyWorld {
         generated_solver_configuration: Option<(GpuSolverExecutionV4, GpuSolverSchedulingPolicyV1)>,
         identity_policy: ContactIdentityPolicyV1,
         use_contact_policy_comparator: bool,
+        branch_robust_tunable: bool,
     ) -> Result<Self, String> {
         scenario.validate().map_err(|error| error.to_string())?;
         let initial_live_count = u32::try_from(scenario.bodies.len())
@@ -221,7 +253,9 @@ impl GpuBodyWorld {
             };
         let generated_contacts = generated_solver_configuration
             .map(|(execution, scheduling_policy)| {
-                if execution == GpuSolverExecutionV4::SELECTED
+                if branch_robust_tunable {
+                    GpuGeneratedContactGraph::new_branch_robust_tunable(device, &storage, scenario)
+                } else if execution == GpuSolverExecutionV4::SELECTED
                     && scheduling_policy
                         == GpuSolverSchedulingPolicyV1::selected_for_body_capacity(body_count)
                     && identity_policy == ContactIdentityPolicyV1::SELECTED
@@ -760,6 +794,13 @@ impl GpuBodyWorld {
             floor_solver,
             generated_contacts,
             generated_solver_configuration,
+            generated_contact_coefficient_policy: generated_solver_configuration.map(|_| {
+                if branch_robust_tunable {
+                    crate::GpuContactCoefficientPolicyV1::AuthorityTunableSoft
+                } else {
+                    crate::GpuContactCoefficientPolicyV1::SELECTED
+                }
+            }),
             body_count,
             initial_live_count,
         })
@@ -1399,6 +1440,12 @@ impl GpuBodyWorld {
         &self,
     ) -> Option<(GpuSolverExecutionV4, GpuSolverSchedulingPolicyV1)> {
         self.generated_solver_configuration
+    }
+
+    pub(crate) const fn generated_contact_coefficient_policy(
+        &self,
+    ) -> Option<crate::GpuContactCoefficientPolicyV1> {
+        self.generated_contact_coefficient_policy
     }
 
     pub(crate) fn contact_point_count(&self) -> u32 {

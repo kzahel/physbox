@@ -109,7 +109,16 @@ S18 as a plain engineering loop: a fast solver scoreboard tool, a fix for the
 branch-robust persistent-key corruption, and the first-ever sweep of the
 soft-contact coefficients, with a pre-committed stop that either produces one
 configuration for promotion review or accepts the residual band and closes
-the settling program without a successor study.
+the settling program without a successor study. S18 is complete: the
+validation-only authority-key ordering bug is fixed, every one of 30 swept
+coefficient tuples is valid, none preserves the 16-stack, and the measured
+hard/direct residual band is accepted as the input to sleeping design.
+That later stop supersedes the unfinished S17 Android qualification and
+promotion package; their unchecked boxes remain as an honest record of work
+not performed after the Metal rejection became final. On 2026-07-21, explicit
+human review additionally requested a lab-only shared-host menu for subjective
+A/B inspection. That access surface is complete and does not reopen or promote
+the rejected candidate.
 
 Tactical filenames use a three-digit zero-padded prefix ordered by their first
 Git creation timestamp. This repository starts at `001`. Never renumber an
@@ -136,8 +145,8 @@ This README remains the unnumbered index.
 | S14 | Branch-robust authority-band formulation | [014-branch-robust-authority-band-formulation.md](014-branch-robust-authority-band-formulation.md) | complete; sole candidate rejected at 10/14 scalar robustness rows, no GPU admitted, 2026-07-19 |
 | S15 | Exact-recurrence precision margin | [015-exact-recurrence-precision-margin.md](015-exact-recurrence-precision-margin.md) | complete; precision limit not still, no candidate, event-structure addendum returned to human review, 2026-07-20 |
 | S16 | Authority event-structure decomposition | [016-authority-event-structure-decomposition.md](016-authority-event-structure-decomposition.md) | manual checkpoint; no declared routed event structure, A4 held pending human release, 2026-07-20 |
-| S17 | Branch-robust product-relative promotion study | [017-branch-robust-product-promotion.md](017-branch-robust-product-promotion.md) | active at Android qualification after reboot/unlock; memory-bounded evidence rerun pending, Metal rejects candidate, 2026-07-20 |
-| S18 | Solver check loop and coefficient exploration | [018-solver-check-loop-and-coefficient-exploration.md](018-solver-check-loop-and-coefficient-exploration.md) | active; engine tunable lane implemented, check binary pending, 2026-07-20 |
+| S17 | Branch-robust product-relative promotion study | [017-branch-robust-product-promotion.md](017-branch-robust-product-promotion.md) | superseded by S18 after Metal rejected the sole candidate; Android/review work intentionally incomplete, 2026-07-20 |
+| S18 | Solver check loop and coefficient exploration | [018-solver-check-loop-and-coefficient-exploration.md](018-solver-check-loop-and-coefficient-exploration.md) | complete; key ordering fixed, no coefficient survivor, residual band accepted, opt-in interactive A/B lab delivered, 2026-07-21 |
 
 ## Conventions
 

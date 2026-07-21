@@ -60,6 +60,7 @@ fn run() -> Result<(), String> {
         600,
         EngineConfig {
             scenario: ValidationScenario::RigidFloor,
+            ..Default::default()
         },
     ))?;
     let adapter = renderer.diagnostics().clone();

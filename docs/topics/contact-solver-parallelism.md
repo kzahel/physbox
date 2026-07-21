@@ -593,8 +593,10 @@ E3+E2+E4 combinations remain explicit compositions. Parameter-word controls
 prove no other coefficient changes; a dynamic-only chain is byte-identical;
 the centered 8-stack changes body state with unchanged selected scheduler
 digests and remains exact across both dispatch forms. Soft construction and
-32-color overflow fail closed. Scene contract version 5 now attests the
-coefficient policy, but product constructors report only `settings-derived`.
+32-color overflow fail closed. Scene contract version 5 introduced coefficient
+policy attestation; version 6 retains it and adds the active lab-only solver
+profile and canonical options. Product constructors report only
+`settings-derived`.
 Full native, WebGPU, Android-target, APK, hardware-backed AVD, boundary, and
 smoke gates pass. The
 [implementation note](../../evidence/p5.2b-s9.4-arm-static-stiff-hard/IMPLEMENTATION.md)

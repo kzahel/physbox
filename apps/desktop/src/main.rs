@@ -24,11 +24,18 @@ fn main() {
         println!("{}", usage("physbox-desktop", LaunchHost::Desktop));
         return;
     }
+    let engine_config = match EngineConfig::try_from(&request.options) {
+        Ok(config) => config,
+        Err(error) => {
+            eprintln!("{error}");
+            std::process::exit(2);
+        }
+    };
     let viewport = [request.options.width, request.options.height];
     let event_loop = EventLoop::new().expect("failed to create desktop event loop");
     let mut app = DesktopApp {
         viewport,
-        driver: WinitFrameDriver::new(EngineConfig::from(&request.options)),
+        driver: WinitFrameDriver::new(engine_config),
         frame_markers: FrameMarkerGate::new(request.options.frame_markers),
     };
     event_loop

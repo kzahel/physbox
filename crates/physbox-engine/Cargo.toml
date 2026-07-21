@@ -7,7 +7,7 @@ publish.workspace = true
 
 [features]
 production-validation = []
-solver-lab = []
+solver-lab = ["physbox-launch/solver-lab"]
 
 [dependencies]
 bytemuck.workspace = true

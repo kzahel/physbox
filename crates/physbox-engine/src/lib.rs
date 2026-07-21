@@ -1,4 +1,8 @@
 #![forbid(unsafe_code)]
+#![cfg_attr(
+    all(feature = "solver-lab", target_arch = "wasm32"),
+    allow(dead_code, unused_imports)
+)]
 
 mod authority_gpu_probe;
 mod body_benchmark;
@@ -27,6 +31,7 @@ mod pair_slot_persistence;
 mod renderer;
 mod report;
 mod scenario;
+mod solver_profile;
 mod ui;
 mod ui_font;
 
@@ -174,3 +179,6 @@ pub use scenario::{
     p5_2_settling_soft_i1_comparator_scenario, p5_2_settling_soft_stack_matrix_scenario,
     p5_2_stale_reseed_reproducer_scenario,
 };
+#[cfg(feature = "solver-lab")]
+pub use solver_profile::BranchRobustInteractiveOptions;
+pub use solver_profile::SolverProfileConfig;

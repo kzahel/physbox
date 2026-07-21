@@ -9,7 +9,7 @@ use crate::{
     GpuSolverAccumulationV4, GpuSolverExecutionV4, GpuSolverSchedulingPolicyV1,
 };
 
-pub const SCENE_CONTRACT_VERSION: u32 = 5;
+pub const SCENE_CONTRACT_VERSION: u32 = 6;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -25,6 +25,8 @@ pub struct SceneContract {
     pub generated_solver_execution: Option<GpuSolverExecutionV4>,
     pub generated_solver_scheduling_policy: Option<GpuSolverSchedulingPolicyV1>,
     pub generated_contact_coefficient_policy: Option<GpuContactCoefficientPolicyV1>,
+    pub solver_profile: &'static str,
+    pub solver_profile_options: Option<String>,
     pub fixed_step_hz: u32,
     pub scenario: &'static str,
     pub scenario_hash: String,
@@ -196,6 +198,10 @@ impl FrameReport {
             generated_solver_scheduling_policy: Option<[u32; 3]>,
             #[serde(rename = "q", skip_serializing_if = "Option::is_none")]
             generated_contact_coefficient_policy: Option<u32>,
+            #[serde(rename = "p")]
+            solver_profile: &'static str,
+            #[serde(rename = "r", skip_serializing_if = "Option::is_none")]
+            solver_profile_options: Option<&'a str>,
             #[serde(rename = "n")]
             scenario: &'static str,
             #[serde(rename = "h")]
@@ -288,6 +294,8 @@ impl FrameReport {
                     .scene_contract
                     .generated_contact_coefficient_policy
                     .map(compact_contact_coefficients),
+                solver_profile: self.scene_contract.solver_profile,
+                solver_profile_options: self.scene_contract.solver_profile_options.as_deref(),
                 scenario: self.scene_contract.scenario,
                 scenario_hash: &self.scene_contract.scenario_hash,
             },
@@ -477,6 +485,8 @@ mod tests {
                 generated_solver_execution: Some(GpuSolverExecutionV4::SELECTED),
                 generated_solver_scheduling_policy: Some(GpuSolverSchedulingPolicyV1::SELECTED),
                 generated_contact_coefficient_policy: Some(GpuContactCoefficientPolicyV1::SELECTED),
+                solver_profile: "selected",
+                solver_profile_options: None,
                 fixed_step_hz: 60,
                 scenario: "bootstrap",
                 scenario_hash: "f".repeat(64),

@@ -76,8 +76,15 @@ mod android {
             .build()
             .expect("failed to create Android event loop");
         event_loop.set_control_flow(ControlFlow::Wait);
+        let engine_config = match EngineConfig::try_from(&options) {
+            Ok(config) => config,
+            Err(error) => {
+                log::error!("PHYSBOX5_ANDROID_STARTUP_ERROR {error}");
+                return;
+            }
+        };
         let mut host = AndroidHost {
-            driver: WinitFrameDriver::new(EngineConfig::from(&options)),
+            driver: WinitFrameDriver::new(engine_config),
             frame_markers: FrameMarkerGate::new(options.frame_markers),
         };
         event_loop

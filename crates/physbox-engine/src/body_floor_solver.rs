@@ -2430,11 +2430,27 @@ impl GpuFixedFloorSolver {
                 restitution_timing_policy,
             )
             .is_ok();
-        let authority_probe = exact_authority_probe || branch_robust_authority_probe;
+        let branch_robust_tunable_probe =
+            crate::branch_robust_gpu_promotion::validate_branch_robust_tunable_runtime_tuple(
+                execution,
+                scheduling_policy,
+                soft_feedback_policy,
+                normal_relaxation_policy,
+                contact_coefficient_policy,
+                substep_contact_policy,
+                restitution_timing_policy,
+            )
+            .is_ok();
+        let authority_probe =
+            exact_authority_probe || branch_robust_authority_probe || branch_robust_tunable_probe;
         if exact_authority_probe {
             crate::authority_gpu_probe::validate_authority_gpu_probe_settings(&scenario.settings)?;
         } else if branch_robust_authority_probe {
             crate::branch_robust_gpu_promotion::validate_branch_robust_gpu_promotion_settings(
+                &scenario.settings,
+            )?;
+        } else if branch_robust_tunable_probe {
+            crate::branch_robust_gpu_promotion::validate_branch_robust_tunable_settings(
                 &scenario.settings,
             )?;
         }

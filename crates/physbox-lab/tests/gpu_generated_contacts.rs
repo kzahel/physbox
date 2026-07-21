@@ -2689,6 +2689,30 @@ fn all_pairs_bucket_baselines_complete_at_capacity_and_replay() {
 }
 
 #[test]
+fn branch_robust_tunable_bucket_keeps_authority_keys_canonical() {
+    let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
+    let mut scenario = p5_2_bucket_scenario(P5_2BucketShape::Rectangle, 100, 12).unwrap();
+    scenario.settings.contact_softness = Some(ContactSoftnessPolicyV1 {
+        version: CONTACT_SOFTNESS_POLICY_VERSION,
+        contact_hertz: FiniteF32::new(30.0).unwrap(),
+        damping_ratio: FiniteF32::new(10.0).unwrap(),
+        static_contact_hertz_multiplier: FiniteF32::new(2.0).unwrap(),
+    });
+    let output = runner
+        .run_branch_robust_tunable_observation_series_with_submission_batch(&scenario, 1, 12, 12)
+        .unwrap();
+    output.validate().unwrap();
+    assert_eq!(output.snapshots.len(), 12);
+    assert!(output.snapshots.iter().all(|snapshot| {
+        snapshot.failure.is_none()
+            && snapshot
+                .capacities
+                .iter()
+                .all(|capacity| capacity.accepted && !capacity.overflowed)
+    }));
+}
+
+#[test]
 fn generated_randomized_worlds_replay_and_dense_overflow_is_atomic() {
     let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
     for pattern in [

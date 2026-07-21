@@ -41,6 +41,42 @@ pub enum FrameMarkerMode {
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
+pub enum SolverProfileName {
+    #[default]
+    Selected,
+    #[cfg(feature = "solver-lab")]
+    BranchRobust,
+}
+
+impl SolverProfileName {
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Selected => "selected",
+            #[cfg(feature = "solver-lab")]
+            Self::BranchRobust => "branch-robust",
+        }
+    }
+
+    #[cfg(feature = "solver-lab")]
+    fn parse(value: &str) -> Result<Self, LaunchError> {
+        match value {
+            "selected" => Ok(Self::Selected),
+            #[cfg(feature = "solver-lab")]
+            "branch-robust" => Ok(Self::BranchRobust),
+            _ => Err(LaunchError(format!("unknown solver profile: {value}"))),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SolverSelection {
+    pub profile: SolverProfileName,
+    pub options: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum ValidationScenario {
     #[default]
     Bootstrap,
@@ -61,10 +97,14 @@ pub enum ValidationScenario {
     SettlingIdentity16,
     SettlingSoftness16,
     SettlingCandidate16,
+    #[cfg(feature = "solver-lab")]
+    SolverLabStack8,
+    #[cfg(feature = "solver-lab")]
+    SolverLabStack16,
 }
 
 impl ValidationScenario {
-    pub const ALL: [Self; 18] = [
+    pub const ALL: &'static [Self] = &[
         Self::Bootstrap,
         Self::RigidFloor,
         Self::RigidStack,
@@ -83,9 +123,13 @@ impl ValidationScenario {
         Self::SettlingIdentity16,
         Self::SettlingSoftness16,
         Self::SettlingCandidate16,
+        #[cfg(feature = "solver-lab")]
+        Self::SolverLabStack8,
+        #[cfg(feature = "solver-lab")]
+        Self::SolverLabStack16,
     ];
 
-    pub const MENU: [Self; 11] = [
+    pub const MENU: &'static [Self] = &[
         Self::Bootstrap,
         Self::RigidFloor,
         Self::RigidStack,
@@ -119,6 +163,10 @@ impl ValidationScenario {
             Self::SettlingIdentity16 => "settling-identity-16",
             Self::SettlingSoftness16 => "settling-softness-16",
             Self::SettlingCandidate16 => "settling-candidate-16",
+            #[cfg(feature = "solver-lab")]
+            Self::SolverLabStack8 => "solver-lab-stack-8",
+            #[cfg(feature = "solver-lab")]
+            Self::SolverLabStack16 => "solver-lab-stack-16",
         }
     }
 }
@@ -133,6 +181,7 @@ pub struct LaunchOptions {
     pub output: Option<PathBuf>,
     pub report: Option<PathBuf>,
     pub scenario: ValidationScenario,
+    pub solver: SolverSelection,
     pub frame_markers: FrameMarkerMode,
 }
 
@@ -147,6 +196,7 @@ impl Default for LaunchOptions {
             output: None,
             report: None,
             scenario: ValidationScenario::Bootstrap,
+            solver: SolverSelection::default(),
             frame_markers: FrameMarkerMode::Milestones,
         }
     }
@@ -215,6 +265,10 @@ pub fn parse_web_query(query: &str) -> Result<LaunchRequest, LaunchError> {
             "width" => "--width",
             "height" => "--height",
             "scenario" => "--scenario",
+            #[cfg(feature = "solver-lab")]
+            "solver" => "--solver",
+            #[cfg(feature = "solver-lab")]
+            "solver-options" => "--solver-options",
             unknown => return Err(LaunchError(format!("unknown web query option: {unknown}"))),
         };
         tokens.push(argument.to_owned());
@@ -240,8 +294,18 @@ pub fn usage(program: &str, host: LaunchHost) -> String {
     } else {
         ""
     };
+    let solver = if cfg!(feature = "solver-lab") {
+        "\n  --solver NAME    selected or branch-robust\n  --solver-options LIST  profile-owned comma-separated key=value settings"
+    } else {
+        ""
+    };
     format!(
-        "Usage: {program} [options]\n\n  --width PX       viewport width (default 960)\n  --height PX      viewport height (default 600)\n  --scenario NAME  bootstrap, body-free-flight, rigid-floor, rigid-stack, rectangle-stack, circle-bucket-100, rectangle-bucket-100, reset-grab, solver-jacobi, solver-colored, solver-manifold-i2, solver-parallel-coloring, settling-hard-8, settling-candidate-8, settling-hard-16, settling-identity-16, settling-softness-16, or settling-candidate-16{frame_markers}{capture}\n  -h, --help       print this help"
+        "Usage: {program} [options]\n\n  --width PX       viewport width (default 960)\n  --height PX      viewport height (default 600)\n  --scenario NAME  bootstrap, body-free-flight, rigid-floor, rigid-stack, rectangle-stack, circle-bucket-100, rectangle-bucket-100, reset-grab, solver-jacobi, solver-colored, solver-manifold-i2, solver-parallel-coloring, settling-hard-8, settling-candidate-8, settling-hard-16, settling-identity-16, settling-softness-16, settling-candidate-16{}{solver}{frame_markers}{capture}\n  -h, --help       print this help",
+        if cfg!(feature = "solver-lab") {
+            ", solver-lab-stack-8, or solver-lab-stack-16"
+        } else {
+            ""
+        }
     )
 }
 
@@ -274,8 +338,21 @@ fn apply_option(
                 "settling-identity-16" => ValidationScenario::SettlingIdentity16,
                 "settling-softness-16" => ValidationScenario::SettlingSoftness16,
                 "settling-candidate-16" => ValidationScenario::SettlingCandidate16,
+                #[cfg(feature = "solver-lab")]
+                "solver-lab-stack-8" => ValidationScenario::SolverLabStack8,
+                #[cfg(feature = "solver-lab")]
+                "solver-lab-stack-16" => ValidationScenario::SolverLabStack16,
                 _ => return Err(LaunchError(format!("unknown scenario: {value}"))),
             }
+        }
+        #[cfg(feature = "solver-lab")]
+        "--solver" => options.solver.profile = SolverProfileName::parse(&value)?,
+        #[cfg(feature = "solver-lab")]
+        "--solver-options" => {
+            if value.is_empty() {
+                return Err(LaunchError("--solver-options cannot be empty".to_owned()));
+            }
+            options.solver.options = Some(value);
         }
         "--frame-markers" if host.supports_frame_markers() => {
             options.frame_markers = match value.as_str() {
@@ -314,6 +391,12 @@ fn parse_positive(argument: &str, value: &str) -> Result<u32, LaunchError> {
 }
 
 fn validate(host: LaunchHost, options: &LaunchOptions) -> Result<(), LaunchError> {
+    #[cfg(feature = "solver-lab")]
+    if options.solver.profile == SolverProfileName::Selected && options.solver.options.is_some() {
+        return Err(LaunchError(
+            "selected solver does not accept --solver-options".to_owned(),
+        ));
+    }
     if host.supports_capture() && options.output.is_none() {
         return Err(LaunchError("headless capture requires --output".to_owned()));
     }
@@ -379,6 +462,46 @@ mod tests {
     fn web_query_rejects_host_owned_settings() {
         let error = parse_web_query("?solverIterations=4").unwrap_err();
         assert!(error.to_string().contains("unknown web query"));
+    }
+
+    #[cfg(feature = "solver-lab")]
+    #[test]
+    fn selected_solver_rejects_candidate_options() {
+        let error = parse_web_query("?solver-options=hz%3D30").unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("selected solver does not accept")
+        );
+    }
+
+    #[cfg(not(feature = "solver-lab"))]
+    #[test]
+    fn production_launch_does_not_expose_solver_profiles() {
+        let error = parse_web_query("?solver=selected").unwrap_err();
+        assert!(error.to_string().contains("unknown web query"));
+    }
+
+    #[cfg(feature = "solver-lab")]
+    #[test]
+    fn solver_lab_profile_and_scene_use_shared_launch_parsing() {
+        let request = parse_web_query(
+            "?scenario=solver-lab-stack-16&solver=branch-robust&solver-options=hz%3D30%2Cdamping%3D10%2Cstatic-scale%3D8",
+        )
+        .unwrap();
+        assert_eq!(
+            request.options.scenario,
+            ValidationScenario::SolverLabStack16
+        );
+        assert_eq!(
+            request.options.solver.profile,
+            SolverProfileName::BranchRobust
+        );
+        assert_eq!(
+            request.options.solver.options.as_deref(),
+            Some("hz=30,damping=10,static-scale=8")
+        );
+        assert!(!ValidationScenario::MENU.contains(&ValidationScenario::SolverLabStack16));
     }
 
     #[test]

@@ -1,9 +1,12 @@
-import init, { PointerButtonCode, start } from "./pkg/physbox_web.js";
+import init, { PointerButtonCode, solverLabEnabled, start } from "./pkg/physbox_web.js";
 
 const canvas = document.querySelector("#physbox-canvas");
 const fatalError = document.querySelector("#fatal-error");
 globalThis.__physbox5 = { ready: false, ok: false };
 let renderingPaused = false;
+const solverPreferenceKey = "physbox5.solver-lab.v1";
+let solverLab = false;
+let lastSolverPreference = "";
 globalThis.__physbox5FrameControl = Object.freeze({
   pause() { renderingPaused = true; },
   resume() {
@@ -16,7 +19,8 @@ globalThis.__physbox5FrameControl = Object.freeze({
 async function boot() {
   if (!navigator.gpu) throw new Error("WebGPU is not available in this browser");
   await init();
-  const app = await start(canvas, location.search);
+  solverLab = solverLabEnabled();
+  const app = await start(canvas, solverLab ? startupSearch() : location.search);
   const diagnostics = JSON.parse(app.diagnosticsJson());
   globalThis.__physbox5App = app;
   globalThis.__physbox5 = { ready: false, ok: true, diagnostics };
@@ -82,12 +86,65 @@ function renderFrame(timestamp) {
   if (renderingPaused) return;
   try {
     const report = JSON.parse(globalThis.__physbox5App.render(timestamp));
+    syncSolverPreference(report);
     globalThis.__physbox5.frame = report;
     globalThis.__physbox5.ready = report.scenario.complete;
     if (!renderingPaused) requestAnimationFrame(renderFrame);
   } catch (error) {
     fail(error);
   }
+}
+
+function startupSearch() {
+  const params = new URLSearchParams(location.search);
+  if (params.has("solver")) return `?${params}`;
+  try {
+    const saved = JSON.parse(localStorage.getItem(solverPreferenceKey) ?? "null");
+    if (
+      saved?.version !== 1
+      || !["selected", "branch-robust"].includes(saved.solver)
+      || (saved.options !== null && typeof saved.options !== "string")
+      || (saved.solver === "selected" && saved.options !== null)
+    ) return `?${params}`;
+    params.set("solver", saved.solver);
+    if (typeof saved.options === "string" && saved.options.length > 0) {
+      params.set("solver-options", saved.options);
+    }
+  } catch (error) {
+    console.warn("Ignoring invalid PhysBox solver preference", error);
+  }
+  return `?${params}`;
+}
+
+function syncSolverPreference(report) {
+  if (!solverLab) return;
+  const contract = report.sceneContract;
+  if (!contract || typeof contract.solverProfile !== "string") return;
+  const saved = JSON.stringify({
+    version: 1,
+    solver: contract.solverProfile,
+    options: contract.solverProfileOptions ?? null,
+  });
+  if (saved === lastSolverPreference) return;
+  lastSolverPreference = saved;
+  try {
+    localStorage.setItem(solverPreferenceKey, saved);
+  } catch (error) {
+    console.warn("Could not persist PhysBox solver preference", error);
+  }
+  const url = new URL(location.href);
+  if (contract.solverProfile === "selected") {
+    url.searchParams.delete("solver");
+    url.searchParams.delete("solver-options");
+  } else {
+    url.searchParams.set("solver", contract.solverProfile);
+    if (contract.solverProfileOptions) {
+      url.searchParams.set("solver-options", contract.solverProfileOptions);
+    } else {
+      url.searchParams.delete("solver-options");
+    }
+  }
+  history.replaceState(null, "", url);
 }
 
 function fail(error) {

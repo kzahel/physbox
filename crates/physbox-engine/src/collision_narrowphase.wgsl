@@ -181,6 +181,18 @@ fn finish_scratch(pair: CandidatePair, normal: vec2f,
                     FEATURE_VERTEX, closest_rectangle_vertex(pair.identities.z,
                         output.point1.anchors.zw));
             }
+            // Authority identity rewrites the feature tuple after the
+            // geometric tangent-order control above. A face-index wrap (for
+            // example vertex 3 followed by vertex 0) can therefore reverse
+            // the persistent-key order even though the two contact points
+            // remain geometrically ordered. Pair-slot persistence already
+            // canonicalizes these rewritten keys before solving; keep the
+            // validation manifold on that same canonical order as well.
+            if (point_key_greater(output.point0, output.point1)) {
+                let swap = output.point0;
+                output.point0 = output.point1;
+                output.point1 = swap;
+            }
         }
     } else if (point_count == 2u && point_key_greater(output.point0, output.point1)) {
         let swap = output.point0;

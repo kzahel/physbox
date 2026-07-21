@@ -1,8 +1,9 @@
 # S17: branch-robust product-relative promotion study
 
-Status: active at S17.5 after the required-device blocker was cleared by a
-host reboot and physical-device unlock, 2026-07-20. Human review authorizes
-Track A: port the one
+Status: superseded by the S18 no-survivor stop after Metal rejected the sole
+candidate; the unfinished Android qualification and promotion package remain
+unchecked rather than being inferred complete, 2026-07-20. Human review had
+authorized Track A: port the one
 S14 cancellation-robust separation expression onto the proven S13 X1-X4 /
 current-X5 GPU pipeline and evaluate it against the current selected
 hard/direct product under the already recorded product-relative material-
@@ -408,3 +409,11 @@ recursively verified better/worse decision package covering the full corpus,
 response probes, Metal, physical Android, AVD, capacity/replay, and matched
 complete-step timing. The product remains hard/direct until a separate human
 promotion decision.
+
+S18 supersession checkpoint, 2026-07-20: the later human direction retired
+the study-chain method, then the completed
+[S18 coefficient loop](018-solver-check-loop-and-coefficient-exploration.md)
+found no stands-quiet-valid branch-robust tuple. The S17 Metal structural and
+geometry rejection is therefore the final candidate disposition. S17.5 and
+S17.6 are intentionally not resumed; their unchecked boxes record work not
+performed, not missing evidence for a still-active promotion.
