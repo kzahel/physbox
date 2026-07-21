@@ -279,6 +279,14 @@ pub(crate) struct CandidateCase {
     speculative_distance: f32,
 }
 
+pub(crate) trait CandidateSource {
+    fn candidate_buffer(&self) -> &wgpu::Buffer;
+    fn candidate_capacity_buffer(&self) -> &wgpu::Buffer;
+    fn work_buffer(&self) -> &wgpu::Buffer;
+    fn candidate_capacity(&self) -> u32;
+    fn speculative_distance(&self) -> f32;
+}
+
 impl CandidateCase {
     pub(crate) fn new(
         device: &wgpu::Device,
@@ -653,6 +661,28 @@ impl CandidateCase {
             + self.work.size()
             + self.capacity.size()
             + self._params.size()
+    }
+}
+
+impl CandidateSource for CandidateCase {
+    fn candidate_buffer(&self) -> &wgpu::Buffer {
+        self.candidate_buffer()
+    }
+
+    fn candidate_capacity_buffer(&self) -> &wgpu::Buffer {
+        self.candidate_capacity_buffer()
+    }
+
+    fn work_buffer(&self) -> &wgpu::Buffer {
+        self.work_buffer()
+    }
+
+    fn candidate_capacity(&self) -> u32 {
+        self.candidate_capacity()
+    }
+
+    fn speculative_distance(&self) -> f32 {
+        self.speculative_distance()
     }
 }
 

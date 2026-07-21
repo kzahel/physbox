@@ -13,7 +13,7 @@ use physbox_contracts::{
 
 use crate::{
     AdapterDiagnostics,
-    collision_candidates::{CandidateCase, CandidatePipelines},
+    collision_candidates::{CandidateCase, CandidatePipelines, CandidateSource},
 };
 #[cfg(not(target_arch = "wasm32"))]
 use crate::{
@@ -596,10 +596,29 @@ impl NarrowphaseCase {
         )
     }
 
-    pub(crate) fn new_with_storage_and_authority_identity(
+    pub(crate) fn new_with_candidate_source_and_identity_policy(
         device: &wgpu::Device,
         pipelines: &NarrowphasePipelines,
-        candidate: &CandidateCase,
+        candidate: &dyn CandidateSource,
+        requested_manifold_capacity: Option<u32>,
+        body_storage: &crate::GpuBodyStorage,
+        identity_policy: ContactIdentityPolicyV1,
+    ) -> Result<Self, String> {
+        Self::new_with_storage_and_identity_mode(
+            device,
+            pipelines,
+            candidate,
+            requested_manifold_capacity,
+            body_storage,
+            identity_policy,
+            false,
+        )
+    }
+
+    pub(crate) fn new_with_candidate_source_and_authority_identity(
+        device: &wgpu::Device,
+        pipelines: &NarrowphasePipelines,
+        candidate: &dyn CandidateSource,
         requested_manifold_capacity: Option<u32>,
         body_storage: &crate::GpuBodyStorage,
     ) -> Result<Self, String> {
@@ -618,7 +637,7 @@ impl NarrowphaseCase {
     fn new_with_storage_and_identity_mode(
         device: &wgpu::Device,
         pipelines: &NarrowphasePipelines,
-        candidate: &CandidateCase,
+        candidate: &dyn CandidateSource,
         requested_manifold_capacity: Option<u32>,
         body_storage: &crate::GpuBodyStorage,
         identity_policy: ContactIdentityPolicyV1,

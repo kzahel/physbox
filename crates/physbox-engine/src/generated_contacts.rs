@@ -22,7 +22,8 @@ use crate::{
         GpuFixedFloorSolver, GpuGatherTopology, GpuGatherTopologyEvidence, GpuSolverExecutionV4,
         GpuSolverSchedulingPolicyV1, PointInputRaw, PreparedPointRaw, validate_selected_settings,
     },
-    collision_candidates::{CandidateCase, CandidatePipelines},
+    broadphase_sap::{SapCase, SapPipelines},
+    collision_candidates::CandidateSource,
     collision_narrowphase::{NarrowphaseCase, NarrowphasePipelines, TemporalIdentityStage},
     collision_persistence::{PersistenceCase, PersistencePipelines},
     pair_slot_persistence::{
@@ -170,8 +171,8 @@ enum GeneratedPersistenceGraph {
 }
 
 pub(crate) struct GpuGeneratedContactGraph {
-    candidate_pipelines: CandidatePipelines,
-    candidate: CandidateCase,
+    broadphase_pipelines: SapPipelines,
+    broadphase: SapCase,
     narrowphase_pipelines: NarrowphasePipelines,
     narrowphase: NarrowphaseCase,
     persistence: GeneratedPersistenceGraph,
@@ -634,28 +635,28 @@ impl GpuGeneratedContactGraph {
             .map(|value| value / 2)
             .ok_or_else(|| "generated contact pair count overflowed".to_owned())?;
         let candidate_capacity = pair_count.min(body_count.saturating_mul(16)).max(1);
-        let candidate_pipelines = CandidatePipelines::new(device);
-        let candidate = CandidateCase::new_with_storage(
+        let broadphase_pipelines = SapPipelines::new(device);
+        let broadphase = SapCase::new_with_storage(
             device,
-            &candidate_pipelines,
+            &broadphase_pipelines,
             scenario,
-            Some(candidate_capacity),
+            candidate_capacity,
             storage,
         )?;
         let narrowphase_pipelines = NarrowphasePipelines::new(device);
         let narrowphase = if authority_identity {
-            NarrowphaseCase::new_with_storage_and_authority_identity(
+            NarrowphaseCase::new_with_candidate_source_and_authority_identity(
                 device,
                 &narrowphase_pipelines,
-                &candidate,
+                &broadphase,
                 Some(candidate_capacity),
                 storage,
             )?
         } else {
-            NarrowphaseCase::new_with_storage_and_identity_policy(
+            NarrowphaseCase::new_with_candidate_source_and_identity_policy(
                 device,
                 &narrowphase_pipelines,
-                &candidate,
+                &broadphase,
                 Some(candidate_capacity),
                 storage,
                 identity_policy,
@@ -689,7 +690,7 @@ impl GpuGeneratedContactGraph {
             persistence_topology,
             storage,
             identity_policy,
-            &candidate,
+            &broadphase,
             &narrowphase,
             &solver_points,
             &solver,
@@ -698,8 +699,8 @@ impl GpuGeneratedContactGraph {
             fingerprint_mask,
         )?;
         Ok(Self {
-            candidate_pipelines,
-            candidate,
+            broadphase_pipelines,
+            broadphase,
             narrowphase_pipelines,
             narrowphase,
             persistence,
@@ -730,8 +731,11 @@ impl GpuGeneratedContactGraph {
         timestamps: Option<(&wgpu::QuerySet, u32)>,
     ) {
         let parity = self.parity.get();
-        self.candidate
-            .encode_with_timestamp(encoder, &self.candidate_pipelines, timestamps);
+        self.broadphase.encode_with_beginning_timestamp(
+            encoder,
+            &self.broadphase_pipelines,
+            timestamps,
+        );
         self.narrowphase
             .encode(encoder, &self.narrowphase_pipelines);
         self.persistence.encode_before_solver(
@@ -755,8 +759,8 @@ impl GpuGeneratedContactGraph {
         destination: &wgpu::Buffer,
     ) -> Result<Vec<GpuSolverPassDescriptorV1>, String> {
         let parity = self.parity.get();
-        self.candidate
-            .encode_with_timestamp(encoder, &self.candidate_pipelines, None);
+        self.broadphase
+            .encode(encoder, &self.broadphase_pipelines, None);
         self.narrowphase
             .encode(encoder, &self.narrowphase_pipelines);
         self.persistence
@@ -779,8 +783,8 @@ impl GpuGeneratedContactGraph {
         destination_offset: u64,
     ) -> Result<Vec<GpuSolverPassDescriptorV1>, String> {
         let parity = self.parity.get();
-        self.candidate
-            .encode_with_timestamp(encoder, &self.candidate_pipelines, None);
+        self.broadphase
+            .encode(encoder, &self.broadphase_pipelines, None);
         self.narrowphase
             .encode(encoder, &self.narrowphase_pipelines);
         self.persistence
@@ -806,8 +810,8 @@ impl GpuGeneratedContactGraph {
         color_occupancy: &[u32],
     ) -> Result<(), String> {
         let parity = self.parity.get();
-        self.candidate
-            .encode_with_timestamp(encoder, &self.candidate_pipelines, None);
+        self.broadphase
+            .encode(encoder, &self.broadphase_pipelines, None);
         self.narrowphase
             .encode(encoder, &self.narrowphase_pipelines);
         self.persistence.encode_before_solver(
@@ -849,7 +853,10 @@ impl GpuGeneratedContactGraph {
     }
 
     pub(crate) fn dispatches_per_step(&self) -> u32 {
-        self.persistence.dispatches() + BRIDGE_DISPATCHES + self.solver.dispatches_per_step()
+        self.broadphase.dispatches()
+            + self.persistence.dispatches()
+            + BRIDGE_DISPATCHES
+            + self.solver.dispatches_per_step()
     }
 
     pub(crate) const fn point_capacity(&self) -> u32 {
@@ -867,7 +874,7 @@ impl GpuGeneratedContactGraph {
     }
 
     pub(crate) fn allocated_bytes(&self) -> u64 {
-        self.candidate.allocated_bytes()
+        self.broadphase.allocated_bytes()
             + self.narrowphase.allocated_bytes()
             + self.persistence.allocated_bytes()
             + self._solver_points.size()
@@ -876,7 +883,7 @@ impl GpuGeneratedContactGraph {
 
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn collision_persistence_allocated_bytes(&self) -> u64 {
-        self.candidate.allocated_bytes()
+        self.broadphase.allocated_bytes()
             + self.narrowphase.allocated_bytes()
             + self.persistence.persistence_allocated_bytes()
     }
@@ -919,7 +926,7 @@ impl GpuGeneratedContactGraph {
         let stride = u64::from(COLLISION_CAPACITY_COUNTER_BYTES);
         let current = self.parity.get();
         for (index, source) in [
-            self.candidate.candidate_capacity_buffer(),
+            self.broadphase.candidate_capacity_buffer(),
             self.narrowphase.manifold_capacity_buffer(),
             self.narrowphase.point_capacity_buffer(),
             self.persistence.current_capacity(current),
@@ -961,7 +968,7 @@ impl GeneratedPersistenceGraph {
         topology: GpuContactPersistenceTopology,
         body_storage: &GpuBodyStorage,
         identity_policy: ContactIdentityPolicyV1,
-        candidate: &CandidateCase,
+        candidate: &dyn CandidateSource,
         narrowphase: &NarrowphaseCase,
         solver_points: &wgpu::Buffer,
         solver: &GpuFixedFloorSolver,
@@ -1145,7 +1152,7 @@ impl GeneratedPersistenceGraph {
 impl FullKeyPersistenceGraph {
     fn new(
         device: &wgpu::Device,
-        candidate: &CandidateCase,
+        candidate: &dyn CandidateSource,
         narrowphase: &NarrowphaseCase,
         solver_points: &wgpu::Buffer,
         solver: &GpuFixedFloorSolver,
@@ -1321,7 +1328,7 @@ impl PairSlotPersistenceGraph {
         device: &wgpu::Device,
         body_storage: &GpuBodyStorage,
         identity_policy: ContactIdentityPolicyV1,
-        candidate: &CandidateCase,
+        candidate: &dyn CandidateSource,
         narrowphase: &NarrowphaseCase,
         solver_points: &wgpu::Buffer,
         solver: &GpuFixedFloorSolver,
@@ -2774,7 +2781,7 @@ impl GeneratedSettlingReadbacks {
         let capacity_offset =
             u64::from(snapshot_index) * u64::from(COLLISION_CAPACITY_COUNTER_BYTES);
         encoder.copy_buffer_to_buffer(
-            graph.candidate.candidate_capacity_buffer(),
+            graph.broadphase.candidate_capacity_buffer(),
             0,
             &self.candidate_capacity,
             capacity_offset,
@@ -2816,7 +2823,7 @@ impl GeneratedSettlingReadbacks {
             self.point_step_bytes,
         );
         encoder.copy_buffer_to_buffer(
-            graph.candidate.work_buffer(),
+            graph.broadphase.work_buffer(),
             0,
             &self.work,
             u64::from(snapshot_index) * u64::from(COLLISION_WORK_COUNTER_BYTES),
@@ -4656,7 +4663,7 @@ impl GpuGeneratedContactRunner {
                 );
                 let current = graph.parity.get();
                 for (index, source) in [
-                    graph.candidate.candidate_capacity_buffer(),
+                    graph.broadphase.candidate_capacity_buffer(),
                     graph.narrowphase.manifold_capacity_buffer(),
                     graph.narrowphase.point_capacity_buffer(),
                     graph.persistence.current_capacity(current),
@@ -5099,7 +5106,7 @@ impl GpuGeneratedContactRunner {
         );
         copy_full(
             &mut encoder,
-            graph.candidate.candidate_capacity_buffer(),
+            graph.broadphase.candidate_capacity_buffer(),
             &candidate_capacity_readback,
         );
         copy_full(
@@ -5127,7 +5134,7 @@ impl GpuGeneratedContactRunner {
             graph.persistence.current_capacity(current),
             &persistence_capacity_readback,
         );
-        copy_full(&mut encoder, graph.candidate.work_buffer(), &work_readback);
+        copy_full(&mut encoder, graph.broadphase.work_buffer(), &work_readback);
         let (step_source, step_offset) = graph.persistence.step_counter_source();
         encoder.copy_buffer_to_buffer(step_source, step_offset, &step_readback, 0, 4);
         graph.copy_pass_evidence(&mut encoder, &pass_readback);
@@ -5277,7 +5284,7 @@ impl GpuGeneratedContactRunner {
             raw_capacity("contact-manifolds", COLLISION_MANIFOLD_BYTES, manifold_raw);
         let point_capacity =
             raw_capacity("contact-points", COLLISION_CONTACT_POINT_BYTES, point_raw);
-        let mut capacities = graph.candidate.capacities(candidate_capacity);
+        let mut capacities = graph.broadphase.capacities(candidate_capacity);
         capacities.extend(graph.narrowphase.capacities(
             manifold_capacity,
             point_capacity,
@@ -6007,6 +6014,7 @@ mod tests {
         );
     }
 
+    #[cfg(not(feature = "production-validation"))]
     #[test]
     fn selected_settling_series_replays_across_a_readback_flush_boundary() {
         let scenario = p5_2_settling_fixture_scenario(

@@ -2,6 +2,7 @@ struct Params {
     counts: vec4u,
     radix: vec4u,
     execution: vec4u,
+    policy: vec4f,
 }
 
 struct Proxy {
@@ -17,7 +18,7 @@ struct CandidatePair {
     identities: vec4u,
 }
 
-@group(0) @binding(0) var<storage, read> input_proxies: array<Proxy>;
+@group(0) @binding(0) var<storage, read_write> input_proxies: array<Proxy>;
 @group(0) @binding(1) var<storage, read_write> proxies_source: array<Proxy>;
 @group(0) @binding(2) var<storage, read_write> proxies_destination: array<Proxy>;
 @group(0) @binding(3) var<storage, read_write> proxy_radix_blocks: array<u32>;
@@ -29,8 +30,17 @@ struct CandidatePair {
 @group(0) @binding(9) var<storage, read_write> capacity: array<atomic<u32>>;
 @group(0) @binding(10) var<uniform> params: Params;
 @group(0) @binding(11) var<storage, read_write> indirect: array<atomic<u32>>;
+@group(0) @binding(12) var<storage, read_write> collision_work: array<atomic<u32>>;
+@group(0) @binding(13) var<storage, read> poses: array<vec4f>;
+@group(0) @binding(14) var<storage, read> properties: array<vec4f>;
+@group(0) @binding(15) var<storage, read> metadata: array<vec4u>;
 
 const MOBILITY_FIXED: u32 = 1u;
+const MOBILITY_LIVE: u32 = 2u;
+const FLAG_LIVE: u32 = 1u << 0u;
+const FLAG_FIXED: u32 = 1u << 2u;
+const FLAG_RECTANGLE: u32 = 1u << 8u;
+const FLAG_CIRCLE: u32 = 1u << 9u;
 const SENTINEL: u32 = 0xffffffffu;
 
 var<workgroup> radix_digits: array<u32, 256>;
@@ -57,6 +67,40 @@ fn clear_sap_state(@builtin(global_invocation_id) invocation: vec3u) {
     if (index < 6u) {
         atomicStore(&indirect[index], 0u);
     }
+    if (index < 32u) {
+        atomicStore(&collision_work[index], 0u);
+    }
+}
+
+@compute @workgroup_size(64)
+fn compute_sap_body_aabbs(@builtin(global_invocation_id) invocation: vec3u) {
+    let index = invocation.x;
+    if (index >= params.counts.x) { return; }
+    let identity = metadata[index];
+    let flags = identity.y;
+    if ((flags & FLAG_LIVE) == 0u) {
+        input_proxies[index].identity_mobility = vec4u(index, identity.x, 0u, index);
+        input_proxies[index].lower_upper = vec4f(bitcast<f32>(0x7f800000u));
+        return;
+    }
+    let pose = poses[index];
+    let shape = properties[index].xy;
+    var extent = shape;
+    if ((flags & FLAG_RECTANGLE) != 0u) {
+        let c = abs(cos(pose.z));
+        let s = abs(sin(pose.z));
+        extent = vec2f(c * shape.x + s * shape.y,
+                       s * shape.x + c * shape.y);
+    } else if ((flags & FLAG_CIRCLE) != 0u) {
+        extent = vec2f(shape.x);
+    }
+    let expanded_extent = extent + vec2f(params.policy.x);
+    let lower = pose.xy - expanded_extent;
+    let upper = pose.xy + expanded_extent;
+    let mobility = MOBILITY_LIVE |
+        select(0u, MOBILITY_FIXED, (flags & FLAG_FIXED) != 0u);
+    input_proxies[index].identity_mobility = vec4u(index, identity.x, mobility, index);
+    input_proxies[index].lower_upper = vec4f(lower, upper);
 }
 
 @compute @workgroup_size(256)
@@ -117,14 +161,15 @@ fn enumerate_sap_pairs(@builtin(global_invocation_id) invocation: vec3u) {
     let index_a = invocation.x;
     if (index_a >= params.counts.x) { return; }
     let proxy_a = proxies_source[index_a];
+    if ((proxy_a.identity_mobility.z & MOBILITY_LIVE) == 0u) { return; }
     var window_count = 0u;
     for (var index_b = index_a + 1u; index_b < params.counts.x; index_b++) {
         let proxy_b = proxies_source[index_b];
         if (proxy_b.lower_upper.x > proxy_a.lower_upper.z) { break; }
         window_count += 1u;
         atomicAdd(&work[3], 1u);
-        if (proxy_a.identity_mobility.z == MOBILITY_FIXED &&
-            proxy_b.identity_mobility.z == MOBILITY_FIXED) {
+        if ((proxy_a.identity_mobility.z & MOBILITY_FIXED) != 0u &&
+            (proxy_b.identity_mobility.z & MOBILITY_FIXED) != 0u) {
             atomicAdd(&work[4], 1u);
             continue;
         }
@@ -166,6 +211,14 @@ fn finalize_sap_counts(@builtin(global_invocation_id) invocation: vec3u) {
     atomicStore(&work[8], params.counts.x + committed);
     atomicStore(&work[9], params.radix.z + params.radix.w);
     atomicStore(&work[14], params.execution.z);
+    let pair_tests = atomicLoad(&work[3]);
+    let fixed_fixed = atomicLoad(&work[4]);
+    atomicStore(&collision_work[0], params.execution.x + params.execution.y);
+    atomicStore(&collision_work[1], pair_tests);
+    atomicStore(&collision_work[2], fixed_fixed);
+    atomicStore(&collision_work[3], pair_tests - fixed_fixed - attempted);
+    atomicStore(&collision_work[4], attempted);
+    atomicStore(&collision_work[15], params.execution.z);
 }
 
 @compute @workgroup_size(256)
