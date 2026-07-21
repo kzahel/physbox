@@ -747,6 +747,116 @@ mod tests {
     }
 
     #[test]
+    fn soft_rate_anchors_replay_with_the_declared_fixed_and_internal_rates() {
+        for fixed_step_hz in [30, 60, 120] {
+            let mut physics = physbox_launch::PhysicsConfigurationV1::SOFT_COUPLED;
+            physics.fixed_step_hz = fixed_step_hz;
+            let config = EngineConfig {
+                scenario: ValidationScenario::Bootstrap,
+                solver_profile: crate::SolverProfileConfig::from_physics(physics).unwrap(),
+            };
+            let run = || {
+                let mut renderer =
+                    pollster::block_on(OffscreenRenderer::new(320, 200, config.clone()))
+                        .expect("soft rate anchor initializes");
+                let report = renderer.render(FrameInput::exact(3));
+                (report, renderer.read_capture_state().unwrap())
+            };
+            let (first_report, first_state) = run();
+            let (replay_report, replay_state) = run();
+            assert_eq!(first_state, replay_state);
+            assert!(first_state.into_iter().all(f32::is_finite));
+            assert_eq!(first_report.scene_contract, replay_report.scene_contract);
+            assert_eq!(first_report.scene_contract.fixed_step_hz, fixed_step_hz);
+            assert_eq!(
+                first_report.scene_contract.internal_substep_hz,
+                fixed_step_hz * physics.substeps
+            );
+            assert_eq!(
+                first_report.scene_contract.fixed_dt_seconds.to_bits(),
+                (1.0 / fixed_step_hz as f32).to_bits()
+            );
+            assert!(!first_report.scene_contract.capacity_overflowed);
+        }
+    }
+
+    #[test]
+    fn soft_resolution_matrix_preserves_scripted_grab_entry_and_construction() {
+        let target_size = [960, 600];
+        let layout = crate::ui::UiLayout::for_target(target_size);
+        let click = |id, at| {
+            [crate::PointerPhase::Down, crate::PointerPhase::Up]
+                .into_iter()
+                .map(|phase| {
+                    crate::InputEvent::Pointer(crate::PointerEvent {
+                        id,
+                        phase,
+                        button: crate::PointerButton::Primary,
+                        normalized_position: at,
+                    })
+                })
+                .collect::<Vec<_>>()
+        };
+        let placement = crate::Camera2d::fixed()
+            .resolve(target_size)
+            .unwrap()
+            .world_to_screen([-0.8, 0.72]);
+
+        for (substeps, iterations) in [(2, 1), (2, 2), (4, 1), (4, 2), (8, 1), (8, 2)] {
+            let mut physics = physbox_launch::PhysicsConfigurationV1::SOFT_COUPLED;
+            physics.substeps = substeps;
+            physics.biased_iterations = iterations;
+            let profile = crate::SolverProfileConfig::from_physics(physics).unwrap();
+
+            let mut scripted = pollster::block_on(OffscreenRenderer::new(
+                target_size[0],
+                target_size[1],
+                EngineConfig {
+                    scenario: ValidationScenario::ResetGrab,
+                    solver_profile: profile.clone(),
+                },
+            ))
+            .expect("configured reset/grab world initializes");
+            let scripted_report = scripted.render(FrameInput::exact(11));
+            assert!(scripted.read_grab_state().unwrap().active);
+            assert!(scripted_report.body_commands.executed_commands_total > 0);
+            assert!(!scripted_report.scene_contract.capacity_overflowed);
+            assert!(
+                scripted
+                    .read_capture_state()
+                    .unwrap()
+                    .into_iter()
+                    .all(f32::is_finite)
+            );
+
+            let mut construction = pollster::block_on(OffscreenRenderer::new(
+                target_size[0],
+                target_size[1],
+                EngineConfig {
+                    scenario: ValidationScenario::Bootstrap,
+                    solver_profile: profile,
+                },
+            ))
+            .expect("configured construction world initializes");
+            construction.render(
+                FrameInput::exact(0)
+                    .with_input_events(click(1, layout.center_normalized("tool", 1))),
+            );
+            let placed =
+                construction.render(FrameInput::exact(1).with_input_events(click(2, placement)));
+            assert_eq!(placed.body_commands.executed_construction_intents_total, 1);
+            assert!(!placed.scene_contract.capacity_overflowed);
+            assert_eq!(
+                construction
+                    .read_construction_state()
+                    .unwrap()
+                    .placed_circles,
+                1
+            );
+        }
+    }
+
+    #[test]
     fn scripted_reset_grab_uses_compliant_anchor_and_replays_after_reset() {
         let mut scripted = pollster::block_on(OffscreenRenderer::new(
             320,

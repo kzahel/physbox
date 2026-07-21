@@ -6,7 +6,7 @@ use physbox_contracts::{
 };
 use physbox_engine::{
     GpuGeneratedContactRunner, GpuGeneratedContactSeriesV1, P5_2BucketShape,
-    gpu_contact_softness_coefficients, p5_2_bucket_scenario,
+    P5_2GeneratedScenarioKind, gpu_contact_softness_coefficients, p5_2_bucket_scenario,
     p5_2_centered_rectangle_stack_scenario,
 };
 use physbox_lab::settling::centered_stack_structure;
@@ -67,6 +67,11 @@ impl Lane {
 enum Scene {
     Stack(u32),
     Bucket,
+    BilateralImpact,
+    OffCenter,
+    Friction,
+    Restitution,
+    ShortStack,
 }
 
 impl Scene {
@@ -78,8 +83,13 @@ impl Scene {
             "stack32" => Ok(Self::Stack(32)),
             "stack64" => Ok(Self::Stack(64)),
             "bucket" => Ok(Self::Bucket),
+            "impact" => Ok(Self::BilateralImpact),
+            "off-center" => Ok(Self::OffCenter),
+            "friction" => Ok(Self::Friction),
+            "restitution" => Ok(Self::Restitution),
+            "short-stack" => Ok(Self::ShortStack),
             _ => Err(format!(
-                "invalid scene {value}; expected stack4, stack8, stack16, stack32, stack64, or bucket"
+                "invalid scene {value}; expected stack4, stack8, stack16, stack32, stack64, bucket, impact, off-center, friction, restitution, or short-stack"
             )),
         }
     }
@@ -93,6 +103,11 @@ impl Scene {
             Self::Stack(64) => "stack64",
             Self::Stack(_) => "stack",
             Self::Bucket => "bucket",
+            Self::BilateralImpact => "impact",
+            Self::OffCenter => "off-center",
+            Self::Friction => "friction",
+            Self::Restitution => "restitution",
+            Self::ShortStack => "short-stack",
         }
     }
 
@@ -100,6 +115,11 @@ impl Scene {
         match self {
             Self::Stack(_) => 1_200,
             Self::Bucket => 600,
+            Self::BilateralImpact => 1,
+            Self::OffCenter => 4,
+            Self::Friction => 12,
+            Self::Restitution => 8,
+            Self::ShortStack => 12,
         }
     }
 
@@ -111,6 +131,11 @@ impl Scene {
             Self::Bucket => {
                 p5_2_bucket_scenario(P5_2BucketShape::Rectangle, 100, steps).map_err(display)
             }
+            Self::BilateralImpact => generated(P5_2GeneratedScenarioKind::BilateralCircles, steps),
+            Self::OffCenter => generated(P5_2GeneratedScenarioKind::OffCenterRectangles, steps),
+            Self::Friction => generated(P5_2GeneratedScenarioKind::FrictionSlide, steps),
+            Self::Restitution => generated(P5_2GeneratedScenarioKind::Restitution, steps),
+            Self::ShortStack => generated(P5_2GeneratedScenarioKind::SmallStack, steps),
         }
     }
 
@@ -119,6 +144,35 @@ impl Scene {
         scenario: &ScenarioV1,
         series: &GpuGeneratedContactSeriesV1,
     ) -> StructureResult {
+        if !matches!(self, Self::Stack(_) | Self::Bucket) {
+            let Some(snapshot) = series.snapshots.last() else {
+                return StructureResult {
+                    final_pass: false,
+                    first_loss: Some(0),
+                };
+            };
+            let bodies = &snapshot.bodies;
+            let final_pass = snapshot_capacity_clean(snapshot)
+                && match self {
+                    Self::BilateralImpact => {
+                        bodies[0].linear_velocity.x < 1.0 && bodies[1].linear_velocity.x > -1.0
+                    }
+                    Self::OffCenter => bodies
+                        .iter()
+                        .any(|body| body.angular_velocity.get().abs() > 1.0e-3),
+                    Self::Friction => bodies[0].linear_velocity.x.abs() < 2.0,
+                    Self::Restitution => bodies[0].linear_velocity.y > 0.0,
+                    Self::ShortStack => bodies[1..]
+                        .windows(2)
+                        .all(|pair| pair[0].position.y < pair[1].position.y),
+                    Self::Stack(_) | Self::Bucket => unreachable!(),
+                };
+            return StructureResult {
+                final_pass,
+                first_loss: (!final_pass).then_some(snapshot.completed_steps),
+            };
+        }
+
         let mut first_loss = None;
         let mut final_pass = true;
         for snapshot in &series.snapshots {
@@ -132,6 +186,11 @@ impl Scene {
                         && snapshot.bodies.len() == scenario.bodies.len()
                         && snapshot.bodies.iter().all(|body| body.validate().is_ok())
                 }
+                Self::BilateralImpact
+                | Self::OffCenter
+                | Self::Friction
+                | Self::Restitution
+                | Self::ShortStack => unreachable!(),
             };
             if !passed && first_loss.is_none() {
                 first_loss = Some(snapshot.completed_steps);
@@ -142,6 +201,10 @@ impl Scene {
             final_pass,
             first_loss,
         }
+    }
+
+    const fn requires_quiet(self) -> bool {
+        matches!(self, Self::Stack(_) | Self::Bucket)
     }
 }
 
@@ -303,9 +366,10 @@ fn run(arguments: Arguments) -> Result<(), String> {
         let qualified = lane_rows.clone().all(|row| {
             row.structure.final_pass
                 && row.structure.first_loss.is_none()
-                && row
-                    .quiet_speed
-                    .is_some_and(|speed| speed <= QUIET_SPEED_LIMIT)
+                && (!row.scene.requires_quiet()
+                    || row
+                        .quiet_speed
+                        .is_some_and(|speed| speed <= QUIET_SPEED_LIMIT))
                 && row.validity.passed
         });
         println!(
@@ -332,8 +396,7 @@ fn run_row(
         Ok(series) => {
             let structure = scene.stands(scenario, &series);
             let validity = series_validity(&series);
-            let quiet_speed = validity
-                .passed
+            let quiet_speed = (validity.passed && scene.requires_quiet())
                 .then(|| last_quarter_maximum_linear_speed(&series));
             Ok(Row {
                 scene,
@@ -614,16 +677,20 @@ fn display(error: impl std::fmt::Display) -> String {
     error.to_string()
 }
 
+fn generated(kind: P5_2GeneratedScenarioKind, steps: u32) -> Result<ScenarioV1, String> {
+    physbox_engine::p5_2_generated_scenario(kind, steps).map_err(display)
+}
+
 fn print_help() {
     println!(
         "physbox-check [--sim-hz N] [--substeps N] [--iterations N] \
          [--hz N] [--damping N] [--static-scale N] \
          [--lane both|selected|candidate] \
-         [--scenes stack4,stack8,stack16,bucket] [--steps N]\n\n\
+         [--scenes stack4,stack8,stack16,bucket,impact,off-center,friction,restitution,short-stack] [--steps N]\n\n\
          Defaults: --sim-hz 60 --substeps 4 --iterations 1 --hz 30 \
          --damping 10 --static-scale 2 --lane both \
          --scenes stack4,stack8,stack16,bucket. Stacks run 1200 steps and the \
          rectangle bucket runs 600; --steps overrides every selected scene. \
-         stack32 and stack64 are available as optional diagnostics."
+         stack32, stack64, and the five response probes are optional diagnostics."
     );
 }
