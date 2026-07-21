@@ -511,9 +511,22 @@ SAP wins every native 10K, 30K, and 100K family while allocating 82.80 MiB at
 some fixed-overhead small rows and one 100K browser giant-static row by 2.2%,
 but does not win the complete cost. Human review therefore selects SAP and
 rejects grid for product integration in
-[S21](../tactical/021-scalable-broadphase.md). No end-to-end product scale,
-CPU crossover, or 60 Hz physics claim follows from this isolated candidate-
-stage evidence, and the product remains all-pairs until S21.5 lands.
+[S21](../tactical/021-scalable-broadphase.md). No CPU crossover or 60 Hz
+physics claim follows from this isolated candidate-stage evidence.
+
+Integration checkpoint, 2026-07-21: the ordinary product graph now consumes
+live full-sort SAP pairs under an 8N candidate bound. A clean Apple M4 Pro
+Metal artifact at revision `8e29cdb` replays exactly and remains capacity-safe
+at 100/1K/10K bodies. Median collision cost is `1.134/1.173/1.618 ms`, while
+median complete GPU physics is `7.290/8.338/22.622 ms`; allocation is
+`1.25/9.42/91.05 MiB`. The sparse paired-contact work is exactly 50/500/5,000
+candidates rather than quadratic. The 10K row proves bounded useful-scale
+execution but misses a 16.67 ms frame budget and is not a 10K-at-60 claim.
+Chrome 150 runs the maintained 103-slot/100-dynamic-body bucket for 10.27
+simulated seconds at `0.993` effective scale with zero slip. This browser row
+is the current full-frame product qualifier; it is not a 1K-plus rendering
+curve. Physical Android remains outstanding in S21.5, and CPU crossover still
+belongs to P5.4.
 
 No LBVH arm is admitted from this matrix. Reopen that question only for a
 measured integrated-SAP miss or a specific sparse multiscale/active-window

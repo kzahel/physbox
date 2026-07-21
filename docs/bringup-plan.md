@@ -13,8 +13,8 @@ slip instead of catch-up.
 The compact [product capability ledger](topics/product-capability-status.md)
 records what is implemented, limited, missing, and deferred without requiring
 the historical tacticals to be reconstructed. S20 owns the validation diet;
-S21 is the next physics workstream and owns the P5.3 broadphase bakeoff and
-winner integration.
+S21 is the current physics workstream and owns the P5.3 broadphase bakeoff,
+winner integration, and remaining physical-Android qualification.
 
 Active cross-milestone execution from the remaining P5.2/S4 closure through
 P5.4 is tracked by
@@ -401,8 +401,11 @@ Execution tracker:
 Selection checkpoint, 2026-07-21: clean 32-through-100K Metal and Browser
 WebGPU matrices qualify both candidates, and human review selects full-sort
 one-axis SAP. SAP wins every 10K/30K/100K native row with roughly one quarter
-of grid's fixed evidence allocation. S21.5 product integration is active; the
-product graph still uses all-pairs until that slice lands.
+of grid's fixed evidence allocation. S21.5 now integrates SAP into the one
+shared product graph with an 8N candidate bound and no automatic fallback.
+Clean integrated 100/1K/10K Metal curves replay exactly and remain capacity
+safe; the maintained 100-body Browser WebGPU scene sustains `0.993` effective
+scale with zero slip. Physical-Android qualification remains before closure.
 
 - Preserve brute force as pair-completeness oracle.
 - Implement sorted sweep-and-prune and multi-cell grid candidates.

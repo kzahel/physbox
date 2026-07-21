@@ -44,7 +44,7 @@ quality. Known limitations remain part of the row.
 | BODY-1 | Fixed and dynamic bodies | **Implemented** | GPU-owned generational slots support construction, erase, reset, and reuse. General kinematic bodies are not exposed. |
 | BODY-2 | Circles and oriented rectangles | **Implemented** | Analytic circle/circle, circle/rectangle, and clipped rectangle/rectangle contact are the complete product shape set. |
 | BODY-3 | Capsules, convex polygons, chains, terrain, compounds | **Deferred** | Follow minimal rigid acceptance and a selected scalable broadphase. |
-| COLL-1 | Broadphase candidate generation | **Limited** | Human review selected GPU SAP from clean S21 evidence. Product integration is active; the current path remains complete all-pairs until that slice lands, with no automatic fallback. |
+| COLL-1 | Broadphase candidate generation | **Limited** | Full-sort GPU SAP owns the ordinary product path under an 8N candidate bound. Brute force remains an isolated bounded exact oracle with no automatic fallback; physical-Android qualification is the remaining S21 gate. |
 | COLL-2 | Contact persistence and warm start | **Implemented** | Stable generational pair slots and body-edge views retain impulses and fail closed on capacity overflow. |
 | COLL-3 | Friction and restitution | **Implemented** | Coulomb friction and a distinct restitution stage are exercised by shared fixtures; broader parity remains P5.4 work. |
 | COLL-4 | Speculative contacts and overlap recovery | **Implemented** | Bounded speculative distance and depenetration velocity are configurable; deep/tall overlap remains a known limitation. |
@@ -73,8 +73,8 @@ quality. Known limitations remain part of the row.
 
 | ID | Capability | Status | Current boundary / next gate |
 | --- | --- | --- | --- |
-| SCALE-1 | Small-world rigid scenes | **Implemented** | Current all-pairs path supports the maintained small interactive tier and 100-body diagnostic buckets with explicit capacity. |
-| SCALE-2 | Scalable broadphase | **In progress** | Clean 32-through-100K Metal/browser evidence qualifies both candidates and human review selects SAP. Product integration, complete curves, and selected-winner Android qualification remain. |
+| SCALE-1 | Small-world rigid scenes | **Implemented** | Selected SAP supports the maintained small interactive tier and 100-body diagnostic buckets with explicit capacity; brute force is validation-only. |
+| SCALE-2 | Scalable broadphase | **In progress** | SAP is selected and integrated; exact native 100/1K/10K product curves and a zero-slip 100-body browser row pass. Physical-Android qualification remains before S21 closure. |
 | SCALE-3 | 1K-100K product-world claims | **Not implemented** | Existing authored-contact/isolated-solver measurements are not scalable end-to-end body claims. |
 | SCALE-4 | Mostly-sleeping scale | **Not implemented** | Requires sleeping, active compaction, and selected broadphase integration. |
 | QUAL-1 | Box2D process oracle | **Implemented** | Clean pinned native process covers current circle/rectangle projections, public manifolds, selected actions, and deterministic results. |
@@ -94,8 +94,8 @@ quality. Known limitations remain part of the row.
 
 ## Current execution order
 
-1. Execute the scalable broadphase bakeoff and integration in
-   [S21](../tactical/021-scalable-broadphase.md).
+1. Finish physical-Android qualification of the integrated scalable
+   broadphase in [S21](../tactical/021-scalable-broadphase.md).
 2. Add sleeping/waking and close current-default rigid acceptance and scale.
 3. Extend the construction loop with editable selection, scene documents, and
    one joint.

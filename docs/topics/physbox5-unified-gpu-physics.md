@@ -1020,10 +1020,13 @@ S21 evidence checkpoint, 2026-07-21: clean Metal and Browser WebGPU matrices
 qualify both declared candidates through 100K, and human review selects
 full-sort one-axis SAP. SAP wins every native scale row at 10K and above with
 roughly one quarter of grid's fixed evidence allocation. Grid is the recorded
-rejected alternative and no LBVH addendum is justified. All-pairs remains
-wired into the shared graph only until S21.5 integrates SAP and qualifies it
-on browser and physical Android. The measured record and reconsideration
-triggers are in [S21](../tactical/021-scalable-broadphase.md).
+rejected alternative and no LBVH addendum is justified. S21.5 now wires SAP
+into the shared product graph: live GPU body buffers produce speculative AABBs
+and sorted canonical generational pairs under an 8N candidate bound, while
+all-pairs remains an isolated bounded oracle with no automatic fallback.
+Integrated Metal and Browser WebGPU qualification passes; physical Android is
+the remaining closure gate. The measured record and reconsideration triggers
+are in [S21](../tactical/021-scalable-broadphase.md).
 
 ## What to learn from existing engines
 

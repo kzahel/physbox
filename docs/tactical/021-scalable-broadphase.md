@@ -1,9 +1,9 @@
 # S21: scalable broadphase
 
-Status: active, SAP selected 2026-07-21. Human review accepted the clean
-candidate bakeoff recommendation; the product still uses all-pairs until
-S21.5 integration completes. This is
-the executable tracker for the S5.5 bakeoff and S5.6 integration milestones;
+Status: active, SAP selected and integrated 2026-07-21. Human review accepted
+the clean candidate bakeoff recommendation; native and browser product
+qualification pass, while physical Android remains before S21.5 closes. This
+is the executable tracker for the S5.5 bakeoff and S5.6 integration milestones;
 the older S5 document remains the umbrella history.
 
 Governing topics:
@@ -89,9 +89,9 @@ brute force on the scale families it claims to improve.
 
 ### S21.5 — winner integration and product scale
 
-- [ ] Integrate only the selected algorithm into the shared product graph;
+- [x] Integrate only the selected algorithm into the shared product graph;
   retain brute force as a bounded validation option without automatic fallback.
-- [ ] Re-run collision-only, complete physics, and full-frame curves plus
+- [x] Re-run collision-only, complete physics, and full-frame curves plus
   effective simulation scale/slip and memory high-water.
 - [ ] Qualify the integrated winner on browser and one physical Android device.
 
@@ -216,5 +216,46 @@ window problem that this corpus did not resolve.
 Human review on 2026-07-21 accepted **full-sort one-axis SAP** for product
 integration. The grid remains rejected lab evidence, brute force remains the
 bounded completeness oracle, and no automatic small-count fallback is
-authorized. This decision opens S21.5; it does not itself change the product
-graph, solver setting, physics default, or scale claim.
+authorized. This decision opened S21.5 without changing the solver setting or
+physics default.
+
+## Integration checkpoint
+
+The shared generated-contact graph now builds speculative circle/rectangle
+AABBs directly from live GPU body pose, motion, properties, and metadata,
+executes the selected 58-pass full-sort SAP sequence, and gives its sorted
+canonical generational pairs to the unchanged narrowphase/persistence/solver
+chain. Product candidate capacity is `min(N * 8, N * (N - 1) / 2)`, overflow
+remains atomic, and the isolated all-pairs runner remains available only to
+bounded validation. There is no runtime fallback or host-local broadphase.
+
+The product constructor is compared exactly against brute force across the
+P5.2 collision corpus and candidate families, including dead-slot generation
+reuse. SAP emits no dead proxy pair, reuses a slot only with its new
+generation, restores contact after reuse, and replays the complete pair set.
+Focused candidate and product tests retain the separate SAP/grid bakeoff while
+ordinary production validation avoids sweeping rejected historical arms.
+
+Clean integrated Metal artifact
+`/tmp/physbox5-product-scale-metal-20260721-r2.json` at revision `8e29cdb`,
+SHA-256 `af523c3983149fb9b37bbf7b2d9213ada4a1733be50633c17095c0d67ee2d5d3`,
+uses one warmup and three raw samples per row:
+
+| Bodies | Candidates | Dispatches | Allocation MiB | Collision P50 ms | Persistence P50 ms | GPU physics P50 ms | Host P50 ms |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 100 | 50 | 1,493 | 1.25 | 1.134 | 0.023 | 7.290 | 10.673 |
+| 1,000 | 500 | 1,496 | 9.42 | 1.173 | 0.026 | 8.338 | 10.581 |
+| 10,000 | 5,000 | 1,499 | 91.05 | 1.618 | 0.102 | 22.622 | 25.693 |
+
+Every row replays exactly, accepts every capacity record, and records
+50/500/5,000 manifolds plus 66/666/6,666 contact points. The 10K row is useful-
+scale execution but exceeds the 16.67 ms 60 Hz GPU budget; it is not a 10K-at-
+60 claim. The final 8N policy also reduces the two-body interactive graph from
+1,224,492 to 636,036 allocated bytes.
+
+Chrome 150 Browser WebGPU runs the maintained 100-dynamic-body circle bucket
+for 10.27 simulated seconds with `0.993` effective simulation scale, zero slip,
+and a visually correct final frame. This is a real full-frame product row;
+there is no claim of a 1K-plus rendered curve yet. Physical Pixel 7a Vulkan
+qualification remains outstanding because the connected device was locked at
+this checkpoint.
