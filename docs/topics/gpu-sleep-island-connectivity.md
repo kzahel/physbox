@@ -1,11 +1,15 @@
 # GPU sleep-island connectivity research
 
-Status: exploratory research, 2026-07-22. The current K=4 bounded-neighbor
-sleep policy remains implemented, opt-in, and off by default. This topic does
-not select an exact-island implementation or change product behavior. It
-records the failure being investigated, a source-level study of pinned Box2D,
-the measured cost of the current PhysBox path, the expected costs and benefits
-of GPU alternatives, and the evidence required before replacing K=4.
+Status: active observation under
+[S26](../tactical/026-exact-contact-component-observation.md), 2026-07-22.
+Human review authorizes only staged stopping point 1: exact GPU labels,
+independent CPU comparison, and cost evidence without behavior changes. The
+current K=4 bounded-neighbor sleep policy remains implemented, opt-in, and off
+by default. This topic does not select an exact-island implementation or change
+product behavior. It records the failure being investigated, a source-level
+study of pinned Box2D, the measured cost of the current PhysBox path, the
+expected costs and benefits of GPU alternatives, and the evidence required
+before replacing K=4.
 
 Governing behavior and current implementation:
 [GPU sleeping and waking](gpu-sleeping-and-waking.md). Performance claims and
