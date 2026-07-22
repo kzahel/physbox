@@ -51,6 +51,10 @@ a running log.
   `sleeping_enabled` toggle, GPU state visualization and policy experimentation
   surface, the mask rule against concealing awake losses, and the S23 execution
   overview.
+- [GPU sleep-island connectivity research](gpu-sleep-island-connectivity.md) —
+  exploratory source study of Box2D's persistent islands, the measured K=4
+  baseline, static and persistent GPU connected-component alternatives, and
+  the performance/behavior gates for any exact-island prototype.
 - [Awake settling and rest stability](awake-settling-and-rest-stability.md) —
   resting-contact identity, warm-start continuity, soft-contact damping,
   realistic drop fixtures, awake quality gates, and the required visible

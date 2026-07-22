@@ -31,6 +31,9 @@ owned by [awake settling and rest stability](awake-settling-and-rest-stability.m
 The rigid behavior authority is
 [Box2D rigid authority](box2d-rigid-authority.md); contact identity is owned
 by [collision and contact persistence](collision-and-contact-persistence.md).
+The independently evolving whole-island alternative, pinned Box2D source
+study, and performance plan are recorded in
+[GPU sleep-island connectivity research](gpu-sleep-island-connectivity.md).
 The execution tracker is
 [tactical S23](../tactical/023-gpu-sleeping-and-waking.md).
 
@@ -571,8 +574,10 @@ merely code existence.
   narrowphase, or persistence work: open the dormant-pair record decision as
   its own contract change.
 - Interactive or recorded review rejects partial-stack sleep or wake-wave
-  behavior across governed paths longer than `K`: evaluate the GPU
-  connected-components island alternative before weakening bands.
+  behavior across governed paths longer than `K`: execute the observation-only
+  exact-component probe and cost gates in
+  [GPU sleep-island connectivity research](gpu-sleep-island-connectivity.md)
+  before weakening bands.
 - No threshold exists that both sleeps the intended settled structures and
   respects the awake residual band: return to threshold/policy design with
   fresh settled-window evidence rather than widening the rest band.
