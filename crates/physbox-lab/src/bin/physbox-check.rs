@@ -350,6 +350,10 @@ fn run(arguments: Arguments) -> Result<(), String> {
     );
 
     let runner = pollster::block_on(GpuGeneratedContactRunner::new())?;
+    println!("adapter {}", runner.diagnostics());
+    println!(
+        "lane mapping: selected=historical hard/direct control; candidate=tunable soft recurrence (default tuple is the current soft-coupled product)"
+    );
     let mut rows = Vec::new();
     for scene in arguments.scenes.iter().copied() {
         let steps = arguments.steps.unwrap_or_else(|| scene.default_steps());
