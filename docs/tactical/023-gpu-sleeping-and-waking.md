@@ -1,11 +1,12 @@
 # S23: GPU sleeping and waking
 
-Status: manual checkpoint 2026-07-22. S23.1 through S23.6 are complete and
-work is stopped before S23.7's reserved human promotion/default decision.
-Sleeping is effective when explicitly requested through the shared menu or
-launch configuration, but remains off by default. The user initially
-authorized the hardware-backed AVD for this unattended checkpoint; an attached
-Pixel 7a later became available and also passed the proportional lane.
+Status: manual checkpoint 2026-07-22. S23.1 through S23.6 are complete, and
+the post-review contact sleep-cycle defect is corrected and qualified. Work is
+stopped before S23.7's reserved human promotion/default decision. Sleeping is
+effective when explicitly requested through the shared menu or launch
+configuration, but remains off by default. The user initially authorized the
+hardware-backed AVD for this unattended checkpoint; an attached Pixel 7a later
+became available and also passed the proportional lane.
 
 Governing topics:
 [GPU sleeping and waking](../topics/gpu-sleeping-and-waking.md),
@@ -331,6 +332,68 @@ visible pink `!`; its PNG/provenance SHA-256 values are
 Both physical runs leave the app stopped. This addendum improves the review
 surface but deliberately neither executes nor completes S23.7's mask-rule and
 default-promotion decision.
+
+#### Post-review coordinated-admission correction
+
+Interactive review of the new visualization exposed a two-body failure: two
+apparently stationary touching bodies could alternate between blue `Z` and
+pink `!` indefinitely, while another run could settle both. The phase of each
+body's independent quiet timer determined the outcome.
+
+The clean pinned Box2D authority at
+`3a4f0da8374af61293a03021c9a0b3ebcfe67948` confirms two governing invariants.
+Its solver retains each body's quiet timer but keeps the whole island awake if
+any member is not ready, then sleeps the island together. Its started-touching
+path wakes a sleeping set; an ordinary persisted resting contact is not a new
+wake event. The original PhysBox implementation violated both invariants by
+sleeping ready bodies independently and seeding every awake body as a contact
+wake root on every outer step. The earlier S23.3 observation that a `K+1`
+neighbor woke on the following step therefore documented the defect rather
+than an acceptable bounded wake wave.
+
+Commit `8859276` keeps per-body counters and the selected `K = 4` bound without
+claiming Box2D island equivalence. Ready counters saturate while a not-ready
+body propagates a blocker over the current generation-checked contact graph;
+an unblocked bounded neighborhood then sleeps together. Wake roots are now
+events: a newly persistent pair touching an awake body, significant impact,
+grab, reset, construction, or erased support. The two existing frontier
+buffers are reused, so allocation is unchanged and no CPU readback is added.
+Paths longer than four contact edges can still partially sleep or wake and
+remain the declared divergence.
+
+A deterministic GPU regression initializes two touching bodies with quiet
+counters 29 outer steps apart. The ready body remains awake with its neighbor,
+both transition automatically at step 30, and both remain asleep for ten more
+steps. Separate coverage proves a new contact wakes a sleeping endpoint, one
+explicit grab root reaches exactly the selected bound, and a persisted contact
+does not continue the wave on the next step. The sleeping-enabled soft-floor
+graph grows from 145 to 154 dispatches per step: one candidate-evaluation pass
+plus eight copy/propagation passes. The default-off graph remains at 145 and
+the accounted allocation remains 819,252 bytes.
+
+Qualification at clean revision
+`8859276c1cd4fc94ad51f065ddd20ca2701b1fd3` passes `npm run test:fast` in
+69.29 seconds with all 115 maintained engine tests, warnings-denied production
+clippy, and `npm run test:web:lab`. ARM64 Android check, ARM64 release-native
+and debug APK construction, and Gradle `assembleRelease` pass. The clean
+1,200-step headless rectangle-stack artifact reports requested/effective
+sleeping on, 154 dispatches, exact scenario completion, and AMD Radeon 890M
+RADV Vulkan. Its PNG/report SHA-256 values are
+`7dacb171d386d36a4d60dc53a664b53758d2c8bc89e8c70381c32ede52ebb9b2` and
+`c135c74bceae74e0f3f41108dc243a1296146768003132122b946ba811a9df6e`.
+
+The attached Pixel 7a physical lane uses the actual menu to enable sleeping
+and visuals, reports requested/effective on plus the complete shared
+rigid-floor result on Mali-G710, and captures a visible blue `Z`. Its
+PNG/provenance SHA-256 values are
+`651dd238db0a8506a06e9eea592908872e89ac6ea75ee16bf079928fedb4df4c` and
+`7aafecbc5483343d07088483b0faa56a87ec2c8e8429721f7809c8adfd758e62`;
+the runner leaves the app stopped. A rectangle-stack physical attempt also
+reached requested/effective on and step 893 cleanly, but its fixed 10-second
+post-rebuild window ended before the authored 1,200-step horizon, so it is not
+claimed as a passing lane. The clean headless artifact owns that exact stack
+horizon; the maintained rigid-floor run owns physical pixels and behavior.
+This correction does not execute S23.7 or change the off default.
 
 ### S23.7 — cross-host qualification and promotion review
 

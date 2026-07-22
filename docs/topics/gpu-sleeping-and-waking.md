@@ -1,7 +1,8 @@
 # GPU sleeping and waking
 
 Status: manual checkpoint, 2026-07-22. Tactical S23.1 through S23.6 are
-complete; work is stopped before the manual promotion/default decision
+complete, and the post-review contact sleep-cycle defect is corrected and
+qualified; work is stopped before the manual promotion/default decision
 reserved for S23.7. Sleeping is effective when explicitly requested but
 remains off by default. An opt-in GPU sleep-state visualization is available
 for interactive review; it does not change that default. This topic is the
@@ -44,8 +45,8 @@ change only with implementation and evidence, not because this design exists.
 | --- | --- | --- |
 | Policy vocabulary and oracle traces | complete | S23.1 freezes experimental policy V1 and a replay-exact 40-row Box2D/PhysBox baseline matrix. |
 | Versioned GPU sleep state | complete | Generation-checked `SleepStateV1`, sorted awake-dynamic list, indirect arguments, and exact inert replay (S23.2). |
-| Wake roots and bounded propagation | complete | Generation-safe roots and four deterministic contact-neighbor rounds execute before solve (S23.3). |
-| Automatic sleep admission | complete | The GPU applies the frozen integer outer-step predicate, zeroes transition velocities, and prevents dormant drift (S23.4). |
+| Wake roots and bounded propagation | complete | Generation-safe event roots and four deterministic contact-neighbor rounds execute before solve; persisted resting contacts are not roots. |
+| Automatic sleep admission | complete | Saturating per-body timers and four-round contact blockers coordinate admission within the selected bound, zero transition velocities, and prevent dormant drift. |
 | Awake-driven solve and integration | complete | Dense awake points and bounded solver bodies size solve/integration while live collision, persistence, and rendering retain sleepers (S23.5). |
 | Toggle and configuration surface | limited | Launch-owned state and the engine-rendered `MENU → WORLD` toggle make sleeping effective on request and persist the choice; the default remains off pending S23.7. |
 | Interactive state visualization | complete | The engine-rendered `SLEEP VISUALS` toggle consumes GPU sleep/grab state directly and distinguishes active, quiet, sleeping, and forced/recently woken dynamics without readback. |
@@ -65,7 +66,8 @@ propagation, and wake triggers as the next rigid-state milestone after S22.
 Sleeping is also product behavior, not only cost. Settled piles should become
 still and stay still without solver micro-motion, and grabs, impacts, erases,
 and support changes must wake exactly the affected bodies with low, explained
-latency. Wake latency, partial-stack sleep, and wake waves are user-visible
+latency. Wake latency and the partial-stack or wake-wave behavior still
+possible across paths longer than the selected bound are user-visible
 consequences of the selected algorithm and need their own fixtures and bands.
 
 ## Boundary with awake settling: the mask rule
@@ -166,8 +168,8 @@ Experimental `SleepPolicyV1` is now version 1 and freezes:
 - quiet duration: 500 simulated milliseconds, converted without floating-
   point rounding to `ceil(500 * fixed_hz / 1000)` integer outer steps;
 - transition velocity: zero linear and angular velocity;
-- grouping vocabulary: per-body admission with bounded contact-neighbor wake
-  propagation, whose round count remains an S23.3 decision.
+- grouping vocabulary: per-body timers with bounded contact-neighbor admission
+  and wake propagation, whose round count remains an S23.3 decision.
 
 The evidence observes zero farthest-point speed at every Box2D sleep
 transition. At the ordinary 60 Hz/four-substep row, Box2D first sleeps the
@@ -175,8 +177,8 @@ isolated circle/rectangle at step 62, the four-stack together at step 35, and
 the pyramid together at step 30. The PhysBox sleep-off overlay first reaches
 the experimental quiet-duration candidate at steps 57/67 for the isolated
 circle/rectangle; the four stack bodies qualify individually at steps 31 and
-40, exposing the intended per-body versus whole-island difference before any
-transition is implemented. Applied impulse and grab wake on the first
+40, exposing the admission-coordination question before any transition is
+implemented. Applied impulse and grab wake on the first
 completed step after the step-120 action (step 121); the projectile wakes its
 own body at step 121 and all four stack bodies together on contact at step 195.
 The public API exposes awake state but no internal transition cause, so the
@@ -242,8 +244,10 @@ Commits `09f5e2e` and `c900a17` make the previously inert representation
 effective. Wake policy V1 uses `K = 4` deterministic generational
 contact-neighbor rounds and a `0.05 m/s` persisted-impact threshold. Direct
 grab, construction, reset, erased-support, new-contact, and impact roots are
-combined as cause bits before solve. The selected bound wakes the `K-1` and
-`K` chain bodies in the root step and the `K+1` body on the next outer step.
+combined as cause bits before solve. The original checkpoint observation that
+the `K+1` body woke on the next outer step was later identified as an
+implementation defect: every awake body was being seeded as a contact root on
+every step. The post-review correction below supersedes that observation.
 
 Post-solver admission evaluates the frozen `0.02 m/s` farthest-point speed and
 500 ms integer duration: exactly 15, 30, or 60 outer steps at 30, 60, or 120
@@ -293,18 +297,43 @@ physical product app is stopped after capture. These checks validate the
 implementation boundary but do not replace S23.7's mask-rule disclosure and
 explicit human decision.
 
+### Post-review Box2D alignment correction
+
+Interactive visualization revealed that even two stationary touching bodies
+could alternate sleep and wake forever when their per-body quiet timers were
+out of phase. Review against pinned Box2D showed the cause: PhysBox seeded
+every awake body as a contact root every step and admitted sleep independently,
+whereas Box2D wakes on started touching and prevents a ready member from
+sleeping while its island has an unready member.
+
+Commit `8859276` corrects those invariants in the selected bounded GPU form.
+New persistent pairs, impacts, grabs, reset, construction, and erased support
+remain roots; persisted resting contacts do not. Per-body counters saturate,
+not-ready blockers propagate for four rounds through the same
+generation-checked contact graph, and unblocked bounded neighborhoods admit
+together. A deterministic two-body test starts counters 29 steps apart,
+observes a simultaneous step-30 transition, and observes no recurrence.
+Allocation is unchanged; sleeping-enabled execution adds nine dispatches
+(145 to 154) while default-off execution retains 145. The tactical records
+the passing maintained/browser/ARM64/APK/headless/Pixel qualification and
+artifact hashes. This is a corrective clarification of experimental policy V1
+before promotion, not a default change or a claim of whole-island equivalence.
+
 ## Selected implementation direction
 
-Per-body sleep timers with bounded contact-neighbor wake propagation, executed
-entirely on the GPU, one shared algorithm at every capacity tier.
+Per-body sleep timers with bounded contact-neighbor admission and wake
+propagation, executed entirely on the GPU, one shared algorithm at every
+capacity tier.
 
 Full Box2D-style island sleeping is a connected-components problem that is
 awkward without readback, as already recorded in the authoritative topic.
-Per-body sleep permits partial-stack sleep and produces measurable wake waves;
-both are accepted, declared behavioral differences from the island authority
-and receive their own fixtures and bands rather than a silent parity claim.
-The ≤64-tier workgroup-island representation is explicitly not reused, so
-wake semantics cannot depend on the capacity preset.
+Each quiet timer therefore remains per-body, but a ready counter saturates
+instead of immediately sleeping while a not-ready contact neighbor reaches it
+within `K` rounds. The bounded neighborhood admits together once no blocker
+reaches it. Paths longer than `K` can still partially sleep or wake and remain
+the accepted, declared behavioral difference from the island authority. The
+≤64-tier workgroup-island representation is explicitly not reused, so sleep
+semantics cannot depend on the capacity preset.
 
 ### Live bodies and awake bodies are different sets
 
@@ -333,10 +362,11 @@ least:
 - last transition cause bitset;
 - policy/layout version.
 
-Causes are a bitset combined by atomic OR, so grab, reset, impact, and
-propagation arriving in one step produce a deterministic record rather than a
-first-writer race. Slot reuse initializes the new generation awake, and every
-stale wake seed is made inert by the generation check. Timers are integer
+Causes are a bitset combined by atomic OR, so grab, reset, new contact, impact,
+and propagation arriving in one step produce a deterministic record rather
+than a first-writer race. An ordinary persisted resting contact is not a wake
+event. Slot reuse initializes the new generation awake, and every stale wake
+seed is made inert by the generation check. Timers are integer
 outer-step counts derived from configured fixed `dt` (the `0.5 s` seed is 30
 outer steps at 60 Hz), keeping sleep in simulated time independent of wall
 pacing and substeps.
@@ -466,8 +496,9 @@ mode is off.
   authored sleepers, proving generation-inert stale seeds and neighbor waking
   before pair retirement.
 - Oracle comparison: Box2D sleep traces as the behavioral reference with the
-  declared divergences (partial-stack sleep, wake waves, automatic
-  support-motion waking) named in the report rather than averaged away.
+  declared divergences (bounded partial-stack sleep or wake waves beyond `K`,
+  automatic support-motion waking) named in the report rather than averaged
+  away.
 - Performance: matched 1%/10%/100% awake sleeping-city curves under the
   performance topic's validity rules; the sparse-capacity probe stays flat;
   a dense awake control still grows honestly. These curves also decide the
@@ -510,9 +541,9 @@ merely code existence.
 
 - **Full island sleeping via GPU connected components** (iterative label
   propagation or union-find passes): retained as the recorded alternative if
-  per-body semantics prove behaviorally unacceptable; rejected initially
-  because convergence detection without readback either costs fixed worst-case
-  rounds every step or reintroduces CPU dependence.
+  bounded-neighborhood semantics prove behaviorally unacceptable; rejected
+  initially because convergence detection without readback either costs fixed
+  worst-case rounds every step or reintroduces CPU dependence.
 - **CPU-side island management**: rejected; it violates GPU residency and the
   no-readback frame contract.
 - **Reusing the ≤64-tier workgroup-island solver representation**: rejected;
@@ -540,8 +571,8 @@ merely code existence.
   narrowphase, or persistence work: open the dormant-pair record decision as
   its own contract change.
 - Interactive or recorded review rejects partial-stack sleep or wake-wave
-  behavior on governed structures: evaluate the GPU connected-components
-  island alternative before weakening bands.
+  behavior across governed paths longer than `K`: evaluate the GPU
+  connected-components island alternative before weakening bands.
 - No threshold exists that both sleeps the intended settled structures and
   respects the awake residual band: return to threshold/policy design with
   fresh settled-window evidence rather than widening the rest band.

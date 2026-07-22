@@ -50,9 +50,9 @@ pub enum SleepTransitionVelocityV1 {
     ZeroLinearAndAngular,
 }
 
-/// Semantic grouping of sleep admission and wake expansion. S23 begins with
-/// per-body admission and later freezes the bounded contact-neighbor round
-/// count; this value distinguishes it from Box2D's whole-island behavior.
+/// Semantic grouping of per-body sleep timers with bounded contact-neighbor
+/// admission and wake expansion. The fixed round count distinguishes it from
+/// Box2D's whole-island behavior.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum SleepGroupingV1 {
