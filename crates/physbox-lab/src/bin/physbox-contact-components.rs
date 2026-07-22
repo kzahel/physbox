@@ -123,11 +123,11 @@ fn run() -> Result<(), String> {
             completed_steps: 1,
         },
         Case {
-            label: "pair-churn-before-impact",
+            label: "pair-churn-contact",
             family: "churn",
             scenario: churn.clone(),
             capacity: 64,
-            completed_steps: 1,
+            completed_steps: 4,
         },
         Case {
             label: "pair-churn-after-impact",
