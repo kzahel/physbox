@@ -104,11 +104,13 @@ contract and validation artifacts record:
 - configuration version/hash so a screenshot or metric is reproducible.
 
 At the inert S23.2 checkpoint, `--sleeping on|off` and the web query transport
-the request, but effective sleeping is hard-false and no ordinary canvas-menu
-control is exposed. Profile switching and preset restore preserve the
-orthogonal request. This is a representation/transport checkpoint, not an
-enabled feature or a default decision; later effectiveness and menu exposure
-remain owned by the sleeping workstream's explicit gates.
+the request, and `MENU → WORLD → SLEEP REQUEST` provides the same
+engine-rendered control. It atomically rebuilds the shared configuration,
+preserves orthogonal solver/capacity/tool state, persists in the version-3
+browser preference, and reports requested and effective values separately.
+Effective sleeping remains hard-false. This is a representation/transport
+control, not an enabled feature or a default decision; later effectiveness and
+default promotion remain owned by the sleeping workstream's explicit gates.
 
 World capacity is a separate engine setting because it changes fixed GPU
 storage and broadphase work rather than the solver equation. The shared launch

@@ -45,7 +45,7 @@ change only with implementation and evidence, not because this design exists.
 | Wake roots and bounded propagation | proposed | Generation-checked roots plus K-round contact-neighbor waves against authored sleepers (S23.3). |
 | Automatic sleep admission | proposed | Integer outer-step timers, cause bitsets, no-drift guarantees (S23.4). |
 | Awake-driven solve and integration | proposed | Solver bodies/points sized by awake work; live collision and rendering retained (S23.5). |
-| Toggle and configuration surface | limited | Launch-owned requested state and cross-host reporting exist; effective state is hard-false and no ordinary menu/default is exposed. |
+| Toggle and configuration surface | limited | Launch-owned requested state, an engine-rendered `MENU → WORLD` request toggle, persistence, and cross-host reporting exist; effective state is hard-false and the default remains off. |
 | Sleeping-city performance curves | proposed | Matched 1%/10%/100% awake evidence; conditional dormant-pair decision (S23.6). |
 | Cross-host qualification and promotion | proposed | Browser plus physical Android, mask-rule disclosure, human default review (S23.7). |
 
@@ -199,8 +199,18 @@ changing physics behavior:
   and full-capacity lifecycle cases have direct readback assertions; and
 - `PhysicsConfigurationV2`, launch parsing, browser preference version 3, and
   scene contract version 9 transport and distinguish requested from effective
-  sleeping. Effective sleeping is hard-false and the ordinary canvas menu has
-  no sleeping control.
+  sleeping. Effective sleeping is hard-false.
+
+UI addendum commit `a1b5453` exposes that existing request as
+`MENU → WORLD → SLEEP REQUEST`. The engine-rendered control rebuilds the full
+shared configuration immediately, preserves capacity and tool state, and
+labels both states (`REQUEST ON/OFF`, `EFFECTIVE OFF`) so it cannot imply that
+sleep transitions exist. Browser validation covers on, persisted reload, and
+off through the actual canvas control. With no physical device available, the
+hardware-backed `jstorrent-tablet` AVD exercised the same control, reported
+requested true/effective false after a successful scenario, produced a
+visually complete capture, and shut down successfully. This addendum does not
+begin S23.3 or change the off default.
 
 The awake list is deliberately not consumed by integration, solver-body work,
 or solver points. Every live dynamic body remains awake and eligible, so S23.2
@@ -335,12 +345,12 @@ Sleeping must be reversible and comparable from day one:
 
 - `sleeping_enabled` lives in the launch-owned versioned physics
   configuration, its configuration hash, the scene contract, the web query
-  mapping, and any later engine-rendered menu control, following the S19
-  ownership pattern: one projection into `EngineConfig`, adapters transport it
-  unchanged, and requested and effective values are both reported. S23.2
-  exposes only the launch/query control; the ordinary menu has no sleeping
-  item and the default remains off until a recorded human promotion review
-  changes it.
+  mapping, and the engine-rendered `MENU → WORLD` request control, following
+  the S19 ownership pattern: one projection into `EngineConfig`, adapters
+  transport it unchanged, and requested and effective values are both
+  reported. The control changes only requested state and explicitly labels
+  effective state as off. The default remains off until a recorded human
+  promotion review changes it.
 - Sleep-off and sleep-enabled share one operation graph. Sleep-off forces
   every live dynamic body into the awake list and resets/ignores timers; it
   must not select another solver, pipeline layout, or compilation path.
@@ -436,8 +446,8 @@ merely code existence.
   warm-start impulses on wake; evaluated once automatic transitions exist.
 - The impact-wake rule's declared closing-speed or predicted-impulse constant.
 - The selected `K` and whether 64-body wake waves meet mobile pacing.
-- Whether and when `sleeping_enabled` appears in the product menu versus
-  remaining a launch/laboratory control before promotion.
+- Whether and when the menu request becomes effective, and whether sleeping is
+  promoted from its off default, after the implementation and evidence gates.
 - Whether the 1%-awake curve forces the dormant-pair persistence decision.
 
 ## Reconsideration triggers

@@ -98,8 +98,8 @@ evidence target pass.
   body is awake, every fixed body is excluded, and the selected solver still
   consumes its existing live-work inputs.
 - [x] Transport and report versioned requested/effective sleeping state without
-  exposing an ordinary product-menu default; effective sleeping remains false
-  at this checkpoint.
+  changing the ordinary off default; the engine-rendered request control
+  explicitly reports that effective sleeping remains false at this checkpoint.
 - [x] Prove sparse authored slots, construction, erase, generation reuse,
   failed mutation, reset, capacity-full behavior, and exact replay. Stale state
   from an older generation must be inert.
@@ -127,7 +127,20 @@ erase/reuse, generation exhaustion and other failed mutation, reset, and a
 full 64-slot capacity. Requested sleeping is transported by
 `PhysicsConfigurationV2` and `--sleeping on|off`; scene contract version 9
 reports requested and effective state separately, with effective sleeping
-hard-false and no ordinary menu control.
+hard-false.
+
+UI addendum commit `a1b5453` exposes the request through the real
+`MENU → WORLD → SLEEP REQUEST` canvas control without beginning S23.3. UI
+contract version 6 labels requested and effective state separately and applies
+the complete shared configuration immediately, preserving capacity and tool
+state. The clean ordinary browser flow toggles on, verifies version-3
+preference and URL/reload persistence, then toggles off; `npm run test:fast`
+passes in 27.27 seconds, warnings-denied production clippy passes, and the
+solver-lab browser lane passes. ARM64 check, dual-ABI release-native/debug APK,
+and Gradle release APK builds pass. With no physical device available, the
+hardware-backed `jstorrent-tablet` AVD uses the actual menu control, completes
+the bootstrap scenario with requested true/effective false, produces a
+visually complete capture, and emits the successful shutdown marker.
 
 Clean revision `47542c08b572316dccc14b678d1be778a012d761` produced
 `/tmp/physbox5-s23.2-47542c0/sleep-policy/manifest.json` on AMD Radeon 890M
@@ -206,8 +219,8 @@ timer-validity, overflow, and cross-capacity comparison rules.
 
 - [ ] Run the full proportional browser/Android qualification and record the
   mask-rule disclosure plus every accepted authority divergence.
-- [ ] Return default state, menu exposure, and any dormant-pair follow-up to a
-  human promotion decision.
+- [ ] Return effective menu behavior, default state, and any dormant-pair
+  follow-up to a human promotion decision.
 
 Gate: a human review explicitly promotes or retains sleeping as opt-in; no
 test, evidence tool, or unattended run may make that product decision.

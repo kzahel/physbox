@@ -54,7 +54,7 @@ quality. Known limitations remain part of the row.
 | COLL-8 | GPU picking | **Limited** | Shared grab/erase selection uses bounded GPU hit selection; it is not a general spatial-query API. |
 | SOLVE-1 | Soft-coupled rigid solver | **Implemented** | Reviewed 60/4/i1, contact 30 Hz/damping 10/static x2 default; quiet feel accepted with visible tall-stack compliance and step-407 16-stack loss. |
 | SOLVE-2 | Hard/direct comparison | **Implemented** | Explicit named comparator only; never an automatic fallback. |
-| SOLVE-3 | Sleeping and waking | **Limited** | Versioned generation-safe GPU state and a sorted awake-dynamic list/indirect-argument seam are in the ordinary graph, but effective sleeping is hard-false. No sleep transition, wake trigger/propagation, or solver filtering exists yet. |
+| SOLVE-3 | Sleeping and waking | **Limited** | Versioned generation-safe GPU state, a sorted awake-dynamic list/indirect-argument seam, and an engine-rendered persisted request toggle are in the ordinary graph, but effective sleeping is hard-false. No sleep transition, wake trigger/propagation, or solver filtering exists yet. |
 | JOINT-1 | Grab constraint | **Implemented** | Anchored GPU grab retains collision and bounded release velocity. |
 | JOINT-2 | General joints | **Not implemented** | Distance/revolute or another first authored joint follows accepted free-body rigid behavior. |
 

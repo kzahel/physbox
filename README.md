@@ -134,17 +134,20 @@ restores the complete configuration on the next launch, and keeps the URL
 synchronized automatically for reproducibility. No query-string editing is
 required.
 
-The S23.2 sleeping checkpoint also accepts `--sleeping on|off` (or the matching
-web query) as an experimental request. Sleeping remains off by default and is
-currently ineffective: reports distinguish requested from effective state,
-and there is intentionally no ordinary menu item until later sleeping/waking
-behavior and promotion gates pass.
+The S23.2 sleeping checkpoint accepts `--sleeping on|off` (or the matching web
+query) as an experimental request. **MENU → WORLD → SLEEP REQUEST** provides
+the same engine-rendered control and applies it immediately while preserving
+the rest of the physics configuration. The browser persists the request and
+keeps the URL synchronized. Sleeping remains off by default and is currently
+ineffective: the button and reports distinguish requested state from the
+hard-false effective state.
 
 Open **MENU → WORLD** to choose **64 SLOTS**, **256 SLOTS**, **1K SLOTS**, or
-**10K SLOTS**. Selection rebuilds and restarts the current scenario immediately
-while retaining camera and tool state. The HUD reports live/effective body
-slots, point capacity, allocated bytes, and overflow. The browser stores this
-choice separately under `physbox5.world.v1` and restores it on the next launch.
+**10K SLOTS**, and to change **SLEEP REQUEST**. A selection rebuilds and
+restarts the current scenario immediately while retaining camera and tool
+state. The HUD reports live/effective body slots, point capacity, allocated
+bytes, and overflow. The browser stores the capacity choice separately under
+`physbox5.world.v1` and restores it on the next launch.
 The higher tiers are deliberately labeled as potentially slow: 10K proves that
 the real product graph can be constructed and executed, not that every device
 can simulate or render 10K bodies at 60 Hz. The cross-host default remains 64;
