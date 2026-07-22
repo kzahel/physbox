@@ -408,21 +408,32 @@ try {
       null,
       { timeout: 10_000 },
     );
-    await page.mouse.click(viewportWidth * 0.75, viewportHeight * 0.3);
+    await page.mouse.move(viewportWidth * 0.68, viewportHeight * 0.35);
+    await page.mouse.down();
     await page.waitForFunction(
       ({ executed }) => {
         const frame = globalThis.__physbox5?.frame;
-        return frame?.bodyCommands?.executedConstructionIntentsTotal > executed
-          && frame?.constructionDiagnostic?.state?.attemptedIntents >= 1;
+        return frame?.bodyCommands?.executedConstructionIntentsTotal > executed;
       },
       { executed: beforeConstruction.bodyCommands.executedConstructionIntentsTotal },
       { timeout: 10_000 },
     );
+    await page.mouse.move(viewportWidth * 0.82, viewportHeight * 0.35, { steps: 4 });
+    await page.waitForFunction(
+      ({ executed }) => {
+        const frame = globalThis.__physbox5?.frame;
+        return frame?.bodyCommands?.executedConstructionIntentsTotal >= executed + 2
+          && frame?.constructionDiagnostic?.state?.attemptedIntents >= 2;
+      },
+      { executed: beforeConstruction.bodyCommands.executedConstructionIntentsTotal },
+      { timeout: 10_000 },
+    );
+    await page.mouse.up();
     capturedConstruction = await page.evaluate(() => globalThis.__physbox5.frame);
     if (
       capturedConstruction.constructionDiagnostic.source !== "async-gpu"
       || capturedConstruction.constructionDiagnostic.state.lastResult !== "placed"
-      || capturedConstruction.constructionDiagnostic.state.liveBodies !== 3
+      || capturedConstruction.constructionDiagnostic.state.liveBodies !== 4
       || capturedConstruction.constructionDiagnostic.ageFrames === null
       || capturedConstruction.constructionDiagnostic.blockingReadbackForAdvancement
       || capturedConstruction.ui.diagnosticSource !== "async-gpu"

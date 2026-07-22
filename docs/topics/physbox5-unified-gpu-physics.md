@@ -147,6 +147,18 @@ The initial rigid experience should remain playable throughout development:
   sleep/wake transitions;
 - reset and replay the same scene on desktop and in the browser.
 
+Circle and rectangle placement use one shared touch-first gesture policy. A
+quick tap commits once on release. Holding for 0.25 seconds enters placement
+paint mode, attempts another primitive every 0.10 seconds, and follows the
+current pointer target until release or cancellation. Hold time advances only
+during active interactive wall time, independent of the selected fixed-step
+rate, but a repeat emits only when an outer fixed step is admitted. Pause and
+overload therefore cannot accumulate a burst of deferred placements. The
+release after paint mode does not add another primitive, and erase remains a
+deliberate release-committed action. This also preserves the two-contact
+transition to camera navigation without committing a short cancelled
+construction gesture.
+
 After those interactions match the intended Box2D-like baseline, water returns
 as the first additional material. The later experience adds pouring, buoyancy,
 displacement, off-center fluid torque, and wave impacts without introducing a

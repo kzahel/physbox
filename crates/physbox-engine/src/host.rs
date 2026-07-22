@@ -174,7 +174,14 @@ struct ActiveToolPointer {
     id: u64,
     tool: WorkbenchTool,
     down_target: Vec2,
+    current_target: Vec2,
+    active_hold_seconds: f64,
+    just_started: bool,
+    repeated: bool,
 }
+
+const CONSTRUCTION_HOLD_DELAY_SECONDS: f64 = 0.25;
+const CONSTRUCTION_REPEAT_INTERVAL_SECONDS: f64 = 0.10;
 
 impl BodyInteractionState {
     fn new(scheduled: Vec<ScheduledBodyCommandV1>, accept_live_input: bool) -> Self {
@@ -242,6 +249,10 @@ impl BodyInteractionState {
                         id: event.id,
                         tool: self.tool,
                         down_target: target,
+                        current_target: target,
+                        active_hold_seconds: 0.0,
+                        just_started: true,
+                        repeated: false,
                     });
                     if self.tool == WorkbenchTool::Grab {
                         let intent = GrabIntentV1::Begin {
@@ -258,7 +269,9 @@ impl BodyInteractionState {
                         .active_pointer
                         .is_some_and(|active| active.id == event.id) =>
                 {
-                    if self.tool == WorkbenchTool::Grab {
+                    let active = self.active_pointer.as_mut().expect("active pointer exists");
+                    active.current_target = target;
+                    if active.tool == WorkbenchTool::Grab {
                         if self.pending_grab.coalesce_target(target) {
                             self.report.coalesced_targets_total += 1;
                         } else {
@@ -281,23 +294,10 @@ impl BodyInteractionState {
                             sequence: self.take_sequence(),
                         };
                         self.push_grab(intent);
-                    } else if event.phase == PointerPhase::Up {
+                    } else if event.phase == PointerPhase::Up && !active.repeated {
                         let sequence = self.take_sequence();
-                        let intent = match active.tool {
-                            WorkbenchTool::Circle => ConstructionIntentV1::PlaceCircle {
-                                sequence,
-                                world_target: active.down_target,
-                            },
-                            WorkbenchTool::Rectangle => ConstructionIntentV1::PlaceRectangle {
-                                sequence,
-                                world_target: active.down_target,
-                            },
-                            WorkbenchTool::Erase => ConstructionIntentV1::EraseAt {
-                                sequence,
-                                world_target: active.down_target,
-                            },
-                            WorkbenchTool::Grab => unreachable!(),
-                        };
+                        let intent = construction_intent(active.tool, sequence, active.down_target)
+                            .expect("non-grab tools produce construction intents");
                         self.push_construction(intent);
                     }
                     self.active_pointer = None;
@@ -308,11 +308,17 @@ impl BodyInteractionState {
         }
     }
 
-    fn prepare(&mut self, steps: u32, completed_steps: u64) -> PreparedBodyCommands {
+    fn prepare(
+        &mut self,
+        steps: u32,
+        completed_steps: u64,
+        active_hold_seconds: f64,
+    ) -> PreparedBodyCommands {
         self.report.grab_intent_dispatches_this_frame = 0;
         self.report.construction_intent_dispatches_this_frame = 0;
         self.report.grab_constraint_dispatches_this_frame = steps;
         let mut ranges = vec![BodyCommandStepRange { start: 0, count: 0 }; steps as usize];
+        self.advance_construction_hold(active_hold_seconds, steps != 0);
         if steps == 0 {
             self.update_presentation_counts();
             return PreparedBodyCommands {
@@ -502,6 +508,63 @@ impl BodyInteractionState {
         if self.pending_construction.push(intent).is_err() {
             self.report.overflowed = true;
         }
+    }
+
+    fn advance_construction_hold(&mut self, elapsed_seconds: f64, can_emit: bool) {
+        let Some(active) = &mut self.active_pointer else {
+            return;
+        };
+        if !matches!(
+            active.tool,
+            WorkbenchTool::Circle | WorkbenchTool::Rectangle
+        ) {
+            return;
+        }
+        if active.just_started {
+            active.just_started = false;
+            return;
+        }
+        let delay_seconds = if active.repeated {
+            CONSTRUCTION_REPEAT_INTERVAL_SECONDS
+        } else {
+            CONSTRUCTION_HOLD_DELAY_SECONDS
+        };
+        active.active_hold_seconds =
+            (active.active_hold_seconds + elapsed_seconds.max(0.0)).min(delay_seconds);
+        if !can_emit || active.active_hold_seconds + 1.0e-9 < delay_seconds {
+            return;
+        }
+
+        let tool = active.tool;
+        let target = active.current_target;
+        active.active_hold_seconds = 0.0;
+        active.repeated = true;
+        let sequence = self.take_sequence();
+        let intent = construction_intent(tool, sequence, target)
+            .expect("repeat-enabled tools produce construction intents");
+        self.push_construction(intent);
+    }
+}
+
+fn construction_intent(
+    tool: WorkbenchTool,
+    sequence: u32,
+    world_target: Vec2,
+) -> Option<ConstructionIntentV1> {
+    match tool {
+        WorkbenchTool::Circle => Some(ConstructionIntentV1::PlaceCircle {
+            sequence,
+            world_target,
+        }),
+        WorkbenchTool::Rectangle => Some(ConstructionIntentV1::PlaceRectangle {
+            sequence,
+            world_target,
+        }),
+        WorkbenchTool::Erase => Some(ConstructionIntentV1::EraseAt {
+            sequence,
+            world_target,
+        }),
+        WorkbenchTool::Grab => None,
     }
 }
 
@@ -1211,11 +1274,16 @@ impl EngineHost {
                 self.solver_executed = true;
             }
         } else if let Some(world) = &self.body_world {
+            let active_hold_seconds = if pacing.mode == crate::PacingMode::ExplicitStep {
+                f64::from(steps) * self.clock.fixed_step_seconds()
+            } else {
+                pacing.admitted_active_wall_seconds_this_frame
+            };
             let commands = self
                 .body_interaction
                 .as_mut()
                 .expect("GPU body worlds own body command state")
-                .prepare(steps, self.fixed_steps_total);
+                .prepare(steps, self.fixed_steps_total, active_hold_seconds);
             world
                 .encode_steps_with_grab_intents(
                     context.queue,
@@ -1798,5 +1866,133 @@ impl EngineHost {
             .ok_or_else(|| "construction body evidence requires a GPU body world".to_owned())?
             .copy_construction_body_evidence(encoder, destination);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod body_interaction_tests {
+    use super::*;
+
+    fn pointer(id: u64, phase: PointerPhase, world_target: Vec2) -> WorldPointerEvent {
+        WorldPointerEvent {
+            id,
+            phase,
+            button: PointerButton::Primary,
+            world_target,
+        }
+    }
+
+    fn intent_target(intent: &ConstructionIntentV1) -> Vec2 {
+        match intent {
+            ConstructionIntentV1::PlaceCircle { world_target, .. }
+            | ConstructionIntentV1::PlaceRectangle { world_target, .. }
+            | ConstructionIntentV1::EraseAt { world_target, .. } => *world_target,
+        }
+    }
+
+    #[test]
+    fn held_placement_repeats_at_the_moving_pointer_and_stops_on_release() {
+        let mut interaction = BodyInteractionState::new(Vec::new(), true);
+        interaction.select_tool(WorkbenchTool::Circle);
+        let down_target = Vec2::new(-0.4, 0.6);
+        let moved_target = Vec2::new(0.3, 0.8);
+        interaction.capture_pointer_events(&[pointer(1, PointerPhase::Down, down_target)]);
+        interaction.prepare(0, 0, 0.0);
+
+        let before_delay = interaction.prepare(14, 0, 14.0 / 60.0);
+        assert!(before_delay.construction_batch.intents.is_empty());
+        interaction.capture_pointer_events(&[pointer(1, PointerPhase::Move, moved_target)]);
+
+        let first_repeat = interaction.prepare(1, 14, 1.0 / 60.0);
+        assert_eq!(first_repeat.construction_batch.intents.len(), 1);
+        assert_eq!(
+            intent_target(&first_repeat.construction_batch.intents[0]),
+            moved_target
+        );
+
+        let before_interval = interaction.prepare(5, 15, 5.0 / 60.0);
+        assert!(before_interval.construction_batch.intents.is_empty());
+        let second_repeat = interaction.prepare(1, 20, 1.0 / 60.0);
+        assert_eq!(second_repeat.construction_batch.intents.len(), 1);
+        assert_eq!(
+            intent_target(&second_repeat.construction_batch.intents[0]),
+            moved_target
+        );
+
+        interaction.capture_pointer_events(&[pointer(1, PointerPhase::Up, moved_target)]);
+        let after_release = interaction.prepare(60, 21, 1.0);
+        assert!(after_release.construction_batch.intents.is_empty());
+        assert!(!interaction.report.construction_pointer_active);
+        assert_eq!(interaction.report.queued_construction_intents_total, 2);
+    }
+
+    #[test]
+    fn quick_tap_places_once_and_cancel_places_nothing() {
+        let mut interaction = BodyInteractionState::new(Vec::new(), true);
+        interaction.select_tool(WorkbenchTool::Rectangle);
+        let tap_target = Vec2::new(0.2, 0.7);
+        interaction.capture_pointer_events(&[
+            pointer(1, PointerPhase::Down, tap_target),
+            pointer(1, PointerPhase::Up, tap_target),
+        ]);
+        let tap = interaction.prepare(1, 0, 1.0 / 60.0);
+        assert_eq!(tap.construction_batch.intents.len(), 1);
+        assert_eq!(
+            intent_target(&tap.construction_batch.intents[0]),
+            tap_target
+        );
+
+        interaction.capture_pointer_events(&[pointer(2, PointerPhase::Down, tap_target)]);
+        interaction.capture_pointer_events(&[pointer(2, PointerPhase::Cancel, tap_target)]);
+        let cancelled = interaction.prepare(120, 1, 2.0);
+        assert!(cancelled.construction_batch.intents.is_empty());
+        assert_eq!(interaction.report.queued_construction_intents_total, 1);
+    }
+
+    #[test]
+    fn hold_time_survives_zero_step_frames_without_queuing_a_backlog() {
+        let mut interaction = BodyInteractionState::new(Vec::new(), true);
+        interaction.select_tool(WorkbenchTool::Circle);
+        let target = Vec2::new(0.1, 0.6);
+        interaction.capture_pointer_events(&[pointer(1, PointerPhase::Down, target)]);
+        interaction.prepare(0, 0, 0.0);
+
+        assert!(
+            interaction
+                .prepare(0, 0, 0.24)
+                .construction_batch
+                .intents
+                .is_empty()
+        );
+        assert!(
+            interaction
+                .prepare(0, 0, 0.02)
+                .construction_batch
+                .intents
+                .is_empty()
+        );
+        assert_eq!(interaction.report.queued_construction_intents_total, 0);
+
+        let admitted = interaction.prepare(1, 0, 0.0);
+        assert_eq!(admitted.construction_batch.intents.len(), 1);
+        assert_eq!(interaction.report.queued_construction_intents_total, 1);
+    }
+
+    #[test]
+    fn erase_remains_release_committed_without_hold_repeat() {
+        let mut interaction = BodyInteractionState::new(Vec::new(), true);
+        interaction.select_tool(WorkbenchTool::Erase);
+        let target = Vec2::new(0.0, 0.5);
+        interaction.capture_pointer_events(&[pointer(1, PointerPhase::Down, target)]);
+        let held = interaction.prepare(120, 0, 2.0);
+        assert!(held.construction_batch.intents.is_empty());
+
+        interaction.capture_pointer_events(&[pointer(1, PointerPhase::Up, target)]);
+        let released = interaction.prepare(1, 120, 1.0 / 60.0);
+        assert_eq!(released.construction_batch.intents.len(), 1);
+        assert!(matches!(
+            released.construction_batch.intents[0],
+            ConstructionIntentV1::EraseAt { .. }
+        ));
     }
 }

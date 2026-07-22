@@ -63,7 +63,7 @@ quality. Known limitations remain part of the row.
 | ID | Capability | Status | Current boundary / next gate |
 | --- | --- | --- | --- |
 | TOOL-1 | Camera and direct manipulation | **Implemented** | Shared pan, zoom, recenter, grab, touch policy, and visible tether. |
-| TOOL-2 | Circle/rectangle place and erase | **Implemented** | Fixed-size placement and erase exercise the real GPU construction path. |
+| TOOL-2 | Circle/rectangle place and erase | **Implemented** | Fixed-size placement and erase exercise the real GPU construction path. A quick tap places once; a 0.25-second hold paints circles or rectangles at a bounded 10 Hz cadence while following the pointer. |
 | TOOL-3 | Solver/configuration inspection | **Implemented** | Engine-rendered responsive menu selects any registered solver profile, bounded physics settings, and 64/256/1K/10K world-capacity presets. Browser choices persist locally. |
 | TOOL-4 | Selection and property editing | **Not implemented** | No persistent user selection, transform/material editor, or deliberate drag-to-size authoring. |
 | TOOL-5 | Scene document and save/load | **Not implemented** | Validation scenarios are reproducible contracts, not an authored product document format. |

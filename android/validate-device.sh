@@ -72,19 +72,20 @@ if [[ "${PHYSBOX5_ANDROID_CONSTRUCTION_CAPTURE:-0}" = "1" ]]; then
     TOOL_POINT="$(node -e 'const w=+process.argv[1],h=+process.argv[2],s=Math.max(1,Math.min(2,Math.min(w,h)/600)); console.log(`${Math.round(229*s)} ${Math.round(50*s)}`)' "$WIDTH" "$HEIGHT")"
     read -r TOOL_X TOOL_Y <<< "$TOOL_POINT"
     "$ADB" -s "$SERIAL" shell input tap "$TOOL_X" "$TOOL_Y"
-    "$ADB" -s "$SERIAL" shell input tap $((WIDTH * 75 / 100)) $((HEIGHT * 30 / 100))
+    PLACE_X=$((WIDTH * 75 / 100)); PLACE_Y=$((HEIGHT * 30 / 100))
+    "$ADB" -s "$SERIAL" shell input swipe "$PLACE_X" "$PLACE_Y" "$PLACE_X" "$PLACE_Y" 700
     CONSTRUCTION_VISIBLE=0
     for _ in $(seq 1 30); do
         "$ADB" -s "$SERIAL" logcat -d -t 10000 > "$LOG"
         REPORT="$(rg 'PHYSBOX5_MARK_FRAME_RENDERED ' "$LOG" | tail -1 | sed 's/^.*PHYSBOX5_MARK_FRAME_RENDERED //')"
         if node -e '
           const frame = JSON.parse(process.argv[1]); const before = Number(process.argv[2]);
-          process.exit(frame.bodyCommands.c > before && frame.d?.a >= 1 && frame.d?.r === "placed" && frame.d?.b === false ? 0 : 1);
+          process.exit(frame.bodyCommands.c >= before + 2 && frame.d?.a >= 2 && frame.d?.b === false ? 0 : 1);
         ' "$REPORT" "$BEFORE_CONSTRUCTION"; then CONSTRUCTION_VISIBLE=1; break; fi
         sleep 0.25
     done
-    [[ "$CONSTRUCTION_VISIBLE" -eq 1 ]] || { echo "error: Android construction diagnostic did not become visible; see $LOG" >&2; exit 1; }
-    CAPTURE_PHASE="${SCENARIO}-construction-placed"
+    [[ "$CONSTRUCTION_VISIBLE" -eq 1 ]] || { echo "error: Android hold-repeat construction diagnostic did not become visible; see $LOG" >&2; exit 1; }
+    CAPTURE_PHASE="${SCENARIO}-construction-hold-repeat"
 fi
 if [[ "${PHYSBOX5_ANDROID_GRAB_CAPTURE:-0}" = "1" ]]; then
     [[ "$SCENARIO" = "rigid-floor" ]] || { echo "error: Android grab capture requires rigid-floor" >&2; exit 2; }

@@ -1899,6 +1899,76 @@ mod tests {
     }
 
     #[test]
+    fn held_placement_paints_moved_targets_through_the_gpu_construction_path() {
+        let target_size = [960, 600];
+        let mut renderer = pollster::block_on(OffscreenRenderer::new(
+            target_size[0],
+            target_size[1],
+            EngineConfig {
+                scenario: ValidationScenario::Bootstrap,
+                ..Default::default()
+            },
+        ))
+        .unwrap();
+        let layout = crate::ui::UiLayout::for_target(target_size);
+        let world_at = |world| {
+            crate::Camera2d::fixed()
+                .resolve(target_size)
+                .unwrap()
+                .world_to_screen(world)
+        };
+        let pointer = |id, phase, at| {
+            crate::InputEvent::Pointer(crate::PointerEvent {
+                id,
+                phase,
+                button: crate::PointerButton::Primary,
+                normalized_position: at,
+            })
+        };
+        let circle_tool = layout.center_normalized("tool", 1);
+        let selected = renderer.render(FrameInput::exact(0).with_input_events(vec![
+            pointer(1, crate::PointerPhase::Down, circle_tool),
+            pointer(1, crate::PointerPhase::Up, circle_tool),
+        ]));
+        assert_eq!(selected.ui.current_tool, "circle");
+
+        let first_target = world_at([-0.65, 0.55]);
+        let second_target = world_at([0.65, 0.55]);
+        renderer.render(FrameInput::exact(0).with_input_events(vec![pointer(
+            2,
+            crate::PointerPhase::Down,
+            first_target,
+        )]));
+        renderer.render(FrameInput::exact(14));
+        renderer.render(FrameInput::exact(1).with_input_events(vec![pointer(
+            2,
+            crate::PointerPhase::Move,
+            first_target,
+        )]));
+        renderer.render(FrameInput::exact(6).with_input_events(vec![pointer(
+            2,
+            crate::PointerPhase::Move,
+            second_target,
+        )]));
+        let released = renderer.render(FrameInput::exact(1).with_input_events(vec![pointer(
+            2,
+            crate::PointerPhase::Up,
+            second_target,
+        )]));
+
+        assert_eq!(
+            released.body_commands.executed_construction_intents_total,
+            2
+        );
+        assert!(!released.body_commands.construction_pointer_active);
+        let construction = renderer.read_construction_state().unwrap();
+        assert_eq!(construction.attempted_intents, 2);
+        assert_eq!(construction.succeeded_intents, 2);
+        assert_eq!(construction.placed_circles, 2);
+        assert_eq!(construction.live_bodies, 4);
+    }
+
+    #[test]
     fn erase_and_generation_reuse_exclude_dead_proxy_and_recontact() {
         let target_size = [960, 600];
         let mut renderer = pollster::block_on(OffscreenRenderer::new(
