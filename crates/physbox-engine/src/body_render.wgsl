@@ -1,12 +1,20 @@
 struct RenderParams {
     viewport: vec4f,
     camera: vec4f,
+    sleep_visualization: vec4u,
+};
+
+struct SleepStateV1 {
+    identity_flags: vec4u,
+    provenance: vec4u,
 };
 
 struct BodyVertexOutput {
     @builtin(position) position: vec4f,
     @location(0) local: vec2f,
     @location(1) @interpolate(flat) flags: u32,
+    @location(2) @interpolate(flat) sleep_visual_state: u32,
+    @location(3) @interpolate(flat) quiet_progress: f32,
 };
 
 struct GrabVertexOutput {
@@ -21,11 +29,22 @@ struct GrabVertexOutput {
 @group(0) @binding(2) var<storage, read> metadata: array<vec4u>;
 @group(0) @binding(3) var<uniform> params: RenderParams;
 @group(0) @binding(4) var<storage, read> active_bodies: array<u32>;
+@group(0) @binding(5) var<storage, read> sleep_states: array<SleepStateV1>;
 
 const FLAG_LIVE: u32 = 1u << 0u;
 const FLAG_FIXED: u32 = 1u << 2u;
 const FLAG_RECTANGLE: u32 = 1u << 8u;
 const FLAG_CIRCLE: u32 = 1u << 9u;
+const SLEEP_FLAG_AWAKE: u32 = 1u << 0u;
+const SLEEP_FLAG_ELIGIBLE: u32 = 1u << 1u;
+const SLEEP_STATE_LAYOUT_VERSION: u32 = 1u;
+const CAUSE_INITIALIZATION: u32 = 1u << 0u;
+const CAUSE_CONFIGURATION: u32 = 1u << 1u;
+const CAUSE_AUTOMATIC: u32 = 1u << 9u;
+const VISUAL_NORMAL: u32 = 0u;
+const VISUAL_QUIET: u32 = 1u;
+const VISUAL_ASLEEP: u32 = 2u;
+const VISUAL_RECENTLY_WOKEN: u32 = 3u;
 
 @vertex
 fn background_vertex(@builtin(vertex_index) vertex_index: u32) -> @builtin(position) vec4f {
@@ -63,7 +82,43 @@ fn body_vertex(
     let flags = identity.y;
     let local = corners[vertex_index];
     if ((flags & FLAG_LIVE) == 0u) {
-        return BodyVertexOutput(vec4f(2.0, 2.0, 0.0, 1.0), local, flags);
+        return BodyVertexOutput(
+            vec4f(2.0, 2.0, 0.0, 1.0),
+            local,
+            flags,
+            VISUAL_NORMAL,
+            0.0,
+        );
+    }
+    var sleep_visual_state = VISUAL_NORMAL;
+    var quiet_progress = 0.0;
+    if (params.sleep_visualization.x != 0u && (flags & FLAG_FIXED) == 0u) {
+        let state = sleep_states[body_index];
+        let state_flags = state.identity_flags.y;
+        let valid = state.identity_flags.x == identity.x &&
+            state.provenance.z == SLEEP_STATE_LAYOUT_VERSION &&
+            (state_flags & SLEEP_FLAG_ELIGIBLE) != 0u;
+        if (valid && (state_flags & SLEEP_FLAG_AWAKE) == 0u) {
+            sleep_visual_state = VISUAL_ASLEEP;
+        } else if (valid) {
+            let transition_causes = state.provenance.x &
+                ~(CAUSE_INITIALIZATION | CAUSE_CONFIGURATION | CAUSE_AUTOMATIC);
+            let transition_age = params.sleep_visualization.y - state.identity_flags.w;
+            let recently_woken = state.identity_flags.w != 0u &&
+                transition_causes != 0u &&
+                transition_age <= params.sleep_visualization.w;
+            if (recently_woken) {
+                sleep_visual_state = VISUAL_RECENTLY_WOKEN;
+            } else if (state.identity_flags.z != 0u) {
+                sleep_visual_state = VISUAL_QUIET;
+                quiet_progress = clamp(
+                    f32(state.identity_flags.z) /
+                        f32(max(params.sleep_visualization.z, 1u)),
+                    0.0,
+                    1.0,
+                );
+            }
+        }
     }
     let pose = poses[body_index];
     let half_extents = properties[body_index].xy;
@@ -74,7 +129,32 @@ fn body_vertex(
                                 s * scaled.x + c * scaled.y);
     let camera_half_extents = max(params.camera.zw, vec2f(0.0001));
     let clip = (world - params.camera.xy) / camera_half_extents;
-    return BodyVertexOutput(vec4f(clip, 0.0, 1.0), local, flags);
+    return BodyVertexOutput(
+        vec4f(clip, 0.0, 1.0),
+        local,
+        flags,
+        sleep_visual_state,
+        quiet_progress,
+    );
+}
+
+fn segment_distance(point: vec2f, start: vec2f, end: vec2f) -> f32 {
+    let line = end - start;
+    let projection = clamp(dot(point - start, line) / max(dot(line, line), 0.0001), 0.0, 1.0);
+    return length(point - (start + projection * line));
+}
+
+fn z_mark(local: vec2f) -> f32 {
+    let top = segment_distance(local, vec2f(-0.34, 0.28), vec2f(0.34, 0.28));
+    let slash = segment_distance(local, vec2f(0.34, 0.28), vec2f(-0.34, -0.28));
+    let bottom = segment_distance(local, vec2f(-0.34, -0.28), vec2f(0.34, -0.28));
+    return 1.0 - smoothstep(0.055, 0.095, min(top, min(slash, bottom)));
+}
+
+fn wake_mark(local: vec2f) -> f32 {
+    let stem = segment_distance(local, vec2f(0.0, 0.34), vec2f(0.0, -0.12));
+    let dot = length(local - vec2f(0.0, -0.34));
+    return 1.0 - smoothstep(0.055, 0.095, min(stem, dot));
 }
 
 @fragment
@@ -88,10 +168,38 @@ fn body_fragment(input: BodyVertexOutput) -> @location(0) vec4f {
     let edge_distance = select(rectangle_edge, circle_edge, circle);
     let rim = 1.0 - smoothstep(0.0, 0.10, edge_distance);
     let fixed = (input.flags & FLAG_FIXED) != 0u;
-    let low = select(vec3f(0.10, 0.76, 0.88), vec3f(0.12, 0.20, 0.28), fixed);
-    let high = select(vec3f(0.44, 0.96, 0.78), vec3f(0.24, 0.34, 0.42), fixed);
+    var low = select(vec3f(0.10, 0.76, 0.88), vec3f(0.12, 0.20, 0.28), fixed);
+    var high = select(vec3f(0.44, 0.96, 0.78), vec3f(0.24, 0.34, 0.42), fixed);
+    var rim_color = select(vec3f(0.55, 1.0, 0.92), vec3f(0.34, 0.46, 0.56), fixed);
+    if (input.sleep_visual_state == VISUAL_QUIET) {
+        low = vec3f(0.82, 0.34, 0.035);
+        high = vec3f(1.0, 0.73, 0.13);
+        rim_color = vec3f(1.0, 0.92, 0.46);
+    } else if (input.sleep_visual_state == VISUAL_ASLEEP) {
+        low = vec3f(0.20, 0.23, 0.55);
+        high = vec3f(0.40, 0.52, 0.86);
+        rim_color = vec3f(0.72, 0.82, 1.0);
+    } else if (input.sleep_visual_state == VISUAL_RECENTLY_WOKEN) {
+        low = vec3f(0.78, 0.04, 0.38);
+        high = vec3f(1.0, 0.32, 0.62);
+        rim_color = vec3f(1.0, 0.88, 0.32);
+    }
     var color = mix(low, high, clamp(input.local.y * 0.5 + 0.5, 0.0, 1.0));
-    color += select(vec3f(0.55, 1.0, 0.92), vec3f(0.34, 0.46, 0.56), fixed) * rim * 0.48;
+    color += rim_color * rim * 0.48;
+    if (input.sleep_visual_state == VISUAL_QUIET) {
+        let bar = 1.0 - smoothstep(
+            0.045,
+            0.085,
+            segment_distance(input.local, vec2f(-0.42, -0.48), vec2f(0.42, -0.48)),
+        );
+        let progress_edge = input.quiet_progress * 0.84 - 0.42;
+        let filled = select(0.15, 1.0, input.local.x <= progress_edge);
+        color = mix(color, vec3f(1.0, 0.98, 0.72), bar * filled * 0.9);
+    } else if (input.sleep_visual_state == VISUAL_ASLEEP) {
+        color = mix(color, vec3f(0.94, 0.97, 1.0), z_mark(input.local) * 0.88);
+    } else if (input.sleep_visual_state == VISUAL_RECENTLY_WOKEN) {
+        color = mix(color, vec3f(1.0, 0.98, 0.64), wake_mark(input.local) * 0.92);
+    }
     return vec4f(color, 1.0);
 }
 

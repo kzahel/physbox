@@ -1673,7 +1673,25 @@ mod tests {
             256
         );
         assert_eq!(sleeping_requested.ui.current_tool, "circle");
+        assert!(!sleeping_requested.ui.sleep_visuals_enabled);
         assert!(!sleeping_requested.ui.menu_open);
+
+        renderer.render(
+            FrameInput::exact(0).with_input_events(click(8, layout.center_normalized("menu", 0))),
+        );
+        renderer.render(
+            FrameInput::exact(0)
+                .with_input_events(click(9, layout.center_normalized("world-tab", 0))),
+        );
+        let visuals_enabled = renderer.render(FrameInput::exact(0).with_input_events(click(
+            10,
+            layout.center_normalized("world-sleep-visuals", 0),
+        )));
+        assert!(visuals_enabled.ui.sleep_visuals_enabled);
+        assert!(visuals_enabled.scene_contract.requested_sleeping_enabled);
+        assert!(visuals_enabled.scene_contract.effective_sleeping_enabled);
+        assert_eq!(visuals_enabled.ui.scenario_restarts_total, 1);
+        assert!(!visuals_enabled.ui.menu_open);
     }
 
     #[cfg(feature = "solver-lab")]

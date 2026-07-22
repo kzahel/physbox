@@ -50,6 +50,7 @@ struct IntegrationParamsRaw {
 struct RenderParamsRaw {
     viewport: [f32; 4],
     camera: [f32; 4],
+    sleep_visualization: [u32; 4],
 }
 
 #[repr(C)]
@@ -86,6 +87,10 @@ pub(crate) struct BodyRenderPlan<'a> {
     pub(crate) frame_index: u64,
     pub(crate) camera: crate::CameraFrame2d,
     pub(crate) grab_pointer_active: bool,
+    pub(crate) sleep_visuals_enabled: bool,
+    pub(crate) current_outer_step: u32,
+    pub(crate) quiet_outer_steps: u32,
+    pub(crate) wake_flash_outer_steps: u32,
     pub(crate) ending_timestamp: Option<(&'a wgpu::QuerySet, u32)>,
 }
 
@@ -768,6 +773,7 @@ impl GpuBodyWorld {
                 storage_entry(2, true, wgpu::ShaderStages::VERTEX),
                 uniform_entry(3, wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT),
                 storage_entry(4, true, wgpu::ShaderStages::VERTEX),
+                storage_entry(5, true, wgpu::ShaderStages::VERTEX),
             ],
         });
         let render_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -793,6 +799,10 @@ impl GpuBodyWorld {
                 wgpu::BindGroupEntry {
                     binding: 4,
                     resource: storage.active_body_buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: storage.sleep_state_buffer().as_entire_binding(),
                 },
             ],
         });
@@ -1187,28 +1197,6 @@ impl GpuBodyWorld {
         Ok(capacity)
     }
 
-    pub(crate) fn encode_render(
-        &self,
-        queue: &wgpu::Queue,
-        encoder: &mut wgpu::CommandEncoder,
-        target: crate::renderer::RenderFrameTarget<'_>,
-        frame_index: u64,
-        camera: crate::CameraFrame2d,
-        grab_pointer_active: bool,
-    ) {
-        self.encode_render_with_timestamp(
-            queue,
-            encoder,
-            target,
-            BodyRenderPlan {
-                frame_index,
-                camera,
-                grab_pointer_active,
-                ending_timestamp: None,
-            },
-        );
-    }
-
     pub(crate) fn encode_render_with_timestamp(
         &self,
         queue: &wgpu::Queue,
@@ -1228,6 +1216,12 @@ impl GpuBodyWorld {
                 plan.camera.center()[1],
                 plan.camera.half_extents()[0],
                 plan.camera.half_extents()[1],
+            ],
+            sleep_visualization: [
+                u32::from(plan.sleep_visuals_enabled),
+                plan.current_outer_step,
+                plan.quiet_outer_steps,
+                plan.wake_flash_outer_steps,
             ],
         };
         queue.write_buffer(&self.render_params, 0, bytemuck::bytes_of(&params));

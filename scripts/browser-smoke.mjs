@@ -77,8 +77,8 @@ try {
   if (before.frame.sceneContract?.solverProfile !== "soft-coupled") {
     throw new Error(`fresh browser did not use soft-coupled: ${JSON.stringify(before.frame.sceneContract)}`);
   }
-  if (before.frame.ui?.version !== 7) {
-    throw new Error(`browser did not expose UI contract 7: ${JSON.stringify(before.frame.ui)}`);
+  if (before.frame.ui?.version !== 8 || before.frame.ui?.sleepVisualsEnabled !== false) {
+    throw new Error(`browser did not expose UI contract 8 defaults: ${JSON.stringify(before.frame.ui)}`);
   }
   if (
     before.frame.sceneContract?.physicsConfigurationVersion !== 2
@@ -141,6 +141,10 @@ try {
   ];
   const solverApplyCenter = [279 * uiScale, (compactLandscape ? 316 : 541) * uiScale];
   const worldSleepingCenter = [192 * uiScale, 331 * uiScale];
+  const worldSleepVisualsCenter = [
+    (compactLandscape ? 496 : 192) * uiScale,
+    (compactLandscape ? 331 : 377) * uiScale,
+  ];
   await page.mouse.click(62 * uiScale, 50 * uiScale);
   await page.waitForFunction(() => globalThis.__physbox5?.frame?.ui?.menuOpen, null, { timeout: 10_000 });
   await page.evaluate(() => new Promise((resolveFrame) => {
@@ -217,12 +221,29 @@ try {
       requestAnimationFrame(() => requestAnimationFrame(resolveFrame));
     }));
     await captureCompleteScreenshot(page, menuScreenshot, "browser sleeping request on menu");
+    await page.mouse.click(...worldSleepVisualsCenter);
+    await page.waitForFunction(
+      () => {
+        const frame = globalThis.__physbox5?.frame;
+        return frame?.ui?.sleepVisualsEnabled === true
+          && frame?.sceneContract?.requestedSleepingEnabled === true
+          && frame?.sceneContract?.effectiveSleepingEnabled === true
+          && !frame?.ui?.menuOpen;
+      },
+      null,
+      { timeout: 30_000 },
+    );
+    await page.waitForTimeout(750);
+    await captureCompleteScreenshot(page, menuScreenshot, "browser sleep-state visualization");
+    await page.mouse.click(62 * uiScale, 50 * uiScale);
+    await page.mouse.click(300 * uiScale, 104 * uiScale);
     await page.mouse.click(...worldSleepingCenter);
     await page.waitForFunction(
       () => {
         const frame = globalThis.__physbox5?.frame;
         return frame?.sceneContract?.requestedSleepingEnabled === false
           && frame?.sceneContract?.effectiveSleepingEnabled === false
+          && frame?.ui?.sleepVisualsEnabled === true
           && !frame?.ui?.menuOpen;
       },
       null,
@@ -242,6 +263,17 @@ try {
     }, true);
     await page.mouse.click(62 * uiScale, 50 * uiScale);
     await page.waitForFunction(() => globalThis.__physbox5?.frame?.ui?.menuOpen, null, { timeout: 10_000 });
+    await page.mouse.click(300 * uiScale, 104 * uiScale);
+    await page.mouse.click(...worldSleepVisualsCenter);
+    await page.waitForFunction(
+      () => globalThis.__physbox5?.frame?.ui?.sleepVisualsEnabled === false
+        && !globalThis.__physbox5?.frame?.ui?.menuOpen,
+      null,
+      { timeout: 10_000 },
+    );
+    await page.mouse.click(62 * uiScale, 50 * uiScale);
+    await page.waitForFunction(() => globalThis.__physbox5?.frame?.ui?.menuOpen, null, { timeout: 10_000 });
+    await page.mouse.click(76 * uiScale, 104 * uiScale);
   }
   if (solverLab) {
     await page.mouse.click(188 * uiScale, 104 * uiScale);

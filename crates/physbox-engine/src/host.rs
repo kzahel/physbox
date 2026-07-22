@@ -9,7 +9,7 @@ use physbox_launch::{ValidationScenario, WorldCapacityPreset};
 use crate::{
     AdapterDiagnostics, BODY_COMMAND_CAPACITY, BoundedBodyCommands, Camera2d, EngineConfig,
     FrameInput, GpuSolverSchedulingPolicyV1, InputEvent, PointerButton, PointerPhase, StepRequest,
-    body_world::{BodyCommandStepRange, BodyStepPlan, GpuBodyWorld},
+    body_world::{BodyCommandStepRange, BodyRenderPlan, BodyStepPlan, GpuBodyWorld},
     clock::{InteractiveClockInput, SimulationClock},
     construction::{
         BoundedConstructionIntents, CONSTRUCTION_INTENT_CAPACITY, empty_construction_intent_batch,
@@ -178,6 +178,7 @@ struct ActiveToolPointer {
 }
 
 const CONSTRUCTION_HOLD_DELAY_SECONDS: f64 = 0.25;
+const SLEEP_WAKE_FLASH_MILLISECONDS: u32 = 160;
 const CONSTRUCTION_REPEAT_INTERVAL_SECONDS: f64 = 0.10;
 
 impl BodyInteractionState {
@@ -1071,6 +1072,7 @@ impl EngineHost {
             solver_profiles,
         } = replacement;
         let camera = self.camera;
+        let sleep_visuals_enabled = self.ui.sleep_visuals_enabled();
         let mut replacement = Self::new(
             device,
             queue,
@@ -1089,6 +1091,9 @@ impl EngineHost {
             .ui
             .set_solver_profiles(solver_profiles, replacement.config.solver_profile.clone());
         replacement.ui.select_tool(selected_tool);
+        replacement
+            .ui
+            .set_sleep_visuals_enabled(sleep_visuals_enabled);
         if preserve_camera {
             replacement.camera = camera;
         }
@@ -1305,13 +1310,30 @@ impl EngineHost {
                 .body_interaction
                 .as_ref()
                 .is_some_and(|interaction| interaction.report.grab_pointer_active);
-            world.encode_render(
+            let physics = self.config.solver_profile.physics();
+            let quiet_outer_steps = physbox_contracts::SleepPolicyV1::experimental_s23()
+                .quiet_outer_steps(physics.fixed_step_hz)
+                .expect("validated physics hertz resolves the sleep quiet duration");
+            let wake_flash_outer_steps = physics
+                .fixed_step_hz
+                .saturating_mul(SLEEP_WAKE_FLASH_MILLISECONDS)
+                .div_ceil(1_000)
+                .max(1);
+            world.encode_render_with_timestamp(
                 context.queue,
                 context.encoder,
                 context.target,
-                self.frame_index,
-                camera_frame,
-                grab_pointer_active,
+                BodyRenderPlan {
+                    frame_index: self.frame_index,
+                    camera: camera_frame,
+                    grab_pointer_active,
+                    sleep_visuals_enabled: self.ui.sleep_visuals_enabled(),
+                    current_outer_step: self.fixed_steps_total.saturating_add(u64::from(steps))
+                        as u32,
+                    quiet_outer_steps,
+                    wake_flash_outer_steps,
+                    ending_timestamp: None,
+                },
             );
         } else {
             let mut pass = context

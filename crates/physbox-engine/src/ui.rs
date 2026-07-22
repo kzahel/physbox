@@ -16,7 +16,7 @@ use crate::{
     },
 };
 
-pub(crate) const UI_CONTRACT_VERSION: u32 = 7;
+pub(crate) const UI_CONTRACT_VERSION: u32 = 8;
 const STATIC_INSTANCE_CAPACITY: usize = 384;
 const DYNAMIC_INSTANCE_CAPACITY: usize = 192;
 
@@ -76,6 +76,7 @@ pub(crate) struct UiRouting {
     pub events: Vec<InputEvent>,
     pub action: Option<UiAction>,
     pub selected_tool: WorkbenchTool,
+    sleep_visuals_toggled: bool,
 }
 
 pub(crate) struct UiFrameModel<'a> {
@@ -101,6 +102,7 @@ struct UiViewState<'a> {
     menu_open: bool,
     menu_page: MenuPage,
     selected_tool: WorkbenchTool,
+    sleep_visuals_enabled: bool,
     solver_profiles: &'a [SolverProfileConfig],
     draft_solver_profile: &'a SolverProfileConfig,
 }
@@ -117,6 +119,7 @@ pub(crate) struct WorkbenchUi {
     menu_open: bool,
     menu_page: MenuPage,
     selected_tool: WorkbenchTool,
+    sleep_visuals_enabled: bool,
     solver_profiles: Vec<SolverProfileConfig>,
     draft_solver_profile: SolverProfileConfig,
     captured_pointers: BTreeSet<u64>,
@@ -135,6 +138,7 @@ impl WorkbenchUi {
             menu_open: false,
             menu_page: MenuPage::default(),
             selected_tool: WorkbenchTool::default(),
+            sleep_visuals_enabled: false,
             solver_profiles,
             draft_solver_profile: solver_profile,
             captured_pointers: BTreeSet::new(),
@@ -146,7 +150,7 @@ impl WorkbenchUi {
         events: &[InputEvent],
         target_size: [u32; 2],
     ) -> UiRouting {
-        route_events(
+        let routing = route_events(
             UiRouteState {
                 menu_open: &mut self.menu_open,
                 menu_page: &mut self.menu_page,
@@ -157,11 +161,23 @@ impl WorkbenchUi {
             },
             events,
             target_size,
-        )
+        );
+        if routing.sleep_visuals_toggled {
+            self.sleep_visuals_enabled = !self.sleep_visuals_enabled;
+        }
+        routing
     }
 
     pub(crate) fn select_tool(&mut self, tool: WorkbenchTool) {
         self.selected_tool = tool;
+    }
+
+    pub(crate) const fn sleep_visuals_enabled(&self) -> bool {
+        self.sleep_visuals_enabled
+    }
+
+    pub(crate) fn set_sleep_visuals_enabled(&mut self, enabled: bool) {
+        self.sleep_visuals_enabled = enabled;
     }
 
     pub(crate) fn set_solver_profiles(
@@ -189,6 +205,7 @@ impl WorkbenchUi {
                 menu_open: self.menu_open,
                 menu_page: self.menu_page,
                 selected_tool: self.selected_tool,
+                sleep_visuals_enabled: self.sleep_visuals_enabled,
                 solver_profiles: &self.solver_profiles,
                 draft_solver_profile: &self.draft_solver_profile,
             },
@@ -220,6 +237,7 @@ fn route_events(
     } = state;
     let mut forwarded = Vec::with_capacity(events.len());
     let mut action = None;
+    let mut sleep_visuals_toggled = false;
     for event in events.iter().copied() {
         let InputEvent::Pointer(pointer) = event else {
             forwarded.push(event);
@@ -301,6 +319,10 @@ fn route_events(
                             draft_solver_profile.clone(),
                         ));
                     }
+                    UiHit::ToggleSleepVisuals => {
+                        sleep_visuals_toggled = true;
+                        *menu_open = false;
+                    }
                     UiHit::Panel => {}
                 }
                 continue;
@@ -312,6 +334,7 @@ fn route_events(
         events: forwarded,
         action,
         selected_tool: *selected_tool,
+        sleep_visuals_toggled,
     }
 }
 
@@ -343,6 +366,7 @@ enum UiHit {
     SolverScene(ValidationScenario),
     WorldCapacity(WorldCapacityPreset),
     ToggleSleeping,
+    ToggleSleepVisuals,
     RestoreSolverPreset,
     ApplySolver,
     Panel,
@@ -448,6 +472,9 @@ impl UiLayout {
                 if contains(self.world_sleeping_button(), pixel) {
                     return Some(UiHit::ToggleSleeping);
                 }
+                if contains(self.world_sleep_visuals_button(), pixel) {
+                    return Some(UiHit::ToggleSleepVisuals);
+                }
             }
         }
         contains(self.menu_panel(menu_page, solver_profiles.len()), pixel).then_some(UiHit::Panel)
@@ -486,8 +513,8 @@ impl UiLayout {
                     + if self.compact_landscape() { 4.0 } else { 8.0 }
             }
             MenuPage::World => {
-                let sleeping = self.world_sleeping_button();
-                (sleeping[1] + sleeping[3]) / self.scale + 44.0
+                let visuals = self.world_sleep_visuals_button();
+                (visuals[1] + visuals[3]) / self.scale + 62.0
             }
         };
         let wide = self.compact_landscape()
@@ -547,6 +574,24 @@ impl UiLayout {
         [
             24.0 * self.scale,
             last[1] + last[3] + 12.0 * self.scale,
+            336.0 * self.scale,
+            34.0 * self.scale,
+        ]
+    }
+
+    fn world_sleep_visuals_button(self) -> [f32; 4] {
+        let sleeping = self.world_sleeping_button();
+        if self.compact_landscape() {
+            return [
+                372.0 * self.scale,
+                sleeping[1],
+                248.0 * self.scale,
+                sleeping[3],
+            ];
+        }
+        [
+            24.0 * self.scale,
+            sleeping[1] + sleeping[3] + 12.0 * self.scale,
             336.0 * self.scale,
             34.0 * self.scale,
         ]
@@ -775,6 +820,7 @@ impl UiLayout {
             "world-tab" => self.menu_tab(MenuPage::World),
             "world-capacity" => self.world_capacity_button(index),
             "world-sleeping" => self.world_sleeping_button(),
+            "world-sleep-visuals" => self.world_sleep_visuals_button(),
             _ => panic!("unknown UI test target"),
         };
         [
@@ -848,6 +894,7 @@ struct StaticKey {
     solver_profile_count: usize,
     world_capacity: WorldCapacityPreset,
     sleeping_effective: bool,
+    sleep_visuals_enabled: bool,
 }
 
 struct UiRenderer {
@@ -1049,6 +1096,7 @@ impl UiRenderer {
             menu_open,
             menu_page,
             selected_tool,
+            sleep_visuals_enabled,
             solver_profiles,
             draft_solver_profile,
         } = view;
@@ -1075,6 +1123,7 @@ impl UiRenderer {
             solver_profile_count: solver_profiles.len(),
             world_capacity: model.world_capacity,
             sleeping_effective: model.sleeping_effective,
+            sleep_visuals_enabled,
         };
         if self.static_key.as_ref() != Some(&key) {
             let batch = static_batch(
@@ -1089,6 +1138,7 @@ impl UiRenderer {
                     draft_solver_profile,
                     world_capacity: model.world_capacity,
                     sleeping_effective: model.sleeping_effective,
+                    sleep_visuals_enabled,
                 },
             );
             if !batch.instances.is_empty() {
@@ -1151,6 +1201,7 @@ impl UiRenderer {
             menu_open,
             current_tool: selected_tool.name(),
             current_scene: model.scenario.name(),
+            sleep_visuals_enabled,
             static_instance_capacity: STATIC_INSTANCE_CAPACITY as u32,
             dynamic_instance_capacity: DYNAMIC_INSTANCE_CAPACITY as u32,
             instance_stride_bytes: std::mem::size_of::<UiInstance>() as u32,
@@ -1249,6 +1300,7 @@ struct StaticBatchModel<'a> {
     draft_solver_profile: &'a SolverProfileConfig,
     world_capacity: WorldCapacityPreset,
     sleeping_effective: bool,
+    sleep_visuals_enabled: bool,
 }
 
 fn static_batch(target_size: [u32; 2], model: StaticBatchModel<'_>) -> Batch {
@@ -1262,6 +1314,7 @@ fn static_batch(target_size: [u32; 2], model: StaticBatchModel<'_>) -> Batch {
         draft_solver_profile,
         world_capacity,
         sleeping_effective,
+        sleep_visuals_enabled,
     } = model;
     let layout = UiLayout::for_target(target_size);
     let scale = layout.scale;
@@ -1482,10 +1535,35 @@ fn static_batch(target_size: [u32; 2], model: StaticBatchModel<'_>) -> Batch {
                     1.35 * scale,
                     if sleeping_requested { accent } else { text },
                 );
+                let visuals = layout.world_sleep_visuals_button();
                 batch.push_text(
                     "HIGH TIERS MAY RUN SLOW",
-                    [28.0 * scale, sleeping[1] + sleeping[3] + 12.0 * scale],
+                    [28.0 * scale, visuals[1] + visuals[3] + 34.0 * scale],
                     1.35 * scale,
+                    text,
+                );
+                batch.push_quad(
+                    visuals,
+                    if sleep_visuals_enabled {
+                        selected
+                    } else {
+                        button
+                    },
+                );
+                batch.push_text(
+                    if sleep_visuals_enabled {
+                        "SLEEP VISUALS ON"
+                    } else {
+                        "SLEEP VISUALS OFF"
+                    },
+                    [visuals[0] + 9.0 * scale, visuals[1] + 10.0 * scale],
+                    1.55 * scale,
+                    if sleep_visuals_enabled { accent } else { text },
+                );
+                batch.push_text(
+                    "TEAL ACTIVE  AMBER QUIET  BLUE Z  PINK !",
+                    [28.0 * scale, visuals[1] + visuals[3] + 12.0 * scale],
+                    1.05 * scale,
                     text,
                 );
             }
@@ -1674,6 +1752,7 @@ mod tests {
                 layout.world_capacity_button(2),
                 layout.world_capacity_button(3),
                 layout.world_sleeping_button(),
+                layout.world_sleep_visuals_button(),
             ] {
                 assert!(bounds[0] >= 0.0 && bounds[1] >= 0.0);
                 assert!(bounds[0] + bounds[2] <= target[0] as f32);
@@ -1756,6 +1835,39 @@ mod tests {
     }
 
     #[test]
+    fn world_menu_toggles_sleep_visuals_without_a_physics_action() {
+        let target = [960, 600];
+        let layout = UiLayout::for_target(target);
+        let mut captured = BTreeSet::new();
+        let mut menu_open = true;
+        let mut menu_page = MenuPage::World;
+        let mut selected_tool = WorkbenchTool::Grab;
+        let mut profiles = SolverProfileConfig::available();
+        let mut draft = SolverProfileConfig::default();
+        let routed = route_events(
+            UiRouteState {
+                menu_open: &mut menu_open,
+                menu_page: &mut menu_page,
+                selected_tool: &mut selected_tool,
+                solver_profiles: &mut profiles,
+                draft_solver_profile: &mut draft,
+                captured_pointers: &mut captured,
+            },
+            &[pointer(
+                1,
+                PointerPhase::Down,
+                PointerButton::Primary,
+                layout.center_normalized("world-sleep-visuals", 0),
+            )],
+            target,
+        );
+        assert!(routed.sleep_visuals_toggled);
+        assert!(routed.action.is_none());
+        assert!(!draft.physics().sleeping_enabled);
+        assert!(!menu_open);
+    }
+
+    #[test]
     fn batches_are_bounded_and_use_one_instance_per_visible_glyph() {
         let active = SolverProfileConfig::default();
         let profiles = SolverProfileConfig::available();
@@ -1771,6 +1883,7 @@ mod tests {
                 draft_solver_profile: &active,
                 world_capacity: WorldCapacityPreset::Slots64,
                 sleeping_effective: false,
+                sleep_visuals_enabled: false,
             },
         );
         let static_open = static_batch(
@@ -1785,6 +1898,7 @@ mod tests {
                 draft_solver_profile: &active,
                 world_capacity: WorldCapacityPreset::Slots64,
                 sleeping_effective: false,
+                sleep_visuals_enabled: false,
             },
         );
         let static_world = static_batch(
@@ -1799,6 +1913,7 @@ mod tests {
                 draft_solver_profile: &active,
                 world_capacity: WorldCapacityPreset::Slots10000,
                 sleeping_effective: false,
+                sleep_visuals_enabled: true,
             },
         );
         assert!(!static_closed.overflowed && !static_open.overflowed && !static_world.overflowed);
@@ -1825,6 +1940,7 @@ mod tests {
                 draft_solver_profile: &active,
                 world_capacity: WorldCapacityPreset::Slots64,
                 sleeping_effective: false,
+                sleep_visuals_enabled: false,
             },
         );
         assert!(!batch.overflowed);
