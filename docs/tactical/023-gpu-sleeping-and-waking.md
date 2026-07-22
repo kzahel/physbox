@@ -3,9 +3,9 @@
 Status: manual checkpoint 2026-07-22. S23.1 through S23.6 are complete and
 work is stopped before S23.7's reserved human promotion/default decision.
 Sleeping is effective when explicitly requested through the shared menu or
-launch configuration, but remains off by default. The user explicitly
-authorized the hardware-backed AVD in place of a physical-device lane for
-this unattended checkpoint.
+launch configuration, but remains off by default. The user initially
+authorized the hardware-backed AVD for this unattended checkpoint; an attached
+Pixel 7a later became available and also passed the proportional lane.
 
 Governing topics:
 [GPU sleeping and waking](../topics/gpu-sleeping-and-waking.md),
@@ -282,6 +282,13 @@ requested/effective on and the complete shared rigid-floor result, captures
 the visible on-state, and shuts down successfully. Its PNG/provenance SHA-256
 values are `de3530c235b5d863481529de5d4b5865d640d3f5357a53702d9012804cfdbbbc`
 and `2e86565903ed77b5d7994ab60e84415ee2eee6d70b1456018550327952fec866`.
+Physical-device revision `74960b9` repeats that actual-menu interaction on a
+Pixel 7a with its Mali-G710 Vulkan adapter, waits for requested/effective on
+and the complete shared rigid-floor result, captures a visually complete
+portrait frame, and leaves the product app stopped. Its PNG/provenance
+SHA-256 values are
+`c978ab61b7cfd9109d5b41348bd35a8cdea6f5d7e21e63a8f4753c2dcd61889d`
+and `73743617bc11f87ddc7911a2772c501f2441babbc898a690223062ed7ad87840`.
 These proportional gates do not complete S23.7's broader mask-rule and human
 promotion review.
 

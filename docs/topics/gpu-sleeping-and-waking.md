@@ -283,12 +283,13 @@ P50 and persistence alone 0.9%. Although live points outnumber awake points
 This measurement supports a limited mostly-sleeping capability, not a 60 Hz,
 10K, 100K, rendered-world, or CPU-crossover claim.
 
-Proportional native, browser, ARM64, APK, and authorized hardware-backed AVD
-gates pass. The browser and AVD both exercise the actual engine-rendered
-toggle; the AVD capture visibly reports `SLEEP REQUEST ON  EFFECTIVE ON`, the
-shared rigid-floor scenario completes, and the emulator shuts down. These
-checks validate the implementation boundary but do not replace S23.7's
-mask-rule disclosure and explicit human decision.
+Proportional native, browser, ARM64, APK, hardware-backed AVD, and physical
+Pixel 7a gates pass. Browser, AVD, and Pixel all exercise the actual
+engine-rendered toggle and visibly report `SLEEP REQUEST ON  EFFECTIVE ON`;
+the shared rigid-floor scenario completes, the emulator shuts down, and the
+physical product app is stopped after capture. These checks validate the
+implementation boundary but do not replace S23.7's mask-rule disclosure and
+explicit human decision.
 
 ## Selected implementation direction
 
