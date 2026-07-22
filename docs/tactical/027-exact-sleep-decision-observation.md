@@ -54,9 +54,9 @@ wake-wave question rather than only static connectivity cost.
 
 ### S27.1 — contract and scalar differential
 
-- [ ] Freeze the schedule points, count definitions, invalid directions, and
+- [x] Freeze the schedule points, count definitions, invalid directions, and
   trace rows.
-- [ ] Add scalar component-reduction tests for wake and admission, including
+- [x] Add scalar component-reduction tests for wake and admission, including
   paths shorter than, equal to, and longer than K=4.
 
 Gate: scalar exact and K=4 decisions match within four hops and expose the
@@ -100,4 +100,3 @@ S27 completes when exact root reductions are measured beside K=4 on synthetic
 and time-evolved structures, GPU results match an independent CPU replay,
 incremental cost and projected work are recorded, applied product behavior is
 unchanged, and the repository stops at the behavior-switch decision point.
-

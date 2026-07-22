@@ -19,6 +19,15 @@ pub(crate) struct ScalarComponentObservation {
     pub converged: bool,
 }
 
+#[cfg(test)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ScalarSleepDecisionComparison {
+    exact_wake: Vec<bool>,
+    bounded_wake: Vec<bool>,
+    exact_admission: Vec<bool>,
+    bounded_admission: Vec<bool>,
+}
+
 /// Returns the fixed hook/shortcut phase count encoded by the GPU observer.
 ///
 /// A hook only lowers a parent, and the following shortcut replaces every
@@ -143,6 +152,66 @@ fn validate_edges(live_dynamic: &[bool], edges: &[(u32, u32)]) -> Result<(), Str
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+fn compare_sleep_decisions_scalar(
+    live_dynamic: &[bool],
+    edges: &[(u32, u32)],
+    wake_roots: &[bool],
+    admission_blockers: &[bool],
+    locally_ready: &[bool],
+    rounds: u32,
+) -> Result<ScalarSleepDecisionComparison, String> {
+    let capacity = live_dynamic.len();
+    if wake_roots.len() != capacity
+        || admission_blockers.len() != capacity
+        || locally_ready.len() != capacity
+    {
+        return Err("sleep-decision scalar inputs must share one capacity".to_owned());
+    }
+    let labels = reference_component_labels(live_dynamic, edges)?;
+    let mut component_wake = vec![false; capacity];
+    let mut component_blocker = vec![false; capacity];
+    for body in 0..capacity {
+        if !live_dynamic[body] {
+            continue;
+        }
+        let root = labels[body] as usize;
+        component_wake[root] |= wake_roots[body];
+        component_blocker[root] |= admission_blockers[body];
+    }
+    let propagate = |seeds: &[bool]| {
+        let mut frontier = seeds.to_vec();
+        for _ in 0..rounds {
+            let source = frontier.clone();
+            for &(a, b) in edges {
+                frontier[a as usize] |= source[b as usize];
+                frontier[b as usize] |= source[a as usize];
+            }
+        }
+        frontier
+    };
+    let bounded_wake = propagate(wake_roots);
+    let bounded_blocker = propagate(admission_blockers);
+    let mut exact_wake = vec![false; capacity];
+    let mut exact_admission = vec![false; capacity];
+    let mut bounded_admission = vec![false; capacity];
+    for body in 0..capacity {
+        if !live_dynamic[body] {
+            continue;
+        }
+        let root = labels[body] as usize;
+        exact_wake[body] = component_wake[root];
+        exact_admission[body] = locally_ready[body] && !component_blocker[root];
+        bounded_admission[body] = locally_ready[body] && !bounded_blocker[body];
+    }
+    Ok(ScalarSleepDecisionComparison {
+        exact_wake,
+        bounded_wake,
+        exact_admission,
+        bounded_admission,
+    })
 }
 
 #[cfg(all(feature = "solver-lab", not(target_arch = "wasm32")))]
@@ -1134,6 +1203,50 @@ mod tests {
         bridge.extend((129..256).map(|body| (body - 1, body)));
         bridge.push((127, 255));
         assert_matches_reference(&live, &bridge);
+    }
+
+    #[test]
+    fn exact_and_four_hop_sleep_decisions_match_inside_the_radius() {
+        let live = vec![true; 5];
+        let edges = (1..5).map(|body| (body - 1, body)).collect::<Vec<_>>();
+        let comparison = compare_sleep_decisions_scalar(
+            &live,
+            &edges,
+            &[true, false, false, false, false],
+            &[true, false, false, false, false],
+            &[false, true, true, true, true],
+            4,
+        )
+        .unwrap();
+        assert_eq!(comparison.exact_wake, comparison.bounded_wake);
+        assert_eq!(comparison.exact_admission, comparison.bounded_admission);
+        assert_eq!(comparison.exact_wake, vec![true; 5]);
+        assert_eq!(comparison.exact_admission, vec![false; 5]);
+    }
+
+    #[test]
+    fn exact_reduction_exposes_both_directional_gaps_beyond_four_hops() {
+        let live = vec![true; 6];
+        let edges = (1..6).map(|body| (body - 1, body)).collect::<Vec<_>>();
+        let comparison = compare_sleep_decisions_scalar(
+            &live,
+            &edges,
+            &[true, false, false, false, false, false],
+            &[true, false, false, false, false, false],
+            &[false, true, true, true, true, true],
+            4,
+        )
+        .unwrap();
+        assert_eq!(comparison.exact_wake, vec![true; 6]);
+        assert_eq!(
+            comparison.bounded_wake,
+            vec![true, true, true, true, true, false]
+        );
+        assert_eq!(comparison.exact_admission, vec![false; 6]);
+        assert_eq!(
+            comparison.bounded_admission,
+            vec![false, false, false, false, false, true]
+        );
     }
 
     #[test]
