@@ -45,6 +45,11 @@ a running log.
   S5.4/S5.4a alternatives, the selected colored/manifold direction, the
   portable WebGPU dispatch floor, the closed negative S9 schedule study,
   fallbacks, prior art, and pacing boundaries.
+- [GPU sleeping and waking](gpu-sleeping-and-waking.md) — master record for
+  the sleeping/waking feature: per-body timers with bounded neighbor wake
+  propagation, versioned sleep state, wake-trigger semantics, the
+  `sleeping_enabled` toggle and policy experimentation surface, the mask rule
+  against concealing awake losses, and the S23 execution overview.
 - [Awake settling and rest stability](awake-settling-and-rest-stability.md) —
   resting-contact identity, warm-start continuity, soft-contact damping,
   realistic drop fixtures, awake quality gates, and the required visible
@@ -68,5 +73,5 @@ a running log.
   broadening an unrelated document.
 - Add every active topic to this index in the same commit that creates it.
 
-Likely next topics include GPU sleeping and island-wake strategy, broadphase
-bake-off results, and the coupled liquid/rigid constraint surface.
+Likely next topics include broadphase bake-off results and the coupled
+liquid/rigid constraint surface.
