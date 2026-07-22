@@ -874,7 +874,7 @@ fn run_s25_finalist_evidence(output: &Path) -> Result<(), String> {
             "replayMillisecondsPerStep": replay_milliseconds_per_step,
             "dispatchesPerStep": primary.dispatches_per_step,
             "allocatedBytes": primary.allocated_bytes,
-            "peakWork": peak_work(&primary),
+            "peakObservedWork": peak_observed_work(&primary),
             "peakCapacities": peak_capacities(&primary),
             "capacityCleanEveryObservation": validity.passed,
             "solverSettings": primary.solver_settings,
@@ -942,27 +942,21 @@ fn serialized_hash(value: &impl Serialize) -> Result<String, String> {
         .map_err(|error| format!("failed to encode exact-replay series: {error}"))
 }
 
-fn peak_work(series: &GpuGeneratedContactSeriesV1) -> CollisionWorkV1 {
-    let mut peak = CollisionWorkV1::default();
-    for work in series.snapshots.iter().map(|snapshot| &snapshot.work) {
-        peak.bodies = peak.bodies.max(work.bodies);
-        peak.pair_attempts = peak.pair_attempts.max(work.pair_attempts);
-        peak.fixed_fixed_rejected = peak.fixed_fixed_rejected.max(work.fixed_fixed_rejected);
-        peak.aabb_rejected = peak.aabb_rejected.max(work.aabb_rejected);
-        peak.candidate_pairs = peak.candidate_pairs.max(work.candidate_pairs);
-        peak.narrowphase_tests = peak.narrowphase_tests.max(work.narrowphase_tests);
-        peak.manifolds = peak.manifolds.max(work.manifolds);
-        peak.contact_points = peak.contact_points.max(work.contact_points);
-        peak.sort_elements = peak.sort_elements.max(work.sort_elements);
-        peak.sort_passes = peak.sort_passes.max(work.sort_passes);
-        peak.cache_previous = peak.cache_previous.max(work.cache_previous);
-        peak.cache_current = peak.cache_current.max(work.cache_current);
-        peak.cache_matched = peak.cache_matched.max(work.cache_matched);
-        peak.cache_cold = peak.cache_cold.max(work.cache_cold);
-        peak.cache_expired = peak.cache_expired.max(work.cache_expired);
-        peak.dispatches = peak.dispatches.max(work.dispatches);
-    }
-    peak
+fn peak_observed_work(series: &GpuGeneratedContactSeriesV1) -> CollisionWorkV1 {
+    series
+        .snapshots
+        .iter()
+        .map(|snapshot| &snapshot.work)
+        .max_by_key(|work| {
+            (
+                work.dispatches,
+                work.pair_attempts,
+                work.contact_points,
+                work.manifolds,
+            )
+        })
+        .cloned()
+        .unwrap_or_default()
 }
 
 fn peak_capacities(series: &GpuGeneratedContactSeriesV1) -> Vec<CollisionCapacityV1> {
