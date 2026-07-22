@@ -113,11 +113,14 @@ test("Android sleep captures use the engine menu and verify effective state", ()
   for (const file of ["validate-device.sh", "validate-avd.sh"]) {
     const source = readFileSync(join(androidDir, file), "utf8");
     assert.match(source, /PHYSBOX5_ANDROID_SLEEP_TOGGLE/, `${file} must expose the sleep capture`);
+    assert.match(source, /PHYSBOX5_ANDROID_SLEEP_VISUALS/, `${file} must expose sleep visuals`);
     assert.match(source, /frame\.sceneContract\.w === false && frame\.sceneContract\.y === false/);
-    assert.match(source, /\[62, 50, 300, 104, 192, 331\]/);
+    assert.match(source, /compact \? 496 : 192, compact \? 331 : 377/);
     assert.match(source, /frame\.sceneContract\.w === true && frame\.sceneContract\.y === true/);
     assert.match(source, /frame\.scenario\.complete === true && frame\.scenario\.passed === true/);
+    assert.match(source, /frame\.u & \(1 << 30\)/);
     assert.match(source, /sleep-request-on-menu/);
+    assert.match(source, /sleep-visuals/);
     assert.match(source, /require-hardware-adapter\.mjs/, `${file} must reject software adapters`);
   }
 });

@@ -289,7 +289,9 @@ impl FrameReport {
                 self.camera.center[1],
                 self.camera.orthographic_half_height,
             ],
-            ui: self.ui.draw_calls_this_frame | ((self.ui.overflowed as u32) << 31),
+            ui: self.ui.draw_calls_this_frame
+                | ((self.ui.sleep_visuals_enabled as u32) << 30)
+                | ((self.ui.overflowed as u32) << 31),
             body_commands: CompactBodyCommands {
                 executed_commands_total: self.body_commands.executed_commands_total,
                 executed_construction_intents_total: self
@@ -566,6 +568,8 @@ mod tests {
             },
         };
         let marker = report.compact_marker_json();
+        let compact: serde_json::Value = serde_json::from_str(&marker).unwrap();
+        assert_eq!(compact["u"], (1_u32 << 30) | 2);
         assert!(
             marker.len() < 900,
             "compact marker is {} bytes",

@@ -69,6 +69,9 @@ ADAPTER="$(rg 'PHYSBOX5_MARK_ADAPTER ' "$LOG" | tail -1 | sed 's/^.*PHYSBOX5_MAR
 [[ -n "$ADAPTER" ]] || { echo "error: Android device adapter diagnostics missing; see $LOG" >&2; exit 1; }
 printf '%s\n' "$ADAPTER" | node "$ANDROID_DIR/require-hardware-adapter.mjs"
 CAPTURE_PHASE="${SCENARIO}-final"
+if [[ "${PHYSBOX5_ANDROID_SLEEP_VISUALS:-0}" = "1" && "${PHYSBOX5_ANDROID_SLEEP_TOGGLE:-0}" != "1" ]]; then
+    echo "error: Android sleep visuals require PHYSBOX5_ANDROID_SLEEP_TOGGLE=1" >&2; exit 2
+fi
 if [[ "${PHYSBOX5_ANDROID_SLEEP_TOGGLE:-0}" = "1" ]]; then
     [[ "${PHYSBOX5_ANDROID_CONSTRUCTION_CAPTURE:-0}" != "1" && "${PHYSBOX5_ANDROID_GRAB_CAPTURE:-0}" != "1" ]] || {
         echo "error: choose only one Android interaction capture" >&2; exit 2;
@@ -83,9 +86,11 @@ if [[ "${PHYSBOX5_ANDROID_SLEEP_TOGGLE:-0}" = "1" ]]; then
     UI_POINTS="$(node -e '
       const w = +process.argv[1], h = +process.argv[2];
       const s = Math.max(1, Math.min(2, Math.min(w, h) / 600));
-      console.log([62, 50, 300, 104, 192, 331].map((value) => Math.round(value * s)).join(" "));
+      const compact = h < 520 && w > h;
+      const points = [62, 50, 300, 104, 192, 331, compact ? 496 : 192, compact ? 331 : 377];
+      console.log(points.map((value) => Math.round(value * s)).join(" "));
     ' "$WIDTH" "$HEIGHT")"
-    read -r MENU_X MENU_Y WORLD_X WORLD_Y SLEEP_X SLEEP_Y <<< "$UI_POINTS"
+    read -r MENU_X MENU_Y WORLD_X WORLD_Y SLEEP_X SLEEP_Y VISUALS_X VISUALS_Y <<< "$UI_POINTS"
     "$ADB" -s "$SERIAL" shell input tap "$MENU_X" "$MENU_Y"
     sleep 0.25
     "$ADB" -s "$SERIAL" shell input tap "$WORLD_X" "$WORLD_Y"
@@ -107,9 +112,26 @@ if [[ "${PHYSBOX5_ANDROID_SLEEP_TOGGLE:-0}" = "1" ]]; then
     sleep 0.25
     "$ADB" -s "$SERIAL" shell input tap "$WORLD_X" "$WORLD_Y"
     sleep 0.25
+    if [[ "${PHYSBOX5_ANDROID_SLEEP_VISUALS:-0}" = "1" ]]; then
+        "$ADB" -s "$SERIAL" shell input tap "$VISUALS_X" "$VISUALS_Y"
+        VISUALS_ENABLED=0
+        for _ in $(seq 1 20); do
+            "$ADB" -s "$SERIAL" logcat -d -t 10000 > "$LOG"
+            REPORT="$(rg 'PHYSBOX5_MARK_FRAME_RENDERED ' "$LOG" | tail -1 | sed 's/^.*PHYSBOX5_MARK_FRAME_RENDERED //')"
+            if node -e '
+              const frame = JSON.parse(process.argv[1]);
+              process.exit((frame.u & (1 << 30)) !== 0 && frame.sceneContract.w === true
+                && frame.sceneContract.y === true ? 0 : 1);
+            ' "$REPORT"; then VISUALS_ENABLED=1; break; fi
+            sleep 0.25
+        done
+        [[ "$VISUALS_ENABLED" -eq 1 ]] || { echo "error: Android menu did not enable sleep visuals; see $LOG" >&2; exit 1; }
+        CAPTURE_PHASE="${SCENARIO}-sleep-visuals"
+    else
+        CAPTURE_PHASE="${SCENARIO}-sleep-request-on-menu"
+    fi
     "$ADB" -s "$SERIAL" logcat -d -t 10000 > "$LOG"
     REPORT="$(rg 'PHYSBOX5_MARK_FRAME_RENDERED ' "$LOG" | tail -1 | sed 's/^.*PHYSBOX5_MARK_FRAME_RENDERED //')"
-    CAPTURE_PHASE="${SCENARIO}-sleep-request-on-menu"
 fi
 if [[ "${PHYSBOX5_ANDROID_CONSTRUCTION_CAPTURE:-0}" = "1" ]]; then
     [[ "$SCENARIO" = "bootstrap" ]] || { echo "error: Android construction capture requires bootstrap" >&2; exit 2; }
