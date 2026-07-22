@@ -34,6 +34,8 @@ struct SleepDecisionRowV1 {
     component_timing: TimingSummaryV1,
     reduction_timing: TimingSummaryV1,
     observer_timing: TimingSummaryV1,
+    physics_timing: TimingSummaryV1,
+    observer_to_physics_p50_ratio: f64,
     observation: GpuSleepDecisionObservationV1,
     timing: GpuSleepDecisionTimingV1,
 }
@@ -168,6 +170,9 @@ fn run() -> Result<(), String> {
             component_timing: timing_summary(timing.gpu_component_seconds.clone())?,
             reduction_timing: timing_summary(timing.gpu_reduction_seconds.clone())?,
             observer_timing: timing_summary(timing.gpu_observer_seconds.clone())?,
+            physics_timing: timing_summary(timing.gpu_physics_seconds.clone())?,
+            observer_to_physics_p50_ratio: percentile_of(&timing.gpu_observer_seconds, 0.50)?
+                / percentile_of(&timing.gpu_physics_seconds, 0.50)?,
             observation,
             timing,
         });
@@ -308,6 +313,19 @@ fn timing_summary(samples_seconds: Vec<f64>) -> Result<TimingSummaryV1, String> 
 fn percentile(sorted: &[f64], quantile: f64) -> f64 {
     let index = ((sorted.len() - 1) as f64 * quantile).ceil() as usize;
     sorted[index]
+}
+
+fn percentile_of(samples: &[f64], quantile: f64) -> Result<f64, String> {
+    if samples.is_empty()
+        || samples
+            .iter()
+            .any(|sample| !sample.is_finite() || *sample < 0.0)
+    {
+        return Err("sleep-decision timing samples are missing or invalid".to_owned());
+    }
+    let mut sorted = samples.to_vec();
+    sorted.sort_by(f64::total_cmp);
+    Ok(percentile(&sorted, quantile))
 }
 
 fn options() -> Result<Options, String> {

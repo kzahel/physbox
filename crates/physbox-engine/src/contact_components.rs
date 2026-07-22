@@ -413,6 +413,8 @@ mod gpu {
         pub wake_propagation_rounds: u32,
         pub observer_dispatches_per_step: u32,
         pub observer_allocated_bytes: u64,
+        pub observer_working_set_bytes: u64,
+        pub observer_trace_bytes: u64,
         pub product_dispatches_per_step: u32,
         pub product_allocated_bytes: u64,
         pub steps: Vec<GpuSleepDecisionStepV1>,
@@ -434,9 +436,11 @@ mod gpu {
         pub samples: u32,
         pub observer_dispatches_per_step: u32,
         pub observer_allocated_bytes: u64,
+        pub observer_working_set_bytes: u64,
         pub gpu_component_seconds: Vec<f64>,
         pub gpu_reduction_seconds: Vec<f64>,
         pub gpu_observer_seconds: Vec<f64>,
+        pub gpu_physics_seconds: Vec<f64>,
         pub host_completion_seconds: Vec<f64>,
         pub timestamp_period_nanoseconds: f32,
     }
@@ -1081,6 +1085,16 @@ mod gpu {
                 + self.component_stats_trace.size()
                 + self.body_trace.size()
                 + self._params.size()
+        }
+
+        fn working_set_bytes(&self) -> u64 {
+            self.components.allocated_bytes()
+                + size_of::<DecisionStatsRaw>() as u64
+                + size_of::<StatsRaw>() as u64
+                + u64::from(self.body_capacity)
+                    * DECISION_BODY_WORDS as u64
+                    * size_of::<u32>() as u64
+                + u64::from(self.params_stride)
         }
     }
 
@@ -1733,6 +1747,10 @@ mod gpu {
             wake_propagation_rounds: sleep_config.wake_propagation_rounds,
             observer_dispatches_per_step: observer.dispatches_per_step(),
             observer_allocated_bytes: observer.allocated_bytes(),
+            observer_working_set_bytes: observer.working_set_bytes(),
+            observer_trace_bytes: observer
+                .allocated_bytes()
+                .saturating_sub(observer.working_set_bytes()),
             product_dispatches_per_step: graph.dispatches_per_step(),
             product_allocated_bytes: graph.allocated_bytes(),
             steps,
@@ -1806,7 +1824,7 @@ mod gpu {
             1,
         )?;
         let query_count = samples
-            .checked_mul(10)
+            .checked_mul(14)
             .ok_or_else(|| "sleep-decision timing query count overflowed".to_owned())?;
         let query_set = device.create_query_set(&wgpu::QuerySetDescriptor {
             label: Some("physbox5_sleep_decision_timestamps"),
@@ -1848,7 +1866,16 @@ mod gpu {
                 &graph,
                 &observer,
                 completed_steps,
-                Some((&query_set, sample * 10)),
+                Some((&query_set, sample * 14)),
+            )?;
+            encode_sleep_decision_baseline_timing_sample(
+                &device,
+                &queue,
+                &storage,
+                &reset,
+                &graph,
+                completed_steps,
+                (&query_set, sample * 14 + 10),
             )?;
             host_completion_seconds.push(started.elapsed().as_secs_f64());
         }
@@ -1866,7 +1893,7 @@ mod gpu {
         let period = queue.get_timestamp_period();
         let seconds = |begin: usize, end: usize| {
             values
-                .chunks_exact(10)
+                .chunks_exact(14)
                 .map(|sample| {
                     sample[end].saturating_sub(sample[begin]) as f64 * f64::from(period) * 1.0e-9
                 })
@@ -1875,7 +1902,7 @@ mod gpu {
         let gpu_component_seconds = seconds(0, 1);
         let reduction_intervals = [(2, 3), (4, 5), (6, 7), (8, 9)];
         let gpu_reduction_seconds = values
-            .chunks_exact(10)
+            .chunks_exact(14)
             .map(|sample| {
                 reduction_intervals
                     .iter()
@@ -1890,6 +1917,7 @@ mod gpu {
             .zip(&gpu_reduction_seconds)
             .map(|(component, reduction)| component + reduction)
             .collect();
+        let gpu_physics_seconds = seconds(10, 13);
         Ok(GpuSleepDecisionTimingV1 {
             version: DECISION_OUTPUT_VERSION,
             adapter: diagnostics,
@@ -1900,9 +1928,11 @@ mod gpu {
             samples,
             observer_dispatches_per_step: observer.dispatches_per_step(),
             observer_allocated_bytes: observer.allocated_bytes(),
+            observer_working_set_bytes: observer.working_set_bytes(),
             gpu_component_seconds,
             gpu_reduction_seconds,
             gpu_observer_seconds,
+            gpu_physics_seconds,
             host_completion_seconds,
             timestamp_period_nanoseconds: period,
         })
@@ -1949,6 +1979,43 @@ mod gpu {
         device
             .poll(wgpu::PollType::Wait)
             .map_err(|error| format!("poll sleep-decision timing sample: {error}"))?;
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn encode_sleep_decision_baseline_timing_sample(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        storage: &GpuBodyStorage,
+        reset: &crate::body_state::GpuBodyResetData,
+        graph: &GpuGeneratedContactGraph,
+        completed_steps: u32,
+        timestamps: (&wgpu::QuerySet, u32),
+    ) -> Result<(), String> {
+        storage.upload_reset_data(queue, reset);
+        device
+            .poll(wgpu::PollType::Wait)
+            .map_err(|error| format!("poll sleep-decision baseline timing reset: {error}"))?;
+        let mut first_step = 1;
+        while first_step < completed_steps {
+            let last_step = (first_step + 31).min(completed_steps - 1);
+            let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("physbox5_sleep_decision_baseline_timing_prefix"),
+            });
+            for step in first_step..=last_step {
+                graph.encode_step(&mut encoder, step == 1);
+            }
+            queue.submit([encoder.finish()]);
+            first_step = last_step + 1;
+        }
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("physbox5_sleep_decision_baseline_timing_target"),
+        });
+        graph.encode_step_with_timestamps(&mut encoder, completed_steps == 1, Some(timestamps));
+        queue.submit([encoder.finish()]);
+        device
+            .poll(wgpu::PollType::Wait)
+            .map_err(|error| format!("poll sleep-decision baseline timing sample: {error}"))?;
         Ok(())
     }
 
@@ -2222,6 +2289,7 @@ mod gpu {
             assert_eq!(output.gpu_component_seconds.len(), 2);
             assert_eq!(output.gpu_reduction_seconds.len(), 2);
             assert_eq!(output.gpu_observer_seconds.len(), 2);
+            assert_eq!(output.gpu_physics_seconds.len(), 2);
             assert!(
                 output
                     .gpu_observer_seconds
