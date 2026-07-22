@@ -450,6 +450,9 @@ struct StackSettlingMetrics {
     penetration_max: f32,
     final_stack_height: f32,
     center_drift_max: f32,
+    first_energy_quartile_max: f32,
+    last_energy_quartile_max: f32,
+    positive_energy_run_max: u32,
     energy_envelope_nonincreasing: bool,
     time_to_rest_step: Option<u32>,
 }
@@ -952,6 +955,9 @@ fn stack_settling_metrics(
             .iter()
             .map(|observation| observation.base.center_drift_max.get())
             .fold(0.0, f32::max),
+        first_energy_quartile_max: summary.first_energy_quartile_max.get(),
+        last_energy_quartile_max: summary.last_energy_quartile_max.get(),
+        positive_energy_run_max: summary.positive_energy_run_max,
         energy_envelope_nonincreasing: summary.energy_envelope_nonincreasing,
         time_to_rest_step: summary.time_to_rest_step,
     })
@@ -1020,7 +1026,7 @@ fn print_row(row: &Row) {
     );
     if let Some(settling) = row.stack_settling {
         println!(
-            "  SETTLING angular-edge={:.6}m/s penetration={:.6}m final-height={:.6}m drift={:.6}m energy={} rest-step={}",
+            "  SETTLING angular-edge={:.6}m/s penetration={:.6}m final-height={:.6}m drift={:.6}m energy={} energy-first={:.9}J energy-last={:.9}J positive-run={} rest-step={}",
             settling.angular_edge_speed_max,
             settling.penetration_max,
             settling.final_stack_height,
@@ -1030,6 +1036,9 @@ fn print_row(row: &Row) {
             } else {
                 "FAIL"
             },
+            settling.first_energy_quartile_max,
+            settling.last_energy_quartile_max,
+            settling.positive_energy_run_max,
             settling
                 .time_to_rest_step
                 .map_or_else(|| "none".to_owned(), |step| step.to_string()),
