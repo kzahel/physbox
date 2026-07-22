@@ -77,13 +77,21 @@ npm run setup:host
 The setup command detects the host OS, installs known native prerequisites,
 adds the required Rust targets, checks Android SDK/NDK access, installs npm
 dependencies, syncs declared source references, and configures the Git hooks.
+When an executable sibling hook exists at
+`../dotfiles/scripts/setup-physbox5-host.sh`, the install flow invokes it last
+with `PHYSBOX5_REPO_ROOT` and `--install`. Machine identity, privileged policy,
+and other private configuration remain owned by that sibling repository. Set
+`PHYSBOX5_HOST_SETUP_HOOK` to an alternate executable or to `off` to disable
+the conventional hook explicitly.
 On Linux, repo launchers recover the active GNOME/systemd graphical-session
 environment when invoked from a
 remote shell. Android AVD automation stays headless while retaining that
-session's hardware GPU; the desktop smoke uses Xwayland so it can progress
-while the GNOME session is locked. Display-less machines use Xvfb for Android
-emulator startup; the hardware desktop smoke still requires an accessible
-graphical session.
+session's hardware GPU. A locked GNOME session is diagnosed but not unlocked
+by public repository code; the hardware desktop smoke requires an accessible,
+unlocked compositor. A private sibling hook may deliberately perform a
+transient current-session unlock without changing the persistent lock policy.
+Display-less machines use Xvfb for Android emulator startup; an Xvfb desktop
+run is software-path diagnostics rather than hardware validation.
 
 ```sh
 cargo run -p physbox-desktop

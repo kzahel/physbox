@@ -59,3 +59,60 @@ physbox5_host_x11_available() {
         [[ -z "${XAUTHORITY:-}" || -r "$XAUTHORITY" ]]
     fi
 }
+
+physbox5_host_parse_gnome_lock_state() {
+    case "$1" in
+        *'(true,)'*) printf 'locked\n' ;;
+        *'(false,)'*) printf 'unlocked\n' ;;
+        *) printf 'unavailable\n' ;;
+    esac
+}
+
+physbox5_host_gnome_lock_state() {
+    local state
+    if ! command -v gdbus >/dev/null || [[ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]]; then
+        printf 'unavailable\n'
+        return 0
+    fi
+    state="$(gdbus call --session \
+        --dest org.gnome.ScreenSaver \
+        --object-path /org/gnome/ScreenSaver \
+        --method org.gnome.ScreenSaver.GetActive 2>/dev/null)" || {
+        printf 'unavailable\n'
+        return 0
+    }
+    physbox5_host_parse_gnome_lock_state "$state"
+}
+
+physbox5_host_setup_hook_path() {
+    local repo_root="$1" hook
+    case "${PHYSBOX5_HOST_SETUP_HOOK:-}" in
+        off|none) return 1 ;;
+        ?*) hook="$PHYSBOX5_HOST_SETUP_HOOK" ;;
+        *)
+            hook="$repo_root/../dotfiles/scripts/setup-physbox5-host.sh"
+            [[ -e "$hook" ]] || return 1
+            ;;
+    esac
+    printf '%s\n' "$hook"
+}
+
+physbox5_host_run_setup_hook() {
+    local repo_root="$1" hook
+    if ! hook="$(physbox5_host_setup_hook_path "$repo_root")"; then
+        echo '[host] private machine setup hook: none'
+        return 0
+    fi
+    if [[ ! -f "$hook" || ! -x "$hook" ]]; then
+        echo "error: private machine setup hook is not executable: $hook" >&2
+        return 1
+    fi
+    if [[ "${PHYSBOX5_HOST_SETUP_HOOK_ACTIVE:-0}" = 1 ]]; then
+        echo "error: recursive private machine setup hook invocation: $hook" >&2
+        return 1
+    fi
+    printf '[host] private machine setup hook: %s\n' "$hook"
+    PHYSBOX5_HOST_SETUP_HOOK_ACTIVE=1 \
+        PHYSBOX5_REPO_ROOT="$repo_root" \
+        "$hook" --install
+}

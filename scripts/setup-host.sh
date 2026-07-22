@@ -135,6 +135,14 @@ if [[ "$PLATFORM" = linux ]]; then
     physbox5_host_import_graphical_session force
     if physbox5_host_x11_available; then
         printf '[ok]   graphical session: DISPLAY=%s WAYLAND_DISPLAY=%s\n' "$DISPLAY" "${WAYLAND_DISPLAY:-none}"
+        case "$(physbox5_host_gnome_lock_state)" in
+            locked)
+                echo '[warn] GNOME session is locked; hardware desktop validation requires a transient unlock'
+                ;;
+            unlocked)
+                echo '[ok]   GNOME session lock: inactive'
+                ;;
+        esac
     else
         echo '[warn] no accessible graphical login session; desktop tests need a login and Android AVDs will use Xvfb'
     fi
@@ -151,6 +159,7 @@ fi
 
 if [[ "$MODE" = install && "$failures" -eq 0 ]]; then
     (cd "$REPO_ROOT" && npm ci && npm run references:sync)
+    physbox5_host_run_setup_hook "$REPO_ROOT"
 elif [[ "$MODE" = check ]] && command -v node >/dev/null; then
     if (cd "$REPO_ROOT" && node scripts/references.mjs status); then
         echo '[ok]   declared source references'
