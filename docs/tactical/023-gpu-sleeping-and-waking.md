@@ -1,10 +1,10 @@
 # S23: GPU sleeping and waking
 
-Status: active 2026-07-22. Human authorization permits unattended execution
-through S23.2 and requires a stop before wake propagation. No physical Android
-device is currently available; the closing Android behavior lane may use the
-hardware-backed AVD as the explicitly authorized substitute, must record that
-limitation, and must shut the emulator down after the run.
+Status: manual checkpoint 2026-07-22. S23.1 and the authorized inert S23.2
+checkpoint are complete. Work stops here before wake propagation; S23.3
+requires a later user request. No physical Android device was available for
+the closing run, so the explicitly authorized hardware-backed AVD substituted
+for that lane and was shut down after validation.
 
 Governing topics:
 [GPU sleeping and waking](../topics/gpu-sleeping-and-waking.md),
@@ -89,21 +89,21 @@ evidence target pass.
 
 ### S23.2 — inert GPU state and awake compaction
 
-- [ ] Add a versioned, generation-checked `SleepStateV1` GPU lane with awake
+- [x] Add a versioned, generation-checked `SleepStateV1` GPU lane with awake
   and eligible flags, quiet-step count, last-transition outer step, cause bits,
   policy version, layout version, and deterministic reset/lifecycle behavior.
-- [ ] Add a sorted awake-dynamic slot list, count, and indirect arguments,
+- [x] Add a sorted awake-dynamic slot list, count, and indirect arguments,
   compacted from the sorted live list on the GPU before the solver seam.
-- [ ] Keep automatic sleep and solver filtering disabled: every live dynamic
+- [x] Keep automatic sleep and solver filtering disabled: every live dynamic
   body is awake, every fixed body is excluded, and the selected solver still
   consumes its existing live-work inputs.
-- [ ] Transport and report versioned requested/effective sleeping state without
+- [x] Transport and report versioned requested/effective sleeping state without
   exposing an ordinary product-menu default; effective sleeping remains false
   at this checkpoint.
-- [ ] Prove sparse authored slots, construction, erase, generation reuse,
+- [x] Prove sparse authored slots, construction, erase, generation reuse,
   failed mutation, reset, capacity-full behavior, and exact replay. Stale state
   from an older generation must be inert.
-- [ ] Prove sleep-off results are exact before and after the inert graph change,
+- [x] Prove sleep-off results are exact before and after the inert graph change,
   including the selected structural corpus and sparse-capacity probe.
 
 Gate: awake readback agrees exactly with live dynamic metadata after every
@@ -116,6 +116,48 @@ pass. The AVD is shut down even after failure.
 **Authorized unattended stopping point:** commit the passing S23.2 checkpoint,
 update the topic, capability ledger, and this tactical with evidence and known
 gaps, then stop. Do not begin S23.3 without a later user request.
+
+Checkpoint evidence, 2026-07-22: implementation commit `47542c0` adds a
+32-byte version-1 state lane per body slot and a sorted GPU awake-dynamic list
+with count and indirect arguments. One deterministic pre-solver compaction
+pass scans the S22 sorted live list, excludes fixed bodies, initializes reused
+generations awake, clears stale list entries, and leaves every existing solver
+input unchanged. Lifecycle readback covers sparse slots, construction,
+erase/reuse, generation exhaustion and other failed mutation, reset, and a
+full 64-slot capacity. Requested sleeping is transported by
+`PhysicsConfigurationV2` and `--sleeping on|off`; scene contract version 9
+reports requested and effective state separately, with effective sleeping
+hard-false and no ordinary menu control.
+
+Clean revision `47542c08b572316dccc14b678d1be778a012d761` produced
+`/tmp/physbox5-s23.2-47542c0/sleep-policy/manifest.json` on AMD Radeon 890M
+RADV Vulkan. All 40 authority rows pass and replay exactly. All 25 supported
+action-free GPU histories replay exactly and their snapshot histories match
+the clean S23.1 baseline at `6c70367` exactly; the 15 action rows retain their
+declared unsupported PhysBox projection. The clean durable sparse-capacity
+artifact `/tmp/physbox5-s23.2-47542c0/sparse-capacity.json` reports exact,
+overflow-free 64/256/1K/10K rows. The new state/list allocation grows honestly
+from `2,048 + 336` bytes at 64 slots to `320,000 + 40,080` bytes at 10K; each
+sparse row still contains two live dynamic bodies.
+
+`npm run test:fast` passes in 29.73 seconds, production and directly affected
+tool clippy pass with warnings denied, and `npm run test:web:lab` passes. A
+fresh 120-step headless rigid-floor run with `--sleeping on` reports requested
+true, effective false, and a successful scene. The ARM64 check, release-native
+arm64-v8a/x86_64 builds, debug APK, and Gradle `assembleRelease` pass. With no
+physical device available, `jstorrent-tablet` passes the shared rigid-floor
+scenario using the host Radeon Vulkan adapter; its screenshot is visually
+complete, provenance is clean, and
+`PHYSBOX5_ANDROID_AVD_SHUTDOWN_SUCCESS` plus an empty `adb devices` list prove
+shutdown.
+
+Known boundary: the correctness-first compaction pass uses one GPU invocation
+to scan live slots. It is deterministic and remained reserve-flat in the
+bounded sparse probe, but it is not a parallel-compaction or mostly-sleeping
+scale claim. No body transitions asleep, no wake root propagates, and neither
+the awake list nor sleep state sizes solver work. Those changes begin only
+after explicit S23.3 authorization and receive their own scale gate before
+awake-driven solving.
 
 ### S23.3 — generation-safe wake roots and bounded propagation
 

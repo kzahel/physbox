@@ -14,8 +14,9 @@ The compact [product capability ledger](topics/product-capability-status.md)
 records what is implemented, limited, missing, and deferred without requiring
 the historical tacticals to be reconstructed. S20 owns the validation diet;
 S21 owns the now-complete P5.3 broadphase bakeoff, winner integration, and
-physical-Android qualification. Sleeping/waking and current-default rigid
-acceptance are the next engine milestones.
+physical-Android qualification. S23.2 has established inert GPU sleep state
+and the awake-work seam; wake propagation, sleep admission, awake-driven solve,
+and current-default rigid acceptance remain the next engine milestones.
 
 Active cross-milestone execution from the remaining P5.2/S4 closure through
 P5.4 is tracked by
@@ -416,8 +417,12 @@ Active-work follow-up: [S22 active-work compaction](tactical/022-active-work-com
 is complete. The GPU live-body set and committed collision/persistence counts
 own integration, rendering, SAP, narrowphase, pair-slot lifecycle, topology,
 and solver dispatch. The durable 64/256/1K/10K probe is approximately flat for
-the same sparse scene while its dense control expands the work vector. Sleeping
-may now use the deterministic live set as its awake-work foundation.
+the same sparse scene while its dense control expands the work vector.
+[S23 GPU sleeping and waking](tactical/023-gpu-sleeping-and-waking.md) has now
+completed its inert checkpoint: generation-safe GPU sleep state and a sorted
+awake-dynamic list exist and replay exactly, but effective sleeping is false
+and the solver does not consume awake work. Work stops before wake propagation
+pending explicit continuation.
 
 - Preserve brute force as pair-completeness oracle.
 - Implement sorted sweep-and-prune and multi-cell grid candidates.
@@ -428,8 +433,9 @@ may now use the deterministic live set as its awake-work foundation.
 
 ## P5.4 — rigid parity and performance gates
 
-- Add sleeping/waking on S22's reserve-independent hot execution and compact
-  asynchronous diagnostics.
+- Continue sleeping/waking from S23.2: add bounded wake propagation, automatic
+  sleep admission, and awake-driven solving on S22's reserve-independent hot
+  execution, with compact asynchronous diagnostics.
 - Accept landing, stack, pyramid, impact, friction, bounce, mass-ratio, and
   grab/release fixtures against Box2D and independent invariants.
 - Publish correctness-qualified Box2D CPU/GPU crossover curves for solver-only,

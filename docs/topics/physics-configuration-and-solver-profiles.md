@@ -79,6 +79,7 @@ The product configuration separates values whose effects and ownership differ:
 | Contact response | contact Hz, damping ratio, static-contact multiplier | Requested soft-contact behavior; effective values depend on substep `dt` and caps |
 | Contact recovery | speculative distance, maximum depenetration velocity | Collision anticipation and bounded recovery from overlap; initially reported, not placed in the primary editor |
 | Solver family | soft-coupled, hard/direct comparison, later explicit candidates | Discrete recurrence, ordering, preparation, and relaxation policy |
+| Sleeping request | off/on request, with separate effective state | Experimental S23 transport; off by default and ineffective at the S23.2 checkpoint |
 
 One canonical versioned configuration must project into `EngineConfig` and the
 neutral scenario exactly once. `physbox-launch` owns names, parsing, defaults,
@@ -86,10 +87,11 @@ help, web mappings, and Android JSON argv. Platform adapters transport the
 selection unchanged. They may not own rates, profile defaults, parameter
 limits, or rebuild behavior.
 
-`PhysicsConfigurationV1` now owns `fixed_step_hz`, `substeps`, `iterations`,
-and the contact values projected into `SolverSettingsV1`; there is no second
-platform-local settings model. The scene contract and validation artifacts
-record:
+`PhysicsConfigurationV2` now owns `fixed_step_hz`, `substeps`, `iterations`,
+the contact values projected into `SolverSettingsV1`, and the experimental
+sleeping request; there is no second platform-local settings model. Version 2
+was required because the serialized configuration gained that field. The scene
+contract and validation artifacts record:
 
 - selected profile id and human label;
 - outer fixed-step Hz and exact `dt`;
@@ -98,7 +100,15 @@ record:
 - biased-iteration and relaxation structure;
 - complete contact coefficients and recovery policy;
 - passes, dispatches, work, and allocation implied by the configuration; and
+- requested/effective sleeping state plus sleep policy/layout versions; and
 - configuration version/hash so a screenshot or metric is reproducible.
+
+At the inert S23.2 checkpoint, `--sleeping on|off` and the web query transport
+the request, but effective sleeping is hard-false and no ordinary canvas-menu
+control is exposed. Profile switching and preset restore preserve the
+orthogonal request. This is a representation/transport checkpoint, not an
+enabled feature or a default decision; later effectiveness and menu exposure
+remain owned by the sleeping workstream's explicit gates.
 
 World capacity is a separate engine setting because it changes fixed GPU
 storage and broadphase work rather than the solver equation. The shared launch
@@ -115,6 +125,10 @@ capacity is mirrored into the shared `body-capacity` launch state for
 reproducibility. The complete cost and physical-device rationale for the safe
 64-slot default live in the
 [performance topic](performance-and-scale.md#interactive-world-capacity-policy).
+
+The complete physics preference is `physbox5.physics.v3`. It adds the sleeping
+request and migrates version 2 with sleeping off, preserving the ordinary
+default while keeping the launch URL reproducible.
 
 ## Initial bounds and presets
 

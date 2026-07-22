@@ -129,9 +129,16 @@ The list grows and reflows as profiles are registered; there is no pairwise
 A/B slot. A change rebuilds the shared GPU world immediately without reloading
 the page; camera position and tool selection are retained. The browser stores
 the active profile and coefficients
-under `physbox5.physics.v2`, migrates the older solver-only key, restores the
-complete configuration on the next launch, and keeps the URL synchronized
-automatically for reproducibility. No query-string editing is required.
+under `physbox5.physics.v3`, migrates the version-2 and older solver-only keys,
+restores the complete configuration on the next launch, and keeps the URL
+synchronized automatically for reproducibility. No query-string editing is
+required.
+
+The S23.2 sleeping checkpoint also accepts `--sleeping on|off` (or the matching
+web query) as an experimental request. Sleeping remains off by default and is
+currently ineffective: reports distinguish requested from effective state,
+and there is intentionally no ordinary menu item until later sleeping/waking
+behavior and promotion gates pass.
 
 Open **MENU → WORLD** to choose **64 SLOTS**, **256 SLOTS**, **1K SLOTS**, or
 **10K SLOTS**. Selection rebuilds and restarts the current scenario immediately

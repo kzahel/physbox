@@ -54,7 +54,7 @@ quality. Known limitations remain part of the row.
 | COLL-8 | GPU picking | **Limited** | Shared grab/erase selection uses bounded GPU hit selection; it is not a general spatial-query API. |
 | SOLVE-1 | Soft-coupled rigid solver | **Implemented** | Reviewed 60/4/i1, contact 30 Hz/damping 10/static x2 default; quiet feel accepted with visible tall-stack compliance and step-407 16-stack loss. |
 | SOLVE-2 | Hard/direct comparison | **Implemented** | Explicit named comparator only; never an automatic fallback. |
-| SOLVE-3 | Sleeping and waking | **Not implemented** | Live-body compaction exists; GPU-owned sleep state, awake filtering, island wake propagation, and wake triggers remain the next rigid-state milestone after S22 closes. |
+| SOLVE-3 | Sleeping and waking | **Limited** | Versioned generation-safe GPU state and a sorted awake-dynamic list/indirect-argument seam are in the ordinary graph, but effective sleeping is hard-false. No sleep transition, wake trigger/propagation, or solver filtering exists yet. |
 | JOINT-1 | Grab constraint | **Implemented** | Anchored GPU grab retains collision and bounded release velocity. |
 | JOINT-2 | General joints | **Not implemented** | Distance/revolute or another first authored joint follows accepted free-body rigid behavior. |
 
@@ -76,7 +76,7 @@ quality. Known limitations remain part of the row.
 | SCALE-1 | Small-world rigid scenes | **Implemented** | The safe 64-slot default, authored-scene headroom, and explicit 256/1K/10K opt-ins use selected SAP and reserve-independent active work; the 100-body diagnostic buckets execute correctly but are not sustained-rate claims on every device. |
 | SCALE-2 | Scalable broadphase | **Implemented** | SAP is selected and integrated; exact native 100/1K/10K curves, a zero-slip 100-body browser row, and physical Pixel bootstrap/bucket execution pass. This does not establish a 1K-plus rendered product-world rate. |
 | SCALE-3 | 1K-100K product-world claims | **Not implemented** | Existing authored-contact/isolated-solver measurements are not scalable end-to-end body claims. |
-| SCALE-4 | Mostly-sleeping scale | **Not implemented** | Selected SAP and live-body compaction exist; sleeping and an awake-work filter are still absent. |
+| SCALE-4 | Mostly-sleeping scale | **Not implemented** | Selected SAP, live-body compaction, and an inert awake-list representation exist; no sleeper or awake-driven solver work exists, so there is no mostly-sleeping performance claim. |
 | QUAL-1 | Box2D process oracle | **Implemented** | Clean pinned native process covers current circle/rectangle projections, public manifolds, selected actions, and deterministic results. |
 | QUAL-2 | Comprehensive rigid acceptance | **Limited** | Core fixtures and extensive research evidence exist; a compact current-default P5.4 acceptance suite is not yet closed. |
 | QUAL-3 | Correctness-qualified CPU/GPU crossover | **Not implemented** | Requires broadphase, sleeping, equivalent-quality worlds, and scoped solver/collision/end-to-end/full-frame curves. |
@@ -94,8 +94,9 @@ quality. Known limitations remain part of the row.
 
 ## Current execution order
 
-1. Add sleeping/waking on the completed S22 live-set foundation and close
-   current-default rigid acceptance and scale.
+1. Continue sleeping/waking from the inert S23.2 checkpoint with explicit wake
+   roots/propagation, then sleep admission and awake-driven solve; close
+   current-default rigid acceptance and scale afterward.
 2. Extend the construction loop with editable selection, scene documents, and
    one joint.
 3. Begin bounded liquid and same-step rigid/fluid coupling.

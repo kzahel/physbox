@@ -1,13 +1,15 @@
 # GPU sleeping and waking
 
-Status: active design, 2026-07-22. Tactical S23 is authorized through its
-inert S23.2 checkpoint; no sleeping behavior is implemented yet. This topic is the
-master record for the sleeping/waking feature: its motivation, the selected
-direction, the frozen experimental policy vocabulary, wake-trigger semantics, the
-toggle and experimentation surface, the validation contract, the execution
-plan, and the running status overview. Direction and step ordering below are
-provisional except where the S23.1 evidence below freezes them; nothing here changes a product default, and enabling
-sleeping as the ordinary default requires a recorded human promotion review.
+Status: active design at a manual checkpoint, 2026-07-22. Tactical S23.1 and
+the authorized inert S23.2 checkpoint are complete; no body can transition
+asleep yet, and work stops before S23.3 wake propagation pending a later user
+request. This topic is the master record for the sleeping/waking feature: its
+motivation, the selected direction, the frozen experimental policy vocabulary,
+wake-trigger semantics, the toggle and experimentation surface, the validation
+contract, the execution plan, and the running status overview. Direction and
+step ordering below are provisional except where S23.1 freezes them; nothing
+here changes a product default, and enabling sleeping as the ordinary default
+requires a recorded human promotion review.
 
 Governing direction:
 [one GPU-resident 2D physics world](physbox5-unified-gpu-physics.md), which
@@ -39,11 +41,11 @@ change only with implementation and evidence, not because this design exists.
 | Area | Status | Current state / next gate |
 | --- | --- | --- |
 | Policy vocabulary and oracle traces | complete | S23.1 freezes experimental policy V1 and a replay-exact 40-row Box2D/PhysBox baseline matrix. |
-| Versioned GPU sleep state | authorized | `SleepStateV1` lane and deterministic awake compaction while sleep stays disabled (S23.2). |
+| Versioned GPU sleep state | complete | Generation-checked `SleepStateV1`, sorted awake-dynamic list, indirect arguments, and exact inert replay (S23.2). |
 | Wake roots and bounded propagation | proposed | Generation-checked roots plus K-round contact-neighbor waves against authored sleepers (S23.3). |
 | Automatic sleep admission | proposed | Integer outer-step timers, cause bitsets, no-drift guarantees (S23.4). |
 | Awake-driven solve and integration | proposed | Solver bodies/points sized by awake work; live collision and rendering retained (S23.5). |
-| Toggle and configuration surface | proposed | Launch-owned `sleeping_enabled`, shared graph, sleep-off equivalence (S23.2 onward). |
+| Toggle and configuration surface | limited | Launch-owned requested state and cross-host reporting exist; effective state is hard-false and no ordinary menu/default is exposed. |
 | Sleeping-city performance curves | proposed | Matched 1%/10%/100% awake evidence; conditional dormant-pair decision (S23.6). |
 | Cross-host qualification and promotion | proposed | Browser plus physical Android, mask-rule disclosure, human default review (S23.7). |
 
@@ -182,6 +184,45 @@ Construction, erase/reuse, reset, and automatic support-motion waking are
 specified primarily as PhysBox invariants because they do not map cleanly
 through the neutral Box2D scenario contract.
 
+### S23.2 inert representation checkpoint
+
+Implementation commit `47542c0` establishes the representation seam without
+changing physics behavior:
+
+- a 32-byte `SleepStateV1` lane is allocated for every body slot and records
+  generation, awake/eligible flags, quiet and transition steps, cause bits,
+  policy version, and layout version;
+- one GPU pass scans the S22 sorted live list, writes a sorted dynamic-only
+  awake list plus count/indirect arguments, excludes fixed bodies, and
+  initializes a changed generation awake;
+- construction, erase/reuse, failed mutation, reset, sparse authored slots,
+  and full-capacity lifecycle cases have direct readback assertions; and
+- `PhysicsConfigurationV2`, launch parsing, browser preference version 3, and
+  scene contract version 9 transport and distinguish requested from effective
+  sleeping. Effective sleeping is hard-false and the ordinary canvas menu has
+  no sleeping control.
+
+The awake list is deliberately not consumed by integration, solver-body work,
+or solver points. Every live dynamic body remains awake and eligible, so S23.2
+cannot conceal an awake solver outcome. The correctness-first compaction pass
+currently uses one GPU invocation to scan live slots. That deterministic form
+is sufficient to freeze layout and lifecycle semantics, but it is not a
+parallel-compaction or mostly-sleeping scale result; parallelization must be
+qualified before awake work becomes a performance claim.
+
+Clean revision `47542c08b572316dccc14b678d1be778a012d761` produced
+`/tmp/physbox5-s23.2-47542c0/sleep-policy/manifest.json` on AMD Radeon 890M
+RADV Vulkan. All 40 authority rows pass, all 25 supported action-free PhysBox
+histories replay exactly, and their snapshot histories equal the S23.1
+`6c70367` baseline exactly. The clean sparse-capacity artifact at
+`/tmp/physbox5-s23.2-47542c0/sparse-capacity.json` is replay-exact and
+overflow-free through the 10K reserve tier while reporting the new state/list
+allocation explicitly. Ordinary/solver-lab browser, headless requested-on,
+ARM64, dual-ABI release-native, release APK, and authorized hardware-backed AVD
+qualification pass. No physical device was available for this closure; the
+AVD used the host Radeon Vulkan adapter, produced a visually complete capture,
+and shut down successfully.
+
 ## Selected implementation direction
 
 Per-body sleep timers with bounded contact-neighbor wake propagation, executed
@@ -294,10 +335,12 @@ Sleeping must be reversible and comparable from day one:
 
 - `sleeping_enabled` lives in the launch-owned versioned physics
   configuration, its configuration hash, the scene contract, the web query
-  mapping, and the engine-rendered menu, following the S19 ownership pattern:
-  one projection into `EngineConfig`, adapters transport it unchanged, and
-  requested and effective values are both reported. The ordinary default is
-  off until a recorded human promotion review changes it.
+  mapping, and any later engine-rendered menu control, following the S19
+  ownership pattern: one projection into `EngineConfig`, adapters transport it
+  unchanged, and requested and effective values are both reported. S23.2
+  exposes only the launch/query control; the ordinary menu has no sleeping
+  item and the default remains off until a recorded human promotion review
+  changes it.
 - Sleep-off and sleep-enabled share one operation graph. Sleep-off forces
   every live dynamic body into the awake list and resets/ignores timers; it
   must not select another solver, pipeline layout, or compilation path.
