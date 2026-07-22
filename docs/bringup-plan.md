@@ -444,6 +444,9 @@ decision is held for human review.
 
 ## P5.4 — rigid parity and performance gates
 
+- Execute
+  [S24 current rigid quality qualification](tactical/024-current-rigid-quality-qualification.md)
+  before the sleeping default decision.
 - Complete the S23.7 sleeping promotion/default review over the implemented
   bounded wake propagation, coordinated admission, awake-driven solve, compact
   diagnostics, and sleeping-city evidence.

@@ -96,12 +96,14 @@ quality. Known limitations remain part of the row.
 
 ## Current execution order
 
-1. Hold sleeping/waking at the S23.6 measured checkpoint for S23.7 human
-   promotion/default review; close current-default rigid acceptance and scale
-   afterward.
-2. Extend the construction loop with editable selection, scene documents, and
+1. Run S24's selected-default sleep-off 2/4/8/12 gate and 14/16 diagnostics;
+   stop at a native 12-stack failure rather than masking it with sleep.
+2. If S24 qualifies the awake gate, return to the held S23.7 sleeping
+   promotion/default review and close the remaining current-default rigid
+   acceptance and scale work.
+3. Extend the construction loop with editable selection, scene documents, and
    one joint.
-3. Begin bounded liquid and same-step rigid/fluid coupling.
+4. Begin bounded liquid and same-step rigid/fluid coupling.
 
 ## Reconsideration triggers
 

@@ -15,6 +15,8 @@ Sleeping boundary:
 [GPU sleeping and waking](gpu-sleeping-and-waking.md).
 Cost and scale claims:
 [performance and scale](performance-and-scale.md).
+Execution tracker:
+[S24 current rigid quality qualification](../tactical/024-current-rigid-quality-qualification.md).
 
 ## Decision
 
