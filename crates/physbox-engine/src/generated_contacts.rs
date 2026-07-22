@@ -763,6 +763,7 @@ impl GpuGeneratedContactGraph {
             .encode_finalize_wakes(encoder, wake_frontier);
         self.awake_work.encode_compaction(encoder);
         self.solver.encode_step(encoder);
+        self.awake_work.encode_sleep_admission(encoder);
         self.persistence
             .encode_after_solver(encoder, parity, self.point_capacity, timestamps);
         self.parity.set(1 - parity);
@@ -791,6 +792,7 @@ impl GpuGeneratedContactGraph {
         let descriptors = self
             .solver
             .encode_step_with_pass_trace(encoder, storage, destination)?;
+        self.awake_work.encode_sleep_admission(encoder);
         self.persistence
             .encode_after_solver(encoder, parity, self.point_capacity, None);
         self.parity.set(1 - parity);
@@ -824,6 +826,7 @@ impl GpuGeneratedContactGraph {
             destination,
             destination_offset,
         )?;
+        self.awake_work.encode_sleep_admission(encoder);
         self.persistence
             .encode_after_solver(encoder, parity, self.point_capacity, None);
         self.parity.set(1 - parity);
@@ -858,6 +861,7 @@ impl GpuGeneratedContactGraph {
         self.awake_work.encode_compaction(encoder);
         self.solver
             .encode_step_solver_phase_instrumented(encoder, query_sets, color_occupancy)?;
+        self.awake_work.encode_sleep_admission(encoder);
         self.persistence
             .encode_after_solver(encoder, parity, self.point_capacity, None);
         self.parity.set(1 - parity);
@@ -888,7 +892,7 @@ impl GpuGeneratedContactGraph {
     }
 
     pub(crate) fn dispatches_per_step(&self) -> u32 {
-        5 + 2 * self.awake_work.wake_propagation_rounds()
+        7 + 2 * self.awake_work.wake_propagation_rounds()
             + self.broadphase.dispatches()
             + self.persistence.dispatches()
             + BRIDGE_DISPATCHES

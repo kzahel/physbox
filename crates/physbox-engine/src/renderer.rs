@@ -689,11 +689,11 @@ mod tests {
                 .expect("generated-contact renderer initializes");
             let report = renderer.render(FrameInput::exact(4));
             assert_eq!(report.scene_contract.contact_point_count, 1_024);
-            assert_eq!(report.scene_contract.solver_dispatches_per_step, 140);
+            assert_eq!(report.scene_contract.solver_dispatches_per_step, 142);
             assert_eq!(report.scene_contract.solver_capacity_bytes, 634_516);
             assert!(!report.scene_contract.capacity_overflowed);
             assert!(report.scene_contract.requested_sleeping_enabled);
-            assert!(!report.scene_contract.effective_sleeping_enabled);
+            assert!(report.scene_contract.effective_sleeping_enabled);
             assert!(report.scene_contract.awake_compaction_enabled);
             assert!(
                 renderer
@@ -1638,7 +1638,7 @@ mod tests {
                 .with_input_events(click(7, layout.center_normalized("world-sleeping", 0))),
         );
         assert!(sleeping_requested.scene_contract.requested_sleeping_enabled);
-        assert!(!sleeping_requested.scene_contract.effective_sleeping_enabled);
+        assert!(sleeping_requested.scene_contract.effective_sleeping_enabled);
         assert!(sleeping_requested.scene_contract.awake_compaction_enabled);
         assert_eq!(
             sleeping_requested.scene_contract.requested_body_capacity,

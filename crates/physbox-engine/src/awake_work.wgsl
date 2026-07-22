@@ -35,6 +35,7 @@ const CAUSE_GRAB: u32 = 1u << 2u;
 const CAUSE_CONSTRUCTION: u32 = 1u << 4u;
 const CAUSE_CONTACT: u32 = 1u << 6u;
 const CAUSE_IMPACT: u32 = 1u << 7u;
+const CAUSE_AUTOMATIC: u32 = 1u << 9u;
 
 fn radial_extent(slot: u32) -> f32 {
     let flags = metadata[slot].y;
@@ -138,9 +139,7 @@ fn finalize_wakes(@builtin(global_invocation_id) invocation: vec3u) {
     sleep_state[slot] = state;
 }
 
-@compute @workgroup_size(1)
-fn compact_awake_bodies() {
-    atomicAdd(&control[0], 1u);
+fn write_awake_bodies() {
     let previous_awake_count = awake_bodies[0];
     let live_count = live_bodies[0];
     var awake_count = 0u;
@@ -178,4 +177,51 @@ fn compact_awake_bodies() {
     awake_bodies[16] = 0u;
     atomicStore(&control[2], awake_count);
     atomicStore(&control[3], live_bodies[1] - awake_count);
+}
+
+@compute @workgroup_size(1)
+fn compact_awake_bodies() {
+    atomicAdd(&control[0], 1u);
+    write_awake_bodies();
+}
+
+@compute @workgroup_size(1)
+fn refresh_awake_bodies() {
+    write_awake_bodies();
+}
+
+@compute @workgroup_size(64)
+fn admit_sleeping_bodies(@builtin(global_invocation_id) invocation: vec3u) {
+    let live_index = invocation.x;
+    if (live_index >= live_bodies[0]) { return; }
+    let slot = live_bodies[ACTIVE_BODY_STATE_WORDS + live_index];
+    let identity = metadata[slot];
+    if ((identity.y & (FLAG_LIVE | FLAG_FIXED)) != FLAG_LIVE) { return; }
+    var state = sleep_state[slot];
+    if (state.identity_flags.x != identity.x ||
+        state.provenance.z != SLEEP_STATE_LAYOUT_VERSION ||
+        (state.identity_flags.y & SLEEP_FLAG_AWAKE) == 0u) {
+        return;
+    }
+    if (params.counts.y == 0u ||
+        (state.identity_flags.y & SLEEP_FLAG_ELIGIBLE) == 0u) {
+        state.identity_flags.z = 0u;
+        sleep_state[slot] = state;
+        return;
+    }
+    if (farthest_point_speed(slot) > params.thresholds.x) {
+        state.identity_flags.z = 0u;
+        sleep_state[slot] = state;
+        return;
+    }
+    let quiet_steps = state.identity_flags.z + 1u;
+    state.identity_flags.z = quiet_steps;
+    if (quiet_steps >= params.counts.z) {
+        state.identity_flags.y &= ~SLEEP_FLAG_AWAKE;
+        state.identity_flags.w = atomicLoad(&control[0]);
+        state.provenance.x = CAUSE_AUTOMATIC;
+        motions[slot] = vec4f(0.0);
+        metadata[slot].y = identity.y | FLAG_SLEEPING;
+    }
+    sleep_state[slot] = state;
 }

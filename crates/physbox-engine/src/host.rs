@@ -1428,7 +1428,10 @@ impl EngineHost {
             sleep_wake_propagation_rounds: sleep_policy.wake_propagation_rounds,
             sleep_impact_wake_speed: sleep_policy.impact_wake_speed.get(),
             requested_sleeping_enabled: physics.sleeping_enabled,
-            effective_sleeping_enabled: false,
+            effective_sleeping_enabled: self
+                .body_world
+                .as_ref()
+                .is_some_and(GpuBodyWorld::sleeping_enabled),
             awake_compaction_enabled: true,
             fixed_step_hz: physics.fixed_step_hz,
             fixed_dt_seconds: physics.fixed_dt_seconds(),
@@ -1660,6 +1663,7 @@ impl EngineHost {
                 contact_count: contract.contact_point_count,
                 capacity_bytes: contract.solver_capacity_bytes,
                 overflowed: contract.capacity_overflowed,
+                sleeping_effective: contract.effective_sleeping_enabled,
                 adapter_backend: &self.adapter.backend,
                 scenario_activations_total: self.scenario_activations_total,
                 scenario_restarts_total: self.scenario_restarts_total,

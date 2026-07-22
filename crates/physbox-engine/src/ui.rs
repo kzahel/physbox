@@ -16,7 +16,7 @@ use crate::{
     },
 };
 
-pub(crate) const UI_CONTRACT_VERSION: u32 = 6;
+pub(crate) const UI_CONTRACT_VERSION: u32 = 7;
 const STATIC_INSTANCE_CAPACITY: usize = 384;
 const DYNAMIC_INSTANCE_CAPACITY: usize = 192;
 
@@ -88,6 +88,7 @@ pub(crate) struct UiFrameModel<'a> {
     pub contact_count: u32,
     pub capacity_bytes: u64,
     pub overflowed: bool,
+    pub sleeping_effective: bool,
     pub adapter_backend: &'a str,
     pub scenario_activations_total: u64,
     pub scenario_restarts_total: u64,
@@ -846,6 +847,7 @@ struct StaticKey {
     active_solver_profile: SolverProfileName,
     solver_profile_count: usize,
     world_capacity: WorldCapacityPreset,
+    sleeping_effective: bool,
 }
 
 struct UiRenderer {
@@ -1072,6 +1074,7 @@ impl UiRenderer {
             active_solver_profile: model.solver_profile.profile_name(),
             solver_profile_count: solver_profiles.len(),
             world_capacity: model.world_capacity,
+            sleeping_effective: model.sleeping_effective,
         };
         if self.static_key.as_ref() != Some(&key) {
             let batch = static_batch(
@@ -1085,6 +1088,7 @@ impl UiRenderer {
                     solver_profiles,
                     draft_solver_profile,
                     world_capacity: model.world_capacity,
+                    sleeping_effective: model.sleeping_effective,
                 },
             );
             if !batch.instances.is_empty() {
@@ -1244,6 +1248,7 @@ struct StaticBatchModel<'a> {
     solver_profiles: &'a [SolverProfileConfig],
     draft_solver_profile: &'a SolverProfileConfig,
     world_capacity: WorldCapacityPreset,
+    sleeping_effective: bool,
 }
 
 fn static_batch(target_size: [u32; 2], model: StaticBatchModel<'_>) -> Batch {
@@ -1256,6 +1261,7 @@ fn static_batch(target_size: [u32; 2], model: StaticBatchModel<'_>) -> Batch {
         solver_profiles,
         draft_solver_profile,
         world_capacity,
+        sleeping_effective,
     } = model;
     let layout = UiLayout::for_target(target_size);
     let scale = layout.scale;
@@ -1467,10 +1473,10 @@ fn static_batch(target_size: [u32; 2], model: StaticBatchModel<'_>) -> Batch {
                 let sleeping_requested = draft_solver_profile.physics().sleeping_enabled;
                 batch.push_quad(sleeping, if sleeping_requested { selected } else { button });
                 batch.push_text(
-                    if sleeping_requested {
-                        "SLEEP REQUEST ON  EFFECTIVE OFF"
-                    } else {
-                        "SLEEP REQUEST OFF EFFECTIVE OFF"
+                    match (sleeping_requested, sleeping_effective) {
+                        (true, true) => "SLEEP REQUEST ON  EFFECTIVE ON",
+                        (true, false) => "SLEEP REQUEST ON  EFFECTIVE OFF",
+                        (false, _) => "SLEEP REQUEST OFF EFFECTIVE OFF",
                     },
                     [sleeping[0] + 9.0 * scale, sleeping[1] + 10.0 * scale],
                     1.35 * scale,
@@ -1764,6 +1770,7 @@ mod tests {
                 solver_profiles: &profiles,
                 draft_solver_profile: &active,
                 world_capacity: WorldCapacityPreset::Slots64,
+                sleeping_effective: false,
             },
         );
         let static_open = static_batch(
@@ -1777,6 +1784,7 @@ mod tests {
                 solver_profiles: &profiles,
                 draft_solver_profile: &active,
                 world_capacity: WorldCapacityPreset::Slots64,
+                sleeping_effective: false,
             },
         );
         let static_world = static_batch(
@@ -1790,6 +1798,7 @@ mod tests {
                 solver_profiles: &profiles,
                 draft_solver_profile: &active,
                 world_capacity: WorldCapacityPreset::Slots10000,
+                sleeping_effective: false,
             },
         );
         assert!(!static_closed.overflowed && !static_open.overflowed && !static_world.overflowed);
@@ -1815,6 +1824,7 @@ mod tests {
                 solver_profiles: &profiles,
                 draft_solver_profile: &active,
                 world_capacity: WorldCapacityPreset::Slots64,
+                sleeping_effective: false,
             },
         );
         assert!(!batch.overflowed);

@@ -77,8 +77,8 @@ try {
   if (before.frame.sceneContract?.solverProfile !== "soft-coupled") {
     throw new Error(`fresh browser did not use soft-coupled: ${JSON.stringify(before.frame.sceneContract)}`);
   }
-  if (before.frame.ui?.version !== 6) {
-    throw new Error(`browser did not expose UI contract 6: ${JSON.stringify(before.frame.ui)}`);
+  if (before.frame.ui?.version !== 7) {
+    throw new Error(`browser did not expose UI contract 7: ${JSON.stringify(before.frame.ui)}`);
   }
   if (
     before.frame.sceneContract?.physicsConfigurationVersion !== 2
@@ -185,7 +185,7 @@ try {
       () => {
         const frame = globalThis.__physbox5?.frame;
         return frame?.sceneContract?.requestedSleepingEnabled === true
-          && frame?.sceneContract?.effectiveSleepingEnabled === false
+          && frame?.sceneContract?.effectiveSleepingEnabled === true
           && !frame?.ui?.menuOpen;
       },
       null,
@@ -207,7 +207,7 @@ try {
     await page.waitForFunction(
       () => globalThis.__physbox5?.ready
         && globalThis.__physbox5?.frame?.sceneContract?.requestedSleepingEnabled === true
-        && globalThis.__physbox5?.frame?.sceneContract?.effectiveSleepingEnabled === false,
+        && globalThis.__physbox5?.frame?.sceneContract?.effectiveSleepingEnabled === true,
       null,
       { timeout: 30_000 },
     );

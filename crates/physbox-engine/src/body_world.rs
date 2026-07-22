@@ -179,6 +179,7 @@ impl GpuBodyWorld {
         )
     }
 
+    #[cfg(test)]
     pub(crate) fn new_generated(
         device: &wgpu::Device,
         color_format: wgpu::TextureFormat,
@@ -1160,6 +1161,7 @@ impl GpuBodyWorld {
                 }
                 self.storage.encode_awake_compaction(encoder);
                 solver.encode_step(encoder);
+                self.storage.encode_sleep_admission(encoder);
             } else {
                 self.storage.encode_awake_compaction(encoder);
                 let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -1178,6 +1180,8 @@ impl GpuBodyWorld {
                     self.storage.active_body_buffer(),
                     ACTIVE_BODY_DISPATCH_64_OFFSET,
                 );
+                drop(pass);
+                self.storage.encode_sleep_admission(encoder);
             }
         }
         Ok(capacity)
@@ -1585,7 +1589,7 @@ impl GpuBodyWorld {
     pub(crate) fn solver_dispatches_per_step(&self) -> u32 {
         self.generated_contacts.as_ref().map_or_else(
             || {
-                1 + self
+                3 + self
                     .floor_solver
                     .as_ref()
                     .map_or(1, GpuFixedFloorSolver::dispatches_per_step)
@@ -1973,8 +1977,17 @@ mod tests {
         scenario: &ScenarioV1,
         wake_propagation_rounds: u32,
     ) -> GpuBodyWorld {
-        let scheduling =
-            selected_interactive_scheduling(scenario, WorldCapacityPreset::default()).unwrap();
+        sleeping_world(device, scenario, 60, wake_propagation_rounds, true)
+    }
+
+    fn sleeping_world(
+        device: &wgpu::Device,
+        scenario: &ScenarioV1,
+        fixed_step_hz: u32,
+        wake_propagation_rounds: u32,
+        enabled: bool,
+    ) -> GpuBodyWorld {
+        let scheduling = GpuSolverSchedulingPolicyV1::SELECTED_SMALL_WORLD;
         GpuBodyWorld::new_with_generated_contacts(
             device,
             wgpu::TextureFormat::Rgba8Unorm,
@@ -1982,14 +1995,130 @@ mod tests {
             WorldCapacityPreset::default(),
             GeneratedContactBuildOptions {
                 sleep_config: SleepExecutionConfig {
-                    enabled: true,
-                    fixed_step_hz: 60,
+                    enabled,
+                    fixed_step_hz,
                     wake_propagation_rounds,
                 },
-                ..GeneratedContactBuildOptions::selected(scheduling, 60)
+                branch_robust_tunable: fixed_step_hz != 60,
+                ..GeneratedContactBuildOptions::selected(scheduling, fixed_step_hz)
             },
         )
         .unwrap()
+    }
+
+    fn read_validation_state_bytes(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        world: &GpuBodyWorld,
+    ) -> Vec<u8> {
+        let byte_count = u64::from(world.body_count) * size_of::<[u32; 4]>() as u64 * 3;
+        let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("sleep_validation_state_readback"),
+            size: byte_count,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("sleep_validation_state_copy"),
+        });
+        world.copy_full_validation_state(&mut encoder, &buffer);
+        queue.submit([encoder.finish()]);
+        read_buffer(device, &buffer)
+    }
+
+    #[test]
+    fn gpu_sleep_admission_uses_exact_outer_steps_and_stops_pose_drift() {
+        let instance = crate::create_instance();
+        let adapter = pollster::block_on(crate::gpu_context::request_adapter(&instance, None))
+            .expect("test GPU adapter");
+        let (device, queue) =
+            pollster::block_on(crate::gpu_context::request_device(&adapter)).unwrap();
+        #[cfg(feature = "production-validation")]
+        let rate_rows = [(60, 30)];
+        #[cfg(not(feature = "production-validation"))]
+        let rate_rows = [(30, 15), (60, 30), (120, 60)];
+        for (fixed_step_hz, quiet_steps) in rate_rows {
+            let mut scenario = crate::p5_1_rectangle_floor_scenario(1).unwrap();
+            let profile = if fixed_step_hz == 60 {
+                crate::SolverProfileConfig::hard_direct()
+            } else {
+                crate::SolverProfileConfig::soft_coupled()
+            };
+            profile.apply_to_scenario(&mut scenario).unwrap();
+            scenario.manifolds.clear();
+            scenario.settings.gravity = Vec2::ZERO;
+            scenario.settings.fixed_dt =
+                physbox_contracts::FiniteF32::new(1.0 / fixed_step_hz as f32).unwrap();
+            scenario.bodies[0].linear_velocity = Vec2::new(0.01, 0.0);
+            scenario.bodies[0].angular_velocity = physbox_contracts::FiniteF32::new(0.0).unwrap();
+            scenario.bodies[0].sleeping = false;
+
+            let enabled = sleeping_world(&device, &scenario, fixed_step_hz, 4, true);
+            let disabled = sleeping_world(&device, &scenario, fixed_step_hz, 4, false);
+            for _ in 0..quiet_steps - 1 {
+                encode(
+                    &device,
+                    &queue,
+                    &enabled,
+                    &grab_batch(Vec::new()),
+                    &empty_construction_intent_batch(),
+                );
+                encode(
+                    &device,
+                    &queue,
+                    &disabled,
+                    &grab_batch(Vec::new()),
+                    &empty_construction_intent_batch(),
+                );
+            }
+            let (states, awake) = read_awake_work(&device, &queue, &enabled);
+            assert!(states[0].awake);
+            assert_eq!(states[0].quiet_outer_steps, quiet_steps - 1);
+            assert_eq!(awake[0], 1);
+            assert_eq!(
+                read_validation_state_bytes(&device, &queue, &enabled),
+                read_validation_state_bytes(&device, &queue, &disabled),
+                "sleep-enabled motion diverged before the {fixed_step_hz} Hz transition"
+            );
+
+            let zero_step_state = read_validation_state_bytes(&device, &queue, &enabled);
+            assert_eq!(
+                read_validation_state_bytes(&device, &queue, &enabled),
+                zero_step_state,
+                "zero-step presentation changed GPU state"
+            );
+            encode(
+                &device,
+                &queue,
+                &enabled,
+                &grab_batch(Vec::new()),
+                &empty_construction_intent_batch(),
+            );
+            let (states, awake) = read_awake_work(&device, &queue, &enabled);
+            assert!(!states[0].awake);
+            assert_eq!(states[0].quiet_outer_steps, quiet_steps);
+            assert_eq!(states[0].last_transition_step, quiet_steps);
+            assert_ne!(
+                states[0].transition_causes & physbox_contracts::SLEEP_TRANSITION_CAUSE_AUTOMATIC,
+                0
+            );
+            assert_eq!(awake[0], 0);
+            let sleeping_state = read_validation_state_bytes(&device, &queue, &enabled);
+            for _ in 0..10 {
+                encode(
+                    &device,
+                    &queue,
+                    &enabled,
+                    &grab_batch(Vec::new()),
+                    &empty_construction_intent_batch(),
+                );
+            }
+            assert_eq!(
+                read_validation_state_bytes(&device, &queue, &enabled),
+                sleeping_state,
+                "sleeping body drifted at {fixed_step_hz} Hz"
+            );
+        }
     }
 
     #[test]

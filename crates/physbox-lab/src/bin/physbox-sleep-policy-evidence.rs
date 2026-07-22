@@ -323,7 +323,7 @@ fn run() -> Result<(), String> {
         host: format!("{}-{}", env::consts::OS, env::consts::ARCH),
         box2d_revision: BOX2D_REVISION,
         policy,
-        policy_status: "experimental-only; sleeping remains ineffective and off by default",
+        policy_status: "experimental opt-in; automatic admission is effective and the default remains off",
         authority_behavior: AuthorityBehaviorV1 {
             quiet_metric: "public velocity trace overlaid with |v| + |omega| * radial extent",
             default_speed_threshold_meters_per_second: 0.05,

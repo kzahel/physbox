@@ -428,6 +428,10 @@ impl GpuBodyStorage {
         self.awake_work.encode(encoder);
     }
 
+    pub(crate) fn encode_sleep_admission(&self, encoder: &mut wgpu::CommandEncoder) {
+        self.awake_work.encode_sleep_admission(encoder);
+    }
+
     #[cfg(test)]
     pub(crate) fn sleep_state_buffer(&self) -> &wgpu::Buffer {
         self.awake_work.sleep_state_buffer()

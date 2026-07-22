@@ -66,9 +66,12 @@ pub(crate) struct GpuAwakeWork {
     begin_bind_group: wgpu::BindGroup,
     finalize_bind_groups: [wgpu::BindGroup; 2],
     compact_bind_group: wgpu::BindGroup,
+    admission_bind_group: wgpu::BindGroup,
     begin_pipeline: wgpu::ComputePipeline,
     finalize_pipeline: wgpu::ComputePipeline,
     compact_pipeline: wgpu::ComputePipeline,
+    refresh_pipeline: wgpu::ComputePipeline,
+    admission_pipeline: wgpu::ComputePipeline,
     live_bodies: Arc<wgpu::Buffer>,
     body_capacity: u32,
     initial_awake_count: u32,
@@ -233,6 +236,31 @@ impl GpuAwakeWork {
                 entry(9, &control),
             ],
         });
+        let admission_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("physbox5_sleep_admission_layout"),
+            entries: &[
+                storage_entry(0, false),
+                storage_entry(1, true),
+                storage_entry(2, false),
+                storage_entry(4, false),
+                storage_entry(5, true),
+                storage_entry(9, false),
+                uniform_entry(10),
+            ],
+        });
+        let admission_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("physbox5_sleep_admission_bind_group"),
+            layout: &admission_layout,
+            entries: &[
+                entry(0, metadata),
+                entry(1, active_bodies),
+                entry(2, &sleep_state),
+                entry(4, motion),
+                entry(5, properties),
+                entry(9, &control),
+                entry(10, &params),
+            ],
+        });
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("physbox5_awake_work_shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("awake_work.wgsl").into()),
@@ -267,6 +295,16 @@ impl GpuAwakeWork {
             "compact_awake_bodies",
             &compact_layout,
         );
+        let refresh_pipeline = pipeline(
+            "physbox5_awake_refresh_pipeline",
+            "refresh_awake_bodies",
+            &compact_layout,
+        );
+        let admission_pipeline = pipeline(
+            "physbox5_sleep_admission_pipeline",
+            "admit_sleeping_bodies",
+            &admission_layout,
+        );
         Ok(Arc::new(Self {
             sleep_state,
             awake_bodies,
@@ -277,9 +315,12 @@ impl GpuAwakeWork {
             begin_bind_group,
             finalize_bind_groups,
             compact_bind_group,
+            admission_bind_group,
             begin_pipeline,
             finalize_pipeline,
             compact_pipeline,
+            refresh_pipeline,
+            admission_pipeline,
             live_bodies: Arc::clone(active_bodies),
             body_capacity,
             initial_awake_count,
@@ -323,6 +364,25 @@ impl GpuAwakeWork {
             timestamp_writes: None,
         });
         pass.set_pipeline(&self.compact_pipeline);
+        pass.set_bind_group(0, &self.compact_bind_group, &[]);
+        pass.dispatch_workgroups(1, 1, 1);
+    }
+
+    pub(crate) fn encode_sleep_admission(&self, encoder: &mut wgpu::CommandEncoder) {
+        {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("physbox5_sleep_admission_pass"),
+                timestamp_writes: None,
+            });
+            pass.set_pipeline(&self.admission_pipeline);
+            pass.set_bind_group(0, &self.admission_bind_group, &[]);
+            pass.dispatch_workgroups_indirect(&self.live_bodies, ACTIVE_BODY_DISPATCH_64_OFFSET);
+        }
+        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("physbox5_awake_refresh_pass"),
+            timestamp_writes: None,
+        });
+        pass.set_pipeline(&self.refresh_pipeline);
         pass.set_bind_group(0, &self.compact_bind_group, &[]);
         pass.dispatch_workgroups(1, 1, 1);
     }
