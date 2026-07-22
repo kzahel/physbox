@@ -324,7 +324,7 @@ fn pair_slot_benchmark_retains_the_correctness_gate() {
     let scenario = p5_2_generated_performance_scenario(32).unwrap();
     let benchmark =
         pollster::block_on(benchmark_gpu_pair_slot_persistence(&scenario, 1, 2)).unwrap();
-    assert_eq!(benchmark.dispatches_per_step, 25);
+    assert_eq!(benchmark.dispatches_per_step, 23);
     assert_eq!(benchmark.host_completion_seconds.len(), 2);
     assert_eq!(benchmark.correctness.steps.len(), 1);
     assert!(benchmark.correctness.steps[0].failure.is_none());

@@ -50,7 +50,7 @@ fn pair_slots_match_scalar_across_warm_churn_and_recontact() {
         assert_eq!(actual.work.cache_cold, expected.cold);
         assert_eq!(actual.work.cache_expired, expected.expired);
         assert_eq!(actual.work.sort_passes, 0);
-        assert_eq!(actual.work.dispatches, 25);
+        assert_eq!(actual.work.dispatches, 23);
         previous = expected.cache;
     }
 

@@ -28,11 +28,12 @@ use crate::{
     gpu_context::{create_instance, request_adapter, request_device},
 };
 
-const WORKGROUP_SIZE: u32 = 64;
 const SCAN_WORKGROUP_SIZE: u32 = 256;
-pub(crate) const PAIR_SLOT_DISPATCHES: u32 = 10;
+pub(crate) const PAIR_SLOT_DISPATCHES: u32 = 8;
 const TOTAL_DISPATCHES: u32 = 15 + PAIR_SLOT_DISPATCHES;
 pub(crate) const PAIR_RECORD_BYTES: u32 = 96;
+const PAIR_SLOT_INDIRECT_WORDS: u32 = 12;
+const PAIR_SLOT_ALLOCATOR_WORDS: u32 = 8;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod, Zeroable)]
@@ -293,6 +294,8 @@ impl GpuPairSlotPersistenceRunner {
             generations[record.meta[0] as usize] = record.meta[1];
         }
         let slot_generations = storage_init(&self.device, "pair_slot_generations", &generations);
+        let allocator =
+            PairSlotAllocator::new(&self.device, pair_capacity, initial_records.len() as u32)?;
         let mut previous_index = 0_usize;
         let mut output_index = 1_usize;
         let mut encoder = self
@@ -318,6 +321,7 @@ impl GpuPairSlotPersistenceRunner {
                 &pair_buffers[output_index],
                 &capacity_buffers[output_index],
                 &slot_generations,
+                &allocator,
                 candidate.work_buffer(),
                 pair_capacity,
                 permute_current_input,
@@ -334,11 +338,13 @@ impl GpuPairSlotPersistenceRunner {
                 &pair_buffers[output_index],
                 &capacity_buffers[output_index],
             );
+            let mut scratch_capacities = pair_slot.capacities();
+            scratch_capacities.extend(allocator.capacities());
             readbacks.push((
                 completed_step,
                 canonical_hash(scenario).map_err(|error| error.to_string())?,
                 readback,
-                pair_slot.capacities(),
+                scratch_capacities,
             ));
             std::mem::swap(&mut previous_index, &mut output_index);
         }
@@ -457,6 +463,7 @@ pub async fn benchmark_gpu_pair_slot_persistence(
         "pair_slot_benchmark_generations",
         &vec![0_u32; pair_capacity as usize + 1],
     );
+    let allocator = PairSlotAllocator::new(&device, pair_capacity, 0)?;
     let pair_slot = PairSlotCase::new(
         &device,
         &pair_slot_pipelines,
@@ -466,6 +473,7 @@ pub async fn benchmark_gpu_pair_slot_persistence(
         &pair_buffers[1],
         &capacity_buffers[1],
         &slot_generations,
+        &allocator,
         candidate.work_buffer(),
         pair_capacity,
         false,
@@ -500,6 +508,7 @@ pub async fn benchmark_gpu_pair_slot_persistence(
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("pair_slot_benchmark_warmup"),
         });
+        allocator.reset(&mut encoder);
         candidate.encode(&mut encoder, &candidate_pipelines);
         narrowphase.encode(&mut encoder, &narrowphase_pipelines);
         pair_slot.encode(&mut encoder, &pair_slot_pipelines);
@@ -516,6 +525,7 @@ pub async fn benchmark_gpu_pair_slot_persistence(
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("pair_slot_benchmark_sample"),
         });
+        allocator.reset(&mut encoder);
         let timestamps = query_resources
             .as_ref()
             .map(|(query_set, _, _)| (query_set, sample * 3));
@@ -571,7 +581,8 @@ pub async fn benchmark_gpu_pair_slot_persistence(
         + pair_slot.allocated_bytes()
         + pair_buffers.iter().map(wgpu::Buffer::size).sum::<u64>()
         + capacity_buffers.iter().map(wgpu::Buffer::size).sum::<u64>()
-        + slot_generations.size();
+        + slot_generations.size()
+        + allocator.allocated_bytes();
     Ok(GpuPairSlotPersistenceBenchmarkOutput {
         adapter: diagnostics,
         source_scenario_hash: canonical_hash(scenario).map_err(|error| error.to_string())?,
@@ -590,20 +601,16 @@ pub async fn benchmark_gpu_pair_slot_persistence(
 }
 
 pub(crate) struct PairSlotPipelines {
-    clear: wgpu::ComputePipeline,
     prepare: wgpu::ComputePipeline,
-    match_current: wgpu::ComputePipeline,
-    classify: wgpu::ComputePipeline,
+    match_and_retire: wgpu::ComputePipeline,
     scan_blocks: wgpu::ComputePipeline,
     scan_totals: wgpu::ComputePipeline,
     add_offsets: wgpu::ComputePipeline,
-    scatter_free: wgpu::ComputePipeline,
+    scatter_retired: wgpu::ComputePipeline,
     assign_new: wgpu::ComputePipeline,
     finalize: wgpu::ComputePipeline,
-    clear_layout: wgpu::BindGroupLayout,
     prepare_layout: wgpu::BindGroupLayout,
     match_layout: wgpu::BindGroupLayout,
-    classify_layout: wgpu::BindGroupLayout,
     scan_layout: wgpu::BindGroupLayout,
     scatter_layout: wgpu::BindGroupLayout,
     assign_layout: wgpu::BindGroupLayout,
@@ -612,24 +619,19 @@ pub(crate) struct PairSlotPipelines {
 
 impl PairSlotPipelines {
     pub(crate) fn new(device: &wgpu::Device) -> Self {
-        let clear_layout = layout(
-            device,
-            "pair_slot_clear_layout",
-            &[
-                (8, false),
-                (9, false),
-                (10, false),
-                (11, false),
-                (12, false),
-                (13, false),
-                (16, false),
-                (17, false),
-            ],
-        );
         let prepare_layout = layout(
             device,
             "pair_slot_prepare_layout",
-            &[(2, false), (3, false), (5, false), (16, false), (19, false)],
+            &[
+                (2, false),
+                (3, false),
+                (5, false),
+                (16, false),
+                (17, false),
+                (19, false),
+                (20, false),
+                (21, false),
+            ],
         );
         let match_layout = layout(
             device,
@@ -638,17 +640,12 @@ impl PairSlotPipelines {
                 (0, true),
                 (1, true),
                 (4, true),
-                (5, false),
                 (6, false),
+                (8, false),
                 (15, false),
-                (16, false),
                 (17, false),
+                (21, false),
             ],
-        );
-        let classify_layout = layout(
-            device,
-            "pair_slot_classify_layout",
-            &[(6, false), (8, false), (10, false), (16, false)],
         );
         let scan_layout = layout(
             device,
@@ -656,16 +653,17 @@ impl PairSlotPipelines {
             &[
                 (8, false),
                 (9, false),
-                (10, false),
                 (11, false),
                 (12, false),
                 (13, false),
+                (16, false),
+                (21, false),
             ],
         );
         let scatter_layout = layout(
             device,
             "pair_slot_scatter_layout",
-            &[(10, false), (11, false), (14, false)],
+            &[(4, true), (8, false), (11, false), (14, false), (21, false)],
         );
         let assign_layout = layout(
             device,
@@ -677,12 +675,13 @@ impl PairSlotPipelines {
                 (14, false),
                 (15, false),
                 (16, false),
+                (21, false),
             ],
         );
         let finalize_layout = layout(
             device,
             "pair_slot_finalize_layout",
-            &[(3, false), (4, true), (5, false), (16, false), (17, false)],
+            &[(3, false), (16, false), (17, false), (21, false)],
         );
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("physbox5_pair_slot_persistence_shader"),
@@ -707,25 +706,15 @@ impl PairSlotPipelines {
             })
         };
         Self {
-            clear: pipeline(
-                "pair_slot_clear_pipeline",
-                "clear_pair_slots",
-                &clear_layout,
-            ),
             prepare: pipeline(
                 "pair_slot_prepare_pipeline",
                 "prepare_pair_slots",
                 &prepare_layout,
             ),
-            match_current: pipeline(
+            match_and_retire: pipeline(
                 "pair_slot_match_pipeline",
-                "match_current_pairs",
+                "match_and_retire_pairs",
                 &match_layout,
-            ),
-            classify: pipeline(
-                "pair_slot_classify_pipeline",
-                "classify_pair_slots",
-                &classify_layout,
             ),
             scan_blocks: pipeline(
                 "pair_slot_scan_blocks_pipeline",
@@ -742,9 +731,9 @@ impl PairSlotPipelines {
                 "add_pair_slot_offsets",
                 &scan_layout,
             ),
-            scatter_free: pipeline(
+            scatter_retired: pipeline(
                 "pair_slot_scatter_free_pipeline",
-                "scatter_free_slots",
+                "scatter_retired_slots",
                 &scatter_layout,
             ),
             assign_new: pipeline(
@@ -757,10 +746,8 @@ impl PairSlotPipelines {
                 "finalize_pair_slots",
                 &finalize_layout,
             ),
-            clear_layout,
             prepare_layout,
             match_layout,
-            classify_layout,
             scan_layout,
             scatter_layout,
             assign_layout,
@@ -769,25 +756,88 @@ impl PairSlotPipelines {
     }
 }
 
+pub(crate) struct PairSlotAllocator {
+    free_slots: wgpu::Buffer,
+    state: wgpu::Buffer,
+    empty_state: wgpu::Buffer,
+    pair_capacity: u32,
+}
+
+impl PairSlotAllocator {
+    pub(crate) fn new(
+        device: &wgpu::Device,
+        pair_capacity: u32,
+        initial_pair_count: u32,
+    ) -> Result<Self, String> {
+        if initial_pair_count > pair_capacity {
+            return Err(format!(
+                "pair-slot allocator initial count {initial_pair_count} exceeds capacity {pair_capacity}"
+            ));
+        }
+        let free_slots = storage::<u32>(device, "pair_slot_retired_slots", pair_capacity)?;
+        let mut initial_state = [0_u32; PAIR_SLOT_ALLOCATOR_WORDS as usize];
+        initial_state[0] = initial_pair_count;
+        let state = storage_init(device, "pair_slot_allocator_state", &initial_state);
+        let empty_state = storage_init(
+            device,
+            "pair_slot_empty_allocator_state",
+            &[0_u32; PAIR_SLOT_ALLOCATOR_WORDS as usize],
+        );
+        Ok(Self {
+            free_slots,
+            state,
+            empty_state,
+            pair_capacity,
+        })
+    }
+
+    pub(crate) fn reset(&self, encoder: &mut wgpu::CommandEncoder) {
+        encoder.copy_buffer_to_buffer(
+            &self.empty_state,
+            0,
+            &self.state,
+            0,
+            self.empty_state.size(),
+        );
+    }
+
+    pub(crate) fn allocated_bytes(&self) -> u64 {
+        self.free_slots.size() + self.state.size() + self.empty_state.size()
+    }
+
+    pub(crate) fn capacities(&self) -> Vec<CollisionCapacityV1> {
+        vec![
+            fixed_capacity(
+                "pair-slot-allocator-state",
+                4,
+                u64::from(PAIR_SLOT_ALLOCATOR_WORDS),
+                u64::from(PAIR_SLOT_ALLOCATOR_WORDS),
+            ),
+            fixed_capacity(
+                "pair-slot-retired-queue",
+                4,
+                u64::from(self.pair_capacity),
+                0,
+            ),
+        ]
+    }
+}
+
 pub(crate) struct PairSlotCase {
     _new_flags: wgpu::Buffer,
     _new_offsets: wgpu::Buffer,
-    _slot_flags: wgpu::Buffer,
-    _slot_offsets: wgpu::Buffer,
+    _retired_offsets: wgpu::Buffer,
     _new_blocks: wgpu::Buffer,
-    _free_blocks: wgpu::Buffer,
-    _free_slots: wgpu::Buffer,
+    _retired_blocks: wgpu::Buffer,
+    indirect: wgpu::Buffer,
     _params: wgpu::Buffer,
-    clear_group: wgpu::BindGroup,
     prepare_group: wgpu::BindGroup,
     match_group: wgpu::BindGroup,
-    classify_group: wgpu::BindGroup,
     scan_group: wgpu::BindGroup,
     scatter_group: wgpu::BindGroup,
     assign_group: wgpu::BindGroup,
     finalize_group: wgpu::BindGroup,
     pair_capacity: u32,
-    manifold_capacity: u32,
     block_count: u32,
 }
 
@@ -802,19 +852,28 @@ impl PairSlotCase {
         output_pairs: &wgpu::Buffer,
         output_capacity: &wgpu::Buffer,
         slot_generations: &wgpu::Buffer,
+        allocator: &PairSlotAllocator,
         work: &wgpu::Buffer,
         pair_capacity: u32,
         permute_current_input: bool,
         fingerprint_mask: u32,
     ) -> Result<Self, String> {
         let block_count = pair_capacity.div_ceil(SCAN_WORKGROUP_SIZE);
-        let new_flags = storage::<u32>(device, "pair_slot_new_flags", pair_capacity)?;
+        let new_flags = storage::<u32>(
+            device,
+            "pair_slot_new_and_retired_flags",
+            pair_capacity.saturating_mul(2),
+        )?;
         let new_offsets = storage::<u32>(device, "pair_slot_new_offsets", pair_capacity)?;
-        let slot_flags = storage::<u32>(device, "pair_slot_active_flags", pair_capacity)?;
-        let slot_offsets = storage::<u32>(device, "pair_slot_free_offsets", pair_capacity)?;
+        let retired_offsets = storage::<u32>(device, "pair_slot_retired_offsets", pair_capacity)?;
         let new_blocks = storage::<u32>(device, "pair_slot_new_blocks", block_count)?;
-        let free_blocks = storage::<u32>(device, "pair_slot_free_blocks", block_count)?;
-        let free_slots = storage::<u32>(device, "pair_slot_free_slots", pair_capacity)?;
+        let retired_blocks = storage::<u32>(device, "pair_slot_retired_blocks", block_count)?;
+        let indirect = storage_with_usage::<u32>(
+            device,
+            "pair_slot_indirect",
+            PAIR_SLOT_INDIRECT_WORDS,
+            wgpu::BufferUsages::INDIRECT,
+        )?;
         let params = uniform(
             device,
             "pair_slot_params",
@@ -833,21 +892,6 @@ impl PairSlotCase {
                 ],
             },
         );
-        let clear_group = group(
-            device,
-            &pipelines.clear_layout,
-            &[
-                (8, &new_flags),
-                (9, &new_offsets),
-                (10, &slot_flags),
-                (11, &slot_offsets),
-                (12, &new_blocks),
-                (13, &free_blocks),
-                (16, output_capacity),
-                (17, work),
-            ],
-            &params,
-        );
         let prepare_group = group(
             device,
             &pipelines.prepare_layout,
@@ -856,7 +900,10 @@ impl PairSlotCase {
                 (3, narrowphase.point_capacity_buffer()),
                 (5, previous_capacity),
                 (16, output_capacity),
+                (17, work),
                 (19, slot_generations),
+                (20, &indirect),
+                (21, &allocator.state),
             ],
             &params,
         );
@@ -867,22 +914,11 @@ impl PairSlotCase {
                 (0, narrowphase.manifolds()),
                 (1, narrowphase.points()),
                 (4, previous_pairs),
-                (5, previous_capacity),
-                (6, output_pairs),
-                (15, slot_generations),
-                (16, output_capacity),
-                (17, work),
-            ],
-            &params,
-        );
-        let classify_group = group(
-            device,
-            &pipelines.classify_layout,
-            &[
                 (6, output_pairs),
                 (8, &new_flags),
-                (10, &slot_flags),
-                (16, output_capacity),
+                (15, slot_generations),
+                (17, work),
+                (21, &allocator.state),
             ],
             &params,
         );
@@ -892,17 +928,24 @@ impl PairSlotCase {
             &[
                 (8, &new_flags),
                 (9, &new_offsets),
-                (10, &slot_flags),
-                (11, &slot_offsets),
+                (11, &retired_offsets),
                 (12, &new_blocks),
-                (13, &free_blocks),
+                (13, &retired_blocks),
+                (16, output_capacity),
+                (21, &allocator.state),
             ],
             &params,
         );
         let scatter_group = group(
             device,
             &pipelines.scatter_layout,
-            &[(10, &slot_flags), (11, &slot_offsets), (14, &free_slots)],
+            &[
+                (4, previous_pairs),
+                (8, &new_flags),
+                (11, &retired_offsets),
+                (14, &allocator.free_slots),
+                (21, &allocator.state),
+            ],
             &params,
         );
         let assign_group = group(
@@ -912,9 +955,10 @@ impl PairSlotCase {
                 (6, output_pairs),
                 (8, &new_flags),
                 (9, &new_offsets),
-                (14, &free_slots),
+                (14, &allocator.free_slots),
                 (15, slot_generations),
                 (16, output_capacity),
+                (21, &allocator.state),
             ],
             &params,
         );
@@ -923,32 +967,27 @@ impl PairSlotCase {
             &pipelines.finalize_layout,
             &[
                 (3, narrowphase.point_capacity_buffer()),
-                (4, previous_pairs),
-                (5, previous_capacity),
                 (16, output_capacity),
                 (17, work),
+                (21, &allocator.state),
             ],
             &params,
         );
         Ok(Self {
             _new_flags: new_flags,
             _new_offsets: new_offsets,
-            _slot_flags: slot_flags,
-            _slot_offsets: slot_offsets,
+            _retired_offsets: retired_offsets,
             _new_blocks: new_blocks,
-            _free_blocks: free_blocks,
-            _free_slots: free_slots,
+            _retired_blocks: retired_blocks,
+            indirect,
             _params: params,
-            clear_group,
             prepare_group,
             match_group,
-            classify_group,
             scan_group,
             scatter_group,
             assign_group,
             finalize_group,
             pair_capacity,
-            manifold_capacity: narrowphase.manifold_capacity(),
             block_count,
         })
     }
@@ -963,62 +1002,63 @@ impl PairSlotCase {
         pipelines: &PairSlotPipelines,
         timestamps: Option<(&wgpu::QuerySet, u32, u32)>,
     ) {
-        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-            label: Some("physbox5_pair_slot_persistence_passes"),
-            timestamp_writes: timestamps.map(|(query_set, beginning, end)| {
+        let mut prepare = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("physbox5_pair_slot_persistence_prepare"),
+            timestamp_writes: timestamps.map(|(query_set, beginning, _)| {
                 wgpu::ComputePassTimestampWrites {
                     query_set,
                     beginning_of_pass_write_index: Some(beginning),
+                    end_of_pass_write_index: None,
+                }
+            }),
+        });
+        dispatch(&mut prepare, &pipelines.prepare, &self.prepare_group, 1);
+        drop(prepare);
+        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("physbox5_pair_slot_persistence_passes"),
+            timestamp_writes: timestamps.map(|(query_set, _, end)| {
+                wgpu::ComputePassTimestampWrites {
+                    query_set,
+                    beginning_of_pass_write_index: None,
                     end_of_pass_write_index: Some(end),
                 }
             }),
         });
-        dispatch(
+        dispatch_indirect(
             &mut pass,
-            &pipelines.clear,
-            &self.clear_group,
-            self.pair_capacity
-                .max(self.block_count)
-                .max(15)
-                .div_ceil(WORKGROUP_SIZE),
-        );
-        dispatch(&mut pass, &pipelines.prepare, &self.prepare_group, 1);
-        dispatch(
-            &mut pass,
-            &pipelines.match_current,
+            &pipelines.match_and_retire,
             &self.match_group,
-            self.manifold_capacity.div_ceil(WORKGROUP_SIZE),
+            &self.indirect,
+            0,
         );
-        dispatch(
-            &mut pass,
-            &pipelines.classify,
-            &self.classify_group,
-            self.pair_capacity.div_ceil(WORKGROUP_SIZE),
-        );
-        dispatch(
+        dispatch_indirect(
             &mut pass,
             &pipelines.scan_blocks,
             &self.scan_group,
-            self.block_count,
+            &self.indirect,
+            3 * size_of::<u32>() as u64,
         );
         dispatch(&mut pass, &pipelines.scan_totals, &self.scan_group, 1);
-        dispatch(
+        dispatch_indirect(
             &mut pass,
             &pipelines.add_offsets,
             &self.scan_group,
-            self.block_count,
+            &self.indirect,
+            3 * size_of::<u32>() as u64,
         );
-        dispatch(
+        dispatch_indirect(
             &mut pass,
-            &pipelines.scatter_free,
+            &pipelines.scatter_retired,
             &self.scatter_group,
-            self.pair_capacity.div_ceil(WORKGROUP_SIZE),
+            &self.indirect,
+            6 * size_of::<u32>() as u64,
         );
-        dispatch(
+        dispatch_indirect(
             &mut pass,
             &pipelines.assign_new,
             &self.assign_group,
-            self.pair_capacity.div_ceil(WORKGROUP_SIZE),
+            &self.indirect,
+            9 * size_of::<u32>() as u64,
         );
         dispatch(&mut pass, &pipelines.finalize, &self.finalize_group, 1);
     }
@@ -1026,11 +1066,10 @@ impl PairSlotCase {
     pub(crate) fn allocated_bytes(&self) -> u64 {
         self._new_flags.size()
             + self._new_offsets.size()
-            + self._slot_flags.size()
-            + self._slot_offsets.size()
+            + self._retired_offsets.size()
             + self._new_blocks.size()
-            + self._free_blocks.size()
-            + self._free_slots.size()
+            + self._retired_blocks.size()
+            + self.indirect.size()
             + self._params.size()
     }
 
@@ -1038,12 +1077,11 @@ impl PairSlotCase {
         let capacity = u64::from(self.pair_capacity);
         let blocks = u64::from(self.block_count);
         let mut capacities = vec![
-            fixed_capacity("pair-slot-active-flags", 4, capacity, capacity),
-            fixed_capacity("pair-slot-free-offsets", 4, capacity, capacity),
-            fixed_capacity("pair-slot-free-slots", 4, capacity, capacity),
-            fixed_capacity("pair-slot-new-flags", 4, capacity, capacity),
-            fixed_capacity("pair-slot-new-offsets", 4, capacity, capacity),
-            fixed_capacity("pair-slot-scan-blocks", 4, blocks * 2, blocks * 2),
+            fixed_capacity("pair-slot-indirect-arguments", 4, 12, 12),
+            fixed_capacity("pair-slot-new-and-retired-flags", 4, capacity * 2, 0),
+            fixed_capacity("pair-slot-new-offsets", 4, capacity, 0),
+            fixed_capacity("pair-slot-retired-offsets", 4, capacity, 0),
+            fixed_capacity("pair-slot-scan-blocks", 4, blocks * 2, 0),
         ];
         capacities.sort_by(|left, right| left.class.cmp(&right.class));
         capacities
@@ -1494,6 +1532,15 @@ fn storage<T>(
     label: &'static str,
     count: u32,
 ) -> Result<wgpu::Buffer, String> {
+    storage_with_usage::<T>(device, label, count, wgpu::BufferUsages::empty())
+}
+
+fn storage_with_usage<T>(
+    device: &wgpu::Device,
+    label: &'static str,
+    count: u32,
+    extra_usage: wgpu::BufferUsages,
+) -> Result<wgpu::Buffer, String> {
     let size = u64::from(count)
         .checked_mul(size_of::<T>() as u64)
         .ok_or_else(|| format!("{label} byte count overflowed"))?;
@@ -1511,7 +1558,8 @@ fn storage<T>(
         size,
         usage: wgpu::BufferUsages::STORAGE
             | wgpu::BufferUsages::COPY_SRC
-            | wgpu::BufferUsages::COPY_DST,
+            | wgpu::BufferUsages::COPY_DST
+            | extra_usage,
         mapped_at_creation: false,
     }))
 }
@@ -1545,4 +1593,16 @@ fn dispatch<'a>(
     pass.set_pipeline(pipeline);
     pass.set_bind_group(0, group, &[]);
     pass.dispatch_workgroups(workgroups, 1, 1);
+}
+
+fn dispatch_indirect<'a>(
+    pass: &mut wgpu::ComputePass<'a>,
+    pipeline: &'a wgpu::ComputePipeline,
+    group: &'a wgpu::BindGroup,
+    indirect: &'a wgpu::Buffer,
+    offset: u64,
+) {
+    pass.set_pipeline(pipeline);
+    pass.set_bind_group(0, group, &[]);
+    pass.dispatch_workgroups_indirect(indirect, offset);
 }

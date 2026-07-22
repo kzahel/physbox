@@ -27,8 +27,8 @@ use crate::{
     collision_narrowphase::{NarrowphaseCase, NarrowphasePipelines, TemporalIdentityStage},
     collision_persistence::{PersistenceCase, PersistencePipelines},
     pair_slot_persistence::{
-        PAIR_RECORD_BYTES, PAIR_SLOT_DISPATCHES, PairRecordRaw, PairSlotCase, PairSlotPipelines,
-        invalid_pair, pair_output,
+        PAIR_RECORD_BYTES, PAIR_SLOT_DISPATCHES, PairRecordRaw, PairSlotAllocator, PairSlotCase,
+        PairSlotPipelines, invalid_pair, pair_output,
     },
 };
 
@@ -158,6 +158,7 @@ struct PairSlotPersistenceGraph {
     capacities: [wgpu::Buffer; 2],
     empty_capacity: wgpu::Buffer,
     slot_generations_and_step: wgpu::Buffer,
+    allocator: PairSlotAllocator,
     _bridge_params: wgpu::Buffer,
     bridge_pipeline_build: wgpu::ComputePipeline,
     bridge_pipeline_store: wgpu::ComputePipeline,
@@ -1376,6 +1377,7 @@ impl PairSlotPersistenceGraph {
             "physbox5_generated_pair_generations_and_step",
             &vec![0_u32; pair_capacity as usize + 1],
         );
+        let allocator = PairSlotAllocator::new(device, pair_capacity, 0)?;
         let temporal_identity =
             (identity_policy == ContactIdentityPolicyV1::PriorContactHysteresis).then(|| {
                 TemporalIdentityStage::new(
@@ -1396,6 +1398,7 @@ impl PairSlotPersistenceGraph {
                 &pairs[1],
                 &capacities[1],
                 &slot_generations_and_step,
+                &allocator,
                 candidate.work_buffer(),
                 pair_capacity,
                 permute_pair_build,
@@ -1410,6 +1413,7 @@ impl PairSlotPersistenceGraph {
                 &pairs[0],
                 &capacities[0],
                 &slot_generations_and_step,
+                &allocator,
                 candidate.work_buffer(),
                 pair_capacity,
                 permute_pair_build,
@@ -1479,6 +1483,7 @@ impl PairSlotPersistenceGraph {
             capacities,
             empty_capacity,
             slot_generations_and_step,
+            allocator,
             _bridge_params: bridge_params,
             bridge_pipeline_build,
             bridge_pipeline_store,
@@ -1502,6 +1507,7 @@ impl PairSlotPersistenceGraph {
                 0,
                 u64::from(COLLISION_CAPACITY_COUNTER_BYTES),
             );
+            self.allocator.reset(encoder);
         }
     }
 
@@ -1518,6 +1524,7 @@ impl PairSlotPersistenceGraph {
             + self.capacities.iter().map(wgpu::Buffer::size).sum::<u64>()
             + self.empty_capacity.size()
             + self.slot_generations_and_step.size()
+            + self.allocator.allocated_bytes()
     }
 }
 
@@ -5423,6 +5430,7 @@ impl GpuGeneratedContactRunner {
                         capacity
                     },
                 ));
+                capacities.extend(pair_graph.allocator.capacities());
                 capacities.push(fixed_capacity(
                     "pair-slot-cache-buffers",
                     PAIR_RECORD_BYTES,
