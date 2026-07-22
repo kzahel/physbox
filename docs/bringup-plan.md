@@ -413,11 +413,11 @@ Shared 64/256/1K/10K world-capacity presets make larger graphs explicit
 opt-ins; they are not additional sustained-rate claims.
 
 Active-work follow-up: [S22 active-work compaction](tactical/022-active-work-compaction.md)
-now makes the GPU live-body set and committed collision counts own integration,
-rendering, SAP, narrowphase, and solver dispatch. Browser and physical Pixel
-checks remove the sparse 1K-reserve cliff. Pair-slot free-list reconstruction,
-remaining reserve-sized topology clearing, and a durable focused timing probe
-must close before sleeping uses the live set as its awake-work foundation.
+is complete. The GPU live-body set and committed collision/persistence counts
+own integration, rendering, SAP, narrowphase, pair-slot lifecycle, topology,
+and solver dispatch. The durable 64/256/1K/10K probe is approximately flat for
+the same sparse scene while its dense control expands the work vector. Sleeping
+may now use the deterministic live set as its awake-work foundation.
 
 - Preserve brute force as pair-completeness oracle.
 - Implement sorted sweep-and-prune and multi-cell grid candidates.
@@ -428,8 +428,8 @@ must close before sleeping uses the live set as its awake-work foundation.
 
 ## P5.4 — rigid parity and performance gates
 
-- Finish S22 reserve-independent hot execution, then add sleeping/waking and
-  compact asynchronous diagnostics.
+- Add sleeping/waking on S22's reserve-independent hot execution and compact
+  asynchronous diagnostics.
 - Accept landing, stack, pyramid, impact, friction, bounce, mass-ratio, and
   grab/release fixtures against Box2D and independent invariants.
 - Publish correctness-qualified Box2D CPU/GPU crossover curves for solver-only,

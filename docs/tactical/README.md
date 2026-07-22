@@ -137,13 +137,14 @@ full-sort SAP product path. Clean Metal/browser selection and integrated
 100/1K/10K product evidence pass. S21 is complete after the integrated product
 also passed physical Pixel 7a Vulkan bootstrap pacing and 103-body bucket
 execution, with the bucket's measured slow-time limitation retained explicitly.
-S22 is active after a physical Pixel 9 run exposed that unused reserved slots
-still sized the hot graph: 256 slots sustained 60 Hz with 256 awake rectangles,
-while a 1K reserve missed 60 Hz with one rectangle. The first implementation
-slice now makes live GPU counts own integration, rendering, SAP, narrowphase,
-and solver dispatch. Browser and connected Pixel 7a checks remove the sparse
-1K/10K reserve cliff. Persistence free-list and topology clearing remain before
-sleeping can consume the live set as an awake-work foundation.
+S22 is complete. A durable clean 64/256/1K/10K probe shows approximately flat
+GPU end-to-end cost for the same two-body scene while allocation remains honest
+and its dense control expands work. GPU committed counts now own persistence
+matching/retirement, deterministic pair-slot reuse, topology/color clearing,
+and the earlier live-body/collision/solver stages. Browser, physical Pixel
+checkpoint, clean headless, and final hardware-backed AVD fallback evidence
+pass. Sleeping can consume the deterministic live set as its awake-work
+foundation.
 
 Tactical filenames use a three-digit zero-padded prefix ordered by their first
 Git creation timestamp. This repository starts at `001`. Never renumber an
@@ -175,7 +176,7 @@ This README remains the unnumbered index.
 | S19 | Soft default and physics configuration | [019-soft-default-and-physics-configuration.md](019-soft-default-and-physics-configuration.md) | complete; soft default/configuration, cross-host evidence, and exact live deployment pass, 2026-07-21 |
 | S20 | Validation diet and feature ledger | [020-validation-diet-and-feature-ledger.md](020-validation-diet-and-feature-ledger.md) | complete; warm everyday lane 7.31 s, production matrices trimmed, exhaustive lanes retained opt-in, 2026-07-21 |
 | S21 | Scalable broadphase | [021-scalable-broadphase.md](021-scalable-broadphase.md) | complete; SAP integrated and qualified on Metal, browser, and physical Pixel 7a Vulkan, 2026-07-21 |
-| S22 | Active-work compaction | [022-active-work-compaction.md](022-active-work-compaction.md) | active; live-body/collision/solver dispatch integrated and sparse reserve cliff removed; persistence/topology closure remains, 2026-07-21 |
+| S22 | Active-work compaction | [022-active-work-compaction.md](022-active-work-compaction.md) | complete; committed persistence/topology work and durable sparse-capacity qualification pass, 2026-07-22 |
 
 ## Conventions
 

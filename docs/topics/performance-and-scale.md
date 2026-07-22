@@ -561,23 +561,35 @@ and settles near `0.61` effective scale during direct inspection. These results
 justify retaining 64 as the cross-host default while making 1K/10K worlds
 available for deliberate scale experiments.
 
-Active-work checkpoint, 2026-07-21: S22 separates allocation capacity from hot
-execution size. A sorted GPU active-slot set now drives integration, rendering,
-SAP, and body solver passes; committed candidate and point counts drive
-narrowphase and contact solver passes through GPU-written indirect arguments.
-This removes the reported 1K sparse-world cliff without a CPU count readback.
-Chrome debug shared-host checks of the same two-body bootstrap report effective
-scale `0.973` at 1K with no slip and `0.923` at 10K with one slipped step. On
-the connected physical Pixel 7a, deliberately expensive per-frame marker runs
-are approximately flat across reserve sizes: `0.591/0.604/0.550` effective
-scale at 256/1K/10K. Those absolute marker-heavy values are not throughput
-claims; the relative result shows no material 1K or 10K reserve penalty.
+Active-work closure, 2026-07-22: S22 separates allocation capacity from hot
+execution size. A sorted GPU active-slot set drives integration, rendering,
+SAP, topology, and body solver passes; committed candidate, current/previous
+pair, retired-slot, and point counts drive narrowphase, persistence, and
+contact solver passes through GPU-written indirect arguments. The persistent
+pair allocator retains deterministic high-water allocation plus a bounded
+retired-slot ring instead of rebuilding its free list by scanning the reserve.
+Color identity maintenance uses epochs, and topology/color clears visit the
+live body/point set rather than `body_capacity` or `body_capacity * 32`.
 
-S22 remains active. Stable pair-slot free-list reconstruction and parts of
-topology clearing still traverse reserved storage, and the durable focused
-sparse-capacity timing artifact is not complete. The current evidence closes
-the user-visible regression, not sleeping, a 10K-at-60 claim, or the broader
-allocation-independent execution contract.
+The durable `benchmark:sparse-capacity` command freezes a two-body, one-contact
+scene at 64/256/1K/10K reserves plus a 64-body dense control. On clean revision
+`f395fe4`, AMD Radeon 890M RADV Vulkan GPU end-to-end P50 is
+`4.225/3.801/3.794/3.987 ms`; host-completion P50 is
+`7.324/6.481/6.110/6.976 ms`. The end-to-end max/min ratio is `1.114` across
+all four rows and `1.051` across 256/1K/10K. Every sparse row reports exactly
+two body slots, two body-mask clears, 2,048 conflict-winner visits, exact
+replay, and clean capacity. Accounted allocation still scales honestly from
+974,300 bytes at 64 to 95,873,384 bytes at 10K. The dense control expands to
+312 pair attempts, 42 contact points, 64 body slots, and 65,536 winner visits.
+These are fixed-configuration probe results on the named adapter, not a
+10K-at-60 rendered-world claim.
+
+The prior browser and physical Pixel 7a comparisons also removed the original
+sparse 1K reserve cliff. The closing revision passes clean headless and Browser
+WebGPU validation; because no physical device was attached, its final Android
+delta used the permitted hardware-backed AVD fallback and shut the emulator
+down. S22 is complete. Sleeping remains unimplemented and is now the next
+consumer of this live-set foundation rather than part of the measured result.
 
 No LBVH arm is admitted from this matrix. Reopen that question only for a
 measured integrated-SAP miss or a specific sparse multiscale/active-window

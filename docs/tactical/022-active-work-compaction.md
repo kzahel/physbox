@@ -1,6 +1,6 @@
 # S22: active-work compaction
 
-Status: active 2026-07-21. A Pixel 9 subjective run established the trigger:
+Status: complete 2026-07-22. A Pixel 9 subjective run established the trigger:
 the 256-slot world sustains presentation at 60 Hz with 256 awake rectangles,
 while selecting the 1K reserve prevents 60 Hz with only one placed rectangle.
 At revision `a436801587f3`, the 256- and 1K-slot bootstrap graphs both encode 497
@@ -48,7 +48,7 @@ admit or size the next interactive step.
 
 ### S22.1 — frozen sparse-capacity probe
 
-- [ ] Add one focused benchmark/probe that runs the same small live scene at
+- [x] Add one focused benchmark/probe that runs the same small live scene at
   64, 256, 1K, and 10K reserve, records GPU collision/persistence/end-to-end
   samples when timestamps exist, host completion, dispatches, live work,
   allocation, replay, and overflow.
@@ -86,7 +86,7 @@ reuse; sparse 256/1K/10K rows report identical live proxy/sort work.
 
 - [x] Size narrowphase generate/scan/scatter from committed candidates without
   clearing or scanning unused candidate capacity.
-- [ ] Size persistence preparation/matching/retirement from committed current
+- [x] Size persistence preparation/matching/retirement from committed current
   and previous pair/point lists while retaining fail-closed capacity behavior.
 - [x] Publish GPU point-count indirect arguments for the solver.
 
@@ -98,7 +98,7 @@ and overflow tests remain exact.
 
 - [x] Dispatch body passes over active slots and contact passes over committed
   solver points.
-- [ ] Remove reserve-sized topology/color scans from the hot path, including
+- [x] Remove reserve-sized topology/color scans from the hot path, including
   the `body_capacity * 32` color-winner clear; retain explicit allocation
   capacities and stale-state safety for reused slots.
 - [x] Keep every solver profile on the shared operation graph and preserve
@@ -132,6 +132,42 @@ marker-heavy connected Pixel 7a comparison reports `0.591/0.604/0.550` at
 256/1K/10K; it is a relative reserve-size gate, not an absolute rate claim.
 The original subjective Pixel 9 observation remains the pre-change trigger.
 
+Closure evidence, 2026-07-22: the durable command is
+`npm run benchmark:sparse-capacity -- --output PATH --warmup 8 --samples 31`.
+It rejects dirty source, stale output, replay/capacity failure, a changed
+adapter or configuration, and anything other than the frozen 64/256/1K/10K
+sparse rows plus the dense 64-slot control. Clean AMD Radeon 890M RADV Vulkan
+artifacts compare probe commit `4a940d7` before persistence/topology closure
+with implementation commit `f395fe4`:
+
+| reserve | persistence P50, pre -> final (ms) | GPU end-to-end P50, pre -> final (ms) | final host P50 (ms) | final body/mask/winner work |
+| ---: | ---: | ---: | ---: | ---: |
+| 64 | 0.017 -> 0.069 | 4.125 -> 4.225 | 7.324 | 2 / 2 / 2,048 |
+| 256 | 0.019 -> 0.071 | 3.961 -> 3.801 | 6.481 | 2 / 2 / 2,048 |
+| 1,024 | 0.038 -> 0.023 | 4.135 -> 3.794 | 6.110 | 2 / 2 / 2,048 |
+| 10,000 | 0.153 -> 0.074 | 4.946 -> 3.987 | 6.976 | 2 / 2 / 2,048 |
+
+All rows contain two live bodies and one committed point, replay exactly, and
+remain capacity-clean. Across all four reserves final GPU end-to-end max/min
+is `1.114`; across 256/1K/10K it is `1.051`. Final host-completion max/min is
+`1.199` across all rows and `1.142` across 256/1K/10K. Persistence P50 has
+sub-0.074 ms timer/runtime noise but no longer grows with the 10K reserve.
+Accounted allocation still grows honestly from 974,300 to 95,873,384 bytes.
+The 64-body dense control reports 312 pair attempts, 32 candidates, 42 contact
+points, 64 body slots, and 65,536 winner visits, proving that actual live work
+still expands.
+
+The final graph passes `npm run test:fast`, production clippy, the ARM64
+Android check, a release-native dual-ABI build, and Gradle `assembleRelease`.
+Clean revision `f395fe4` produced successful fresh headless and Browser WebGPU
+validation. With no physical device attached for the closing run, the allowed
+AVD fallback passed on `jstorrent-tablet` using the host Radeon Vulkan adapter;
+the screenshot was visually complete and the script confirmed emulator
+shutdown. The physical Pixel 7a capacity comparison from the preceding S22
+checkpoint remains the physical-device evidence; the final persistence and
+topology delta was requalified on the AVD rather than misreported as a new
+physical run.
+
 ## Completion condition
 
 S22 is complete only when all hot product stages are driven by GPU-resident
@@ -140,3 +176,8 @@ live/current work, the sparse-capacity probe is approximately flat through
 and browser plus physical Android evidence is recorded. Merely hiding dead
 bodies in a shader, selecting a cheaper fixed schedule, or improving one
 capacity preset does not complete the workstream.
+
+That condition is met at `f395fe4`: allocation capacity remains explicit and
+fail-closed, while committed active bodies, candidates, pair slots, points,
+and colors size hot work without a CPU count readback. Sleeping can now consume
+the deterministic live set as its awake-work foundation.

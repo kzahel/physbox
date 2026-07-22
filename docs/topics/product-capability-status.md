@@ -1,6 +1,6 @@
 # Product capability status
 
-Status: current implementation ledger, 2026-07-21. This topic is the compact
+Status: current implementation ledger, 2026-07-22. This topic is the compact
 answer to “what does PhysBox 5 actually support now?” It records product
 capability rather than historical research completion. Update it in the same
 change that materially changes a feature status or product claim.
@@ -45,7 +45,7 @@ quality. Known limitations remain part of the row.
 | BODY-2 | Circles and oriented rectangles | **Implemented** | Analytic circle/circle, circle/rectangle, and clipped rectangle/rectangle contact are the complete product shape set. |
 | BODY-3 | Capsules, convex polygons, chains, terrain, compounds | **Deferred** | Follow minimal rigid acceptance and a selected scalable broadphase. |
 | COLL-1 | Broadphase candidate generation | **Implemented** | Full-sort GPU SAP owns the ordinary product path under an 8N candidate bound and is qualified on Metal, browser, and physical Pixel Vulkan. Brute force remains an isolated bounded exact oracle with no automatic fallback. |
-| COLL-2 | Contact persistence and warm start | **Implemented** | Stable generational pair slots and body-edge views retain impulses and fail closed on capacity overflow. |
+| COLL-2 | Contact persistence and warm start | **Implemented** | Stable generational pair slots and body-edge views retain impulses; committed current/previous work drives matching and retirement while deterministic high-water plus retired-ring allocation fails closed on capacity overflow. |
 | COLL-3 | Friction and restitution | **Implemented** | Coulomb friction and a distinct restitution stage are exercised by shared fixtures; broader parity remains P5.4 work. |
 | COLL-4 | Speculative contacts and overlap recovery | **Implemented** | Bounded speculative distance and depenetration velocity are configurable; deep/tall overlap remains a known limitation. |
 | COLL-5 | Continuous collision detection / TOI | **Not implemented** | Speculative contact is not a complete bullet or time-of-impact system. |
@@ -73,7 +73,7 @@ quality. Known limitations remain part of the row.
 
 | ID | Capability | Status | Current boundary / next gate |
 | --- | --- | --- | --- |
-| SCALE-1 | Small-world rigid scenes | **Implemented** | The safe 64-slot default, authored-scene headroom, and explicit 256/1K/10K opt-ins use selected SAP; the 100-body diagnostic buckets execute correctly but are not sustained-rate claims on every device. |
+| SCALE-1 | Small-world rigid scenes | **Implemented** | The safe 64-slot default, authored-scene headroom, and explicit 256/1K/10K opt-ins use selected SAP and reserve-independent active work; the 100-body diagnostic buckets execute correctly but are not sustained-rate claims on every device. |
 | SCALE-2 | Scalable broadphase | **Implemented** | SAP is selected and integrated; exact native 100/1K/10K curves, a zero-slip 100-body browser row, and physical Pixel bootstrap/bucket execution pass. This does not establish a 1K-plus rendered product-world rate. |
 | SCALE-3 | 1K-100K product-world claims | **Not implemented** | Existing authored-contact/isolated-solver measurements are not scalable end-to-end body claims. |
 | SCALE-4 | Mostly-sleeping scale | **Not implemented** | Selected SAP and live-body compaction exist; sleeping and an awake-work filter are still absent. |
@@ -94,11 +94,11 @@ quality. Known limitations remain part of the row.
 
 ## Current execution order
 
-1. Finish reserve-independent persistence/topology work in S22.
-2. Add sleeping/waking and close current-default rigid acceptance and scale.
-3. Extend the construction loop with editable selection, scene documents, and
+1. Add sleeping/waking on the completed S22 live-set foundation and close
+   current-default rigid acceptance and scale.
+2. Extend the construction loop with editable selection, scene documents, and
    one joint.
-4. Begin bounded liquid and same-step rigid/fluid coupling.
+3. Begin bounded liquid and same-step rigid/fluid coupling.
 
 ## Reconsideration triggers
 
