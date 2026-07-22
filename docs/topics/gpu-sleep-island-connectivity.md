@@ -1,15 +1,12 @@
 # GPU sleep-island connectivity research
 
-Status: active observation under
+Status: observation stopping point complete under
 [S26](../tactical/026-exact-contact-component-observation.md), 2026-07-22.
-Human review authorizes only staged stopping point 1: exact GPU labels,
-independent CPU comparison, and cost evidence without behavior changes. The
-current K=4 bounded-neighbor sleep policy remains implemented, opt-in, and off
-by default. This topic does not select an exact-island implementation or change
-product behavior. It records the failure being investigated, a source-level
-study of pinned Box2D, the measured cost of the current PhysBox path, the
-expected costs and benefits of GPU alternatives, and the evidence required
-before replacing K=4.
+Exact GPU labels match an independent CPU traversal on the admitted graph,
+split/churn, dense-pile, sleeping-city, and capacity rows. The current K=4
+bounded-neighbor sleep policy remains implemented, opt-in, and off by default.
+No component label affects product behavior. Component reductions, a behavior
+switch, persistent optimization, and promotion remain unauthorized.
 
 Governing behavior and current implementation:
 [GPU sleeping and waking](gpu-sleeping-and-waking.md). Performance claims and
@@ -22,23 +19,34 @@ rigid behavior authority is [Box2D](box2d-rigid-authority.md), pinned at
 
 ## Recommendation
 
-Do not replace K=4 or increase K yet. First add an observation-only laboratory
-stage that rebuilds exact dynamic-body contact components on the GPU and emits
-component labels and stage timings without affecting wake or sleep decisions.
-Use a deterministic, monotonic min-root hook-and-shortcut algorithm with a
-proved capacity-dependent phase bound. Prefer WGSL `atomicMin` and dispatch
-boundaries over an unbounded in-shader CAS loop. Compare its labels with a
-test-only CPU traversal and compare its cost with the current K=4 path on
-chains, piles, arches, split/churn cases, and sleeping-city capacity sweeps.
+Do not replace K=4 or increase K yet. The completed observation-only static
+rebuild is exact and capacity-clean. It uses deterministic monotonic min-root
+hooking, pointer shortcut dispatch barriers, a fixed
+`2 * ceil(log2(capacity)) + 1` phase bound, and independent final root/edge
+validation. Exact labels and structural counts replay; atomic work counts are
+reported as order-dependent contention proxies.
 
-This first probe is intentionally the simpler, more expensive static rebuild.
-It establishes the behavioral value and a measured upper cost bound. If it is
-correct and already pays for itself, it is the smallest credible product
-candidate. If topology maintenance dominates, retain the exact component
-contract but prototype a persistent GPU design patterned after Box2D:
-incremental merges, removal-dirty components, and deferred rebuild only when a
-dirty component approaches sleep. Merely increasing K preserves the known
-diameter-dependent failure and is not the recommended next experiment.
+The static path costs 29 dispatches at a 64-body reserve, 37 at 256, 45 at
+1,024, and 61 at 10K. Representative GPU P50 is 0.219 ms for an eight-body
+chain, 0.299 ms for a 100-body packed pile, 0.577 ms for a 1,000-body packed
+pile, 0.361 ms for the matched 1,000-body sleeping city, and 0.489 ms for 200
+live bodies under a 10K reserve. Parent, size, statistics, and aligned
+parameter storage totals 4,160 bytes at 64, 13,888 bytes at 1,024, and 87,744
+bytes at 10K. The complete measurements and provenance are in
+[S26](../tactical/026-exact-contact-component-observation.md).
+The dense rows intentionally use deterministic initially touching packed
+piles; a time-evolved poured-pile decision trace belongs to the later
+component-reduction comparison and is not claimed by this observation.
+
+The recommended next experiment, if human review wants it, is stopping point
+2 only: reduce wake causes and post-solve readiness by exact root alongside
+the unchanged K=4 policy and compare decisions without applying them. The
+static rebuild is a credible upper-bound mechanism at dense scale, but its
+29–61 dispatches are materially larger than K=4's current nine-dispatch
+enabled-path delta and its cost reaches 11–18% of full physics on small/sparse
+rows. Do not begin a behavior switch. Do not begin persistent additions/dirty
+splits unless component reductions first demonstrate a material behavioral
+benefit that justifies optimizing the static cost.
 
 ## Observed problem and required invariant
 
@@ -395,8 +403,8 @@ persistent/deferred-split prototype, not for increasing K.
 
 ## Staged stopping points
 
-1. **Observation-only static probe:** exact labels and timestamps, no effect on
-   sleep behavior. Stop and review measured correctness, phase count, and cost.
+1. **Observation-only static probe — complete:** exact labels and timestamps,
+   no effect on sleep behavior. S26 passes and is stopped at human review.
 2. **Component reductions:** only after step 1 passes, derive component wake
    causes and readiness alongside K=4 and compare decisions without applying
    them.

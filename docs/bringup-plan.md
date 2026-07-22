@@ -444,9 +444,11 @@ decision is the next separate human checkpoint. S25's qualified eight-substep
 setting was not promoted, and sleeping may not conceal the retained
 four-substep awake limitation.
 [S26 exact contact-component observation](tactical/026-exact-contact-component-observation.md)
-is separately active as a no-behavior GPU measurement. It must return exact
-labels, an independent CPU differential, and cost evidence, then stop before
-component reductions or an exact-island policy.
+is complete as a no-behavior GPU measurement. Exact labels and structural
+counts match CPU through the admitted split/churn, 1K connected-pile, and 10K
+reserve rows. Its 29–61 dispatch and 0.110–0.577 ms P50 upper-bound cost is
+recorded. Work is stopped before component reductions or an exact-island
+policy.
 
 - Preserve brute force as pair-completeness oracle.
 - Implement sorted sweep-and-prune and multi-cell grid candidates.
@@ -472,8 +474,8 @@ component reductions or an exact-island policy.
 - Complete the S23.7 sleeping promotion/default review over the implemented
   bounded wake propagation, coordinated admission, awake-driven solve, compact
   diagnostics, and sleeping-city evidence.
-- Complete S26's observation-only exact contact-component correctness and cost
-  report without allowing its labels to affect any sleep or solver decision.
+- Retain S26's completed observation-only exact contact-component correctness
+  and cost report; its labels affect no sleep or solver decision.
 - Qualify the selected default against the current centered-stack hierarchy:
   2/4/8 foundation, 12 blocking awake, 14 stretch, and 16 matched-Box2D
   frontier diagnostic. Sleep-enabled survival may not satisfy the awake gate.

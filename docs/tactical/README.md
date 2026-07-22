@@ -174,6 +174,12 @@ sleep-island research: one observation-only static GPU contact-component
 rebuild with independent CPU labels and cost evidence. It cannot affect K=4,
 sleep admission, solving, rendering, defaults, or S23.7, and must stop before
 component reductions or any behavior switch.
+S26 is complete at that stopping point. Every admitted label and structural
+count matches CPU and replays exactly through a 1,000-body connected pile and
+a sparse 10K reserve. The static observer costs 29–61 dispatches and roughly
+0.110–0.577 ms GPU P50, so component reductions are the recommended next
+observation only if separately authorized; behavior switching and persistent
+optimization remain held.
 
 Current target supersession, 2026-07-22: the
 [rigid quality target contract](../topics/rigid-quality-targets.md) governs new
@@ -218,7 +224,7 @@ This README remains the unnumbered index.
 | S23 | GPU sleeping and waking | [023-gpu-sleeping-and-waking.md](023-gpu-sleeping-and-waking.md) | manual checkpoint; contact sleep-cycle correction qualified on browser/headless/Pixel, S23.7 human decision held, 2026-07-22 |
 | S24 | Current rigid quality qualification | [024-current-rigid-quality-qualification.md](024-current-rigid-quality-qualification.md) | complete negative; native 2/4/8 pass, upright 12 misses quiet band, conditional cross-host work not admitted, 2026-07-22 |
 | S25 | Bounded awake configuration qualification | [025-bounded-awake-configuration-qualification.md](025-bounded-awake-configuration-qualification.md) | complete; qualified 60/8/i1 not promoted, 60/4/i1 retained with accepted 8-quality/14-structural limitation, 2026-07-22 |
-| S26 | Exact contact-component observation | [026-exact-contact-component-observation.md](026-exact-contact-component-observation.md) | active; observation-only exact GPU labels, CPU differential, and cost evidence authorized, 2026-07-22 |
+| S26 | Exact contact-component observation | [026-exact-contact-component-observation.md](026-exact-contact-component-observation.md) | complete; exact labels/CPU differential pass, static cost recorded, stopped before reductions or behavior, 2026-07-22 |
 
 ## Conventions
 
