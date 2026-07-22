@@ -1,10 +1,11 @@
 # Rigid quality targets
 
-Status: decided current acceptance contract with a fresh native blocking
-failure, 2026-07-22. This topic owns the awake rigid stack hierarchy for new
-implementation and promotion work. The selected soft-coupled default passes
-the native 2/4/8 foundation but misses the 12-stack quiet-speed observation;
-browser and physical-Android qualification were therefore not admitted.
+Status: decided current acceptance contract with one qualified custom
+configuration, 2026-07-22. This topic owns the awake rigid stack hierarchy for
+new implementation and promotion work. The ordinary soft-coupled default
+misses the native 12-stack quiet observation; a bounded eight-substep custom
+configuration now passes 2/4/8/12 and has matching browser/physical-Android
+product-path evidence. Promotion remains a human default decision.
 
 Governing direction:
 [one GPU-resident 2D physics world](physbox5-unified-gpu-physics.md).
@@ -108,6 +109,46 @@ follow-up. It freezes six evidence-driven rows, retains this topic's bands and
 sleep-off rule, and leaves the default unchanged unless a later human decision
 promotes a fully qualified finalist.
 
+## Qualified custom-finalist checkpoint
+
+S25 selected exactly one custom configuration without changing the solver
+family or equation: soft-coupled 60 Hz, eight substeps, one biased iteration,
+contact 30 Hz/damping 10/static x2, sleeping off. Clean revision
+`c71eabc1c3d756c19edd75114aa38d0b8dbeae4d` projects configuration hash
+`87dfec84f20c6adfab96618809e79fbc65da83220f81c34b6477ec12db9ed6b2`
+through the same canonical profile and centered-stack source used by the
+shared host.
+
+| Stack | Structure | Settled linear | Angular edge | Result |
+| ---: | --- | ---: | ---: | --- |
+| 2 | pass | `0.000957 m/s` | `0.000672 m/s` | foundation pass |
+| 4 | pass | `0.004333 m/s` | `0.001736 m/s` | foundation pass |
+| 8 | pass | `0.010482 m/s` | `0.002915 m/s` | foundation pass |
+| 12 | pass | `0.017233 m/s` | `0.005768 m/s` | **blocking awake pass** |
+| 14 | pass | `0.014716 m/s` | `0.006246 m/s` | stretch pass |
+| 16 | first loss at step 840 | `1.868055 m/s` after loss | `1.783489 m/s` after loss | reported frontier failure |
+
+Every row is finite/capacity-clean and exactly replays. All four blockers
+pass the default-relative penetration/height guard. Depths 2 and 4 regress the
+energy-envelope boolean while ending at materially lower absolute energy than
+the four-substep controls; this remains a disclosed limitation, not a hidden
+pass field.
+
+The eight-substep observation-series wall cost is `4.514/4.515/4.472/4.887
+ms` per blocker step, versus `3.928/3.404/3.332/3.411 ms` for same-revision
+four-substep controls: approximately 15/33/34/43 percent higher. These
+instrumented validation timings expose the cost direction but are not an
+uninstrumented frame-rate claim. Browser WebGPU and physical Pixel 7a
+Mali-G710 Vulkan complete all six exact shared scenario identities with the
+same configuration/scenario hashes, clean capacity, and final captures. The
+12 capture remains upright and the 16 capture exposes the diagnostic loss;
+native readback continues to own numerical quiet/structure.
+
+This is outcome evidence for a custom setting, not a default change. The
+ordinary default remains four substeps and therefore remains unqualified at
+12. Human review can now compare the passing quality margin and visibly
+higher work before deciding whether eight substeps should replace it.
+
 ## Why 16 is a diagnostic, not the product gate
 
 The old S5-S18 program repeatedly used 16 as an all-or-nothing solver gate.
@@ -159,11 +200,12 @@ limitations and may motivate future solver work; they no longer veto current
 product acceptance by themselves.
 
 The selected soft-coupled 60/4/i1, contact 30 Hz/damping 10/static x2 default
-is not qualified under the new hierarchy. S24 now supplies the fresh native
-2/4/8/12/14/16 discriminator above; its 12-stack quiet failure stops the
-cross-host package. The current sleep-off 16-stack loss at step 463 remains a
-diagnostic result rather than a blocker. Existing older outcomes are not
-substituted for the missing browser or physical-Android baseline.
+is not qualified under the new hierarchy. S24 supplies its fresh native
+2/4/8/12/14/16 discriminator and 12-stack quiet failure. S25 does not rewrite
+that result: it qualifies the explicit 60/8/i1 custom alternative across the
+native, browser, and physical-Android paths. Its 16-stack loss at step 840
+remains diagnostic rather than blocking. Default promotion is the remaining
+decision.
 
 ## Validation and reporting
 

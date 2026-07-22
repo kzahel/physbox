@@ -18,10 +18,11 @@ physical-Android qualification. S23 has reached its manual promotion checkpoint
 with opt-in effective sleeping, coordinated bounded-neighbor admission/wake,
 awake-driven solve work, and matched sleeping-city evidence. S24's current-
 default native discriminator passes 2/4/8 but the upright 12-stack misses the
-awake quiet band; cross-host expansion and S23.7 remain held for a human
-solver/configuration decision. That decision authorizes S25's bounded six-row
-configuration-only screen while leaving the equation, bands, sleeping policy,
-and product default fixed.
+awake quiet band. The authorized S25 follow-up is now complete: 60/8/i1 passes
+the native 2/4/8/12 gate, preserves 14, reports 16 loss at step 840, and has
+matching Browser WebGPU/physical-Pixel identities. The equation, bands,
+sleeping policy, and 60/4/i1 product default remain fixed until human review
+chooses whether the quality margin justifies the extra work.
 
 The [current rigid quality target](topics/rigid-quality-targets.md) supersedes
 the historical 16-stack promotion gate for new work: 2/4/8 remain the
@@ -438,8 +439,9 @@ reached its manual checkpoint: generation-safe GPU sleep state, coordinated
 four-round admission/wake propagation, awake-driven solve work, the persisted
 toggle, state visualization, and matched sleeping-city evidence are complete.
 Effective sleeping remains opt-in and off by default; S23.7's promotion/default
-decision is held behind S24's native awake 12-stack quiet failure and a human
-solver/configuration decision.
+decision now shares the human checkpoint with S25's qualified awake custom
+configuration. Neither the eight-substep setting nor sleeping is promoted
+automatically.
 
 - Preserve brute force as pair-completeness oracle.
 - Implement sorted sweep-and-prune and multi-cell grid candidates.
@@ -454,11 +456,13 @@ solver/configuration decision.
   [S24 current rigid quality qualification](tactical/024-current-rigid-quality-qualification.md):
   the native 2/4/8 foundation passes, but the upright 12-stack exceeds the
   awake quiet band and stopped browser/physical expansion.
-- Execute
+- Record the completed
   [S25 bounded awake configuration qualification](tactical/025-bounded-awake-configuration-qualification.md),
-  admitting no more than two native survivors and one cross-host custom
-  finalist. A negative result returns to human review without an automatic
-  solver-formulation successor.
+  whose sole 60/8/i1 finalist passes native 2/4/8/12 plus matching browser and
+  physical-Android execution while exposing higher cost and the 16 diagnostic
+  failure.
+- Decide whether to promote that custom setting over the unqualified 60/4/i1
+  default; do not infer promotion from the passing evidence package.
 - Complete the S23.7 sleeping promotion/default review over the implemented
   bounded wake propagation, coordinated admission, awake-driven solve, compact
   diagnostics, and sleeping-city evidence.

@@ -1,11 +1,15 @@
 # Physics configuration and solver profiles
 
-Status: implemented product direction, updated 2026-07-22. Human review selected the
-soft-coupled solver family, and the shared code now uses its reviewed
-60/4/i1 seed as the fresh ordinary default. Product-owned fixed-step, substep,
-iteration, contact-response, and recovery settings form one versioned bounded
-configuration. [S19](../tactical/019-soft-default-and-physics-configuration.md)
-records the completed cross-host qualification and exact live deployment.
+Status: implemented product direction with one qualified custom alternative,
+updated 2026-07-22. Human review selected the soft-coupled solver family, and
+the shared code still uses its reviewed 60/4/i1 seed as the fresh ordinary
+default. Product-owned fixed-step, substep, iteration, contact-response, and
+recovery settings form one versioned bounded configuration. S25 now qualifies
+60/8/i1 as an explicit sleep-off quality alternative without promoting it.
+[S19](../tactical/019-soft-default-and-physics-configuration.md) records the
+ordinary default deployment;
+[S25](../tactical/025-bounded-awake-configuration-qualification.md) records the
+new alternative and its cost.
 
 Governing direction:
 [one GPU-resident 2D physics world](physbox5-unified-gpu-physics.md).
@@ -66,10 +70,13 @@ Penetration, stack height, first structural-loss step, and subjective review
 remain visible configuration characteristics.
 
 The later rigid-quality decision classifies 16 as the matched-Box2D frontier
-diagnostic rather than a blocking promotion gate. It does not infer that the
-current seed passes the new requirement: fresh selected-default 2/4/8/12
-sleep-off qualification is still required, and 14 remains a reported stretch
-result.
+diagnostic rather than a blocking promotion gate. S24 confirms that the
+current 60/4/i1 seed misses the blocking sleep-off 12-stack quiet band.
+S25's bounded configuration screen then qualifies the already-supported
+60/8/i1 alternative on 2/4/8/12, preserves 14, and reports first 16-stack loss
+at step 840. Browser WebGPU and physical Pixel 7a Vulkan complete the same
+six scenario/configuration identities. This supplies a real alternative for
+human review; it does not silently change the seed.
 
 Historical S6-S18 negative dispositions remain true within their frozen
 questions. They explain limitations and preserve useful implementations; they
@@ -163,16 +170,17 @@ The initial profile list is deliberately small:
 2. **HARD DIRECT** — the existing 60/4/i2 product retained as a comparison and
    rollback diagnostic, never selected automatically.
 
-No **SOFT HIGH QUALITY** preset ships initially. The measured 60 Hz matrix
-showed no monotonic winner: 4/i2 delayed the known 16-stack loss from step 407
-to 469 at roughly 19% more 16-stack cost while slightly increasing ordinary
-stack motion; 8/i1 and 8/i2 delayed first loss to 851/836 but became violently
-active after loss and cost substantially more. Two-substep variants were
-plainly worse. The existing 30/10/staticx1 response is representable as an
-ordinary custom soft configuration, so it needs no scene-specific or named
-profile. Additional presets are admitted only when they offer a distinct,
-reviewed behavior/cost trade-off; a grid cell is not a product preset merely
-because it exists.
+No **SOFT HIGH QUALITY** preset ships yet. The earlier 60 Hz matrix showed no
+monotonic winner: 4/i2 delayed the then-governed 16-stack loss while slightly
+increasing ordinary-stack motion; 8/i1 and 8/i2 delayed first loss but became
+violently active after loss and cost substantially more. S25 asks the narrower
+current question and establishes that 8/i1 does clear the 12-stack awake gate,
+with 15-43% higher fully observed validation-wall cost across the four blocker
+depths. That measured quality/cost trade-off is now ready for human default
+review, not automatic preset creation. The existing 30/10/staticx1 response
+remains representable as an ordinary custom soft configuration. Additional
+presets are admitted only when they offer a distinct, reviewed trade-off; a
+grid cell is not a product preset merely because it exists.
 
 ## Runtime and pacing semantics
 

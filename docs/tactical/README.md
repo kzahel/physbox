@@ -163,7 +163,10 @@ Human review authorizes S25 as one configuration-only resolution attempt. Its
 six-row, one-process native shortlist keeps the equation, bands, sleeping
 policy, and product default fixed; no more than two survivors reach broader
 native guards and no more than one reaches conditional browser/physical
-qualification.
+qualification. S25 is now complete: the sole 60/8/i1 finalist passes the
+native 2/4/8/12 blockers, preserves 14, reports 16 loss at step 840, and
+matches Browser WebGPU and physical Pixel 7a configuration/scenario identities.
+The 60/4/i1 default remains unchanged at a human quality/cost decision.
 
 Current target supersession, 2026-07-22: the
 [rigid quality target contract](../topics/rigid-quality-targets.md) governs new
@@ -207,7 +210,7 @@ This README remains the unnumbered index.
 | S22 | Active-work compaction | [022-active-work-compaction.md](022-active-work-compaction.md) | complete; committed persistence/topology work and durable sparse-capacity qualification pass, 2026-07-22 |
 | S23 | GPU sleeping and waking | [023-gpu-sleeping-and-waking.md](023-gpu-sleeping-and-waking.md) | manual checkpoint; contact sleep-cycle correction qualified on browser/headless/Pixel, S23.7 human decision held, 2026-07-22 |
 | S24 | Current rigid quality qualification | [024-current-rigid-quality-qualification.md](024-current-rigid-quality-qualification.md) | complete negative; native 2/4/8 pass, upright 12 misses quiet band, conditional cross-host work not admitted, 2026-07-22 |
-| S25 | Bounded awake configuration qualification | [025-bounded-awake-configuration-qualification.md](025-bounded-awake-configuration-qualification.md) | active; six-row native 12-stack screen, survivor-only expansion, default unchanged, 2026-07-22 |
+| S25 | Bounded awake configuration qualification | [025-bounded-awake-configuration-qualification.md](025-bounded-awake-configuration-qualification.md) | complete; custom 60/8/i1 passes native 2/4/8/12 plus browser/physical-Pixel identities, default unchanged for human review, 2026-07-22 |
 
 ## Conventions
 

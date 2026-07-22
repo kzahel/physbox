@@ -1,9 +1,10 @@
 # S25 — Bounded awake configuration qualification
 
-Status: active, 2026-07-22. Human review authorizes one fast configuration-
-only attempt to clear S24's native 12-stack quiet failure. The solver family,
-equation, awake bands, sleeping policy, and product default remain unchanged
-while the predeclared shortlist is screened.
+Status: complete at human default-review checkpoint, 2026-07-22. The bounded
+screen selected one eight-substep custom finalist, and its native product,
+browser, and physical-Android qualification passes the blocking 2/4/8/12
+contract. The solver family, equation, awake bands, sleeping policy, and
+ordinary four-substep product default remain unchanged.
 
 Governing topics:
 [rigid quality targets](../topics/rigid-quality-targets.md),
@@ -177,32 +178,121 @@ decision. The sole finalist is therefore `resolution-control`: soft-coupled
 This slice runs only if S25.2 selects one finalist. It validates a custom
 configuration; it does not change the default.
 
-- [ ] Project the finalist through the canonical product configuration and
+- [x] Project the finalist through the canonical product configuration and
   engine-owned stack source exactly once. Produce the durable native package
   deferred by S24: all six roles, settling/geometry/energy, replay, work,
   allocation, capacity, adapter, hashes, revision/dirty state, run id, and
   exact replay command.
-- [ ] Qualify 2/4/8/12 and report 14/16 on ordinary Browser WebGPU and the
+- [x] Qualify 2/4/8/12 and report 14/16 on ordinary Browser WebGPU and the
   attached physical Android device with the same configuration/scenario
   identities and fresh provenance. Do not use an AVD while the physical lane
   is available.
-- [ ] Run the proportional production gates required for a physics-visible
+- [x] Run the proportional production gates required for a physics-visible
   cross-host validation addition: `npm run test:fast`, production clippy with
   warnings denied, one fresh headless smoke, ARM64 check, release APK,
   `npm run test:web:lab` when the existing configuration interaction is used,
   and the physical-device lane.
 
+Clean revision `c71eabc1c3d756c19edd75114aa38d0b8dbeae4d` owns the
+complete S25.3 chain. The canonical finalist configuration hash is
+`87dfec84f20c6adfab96618809e79fbc65da83220f81c34b6477ec12db9ed6b2`.
+`SolverProfileConfig::apply_to_scenario` projects that launch-owned
+configuration exactly once into each engine-owned centered stack.
+
+The durable native command is:
+
+```sh
+cargo run --release -p physbox-lab --bin physbox-check -- \
+  --evidence s25-awake-finalist \
+  --output /tmp/physbox5-s25-native-finalist.json
+```
+
+It completes in `91.586 s` on AMD Radeon 890M RADV/Vulkan, records clean
+source/adapter/configuration/scenario provenance, and passes exact serialized
+series replay for all six roles. Its SHA-256 is
+`7b5e9d83cce8e87d42764022e1a5fe6c49e14e661f08fe16beb0d69b40dcaffe`.
+
+| Stack | Structure | Linear | Angular edge | Penetration | Height | Observation-series wall cost | Result |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| 2 | pass | `0.000957` | `0.000672` | `0.001176` | `0.498546` | `4.514 ms/step`, `270.841 ms/sim-s` | blocking pass |
+| 4 | pass | `0.004333` | `0.001736` | `0.003453` | `0.992811` | `4.515 ms/step`, `270.893 ms/sim-s` | blocking pass |
+| 8 | pass | `0.010482` | `0.002915` | `0.007986` | `1.968382` | `4.472 ms/step`, `268.298 ms/sim-s` | blocking pass |
+| 12 | pass | `0.017233` | `0.005768` | `0.012868` | `2.925068` | `4.887 ms/step`, `293.237 ms/sim-s` | blocking pass |
+| 14 | pass | `0.014716` | `0.006246` | `0.014782` | `3.397960` | `4.568 ms/step`, `274.082 ms/sim-s` | stretch pass |
+| 16 | fail at step 840 | `1.868055` after loss | `1.783489` after loss | `0.004026` after loss | `0.992802` after loss | `5.005 ms/step`, `300.279 ms/sim-s` | diagnostic failure |
+
+Speeds are m/s and geometry is meters. The four blocker geometry comparisons
+pass against fresh default controls in the same package. The finalist still
+has the declared shallow-stack energy-envelope limitation at depths 2 and 4;
+it is not hidden by the passing quality verdict.
+
+A same-revision, same-adapter four-substep control reports
+`3.928/3.404/3.332/3.411 ms` per fully observed step at depths 2/4/8/12,
+versus `4.514/4.515/4.472/4.887 ms` for the finalist. The validation-wall
+increase is therefore approximately `15%/33%/34%/43%`; it is not a free
+quality improvement and must not be mistaken for an uninstrumented frame-time
+benchmark. The finalist graph records 170 dispatches per blocker step and
+26,156 through 144,500 allocated bytes as depth grows. The shared headless
+product contract at depth 12 reports 173 solver dispatches, 826,420 bytes of
+64-slot solver capacity, no overflow, and the same configuration/scenario
+hashes.
+
+The focused browser command builds once and executes all six roles:
+
+```sh
+node scripts/qualify-awake-finalist.mjs \
+  --native-evidence /tmp/physbox5-s25-native-finalist.json \
+  --output /tmp/physbox5-s25-web-finalist.json
+```
+
+Browser WebGPU completes exactly 1,200 interactive outer steps per role with
+zero or one step per frame, matching all six native scenario hashes and the
+finalist configuration hash. Its SHA-256 is
+`54635d0b61ceceae1eab2bedc9d5c876144e8c31e32b04554297423b8e9594a2`.
+
+The attached Pixel 7a/Mali-G710 Vulkan lane uses the same native package:
+
+```sh
+android/qualify-awake-finalist.sh \
+  --native-evidence /tmp/physbox5-s25-native-finalist.json \
+  --output-directory /tmp/physbox5-s25-android
+```
+
+All six roles emit a hardware-adapter success, complete screenshots, success
+sentinel, matching hashes, sleep-off state, and clean capacity. The 12-stack
+capture remains upright; the 16-stack capture visibly retains its native
+diagnostic loss. Browser/Android completion validates the shared product path,
+identity, capacity, and pixels; native readback owns numerical quiet and
+structure, so their completion sentinels do not relabel the failed 16-stack.
+
+Artifact inventory:
+
+| Host | Artifact | SHA-256 |
+| --- | --- | --- |
+| Native | `/tmp/physbox5-s25-native-finalist.json` | `7b5e9d83cce8e87d42764022e1a5fe6c49e14e661f08fe16beb0d69b40dcaffe` |
+| Browser | `/tmp/physbox5-s25-web-finalist.json` | `54635d0b61ceceae1eab2bedc9d5c876144e8c31e32b04554297423b8e9594a2` |
+| Physical Android | `/tmp/physbox5-s25-android/android-s25-awake-finalist.json` | `a153acb680f02666e59a4d7c5836aa9063262541c38fcb3245de8ed733604401` |
+| Headless stack 12 | `/tmp/physbox5-s25-headless-stack12.json` | `b3a5f1ab0aa1087ba24a5198237258f80bfb81147ca3a39952951d0aa98e2c6b` |
+
+Proportional gates pass: `npm run test:fast` in `24.06 s`, production clippy
+with warnings denied, fresh headless stack 12, ARM64 Android check with the
+solver-lab feature, `npm run test:web:lab`, arm64 release-native/debug APK,
+Gradle `assembleRelease`, and the physical Pixel lane. An initial bare Gradle
+invocation could not locate the SDK; sourcing `android/toolchain.sh` and
+`physbox5_android_detect_sdk` made the declared release build pass. No AVD was
+started.
+
 ## S25.4 — disposition
 
-- [ ] Update the quality topic, configuration topic, capability ledger,
+- [x] Update the quality topic, configuration topic, capability ledger,
   bring-up plan, and tactical index with every measured row and missing lane.
 - [ ] If no S25.1/S25.2 survivor exists, record `no-configuration-only-
   solution`, leave the default unchanged, keep S23.7 held, and return any
   solver-formulation work to human review without opening it automatically.
-- [ ] If one S25.3 finalist passes, leave the default unchanged and stop at a
+- [x] If one S25.3 finalist passes, leave the default unchanged and stop at a
   human subjective/default decision with the exact interactive configuration
   available through the existing menu.
-- [ ] Commit each admitted implementation boundary before producing clean
+- [x] Commit each admitted implementation boundary before producing clean
   evidence and finish with a clean worktree.
 
 ## Completion condition
