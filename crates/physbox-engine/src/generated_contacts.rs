@@ -677,7 +677,7 @@ impl GpuGeneratedContactGraph {
             device,
             storage,
             &solver_points,
-            narrowphase.point_capacity_buffer(),
+            narrowphase.manifold_capacity_buffer(),
             point_capacity,
         )?;
         let solver = GpuFixedFloorSolver::new_generated_experiment_with_topology_scheduling_and_extended_solver_policies(
@@ -916,7 +916,7 @@ impl GpuGeneratedContactGraph {
     }
 
     pub(crate) fn dispatches_per_step(&self) -> u32 {
-        11 + 2 * self.awake_work.wake_propagation_rounds()
+        10 + 2 * self.awake_work.wake_propagation_rounds()
             + self.broadphase.dispatches()
             + self.persistence.dispatches()
             + BRIDGE_DISPATCHES
@@ -974,6 +974,16 @@ impl GpuGeneratedContactGraph {
         destination: &wgpu::Buffer,
     ) {
         self.awake_points.copy_mapping(encoder, destination);
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn copy_solver_body_state(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        destination: &wgpu::Buffer,
+    ) {
+        self.awake_points
+            .copy_solver_body_state(encoder, destination);
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -1870,6 +1880,10 @@ pub struct GpuGeneratedContactOutput {
     pub substep_contact_policy: crate::GpuSubstepContactPolicyV1,
     pub restitution_timing_policy: crate::GpuRestitutionTimingPolicyV1,
     pub contact_identity_policy: ContactIdentityPolicyV1,
+    pub awake_dynamic_body_count: u32,
+    pub solver_body_count: u32,
+    pub live_contact_point_count: u32,
+    pub awake_contact_point_count: u32,
     pub bodies: Vec<physbox_contracts::BodyStateV1>,
     pub manifolds: Vec<physbox_contracts::CollisionManifoldV1>,
     pub cache: Vec<PersistentContactV1>,
@@ -2382,6 +2396,12 @@ impl GpuGeneratedContactOutput {
             && self.contact_identity_policy != ContactIdentityPolicyV1::SELECTED
         {
             return Err("retained-refresh output changed contact identity".to_owned());
+        }
+        if self.awake_dynamic_body_count > self.solver_body_count
+            || self.solver_body_count > self.bodies.len() as u32
+            || self.awake_contact_point_count > self.live_contact_point_count
+        {
+            return Err("generated awake-work counts exceed their live bounds".to_owned());
         }
         self.restitution_timing_policy.validate(
             &self.solver_settings,
@@ -5116,39 +5136,6 @@ impl GpuGeneratedContactRunner {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn run_with_topologies_execution_scheduling_identity_and_body_capacity(
-        &self,
-        scenario: &ScenarioV1,
-        completed_steps: u32,
-        persistence_topology: GpuContactPersistenceTopology,
-        gather_topology: GpuGatherTopology,
-        permute_edge_build: bool,
-        permute_pair_build: bool,
-        fingerprint_mask: u32,
-        execution: GpuSolverExecutionV4,
-        scheduling_policy: GpuSolverSchedulingPolicyV1,
-        identity_policy: ContactIdentityPolicyV1,
-        body_capacity: u32,
-    ) -> Result<GpuGeneratedContactOutput, String> {
-        self.run_with_topologies_execution_scheduling_identity_extended_and_body_capacity(
-            scenario,
-            completed_steps,
-            persistence_topology,
-            gather_topology,
-            permute_edge_build,
-            permute_pair_build,
-            fingerprint_mask,
-            execution,
-            scheduling_policy,
-            identity_policy,
-            crate::GpuContactCoefficientPolicyV1::SELECTED,
-            crate::GpuSubstepContactPolicyV1::SELECTED,
-            crate::GpuRestitutionTimingPolicyV1::SELECTED,
-            body_capacity,
-        )
-    }
-
-    #[allow(clippy::too_many_arguments)]
     fn run_with_topologies_execution_scheduling_identity_extended_and_body_capacity(
         &self,
         scenario: &ScenarioV1,
@@ -5166,6 +5153,44 @@ impl GpuGeneratedContactRunner {
         restitution_timing_policy: crate::GpuRestitutionTimingPolicyV1,
         body_capacity: u32,
     ) -> Result<GpuGeneratedContactOutput, String> {
+        self.run_with_topologies_execution_scheduling_identity_extended_body_capacity_and_sleep(
+            scenario,
+            completed_steps,
+            persistence_topology,
+            gather_topology,
+            permute_edge_build,
+            permute_pair_build,
+            fingerprint_mask,
+            execution,
+            scheduling_policy,
+            identity_policy,
+            contact_coefficient_policy,
+            substep_contact_policy,
+            restitution_timing_policy,
+            body_capacity,
+            crate::awake_work::SleepExecutionConfig::disabled(60),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn run_with_topologies_execution_scheduling_identity_extended_body_capacity_and_sleep(
+        &self,
+        scenario: &ScenarioV1,
+        completed_steps: u32,
+        persistence_topology: GpuContactPersistenceTopology,
+        gather_topology: GpuGatherTopology,
+        permute_edge_build: bool,
+        permute_pair_build: bool,
+        fingerprint_mask: u32,
+        execution: GpuSolverExecutionV4,
+        scheduling_policy: GpuSolverSchedulingPolicyV1,
+        identity_policy: ContactIdentityPolicyV1,
+        contact_coefficient_policy: crate::GpuContactCoefficientPolicyV1,
+        substep_contact_policy: crate::GpuSubstepContactPolicyV1,
+        restitution_timing_policy: crate::GpuRestitutionTimingPolicyV1,
+        body_capacity: u32,
+        sleep_config: crate::awake_work::SleepExecutionConfig,
+    ) -> Result<GpuGeneratedContactOutput, String> {
         if completed_steps == 0 {
             return Err("generated contact validation requires at least one step".to_owned());
         }
@@ -5178,11 +5203,12 @@ impl GpuGeneratedContactRunner {
             ));
         }
         let body_count = body_capacity;
-        let storage = GpuBodyStorage::new(
+        let storage = GpuBodyStorage::new_with_sleeping(
             &self.device,
             body_count,
             crate::BODY_COMMAND_CAPACITY,
             &scenario.bodies,
+            sleep_config,
         )?;
         let graph =
             GpuGeneratedContactGraph::new_with_topologies_execution_scheduling_identity_and_extended_solver_policies(
@@ -5235,6 +5261,16 @@ impl GpuGeneratedContactRunner {
             &self.device,
             "generated_awake_point_mapping_readback",
             u64::from(graph.point_capacity) * size_of::<u32>() as u64,
+        );
+        let awake_body_state_readback = readback(
+            &self.device,
+            "generated_awake_body_state_readback",
+            u64::from(crate::awake_work::AWAKE_BODY_STATE_WORDS) * size_of::<u32>() as u64,
+        );
+        let solver_body_state_readback = readback(
+            &self.device,
+            "generated_solver_body_state_readback",
+            20 * size_of::<u32>() as u64,
         );
         let manifold_records_readback = readback(
             &self.device,
@@ -5321,6 +5357,14 @@ impl GpuGeneratedContactRunner {
         );
         graph.copy_awake_point_state(&mut encoder, &awake_point_state_readback);
         graph.copy_awake_point_mapping(&mut encoder, &awake_point_mapping_readback);
+        encoder.copy_buffer_to_buffer(
+            storage.awake_body_buffer(),
+            0,
+            &awake_body_state_readback,
+            0,
+            u64::from(crate::awake_work::AWAKE_BODY_STATE_WORDS) * size_of::<u32>() as u64,
+        );
+        graph.copy_solver_body_state(&mut encoder, &solver_body_state_readback);
         copy_full(
             &mut encoder,
             graph.narrowphase.manifolds(),
@@ -5392,6 +5436,16 @@ impl GpuGeneratedContactRunner {
             &self.device,
             &awake_point_mapping_readback,
             graph.point_capacity as usize,
+        )?;
+        let awake_body_raw = crate::collision_candidates::map_values::<u32>(
+            &self.device,
+            &awake_body_state_readback,
+            crate::awake_work::AWAKE_BODY_STATE_WORDS as usize,
+        )?;
+        let solver_body_raw = crate::collision_candidates::map_values::<u32>(
+            &self.device,
+            &solver_body_state_readback,
+            20,
         )?;
         let persistence_raw = crate::collision_candidates::map_values::<
             crate::collision_persistence::CapacityRaw,
@@ -5630,6 +5684,10 @@ impl GpuGeneratedContactRunner {
             substep_contact_policy: graph.substep_contact_policy,
             restitution_timing_policy: graph.restitution_timing_policy,
             contact_identity_policy: graph.identity_policy,
+            awake_dynamic_body_count: awake_body_raw[0],
+            solver_body_count: solver_body_raw[0],
+            live_contact_point_count: point_raw[2],
+            awake_contact_point_count: awake_point_raw[2],
             bodies,
             manifolds,
             cache,
@@ -5719,6 +5777,39 @@ pub async fn benchmark_gpu_sparse_capacity(
         GpuSolverSchedulingPolicyV1::SELECTED,
         ContactIdentityPolicyV1::SELECTED,
         body_capacity,
+        crate::awake_work::SleepExecutionConfig::disabled(60),
+    )
+    .await
+}
+
+/// Measures one selected contact graph with the authored sleeping state made
+/// effective. The caller owns the matched awake-fraction scenario family.
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn benchmark_gpu_sleeping_city(
+    scenario: &ScenarioV1,
+    body_capacity: u32,
+    warmup_steps: u32,
+    samples: u32,
+) -> Result<GpuGeneratedContactBenchmarkOutput, String> {
+    validate_selected_settings(scenario)?;
+    if warmup_steps
+        .checked_add(samples)
+        .is_none_or(|steps| steps >= 30)
+    {
+        return Err(
+            "sleeping-city benchmark window must remain below the 60 Hz quiet duration".to_owned(),
+        );
+    }
+    benchmark_gpu_generated_contacts_with_execution_scheduling_identity_and_body_capacity(
+        scenario,
+        warmup_steps,
+        samples,
+        GpuGatherTopology::StableBodyEdge,
+        GpuSolverExecutionV4::SELECTED,
+        GpuSolverSchedulingPolicyV1::SELECTED,
+        ContactIdentityPolicyV1::SELECTED,
+        body_capacity,
+        crate::awake_work::SleepExecutionConfig::enabled(60),
     )
     .await
 }
@@ -5871,6 +5962,7 @@ async fn benchmark_gpu_generated_contacts_with_execution_scheduling_and_identity
         scheduling_policy,
         identity_policy,
         body_capacity,
+        crate::awake_work::SleepExecutionConfig::disabled(60),
     )
     .await
 }
@@ -5886,6 +5978,7 @@ async fn benchmark_gpu_generated_contacts_with_execution_scheduling_identity_and
     scheduling_policy: GpuSolverSchedulingPolicyV1,
     identity_policy: ContactIdentityPolicyV1,
     body_capacity: u32,
+    sleep_config: crate::awake_work::SleepExecutionConfig,
 ) -> Result<GpuGeneratedContactBenchmarkOutput, String> {
     if warmup_steps == 0 || samples == 0 {
         return Err("generated-contact benchmark requires non-zero warmup and samples".to_owned());
@@ -5901,19 +5994,24 @@ async fn benchmark_gpu_generated_contacts_with_execution_scheduling_identity_and
     let (correctness, replay) = {
         let runner = GpuGeneratedContactRunner::new().await?;
         let run = || {
-            runner.run_with_topologies_execution_scheduling_identity_and_body_capacity(
-                scenario,
-                1,
-                GpuContactPersistenceTopology::StablePairSlot,
-                gather_topology,
-                false,
-                false,
-                u32::MAX,
-                execution,
-                scheduling_policy,
-                identity_policy,
-                body_capacity,
-            )
+            runner
+                .run_with_topologies_execution_scheduling_identity_extended_body_capacity_and_sleep(
+                    scenario,
+                    1,
+                    GpuContactPersistenceTopology::StablePairSlot,
+                    gather_topology,
+                    false,
+                    false,
+                    u32::MAX,
+                    execution,
+                    scheduling_policy,
+                    identity_policy,
+                    crate::GpuContactCoefficientPolicyV1::SELECTED,
+                    crate::GpuSubstepContactPolicyV1::SELECTED,
+                    crate::GpuRestitutionTimingPolicyV1::SELECTED,
+                    body_capacity,
+                    sleep_config,
+                )
         };
         (run()?, run()?)
     };
@@ -5921,6 +6019,10 @@ async fn benchmark_gpu_generated_contacts_with_execution_scheduling_identity_and
         && correctness.cache == replay.cache
         && correctness.pass_evidence == replay.pass_evidence
         && correctness.work == replay.work
+        && correctness.awake_dynamic_body_count == replay.awake_dynamic_body_count
+        && correctness.solver_body_count == replay.solver_body_count
+        && correctness.live_contact_point_count == replay.live_contact_point_count
+        && correctness.awake_contact_point_count == replay.awake_contact_point_count
         && correctness.capacities == replay.capacities
         && correctness.failure == replay.failure;
     if !replay_exact {
@@ -5952,11 +6054,12 @@ async fn benchmark_gpu_generated_contacts_with_execution_scheduling_identity_and
     };
     let (device, queue) =
         crate::gpu_context::request_device_with_features(&adapter, required_features).await?;
-    let storage = GpuBodyStorage::new(
+    let storage = GpuBodyStorage::new_with_sleeping(
         &device,
         body_capacity,
         crate::BODY_COMMAND_CAPACITY,
         &scenario.bodies,
+        sleep_config,
     )?;
     let reset = crate::body_state::GpuBodyResetData::new(body_capacity, &scenario.bodies)?;
     let graph =
@@ -6263,10 +6366,9 @@ fn map_range<T: Pod + Copy>(
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
-    use super::{
-        GpuGeneratedContactRunner, VALIDATION_SNAPSHOTS_PER_READBACK_FLUSH,
-        product_candidate_capacity,
-    };
+    #[cfg(not(feature = "production-validation"))]
+    use super::VALIDATION_SNAPSHOTS_PER_READBACK_FLUSH;
+    use super::{GpuGeneratedContactRunner, product_candidate_capacity};
     use crate::{
         GpuRestitutionTimingPolicyV1, GpuSubstepContactPolicyV1, P5_2SettlingFixtureKind,
         p5_2_centered_rectangle_stack_scenario, p5_2_settling_fixture_scenario,

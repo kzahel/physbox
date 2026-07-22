@@ -26,7 +26,7 @@ struct SleepStateV1 {
 }
 
 @group(0) @binding(0) var<storage, read> source_points: array<PointInput>;
-@group(0) @binding(1) var<storage, read> source_state: array<u32>;
+@group(0) @binding(1) var<storage, read> source_span_state: array<u32>;
 @group(0) @binding(2) var<storage, read> metadata: array<vec4u>;
 @group(0) @binding(3) var<storage, read> sleep_state: array<SleepStateV1>;
 @group(0) @binding(4) var<storage, read_write> awake_points: array<PointInput>;
@@ -65,12 +65,13 @@ fn cache_only_prepared(point: PointInput) -> PreparedPoint {
 
 @compute @workgroup_size(1)
 fn compact_awake_points() {
+    let point_span = min(source_span_state[2] * 2u, params.x);
     var awake_count = 0u;
     // Stable pair slots are addressed as pair_index * 2 and are intentionally
-    // sparse when a preceding manifold owns one point. Scan the bounded solver
-    // capacity and reject invalid sentinels instead of treating the packed
-    // narrow-phase point count as a dense solver-input prefix.
-    for (var index = 0u; index < params.x; index += 1u) {
+    // sparse when a preceding manifold owns one point. Scan the bounded two
+    // slots per committed manifold and reject invalid sentinels instead of
+    // treating the packed narrow-phase point count as a dense solver prefix.
+    for (var index = 0u; index < point_span; index += 1u) {
         let point = source_points[index];
         persistence_prepared[index] = cache_only_prepared(point);
         if (point.ids.x >= params.y || point.ids.y >= params.y) { continue; }
@@ -82,7 +83,7 @@ fn compact_awake_points() {
     awake_state[0] = params.x;
     awake_state[1] = awake_count;
     awake_state[2] = awake_count;
-    awake_state[3] = source_state[3];
+    awake_state[3] = source_span_state[3];
     awake_state[4] = (awake_count + 63u) / 64u;
     awake_state[5] = 1u;
     awake_state[6] = 1u;

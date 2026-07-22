@@ -154,7 +154,8 @@ pub use generated_contacts::{
     benchmark_gpu_generated_contact_experiment,
     benchmark_gpu_generated_contact_identity_experiment,
     benchmark_gpu_generated_contact_scheduling_experiment, benchmark_gpu_generated_contacts,
-    benchmark_gpu_generated_contacts_with_gather_topology, benchmark_gpu_sparse_capacity,
+    benchmark_gpu_generated_contacts_with_gather_topology, benchmark_gpu_sleeping_city,
+    benchmark_gpu_sparse_capacity,
 };
 pub use generated_contacts::{GpuConstructionGraphEvidence, GpuContactPersistenceTopology};
 pub use gpu_context::{AdapterDiagnostics, create_instance};
@@ -202,6 +203,7 @@ pub use scenario::{
     p5_2_s13_authority_overflow_scenario, p5_2_settling_fixture_scenario,
     p5_2_settling_review_scenario, p5_2_settling_soft_fixture_scenario,
     p5_2_settling_soft_i1_comparator_scenario, p5_2_settling_soft_stack_matrix_scenario,
-    p5_2_stale_reseed_reproducer_scenario, p5_3_broadphase_scenario, p5_3_broadphase_snapshot,
+    p5_2_sleeping_city_scenario, p5_2_stale_reseed_reproducer_scenario, p5_3_broadphase_scenario,
+    p5_3_broadphase_snapshot,
 };
 pub use solver_profile::SolverProfileConfig;

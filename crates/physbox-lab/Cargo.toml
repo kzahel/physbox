@@ -56,6 +56,11 @@ path = "src/bin/physbox-sleep-policy-evidence.rs"
 test = false
 
 [[bin]]
+name = "physbox-sleeping-city-evidence"
+path = "src/bin/physbox-sleeping-city-evidence.rs"
+test = false
+
+[[bin]]
 name = "physbox-s17-product-relative"
 path = "src/bin/physbox-s17-product-relative.rs"
 test = false

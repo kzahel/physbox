@@ -25,7 +25,6 @@ pub(crate) struct GpuAwakePoints {
     compact_pipeline: wgpu::ComputePipeline,
     solver_body_pipeline: wgpu::ComputePipeline,
     scatter_pipeline: wgpu::ComputePipeline,
-    clear_pipeline: wgpu::ComputePipeline,
     _params: wgpu::Buffer,
     point_capacity: u32,
 }
@@ -35,7 +34,7 @@ impl GpuAwakePoints {
         device: &wgpu::Device,
         storage: &GpuBodyStorage,
         source_points: &wgpu::Buffer,
-        source_state: &wgpu::Buffer,
+        source_span_state: &wgpu::Buffer,
         point_capacity: u32,
     ) -> Result<Self, String> {
         if point_capacity == 0 {
@@ -112,7 +111,7 @@ impl GpuAwakePoints {
             layout: &compact_layout,
             entries: &[
                 entry(0, source_points),
-                entry(1, source_state),
+                entry(1, source_span_state),
                 entry(2, storage.metadata_buffer()),
                 entry(3, storage.awake_work_handle().sleep_state_buffer()),
                 entry(4, &points),
@@ -128,7 +127,7 @@ impl GpuAwakePoints {
                 storage_entry(5, true),
                 storage_entry(6, true),
                 storage_entry(7, false),
-                storage_entry(9, false),
+                storage_entry(9, true),
             ],
         });
         let solver_body_layout =
@@ -190,12 +189,6 @@ impl GpuAwakePoints {
             &solver_body_layout,
             &solver_body_shader,
         );
-        let clear_pipeline = pipeline(
-            "physbox5_awake_point_clear_pipeline",
-            "clear_stale_prepared_points",
-            &scatter_layout,
-            &scatter_shader,
-        );
         let scatter_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("physbox5_awake_point_scatter_bind_group_unbound"),
             layout: &scatter_layout,
@@ -230,7 +223,6 @@ impl GpuAwakePoints {
             compact_pipeline,
             solver_body_pipeline,
             scatter_pipeline,
-            clear_pipeline,
             _params: params,
             point_capacity,
         })
@@ -268,8 +260,6 @@ impl GpuAwakePoints {
         pass.set_pipeline(&self.scatter_pipeline);
         pass.set_bind_group(0, &self.scatter_bind_group, &[]);
         pass.dispatch_workgroups_indirect(&self.state, POINT_DISPATCH_64_OFFSET);
-        pass.set_pipeline(&self.clear_pipeline);
-        pass.dispatch_workgroups(1, 1, 1);
     }
 
     pub(crate) fn encode_solver_body_compaction(&self, encoder: &mut wgpu::CommandEncoder) {
@@ -353,6 +343,21 @@ impl GpuAwakePoints {
             destination,
             0,
             u64::from(self.point_capacity) * size_of::<u32>() as u64,
+        );
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn copy_solver_body_state(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        destination: &wgpu::Buffer,
+    ) {
+        encoder.copy_buffer_to_buffer(
+            &self.solver_bodies,
+            0,
+            destination,
+            0,
+            u64::from(SOLVER_BODY_STATE_WORDS) * size_of::<u32>() as u64,
         );
     }
 }

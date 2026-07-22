@@ -1411,6 +1411,39 @@ pub fn p5_2_generated_performance_scenario(
     })
 }
 
+pub fn p5_2_sleeping_city_scenario(
+    body_count: u32,
+    awake_percent: u32,
+) -> Result<ScenarioV1, ScenarioBuildError> {
+    if !(200..=10_000).contains(&body_count)
+        || !body_count.is_multiple_of(100)
+        || !matches!(awake_percent, 1 | 10 | 100)
+    {
+        return Err(ScenarioBuildError(
+            "sleeping city requires 200-10000 bodies in hundreds and 1, 10, or 100 percent awake"
+                .to_owned(),
+        ));
+    }
+    let awake_count = body_count * awake_percent / 100;
+    if !awake_count.is_multiple_of(2) {
+        return Err(ScenarioBuildError(
+            "sleeping-city awake bodies must preserve complete contact pairs".to_owned(),
+        ));
+    }
+    let mut scenario = p5_2_generated_performance_scenario(body_count)?;
+    scenario.id = format!("p5.2-sleeping-city-{body_count}-{awake_percent}pct");
+    scenario.seed = 0x5323_0600 + u64::from(body_count) * 100 + u64::from(awake_percent);
+    for (index, body) in scenario.bodies.iter_mut().enumerate() {
+        body.linear_velocity = Vec2::ZERO;
+        body.angular_velocity = finite(0.0);
+        body.sleeping = index >= awake_count as usize;
+    }
+    scenario
+        .validate()
+        .map_err(|error| ScenarioBuildError(error.to_string()))?;
+    Ok(scenario)
+}
+
 pub(crate) fn p5_1_direct_render_scenario(
     requested_steps: u32,
 ) -> Result<ScenarioV1, ScenarioBuildError> {
@@ -3091,6 +3124,32 @@ mod tests {
             );
         }
         assert!(p5_2_generated_performance_scenario(33).is_err());
+    }
+
+    #[test]
+    fn p5_2_sleeping_city_rows_are_matched_exact_and_pair_aligned() {
+        for body_count in [200, 1_000, 10_000] {
+            for awake_percent in [1, 10, 100] {
+                let scenario = p5_2_sleeping_city_scenario(body_count, awake_percent).unwrap();
+                scenario.validate().unwrap();
+                assert_eq!(scenario.bodies.len(), body_count as usize);
+                let awake_count = body_count * awake_percent / 100;
+                assert_eq!(
+                    scenario.bodies.iter().filter(|body| !body.sleeping).count(),
+                    awake_count as usize
+                );
+                assert!(awake_count.is_multiple_of(2));
+                assert_eq!(
+                    canonical_json(&scenario).unwrap(),
+                    canonical_json(
+                        &p5_2_sleeping_city_scenario(body_count, awake_percent).unwrap()
+                    )
+                    .unwrap()
+                );
+            }
+        }
+        assert!(p5_2_sleeping_city_scenario(100, 1).is_err());
+        assert!(p5_2_sleeping_city_scenario(200, 25).is_err());
     }
 
     #[cfg(not(feature = "production-validation"))]
