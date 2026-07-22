@@ -2614,7 +2614,7 @@ impl GpuFixedFloorSolver {
             device,
             "physbox5_floor_topology",
             topology_layout.element_count,
-            usage | wgpu::BufferUsages::INDIRECT,
+            usage,
         );
         let color_indirect = topology_layout.has_coloring.then(|| {
             let words = COLOR_INDIRECT_WORDS
@@ -3477,10 +3477,9 @@ impl GpuFixedFloorSolver {
                 .as_ref()
                 .expect("dynamic dispatch requires active-work resources");
             let (buffer, offset) = match dispatch {
-                DynamicDispatch::Topology64 => (
-                    &self._topology,
-                    u64::from(self.topology_layout.work_state_base + 2) * size_of::<u32>() as u64,
-                ),
+                DynamicDispatch::Topology64 => {
+                    (work.body_indirect.as_ref(), ACTIVE_BODY_DISPATCH_64_OFFSET)
+                }
                 DynamicDispatch::Point64 => {
                     (work.point_indirect.as_ref(), POINT_DISPATCH_64_OFFSET)
                 }
