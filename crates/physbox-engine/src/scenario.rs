@@ -1021,6 +1021,47 @@ pub fn s26_packed_pile_scenario(
     Ok(scenario)
 }
 
+/// S27 synthetic comparison control. One sleeping eight-body contact chain has
+/// a motion wake root at the bottom, putting the far end beyond K=4 while the
+/// exact component reduction still observes the complete chain.
+pub fn s27_long_path_wake_scenario(requested_steps: u32) -> Result<ScenarioV1, ScenarioBuildError> {
+    let mut scenario = p5_2_centered_rectangle_stack_scenario(8, requested_steps)?;
+    scenario.id = "s27-long-path-wake-control".to_owned();
+    for body in &mut scenario.bodies[1..] {
+        body.sleeping = true;
+    }
+    scenario.bodies[1].linear_velocity = Vec2::new(0.2, 0.0);
+    scenario
+        .validate()
+        .map_err(|error| ScenarioBuildError(error.to_string()))?;
+    Ok(scenario)
+}
+
+/// S27 time-evolved pile. The shared rectangle bucket population starts above
+/// a taller container and falls under the ordinary product gravity/contact
+/// path; no contact or sleep result is authored into the fixture.
+pub fn s27_poured_pile_scenario(requested_steps: u32) -> Result<ScenarioV1, ScenarioBuildError> {
+    let mut scenario = p5_2_bucket_scenario(P5_2BucketShape::Rectangle, 100, requested_steps)?;
+    scenario.id = "s27-poured-rectangle-pile-100".to_owned();
+    scenario.seed = 0x5027_0100;
+    for body in &mut scenario.bodies {
+        if body.inverse_mass.get() > 0.0 {
+            body.position.y += 1.6;
+            continue;
+        }
+        if body.id.slot == 1 || body.id.slot == 2 {
+            body.position.y = 0.8;
+            body.shape = ShapeV1::Rectangle {
+                half_extents: Vec2::new(0.08, 1.6),
+            };
+        }
+    }
+    scenario
+        .validate()
+        .map_err(|error| ScenarioBuildError(error.to_string()))?;
+    Ok(scenario)
+}
+
 pub fn p5_2_bucket_scenario(
     shape: P5_2BucketShape,
     body_count: u32,
@@ -3304,6 +3345,24 @@ mod tests {
             6
         );
         assert!(s26_packed_pile_scenario(99, 1).is_err());
+    }
+
+    #[test]
+    fn s27_sleep_decision_scenarios_are_shared_and_replayable() {
+        let path = s27_long_path_wake_scenario(1).unwrap();
+        assert_eq!(path.bodies.len(), 9);
+        assert!(path.bodies[1..].iter().all(|body| body.sleeping));
+        assert_eq!(path.bodies[1].linear_velocity, Vec2::new(0.2, 0.0));
+
+        let pile = s27_poured_pile_scenario(600).unwrap();
+        assert_eq!(pile.bodies.len(), 103);
+        assert_eq!(pile.requested_steps, 600);
+        assert!(pile.manifolds.is_empty());
+        assert_eq!(
+            canonical_json(&pile).unwrap(),
+            canonical_json(&s27_poured_pile_scenario(600).unwrap()).unwrap()
+        );
+        assert!(pile.bodies[3..].iter().all(|body| body.position.y > 0.8));
     }
 
     #[cfg(not(feature = "production-validation"))]

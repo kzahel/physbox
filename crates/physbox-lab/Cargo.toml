@@ -66,6 +66,11 @@ path = "src/bin/physbox-contact-components.rs"
 test = false
 
 [[bin]]
+name = "physbox-sleep-decisions"
+path = "src/bin/physbox-sleep-decisions.rs"
+test = false
+
+[[bin]]
 name = "physbox-s17-product-relative"
 path = "src/bin/physbox-s17-product-relative.rs"
 test = false

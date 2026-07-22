@@ -143,7 +143,8 @@ pub use construction_validation::{
 #[cfg(all(feature = "solver-lab", not(target_arch = "wasm32")))]
 pub use contact_components::{
     GpuContactComponentObservationV1, GpuContactComponentStatsV1, GpuSleepDecisionObservationV1,
-    GpuSleepDecisionStepV1, observe_gpu_contact_components, observe_gpu_sleep_decisions,
+    GpuSleepDecisionStepV1, GpuSleepDecisionTimingV1, benchmark_gpu_sleep_decision_observer,
+    observe_gpu_contact_components, observe_gpu_sleep_decisions,
 };
 pub use frame::{
     FrameInput, InputEvent, PointerButton, PointerEvent, PointerPhase, StepRequest, WheelEvent,
@@ -212,6 +213,6 @@ pub use scenario::{
     p5_2_settling_soft_i1_comparator_scenario, p5_2_settling_soft_stack_matrix_scenario,
     p5_2_sleeping_city_scenario, p5_2_stale_reseed_reproducer_scenario, p5_3_broadphase_scenario,
     p5_3_broadphase_snapshot, s26_bridge_components_scenario, s26_isolated_components_scenario,
-    s26_packed_pile_scenario,
+    s26_packed_pile_scenario, s27_long_path_wake_scenario, s27_poured_pile_scenario,
 };
 pub use solver_profile::SolverProfileConfig;

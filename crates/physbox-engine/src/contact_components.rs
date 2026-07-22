@@ -422,6 +422,25 @@ mod gpu {
         pub exact: bool,
     }
 
+    #[derive(Clone, Debug, serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct GpuSleepDecisionTimingV1 {
+        pub version: &'static str,
+        pub adapter: AdapterDiagnostics,
+        pub source_scenario_hash: String,
+        pub body_capacity: u32,
+        pub completed_steps: u32,
+        pub warmup_samples: u32,
+        pub samples: u32,
+        pub observer_dispatches_per_step: u32,
+        pub observer_allocated_bytes: u64,
+        pub gpu_component_seconds: Vec<f64>,
+        pub gpu_reduction_seconds: Vec<f64>,
+        pub gpu_observer_seconds: Vec<f64>,
+        pub host_completion_seconds: Vec<f64>,
+        pub timestamp_period_nanoseconds: f32,
+    }
+
     struct ObserverPipelines {
         initialize: wgpu::ComputePipeline,
         hook: wgpu::ComputePipeline,
@@ -920,14 +939,17 @@ mod gpu {
             &self,
             encoder: &mut wgpu::CommandEncoder,
             point_capacity_state: &wgpu::Buffer,
+            timestamps: Option<(&wgpu::QuerySet, u32, u32)>,
         ) {
-            self.components.encode(encoder, point_capacity_state, None);
+            self.components
+                .encode(encoder, point_capacity_state, timestamps);
         }
 
         pub(crate) fn encode_wake_aggregation(
             &self,
             encoder: &mut wgpu::CommandEncoder,
             trace_index: u32,
+            timestamps: Option<(&wgpu::QuerySet, u32, u32)>,
         ) {
             self.clear_step(encoder, trace_index);
             self.direct_pass(
@@ -936,6 +958,7 @@ mod gpu {
                 &self.pipelines.aggregate_wake_roots,
                 trace_index,
                 0,
+                timestamps,
             );
         }
 
@@ -944,6 +967,7 @@ mod gpu {
             encoder: &mut wgpu::CommandEncoder,
             trace_index: u32,
             final_frontier: usize,
+            timestamps: Option<(&wgpu::QuerySet, u32, u32)>,
         ) {
             self.direct_pass(
                 encoder,
@@ -951,6 +975,7 @@ mod gpu {
                 &self.pipelines.compare_wake_decisions,
                 trace_index,
                 final_frontier,
+                timestamps,
             );
         }
 
@@ -958,6 +983,7 @@ mod gpu {
             &self,
             encoder: &mut wgpu::CommandEncoder,
             trace_index: u32,
+            timestamps: Option<(&wgpu::QuerySet, u32, u32)>,
         ) {
             encoder.clear_buffer(&self.components.sizes, 0, None);
             self.direct_pass(
@@ -966,6 +992,7 @@ mod gpu {
                 &self.pipelines.aggregate_admission_blockers,
                 trace_index,
                 0,
+                timestamps,
             );
         }
 
@@ -974,6 +1001,7 @@ mod gpu {
             encoder: &mut wgpu::CommandEncoder,
             trace_index: u32,
             final_frontier: usize,
+            timestamps: Option<(&wgpu::QuerySet, u32, u32)>,
         ) {
             self.direct_pass(
                 encoder,
@@ -981,6 +1009,7 @@ mod gpu {
                 &self.pipelines.compare_admission_decisions,
                 trace_index,
                 final_frontier,
+                timestamps,
             );
             encoder.copy_buffer_to_buffer(
                 &self.components.stats,
@@ -1020,11 +1049,18 @@ mod gpu {
             pipeline: &wgpu::ComputePipeline,
             trace_index: u32,
             final_frontier: usize,
+            timestamps: Option<(&wgpu::QuerySet, u32, u32)>,
         ) {
             debug_assert!(trace_index < self.trace_capacity);
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some(label),
-                timestamp_writes: None,
+                timestamp_writes: timestamps.map(|(query_set, begin, end)| {
+                    wgpu::ComputePassTimestampWrites {
+                        query_set,
+                        beginning_of_pass_write_index: Some(begin),
+                        end_of_pass_write_index: Some(end),
+                    }
+                }),
             });
             pass.set_pipeline(pipeline);
             pass.set_bind_group(
@@ -1469,6 +1505,7 @@ mod gpu {
                     step == 1,
                     &observer,
                     step - 1,
+                    None,
                 );
             }
             queue.submit([encoder.finish()]);
@@ -1704,6 +1741,215 @@ mod gpu {
             invalid_direction_count,
             exact,
         })
+    }
+
+    pub async fn benchmark_gpu_sleep_decision_observer(
+        scenario: &ScenarioV1,
+        body_capacity: u32,
+        completed_steps: u32,
+        warmup_samples: u32,
+        samples: u32,
+    ) -> Result<GpuSleepDecisionTimingV1, String> {
+        if completed_steps == 0 || completed_steps > scenario.requested_steps || samples == 0 {
+            return Err(
+                "sleep-decision timing requires a valid target step and retained samples"
+                    .to_owned(),
+            );
+        }
+        scenario.validate().map_err(|error| error.to_string())?;
+        let body_count = u32::try_from(scenario.bodies.len())
+            .map_err(|_| "sleep-decision timing body count exceeds u32".to_owned())?;
+        if body_capacity < body_count {
+            return Err(format!(
+                "sleep-decision timing capacity {body_capacity} cannot hold {body_count} bodies"
+            ));
+        }
+        let instance = crate::gpu_context::create_instance();
+        let adapter = crate::gpu_context::request_adapter(&instance, None).await?;
+        let diagnostics = AdapterDiagnostics::from_adapter(&adapter);
+        if !adapter.features().contains(wgpu::Features::TIMESTAMP_QUERY) {
+            return Err("sleep-decision timing requires GPU timestamps".to_owned());
+        }
+        let (device, queue) = crate::gpu_context::request_device_with_features(
+            &adapter,
+            wgpu::Features::TIMESTAMP_QUERY,
+        )
+        .await?;
+        let sleep_config = SleepExecutionConfig::enabled(60);
+        let storage = GpuBodyStorage::new_with_sleeping(
+            &device,
+            body_capacity,
+            BODY_COMMAND_CAPACITY,
+            &scenario.bodies,
+            sleep_config,
+        )?;
+        let reset = crate::body_state::GpuBodyResetData::new(body_capacity, &scenario.bodies)?;
+        let graph = GpuGeneratedContactGraph::new_with_topologies_execution_and_scheduling(
+            &device,
+            &storage,
+            scenario,
+            GpuContactPersistenceTopology::StablePairSlot,
+            GpuGatherTopology::StableBodyEdge,
+            false,
+            false,
+            u32::MAX,
+            GpuSolverExecutionV4::SELECTED,
+            GpuSolverSchedulingPolicyV1::selected_for_body_capacity(body_capacity),
+        )?;
+        let (solver_points, _, point_capacity) = graph.contact_component_sources();
+        let observer = GpuSleepDecisionObserver::new(
+            &device,
+            &storage,
+            solver_points,
+            body_capacity,
+            point_capacity,
+            1,
+        )?;
+        let query_count = samples
+            .checked_mul(10)
+            .ok_or_else(|| "sleep-decision timing query count overflowed".to_owned())?;
+        let query_set = device.create_query_set(&wgpu::QuerySetDescriptor {
+            label: Some("physbox5_sleep_decision_timestamps"),
+            ty: wgpu::QueryType::Timestamp,
+            count: query_count,
+        });
+        let timestamp_bytes = u64::from(query_count) * size_of::<u64>() as u64;
+        let resolve = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("physbox5_sleep_decision_timestamp_resolve"),
+            size: timestamp_bytes,
+            usage: wgpu::BufferUsages::QUERY_RESOLVE | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+        let readback = readback_buffer(
+            &device,
+            "physbox5_sleep_decision_timestamp_readback",
+            timestamp_bytes,
+        );
+        for _ in 0..warmup_samples {
+            encode_sleep_decision_timing_sample(
+                &device,
+                &queue,
+                &storage,
+                &reset,
+                &graph,
+                &observer,
+                completed_steps,
+                None,
+            )?;
+        }
+        let mut host_completion_seconds = Vec::with_capacity(samples as usize);
+        for sample in 0..samples {
+            let started = Instant::now();
+            encode_sleep_decision_timing_sample(
+                &device,
+                &queue,
+                &storage,
+                &reset,
+                &graph,
+                &observer,
+                completed_steps,
+                Some((&query_set, sample * 10)),
+            )?;
+            host_completion_seconds.push(started.elapsed().as_secs_f64());
+        }
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("physbox5_sleep_decision_timestamp_copy"),
+        });
+        encoder.resolve_query_set(&query_set, 0..query_count, &resolve, 0);
+        encoder.copy_buffer_to_buffer(&resolve, 0, &readback, 0, timestamp_bytes);
+        queue.submit([encoder.finish()]);
+        let values = crate::collision_candidates::map_values::<u64>(
+            &device,
+            &readback,
+            query_count as usize,
+        )?;
+        let period = queue.get_timestamp_period();
+        let seconds = |begin: usize, end: usize| {
+            values
+                .chunks_exact(10)
+                .map(|sample| {
+                    sample[end].saturating_sub(sample[begin]) as f64 * f64::from(period) * 1.0e-9
+                })
+                .collect::<Vec<_>>()
+        };
+        let gpu_component_seconds = seconds(0, 1);
+        let reduction_intervals = [(2, 3), (4, 5), (6, 7), (8, 9)];
+        let gpu_reduction_seconds = values
+            .chunks_exact(10)
+            .map(|sample| {
+                reduction_intervals
+                    .iter()
+                    .map(|&(begin, end)| sample[end].saturating_sub(sample[begin]))
+                    .sum::<u64>() as f64
+                    * f64::from(period)
+                    * 1.0e-9
+            })
+            .collect::<Vec<_>>();
+        let gpu_observer_seconds = gpu_component_seconds
+            .iter()
+            .zip(&gpu_reduction_seconds)
+            .map(|(component, reduction)| component + reduction)
+            .collect();
+        Ok(GpuSleepDecisionTimingV1 {
+            version: DECISION_OUTPUT_VERSION,
+            adapter: diagnostics,
+            source_scenario_hash: canonical_hash(scenario).map_err(|error| error.to_string())?,
+            body_capacity,
+            completed_steps,
+            warmup_samples,
+            samples,
+            observer_dispatches_per_step: observer.dispatches_per_step(),
+            observer_allocated_bytes: observer.allocated_bytes(),
+            gpu_component_seconds,
+            gpu_reduction_seconds,
+            gpu_observer_seconds,
+            host_completion_seconds,
+            timestamp_period_nanoseconds: period,
+        })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn encode_sleep_decision_timing_sample(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        storage: &GpuBodyStorage,
+        reset: &crate::body_state::GpuBodyResetData,
+        graph: &GpuGeneratedContactGraph,
+        observer: &GpuSleepDecisionObserver,
+        completed_steps: u32,
+        timestamps: Option<(&wgpu::QuerySet, u32)>,
+    ) -> Result<(), String> {
+        storage.upload_reset_data(queue, reset);
+        device
+            .poll(wgpu::PollType::Wait)
+            .map_err(|error| format!("poll sleep-decision timing reset: {error}"))?;
+        let mut first_step = 1;
+        while first_step < completed_steps {
+            let last_step = (first_step + 31).min(completed_steps - 1);
+            let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("physbox5_sleep_decision_timing_prefix"),
+            });
+            for step in first_step..=last_step {
+                graph.encode_step(&mut encoder, step == 1);
+            }
+            queue.submit([encoder.finish()]);
+            first_step = last_step + 1;
+        }
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("physbox5_sleep_decision_timing_target"),
+        });
+        graph.encode_step_with_sleep_decision_observer(
+            &mut encoder,
+            completed_steps == 1,
+            observer,
+            0,
+            timestamps,
+        );
+        queue.submit([encoder.finish()]);
+        device
+            .poll(wgpu::PollType::Wait)
+            .map_err(|error| format!("poll sleep-decision timing sample: {error}"))?;
+        Ok(())
     }
 
     fn capture_applied_state(
@@ -1965,13 +2211,32 @@ mod gpu {
             assert!(output.steps[0].exact_only_new_wake_bodies > 0);
             assert_eq!(output.steps[0].invalid_bounded_only_wake_bodies, 0);
         }
+
+        #[test]
+        fn gpu_sleep_decision_timestamps_cover_components_and_reductions() {
+            let scenario = crate::p5_2_centered_rectangle_stack_scenario(2, 1).unwrap();
+            let output = pollster::block_on(benchmark_gpu_sleep_decision_observer(
+                &scenario, 64, 1, 0, 2,
+            ))
+            .unwrap();
+            assert_eq!(output.gpu_component_seconds.len(), 2);
+            assert_eq!(output.gpu_reduction_seconds.len(), 2);
+            assert_eq!(output.gpu_observer_seconds.len(), 2);
+            assert!(
+                output
+                    .gpu_observer_seconds
+                    .iter()
+                    .all(|sample| sample.is_finite() && *sample > 0.0)
+            );
+        }
     }
 }
 
 #[cfg(all(feature = "solver-lab", not(target_arch = "wasm32")))]
 pub use gpu::{
     GpuContactComponentObservationV1, GpuContactComponentStatsV1, GpuSleepDecisionObservationV1,
-    GpuSleepDecisionStepV1, observe_gpu_contact_components, observe_gpu_sleep_decisions,
+    GpuSleepDecisionStepV1, GpuSleepDecisionTimingV1, benchmark_gpu_sleep_decision_observer,
+    observe_gpu_contact_components, observe_gpu_sleep_decisions,
 };
 
 #[cfg(all(feature = "solver-lab", not(target_arch = "wasm32")))]

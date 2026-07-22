@@ -794,6 +794,7 @@ impl GpuGeneratedContactGraph {
         invalidate_previous_cache: bool,
         observer: &GpuSleepDecisionObserver,
         trace_index: u32,
+        timestamps: Option<(&wgpu::QuerySet, u32)>,
     ) {
         let parity = self.parity.get();
         self.awake_work.encode_begin_step(encoder);
@@ -809,11 +810,24 @@ impl GpuGeneratedContactGraph {
             self.point_capacity,
             None,
         );
-        observer.encode_components(encoder, self.narrowphase.point_capacity_buffer());
+        observer.encode_components(
+            encoder,
+            self.narrowphase.point_capacity_buffer(),
+            timestamps.map(|(set, base)| (set, base, base + 1)),
+        );
         self.sleep_contacts.encode_contact_wake_roots(encoder);
-        observer.encode_wake_aggregation(encoder, trace_index);
+        observer.encode_wake_aggregation(
+            encoder,
+            trace_index,
+            timestamps.map(|(set, base)| (set, base + 2, base + 3)),
+        );
         let wake_frontier = self.sleep_contacts.encode_frontier_propagation(encoder);
-        observer.encode_wake_comparison(encoder, trace_index, wake_frontier);
+        observer.encode_wake_comparison(
+            encoder,
+            trace_index,
+            wake_frontier,
+            timestamps.map(|(set, base)| (set, base + 4, base + 5)),
+        );
         self.awake_work
             .encode_finalize_wakes(encoder, wake_frontier);
         self.awake_work.encode_compaction(encoder);
@@ -822,9 +836,18 @@ impl GpuGeneratedContactGraph {
         self.solver.encode_step(encoder);
         self.awake_points.encode_scatter(encoder);
         self.awake_work.encode_sleep_evaluation(encoder);
-        observer.encode_admission_aggregation(encoder, trace_index);
+        observer.encode_admission_aggregation(
+            encoder,
+            trace_index,
+            timestamps.map(|(set, base)| (set, base + 6, base + 7)),
+        );
         let blocker_frontier = self.sleep_contacts.encode_frontier_propagation(encoder);
-        observer.encode_admission_comparison(encoder, trace_index, blocker_frontier);
+        observer.encode_admission_comparison(
+            encoder,
+            trace_index,
+            blocker_frontier,
+            timestamps.map(|(set, base)| (set, base + 8, base + 9)),
+        );
         self.awake_work
             .encode_sleep_admission_from_frontier(encoder, blocker_frontier);
         self.persistence
