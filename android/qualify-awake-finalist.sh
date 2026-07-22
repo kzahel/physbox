@@ -108,12 +108,10 @@ for COUNT in 2 4 8 12 14 16; do
       const [scenario, scenarioHash, physicsHash] = process.argv.slice(2);
       const contract=report.sceneContract;
       if (report.scenario?.name !== scenario || report.scenario?.complete !== true || report.scenario?.passed !== true
-          || contract?.scenario !== scenario || contract?.scenarioHash !== scenarioHash
-          || contract?.physicsConfigurationHash !== physicsHash || contract?.solverProfile !== "soft-coupled"
-          || contract?.fixedStepHz !== 60 || contract?.solverSubsteps !== 8 || contract?.solverBiasedIterations !== 1
-          || contract?.requestedContactHz !== 30 || contract?.contactDampingRatio !== 10
-          || contract?.requestedStaticContactHz !== 60 || contract?.requestedSleepingEnabled !== false
-          || contract?.effectiveSleepingEnabled !== false || contract?.capacityOverflowed !== false) {
+          || contract?.n !== scenario || contract?.h !== scenarioHash
+          || contract?.k !== physicsHash || contract?.p !== "soft-coupled"
+          || contract?.r !== "hz=30,damping=10,static-scale=2"
+          || contract?.w !== false || contract?.y !== false || contract?.o !== false) {
         throw new Error(`Android contract mismatch: ${JSON.stringify(report)}`);
       }
     ' "$REPORT" "$SCENARIO" "$EXPECTED_SCENARIO_HASH" "$PHYSICS_HASH"
