@@ -20,6 +20,7 @@
     "bundle:web": "node scripts/build-web.mjs --release --solver-lab --output dist-web",
     "benchmark:bodies-browser": "node scripts/browser-body-benchmark.mjs",
     "benchmark:broadphase-browser": "node scripts/browser-broadphase-benchmark.mjs",
+    "benchmark:contact-components": "cargo run --release -p physbox-lab --bin physbox-contact-components --",
     "benchmark:sparse-capacity": "cargo run --release -p physbox-lab --bin physbox-sparse-capacity --",
     "benchmark:sleeping-city": "cargo run --release -p physbox-lab --bin physbox-sleeping-city-evidence --",
     "check:boundaries": "node scripts/check-platform-boundaries.mjs",
