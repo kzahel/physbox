@@ -1,6 +1,7 @@
 # S27 exact sleep-decision observation
 
-Status: active, 2026-07-22. Human review authorizes stopping point 2 from
+Status: complete at the required behavior-switch checkpoint, 2026-07-22.
+Human review authorized stopping point 2 from
 [GPU sleep-island connectivity research](../topics/gpu-sleep-island-connectivity.md):
 reduce wake causes and post-solve readiness by the exact S26 component labels
 beside the unchanged K=4 sleeper, compare decisions, and stop before any exact
@@ -82,7 +83,7 @@ the applied K=4 outcome is byte-identical with and without observation.
   settling trace long enough to cover admission and subsequent wake activity.
 - [x] Report disagreement incidence and duration, cohort sizes, projected
   extra/fewer awake bodies, observer GPU P50/P95/P99, dispatches, and bytes.
-- [ ] Run proportional engine, clippy, browser, headless, ARM64, release APK,
+- [x] Run proportional engine, clippy, browser, headless, ARM64, release APK,
   and available Android hardware validation required by the touched boundary.
 
 Gate: fresh provenance-complete evidence distinguishes behavioral benefit from
@@ -93,7 +94,7 @@ added component cost and from solver motion that correctly blocks an island.
 - [x] Update the governing topic with findings, limitations, and one of:
   retain K=4, authorize a later behavior candidate, or first authorize a
   persistent-cost experiment.
-- [ ] Stop before exact decisions are applied and return to human review.
+- [x] Stop before exact decisions are applied and return to human review.
 
 ## Completion condition
 
@@ -151,3 +152,37 @@ therefore detects broader signal cohorts but does not change the transition
 that limits those scenes. The result retains K=4 and does not admit stopping
 point 3. A future behavior candidate first needs a deterministic fixture that
 reproduces an actual mixed transition, or new solver/readiness evidence.
+
+## Disposition and gates
+
+S27 stops with `retain-k4-no-behavior-switch`. Exact decisions are mechanically
+credible and visibly broader on the synthetic path, but they do not change one
+evolved transition in the admitted matrix. Static exact connectivity adds
+33–41 observer dispatches and a 4.73–22.07% P50 cost where the larger fixtures
+are blocked by local motion anyway. Persistent maintenance is not justified
+because reduction cost is already negligible and no natural decision benefit
+has been demonstrated.
+
+Proportional validation passes on the unchanged product behavior:
+
+- `npm run test:fast` passes all 124 maintained engine tests, performance
+  smoke, tooling/boundary tests, and real Browser WebGPU in 22.22 seconds;
+- production warnings-denied clippy, directly affected engine/lab clippy, and
+  all 13 scalar/GPU contact-component and decision tests pass;
+- `npm run test:web:lab` passes the solver-lab Browser WebGPU lane;
+- a fresh headless bootstrap emits `PHYSBOX5_VALIDATION_SUCCESS`; its PNG and
+  report SHA-256 values are
+  `fdbbdbbc218c6bad4e7af76c0013f8fc28c61e6e0919b11dd856889cedc99c2a`
+  and `2f6bce20cee791b47ab73af41dfff089c55d688c80f1a022c01256e653451c95`;
+- ARM64 solver-lab check, ARM64 solver-lab release-native/debug APK, and the
+  release APK pass; and
+- the attached Pixel 7a was authorized but credential-locked, so the physical
+  pixel lane could not run. The permitted `jstorrent-tablet` hardware-backed
+  AVD fallback passed bootstrap and emitted
+  `PHYSBOX5_ANDROID_AVD_SHUTDOWN_SUCCESS`; its PNG and provenance SHA-256
+  values are `f40040550c294edf6eb4bd6ee47aea9e1148a64ef1c53b54e479e5cee0d65bbd`
+  and `b31172dff12dd3ddcc0c5ff04e4ea17160e34782324f94fb7f460875a0984c48`.
+  The final device list contains only the physical Pixel and no emulator.
+
+No default, configuration, menu, renderer, sleep state, solver result, or
+platform behavior changed. Stopping point 3 remains a new human decision.
