@@ -68,10 +68,14 @@ impl OracleExecutionOptionsV1 {
     };
 
     fn validate(self, lane: OracleLane) -> Result<(), AdapterError> {
-        if (!self.warm_start || self.capture_step_trace) && lane != OracleLane::WorldAwake {
+        if !self.warm_start && lane != OracleLane::WorldAwake {
             return Err(AdapterError::Unsupported(
-                "warm-start-off and per-step trace options require the sleep-off world-awake lane"
-                    .to_owned(),
+                "warm-start-off requires the sleep-off world-awake lane".to_owned(),
+            ));
+        }
+        if self.capture_step_trace && lane == OracleLane::Narrowphase {
+            return Err(AdapterError::Unsupported(
+                "per-step trace requires a world lane".to_owned(),
             ));
         }
         Ok(())
@@ -531,11 +535,25 @@ fn capture_world_step_trace(
         let position = unsafe { ffi::b2Body_GetPosition(*raw_body) };
         let rotation = unsafe { ffi::b2Body_GetRotation(*raw_body) };
         let linear_velocity = unsafe { ffi::b2Body_GetLinearVelocity(*raw_body) };
+        let angular_velocity = unsafe { ffi::b2Body_GetAngularVelocity(*raw_body) };
+        let extent = match source.shape {
+            ShapeV1::Circle { radius } => radius.get(),
+            ShapeV1::Rectangle { half_extents } => half_extents.x.hypot(half_extents.y),
+        };
+        let farthest_point_speed =
+            linear_velocity.x.hypot(linear_velocity.y) + angular_velocity.abs() * extent;
         let values = vec![
             trace_value("angle", unsafe { ffi::b2Atan2(rotation.s, rotation.c) })?,
-            trace_value("angular_velocity", unsafe {
-                ffi::b2Body_GetAngularVelocity(*raw_body)
-            })?,
+            trace_value("angular_velocity", angular_velocity)?,
+            trace_value(
+                "awake",
+                if unsafe { ffi::b2Body_IsAwake(*raw_body) } {
+                    1.0
+                } else {
+                    0.0
+                },
+            )?,
+            trace_value("farthest_point_speed", farthest_point_speed)?,
             trace_value("linear_velocity_x", linear_velocity.x)?,
             trace_value("linear_velocity_y", linear_velocity.y)?,
             trace_value("position_x", position.x)?,
@@ -950,7 +968,7 @@ fn provenance(
             named(
                 "step_trace",
                 if options.capture_step_trace {
-                    "settled-contact-impulses-plus-every-step-bodies"
+                    "public-awake-state-farthest-point-speed-every-step-bodies-plus-settled-contact-impulses"
                 } else {
                     "off"
                 },
@@ -1308,6 +1326,43 @@ mod tests {
             Some("false")
         );
         result.validate().unwrap();
+    }
+
+    #[test]
+    fn sleeping_world_trace_records_public_awake_transitions_and_farthest_speed() {
+        let scenario = analytic_fixture_scenario(AnalyticFixtureKind::CircleFloor, 180).unwrap();
+        let request = request("box2d-world-sleep-trace", scenario);
+        let bytes = canonical_json(&request).unwrap();
+        let options = OracleExecutionOptionsV1 {
+            warm_start: true,
+            capture_step_trace: true,
+        };
+        let result =
+            execute_request_with_options(&request, &bytes, OracleLane::World, options).unwrap();
+        let body_traces = result
+            .traces
+            .iter()
+            .filter(|trace| trace.stage == TraceStageV1::Integrate && trace.manifold_id == 0)
+            .collect::<Vec<_>>();
+        assert_eq!(body_traces.len(), 180);
+        assert!(body_traces.iter().any(|trace| {
+            trace
+                .values
+                .iter()
+                .any(|value| value.name == "awake" && value.value.get() == 0.0)
+        }));
+        assert!(body_traces.iter().all(|trace| {
+            trace
+                .values
+                .iter()
+                .find(|value| value.name == "farthest_point_speed")
+                .is_some_and(|value| value.value.get() >= 0.0)
+        }));
+        result.validate().unwrap();
+
+        let replay =
+            execute_request_with_options(&request, &bytes, OracleLane::World, options).unwrap();
+        assert_eq!(result.traces, replay.traces);
     }
 
     #[test]
