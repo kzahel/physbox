@@ -66,7 +66,51 @@ REPORT="$(rg 'PHYSBOX5_MARK_FRAME_RENDERED ' "$LOG" | tail -1 | sed 's/^.*PHYSBO
     echo "error: Android device reported the wrong shared scenario; see $LOG" >&2; exit 1;
 }
 ADAPTER="$(rg 'PHYSBOX5_MARK_ADAPTER ' "$LOG" | tail -1 | sed 's/^.*PHYSBOX5_MARK_ADAPTER //' || true)"
+[[ -n "$ADAPTER" ]] || { echo "error: Android device adapter diagnostics missing; see $LOG" >&2; exit 1; }
+printf '%s\n' "$ADAPTER" | node "$ANDROID_DIR/require-hardware-adapter.mjs"
 CAPTURE_PHASE="${SCENARIO}-final"
+if [[ "${PHYSBOX5_ANDROID_SLEEP_TOGGLE:-0}" = "1" ]]; then
+    [[ "${PHYSBOX5_ANDROID_CONSTRUCTION_CAPTURE:-0}" != "1" && "${PHYSBOX5_ANDROID_GRAB_CAPTURE:-0}" != "1" ]] || {
+        echo "error: choose only one Android interaction capture" >&2; exit 2;
+    }
+    node -e '
+      const frame = JSON.parse(process.argv[1]);
+      process.exit(frame.sceneContract.w === false && frame.sceneContract.y === false ? 0 : 1);
+    ' "$REPORT" || { echo "error: Android sleep toggle must start from the off default; see $LOG" >&2; exit 1; }
+    SIZE="$($ADB -s "$SERIAL" shell wm size | sed -n 's/.*Physical size: //p' | tail -1 | tr -d '\r')"
+    WIDTH="${SIZE%x*}"; HEIGHT="${SIZE#*x}"
+    [[ "$WIDTH" =~ ^[0-9]+$ && "$HEIGHT" =~ ^[0-9]+$ ]] || { echo "error: could not determine Android display size" >&2; exit 1; }
+    UI_POINTS="$(node -e '
+      const w = +process.argv[1], h = +process.argv[2];
+      const s = Math.max(1, Math.min(2, Math.min(w, h) / 600));
+      console.log([62, 50, 300, 104, 192, 331].map((value) => Math.round(value * s)).join(" "));
+    ' "$WIDTH" "$HEIGHT")"
+    read -r MENU_X MENU_Y WORLD_X WORLD_Y SLEEP_X SLEEP_Y <<< "$UI_POINTS"
+    "$ADB" -s "$SERIAL" shell input tap "$MENU_X" "$MENU_Y"
+    sleep 0.25
+    "$ADB" -s "$SERIAL" shell input tap "$WORLD_X" "$WORLD_Y"
+    sleep 0.25
+    "$ADB" -s "$SERIAL" shell input tap "$SLEEP_X" "$SLEEP_Y"
+    SLEEPING_EFFECTIVE=0
+    for _ in $(seq 1 40); do
+        "$ADB" -s "$SERIAL" logcat -d -t 10000 > "$LOG"
+        REPORT="$(rg 'PHYSBOX5_MARK_FRAME_RENDERED ' "$LOG" | tail -1 | sed 's/^.*PHYSBOX5_MARK_FRAME_RENDERED //')"
+        if node -e '
+          const frame = JSON.parse(process.argv[1]);
+          process.exit(frame.sceneContract.w === true && frame.sceneContract.y === true
+            && frame.scenario.complete === true && frame.scenario.passed === true ? 0 : 1);
+        ' "$REPORT"; then SLEEPING_EFFECTIVE=1; break; fi
+        sleep 0.25
+    done
+    [[ "$SLEEPING_EFFECTIVE" -eq 1 ]] || { echo "error: Android menu did not make sleeping requested and effective; see $LOG" >&2; exit 1; }
+    "$ADB" -s "$SERIAL" shell input tap "$MENU_X" "$MENU_Y"
+    sleep 0.25
+    "$ADB" -s "$SERIAL" shell input tap "$WORLD_X" "$WORLD_Y"
+    sleep 0.25
+    "$ADB" -s "$SERIAL" logcat -d -t 10000 > "$LOG"
+    REPORT="$(rg 'PHYSBOX5_MARK_FRAME_RENDERED ' "$LOG" | tail -1 | sed 's/^.*PHYSBOX5_MARK_FRAME_RENDERED //')"
+    CAPTURE_PHASE="${SCENARIO}-sleep-request-on-menu"
+fi
 if [[ "${PHYSBOX5_ANDROID_CONSTRUCTION_CAPTURE:-0}" = "1" ]]; then
     [[ "$SCENARIO" = "bootstrap" ]] || { echo "error: Android construction capture requires bootstrap" >&2; exit 2; }
     [[ "${PHYSBOX5_ANDROID_GRAB_CAPTURE:-0}" != "1" ]] || { echo "error: choose either grab or construction capture" >&2; exit 2; }
