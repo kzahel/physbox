@@ -46,7 +46,7 @@ mod tests {
     fn lab_profile_is_projected_once_and_rejects_non_generated_scenes() {
         let mut options = LaunchOptions {
             scenario: ValidationScenario::SolverLabStack16,
-            physics: physbox_launch::PhysicsConfigurationV1::SOFT_COUPLED,
+            physics: physbox_launch::PhysicsConfigurationV2::SOFT_COUPLED,
             ..Default::default()
         };
         let config = EngineConfig::try_from(&options).unwrap();
@@ -61,7 +61,7 @@ mod tests {
     #[test]
     fn configuration_hash_covers_every_applied_physics_field() {
         let mut options = LaunchOptions {
-            physics: physbox_launch::PhysicsConfigurationV1::SOFT_COUPLED,
+            physics: physbox_launch::PhysicsConfigurationV2::SOFT_COUPLED,
             ..Default::default()
         };
         let original = EngineConfig::try_from(&options).unwrap();
@@ -72,5 +72,13 @@ mod tests {
         options.physics.contact_damping_ratio = 9.5;
         let changed = EngineConfig::try_from(&options).unwrap();
         assert_ne!(original_hash, changed.physics_configuration_hash());
+
+        options.physics = physbox_launch::PhysicsConfigurationV2::SOFT_COUPLED;
+        options.physics.sleeping_enabled = true;
+        let sleeping_requested = EngineConfig::try_from(&options).unwrap();
+        assert_ne!(
+            original_hash,
+            sleeping_requested.physics_configuration_hash()
+        );
     }
 }

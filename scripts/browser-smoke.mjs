@@ -77,6 +77,15 @@ try {
   if (before.frame.sceneContract?.solverProfile !== "soft-coupled") {
     throw new Error(`fresh browser did not use soft-coupled: ${JSON.stringify(before.frame.sceneContract)}`);
   }
+  if (
+    before.frame.sceneContract?.physicsConfigurationVersion !== 2
+    || before.frame.sceneContract?.sleepPolicy !== "experimental-s23-v1"
+    || before.frame.sceneContract?.requestedSleepingEnabled !== false
+    || before.frame.sceneContract?.effectiveSleepingEnabled !== false
+    || before.frame.sceneContract?.awakeCompactionEnabled !== true
+  ) {
+    throw new Error(`browser sleep checkpoint contract is incomplete: ${JSON.stringify(before.frame.sceneContract)}`);
+  }
   if (before.frame.sceneContract?.requestedBodyCapacity !== requestedBodyCapacity) {
     throw new Error(`browser did not use requested world preset ${requestedBodyCapacity}: ${JSON.stringify(before.frame.sceneContract)}`);
   }
@@ -304,6 +313,7 @@ try {
       maxDepenetrationVelocity: 3,
     });
     await page.evaluate(() => {
+      localStorage.removeItem("physbox5.physics.v3");
       localStorage.removeItem("physbox5.physics.v2");
       localStorage.setItem("physbox5.solver-lab.v1", JSON.stringify({
         version: 1,
@@ -638,9 +648,11 @@ function requireNoGpuValidationErrors(messages, label) {
 async function requirePhysicsPreference(page, expected, expectClean = false) {
   await page.waitForFunction(
     ({ expectedPhysics, clean }) => {
-      const saved = JSON.parse(localStorage.getItem("physbox5.physics.v2") ?? "null");
+      const saved = JSON.parse(localStorage.getItem("physbox5.physics.v3") ?? "null");
       const url = new URL(location.href);
-      const stored = saved?.version === 2
+      const expectedSleeping = expectedPhysics.sleeping ?? false;
+      const stored = saved?.version === 3
+        && saved.sleeping === expectedSleeping
         && Object.entries(expectedPhysics).every(([key, value]) => saved[key] === value);
       const keys = [
         "solver",
@@ -652,6 +664,7 @@ async function requirePhysicsPreference(page, expected, expectClean = false) {
         "static-contact-scale",
         "speculative-distance",
         "max-depenetration-velocity",
+        "sleeping",
         "solver-options",
       ];
       const addressed = clean
@@ -665,6 +678,7 @@ async function requirePhysicsPreference(page, expected, expectClean = false) {
           && url.searchParams.get("static-contact-scale") === String(expectedPhysics.staticContactScale)
           && url.searchParams.get("speculative-distance") === String(expectedPhysics.speculativeDistance)
           && url.searchParams.get("max-depenetration-velocity") === String(expectedPhysics.maxDepenetrationVelocity)
+          && url.searchParams.get("sleeping") === (expectedSleeping ? "on" : "off")
           && !url.searchParams.has("solver-options");
       return stored && addressed;
     },

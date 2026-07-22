@@ -16,6 +16,8 @@ pub const SETTLING_OBSERVATION_V2_VERSION: u32 = 2;
 pub const CONTACT_IDENTITY_POLICY_VERSION: u32 = 1;
 pub const CONTACT_SOFTNESS_POLICY_VERSION: u32 = 1;
 pub const SLEEP_POLICY_VERSION: u32 = 1;
+pub const SLEEP_STATE_LAYOUT_VERSION: u32 = 1;
+pub const SLEEP_TRANSITION_CAUSE_INITIALIZATION: u32 = 1 << 0;
 pub const ORACLE_SUCCESS_SENTINEL: &str = "PHYSBOX5_ORACLE_SUCCESS";
 
 pub use collision::*;
@@ -101,6 +103,44 @@ impl Validate for SleepPolicyV1 {
         if self.speed_threshold.get() <= 0.0 || self.quiet_duration_milliseconds == 0 {
             return Err(ContractError(
                 "sleep speed threshold and quiet duration must be positive".to_owned(),
+            ));
+        }
+        Ok(())
+    }
+}
+
+/// Readback form of the versioned per-slot GPU sleep lane. Runtime shaders
+/// use the identical eight-word layout; this contract makes generation and
+/// policy provenance testable without making readback part of frame progress.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SleepStateV1 {
+    pub layout_version: u32,
+    pub body: BodyId,
+    pub awake: bool,
+    pub sleep_eligible: bool,
+    pub quiet_outer_steps: u32,
+    pub last_transition_step: u32,
+    pub transition_causes: u32,
+    pub policy_version: u32,
+}
+
+impl Validate for SleepStateV1 {
+    fn validate(&self) -> Result<(), ContractError> {
+        if self.layout_version != SLEEP_STATE_LAYOUT_VERSION {
+            return Err(ContractError(format!(
+                "unsupported sleep-state layout version {}, expected {SLEEP_STATE_LAYOUT_VERSION}",
+                self.layout_version
+            )));
+        }
+        if self.body.generation == 0 || self.policy_version != SLEEP_POLICY_VERSION {
+            return Err(ContractError(
+                "sleep state requires nonzero generation and the current policy version".to_owned(),
+            ));
+        }
+        if !self.awake && self.quiet_outer_steps != 0 && self.last_transition_step == 0 {
+            return Err(ContractError(
+                "sleep state with accumulated quiet time requires transition provenance".to_owned(),
             ));
         }
         Ok(())
@@ -2280,6 +2320,36 @@ mod tests {
         wrong_version.version += 1;
         assert!(wrong_version.validate().is_err());
         assert!(policy.quiet_outer_steps(0).is_err());
+    }
+
+    #[test]
+    fn sleep_state_requires_generation_layout_and_policy_provenance() {
+        let state = SleepStateV1 {
+            layout_version: SLEEP_STATE_LAYOUT_VERSION,
+            body: BodyId {
+                slot: 7,
+                generation: 3,
+            },
+            awake: true,
+            sleep_eligible: true,
+            quiet_outer_steps: 0,
+            last_transition_step: 0,
+            transition_causes: SLEEP_TRANSITION_CAUSE_INITIALIZATION,
+            policy_version: SLEEP_POLICY_VERSION,
+        };
+        state.validate().unwrap();
+        let bytes = canonical_json(&state).unwrap();
+        assert_eq!(
+            serde_json::from_slice::<SleepStateV1>(&bytes).unwrap(),
+            state
+        );
+
+        let mut stale = state;
+        stale.body.generation = 0;
+        assert!(stale.validate().is_err());
+        let mut wrong_layout = state;
+        wrong_layout.layout_version += 1;
+        assert!(wrong_layout.validate().is_err());
     }
 
     fn finite(value: f32) -> FiniteF32 {

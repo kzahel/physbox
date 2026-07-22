@@ -9,6 +9,8 @@ use physbox_contracts::{
 };
 use wgpu::util::DeviceExt;
 
+use crate::awake_work::GpuAwakeWork;
+
 pub const BODY_BYTES_PER_SLOT: u32 = 64;
 pub const BODY_COMMAND_BYTES: u32 = 48;
 pub const BODY_COMMAND_CAPACITY: u32 = 64;
@@ -70,6 +72,7 @@ pub(crate) struct GpuBodyResetData {
     motions: Vec<BodyMotionRaw>,
     metadata: Vec<BodyMetadataRaw>,
     active_bodies: Vec<u32>,
+    bodies: Vec<BodyStateV1>,
 }
 
 struct PackedBodies {
@@ -274,6 +277,7 @@ pub struct GpuBodyStorage {
     properties: wgpu::Buffer,
     metadata: wgpu::Buffer,
     active_bodies: Arc<wgpu::Buffer>,
+    awake_work: Arc<GpuAwakeWork>,
     commands: wgpu::Buffer,
     layout: BodyLayoutV1,
     command_capacity: u32,
@@ -327,6 +331,7 @@ impl GpuBodyStorage {
             &packed.active_bodies,
             usage | wgpu::BufferUsages::INDIRECT,
         ));
+        let awake_work = GpuAwakeWork::new(device, capacity, bodies, &metadata, &active_bodies)?;
         let commands = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("physbox5_body_commands"),
             size: u64::from(command_capacity) * u64::from(BODY_COMMAND_BYTES),
@@ -342,6 +347,7 @@ impl GpuBodyStorage {
             properties,
             metadata,
             active_bodies,
+            awake_work,
             commands,
             layout,
             command_capacity,
@@ -383,6 +389,32 @@ impl GpuBodyStorage {
 
     pub(crate) fn active_body_handle(&self) -> Arc<wgpu::Buffer> {
         Arc::clone(&self.active_bodies)
+    }
+
+    pub(crate) fn awake_work_handle(&self) -> Arc<GpuAwakeWork> {
+        Arc::clone(&self.awake_work)
+    }
+
+    pub(crate) fn encode_awake_compaction(&self, encoder: &mut wgpu::CommandEncoder) {
+        self.awake_work.encode(encoder);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn sleep_state_buffer(&self) -> &wgpu::Buffer {
+        self.awake_work.sleep_state_buffer()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn awake_body_buffer(&self) -> &wgpu::Buffer {
+        self.awake_work.awake_body_buffer()
+    }
+
+    pub fn sleep_state_capacity_record(&self) -> CapacityRecordV1 {
+        self.awake_work.sleep_state_capacity()
+    }
+
+    pub fn awake_body_capacity_record(&self) -> CapacityRecordV1 {
+        self.awake_work.awake_body_capacity()
     }
 
     pub fn command_buffer(&self) -> &wgpu::Buffer {
@@ -445,6 +477,7 @@ impl GpuBodyStorage {
             0,
             bytemuck::cast_slice(&data.active_bodies),
         );
+        self.awake_work.upload_reset(queue, &data.bodies);
     }
 }
 
@@ -456,6 +489,7 @@ impl GpuBodyResetData {
             motions: packed.motions,
             metadata: packed.metadata,
             active_bodies: packed.active_bodies,
+            bodies: bodies.to_vec(),
         })
     }
 }

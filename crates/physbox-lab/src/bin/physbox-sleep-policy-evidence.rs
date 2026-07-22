@@ -18,7 +18,7 @@ use physbox_engine::{
 use physbox_lab::oracle_transport::{
     OracleProcess, OracleRunConfig, run_oracle, verify_clean_git_pin,
 };
-use physbox_launch::PhysicsConfigurationV1;
+use physbox_launch::PhysicsConfigurationV2;
 use serde::Serialize;
 
 const ARTIFACT_VERSION: u32 = 1;
@@ -132,7 +132,17 @@ struct SleepPolicyEvidenceV1 {
     physbox_behavior: PhysBoxBehaviorV1,
     adapter: AdapterDiagnostics,
     rows: Vec<EvidenceRowV1>,
+    gpu_baseline_comparison: Option<GpuBaselineComparisonV1>,
     all_accepted: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GpuBaselineComparisonV1 {
+    baseline_artifact: String,
+    baseline_source_revision: String,
+    compared_histories: u32,
+    snapshot_histories_exact: bool,
 }
 
 #[derive(Serialize)]
@@ -226,6 +236,7 @@ struct Arguments {
     run_id: String,
     allow_dirty: bool,
     quick: bool,
+    compare_gpu_baseline: Option<PathBuf>,
 }
 
 fn main() {
@@ -289,7 +300,15 @@ fn run() -> Result<(), String> {
             )?);
         }
     }
-    let all_accepted = rows.iter().all(|row| row.accepted);
+    let gpu_baseline_comparison = arguments
+        .compare_gpu_baseline
+        .as_ref()
+        .map(|baseline| compare_gpu_baseline(baseline, &staging))
+        .transpose()?;
+    let all_accepted = rows.iter().all(|row| row.accepted)
+        && gpu_baseline_comparison
+            .as_ref()
+            .is_none_or(|comparison| comparison.snapshot_histories_exact);
     if !all_accepted {
         return Err("sleep-policy evidence contained a rejected row".to_owned());
     }
@@ -323,6 +342,7 @@ fn run() -> Result<(), String> {
         },
         adapter,
         rows,
+        gpu_baseline_comparison,
         all_accepted,
     };
     write_new(&staging.join("manifest.json"), &json_bytes(&manifest)?)?;
@@ -637,7 +657,7 @@ fn fixture_scenario(
     scenario.manifolds.clear();
     scenario.contact_cache.clear();
     scenario.actions.clear();
-    let mut physics = PhysicsConfigurationV1::SOFT_COUPLED;
+    let mut physics = PhysicsConfigurationV2::SOFT_COUPLED;
     physics.fixed_step_hz = configuration.fixed_step_hz;
     physics.substeps = configuration.substeps;
     SolverProfileConfig::from_physics(physics)?.apply_to_scenario(&mut scenario)?;
@@ -754,6 +774,55 @@ fn write_new(path: &Path, bytes: &[u8]) -> Result<(), String> {
     fs::write(path, bytes).map_err(display)
 }
 
+fn compare_gpu_baseline(
+    baseline: &Path,
+    current: &Path,
+) -> Result<GpuBaselineComparisonV1, String> {
+    let baseline_manifest: serde_json::Value =
+        serde_json::from_slice(&fs::read(baseline.join("manifest.json")).map_err(display)?)
+            .map_err(display)?;
+    let baseline_source_revision = baseline_manifest["sourceRevision"]
+        .as_str()
+        .ok_or_else(|| "GPU baseline manifest lacks sourceRevision".to_owned())?
+        .to_owned();
+    let read_names = |directory: &Path| -> Result<Vec<String>, String> {
+        let mut names = fs::read_dir(directory)
+            .map_err(display)?
+            .map(|entry| {
+                entry
+                    .map_err(display)
+                    .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        names.sort();
+        Ok(names)
+    };
+    let names = read_names(&current.join("gpu"))?;
+    let baseline_names = read_names(&baseline.join("gpu"))?;
+    if names != baseline_names {
+        return Err("GPU baseline and current history file sets differ".to_owned());
+    }
+    if names.is_empty() {
+        return Err("GPU baseline comparison found no current histories".to_owned());
+    }
+    let mut exact = true;
+    for name in &names {
+        let before: serde_json::Value =
+            serde_json::from_slice(&fs::read(baseline.join("gpu").join(name)).map_err(display)?)
+                .map_err(display)?;
+        let after: serde_json::Value =
+            serde_json::from_slice(&fs::read(current.join("gpu").join(name)).map_err(display)?)
+                .map_err(display)?;
+        exact &= before.get("snapshots") == after.get("snapshots");
+    }
+    Ok(GpuBaselineComparisonV1 {
+        baseline_artifact: baseline.display().to_string(),
+        baseline_source_revision,
+        compared_histories: names.len() as u32,
+        snapshot_histories_exact: exact,
+    })
+}
+
 fn json_bytes(value: &impl Serialize) -> Result<Vec<u8>, String> {
     serde_json::to_vec(value).map_err(display)
 }
@@ -792,6 +861,7 @@ fn parse_arguments() -> Result<Arguments, String> {
     let mut run_id = None;
     let mut allow_dirty = false;
     let mut quick = false;
+    let mut compare_gpu_baseline = None;
     let mut arguments = env::args().skip(1);
     while let Some(argument) = arguments.next() {
         match argument.as_str() {
@@ -803,6 +873,12 @@ fn parse_arguments() -> Result<Arguments, String> {
             "--run-id" => run_id = Some(next(&mut arguments, "--run-id")?),
             "--allow-dirty" => allow_dirty = true,
             "--quick" => quick = true,
+            "--compare-gpu-baseline" => {
+                compare_gpu_baseline = Some(PathBuf::from(next(
+                    &mut arguments,
+                    "--compare-gpu-baseline",
+                )?))
+            }
             _ => return Err(format!("unknown argument {argument}")),
         }
     }
@@ -813,6 +889,7 @@ fn parse_arguments() -> Result<Arguments, String> {
         run_id: run_id.ok_or_else(|| "missing --run-id ID".to_owned())?,
         allow_dirty,
         quick,
+        compare_gpu_baseline,
     })
 }
 

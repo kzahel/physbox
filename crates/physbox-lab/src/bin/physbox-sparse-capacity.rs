@@ -57,6 +57,8 @@ struct SparseCapacityRowV1 {
     graph_allocated_bytes: u64,
     body_allocated_bytes: u64,
     active_body_allocated_bytes: u64,
+    sleep_state_allocated_bytes: u64,
+    awake_body_allocated_bytes: u64,
     total_accounted_allocated_bytes: u64,
     collision_persistence_allocated_bytes: u64,
     work: CollisionWorkV1,
@@ -288,6 +290,8 @@ fn row(result: GpuGeneratedContactBenchmarkOutput) -> Result<SparseCapacityRowV1
         .allocated_bytes
         .checked_add(result.body_allocated_bytes)
         .and_then(|value| value.checked_add(result.active_body_allocated_bytes))
+        .and_then(|value| value.checked_add(result.sleep_state_allocated_bytes))
+        .and_then(|value| value.checked_add(result.awake_body_allocated_bytes))
         .ok_or_else(|| "sparse-capacity allocation total overflowed".to_owned())?;
     let overflowed = result.correctness.failure.is_some()
         || result
@@ -311,6 +315,8 @@ fn row(result: GpuGeneratedContactBenchmarkOutput) -> Result<SparseCapacityRowV1
         graph_allocated_bytes: result.allocated_bytes,
         body_allocated_bytes: result.body_allocated_bytes,
         active_body_allocated_bytes: result.active_body_allocated_bytes,
+        sleep_state_allocated_bytes: result.sleep_state_allocated_bytes,
+        awake_body_allocated_bytes: result.awake_body_allocated_bytes,
         total_accounted_allocated_bytes,
         collision_persistence_allocated_bytes: result.collision_persistence_allocated_bytes,
         work: result.correctness.work,

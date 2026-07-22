@@ -1116,8 +1116,10 @@ impl GpuBodyWorld {
                         "timed free-flight encoding cannot include a floor solver".to_owned()
                     );
                 }
+                self.storage.encode_awake_compaction(encoder);
                 solver.encode_step(encoder);
             } else {
+                self.storage.encode_awake_compaction(encoder);
                 let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                     label: Some("physbox5_body_integration_pass"),
                     timestamp_writes: beginning_timestamp.take().map(|(query_set, beginning)| {
@@ -1414,7 +1416,9 @@ impl GpuBodyWorld {
                 ) * size_of::<u32>() as u64,
                 overflowed: false,
             },
+            self.storage.awake_body_capacity_record(),
             self.storage.body_capacity_record(),
+            self.storage.sleep_state_capacity_record(),
             CapacityRecordV1 {
                 class: "render-target-rgba8-logical".to_owned(),
                 capacity_elements: u64::from(width) * u64::from(height),
@@ -1467,6 +1471,27 @@ impl GpuBodyWorld {
         );
     }
 
+    #[cfg(test)]
+    fn copy_awake_work_data(&self, encoder: &mut wgpu::CommandEncoder, destination: &wgpu::Buffer) {
+        let sleep_bytes =
+            u64::from(self.body_count) * u64::from(crate::awake_work::SLEEP_STATE_BYTES);
+        encoder.copy_buffer_to_buffer(
+            self.storage.sleep_state_buffer(),
+            0,
+            destination,
+            0,
+            sleep_bytes,
+        );
+        encoder.copy_buffer_to_buffer(
+            self.storage.awake_body_buffer(),
+            0,
+            destination,
+            sleep_bytes,
+            u64::from(self.body_count + crate::awake_work::AWAKE_BODY_STATE_WORDS)
+                * size_of::<u32>() as u64,
+        );
+    }
+
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn copy_construction_graph_evidence(
         &self,
@@ -1513,7 +1538,8 @@ impl GpuBodyWorld {
     pub(crate) fn solver_dispatches_per_step(&self) -> u32 {
         self.generated_contacts.as_ref().map_or_else(
             || {
-                self.floor_solver
+                1 + self
+                    .floor_solver
                     .as_ref()
                     .map_or(1, GpuFixedFloorSolver::dispatches_per_step)
             },
@@ -1822,6 +1848,52 @@ mod tests {
         bytemuck::cast_slice(&read_buffer(device, &buffer)).to_vec()
     }
 
+    fn read_awake_work(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        world: &GpuBodyWorld,
+    ) -> (Vec<physbox_contracts::SleepStateV1>, Vec<u32>) {
+        let sleep_bytes =
+            u64::from(world.body_count) * u64::from(crate::awake_work::SLEEP_STATE_BYTES);
+        let awake_bytes = u64::from(world.body_count + crate::awake_work::AWAKE_BODY_STATE_WORDS)
+            * size_of::<u32>() as u64;
+        let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("awake_work_test_readback"),
+            size: sleep_bytes + awake_bytes,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("awake_work_test_copy"),
+        });
+        world.copy_awake_work_data(&mut encoder, &buffer);
+        queue.submit([encoder.finish()]);
+        let bytes = read_buffer(device, &buffer);
+        let state_words = bytemuck::cast_slice::<u8, u32>(&bytes[..sleep_bytes as usize]);
+        let states = state_words
+            .chunks_exact(crate::awake_work::SLEEP_STATE_WORDS as usize)
+            .enumerate()
+            .map(|(slot, words)| physbox_contracts::SleepStateV1 {
+                layout_version: words[6],
+                body: physbox_contracts::BodyId {
+                    slot: slot as u32,
+                    generation: words[0],
+                },
+                awake: words[1] & 1 != 0,
+                sleep_eligible: words[1] & 2 != 0,
+                quiet_outer_steps: words[2],
+                last_transition_step: words[3],
+                transition_causes: words[4],
+                policy_version: words[5],
+            })
+            .collect::<Vec<_>>();
+        for state in &states {
+            state.validate().unwrap();
+        }
+        let awake = bytemuck::cast_slice::<u8, u32>(&bytes[sleep_bytes as usize..]).to_vec();
+        (states, awake)
+    }
+
     #[test]
     fn gpu_construction_reuses_generations_clears_grab_and_rejects_failures() {
         let instance = crate::create_instance();
@@ -1915,6 +1987,13 @@ mod tests {
         assert_eq!(&active[4..10], &[1, 1, 1, 1, 1, 1]);
         assert_eq!(&active[13..17], &[6, 3, 0, 0]);
         assert_eq!(&active[20..23], &[0, 1, 2]);
+        let (sleep_states, awake) = read_awake_work(&device, &queue, &world);
+        assert_eq!(&awake[..3], &[2, 2, 0]);
+        assert_eq!(&awake[20..22], &[0, 2]);
+        assert_eq!(sleep_states[0].body.generation, 2);
+        assert!(sleep_states[0].awake && sleep_states[0].sleep_eligible);
+        assert!(!sleep_states[1].awake && !sleep_states[1].sleep_eligible);
+        assert!(sleep_states[2].awake && sleep_states[2].sleep_eligible);
 
         let lane_bytes = u64::from(world.body_count) * size_of::<[u32; 4]>() as u64;
         let validation = device.create_buffer(&wgpu::BufferDescriptor {
@@ -1939,6 +2018,15 @@ mod tests {
             metadata[1] & physbox_contracts::ANALYTIC_SHAPE_FLAG_CIRCLE,
             0
         );
+
+        let reset = world.benchmark_reset_data(&scenario.bodies).unwrap();
+        world.reset_from_authored(&queue, &reset);
+        let (sleep_states, awake) = read_awake_work(&device, &queue, &world);
+        assert_eq!(&awake[..3], &[1, 1, 0]);
+        assert_eq!(awake[20], 0);
+        assert_eq!(sleep_states[0].body.generation, 1);
+        assert!(sleep_states[0].awake);
+        assert!(!sleep_states[1].awake);
     }
 
     #[test]
@@ -1978,6 +2066,14 @@ mod tests {
         let active = read_active_bodies(&device, &queue, &world);
         assert_eq!(&active[..3], &[64, 63, 1]);
         assert_eq!(&active[20..84], &(0..64).collect::<Vec<_>>());
+        let (sleep_states, awake) = read_awake_work(&device, &queue, &world);
+        assert_eq!(&awake[..3], &[63, 63, 0]);
+        assert_eq!(awake[20], 0);
+        assert_eq!(awake[21], 2);
+        assert_eq!(awake[82], 63);
+        assert!(sleep_states[0].awake);
+        assert!(!sleep_states[1].awake);
+        assert!(sleep_states[63].awake);
 
         let exhausted = GpuBodyWorld::new_generated(
             &device,
@@ -2010,6 +2106,10 @@ mod tests {
             read_active_bodies(&device, &queue, &exhausted),
             active_before
         );
+        let (sleep_states, awake) = read_awake_work(&device, &queue, &exhausted);
+        assert_eq!(sleep_states[0].body.generation, u32::MAX);
+        assert_eq!(&awake[..3], &[1, 1, 0]);
+        assert_eq!(awake[20], 0);
     }
 
     #[test]

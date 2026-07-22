@@ -6,13 +6,13 @@ use physbox_launch::{
     MAX_BIASED_ITERATIONS, MAX_CONTACT_DAMPING_RATIO, MAX_CONTACT_HZ, MAX_FIXED_STEP_HZ,
     MAX_SOLVER_SUBSTEPS, MAX_STATIC_CONTACT_HZ_MULTIPLIER, MIN_BIASED_ITERATIONS,
     MIN_CONTACT_DAMPING_RATIO, MIN_CONTACT_HZ, MIN_FIXED_STEP_HZ, MIN_SOLVER_SUBSTEPS,
-    MIN_STATIC_CONTACT_HZ_MULTIPLIER, PhysicsConfigurationV1, SolverProfileName,
+    MIN_STATIC_CONTACT_HZ_MULTIPLIER, PhysicsConfigurationV2, SolverProfileName,
     ValidationScenario,
 };
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct SolverProfileConfig {
-    physics: PhysicsConfigurationV1,
+    physics: PhysicsConfigurationV2,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -49,13 +49,13 @@ impl SolverParameter {
 
 impl Default for SolverProfileConfig {
     fn default() -> Self {
-        Self::from_physics(PhysicsConfigurationV1::default())
+        Self::from_physics(PhysicsConfigurationV2::default())
             .expect("launch-owned default physics configuration is valid")
     }
 }
 
 impl SolverProfileConfig {
-    pub fn from_physics(physics: PhysicsConfigurationV1) -> Result<Self, String> {
+    pub fn from_physics(physics: PhysicsConfigurationV2) -> Result<Self, String> {
         physics.validate().map_err(|error| error.to_string())?;
         let profile = Self { physics };
         profile.validate()?;
@@ -63,17 +63,21 @@ impl SolverProfileConfig {
     }
 
     pub fn hard_direct() -> Self {
-        Self::from_physics(PhysicsConfigurationV1::HARD_DIRECT)
+        Self::from_physics(PhysicsConfigurationV2::HARD_DIRECT)
             .expect("hard-direct preset is valid")
     }
 
     pub fn soft_coupled() -> Self {
-        Self::from_physics(PhysicsConfigurationV1::SOFT_COUPLED)
+        Self::from_physics(PhysicsConfigurationV2::SOFT_COUPLED)
             .expect("soft-coupled preset is valid")
     }
 
-    pub const fn physics(&self) -> PhysicsConfigurationV1 {
+    pub const fn physics(&self) -> PhysicsConfigurationV2 {
         self.physics
+    }
+
+    pub(crate) fn set_sleeping_enabled(&mut self, enabled: bool) {
+        self.physics.sleeping_enabled = enabled;
     }
 
     pub const fn name(&self) -> &'static str {
@@ -100,11 +104,15 @@ impl SolverProfileConfig {
     }
 
     pub fn is_preset(&self) -> bool {
-        self.physics == PhysicsConfigurationV1::for_profile(self.physics.solver_profile)
+        let mut expected = PhysicsConfigurationV2::for_profile(self.physics.solver_profile);
+        expected.sleeping_enabled = self.physics.sleeping_enabled;
+        self.physics == expected
     }
 
     pub(crate) fn restore_preset(&mut self) {
-        self.physics = PhysicsConfigurationV1::for_profile(self.physics.solver_profile);
+        let sleeping_enabled = self.physics.sleeping_enabled;
+        self.physics = PhysicsConfigurationV2::for_profile(self.physics.solver_profile);
+        self.physics.sleeping_enabled = sleeping_enabled;
     }
 
     pub(crate) fn effective_dynamic_contact_hz(&self) -> f32 {
@@ -125,7 +133,7 @@ impl SolverProfileConfig {
 
     pub(crate) fn configuration_key(&self) -> String {
         format!(
-            "{}:{}:{}:{}:{}:{}:{}:{}:{}",
+            "{}:{}:{}:{}:{}:{}:{}:{}:{}:{}",
             self.name(),
             self.physics.fixed_step_hz,
             self.physics.substeps,
@@ -135,6 +143,7 @@ impl SolverProfileConfig {
             self.physics.static_contact_hertz_multiplier,
             self.physics.speculative_distance,
             self.physics.max_depenetration_velocity,
+            self.physics.sleeping_enabled,
         )
     }
 
@@ -348,7 +357,7 @@ mod tests {
 
     #[test]
     fn soft_configuration_is_concrete_and_encodes_legacy_contact_options() {
-        let mut physics = PhysicsConfigurationV1::SOFT_COUPLED;
+        let mut physics = PhysicsConfigurationV2::SOFT_COUPLED;
         physics.static_contact_hertz_multiplier = 8.0;
         let profile = SolverProfileConfig::from_physics(physics).unwrap();
         assert_eq!(profile.name(), "soft-coupled");
@@ -366,7 +375,7 @@ mod tests {
 
     #[test]
     fn hard_comparison_rejects_resolution_changes_before_gpu_allocation() {
-        let mut physics = PhysicsConfigurationV1::HARD_DIRECT;
+        let mut physics = PhysicsConfigurationV2::HARD_DIRECT;
         physics.substeps = 8;
         let error = SolverProfileConfig::from_physics(physics).unwrap_err();
         assert!(error.contains("hard-direct comparison is fixed"));
@@ -374,7 +383,7 @@ mod tests {
 
     #[test]
     fn complete_soft_configuration_projects_into_the_neutral_scenario_once() {
-        let mut physics = PhysicsConfigurationV1::SOFT_COUPLED;
+        let mut physics = PhysicsConfigurationV2::SOFT_COUPLED;
         physics.fixed_step_hz = 120;
         physics.substeps = 8;
         physics.biased_iterations = 2;

@@ -260,12 +260,14 @@ fn route_events(
                         action = Some(UiAction::Recenter);
                     }
                     UiHit::SolverProfile(profile) => {
+                        let sleeping_enabled = draft_solver_profile.physics().sleeping_enabled;
                         remember_solver_profile(solver_profiles, draft_solver_profile.clone());
                         *draft_solver_profile = solver_profiles
                             .iter()
                             .find(|candidate| candidate.profile_name() == profile)
                             .cloned()
                             .unwrap_or_else(|| SolverProfileConfig::select(profile));
+                        draft_solver_profile.set_sleeping_enabled(sleeping_enabled);
                     }
                     UiHit::SolverParameter(parameter, direction) => {
                         draft_solver_profile.adjust(parameter, direction);
@@ -1808,6 +1810,7 @@ mod tests {
         let mut selected_tool = WorkbenchTool::Grab;
         let mut profiles = SolverProfileConfig::available();
         let mut draft = SolverProfileConfig::default();
+        draft.set_sleeping_enabled(true);
 
         for (id, position) in [
             (1, layout.center_normalized("solver-profile", 0)),
@@ -1865,6 +1868,7 @@ mod tests {
         assert_eq!(physics.fixed_step_hz, 75);
         assert_eq!(physics.substeps, 5);
         assert_eq!(physics.biased_iterations, 2);
+        assert!(physics.sleeping_enabled);
         assert!(!menu_open);
 
         menu_open = true;
@@ -1887,10 +1891,9 @@ mod tests {
         );
         assert!(restored.action.is_none());
         assert!(draft.is_preset());
-        assert_eq!(
-            draft.physics(),
-            physbox_launch::PhysicsConfigurationV1::SOFT_COUPLED
-        );
+        let mut expected = physbox_launch::PhysicsConfigurationV2::SOFT_COUPLED;
+        expected.sleeping_enabled = true;
+        assert_eq!(draft.physics(), expected);
     }
 
     #[test]

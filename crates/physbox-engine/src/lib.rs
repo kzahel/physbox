@@ -5,6 +5,7 @@
 )]
 
 mod authority_gpu_probe;
+mod awake_work;
 mod body_benchmark;
 mod body_floor_solver;
 mod body_state;

@@ -2,7 +2,7 @@
 // runners reuse its internals through the opt-in `solver-lab` API.
 #![cfg_attr(not(feature = "solver-lab"), allow(dead_code, unused_imports))]
 
-use std::{cell::Cell, mem::size_of};
+use std::{cell::Cell, mem::size_of, sync::Arc};
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
@@ -18,6 +18,7 @@ use wgpu::util::DeviceExt;
 
 use crate::{
     GpuBodyStorage,
+    awake_work::GpuAwakeWork,
     body_floor_solver::{
         GpuFixedFloorSolver, GpuGatherTopology, GpuGatherTopologyEvidence, GpuSolverExecutionV4,
         GpuSolverSchedulingPolicyV1, PointInputRaw, PreparedPointRaw, validate_selected_settings,
@@ -187,6 +188,7 @@ pub(crate) struct GpuGeneratedContactGraph {
     substep_contact_policy: crate::GpuSubstepContactPolicyV1,
     restitution_timing_policy: crate::GpuRestitutionTimingPolicyV1,
     authority_identity: bool,
+    awake_work: Arc<GpuAwakeWork>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
@@ -712,6 +714,7 @@ impl GpuGeneratedContactGraph {
             substep_contact_policy,
             restitution_timing_policy,
             authority_identity,
+            awake_work: storage.awake_work_handle(),
         })
     }
 
@@ -744,6 +747,7 @@ impl GpuGeneratedContactGraph {
             self.point_capacity,
             timestamps,
         );
+        self.awake_work.encode(encoder);
         self.solver.encode_step(encoder);
         self.persistence
             .encode_after_solver(encoder, parity, self.point_capacity, timestamps);
@@ -764,6 +768,7 @@ impl GpuGeneratedContactGraph {
             .encode(encoder, &self.narrowphase_pipelines);
         self.persistence
             .encode_before_solver(encoder, parity, false, self.point_capacity, None);
+        self.awake_work.encode(encoder);
         let descriptors = self
             .solver
             .encode_step_with_pass_trace(encoder, storage, destination)?;
@@ -788,6 +793,7 @@ impl GpuGeneratedContactGraph {
             .encode(encoder, &self.narrowphase_pipelines);
         self.persistence
             .encode_before_solver(encoder, parity, false, self.point_capacity, None);
+        self.awake_work.encode(encoder);
         let descriptors = self.solver.encode_step_with_pass_motion_trace(
             encoder,
             storage,
@@ -820,6 +826,7 @@ impl GpuGeneratedContactGraph {
             self.point_capacity,
             None,
         );
+        self.awake_work.encode(encoder);
         self.solver
             .encode_step_solver_phase_instrumented(encoder, query_sets, color_occupancy)?;
         self.persistence
@@ -852,7 +859,7 @@ impl GpuGeneratedContactGraph {
     }
 
     pub(crate) fn dispatches_per_step(&self) -> u32 {
-        self.broadphase.dispatches()
+        1 + self.broadphase.dispatches()
             + self.persistence.dispatches()
             + BRIDGE_DISPATCHES
             + self.solver.dispatches_per_step()
@@ -5509,6 +5516,8 @@ pub struct GpuGeneratedContactBenchmarkOutput {
     pub body_capacity: u32,
     pub body_allocated_bytes: u64,
     pub active_body_allocated_bytes: u64,
+    pub sleep_state_allocated_bytes: u64,
+    pub awake_body_allocated_bytes: u64,
     pub warmup_steps: u32,
     pub samples: u32,
     pub gpu_collision_seconds: Option<Vec<f64>>,
@@ -6010,6 +6019,8 @@ async fn benchmark_gpu_generated_contacts_with_execution_scheduling_identity_and
         active_body_allocated_bytes: u64::from(
             body_capacity + crate::body_state::ACTIVE_BODY_STATE_WORDS,
         ) * size_of::<u32>() as u64,
+        sleep_state_allocated_bytes: storage.sleep_state_capacity_record().allocated_bytes,
+        awake_body_allocated_bytes: storage.awake_body_capacity_record().allocated_bytes,
         warmup_steps,
         samples,
         gpu_collision_seconds,

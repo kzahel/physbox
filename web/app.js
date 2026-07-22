@@ -4,7 +4,8 @@ const canvas = document.querySelector("#physbox-canvas");
 const fatalError = document.querySelector("#fatal-error");
 globalThis.__physbox5 = { ready: false, ok: false };
 let renderingPaused = false;
-const physicsPreferenceKey = "physbox5.physics.v2";
+const physicsPreferenceKey = "physbox5.physics.v3";
+const priorPhysicsPreferenceKey = "physbox5.physics.v2";
 const worldPreferenceKey = "physbox5.world.v1";
 const legacySolverPreferenceKey = "physbox5.solver-lab.v1";
 const worldCapacityQueryKey = "body-capacity";
@@ -18,6 +19,7 @@ const physicsQueryKeys = Object.freeze([
   "static-contact-scale",
   "speculative-distance",
   "max-depenetration-velocity",
+  "sleeping",
   "solver-options",
 ]);
 let lastPhysicsPreference = "";
@@ -165,7 +167,7 @@ function syncPhysicsPreference(report) {
   const contract = report.sceneContract;
   if (!contract || typeof contract.solverProfile !== "string") return;
   const preference = {
-    version: 2,
+    version: 3,
     solver: contract.solverProfile,
     simHz: contract.fixedStepHz,
     substeps: contract.solverSubsteps,
@@ -175,6 +177,7 @@ function syncPhysicsPreference(report) {
     staticContactScale: contract.requestedStaticContactHz / contract.requestedContactHz,
     speculativeDistance: contract.speculativeDistance,
     maxDepenetrationVelocity: contract.maxDepenetrationVelocity,
+    sleeping: contract.requestedSleepingEnabled,
   };
   if (!validPhysicsPreference(preference)) return;
   const saved = JSON.stringify(preference);
@@ -182,6 +185,7 @@ function syncPhysicsPreference(report) {
   lastPhysicsPreference = saved;
   try {
     localStorage.setItem(physicsPreferenceKey, saved);
+    localStorage.removeItem(priorPhysicsPreferenceKey);
     localStorage.removeItem(legacySolverPreferenceKey);
   } catch (error) {
     console.warn("Could not persist PhysBox physics preference", error);
@@ -200,6 +204,12 @@ function loadPhysicsPreference() {
   const saved = JSON.parse(localStorage.getItem(physicsPreferenceKey) ?? "null");
   if (validPhysicsPreference(saved)) return saved;
 
+  const prior = JSON.parse(localStorage.getItem(priorPhysicsPreferenceKey) ?? "null");
+  if (prior?.version === 2) {
+    const migrated = { ...prior, version: 3, sleeping: false };
+    if (validPhysicsPreference(migrated)) return migrated;
+  }
+
   const legacy = JSON.parse(localStorage.getItem(legacySolverPreferenceKey) ?? "null");
   if (
     legacy?.version !== 1
@@ -207,7 +217,7 @@ function loadPhysicsPreference() {
     || (legacy.options !== null && typeof legacy.options !== "string")
   ) return null;
   const migrated = {
-    version: 2,
+    version: 3,
     solver: legacy.solver === "selected" ? "hard-direct" : "soft-coupled",
     simHz: 60,
     substeps: 4,
@@ -217,6 +227,7 @@ function loadPhysicsPreference() {
     staticContactScale: 2,
     speculativeDistance: 0.02,
     maxDepenetrationVelocity: 3,
+    sleeping: false,
   };
   if (typeof legacy.options === "string") {
     for (const field of legacy.options.split(",")) {
@@ -233,7 +244,7 @@ function loadPhysicsPreference() {
 
 function validPhysicsPreference(saved) {
   if (
-    saved?.version !== 2
+    saved?.version !== 3
     || !["soft-coupled", "hard-direct"].includes(saved.solver)
   ) return false;
   const integerBounds = [
@@ -248,7 +259,8 @@ function validPhysicsPreference(saved) {
     [saved.speculativeDistance, 0, 1],
     [saved.maxDepenetrationVelocity, 0.1, 100],
   ];
-  return integerBounds.every(([value, minimum, maximum]) =>
+  return typeof saved.sleeping === "boolean"
+    && integerBounds.every(([value, minimum, maximum]) =>
     Number.isInteger(value) && value >= minimum && value <= maximum
   ) && numberBounds.every(([value, minimum, maximum]) =>
     Number.isFinite(value) && value >= minimum && value <= maximum
@@ -266,6 +278,7 @@ function writePhysicsQuery(params, preference) {
   params.set("static-contact-scale", String(preference.staticContactScale));
   params.set("speculative-distance", String(preference.speculativeDistance));
   params.set("max-depenetration-velocity", String(preference.maxDepenetrationVelocity));
+  params.set("sleeping", preference.sleeping ? "on" : "off");
 }
 
 function isDefaultPhysicsPreference(preference) {
@@ -277,7 +290,8 @@ function isDefaultPhysicsPreference(preference) {
     && preference.contactDamping === 10
     && preference.staticContactScale === 2
     && preference.speculativeDistance === 0.02
-    && preference.maxDepenetrationVelocity === 3;
+    && preference.maxDepenetrationVelocity === 3
+    && preference.sleeping === false;
 }
 
 function fail(error) {

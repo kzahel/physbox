@@ -9,7 +9,7 @@ use crate::{
     GpuSolverAccumulationV4, GpuSolverExecutionV4, GpuSolverSchedulingPolicyV1,
 };
 
-pub const SCENE_CONTRACT_VERSION: u32 = 8;
+pub const SCENE_CONTRACT_VERSION: u32 = 9;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -31,6 +31,12 @@ pub struct SceneContract {
     pub solver_profile_options: Option<String>,
     pub physics_configuration_version: u32,
     pub physics_configuration_hash: String,
+    pub sleep_policy: &'static str,
+    pub sleep_policy_version: u32,
+    pub sleep_state_layout_version: u32,
+    pub requested_sleeping_enabled: bool,
+    pub effective_sleeping_enabled: bool,
+    pub awake_compaction_enabled: bool,
     pub fixed_step_hz: u32,
     pub fixed_dt_seconds: f32,
     pub solver_substeps: u32,
@@ -223,6 +229,10 @@ impl FrameReport {
             solver_profile_options: Option<&'a str>,
             #[serde(rename = "k")]
             physics_configuration_hash: &'a str,
+            #[serde(rename = "w")]
+            requested_sleeping_enabled: bool,
+            #[serde(rename = "y")]
+            effective_sleeping_enabled: bool,
             #[serde(rename = "n")]
             scenario: &'static str,
             #[serde(rename = "h")]
@@ -320,6 +330,8 @@ impl FrameReport {
                 solver_profile: self.scene_contract.solver_profile,
                 solver_profile_options: self.scene_contract.solver_profile_options.as_deref(),
                 physics_configuration_hash: &self.scene_contract.physics_configuration_hash,
+                requested_sleeping_enabled: self.scene_contract.requested_sleeping_enabled,
+                effective_sleeping_enabled: self.scene_contract.effective_sleeping_enabled,
                 scenario: self.scene_contract.scenario,
                 scenario_hash: &self.scene_contract.scenario_hash,
             },
@@ -513,8 +525,14 @@ mod tests {
                 generated_contact_coefficient_policy: Some(GpuContactCoefficientPolicyV1::SELECTED),
                 solver_profile: "selected",
                 solver_profile_options: None,
-                physics_configuration_version: 1,
+                physics_configuration_version: physbox_launch::PHYSICS_CONFIGURATION_VERSION,
                 physics_configuration_hash: "e".repeat(64),
+                sleep_policy: "experimental-s23-v1",
+                sleep_policy_version: physbox_contracts::SLEEP_POLICY_VERSION,
+                sleep_state_layout_version: physbox_contracts::SLEEP_STATE_LAYOUT_VERSION,
+                requested_sleeping_enabled: false,
+                effective_sleeping_enabled: false,
+                awake_compaction_enabled: true,
                 fixed_step_hz: 60,
                 fixed_dt_seconds: 1.0 / 60.0,
                 solver_substeps: 4,

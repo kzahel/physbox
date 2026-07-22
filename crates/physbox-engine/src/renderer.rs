@@ -677,8 +677,11 @@ mod tests {
 
     #[test]
     fn soft_floor_pipeline_performance_smoke_is_finite_and_deterministic() {
+        let mut physics = physbox_launch::PhysicsConfigurationV2::SOFT_COUPLED;
+        physics.sleeping_enabled = true;
         let config = EngineConfig {
             scenario: ValidationScenario::RigidFloor,
+            solver_profile: crate::SolverProfileConfig::from_physics(physics).unwrap(),
             ..Default::default()
         };
         let run = || {
@@ -686,9 +689,12 @@ mod tests {
                 .expect("generated-contact renderer initializes");
             let report = renderer.render(FrameInput::exact(4));
             assert_eq!(report.scene_contract.contact_point_count, 1_024);
-            assert_eq!(report.scene_contract.solver_dispatches_per_step, 127);
+            assert_eq!(report.scene_contract.solver_dispatches_per_step, 128);
             assert_eq!(report.scene_contract.solver_capacity_bytes, 634_516);
             assert!(!report.scene_contract.capacity_overflowed);
+            assert!(report.scene_contract.requested_sleeping_enabled);
+            assert!(!report.scene_contract.effective_sleeping_enabled);
+            assert!(report.scene_contract.awake_compaction_enabled);
             assert!(
                 renderer
                     .read_fixed_floor_pass_evidence()
@@ -712,7 +718,7 @@ mod tests {
     }
 
     fn assert_soft_resolution_replays(substeps: u32, iterations: u32) -> u32 {
-        let mut physics = physbox_launch::PhysicsConfigurationV1::SOFT_COUPLED;
+        let mut physics = physbox_launch::PhysicsConfigurationV2::SOFT_COUPLED;
         physics.substeps = substeps;
         physics.biased_iterations = iterations;
         let config = EngineConfig {
@@ -772,7 +778,7 @@ mod tests {
     #[test]
     fn soft_rate_anchors_replay_with_the_declared_fixed_and_internal_rates() {
         for fixed_step_hz in [30, 60, 120] {
-            let mut physics = physbox_launch::PhysicsConfigurationV1::SOFT_COUPLED;
+            let mut physics = physbox_launch::PhysicsConfigurationV2::SOFT_COUPLED;
             physics.fixed_step_hz = fixed_step_hz;
             let config = EngineConfig {
                 scenario: ValidationScenario::Bootstrap,
@@ -826,7 +832,7 @@ mod tests {
             .world_to_screen([-0.8, 0.72]);
 
         for &(substeps, iterations) in configurations {
-            let mut physics = physbox_launch::PhysicsConfigurationV1::SOFT_COUPLED;
+            let mut physics = physbox_launch::PhysicsConfigurationV2::SOFT_COUPLED;
             physics.substeps = substeps;
             physics.biased_iterations = iterations;
             let profile = crate::SolverProfileConfig::from_physics(physics).unwrap();
@@ -1631,6 +1637,7 @@ mod tests {
             EngineConfig {
                 scenario: ValidationScenario::Bootstrap,
                 solver_profile: crate::SolverProfileConfig::soft_coupled(),
+                ..Default::default()
             },
         ))
         .unwrap();
