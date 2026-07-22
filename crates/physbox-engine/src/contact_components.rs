@@ -6,6 +6,7 @@
 
 const INVALID_LABEL: u32 = u32::MAX;
 
+#[cfg(feature = "solver-lab")]
 pub(crate) const CONTACT_COMPONENT_PHASE_BOUND_VERSION: &str =
     "physbox5-contact-component-phase-bound-v1";
 
