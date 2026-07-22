@@ -10,14 +10,15 @@ use std::time::Instant;
 use bytemuck::{Pod, Zeroable};
 use physbox_contracts::{
     CANDIDATE_PAIR_BYTES, COLLISION_CAPACITY_COUNTER_BYTES, COLLISION_CONTACT_POINT_BYTES,
-    COLLISION_MANIFOLD_BYTES, COLLISION_WORK_COUNTER_BYTES, CollisionCapacityV1, CollisionWorkV1,
-    ContactIdentityPolicyV1, FailureKindV1, FailureV1, PERSISTENT_CONTACT_KEY_BYTES,
-    PersistentContactV1, ScenarioV1, Validate, canonical_hash,
+    COLLISION_MANIFOLD_BYTES, COLLISION_WORK_COUNTER_BYTES, CapacityRecordV1, CollisionCapacityV1,
+    CollisionWorkV1, ContactIdentityPolicyV1, FailureKindV1, FailureV1,
+    PERSISTENT_CONTACT_KEY_BYTES, PersistentContactV1, ScenarioV1, Validate, canonical_hash,
 };
 use wgpu::util::DeviceExt;
 
 use crate::{
     GpuBodyStorage,
+    awake_points::GpuAwakePoints,
     awake_work::GpuAwakeWork,
     body_floor_solver::{
         GpuFixedFloorSolver, GpuGatherTopology, GpuGatherTopologyEvidence, GpuSolverExecutionV4,
@@ -191,6 +192,7 @@ pub(crate) struct GpuGeneratedContactGraph {
     authority_identity: bool,
     awake_work: Arc<GpuAwakeWork>,
     sleep_contacts: GpuSleepContacts,
+    awake_points: GpuAwakePoints,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
@@ -671,12 +673,20 @@ impl GpuGeneratedContactGraph {
             point_capacity,
             size_of::<PointInputRaw>() as u32,
         )?;
+        let mut awake_points = GpuAwakePoints::new(
+            device,
+            storage,
+            &solver_points,
+            narrowphase.point_capacity_buffer(),
+            point_capacity,
+        )?;
         let solver = GpuFixedFloorSolver::new_generated_experiment_with_topology_scheduling_and_extended_solver_policies(
                 device,
                 storage,
                 scenario,
-                &solver_points,
-                narrowphase.point_capacity_handle(),
+                awake_points.points(),
+                awake_points.state_handle(),
+                awake_points.solver_body_state_handle(),
                 point_capacity,
                 gather_topology,
                 permute_edge_build,
@@ -688,6 +698,7 @@ impl GpuGeneratedContactGraph {
                 substep_contact_policy,
                 restitution_timing_policy,
             )?;
+        awake_points.bind_solver_prepared(device, solver.prepared_buffer());
         let persistence = GeneratedPersistenceGraph::new(
             device,
             persistence_topology,
@@ -696,7 +707,7 @@ impl GpuGeneratedContactGraph {
             &broadphase,
             &narrowphase,
             &solver_points,
-            &solver,
+            awake_points.persistence_prepared(),
             point_capacity,
             permute_pair_build,
             fingerprint_mask,
@@ -724,6 +735,7 @@ impl GpuGeneratedContactGraph {
             authority_identity,
             awake_work: storage.awake_work_handle(),
             sleep_contacts,
+            awake_points,
         })
     }
 
@@ -762,7 +774,10 @@ impl GpuGeneratedContactGraph {
         self.awake_work
             .encode_finalize_wakes(encoder, wake_frontier);
         self.awake_work.encode_compaction(encoder);
+        self.awake_points.encode_compaction(encoder);
+        self.awake_points.encode_solver_body_compaction(encoder);
         self.solver.encode_step(encoder);
+        self.awake_points.encode_scatter(encoder);
         self.awake_work.encode_sleep_admission(encoder);
         self.persistence
             .encode_after_solver(encoder, parity, self.point_capacity, timestamps);
@@ -789,9 +804,12 @@ impl GpuGeneratedContactGraph {
         self.awake_work
             .encode_finalize_wakes(encoder, wake_frontier);
         self.awake_work.encode_compaction(encoder);
+        self.awake_points.encode_compaction(encoder);
+        self.awake_points.encode_solver_body_compaction(encoder);
         let descriptors = self
             .solver
             .encode_step_with_pass_trace(encoder, storage, destination)?;
+        self.awake_points.encode_scatter(encoder);
         self.awake_work.encode_sleep_admission(encoder);
         self.persistence
             .encode_after_solver(encoder, parity, self.point_capacity, None);
@@ -820,12 +838,15 @@ impl GpuGeneratedContactGraph {
         self.awake_work
             .encode_finalize_wakes(encoder, wake_frontier);
         self.awake_work.encode_compaction(encoder);
+        self.awake_points.encode_compaction(encoder);
+        self.awake_points.encode_solver_body_compaction(encoder);
         let descriptors = self.solver.encode_step_with_pass_motion_trace(
             encoder,
             storage,
             destination,
             destination_offset,
         )?;
+        self.awake_points.encode_scatter(encoder);
         self.awake_work.encode_sleep_admission(encoder);
         self.persistence
             .encode_after_solver(encoder, parity, self.point_capacity, None);
@@ -859,8 +880,11 @@ impl GpuGeneratedContactGraph {
         self.awake_work
             .encode_finalize_wakes(encoder, wake_frontier);
         self.awake_work.encode_compaction(encoder);
+        self.awake_points.encode_compaction(encoder);
+        self.awake_points.encode_solver_body_compaction(encoder);
         self.solver
             .encode_step_solver_phase_instrumented(encoder, query_sets, color_occupancy)?;
+        self.awake_points.encode_scatter(encoder);
         self.awake_work.encode_sleep_admission(encoder);
         self.persistence
             .encode_after_solver(encoder, parity, self.point_capacity, None);
@@ -892,7 +916,7 @@ impl GpuGeneratedContactGraph {
     }
 
     pub(crate) fn dispatches_per_step(&self) -> u32 {
-        7 + 2 * self.awake_work.wake_propagation_rounds()
+        11 + 2 * self.awake_work.wake_propagation_rounds()
             + self.broadphase.dispatches()
             + self.persistence.dispatches()
             + BRIDGE_DISPATCHES
@@ -918,7 +942,38 @@ impl GpuGeneratedContactGraph {
             + self.narrowphase.allocated_bytes()
             + self.persistence.allocated_bytes()
             + self._solver_points.size()
+            + self.awake_points.capacity_record().allocated_bytes
+            + self
+                .awake_points
+                .solver_body_capacity_record()
+                .allocated_bytes
             + self.solver.allocated_bytes()
+    }
+
+    pub(crate) fn awake_point_capacity_record(&self) -> CapacityRecordV1 {
+        self.awake_points.capacity_record()
+    }
+
+    pub(crate) fn solver_body_capacity_record(&self) -> CapacityRecordV1 {
+        self.awake_points.solver_body_capacity_record()
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn copy_awake_point_state(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        destination: &wgpu::Buffer,
+    ) {
+        self.awake_points.copy_state(encoder, destination);
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn copy_awake_point_mapping(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        destination: &wgpu::Buffer,
+    ) {
+        self.awake_points.copy_mapping(encoder, destination);
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -1021,7 +1076,7 @@ impl GeneratedPersistenceGraph {
         candidate: &dyn CandidateSource,
         narrowphase: &NarrowphaseCase,
         solver_points: &wgpu::Buffer,
-        solver: &GpuFixedFloorSolver,
+        prepared_points: &wgpu::Buffer,
         point_capacity: u32,
         permute_pair_build: bool,
         fingerprint_mask: u32,
@@ -1033,7 +1088,7 @@ impl GeneratedPersistenceGraph {
                     candidate,
                     narrowphase,
                     solver_points,
-                    solver,
+                    prepared_points,
                     point_capacity,
                 )?)))
             }
@@ -1045,7 +1100,7 @@ impl GeneratedPersistenceGraph {
                     candidate,
                     narrowphase,
                     solver_points,
-                    solver,
+                    prepared_points,
                     point_capacity,
                     permute_pair_build,
                     fingerprint_mask,
@@ -1205,7 +1260,7 @@ impl FullKeyPersistenceGraph {
         candidate: &dyn CandidateSource,
         narrowphase: &NarrowphaseCase,
         solver_points: &wgpu::Buffer,
-        solver: &GpuFixedFloorSolver,
+        prepared_points: &wgpu::Buffer,
         point_capacity: u32,
     ) -> Result<Self, String> {
         let pipelines = PersistencePipelines::new(device);
@@ -1319,7 +1374,7 @@ impl FullKeyPersistenceGraph {
                         (3, &caches[output]),
                         (4, &capacities[output]),
                         (5, solver_points),
-                        (6, solver.prepared_buffer()),
+                        (6, prepared_points),
                     ],
                     &bridge_params,
                 ),
@@ -1381,7 +1436,7 @@ impl PairSlotPersistenceGraph {
         candidate: &dyn CandidateSource,
         narrowphase: &NarrowphaseCase,
         solver_points: &wgpu::Buffer,
-        solver: &GpuFixedFloorSolver,
+        prepared_points: &wgpu::Buffer,
         point_capacity: u32,
         permute_pair_build: bool,
         fingerprint_mask: u32,
@@ -1511,7 +1566,7 @@ impl PairSlotPersistenceGraph {
                         (0, narrowphase.manifolds()),
                         (2, &pairs[output]),
                         (3, &capacities[output]),
-                        (6, solver.prepared_buffer()),
+                        (6, prepared_points),
                     ],
                     &bridge_params,
                 ),
@@ -2436,7 +2491,9 @@ impl GpuGeneratedContactOutput {
                 0
             };
         if traced_block_points != expected_block_points {
-            return Err("generated manifold-block evidence does not match execution".to_owned());
+            return Err(format!(
+                "generated manifold-block evidence does not match execution: traced {traced_block_points}, expected {expected_block_points}"
+            ));
         }
         match (
             self.solver_execution.accumulation,
@@ -5169,6 +5226,16 @@ impl GpuGeneratedContactRunner {
             "generated_point_capacity_readback",
             u64::from(COLLISION_CAPACITY_COUNTER_BYTES),
         );
+        let awake_point_state_readback = readback(
+            &self.device,
+            "generated_awake_point_state_readback",
+            16 * size_of::<u32>() as u64,
+        );
+        let awake_point_mapping_readback = readback(
+            &self.device,
+            "generated_awake_point_mapping_readback",
+            u64::from(graph.point_capacity) * size_of::<u32>() as u64,
+        );
         let manifold_records_readback = readback(
             &self.device,
             "generated_manifold_records_readback",
@@ -5252,6 +5319,8 @@ impl GpuGeneratedContactRunner {
             graph.narrowphase.point_capacity_buffer(),
             &point_capacity_readback,
         );
+        graph.copy_awake_point_state(&mut encoder, &awake_point_state_readback);
+        graph.copy_awake_point_mapping(&mut encoder, &awake_point_mapping_readback);
         copy_full(
             &mut encoder,
             graph.narrowphase.manifolds(),
@@ -5308,6 +5377,22 @@ impl GpuGeneratedContactRunner {
             &point_capacity_readback,
             1,
         )?[0];
+        let awake_point_raw = crate::collision_candidates::map_values::<u32>(
+            &self.device,
+            &awake_point_state_readback,
+            16,
+        )?;
+        if awake_point_raw[2] > point_raw[2] {
+            return Err(format!(
+                "awake point count {} exceeds current contact count {}",
+                awake_point_raw[2], point_raw[2]
+            ));
+        }
+        let awake_point_mapping = crate::collision_candidates::map_values::<u32>(
+            &self.device,
+            &awake_point_mapping_readback,
+            graph.point_capacity as usize,
+        )?;
         let persistence_raw = crate::collision_candidates::map_values::<
             crate::collision_persistence::CapacityRaw,
         >(&self.device, &persistence_capacity_readback, 1)?[0];
@@ -5337,25 +5422,47 @@ impl GpuGeneratedContactRunner {
             )?,
             pass_layout,
         )?;
-        let valid_point_indices = pass_evidence
+        let awake_point_count = awake_point_raw[2];
+        let valid_dense_point_indices = pass_evidence
             .contacts
             .iter()
-            .filter(|contact| contact.valid && contact.point_index < point_raw[2])
+            .filter(|contact| contact.valid && contact.point_index < awake_point_count)
             .map(|contact| contact.point_index)
             .collect::<Vec<_>>();
         pass_evidence
             .contacts
-            .retain(|contact| contact.valid && contact.point_index < point_raw[2]);
+            .retain(|contact| contact.valid && contact.point_index < awake_point_count);
+        for contact in &mut pass_evidence.contacts {
+            contact.point_index = awake_point_mapping[contact.point_index as usize];
+        }
         pass_evidence.contributions = pass_evidence
             .contributions
             .into_iter()
-            .enumerate()
-            .filter(|(index, contribution)| {
-                contribution.body_index < body_count
-                    && valid_point_indices.contains(&((*index / 2) as u32))
+            .filter_map(|mut contribution| {
+                (contribution.body_index < body_count
+                    && valid_dense_point_indices.contains(&contribution.point_index))
+                .then(|| {
+                    contribution.point_index =
+                        awake_point_mapping[contribution.point_index as usize];
+                    contribution
+                })
             })
-            .map(|(_, contribution)| contribution)
             .collect();
+        let coloring_rejected = pass_evidence
+            .coloring
+            .as_ref()
+            .is_some_and(|coloring| coloring.overflowed);
+        if execution.normal_solver.uses_block() && !coloring_rejected {
+            pass_evidence.manifold_blocks.retain(|block| {
+                pass_evidence.contacts.iter().any(|contact| {
+                    contact.manifold_index == block.manifold_index
+                        && contact.body_a == block.body_a
+                        && contact.body_b == block.body_b
+                })
+            });
+        } else {
+            pass_evidence.manifold_blocks.clear();
+        }
         any_rejected |= pass_evidence
             .coloring
             .as_ref()

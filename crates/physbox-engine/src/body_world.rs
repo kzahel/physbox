@@ -407,7 +407,7 @@ impl GpuBodyWorld {
                 },
                 wgpu::BindGroupEntry {
                     binding: 5,
-                    resource: storage.active_body_buffer().as_entire_binding(),
+                    resource: storage.awake_body_buffer().as_entire_binding(),
                 },
             ],
         });
@@ -1177,7 +1177,7 @@ impl GpuBodyWorld {
                 pass.set_pipeline(&self.integration_pipeline);
                 pass.set_bind_group(0, &self.integration_bind_group, &[]);
                 pass.dispatch_workgroups_indirect(
-                    self.storage.active_body_buffer(),
+                    self.storage.awake_body_buffer(),
                     ACTIVE_BODY_DISPATCH_64_OFFSET,
                 );
                 drop(pass);
@@ -1475,6 +1475,10 @@ impl GpuBodyWorld {
                 overflowed: false,
             },
         ];
+        if let Some(generated) = &self.generated_contacts {
+            records.push(generated.awake_point_capacity_record());
+            records.push(generated.solver_body_capacity_record());
+        }
         records.sort_by(|left, right| left.class.cmp(&right.class));
         records
     }
@@ -1516,6 +1520,18 @@ impl GpuBodyWorld {
             u64::from(self.body_count + crate::body_state::ACTIVE_BODY_STATE_WORDS)
                 * size_of::<u32>() as u64,
         );
+    }
+
+    #[cfg(test)]
+    fn copy_awake_point_state(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        destination: &wgpu::Buffer,
+    ) {
+        self.generated_contacts
+            .as_ref()
+            .expect("awake-point state requires generated contacts")
+            .copy_awake_point_state(encoder, destination);
     }
 
     #[cfg(test)]
@@ -1972,6 +1988,25 @@ mod tests {
         (states, awake)
     }
 
+    fn read_awake_point_state(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        world: &GpuBodyWorld,
+    ) -> Vec<u32> {
+        let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("awake_point_state_readback"),
+            size: 16 * size_of::<u32>() as u64,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("awake_point_state_copy"),
+        });
+        world.copy_awake_point_state(&mut encoder, &buffer);
+        queue.submit([encoder.finish()]);
+        bytemuck::cast_slice(&read_buffer(device, &buffer)).to_vec()
+    }
+
     fn sleeping_chain_world(
         device: &wgpu::Device,
         scenario: &ScenarioV1,
@@ -2119,6 +2154,64 @@ mod tests {
                 "sleeping body drifted at {fixed_step_hz} Hz"
             );
         }
+    }
+
+    #[test]
+    fn gpu_solver_work_follows_awake_bodies_and_points_then_restores_on_wake() {
+        let instance = crate::create_instance();
+        let adapter = pollster::block_on(crate::gpu_context::request_adapter(&instance, None))
+            .expect("test GPU adapter");
+        let (device, queue) =
+            pollster::block_on(crate::gpu_context::request_device(&adapter)).unwrap();
+        let mut scenario = crate::authored_chain_scenario(2, 43).unwrap();
+        crate::SolverProfileConfig::hard_direct()
+            .apply_to_scenario(&mut scenario)
+            .unwrap();
+        scenario.manifolds.clear();
+        scenario.settings.gravity = Vec2::ZERO;
+        for (index, body) in scenario.bodies.iter_mut().enumerate() {
+            body.position = Vec2::new(index as f32 * 0.9, 0.0);
+            body.linear_velocity = Vec2::ZERO;
+            body.angular_velocity = physbox_contracts::FiniteF32::new(0.0).unwrap();
+            body.sleeping = true;
+        }
+        let world = sleeping_chain_world(&device, &scenario, 4);
+        encode(
+            &device,
+            &queue,
+            &world,
+            &grab_batch(Vec::new()),
+            &empty_construction_intent_batch(),
+        );
+        let (states, awake) = read_awake_work(&device, &queue, &world);
+        let points = read_awake_point_state(&device, &queue, &world);
+        assert!(!states[0].awake && !states[1].awake);
+        assert_eq!(awake[0], 0);
+        assert_eq!(points[2], 0);
+
+        encode(
+            &device,
+            &queue,
+            &world,
+            &grab_batch(vec![GrabIntentV1::Begin {
+                sequence: 1,
+                world_target: Vec2::new(0.0, 0.0),
+            }]),
+            &empty_construction_intent_batch(),
+        );
+        let (states, awake) = read_awake_work(&device, &queue, &world);
+        let points = read_awake_point_state(&device, &queue, &world);
+        assert!(states[0].awake && states[1].awake);
+        assert_eq!(awake[0], 2);
+        assert_eq!(points[2], 2);
+        assert_ne!(
+            states[0].transition_causes & physbox_contracts::SLEEP_TRANSITION_CAUSE_GRAB,
+            0
+        );
+        assert_ne!(
+            states[1].transition_causes & physbox_contracts::SLEEP_TRANSITION_CAUSE_PROPAGATION,
+            0
+        );
     }
 
     #[test]

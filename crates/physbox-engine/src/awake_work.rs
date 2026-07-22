@@ -409,7 +409,6 @@ impl GpuAwakeWork {
         &self.sleep_state
     }
 
-    #[cfg(test)]
     pub(crate) fn awake_body_buffer(&self) -> &wgpu::Buffer {
         &self.awake_bodies
     }

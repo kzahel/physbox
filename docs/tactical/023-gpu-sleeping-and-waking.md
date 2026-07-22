@@ -1,10 +1,11 @@
 # S23: GPU sleeping and waking
 
-Status: manual checkpoint 2026-07-22. S23.1 and the authorized inert S23.2
-checkpoint are complete. Work stops here before wake propagation; S23.3
-requires a later user request. No physical Android device was available for
-the closing run, so the explicitly authorized hardware-backed AVD substituted
-for that lane and was shut down after validation.
+Status: active implementation 2026-07-22. S23.1 through S23.5 are complete;
+S23.6 matched sleeping-city scale evidence is the current slice. Sleeping is
+effective when explicitly requested through the shared menu or launch
+configuration, but remains off by default. No physical Android device is
+available, so the user explicitly authorized a hardware-backed AVD for the
+later proportional qualification lane.
 
 Governing topics:
 [GPU sleeping and waking](../topics/gpu-sleeping-and-waking.md),
@@ -174,36 +175,64 @@ awake-driven solving.
 
 ### S23.3 — generation-safe wake roots and bounded propagation
 
-- [ ] Add explicit wake roots for impulse, projectile/new touching contact,
+- [x] Add explicit wake roots for impulse, projectile/new touching contact,
   grab begin/hold, construction/support change, reset/rebuild, and authored
   test state.
-- [ ] Propagate roots over current generational contact neighbors for a fixed
+- [x] Propagate roots over current generational contact neighbors for a fixed
   number of deterministic GPU rounds; reject stale slot generations.
-- [ ] Select `K` using predeclared `K-1`/`K`/`K+1` chains and 64-body mobile
+- [x] Select `K` using predeclared `K-1`/`K`/`K+1` chains and 64-body mobile
   wake-wave evidence.
 
 Gate: wake causes and latency match the declared policy, neighbors wake before
 pair retirement, capacity presets share semantics, and overflow fails closed.
 
+Checkpoint evidence: commit `09f5e2e` selects four deterministic propagation
+rounds and a `0.05 m/s` persisted-impact wake threshold. Generation-checked
+roots cover grab begin/hold, construction, reset, erased support, new contact,
+and impact. The 1/2/4/8-round comparison runs on 16- and 64-body chains; the
+`K-1` and `K` bodies wake in the root step, the `K+1` body wakes on the next
+outer step, and stale generations remain inert.
+
 ### S23.4 — automatic sleep admission
 
-- [ ] Evaluate the frozen quiet predicate and integer outer-step duration on
+- [x] Evaluate the frozen quiet predicate and integer outer-step duration on
   the GPU, set cause bits, and perform the selected velocity treatment.
-- [ ] Establish no pose drift while asleep and sleep-off versus
+- [x] Establish no pose drift while asleep and sleep-off versus
   pre-first-transition exactness when enabled.
 
 Gate: authority overlays and PhysBox-specific invariants pass without masking
 an awake failure or advancing timers on zero-step/substep-only work.
 
+Checkpoint evidence: commit `c900a17` evaluates the frozen `0.02 m/s`
+farthest-point predicate after solve, admits sleep after exactly 15/30/60
+outer steps at 30/60/120 Hz, and zeros transition velocities. Focused GPU
+readback proves no sleeping pose drift and no substep-derived timer advance.
+Requested sleeping is now effective when enabled; the menu reports
+`EFFECTIVE ON`, while the ordinary default remains off.
+
 ### S23.5 — awake-driven solve and integration
 
-- [ ] Drive solver bodies and integration from awake work and compact solver
+- [x] Drive solver bodies and integration from awake work and compact solver
   points that touch at least one awake dynamic body.
-- [ ] Retain all sleepers in live collision, persistence, support, and render
+- [x] Retain all sleepers in live collision, persistence, support, and render
   work with cached impulses ready for wake.
 
 Gate: awake work reduction is observable while wake transitions preserve
 contact identity, exact replay, and declared latency.
+
+Checkpoint evidence: deterministic GPU compaction now produces dense awake
+solver points with an original-contact mapping, while persistence receives
+solved impulses scattered back to its unchanged live-contact order. The
+sorted public awake list remains dynamic-only; a separate bounded solver-body
+list adds only fixed endpoints required by active awake contacts. Integration,
+solver body work, and point work therefore fall to zero for two authored
+sleepers, restore to two bodies/two points on a grabbed wake root, and preserve
+the fixed-floor grab result. Live SAP, narrowphase, persistence, rendering,
+and cached dormant impulses remain unchanged. The maintained 110-test product
+suite, the two previously sensitive exact-replay tests, and the focused wake
+restoration test pass; the complete non-production engine suite has only its
+independently verified pre-existing 197-versus-195 experiment-dispatch
+assertion failure.
 
 ### S23.6 — scale evidence and dormant-pair decision
 

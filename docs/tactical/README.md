@@ -145,10 +145,10 @@ and the earlier live-body/collision/solver stages. Browser, physical Pixel
 checkpoint, clean headless, and final hardware-backed AVD fallback evidence
 pass. Sleeping can consume the deterministic live set as its awake-work
 foundation.
-S23 is at its manual checkpoint after completing the authorized S23.1/S23.2
-scope: policy/oracle baselines, versioned GPU sleep state, and awake compaction
-while sleeping remains ineffective and solver inputs remain unchanged. Wake
-propagation and all later behavior stop for a subsequent user request.
+S23 is active after completing S23.1 through S23.5. Effective opt-in sleeping,
+bounded wake propagation, automatic admission, and awake-driven solve work are
+implemented; S23.6 matched sleeping-city evidence is next, and work will stop
+before S23.7 for the reserved human promotion/default decision.
 
 Tactical filenames use a three-digit zero-padded prefix ordered by their first
 Git creation timestamp. This repository starts at `001`. Never renumber an
@@ -181,7 +181,7 @@ This README remains the unnumbered index.
 | S20 | Validation diet and feature ledger | [020-validation-diet-and-feature-ledger.md](020-validation-diet-and-feature-ledger.md) | complete; warm everyday lane 7.31 s, production matrices trimmed, exhaustive lanes retained opt-in, 2026-07-21 |
 | S21 | Scalable broadphase | [021-scalable-broadphase.md](021-scalable-broadphase.md) | complete; SAP integrated and qualified on Metal, browser, and physical Pixel 7a Vulkan, 2026-07-21 |
 | S22 | Active-work compaction | [022-active-work-compaction.md](022-active-work-compaction.md) | complete; committed persistence/topology work and durable sparse-capacity qualification pass, 2026-07-22 |
-| S23 | GPU sleeping and waking | [023-gpu-sleeping-and-waking.md](023-gpu-sleeping-and-waking.md) | manual checkpoint; policy baseline plus inert state/awake compaction complete, stopped before wake propagation, 2026-07-22 |
+| S23 | GPU sleeping and waking | [023-gpu-sleeping-and-waking.md](023-gpu-sleeping-and-waking.md) | active; effective sleeping and awake-driven solve complete through S23.5, S23.6 scale evidence next, 2026-07-22 |
 
 ## Conventions
 

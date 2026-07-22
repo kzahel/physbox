@@ -2223,6 +2223,7 @@ impl GpuFixedFloorSolver {
             GpuSubstepContactPolicyV1::AuthorityFixedAnchorAnalyticalSeparation,
             GpuRestitutionTimingPolicyV1::AfterEachSubstep,
             None,
+            None,
         )?;
         solver._owned_point_input = Some(point_buffer);
         Ok(solver)
@@ -2276,6 +2277,7 @@ impl GpuFixedFloorSolver {
             GpuSubstepContactPolicyV1::AuthorityBranchRobustFixedAnchorAnalyticalSeparation,
             GpuRestitutionTimingPolicyV1::AfterEachSubstep,
             None,
+            None,
         )?;
         solver._owned_point_input = Some(point_buffer);
         Ok(solver)
@@ -2288,6 +2290,7 @@ impl GpuFixedFloorSolver {
         scenario: &ScenarioV1,
         point_buffer: &wgpu::Buffer,
         point_work_state: Arc<wgpu::Buffer>,
+        body_work_state: Arc<wgpu::Buffer>,
         point_capacity: u32,
         topology: GpuGatherTopology,
         permute_edge_build: bool,
@@ -2342,6 +2345,7 @@ impl GpuFixedFloorSolver {
             substep_contact_policy,
             restitution_timing_policy,
             Some(point_work_state),
+            Some(body_work_state),
         )
     }
 
@@ -2433,6 +2437,7 @@ impl GpuFixedFloorSolver {
             GpuSubstepContactPolicyV1::SELECTED,
             GpuRestitutionTimingPolicyV1::SELECTED,
             None,
+            None,
         )
     }
 
@@ -2453,6 +2458,7 @@ impl GpuFixedFloorSolver {
         substep_contact_policy: GpuSubstepContactPolicyV1,
         restitution_timing_policy: GpuRestitutionTimingPolicyV1,
         point_work_state: Option<Arc<wgpu::Buffer>>,
+        body_work_state: Option<Arc<wgpu::Buffer>>,
     ) -> Result<Self, String> {
         let exact_authority_probe =
             crate::authority_gpu_probe::validate_authority_gpu_probe_runtime_tuple(
@@ -2751,8 +2757,9 @@ impl GpuFixedFloorSolver {
             label: Some("physbox5_floor_solver_shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("body_floor_solver.wgsl").into()),
         });
-        let dynamic_work = if let Some(point_indirect) = point_work_state {
-            let body_indirect = storage.active_body_handle();
+        let dynamic_work = if let (Some(point_indirect), Some(body_indirect)) =
+            (point_work_state, body_work_state)
+        {
             let work_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("physbox5_floor_dynamic_work_layout"),
                 entries: &[

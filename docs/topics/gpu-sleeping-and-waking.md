@@ -1,15 +1,16 @@
 # GPU sleeping and waking
 
-Status: active design at a manual checkpoint, 2026-07-22. Tactical S23.1 and
-the authorized inert S23.2 checkpoint are complete; no body can transition
-asleep yet, and work stops before S23.3 wake propagation pending a later user
-request. This topic is the master record for the sleeping/waking feature: its
-motivation, the selected direction, the frozen experimental policy vocabulary,
-wake-trigger semantics, the toggle and experimentation surface, the validation
-contract, the execution plan, and the running status overview. Direction and
-step ordering below are provisional except where S23.1 freezes them; nothing
-here changes a product default, and enabling sleeping as the ordinary default
-requires a recorded human promotion review.
+Status: active implementation, 2026-07-22. Tactical S23.1 through S23.5 are
+complete; S23.6 scale evidence is in progress and the manual promotion/default
+decision remains reserved for S23.7. Sleeping is effective when explicitly
+requested but remains off by default. This topic is the master record for the
+sleeping/waking feature: its motivation, the selected direction, the frozen
+experimental policy vocabulary, wake-trigger semantics, the toggle and
+experimentation surface, the validation contract, the execution plan, and the
+running status overview. Direction and step ordering below are provisional
+except where S23.1 freezes them; nothing here changes a product default, and
+enabling sleeping as the ordinary default requires a recorded human promotion
+review.
 
 Governing direction:
 [one GPU-resident 2D physics world](physbox5-unified-gpu-physics.md), which
@@ -42,10 +43,10 @@ change only with implementation and evidence, not because this design exists.
 | --- | --- | --- |
 | Policy vocabulary and oracle traces | complete | S23.1 freezes experimental policy V1 and a replay-exact 40-row Box2D/PhysBox baseline matrix. |
 | Versioned GPU sleep state | complete | Generation-checked `SleepStateV1`, sorted awake-dynamic list, indirect arguments, and exact inert replay (S23.2). |
-| Wake roots and bounded propagation | proposed | Generation-checked roots plus K-round contact-neighbor waves against authored sleepers (S23.3). |
-| Automatic sleep admission | proposed | Integer outer-step timers, cause bitsets, no-drift guarantees (S23.4). |
-| Awake-driven solve and integration | proposed | Solver bodies/points sized by awake work; live collision and rendering retained (S23.5). |
-| Toggle and configuration surface | limited | Launch-owned requested state, an engine-rendered `MENU → WORLD` request toggle, persistence, and cross-host reporting exist; effective state is hard-false and the default remains off. |
+| Wake roots and bounded propagation | complete | Generation-safe roots and four deterministic contact-neighbor rounds execute before solve (S23.3). |
+| Automatic sleep admission | complete | The GPU applies the frozen integer outer-step predicate, zeroes transition velocities, and prevents dormant drift (S23.4). |
+| Awake-driven solve and integration | complete | Dense awake points and bounded solver bodies size solve/integration while live collision, persistence, and rendering retain sleepers (S23.5). |
+| Toggle and configuration surface | limited | Launch-owned state and the engine-rendered `MENU → WORLD` toggle make sleeping effective on request and persist the choice; the default remains off pending S23.7. |
 | Sleeping-city performance curves | proposed | Matched 1%/10%/100% awake evidence; conditional dormant-pair decision (S23.6). |
 | Cross-host qualification and promotion | proposed | Browser plus physical Android, mask-rule disclosure, human default review (S23.7). |
 
@@ -232,6 +233,35 @@ ARM64, dual-ABI release-native, release APK, and authorized hardware-backed AVD
 qualification pass. No physical device was available for this closure; the
 AVD used the host Radeon Vulkan adapter, produced a visually complete capture,
 and shut down successfully.
+
+### S23.3-S23.5 effective sleeping checkpoint
+
+Commits `09f5e2e` and `c900a17` make the previously inert representation
+effective. Wake policy V1 uses `K = 4` deterministic generational
+contact-neighbor rounds and a `0.05 m/s` persisted-impact threshold. Direct
+grab, construction, reset, erased-support, new-contact, and impact roots are
+combined as cause bits before solve. The selected bound wakes the `K-1` and
+`K` chain bodies in the root step and the `K+1` body on the next outer step.
+
+Post-solver admission evaluates the frozen `0.02 m/s` farthest-point speed and
+500 ms integer duration: exactly 15, 30, or 60 outer steps at 30, 60, or 120
+Hz. A transition zeros linear and angular velocity; sleeping poses do not
+drift. The engine-rendered request toggle now reports effective sleeping on
+when selected, without changing the off default.
+
+S23.5 consumes the awake representation. Solver points touching at least one
+awake dynamic are compacted densely, solved, and scattered through a
+dense-to-live mapping so persistent contact identity and cached impulses keep
+their original order. The public awake list stays sorted and dynamic-only. A
+separate bounded solver-body list contains those awake dynamics plus fixed
+endpoints required by active contacts; this distinction is necessary for
+fixed-support topology without reintroducing sleeping dynamics. Live SAP,
+narrowphase, persistence, support, and rendering still include sleepers.
+Focused readback observes zero body/point solve work for dormant contacts and
+full restoration on a grab wake. Exact replay across submission boundaries,
+the fixed-floor grab regression, the maintained 110-test product suite, and
+the ordinary fast/browser lane pass. S23.6 must still establish whether the
+serial correctness-first compactors yield a useful mostly-sleeping curve.
 
 ## Selected implementation direction
 
@@ -444,10 +474,8 @@ merely code existence.
   preserve the S23.1 baseline rather than changing it in place.
 - The interaction between the frozen zero-velocity transition and retained
   warm-start impulses on wake; evaluated once automatic transitions exist.
-- The impact-wake rule's declared closing-speed or predicted-impulse constant.
-- The selected `K` and whether 64-body wake waves meet mobile pacing.
-- Whether and when the menu request becomes effective, and whether sleeping is
-  promoted from its off default, after the implementation and evidence gates.
+- Whether sleeping should be promoted from its off default after the S23.6
+  evidence and S23.7 qualification package.
 - Whether the 1%-awake curve forces the dormant-pair persistence decision.
 
 ## Reconsideration triggers

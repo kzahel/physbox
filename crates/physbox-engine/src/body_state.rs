@@ -420,6 +420,10 @@ impl GpuBodyStorage {
         Arc::clone(&self.awake_work)
     }
 
+    pub(crate) fn awake_body_buffer(&self) -> &wgpu::Buffer {
+        self.awake_work.awake_body_buffer()
+    }
+
     pub(crate) fn wake_request_buffer(&self) -> &wgpu::Buffer {
         self.awake_work.wake_request_buffer()
     }
@@ -435,11 +439,6 @@ impl GpuBodyStorage {
     #[cfg(test)]
     pub(crate) fn sleep_state_buffer(&self) -> &wgpu::Buffer {
         self.awake_work.sleep_state_buffer()
-    }
-
-    #[cfg(test)]
-    pub(crate) fn awake_body_buffer(&self) -> &wgpu::Buffer {
-        self.awake_work.awake_body_buffer()
     }
 
     pub fn sleep_state_capacity_record(&self) -> CapacityRecordV1 {
