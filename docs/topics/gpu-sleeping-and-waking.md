@@ -1,6 +1,7 @@
 # GPU sleeping and waking
 
-Status: proposed design, 2026-07-22. Nothing is implemented. This topic is the
+Status: active design, 2026-07-22. Tactical S23 is authorized through its
+inert S23.2 checkpoint; no sleeping behavior is implemented yet. This topic is the
 master record for the sleeping/waking feature: its motivation, the provisional
 selected direction, the frozen policy vocabulary, wake-trigger semantics, the
 toggle and experimentation surface, the validation contract, the execution
@@ -26,8 +27,8 @@ owned by [awake settling and rest stability](awake-settling-and-rest-stability.m
 The rigid behavior authority is
 [Box2D rigid authority](box2d-rigid-authority.md); contact identity is owned
 by [collision and contact persistence](collision-and-contact-persistence.md).
-The planned execution tracker is tactical S23, to be created as
-`023-gpu-sleeping-and-waking.md` when work is authorized.
+The execution tracker is
+[tactical S23](../tactical/023-gpu-sleeping-and-waking.md).
 
 ## Feature overview and tracking
 
@@ -38,8 +39,8 @@ change only with implementation and evidence, not because this design exists.
 
 | Area | Status | Current state / next gate |
 | --- | --- | --- |
-| Policy vocabulary and oracle traces | proposed | Freeze quiet predicate, thresholds-as-policy, and Box2D behavioral captures (S23.1). |
-| Versioned GPU sleep state | proposed | `SleepStateV1` lane and deterministic awake compaction while sleep stays disabled (S23.2). |
+| Policy vocabulary and oracle traces | active | Freeze quiet predicate, thresholds-as-policy, and Box2D behavioral captures (S23.1). |
+| Versioned GPU sleep state | authorized | `SleepStateV1` lane and deterministic awake compaction while sleep stays disabled (S23.2). |
 | Wake roots and bounded propagation | proposed | Generation-checked roots plus K-round contact-neighbor waves against authored sleepers (S23.3). |
 | Automatic sleep admission | proposed | Integer outer-step timers, cause bitsets, no-drift guarantees (S23.4). |
 | Awake-driven solve and integration | proposed | Solver bodies/points sized by awake work; live collision and rendering retained (S23.5). |
