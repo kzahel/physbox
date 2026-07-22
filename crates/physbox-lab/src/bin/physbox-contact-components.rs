@@ -127,7 +127,7 @@ fn run() -> Result<(), String> {
             family: "churn",
             scenario: churn.clone(),
             capacity: 64,
-            completed_steps: 4,
+            completed_steps: 5,
         },
         Case {
             label: "pair-churn-after-impact",
