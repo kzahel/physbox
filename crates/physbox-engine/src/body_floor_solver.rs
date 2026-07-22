@@ -1095,6 +1095,16 @@ pub(crate) struct PointInputRaw {
     padding1: [f32; 2],
 }
 
+impl PointInputRaw {
+    pub(crate) const fn component_ids(&self) -> [u32; 4] {
+        self.ids
+    }
+
+    pub(crate) fn component_generations(&self) -> [u32; 2] {
+        [self.padding1[0].to_bits(), self.padding1[1].to_bits()]
+    }
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
 pub(crate) struct PreparedPointRaw {

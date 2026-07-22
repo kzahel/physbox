@@ -747,7 +747,7 @@ impl GpuGeneratedContactGraph {
         self.encode_step_with_timestamps(encoder, invalidate_previous_cache, None);
     }
 
-    fn encode_step_with_timestamps(
+    pub(crate) fn encode_step_with_timestamps(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         invalidate_previous_cache: bool,
@@ -782,6 +782,15 @@ impl GpuGeneratedContactGraph {
         self.persistence
             .encode_after_solver(encoder, parity, self.point_capacity, timestamps);
         self.parity.set(1 - parity);
+    }
+
+    #[cfg(any(test, feature = "solver-lab"))]
+    pub(crate) fn contact_component_sources(&self) -> (&wgpu::Buffer, &wgpu::Buffer, u32) {
+        (
+            &self._solver_points,
+            self.narrowphase.point_capacity_buffer(),
+            self.point_capacity,
+        )
     }
 
     #[cfg(not(target_arch = "wasm32"))]

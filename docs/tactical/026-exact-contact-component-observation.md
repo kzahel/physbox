@@ -58,12 +58,12 @@ small-graph limit match a CPU breadth/depth traversal exactly.
 
 ### S26.2 — opt-in GPU observer
 
-- [ ] Add an opt-in generated-contact stage that initializes parents, performs
+- [x] Add an opt-in generated-contact stage that initializes parents, performs
   bounded hook/shortcut passes, flattens labels, accumulates component sizes,
   and validates roots/edges.
-- [ ] Expose compact diagnostic readback and timestamp scope without routing
+- [x] Expose compact diagnostic readback and timestamp scope without routing
   any value into sleep, solve, or render decisions.
-- [ ] Prove through construction tests that the ordinary product graph has no
+- [x] Prove through construction tests that the ordinary product graph has no
   observer allocation or dispatch.
 
 Gate: exact replay, zero invalid roots, and zero cross-label contact edges.

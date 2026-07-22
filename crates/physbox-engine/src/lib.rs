@@ -140,6 +140,10 @@ pub use construction_validation::{
     construction_deep_overlap_validation_script, construction_interaction_validation_script,
     construction_invalidation_validation_script,
 };
+#[cfg(all(feature = "solver-lab", not(target_arch = "wasm32")))]
+pub use contact_components::{
+    GpuContactComponentObservationV1, GpuContactComponentStatsV1, observe_gpu_contact_components,
+};
 pub use frame::{
     FrameInput, InputEvent, PointerButton, PointerEvent, PointerPhase, StepRequest, WheelEvent,
 };
