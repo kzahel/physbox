@@ -63,7 +63,7 @@ fn compact_solver_bodies() {
     solver_bodies[14] = solver_count;
     solver_bodies[15] = 0u;
     solver_bodies[16] = 0u;
-    solver_bodies[17] = 0u;
-    solver_bodies[18] = 0u;
-    solver_bodies[19] = 0u;
+    solver_bodies[17] = max(1u, (solver_count + 63u) / 64u);
+    solver_bodies[18] = 1u;
+    solver_bodies[19] = 1u;
 }

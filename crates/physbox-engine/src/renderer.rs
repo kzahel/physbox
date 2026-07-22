@@ -717,6 +717,34 @@ mod tests {
         );
     }
 
+    #[test]
+    fn sleeping_floor_pass_evidence_clears_zero_work_topology() {
+        let mut physics = physbox_launch::PhysicsConfigurationV2::SOFT_COUPLED;
+        physics.sleeping_enabled = true;
+        let mut renderer = pollster::block_on(OffscreenRenderer::new(
+            320,
+            200,
+            EngineConfig {
+                scenario: ValidationScenario::RigidFloor,
+                solver_profile: crate::SolverProfileConfig::from_physics(physics).unwrap(),
+                ..Default::default()
+            },
+        ))
+        .expect("generated-contact renderer initializes");
+
+        let report = renderer.render(FrameInput::exact(120));
+        assert!(report.scenario.complete && report.scenario.passed);
+        let evidence = renderer
+            .read_fixed_floor_pass_evidence()
+            .expect("sleeping zero-work pass evidence decodes");
+        assert!(evidence.contacts.iter().all(|contact| !contact.valid));
+        let coloring = evidence.coloring.expect("selected solver uses coloring");
+        assert_eq!(coloring.color_count, 0);
+        assert!(coloring.color_occupancy.is_empty());
+        assert_eq!(coloring.active_color_passes, 0);
+        assert_eq!(coloring.island_count, 0);
+    }
+
     fn assert_soft_resolution_replays(substeps: u32, iterations: u32) -> u32 {
         let mut physics = physbox_launch::PhysicsConfigurationV2::SOFT_COUPLED;
         physics.substeps = substeps;

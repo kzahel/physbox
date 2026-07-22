@@ -35,6 +35,7 @@ const ISLAND_INDIRECT_OFFSET: u64 = COLOR_INDIRECT_WORDS as u64 * size_of::<u32>
 const POINT_DISPATCH_64_OFFSET: u64 = 4 * size_of::<u32>() as u64;
 const DOUBLE_POINT_DISPATCH_64_OFFSET: u64 = 10 * size_of::<u32>() as u64;
 const DOUBLE_POINT_DISPATCH_256_OFFSET: u64 = 13 * size_of::<u32>() as u64;
+const TOPOLOGY_DISPATCH_64_OFFSET: u64 = 17 * size_of::<u32>() as u64;
 #[cfg(not(target_arch = "wasm32"))]
 const MAX_INSTRUMENTED_QUERIES_PER_SET: u32 = 4_096;
 
@@ -3484,8 +3485,11 @@ impl GpuFixedFloorSolver {
                 .as_ref()
                 .expect("dynamic dispatch requires active-work resources");
             let (buffer, offset) = match dispatch {
+                // Global topology counters still need one clearing invocation
+                // when both active body and point work are empty. The prepared
+                // body-work record carries a dedicated nonzero dispatch.
                 DynamicDispatch::Topology64 => {
-                    (work.body_indirect.as_ref(), ACTIVE_BODY_DISPATCH_64_OFFSET)
+                    (work.body_indirect.as_ref(), TOPOLOGY_DISPATCH_64_OFFSET)
                 }
                 DynamicDispatch::Point64 => {
                     (work.point_indirect.as_ref(), POINT_DISPATCH_64_OFFSET)
