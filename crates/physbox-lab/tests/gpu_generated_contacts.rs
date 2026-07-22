@@ -1056,7 +1056,9 @@ fn sparse_capacity_benchmark_separates_live_work_from_reserve_allocation() {
             .all(|capacity| capacity.accepted && !capacity.overflowed)
     );
     let scheduler = benchmark.scheduler_work.as_ref().unwrap();
-    assert_eq!(scheduler.body_slots, 64);
+    assert_eq!(scheduler.body_slots, 2);
+    assert_eq!(scheduler.body_mask_slots_cleared, 2);
+    assert_eq!(scheduler.conflict_winner_slots_visited, 2 * 32 * 32);
     assert!(scheduler.conflict_winner_slots_visited > 0);
 }
 

@@ -5299,10 +5299,12 @@ impl GpuGeneratedContactRunner {
         let valid_point_indices = pass_evidence
             .contacts
             .iter()
-            .filter(|contact| contact.valid)
+            .filter(|contact| contact.valid && contact.point_index < point_raw[2])
             .map(|contact| contact.point_index)
             .collect::<Vec<_>>();
-        pass_evidence.contacts.retain(|contact| contact.valid);
+        pass_evidence
+            .contacts
+            .retain(|contact| contact.valid && contact.point_index < point_raw[2]);
         pass_evidence.contributions = pass_evidence
             .contributions
             .into_iter()
@@ -5784,7 +5786,7 @@ async fn benchmark_gpu_generated_contacts_with_execution_scheduling_identity_and
     }
     let scheduler_work = correctness
         .pass_evidence
-        .scheduler_work_vector(body_capacity)?;
+        .scheduler_work_vector(body_count)?;
 
     let query_count = samples
         .checked_mul(4)
