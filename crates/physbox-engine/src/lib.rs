@@ -37,6 +37,7 @@ mod pair_slot_persistence;
 mod renderer;
 mod report;
 mod scenario;
+mod sleep_contacts;
 mod solver_profile;
 mod ui;
 mod ui_font;

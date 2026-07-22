@@ -9,7 +9,7 @@ use physbox_contracts::{
 };
 use wgpu::util::DeviceExt;
 
-use crate::awake_work::GpuAwakeWork;
+use crate::awake_work::{GpuAwakeWork, SleepExecutionConfig};
 
 pub const BODY_BYTES_PER_SLOT: u32 = 64;
 pub const BODY_COMMAND_BYTES: u32 = 48;
@@ -291,6 +291,22 @@ impl GpuBodyStorage {
         command_capacity: u32,
         bodies: &[BodyStateV1],
     ) -> Result<Self, String> {
+        Self::new_with_sleeping(
+            device,
+            capacity,
+            command_capacity,
+            bodies,
+            SleepExecutionConfig::disabled(60),
+        )
+    }
+
+    pub(crate) fn new_with_sleeping(
+        device: &wgpu::Device,
+        capacity: u32,
+        command_capacity: u32,
+        bodies: &[BodyStateV1],
+        sleep_config: SleepExecutionConfig,
+    ) -> Result<Self, String> {
         if bodies.len() > capacity as usize {
             return Err(format!(
                 "body capacity {capacity} cannot hold {} authored bodies",
@@ -331,7 +347,16 @@ impl GpuBodyStorage {
             &packed.active_bodies,
             usage | wgpu::BufferUsages::INDIRECT,
         ));
-        let awake_work = GpuAwakeWork::new(device, capacity, bodies, &metadata, &active_bodies)?;
+        let awake_work = GpuAwakeWork::new(
+            device,
+            capacity,
+            bodies,
+            &metadata,
+            &motion,
+            &properties,
+            &active_bodies,
+            sleep_config,
+        )?;
         let commands = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("physbox5_body_commands"),
             size: u64::from(command_capacity) * u64::from(BODY_COMMAND_BYTES),
@@ -395,6 +420,10 @@ impl GpuBodyStorage {
         Arc::clone(&self.awake_work)
     }
 
+    pub(crate) fn wake_request_buffer(&self) -> &wgpu::Buffer {
+        self.awake_work.wake_request_buffer()
+    }
+
     pub(crate) fn encode_awake_compaction(&self, encoder: &mut wgpu::CommandEncoder) {
         self.awake_work.encode(encoder);
     }
@@ -415,6 +444,10 @@ impl GpuBodyStorage {
 
     pub fn awake_body_capacity_record(&self) -> CapacityRecordV1 {
         self.awake_work.awake_body_capacity()
+    }
+
+    pub fn sleep_wake_capacity_record(&self) -> CapacityRecordV1 {
+        self.awake_work.wake_capacity()
     }
 
     pub fn command_buffer(&self) -> &wgpu::Buffer {

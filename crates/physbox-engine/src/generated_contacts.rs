@@ -31,6 +31,7 @@ use crate::{
         PAIR_RECORD_BYTES, PAIR_SLOT_DISPATCHES, PairRecordRaw, PairSlotAllocator, PairSlotCase,
         PairSlotPipelines, invalid_pair, pair_output,
     },
+    sleep_contacts::GpuSleepContacts,
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -189,6 +190,7 @@ pub(crate) struct GpuGeneratedContactGraph {
     restitution_timing_policy: crate::GpuRestitutionTimingPolicyV1,
     authority_identity: bool,
     awake_work: Arc<GpuAwakeWork>,
+    sleep_contacts: GpuSleepContacts,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
@@ -699,6 +701,12 @@ impl GpuGeneratedContactGraph {
             permute_pair_build,
             fingerprint_mask,
         )?;
+        let sleep_contacts = GpuSleepContacts::new(
+            device,
+            storage,
+            &solver_points,
+            narrowphase.point_capacity_handle(),
+        );
         Ok(Self {
             broadphase_pipelines,
             broadphase,
@@ -715,6 +723,7 @@ impl GpuGeneratedContactGraph {
             restitution_timing_policy,
             authority_identity,
             awake_work: storage.awake_work_handle(),
+            sleep_contacts,
         })
     }
 
@@ -733,6 +742,8 @@ impl GpuGeneratedContactGraph {
         timestamps: Option<(&wgpu::QuerySet, u32)>,
     ) {
         let parity = self.parity.get();
+        self.awake_work.encode_begin_step(encoder);
+        self.sleep_contacts.encode_erased_neighbor_roots(encoder);
         self.broadphase.encode_with_beginning_timestamp(
             encoder,
             &self.broadphase_pipelines,
@@ -747,7 +758,10 @@ impl GpuGeneratedContactGraph {
             self.point_capacity,
             timestamps,
         );
-        self.awake_work.encode(encoder);
+        let wake_frontier = self.sleep_contacts.encode_contact_wakes(encoder);
+        self.awake_work
+            .encode_finalize_wakes(encoder, wake_frontier);
+        self.awake_work.encode_compaction(encoder);
         self.solver.encode_step(encoder);
         self.persistence
             .encode_after_solver(encoder, parity, self.point_capacity, timestamps);
@@ -762,13 +776,18 @@ impl GpuGeneratedContactGraph {
         destination: &wgpu::Buffer,
     ) -> Result<Vec<GpuSolverPassDescriptorV1>, String> {
         let parity = self.parity.get();
+        self.awake_work.encode_begin_step(encoder);
+        self.sleep_contacts.encode_erased_neighbor_roots(encoder);
         self.broadphase
             .encode(encoder, &self.broadphase_pipelines, None);
         self.narrowphase
             .encode(encoder, &self.narrowphase_pipelines);
         self.persistence
             .encode_before_solver(encoder, parity, false, self.point_capacity, None);
-        self.awake_work.encode(encoder);
+        let wake_frontier = self.sleep_contacts.encode_contact_wakes(encoder);
+        self.awake_work
+            .encode_finalize_wakes(encoder, wake_frontier);
+        self.awake_work.encode_compaction(encoder);
         let descriptors = self
             .solver
             .encode_step_with_pass_trace(encoder, storage, destination)?;
@@ -787,13 +806,18 @@ impl GpuGeneratedContactGraph {
         destination_offset: u64,
     ) -> Result<Vec<GpuSolverPassDescriptorV1>, String> {
         let parity = self.parity.get();
+        self.awake_work.encode_begin_step(encoder);
+        self.sleep_contacts.encode_erased_neighbor_roots(encoder);
         self.broadphase
             .encode(encoder, &self.broadphase_pipelines, None);
         self.narrowphase
             .encode(encoder, &self.narrowphase_pipelines);
         self.persistence
             .encode_before_solver(encoder, parity, false, self.point_capacity, None);
-        self.awake_work.encode(encoder);
+        let wake_frontier = self.sleep_contacts.encode_contact_wakes(encoder);
+        self.awake_work
+            .encode_finalize_wakes(encoder, wake_frontier);
+        self.awake_work.encode_compaction(encoder);
         let descriptors = self.solver.encode_step_with_pass_motion_trace(
             encoder,
             storage,
@@ -815,6 +839,8 @@ impl GpuGeneratedContactGraph {
         color_occupancy: &[u32],
     ) -> Result<(), String> {
         let parity = self.parity.get();
+        self.awake_work.encode_begin_step(encoder);
+        self.sleep_contacts.encode_erased_neighbor_roots(encoder);
         self.broadphase
             .encode(encoder, &self.broadphase_pipelines, None);
         self.narrowphase
@@ -826,7 +852,10 @@ impl GpuGeneratedContactGraph {
             self.point_capacity,
             None,
         );
-        self.awake_work.encode(encoder);
+        let wake_frontier = self.sleep_contacts.encode_contact_wakes(encoder);
+        self.awake_work
+            .encode_finalize_wakes(encoder, wake_frontier);
+        self.awake_work.encode_compaction(encoder);
         self.solver
             .encode_step_solver_phase_instrumented(encoder, query_sets, color_occupancy)?;
         self.persistence
@@ -859,7 +888,8 @@ impl GpuGeneratedContactGraph {
     }
 
     pub(crate) fn dispatches_per_step(&self) -> u32 {
-        1 + self.broadphase.dispatches()
+        5 + 2 * self.awake_work.wake_propagation_rounds()
+            + self.broadphase.dispatches()
             + self.persistence.dispatches()
             + BRIDGE_DISPATCHES
             + self.solver.dispatches_per_step()

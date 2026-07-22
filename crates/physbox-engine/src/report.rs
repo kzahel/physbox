@@ -9,7 +9,7 @@ use crate::{
     GpuSolverAccumulationV4, GpuSolverExecutionV4, GpuSolverSchedulingPolicyV1,
 };
 
-pub const SCENE_CONTRACT_VERSION: u32 = 9;
+pub const SCENE_CONTRACT_VERSION: u32 = 10;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -34,6 +34,10 @@ pub struct SceneContract {
     pub sleep_policy: &'static str,
     pub sleep_policy_version: u32,
     pub sleep_state_layout_version: u32,
+    pub sleep_speed_threshold: f32,
+    pub sleep_quiet_outer_steps: u32,
+    pub sleep_wake_propagation_rounds: u32,
+    pub sleep_impact_wake_speed: f32,
     pub requested_sleeping_enabled: bool,
     pub effective_sleeping_enabled: bool,
     pub awake_compaction_enabled: bool,
@@ -530,6 +534,10 @@ mod tests {
                 sleep_policy: "experimental-s23-v1",
                 sleep_policy_version: physbox_contracts::SLEEP_POLICY_VERSION,
                 sleep_state_layout_version: physbox_contracts::SLEEP_STATE_LAYOUT_VERSION,
+                sleep_speed_threshold: 0.02,
+                sleep_quiet_outer_steps: 30,
+                sleep_wake_propagation_rounds: 4,
+                sleep_impact_wake_speed: 0.05,
                 requested_sleeping_enabled: false,
                 effective_sleeping_enabled: false,
                 awake_compaction_enabled: true,

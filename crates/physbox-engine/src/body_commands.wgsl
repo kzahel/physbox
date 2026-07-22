@@ -35,6 +35,7 @@ struct GrabParams {
 @group(0) @binding(6) var<storage, read_write> grab: GrabState;
 @group(0) @binding(7) var<storage, read> intents: array<GrabIntent>;
 @group(0) @binding(8) var<uniform> grab_params: GrabParams;
+@group(0) @binding(9) var<storage, read_write> wake_requests: array<atomic<u32>>;
 
 const FLAG_LIVE: u32 = 1u << 0u;
 const FLAG_FIXED: u32 = 1u << 2u;
@@ -49,6 +50,8 @@ const COMMAND_GRAB_END: u32 = 4u;
 const INTENT_BEGIN: u32 = 1u;
 const INTENT_TARGET: u32 = 2u;
 const INTENT_END: u32 = 3u;
+const CAUSE_GRAB: u32 = 1u << 2u;
+const CAUSE_RESET: u32 = 1u << 3u;
 
 fn rotate(vector: vec2f, angle: f32) -> vec2f {
     let c = cos(angle);
@@ -96,6 +99,7 @@ fn activate_slot(slot: u32, point: vec2f, sequence: u32) {
         inverse_rotate(point - pose.xy, pose.z),
         point,
     );
+    atomicOr(&wake_requests[slot], CAUSE_GRAB);
 }
 
 fn begin_specific(slot: u32, generation: u32, point: vec2f, sequence: u32) {
@@ -151,6 +155,7 @@ fn process_commands() {
         if (kind == COMMAND_RESET) {
             poses[slot] = command.data0;
             motions[slot] = command.data1;
+            atomicOr(&wake_requests[slot], CAUSE_RESET);
             if (grab.identity_status.x == slot && grab.identity_status.y == generation) {
                 clear_active(sequence);
             }
@@ -235,6 +240,7 @@ fn apply_grab_constraint() {
         grab.activity.z += 1u;
         return;
     }
+    atomicOr(&wake_requests[slot], CAUSE_GRAB);
     let pose = poses[slot];
     var motion = motions[slot];
     let property = properties[slot];

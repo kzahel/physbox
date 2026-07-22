@@ -75,16 +75,13 @@ fn profiled_generated_world(
     profile: &crate::SolverProfileConfig,
     world_capacity: WorldCapacityPreset,
 ) -> Result<GpuBodyWorld, String> {
-    if !profile.is_selected() {
-        return GpuBodyWorld::new_generated_with_solver_profile(
-            device,
-            color_format,
-            scenario,
-            world_capacity,
-            profile,
-        );
-    }
-    GpuBodyWorld::new_generated(device, color_format, scenario, world_capacity)
+    GpuBodyWorld::new_generated_with_solver_profile(
+        device,
+        color_format,
+        scenario,
+        world_capacity,
+        profile,
+    )
 }
 
 fn profiled_generated_world_with_scheduling(
@@ -1369,6 +1366,7 @@ impl EngineHost {
         } else {
             0.0
         };
+        let sleep_policy = physbox_contracts::SleepPolicyV1::experimental_s23();
         let contract = SceneContract {
             version: SCENE_CONTRACT_VERSION,
             engine: "physbox5",
@@ -1423,6 +1421,12 @@ impl EngineHost {
             sleep_policy: "experimental-s23-v1",
             sleep_policy_version: physbox_contracts::SLEEP_POLICY_VERSION,
             sleep_state_layout_version: physbox_contracts::SLEEP_STATE_LAYOUT_VERSION,
+            sleep_speed_threshold: sleep_policy.speed_threshold.get(),
+            sleep_quiet_outer_steps: sleep_policy
+                .quiet_outer_steps(physics.fixed_step_hz)
+                .expect("validated sleep policy and fixed-step hertz"),
+            sleep_wake_propagation_rounds: sleep_policy.wake_propagation_rounds,
+            sleep_impact_wake_speed: sleep_policy.impact_wake_speed.get(),
             requested_sleeping_enabled: physics.sleeping_enabled,
             effective_sleeping_enabled: false,
             awake_compaction_enabled: true,

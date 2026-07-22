@@ -18,6 +18,15 @@ pub const CONTACT_SOFTNESS_POLICY_VERSION: u32 = 1;
 pub const SLEEP_POLICY_VERSION: u32 = 1;
 pub const SLEEP_STATE_LAYOUT_VERSION: u32 = 1;
 pub const SLEEP_TRANSITION_CAUSE_INITIALIZATION: u32 = 1 << 0;
+pub const SLEEP_TRANSITION_CAUSE_CONFIGURATION: u32 = 1 << 1;
+pub const SLEEP_TRANSITION_CAUSE_GRAB: u32 = 1 << 2;
+pub const SLEEP_TRANSITION_CAUSE_RESET: u32 = 1 << 3;
+pub const SLEEP_TRANSITION_CAUSE_CONSTRUCTION: u32 = 1 << 4;
+pub const SLEEP_TRANSITION_CAUSE_ERASED_NEIGHBOR: u32 = 1 << 5;
+pub const SLEEP_TRANSITION_CAUSE_CONTACT: u32 = 1 << 6;
+pub const SLEEP_TRANSITION_CAUSE_IMPACT: u32 = 1 << 7;
+pub const SLEEP_TRANSITION_CAUSE_PROPAGATION: u32 = 1 << 8;
+pub const SLEEP_TRANSITION_CAUSE_AUTOMATIC: u32 = 1 << 9;
 pub const ORACLE_SUCCESS_SENTINEL: &str = "PHYSBOX5_ORACLE_SUCCESS";
 
 pub use collision::*;
@@ -59,6 +68,8 @@ pub struct SleepPolicyV1 {
     pub quiet_duration_milliseconds: u32,
     pub transition_velocity: SleepTransitionVelocityV1,
     pub grouping: SleepGroupingV1,
+    pub wake_propagation_rounds: u32,
+    pub impact_wake_speed: FiniteF32,
 }
 
 impl SleepPolicyV1 {
@@ -73,6 +84,8 @@ impl SleepPolicyV1 {
             quiet_duration_milliseconds: 500,
             transition_velocity: SleepTransitionVelocityV1::ZeroLinearAndAngular,
             grouping: SleepGroupingV1::PerBodyBoundedContactNeighbors,
+            wake_propagation_rounds: 4,
+            impact_wake_speed: FiniteF32::new(0.05).expect("finite impact-wake speed"),
         }
     }
 
@@ -94,15 +107,21 @@ impl SleepPolicyV1 {
 impl Validate for SleepPolicyV1 {
     fn validate(&self) -> Result<(), ContractError> {
         self.speed_threshold.validate()?;
+        self.impact_wake_speed.validate()?;
         if self.version != SLEEP_POLICY_VERSION {
             return Err(ContractError(format!(
                 "unsupported sleep policy version {}, expected {SLEEP_POLICY_VERSION}",
                 self.version
             )));
         }
-        if self.speed_threshold.get() <= 0.0 || self.quiet_duration_milliseconds == 0 {
+        if self.speed_threshold.get() <= 0.0
+            || self.quiet_duration_milliseconds == 0
+            || !matches!(self.wake_propagation_rounds, 1 | 2 | 4 | 8)
+            || self.impact_wake_speed.get() <= 0.0
+        {
             return Err(ContractError(
-                "sleep speed threshold and quiet duration must be positive".to_owned(),
+                "sleep thresholds and quiet duration must be positive, with 1/2/4/8 wake rounds"
+                    .to_owned(),
             ));
         }
         Ok(())

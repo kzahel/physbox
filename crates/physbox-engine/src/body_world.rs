@@ -10,6 +10,7 @@ use physbox_contracts::{
 use physbox_launch::WorldCapacityPreset;
 use wgpu::util::DeviceExt;
 
+use crate::awake_work::SleepExecutionConfig;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::body_floor_solver::FixedFloorEvidenceLayout;
 use crate::body_state::{
@@ -129,6 +130,7 @@ pub(crate) struct GpuBodyWorld {
     generated_contact_coefficient_policy: Option<crate::GpuContactCoefficientPolicyV1>,
     body_count: u32,
     initial_live_count: u32,
+    sleeping_enabled: bool,
 }
 
 struct GeneratedContactBuildOptions {
@@ -136,24 +138,27 @@ struct GeneratedContactBuildOptions {
     identity_policy: ContactIdentityPolicyV1,
     use_contact_policy_comparator: bool,
     branch_robust_tunable: bool,
+    sleep_config: SleepExecutionConfig,
 }
 
 impl GeneratedContactBuildOptions {
-    fn disabled() -> Self {
+    fn disabled(fixed_step_hz: u32) -> Self {
         Self {
             solver_configuration: None,
             identity_policy: ContactIdentityPolicyV1::SELECTED,
             use_contact_policy_comparator: false,
             branch_robust_tunable: false,
+            sleep_config: SleepExecutionConfig::disabled(fixed_step_hz),
         }
     }
 
-    fn selected(scheduling_policy: GpuSolverSchedulingPolicyV1) -> Self {
+    fn selected(scheduling_policy: GpuSolverSchedulingPolicyV1, fixed_step_hz: u32) -> Self {
         Self {
             solver_configuration: Some((GpuSolverExecutionV4::SELECTED, scheduling_policy)),
             identity_policy: ContactIdentityPolicyV1::SELECTED,
             use_contact_policy_comparator: false,
             branch_robust_tunable: false,
+            sleep_config: SleepExecutionConfig::disabled(fixed_step_hz),
         }
     }
 }
@@ -164,12 +169,13 @@ impl GpuBodyWorld {
         color_format: wgpu::TextureFormat,
         scenario: &ScenarioV1,
     ) -> Result<Self, String> {
+        let fixed_step_hz = scenario_fixed_step_hz(scenario)?;
         Self::new_with_generated_contacts(
             device,
             color_format,
             scenario,
             WorldCapacityPreset::default(),
-            GeneratedContactBuildOptions::disabled(),
+            GeneratedContactBuildOptions::disabled(fixed_step_hz),
         )
     }
 
@@ -179,13 +185,14 @@ impl GpuBodyWorld {
         scenario: &ScenarioV1,
         world_capacity: WorldCapacityPreset,
     ) -> Result<Self, String> {
+        let fixed_step_hz = scenario_fixed_step_hz(scenario)?;
         let scheduling_policy = selected_interactive_scheduling(scenario, world_capacity)?;
         Self::new_with_generated_contacts(
             device,
             color_format,
             scenario,
             world_capacity,
-            GeneratedContactBuildOptions::selected(scheduling_policy),
+            GeneratedContactBuildOptions::selected(scheduling_policy, fixed_step_hz),
         )
     }
 
@@ -196,12 +203,13 @@ impl GpuBodyWorld {
         world_capacity: WorldCapacityPreset,
         scheduling_policy: GpuSolverSchedulingPolicyV1,
     ) -> Result<Self, String> {
+        let fixed_step_hz = scenario_fixed_step_hz(scenario)?;
         Self::new_with_generated_contacts(
             device,
             color_format,
             scenario,
             world_capacity,
-            GeneratedContactBuildOptions::selected(scheduling_policy),
+            GeneratedContactBuildOptions::selected(scheduling_policy, fixed_step_hz),
         )
     }
 
@@ -212,6 +220,7 @@ impl GpuBodyWorld {
         world_capacity: WorldCapacityPreset,
         identity_policy: ContactIdentityPolicyV1,
     ) -> Result<Self, String> {
+        let fixed_step_hz = scenario_fixed_step_hz(scenario)?;
         let scheduling_policy = selected_interactive_scheduling(scenario, world_capacity)?;
         Self::new_with_generated_contacts(
             device,
@@ -221,7 +230,7 @@ impl GpuBodyWorld {
             GeneratedContactBuildOptions {
                 identity_policy,
                 use_contact_policy_comparator: true,
-                ..GeneratedContactBuildOptions::selected(scheduling_policy)
+                ..GeneratedContactBuildOptions::selected(scheduling_policy, fixed_step_hz)
             },
         )
     }
@@ -233,8 +242,27 @@ impl GpuBodyWorld {
         world_capacity: WorldCapacityPreset,
         profile: &crate::SolverProfileConfig,
     ) -> Result<Self, String> {
+        let physics = profile.physics();
+        let sleep_config = if physics.sleeping_enabled {
+            SleepExecutionConfig::enabled(physics.fixed_step_hz)
+        } else {
+            SleepExecutionConfig::disabled(physics.fixed_step_hz)
+        };
         if profile.is_selected() {
-            return Self::new_generated(device, color_format, scenario, world_capacity);
+            let scheduling_policy = selected_interactive_scheduling(scenario, world_capacity)?;
+            return Self::new_with_generated_contacts(
+                device,
+                color_format,
+                scenario,
+                world_capacity,
+                GeneratedContactBuildOptions {
+                    sleep_config,
+                    ..GeneratedContactBuildOptions::selected(
+                        scheduling_policy,
+                        physics.fixed_step_hz,
+                    )
+                },
+            );
         }
         let initial_body_count = u32::try_from(scenario.bodies.len())
             .map_err(|_| "GPU body count exceeds u32".to_owned())?;
@@ -254,6 +282,7 @@ impl GpuBodyWorld {
                 identity_policy: ContactIdentityPolicyV1::SELECTED,
                 use_contact_policy_comparator: false,
                 branch_robust_tunable: true,
+                sleep_config,
             },
         )
     }
@@ -270,6 +299,7 @@ impl GpuBodyWorld {
             identity_policy,
             use_contact_policy_comparator,
             branch_robust_tunable,
+            sleep_config,
         } = options;
         scenario.validate().map_err(|error| error.to_string())?;
         let initial_live_count = u32::try_from(scenario.bodies.len())
@@ -282,8 +312,14 @@ impl GpuBodyWorld {
         } else {
             initial_live_count
         };
-        let storage =
-            GpuBodyStorage::new(device, body_count, BODY_COMMAND_CAPACITY, &scenario.bodies)?;
+        let sleeping_enabled = sleep_config.enabled;
+        let storage = GpuBodyStorage::new_with_sleeping(
+            device,
+            body_count,
+            BODY_COMMAND_CAPACITY,
+            &scenario.bodies,
+            sleep_config,
+        )?;
         let floor_solver =
             if generated_solver_configuration.is_some() || scenario.manifolds.is_empty() {
                 None
@@ -457,6 +493,7 @@ impl GpuBodyWorld {
                 storage_entry(6, false, wgpu::ShaderStages::COMPUTE),
                 storage_entry(7, true, wgpu::ShaderStages::COMPUTE),
                 uniform_entry(8, wgpu::ShaderStages::COMPUTE),
+                storage_entry(9, false, wgpu::ShaderStages::COMPUTE),
             ],
         });
         let command_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -502,6 +539,10 @@ impl GpuBodyWorld {
                 wgpu::BindGroupEntry {
                     binding: 8,
                     resource: grab_params.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 9,
+                    resource: storage.wake_request_buffer().as_entire_binding(),
                 },
             ],
         });
@@ -857,6 +898,7 @@ impl GpuBodyWorld {
             }),
             body_count,
             initial_live_count,
+            sleeping_enabled,
         })
     }
 
@@ -1417,6 +1459,7 @@ impl GpuBodyWorld {
                 overflowed: false,
             },
             self.storage.awake_body_capacity_record(),
+            self.storage.sleep_wake_capacity_record(),
             self.storage.body_capacity_record(),
             self.storage.sleep_state_capacity_record(),
             CapacityRecordV1 {
@@ -1533,6 +1576,10 @@ impl GpuBodyWorld {
 
     pub(crate) const fn body_capacity(&self) -> u32 {
         self.body_count
+    }
+
+    pub(crate) const fn sleeping_enabled(&self) -> bool {
+        self.sleeping_enabled
     }
 
     pub(crate) fn solver_dispatches_per_step(&self) -> u32 {
@@ -1677,6 +1724,19 @@ fn interactive_body_capacity(
         .ok_or_else(|| "interactive body capacity overflowed".to_owned())
 }
 
+fn scenario_fixed_step_hz(scenario: &ScenarioV1) -> Result<u32, String> {
+    let reciprocal = 1.0 / scenario.settings.fixed_dt.get();
+    let rounded = reciprocal.round();
+    if !rounded.is_finite()
+        || rounded < 1.0
+        || rounded > u32::MAX as f32
+        || (reciprocal - rounded).abs() > 1.0e-3
+    {
+        return Err("sleep execution requires an integer fixed-step hertz".to_owned());
+    }
+    Ok(rounded as u32)
+}
+
 fn selected_interactive_scheduling(
     scenario: &ScenarioV1,
     world_capacity: WorldCapacityPreset,
@@ -1724,8 +1784,8 @@ mod tests {
     use std::sync::mpsc;
 
     use physbox_contracts::{
-        BodyCommandBatchV1, ConstructionIntentV1, GRAB_INTENT_CONTRACT_VERSION, GrabIntentBatchV1,
-        GrabIntentV1, SCHEMA_VERSION, Vec2,
+        BodyCommandBatchV1, BodyCommandV1, ConstructionIntentV1, GRAB_INTENT_CONTRACT_VERSION,
+        GrabIntentBatchV1, GrabIntentV1, SCHEMA_VERSION, Vec2,
     };
 
     use super::*;
@@ -1765,7 +1825,21 @@ mod tests {
         construction: &ConstructionIntentBatchV1,
     ) {
         let commands = empty_commands();
-        let command_ranges = [BodyCommandStepRange { start: 0, count: 0 }];
+        encode_with_commands(device, queue, world, &commands, grab, construction);
+    }
+
+    fn encode_with_commands(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        world: &GpuBodyWorld,
+        commands: &BodyCommandBatchV1,
+        grab: &GrabIntentBatchV1,
+        construction: &ConstructionIntentBatchV1,
+    ) {
+        let command_ranges = [BodyCommandStepRange {
+            start: 0,
+            count: commands.commands.len() as u32,
+        }];
         let grab_ranges = [BodyCommandStepRange {
             start: 0,
             count: grab.intents.len() as u32,
@@ -1783,7 +1857,7 @@ mod tests {
                 &mut encoder,
                 1,
                 BodyStepPlan {
-                    batch: &commands,
+                    batch: commands,
                     ranges: &command_ranges,
                     grab_batch: grab,
                     grab_ranges: &grab_ranges,
@@ -1892,6 +1966,244 @@ mod tests {
         }
         let awake = bytemuck::cast_slice::<u8, u32>(&bytes[sleep_bytes as usize..]).to_vec();
         (states, awake)
+    }
+
+    fn sleeping_chain_world(
+        device: &wgpu::Device,
+        scenario: &ScenarioV1,
+        wake_propagation_rounds: u32,
+    ) -> GpuBodyWorld {
+        let scheduling =
+            selected_interactive_scheduling(scenario, WorldCapacityPreset::default()).unwrap();
+        GpuBodyWorld::new_with_generated_contacts(
+            device,
+            wgpu::TextureFormat::Rgba8Unorm,
+            scenario,
+            WorldCapacityPreset::default(),
+            GeneratedContactBuildOptions {
+                sleep_config: SleepExecutionConfig {
+                    enabled: true,
+                    fixed_step_hz: 60,
+                    wake_propagation_rounds,
+                },
+                ..GeneratedContactBuildOptions::selected(scheduling, 60)
+            },
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn gpu_wake_propagation_is_bounded_generation_safe_and_selects_four_rounds() {
+        let instance = crate::create_instance();
+        let adapter = pollster::block_on(crate::gpu_context::request_adapter(&instance, None))
+            .expect("test GPU adapter");
+        let (device, queue) =
+            pollster::block_on(crate::gpu_context::request_device(&adapter)).unwrap();
+        for body_count in [16, 64] {
+            let mut comparison = crate::authored_chain_scenario(body_count, 23).unwrap();
+            crate::SolverProfileConfig::hard_direct()
+                .apply_to_scenario(&mut comparison)
+                .unwrap();
+            comparison.manifolds.clear();
+            comparison.settings.gravity = Vec2::ZERO;
+            for (index, body) in comparison.bodies.iter_mut().enumerate() {
+                body.position = Vec2::new(index as f32 * 0.89, 0.0);
+                body.linear_velocity = Vec2::ZERO;
+                body.angular_velocity = physbox_contracts::FiniteF32::new(0.0).unwrap();
+                body.sleeping = index != 0;
+            }
+            for rounds in [1, 2, 4, 8] {
+                let world = sleeping_chain_world(&device, &comparison, rounds);
+                encode(
+                    &device,
+                    &queue,
+                    &world,
+                    &grab_batch(Vec::new()),
+                    &empty_construction_intent_batch(),
+                );
+                let (states, awake) = read_awake_work(&device, &queue, &world);
+                let expected_awake = rounds + 1;
+                assert_eq!(
+                    awake[0], expected_awake,
+                    "{body_count} bodies, wake rounds {rounds}"
+                );
+                for state in &states[..expected_awake as usize] {
+                    assert!(
+                        state.awake,
+                        "wake rounds {rounds}, slot {}",
+                        state.body.slot
+                    );
+                }
+                for state in &states[expected_awake as usize..body_count as usize] {
+                    assert!(
+                        !state.awake,
+                        "wake rounds {rounds}, slot {}",
+                        state.body.slot
+                    );
+                }
+            }
+        }
+
+        let mut scenario = crate::authored_chain_scenario(10, 23).unwrap();
+        crate::SolverProfileConfig::hard_direct()
+            .apply_to_scenario(&mut scenario)
+            .unwrap();
+        scenario.manifolds.clear();
+        scenario.settings.gravity = Vec2::ZERO;
+        for (index, body) in scenario.bodies.iter_mut().enumerate() {
+            body.position = Vec2::new(index as f32 * 0.89, 0.0);
+            body.linear_velocity = Vec2::ZERO;
+            body.angular_velocity = physbox_contracts::FiniteF32::new(0.0).unwrap();
+            body.sleeping = index != 0;
+        }
+        let world = sleeping_chain_world(&device, &scenario, 4);
+        encode(
+            &device,
+            &queue,
+            &world,
+            &grab_batch(Vec::new()),
+            &empty_construction_intent_batch(),
+        );
+        let (states, _) = read_awake_work(&device, &queue, &world);
+        assert!(states[3].awake && states[4].awake);
+        assert!(!states[5].awake);
+        assert_eq!(states[4].last_transition_step, 1);
+        assert_ne!(
+            states[4].transition_causes & physbox_contracts::SLEEP_TRANSITION_CAUSE_PROPAGATION,
+            0
+        );
+        encode(
+            &device,
+            &queue,
+            &world,
+            &grab_batch(Vec::new()),
+            &empty_construction_intent_batch(),
+        );
+        let (states, awake) = read_awake_work(&device, &queue, &world);
+        assert!(awake[0] >= 6);
+        assert!(states[5].awake);
+        assert_eq!(states[5].last_transition_step, 2);
+    }
+
+    #[test]
+    fn gpu_wake_roots_cover_grab_reset_construction_and_erased_neighbors() {
+        let instance = crate::create_instance();
+        let adapter = pollster::block_on(crate::gpu_context::request_adapter(&instance, None))
+            .expect("test GPU adapter");
+        let (device, queue) =
+            pollster::block_on(crate::gpu_context::request_device(&adapter)).unwrap();
+        let mut scenario = crate::authored_chain_scenario(6, 29).unwrap();
+        crate::SolverProfileConfig::hard_direct()
+            .apply_to_scenario(&mut scenario)
+            .unwrap();
+        scenario.manifolds.clear();
+        scenario.settings.gravity = Vec2::ZERO;
+        for (index, body) in scenario.bodies.iter_mut().enumerate() {
+            body.position = Vec2::new(index as f32 * 0.9, 0.0);
+            body.linear_velocity = Vec2::ZERO;
+            body.angular_velocity = physbox_contracts::FiniteF32::new(0.0).unwrap();
+            body.sleeping = true;
+        }
+
+        let grabbed = sleeping_chain_world(&device, &scenario, 4);
+        encode(
+            &device,
+            &queue,
+            &grabbed,
+            &grab_batch(vec![GrabIntentV1::Begin {
+                sequence: 1,
+                world_target: Vec2::new(0.0, 0.0),
+            }]),
+            &empty_construction_intent_batch(),
+        );
+        let (states, awake) = read_awake_work(&device, &queue, &grabbed);
+        assert_eq!(awake[0], 5);
+        assert!(states[0].awake && !states[0].sleep_eligible);
+        assert_ne!(
+            states[0].transition_causes & physbox_contracts::SLEEP_TRANSITION_CAUSE_GRAB,
+            0
+        );
+
+        let reset = sleeping_chain_world(&device, &scenario, 4);
+        let reset_batch = BodyCommandBatchV1 {
+            schema_version: SCHEMA_VERSION,
+            capacity_commands: BODY_COMMAND_CAPACITY,
+            attempted_commands: 1,
+            overflowed: false,
+            commands: vec![BodyCommandV1::Reset {
+                sequence: 1,
+                body: scenario.bodies[0].id,
+                position: scenario.bodies[0].position,
+                angle: scenario.bodies[0].angle,
+                linear_velocity: Vec2::ZERO,
+                angular_velocity: physbox_contracts::FiniteF32::new(0.0).unwrap(),
+            }],
+        };
+        encode_with_commands(
+            &device,
+            &queue,
+            &reset,
+            &reset_batch,
+            &grab_batch(Vec::new()),
+            &empty_construction_intent_batch(),
+        );
+        let (states, _) = read_awake_work(&device, &queue, &reset);
+        assert!(states[0].awake);
+        assert_ne!(
+            states[0].transition_causes & physbox_contracts::SLEEP_TRANSITION_CAUSE_RESET,
+            0
+        );
+
+        let lifecycle = sleeping_chain_world(&device, &scenario, 4);
+        encode(
+            &device,
+            &queue,
+            &lifecycle,
+            &grab_batch(Vec::new()),
+            &empty_construction_intent_batch(),
+        );
+        let mut erase = BoundedConstructionIntents::new(CONSTRUCTION_INTENT_CAPACITY).unwrap();
+        erase
+            .push(ConstructionIntentV1::EraseAt {
+                sequence: 1,
+                world_target: Vec2::new(0.0, 0.0),
+            })
+            .unwrap();
+        encode(
+            &device,
+            &queue,
+            &lifecycle,
+            &grab_batch(Vec::new()),
+            &erase.artifact(),
+        );
+        let (states, _) = read_awake_work(&device, &queue, &lifecycle);
+        assert!(states[1].awake);
+        assert_ne!(
+            states[1].transition_causes & physbox_contracts::SLEEP_TRANSITION_CAUSE_ERASED_NEIGHBOR,
+            0
+        );
+
+        let mut place = BoundedConstructionIntents::new(CONSTRUCTION_INTENT_CAPACITY).unwrap();
+        place
+            .push(ConstructionIntentV1::PlaceCircle {
+                sequence: 2,
+                world_target: Vec2::new(-2.0, 0.2),
+            })
+            .unwrap();
+        encode(
+            &device,
+            &queue,
+            &lifecycle,
+            &grab_batch(Vec::new()),
+            &place.artifact(),
+        );
+        let (states, _) = read_awake_work(&device, &queue, &lifecycle);
+        assert_eq!(states[0].body.generation, 2);
+        assert!(states[0].awake);
+        assert_ne!(
+            states[0].transition_causes & physbox_contracts::SLEEP_TRANSITION_CAUSE_CONSTRUCTION,
+            0
+        );
     }
 
     #[test]
