@@ -118,6 +118,27 @@ test("AVD sleep capture uses the engine menu and verifies effective state", () =
   assert.match(source, /sleep-request-on-menu/);
 });
 
+test("APK validation runners stop the product app on every exit", () => {
+  const toolchain = readFileSync(join(androidDir, "toolchain.sh"), "utf8");
+  assert.match(toolchain, /PHYSBOX5_ANDROID_APP_ID="com\.kzahel\.physbox5"/);
+  assert.match(toolchain, /physbox5_android_stop_product_app\(\)/);
+  assert.match(toolchain, /shell am force-stop "\$PHYSBOX5_ANDROID_APP_ID"/);
+
+  for (const file of ["validate-device.sh", "validate-avd.sh", "validate-pacing.sh"]) {
+    const source = readFileSync(join(androidDir, file), "utf8");
+    assert.match(
+      source,
+      /physbox5_android_stop_product_app "\$ADB" "\$SERIAL"/,
+      `${file} must force-stop the product app during cleanup`,
+    );
+    assert.match(source, /trap cleanup EXIT/, `${file} must clean up on every exit`);
+    assert.match(source, /trap 'exit 130' INT TERM/, `${file} must clean up after interruption`);
+  }
+
+  const pacing = readFileSync(join(androidDir, "validate-pacing.sh"), "utf8");
+  assert.doesNotMatch(pacing, /restore_product_launch/);
+});
+
 function check(payload) {
   return spawnSync(process.execPath, [checker], {
     encoding: "utf8",

@@ -51,11 +51,13 @@ if [[ -z "$SERIAL" ]]; then
 fi
 [[ -n "$SERIAL" ]] || { echo "error: emulator did not become ready" >&2; exit 1; }
 cleanup() {
+    physbox5_android_stop_product_app "$ADB" "$SERIAL"
     if [[ "$STARTED" -eq 1 && "$KEEP_EMULATOR" -eq 0 ]]; then
         physbox5_android_stop_emulator "$ADB" "$SERIAL" "$EMULATOR_PID" "$AVD_NAME"
     fi
 }
 trap cleanup EXIT
+trap 'exit 130' INT TERM
 
 ABI="$("$ADB" -s "$SERIAL" shell getprop ro.product.cpu.abi | tr -d '\r')"
 if [[ "$SKIP_BUILD" -eq 0 ]]; then PHYSBOX5_ANDROID_ABI="$ABI" "$ANDROID_DIR/build-apk.sh"; fi

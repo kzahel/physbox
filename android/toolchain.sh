@@ -3,6 +3,8 @@
 PHYSBOX5_ANDROID_TOOLCHAIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$PHYSBOX5_ANDROID_TOOLCHAIN_DIR/../scripts/host-env.sh"
 
+PHYSBOX5_ANDROID_APP_ID="com.kzahel.physbox5"
+
 physbox5_android_detect_sdk() {
     local candidates=()
     [[ -z "${ANDROID_HOME:-}" ]] || candidates+=("$ANDROID_HOME")
@@ -45,6 +47,14 @@ physbox5_android_require_tool() {
     path="$PHYSBOX5_ANDROID_SDK/$relative"
     [[ -x "$path" ]] || { echo "error: $description not found: $path" >&2; return 1; }
     printf '%s\n' "$path"
+}
+
+physbox5_android_stop_product_app() {
+    local adb="$1" serial="$2"
+    [[ -n "$serial" ]] || return 0
+    if ! "$adb" -s "$serial" shell am force-stop "$PHYSBOX5_ANDROID_APP_ID" >/dev/null 2>&1; then
+        echo "warning: failed to stop $PHYSBOX5_ANDROID_APP_ID on Android target $serial" >&2
+    fi
 }
 
 physbox5_android_configure_emulator_display() {

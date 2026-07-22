@@ -62,12 +62,12 @@ APK="$ANDROID_DIR/app/build/outputs/apk/debug/app-debug.apk"
 [[ -f "$APK" ]] || { echo "error: APK missing: $APK" >&2; exit 1; }
 rm -f "$OUTPUT" "$OUTPUT.tmp"
 PACING_TEMP="$(mktemp -d /tmp/physbox5-android-pacing.XXXXXX)"
-restore_product_launch() {
-    "$ADB" -s "$SERIAL" shell am force-stop com.kzahel.physbox5 >/dev/null 2>&1 || true
-    "$ADB" -s "$SERIAL" shell "am start -n com.kzahel.physbox5/android.app.NativeActivity --es physbox5.startup.argv '[\"--scenario\",\"bootstrap\"]'" >/dev/null 2>&1 || true
+cleanup() {
+    physbox5_android_stop_product_app "$ADB" "$SERIAL"
     rm -rf "$PACING_TEMP"
 }
-trap restore_product_launch EXIT
+trap cleanup EXIT
+trap 'exit 130' INT TERM
 
 "$ADB" -s "$SERIAL" install -r "$APK" >/dev/null
 

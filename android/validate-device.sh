@@ -35,6 +35,11 @@ if "$ADB" -s "$SERIAL" shell dumpsys window 2>/dev/null | rg -q 'mDreamingLocksc
     echo "error: Android device $SERIAL is locked; unlock it before validation" >&2
     exit 1
 fi
+cleanup() {
+    physbox5_android_stop_product_app "$ADB" "$SERIAL"
+}
+trap cleanup EXIT
+trap 'exit 130' INT TERM
 
 rm -f "$SCREENSHOT" "$PROVENANCE" "$LOG"
 ABI="$($ADB -s "$SERIAL" shell getprop ro.product.cpu.abi | tr -d '\r')"
