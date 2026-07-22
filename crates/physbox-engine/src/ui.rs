@@ -16,7 +16,7 @@ use crate::{
     },
 };
 
-pub(crate) const UI_CONTRACT_VERSION: u32 = 5;
+pub(crate) const UI_CONTRACT_VERSION: u32 = 6;
 const STATIC_INSTANCE_CAPACITY: usize = 384;
 const DYNAMIC_INSTANCE_CAPACITY: usize = 192;
 
@@ -292,6 +292,14 @@ fn route_events(
                         *menu_open = false;
                         action = Some(UiAction::ActivateWorldCapacity(capacity));
                     }
+                    UiHit::ToggleSleeping => {
+                        let enabled = !draft_solver_profile.physics().sleeping_enabled;
+                        draft_solver_profile.set_sleeping_enabled(enabled);
+                        *menu_open = false;
+                        action = Some(UiAction::ActivateSolverProfile(
+                            draft_solver_profile.clone(),
+                        ));
+                    }
                     UiHit::Panel => {}
                 }
                 continue;
@@ -333,6 +341,7 @@ enum UiHit {
     SolverParameter(crate::solver_profile::SolverParameter, i32),
     SolverScene(ValidationScenario),
     WorldCapacity(WorldCapacityPreset),
+    ToggleSleeping,
     RestoreSolverPreset,
     ApplySolver,
     Panel,
@@ -435,6 +444,9 @@ impl UiLayout {
                         return Some(UiHit::WorldCapacity(capacity));
                     }
                 }
+                if contains(self.world_sleeping_button(), pixel) {
+                    return Some(UiHit::ToggleSleeping);
+                }
             }
         }
         contains(self.menu_panel(menu_page, solver_profiles.len()), pixel).then_some(UiHit::Panel)
@@ -473,8 +485,8 @@ impl UiLayout {
                     + if self.compact_landscape() { 4.0 } else { 8.0 }
             }
             MenuPage::World => {
-                let last = self.world_capacity_button(WorldCapacityPreset::ALL.len() - 1);
-                (last[1] + last[3]) / self.scale + 58.0
+                let sleeping = self.world_sleeping_button();
+                (sleeping[1] + sleeping[3]) / self.scale + 44.0
             }
         };
         let wide = self.compact_landscape()
@@ -524,6 +536,16 @@ impl UiLayout {
         [
             24.0 * self.scale,
             (154.0 + index as f32 * 38.0) * self.scale,
+            336.0 * self.scale,
+            34.0 * self.scale,
+        ]
+    }
+
+    fn world_sleeping_button(self) -> [f32; 4] {
+        let last = self.world_capacity_button(WorldCapacityPreset::ALL.len() - 1);
+        [
+            24.0 * self.scale,
+            last[1] + last[3] + 12.0 * self.scale,
             336.0 * self.scale,
             34.0 * self.scale,
         ]
@@ -751,6 +773,7 @@ impl UiLayout {
             "restore-solver" => self.restore_solver_button(SolverProfileConfig::available().len()),
             "world-tab" => self.menu_tab(MenuPage::World),
             "world-capacity" => self.world_capacity_button(index),
+            "world-sleeping" => self.world_sleeping_button(),
             _ => panic!("unknown UI test target"),
         };
         [
@@ -1440,16 +1463,22 @@ fn static_batch(target_size: [u32; 2], model: StaticBatchModel<'_>) -> Batch {
                         text,
                     );
                 }
-                let last = layout.world_capacity_button(WorldCapacityPreset::ALL.len() - 1);
+                let sleeping = layout.world_sleeping_button();
+                let sleeping_requested = draft_solver_profile.physics().sleeping_enabled;
+                batch.push_quad(sleeping, if sleeping_requested { selected } else { button });
                 batch.push_text(
-                    "HIGH TIERS MAY RUN SLOW",
-                    [28.0 * scale, last[1] + last[3] + 12.0 * scale],
+                    if sleeping_requested {
+                        "SLEEP REQUEST ON  EFFECTIVE OFF"
+                    } else {
+                        "SLEEP REQUEST OFF EFFECTIVE OFF"
+                    },
+                    [sleeping[0] + 9.0 * scale, sleeping[1] + 10.0 * scale],
                     1.35 * scale,
-                    text,
+                    if sleeping_requested { accent } else { text },
                 );
                 batch.push_text(
-                    "SELECTING RESTARTS SCENE",
-                    [28.0 * scale, last[1] + last[3] + 28.0 * scale],
+                    "HIGH TIERS MAY RUN SLOW",
+                    [28.0 * scale, sleeping[1] + sleeping[3] + 12.0 * scale],
                     1.35 * scale,
                     text,
                 );
@@ -1638,6 +1667,7 @@ mod tests {
                 layout.world_capacity_button(1),
                 layout.world_capacity_button(2),
                 layout.world_capacity_button(3),
+                layout.world_sleeping_button(),
             ] {
                 assert!(bounds[0] >= 0.0 && bounds[1] >= 0.0);
                 assert!(bounds[0] + bounds[2] <= target[0] as f32);
@@ -1680,6 +1710,42 @@ mod tests {
             ))
         );
         assert_eq!(routed.selected_tool, WorkbenchTool::Circle);
+        assert!(!menu_open);
+    }
+
+    #[test]
+    fn world_menu_applies_the_experimental_sleeping_request_immediately() {
+        let target = [960, 600];
+        let layout = UiLayout::for_target(target);
+        let mut captured = BTreeSet::new();
+        let mut menu_open = true;
+        let mut menu_page = MenuPage::World;
+        let mut selected_tool = WorkbenchTool::Rectangle;
+        let mut profiles = SolverProfileConfig::available();
+        let mut draft = SolverProfileConfig::default();
+        let routed = route_events(
+            UiRouteState {
+                menu_open: &mut menu_open,
+                menu_page: &mut menu_page,
+                selected_tool: &mut selected_tool,
+                solver_profiles: &mut profiles,
+                draft_solver_profile: &mut draft,
+                captured_pointers: &mut captured,
+            },
+            &[pointer(
+                1,
+                PointerPhase::Down,
+                PointerButton::Primary,
+                layout.center_normalized("world-sleeping", 0),
+            )],
+            target,
+        );
+        let Some(UiAction::ActivateSolverProfile(profile)) = routed.action else {
+            panic!("sleeping toggle must apply one complete physics configuration");
+        };
+        assert!(profile.physics().sleeping_enabled);
+        assert_eq!(profile.profile_name(), SolverProfileName::SoftCoupled);
+        assert_eq!(routed.selected_tool, WorkbenchTool::Rectangle);
         assert!(!menu_open);
     }
 

@@ -1574,7 +1574,7 @@ mod tests {
     }
 
     #[test]
-    fn world_capacity_menu_rebuilds_the_shared_graph_and_preserves_tool() {
+    fn world_menu_rebuilds_capacity_and_sleep_request_while_preserving_tool() {
         let target = [960, 600];
         let mut renderer = pollster::block_on(OffscreenRenderer::new(
             target[0],
@@ -1625,6 +1625,27 @@ mod tests {
         assert_eq!(changed.ui.current_tool, "circle");
         assert_eq!(changed.ui.scenario_restarts_total, 1);
         assert!(!changed.ui.menu_open);
+
+        renderer.render(
+            FrameInput::exact(0).with_input_events(click(5, layout.center_normalized("menu", 0))),
+        );
+        renderer.render(
+            FrameInput::exact(0)
+                .with_input_events(click(6, layout.center_normalized("world-tab", 0))),
+        );
+        let sleeping_requested = renderer.render(
+            FrameInput::exact(0)
+                .with_input_events(click(7, layout.center_normalized("world-sleeping", 0))),
+        );
+        assert!(sleeping_requested.scene_contract.requested_sleeping_enabled);
+        assert!(!sleeping_requested.scene_contract.effective_sleeping_enabled);
+        assert!(sleeping_requested.scene_contract.awake_compaction_enabled);
+        assert_eq!(
+            sleeping_requested.scene_contract.requested_body_capacity,
+            256
+        );
+        assert_eq!(sleeping_requested.ui.current_tool, "circle");
+        assert!(!sleeping_requested.ui.menu_open);
     }
 
     #[cfg(feature = "solver-lab")]

@@ -77,6 +77,9 @@ try {
   if (before.frame.sceneContract?.solverProfile !== "soft-coupled") {
     throw new Error(`fresh browser did not use soft-coupled: ${JSON.stringify(before.frame.sceneContract)}`);
   }
+  if (before.frame.ui?.version !== 6) {
+    throw new Error(`browser did not expose UI contract 6: ${JSON.stringify(before.frame.ui)}`);
+  }
   if (
     before.frame.sceneContract?.physicsConfigurationVersion !== 2
     || before.frame.sceneContract?.sleepPolicy !== "experimental-s23-v1"
@@ -137,6 +140,7 @@ try {
     (compactLandscape ? 282 : 491) * uiScale,
   ];
   const solverApplyCenter = [279 * uiScale, (compactLandscape ? 316 : 541) * uiScale];
+  const worldSleepingCenter = [192 * uiScale, 331 * uiScale];
   await page.mouse.click(62 * uiScale, 50 * uiScale);
   await page.waitForFunction(() => globalThis.__physbox5?.frame?.ui?.menuOpen, null, { timeout: 10_000 });
   await page.evaluate(() => new Promise((resolveFrame) => {
@@ -173,6 +177,69 @@ try {
       { timeout: 30_000 },
     );
     await requireWorldPreference(page, 256);
+    await page.mouse.click(62 * uiScale, 50 * uiScale);
+    await page.waitForFunction(() => globalThis.__physbox5?.frame?.ui?.menuOpen, null, { timeout: 10_000 });
+    await page.mouse.click(300 * uiScale, 104 * uiScale);
+    await page.mouse.click(...worldSleepingCenter);
+    await page.waitForFunction(
+      () => {
+        const frame = globalThis.__physbox5?.frame;
+        return frame?.sceneContract?.requestedSleepingEnabled === true
+          && frame?.sceneContract?.effectiveSleepingEnabled === false
+          && !frame?.ui?.menuOpen;
+      },
+      null,
+      { timeout: 30_000 },
+    );
+    await requirePhysicsPreference(page, {
+      solver: "soft-coupled",
+      simHz: 60,
+      substeps: 4,
+      iterations: 1,
+      contactHz: 30,
+      contactDamping: 10,
+      staticContactScale: 2,
+      speculativeDistance: 0.02,
+      maxDepenetrationVelocity: 3,
+      sleeping: true,
+    });
+    await page.reload({ waitUntil: "networkidle" });
+    await page.waitForFunction(
+      () => globalThis.__physbox5?.ready
+        && globalThis.__physbox5?.frame?.sceneContract?.requestedSleepingEnabled === true
+        && globalThis.__physbox5?.frame?.sceneContract?.effectiveSleepingEnabled === false,
+      null,
+      { timeout: 30_000 },
+    );
+    await page.mouse.click(62 * uiScale, 50 * uiScale);
+    await page.mouse.click(300 * uiScale, 104 * uiScale);
+    await page.evaluate(() => new Promise((resolveFrame) => {
+      requestAnimationFrame(() => requestAnimationFrame(resolveFrame));
+    }));
+    await captureCompleteScreenshot(page, menuScreenshot, "browser sleeping request on menu");
+    await page.mouse.click(...worldSleepingCenter);
+    await page.waitForFunction(
+      () => {
+        const frame = globalThis.__physbox5?.frame;
+        return frame?.sceneContract?.requestedSleepingEnabled === false
+          && frame?.sceneContract?.effectiveSleepingEnabled === false
+          && !frame?.ui?.menuOpen;
+      },
+      null,
+      { timeout: 30_000 },
+    );
+    await requirePhysicsPreference(page, {
+      solver: "soft-coupled",
+      simHz: 60,
+      substeps: 4,
+      iterations: 1,
+      contactHz: 30,
+      contactDamping: 10,
+      staticContactScale: 2,
+      speculativeDistance: 0.02,
+      maxDepenetrationVelocity: 3,
+      sleeping: false,
+    }, true);
     await page.mouse.click(62 * uiScale, 50 * uiScale);
     await page.waitForFunction(() => globalThis.__physbox5?.frame?.ui?.menuOpen, null, { timeout: 10_000 });
   }
