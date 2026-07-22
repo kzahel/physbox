@@ -1,9 +1,10 @@
 # Rigid quality targets
 
-Status: decided current acceptance contract, 2026-07-22. This topic owns the
-awake rigid stack hierarchy for new implementation and promotion work. Fresh
-qualification of the selected soft-coupled default against the hierarchy is
-still pending; this decision does not invent a pass from historical evidence.
+Status: decided current acceptance contract with a fresh native blocking
+failure, 2026-07-22. This topic owns the awake rigid stack hierarchy for new
+implementation and promotion work. The selected soft-coupled default passes
+the native 2/4/8 foundation but misses the 12-stack quiet-speed observation;
+browser and physical-Android qualification were therefore not admitted.
 
 Governing direction:
 [one GPU-resident 2D physics world](physbox5-unified-gpu-physics.md).
@@ -72,6 +73,34 @@ as stretch and diagnostic evidence. A routine code-change gate may exercise a
 smaller subset; that narrower cadence cannot be presented as milestone
 qualification.
 
+## Current selected-default checkpoint
+
+S24 ran a clean native blocking discriminator at revision
+`66d85dde3449897dcda9ec80de46f8a0aa245992` on the AMD Radeon 890M Graphics
+RADV/Vulkan adapter. The selected soft-coupled 60/4/i1, contact 30 Hz,
+damping 10, static-contact x2 recurrence ran sleeping off for exactly 1,200
+outer steps per stack under the existing `0.025000 m/s` quiet limit:
+
+| Stack | Structural result | Last-quarter maximum linear speed | Verdict |
+| ---: | --- | ---: | --- |
+| 2 | pass | `0.001747 m/s` | foundation pass |
+| 4 | pass | `0.007952 m/s` | foundation pass |
+| 8 | pass | `0.021373 m/s` | foundation pass |
+| 12 | pass | `0.029767 m/s` | **blocking quiet failure** |
+| 14 | pass | `0.028236 m/s` | reported stretch quiet failure |
+| 16 | first structural loss at step 463 | `0.009305 m/s` after loss | reported frontier failure; post-loss quiet value is not a settling pass |
+
+All rows remained finite and capacity-valid. The result demonstrates why
+structure alone is insufficient: the 12-stack looks upright but retains more
+motion than the accepted awake quiet band. Per S24's predeclared stop, no
+durable product package, browser row, or physical-Android row was produced.
+Those missing hosts are neither passes nor inferred failures.
+
+This blocks current product qualification without changing the target,
+threshold, solver, or default. S23.7 remains held until human review authorizes
+an awake solver/configuration follow-up and a fresh native 12-stack attempt.
+The exact commands and full disposition are recorded in S24.
+
 ## Why 16 is a diagnostic, not the product gate
 
 The old S5-S18 program repeatedly used 16 as an all-or-nothing solver gate.
@@ -123,10 +152,11 @@ limitations and may motivate future solver work; they no longer veto current
 product acceptance by themselves.
 
 The selected soft-coupled 60/4/i1, contact 30 Hz/damping 10/static x2 default
-is not yet qualified under the new hierarchy. Its known sleep-off 16-stack
-loss at step 407 is now correctly classified as a diagnostic result. Existing
-older or candidate 12/14 outcomes are not substituted for a fresh selected-
-default cross-host baseline.
+is not qualified under the new hierarchy. S24 now supplies the fresh native
+2/4/8/12/14/16 discriminator above; its 12-stack quiet failure stops the
+cross-host package. The current sleep-off 16-stack loss at step 463 remains a
+diagnostic result rather than a blocker. Existing older outcomes are not
+substituted for the missing browser or physical-Android baseline.
 
 ## Validation and reporting
 

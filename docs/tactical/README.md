@@ -153,11 +153,12 @@ sleep and forced-awake marks. The dormant-pair gate retains live processing;
 a post-review correction now coordinates admission within `K` and removes
 persisted-contact wake cycling. Work is stopped before S23.7 for the reserved
 human promotion/default decision.
-S24 is active as the bounded prerequisite to that decision. It first runs the
-selected soft default sleep-off on the new 2/4/8/12/14/16 hierarchy. A native
-12-stack failure stops browser and physical-device expansion; a pass admits a
-durable native package and shared Browser WebGPU/physical Android
-qualification before S23.7 resumes.
+S24 is complete as a bounded negative prerequisite to that decision. A clean
+native selected-default sleep-off run passes 2/4/8 but the upright 12-stack
+misses the existing quiet band (`0.029767` versus `0.025000 m/s`). Fourteen
+also misses the quiet band and 16 loses structure at step 463. The declared
+hard stop prevented durable/browser/physical-device expansion; S23.7 remains
+held at a human awake-solver/configuration checkpoint.
 
 Current target supersession, 2026-07-22: the
 [rigid quality target contract](../topics/rigid-quality-targets.md) governs new
@@ -200,7 +201,7 @@ This README remains the unnumbered index.
 | S21 | Scalable broadphase | [021-scalable-broadphase.md](021-scalable-broadphase.md) | complete; SAP integrated and qualified on Metal, browser, and physical Pixel 7a Vulkan, 2026-07-21 |
 | S22 | Active-work compaction | [022-active-work-compaction.md](022-active-work-compaction.md) | complete; committed persistence/topology work and durable sparse-capacity qualification pass, 2026-07-22 |
 | S23 | GPU sleeping and waking | [023-gpu-sleeping-and-waking.md](023-gpu-sleeping-and-waking.md) | manual checkpoint; contact sleep-cycle correction qualified on browser/headless/Pixel, S23.7 human decision held, 2026-07-22 |
-| S24 | Current rigid quality qualification | [024-current-rigid-quality-qualification.md](024-current-rigid-quality-qualification.md) | active; native 12-stack discriminator precedes browser/physical qualification and S23.7, 2026-07-22 |
+| S24 | Current rigid quality qualification | [024-current-rigid-quality-qualification.md](024-current-rigid-quality-qualification.md) | complete negative; native 2/4/8 pass, upright 12 misses quiet band, conditional cross-host work not admitted, 2026-07-22 |
 
 ## Conventions
 

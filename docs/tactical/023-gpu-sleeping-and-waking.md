@@ -6,7 +6,9 @@ stopped before S23.7's reserved human promotion/default decision. Sleeping is
 effective when explicitly requested through the shared menu or launch
 configuration, but remains off by default. The user initially authorized the
 hardware-backed AVD for this unattended checkpoint; an attached Pixel 7a later
-became available and also passed the proportional lane.
+became available and also passed the proportional lane. Completed-negative S24
+now holds S23.7 behind a separate native awake 12-stack quiet failure and human
+solver/configuration decision.
 
 Governing topics:
 [GPU sleeping and waking](../topics/gpu-sleeping-and-waking.md),
@@ -396,6 +398,10 @@ horizon; the maintained rigid-floor run owns physical pixels and behavior.
 This correction does not execute S23.7 or change the off default.
 
 ### S23.7 — cross-host qualification and promotion review
+
+Not admitted: S24's fresh native awake 12-stack missed the existing quiet
+band, so browser/physical awake expansion and this promotion review remain
+held pending an explicitly authorized solver/configuration follow-up.
 
 - [ ] Run the full proportional browser/Android qualification and record the
   mask-rule disclosure plus every accepted authority divergence.

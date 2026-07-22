@@ -54,9 +54,9 @@ quality. Known limitations remain part of the row.
 | COLL-6 | Collision filtering and sensors | **Not implemented** | No product category/mask/group filtering or trigger/sensor contract exists. |
 | COLL-7 | Contact/query events | **Not implemented** | No general begin/end/hit event stream, AABB query, ray cast, or shape cast API exists. |
 | COLL-8 | GPU picking | **Limited** | Shared grab/erase selection uses bounded GPU hit selection; it is not a general spatial-query API. |
-| SOLVE-1 | Soft-coupled rigid solver | **Implemented** | Reviewed 60/4/i1, contact 30 Hz/damping 10/static x2 default. Its sleep-off 16-stack loss at step 407 is a frontier diagnostic; fresh selected-default 12-stack blocking and 14-stack stretch results are not yet recorded. |
+| SOLVE-1 | Soft-coupled rigid solver | **Implemented** | Reviewed 60/4/i1, contact 30 Hz/damping 10/static x2 default. A fresh native sleep-off run passes the 2/4/8 foundation structurally and quietly, preserves 12/14 structurally but misses their quiet observation at `0.029767`/`0.028236 m/s`, and loses 16 at step 463. |
 | SOLVE-2 | Hard/direct comparison | **Implemented** | Explicit named comparator only; never an automatic fallback. |
-| SOLVE-3 | Sleeping and waking | **Limited** | Opt-in effective GPU sleeping has versioned generation-safe state, four-round wake propagation, integer outer-step admission, awake-driven solve/integration, and an engine-rendered persisted toggle. The default and final qualification remain held for S23.7 human review. |
+| SOLVE-3 | Sleeping and waking | **Limited** | Opt-in effective GPU sleeping has versioned generation-safe state, four-round wake propagation, integer outer-step admission, awake-driven solve/integration, and an engine-rendered persisted toggle. S23.7's default review remains held behind the separate native awake 12-stack quiet failure. |
 | JOINT-1 | Grab constraint | **Implemented** | Anchored GPU grab retains collision and bounded release velocity. |
 | JOINT-2 | General joints | **Not implemented** | Distance/revolute or another first authored joint follows accepted free-body rigid behavior. |
 
@@ -80,7 +80,7 @@ quality. Known limitations remain part of the row.
 | SCALE-3 | 1K-100K product-world claims | **Not implemented** | Existing authored-contact/isolated-solver measurements are not scalable end-to-end body claims. |
 | SCALE-4 | Mostly-sleeping scale | **Limited** | Valid named-adapter 1%/10%/100% awake curves show solver work and GPU time falling with awake bodies/points, and reserve probes remain bounded through 10K capacity. Live pair processing is retained; no rendered 10K/100K, 60 Hz, or cross-adapter product-rate claim exists. |
 | QUAL-1 | Box2D process oracle | **Implemented** | Clean pinned native process covers current circle/rectangle projections, public manifolds, selected actions, and deterministic results. |
-| QUAL-2 | Comprehensive rigid acceptance | **Limited** | Core fixtures and extensive research evidence exist. The current sleep-off hierarchy requires fresh selected-default 2/4/8 foundation and 12-stack blocking results across native, browser, and physical Android, with 14/16 reported as stretch/diagnostic evidence; that P5.4 package is not yet closed. |
+| QUAL-2 | Comprehensive rigid acceptance | **Limited** | Core fixtures and extensive research evidence exist. S24's fresh native discriminator passes the 2/4/8 foundation but the upright 12-stack misses the existing quiet band, so browser and physical-Android qualification were not admitted. The P5.4 package remains blocked at an awake solver/configuration decision. |
 | QUAL-3 | Correctness-qualified CPU/GPU crossover | **Not implemented** | Requires broadphase, sleeping, equivalent-quality worlds, and scoped solver/collision/end-to-end/full-frame curves. |
 | TEST-1 | Everyday fast lane | **Implemented** | `npm run test:fast` runs format, maintained Rust plus performance smoke, tool tests, boundaries, and browser WebGPU under a 120-second hard budget. |
 | TEST-2 | Exhaustive research/audit lane | **Implemented** | Historical lab/oracle matrices remain opt-in; they are not ordinary pre-push gates. |
@@ -96,14 +96,17 @@ quality. Known limitations remain part of the row.
 
 ## Current execution order
 
-1. Run S24's selected-default sleep-off 2/4/8/12 gate and 14/16 diagnostics;
-   stop at a native 12-stack failure rather than masking it with sleep.
-2. If S24 qualifies the awake gate, return to the held S23.7 sleeping
-   promotion/default review and close the remaining current-default rigid
-   acceptance and scale work.
-3. Extend the construction loop with editable selection, scene documents, and
+1. Resolve the S24 human checkpoint: the current default passes native 2/4/8
+   but its upright 12-stack runs at `0.029767 m/s` against the `0.025000 m/s`
+   quiet band. Do not weaken the gate or use sleeping to conceal the result.
+2. Under an explicitly authorized awake solver/configuration workstream, earn
+   a fresh native 12-stack pass before admitting browser and physical Android.
+3. Only after that cross-host awake package passes, return to the held S23.7
+   sleeping promotion/default review and close the remaining current-default
+   rigid acceptance and scale work.
+4. Extend the construction loop with editable selection, scene documents, and
    one joint.
-4. Begin bounded liquid and same-step rigid/fluid coupling.
+5. Begin bounded liquid and same-step rigid/fluid coupling.
 
 ## Reconsideration triggers
 

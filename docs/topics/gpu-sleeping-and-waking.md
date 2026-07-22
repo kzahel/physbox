@@ -3,10 +3,12 @@
 Status: manual checkpoint, 2026-07-22. Tactical S23.1 through S23.6 are
 complete, and the post-review contact sleep-cycle defect is corrected and
 qualified; work is stopped before the manual promotion/default decision
-reserved for S23.7. Sleeping is effective when explicitly requested but
-remains off by default. An opt-in GPU sleep-state visualization is available
-for interactive review; it does not change that default. This topic is the
-master record for the sleeping/waking feature: its motivation, the selected
+reserved for S23.7. S24's native awake 12-stack quiet failure now holds that
+decision behind a separate human solver/configuration checkpoint. Sleeping is
+effective when explicitly requested but remains off by default. An opt-in GPU
+sleep-state visualization is available for interactive review; it does not
+change that default. This topic is the master record for the sleeping/waking
+feature: its motivation, the selected
 direction, the frozen experimental policy vocabulary, wake-trigger semantics,
 the toggle and experimentation surface, the validation contract, the execution
 plan, and the running status overview. Direction and step ordering below are provisional
@@ -54,10 +56,10 @@ change only with implementation and evidence, not because this design exists.
 | Wake roots and bounded propagation | complete | Generation-safe event roots and four deterministic contact-neighbor rounds execute before solve; persisted resting contacts are not roots. |
 | Automatic sleep admission | complete | Saturating per-body timers and four-round contact blockers coordinate admission within the selected bound, zero transition velocities, and prevent dormant drift. |
 | Awake-driven solve and integration | complete | Dense awake points and bounded solver bodies size solve/integration while live collision, persistence, and rendering retain sleepers (S23.5). |
-| Toggle and configuration surface | limited | Launch-owned state and the engine-rendered `MENU → WORLD` toggle make sleeping effective on request and persist the choice; the default remains off pending S23.7. |
+| Toggle and configuration surface | limited | Launch-owned state and the engine-rendered `MENU → WORLD` toggle make sleeping effective on request and persist the choice; the default remains off pending the now-held S23.7 review. |
 | Interactive state visualization | complete | The engine-rendered `SLEEP VISUALS` toggle consumes GPU sleep/grab state directly and distinguishes active, quiet, sleeping, and forced/recently woken dynamics without readback. |
 | Sleeping-city performance curves | complete | Valid matched 1%/10%/100% awake curves show bounded work reduction; S23.6 retains live pair processing and makes no public product-rate claim. |
-| Cross-host qualification and promotion | proposed | Browser plus physical Android, mask-rule disclosure, human default review (S23.7). |
+| Cross-host qualification and promotion | held | S24 passes native 2/4/8 but misses the awake 12-stack quiet band; browser/physical awake expansion and the S23.7 human default review wait for an authorized solver/configuration follow-up. |
 
 ## The concern
 
@@ -576,7 +578,9 @@ merely code existence.
 - Whether a later policy should alter retained warm-start impulses on wake;
   V1 retains them and the current wake-restoration/exact-replay gates pass.
 - Whether sleeping should be promoted from its off default after the S23.6
-  evidence and S23.7 qualification package.
+  evidence, a passing cross-host awake 12-stack package, and the S23.7 human
+  review. S24's current native quiet failure prevents that sequence from
+  resuming automatically.
 
 ## Reconsideration triggers
 

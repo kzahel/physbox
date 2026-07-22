@@ -16,8 +16,10 @@ the historical tacticals to be reconstructed. S20 owns the validation diet;
 S21 owns the now-complete P5.3 broadphase bakeoff, winner integration, and
 physical-Android qualification. S23 has reached its manual promotion checkpoint
 with opt-in effective sleeping, coordinated bounded-neighbor admission/wake,
-awake-driven solve work, and matched sleeping-city evidence. Current-default
-rigid acceptance remains a next engine milestone.
+awake-driven solve work, and matched sleeping-city evidence. S24's current-
+default native discriminator passes 2/4/8 but the upright 12-stack misses the
+awake quiet band; cross-host expansion and S23.7 remain held for a human
+solver/configuration decision.
 
 The [current rigid quality target](topics/rigid-quality-targets.md) supersedes
 the historical 16-stack promotion gate for new work: 2/4/8 remain the
@@ -382,8 +384,9 @@ relaxation 30/10/staticx2 seed is much quieter and subjectively closer to
 Box2D than hard/direct. Its visible tall-stack penetration and step-407
 16-stack loss are accepted starting limitations, not hidden successes. Under
 the later [rigid quality target](topics/rigid-quality-targets.md), that
-16-stack result is diagnostic; the selected default still requires fresh
-sleep-off 2/4/8/12 qualification and a reported 14-stack stretch result.
+16-stack result is diagnostic. S24's fresh native discriminator subsequently
+passes 2/4/8, preserves 12/14 structurally but misses their quiet observation,
+and loses 16 at step 463; browser and physical qualification were not admitted.
 
 - Make soft-coupled the ordinary default on desktop, browser, Android, and
   headless; retain hard/direct as an explicit comparison only.
@@ -433,7 +436,8 @@ reached its manual checkpoint: generation-safe GPU sleep state, coordinated
 four-round admission/wake propagation, awake-driven solve work, the persisted
 toggle, state visualization, and matched sleeping-city evidence are complete.
 Effective sleeping remains opt-in and off by default; S23.7's promotion/default
-decision is held for human review.
+decision is held behind S24's native awake 12-stack quiet failure and a human
+solver/configuration decision.
 
 - Preserve brute force as pair-completeness oracle.
 - Implement sorted sweep-and-prune and multi-cell grid candidates.
@@ -444,9 +448,13 @@ decision is held for human review.
 
 ## P5.4 — rigid parity and performance gates
 
-- Execute
-  [S24 current rigid quality qualification](tactical/024-current-rigid-quality-qualification.md)
-  before the sleeping default decision.
+- Resolve the completed-negative
+  [S24 current rigid quality qualification](tactical/024-current-rigid-quality-qualification.md):
+  the native 2/4/8 foundation passes, but the upright 12-stack exceeds the
+  awake quiet band and stopped browser/physical expansion.
+- Authorize and execute a bounded awake solver/configuration follow-up, then
+  earn a fresh native, browser, and physical-Android 12-stack pass before the
+  sleeping default decision.
 - Complete the S23.7 sleeping promotion/default review over the implemented
   bounded wake propagation, coordinated admission, awake-driven solve, compact
   diagnostics, and sleeping-city evidence.
