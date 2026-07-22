@@ -20,6 +20,7 @@
     "bundle:web": "node scripts/build-web.mjs --release --solver-lab --output dist-web",
     "benchmark:bodies-browser": "node scripts/browser-body-benchmark.mjs",
     "benchmark:broadphase-browser": "node scripts/browser-broadphase-benchmark.mjs",
+    "benchmark:sparse-capacity": "cargo run --release -p physbox-lab --bin physbox-sparse-capacity --",
     "check:boundaries": "node scripts/check-platform-boundaries.mjs",
     "deploy": "bash scripts/deploy-web.sh",
     "deploy:dry-run": "bash scripts/deploy-web.sh --dry-run",

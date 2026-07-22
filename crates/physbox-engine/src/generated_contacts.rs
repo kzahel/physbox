@@ -4990,12 +4990,89 @@ impl GpuGeneratedContactRunner {
         substep_contact_policy: crate::GpuSubstepContactPolicyV1,
         restitution_timing_policy: crate::GpuRestitutionTimingPolicyV1,
     ) -> Result<GpuGeneratedContactOutput, String> {
+        let body_capacity = u32::try_from(scenario.bodies.len())
+            .map_err(|_| "generated validation body capacity exceeds u32".to_owned())?;
+        self.run_with_topologies_execution_scheduling_identity_extended_and_body_capacity(
+            scenario,
+            completed_steps,
+            persistence_topology,
+            gather_topology,
+            permute_edge_build,
+            permute_pair_build,
+            fingerprint_mask,
+            execution,
+            scheduling_policy,
+            identity_policy,
+            contact_coefficient_policy,
+            substep_contact_policy,
+            restitution_timing_policy,
+            body_capacity,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn run_with_topologies_execution_scheduling_identity_and_body_capacity(
+        &self,
+        scenario: &ScenarioV1,
+        completed_steps: u32,
+        persistence_topology: GpuContactPersistenceTopology,
+        gather_topology: GpuGatherTopology,
+        permute_edge_build: bool,
+        permute_pair_build: bool,
+        fingerprint_mask: u32,
+        execution: GpuSolverExecutionV4,
+        scheduling_policy: GpuSolverSchedulingPolicyV1,
+        identity_policy: ContactIdentityPolicyV1,
+        body_capacity: u32,
+    ) -> Result<GpuGeneratedContactOutput, String> {
+        self.run_with_topologies_execution_scheduling_identity_extended_and_body_capacity(
+            scenario,
+            completed_steps,
+            persistence_topology,
+            gather_topology,
+            permute_edge_build,
+            permute_pair_build,
+            fingerprint_mask,
+            execution,
+            scheduling_policy,
+            identity_policy,
+            crate::GpuContactCoefficientPolicyV1::SELECTED,
+            crate::GpuSubstepContactPolicyV1::SELECTED,
+            crate::GpuRestitutionTimingPolicyV1::SELECTED,
+            body_capacity,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn run_with_topologies_execution_scheduling_identity_extended_and_body_capacity(
+        &self,
+        scenario: &ScenarioV1,
+        completed_steps: u32,
+        persistence_topology: GpuContactPersistenceTopology,
+        gather_topology: GpuGatherTopology,
+        permute_edge_build: bool,
+        permute_pair_build: bool,
+        fingerprint_mask: u32,
+        execution: GpuSolverExecutionV4,
+        scheduling_policy: GpuSolverSchedulingPolicyV1,
+        identity_policy: ContactIdentityPolicyV1,
+        contact_coefficient_policy: crate::GpuContactCoefficientPolicyV1,
+        substep_contact_policy: crate::GpuSubstepContactPolicyV1,
+        restitution_timing_policy: crate::GpuRestitutionTimingPolicyV1,
+        body_capacity: u32,
+    ) -> Result<GpuGeneratedContactOutput, String> {
         if completed_steps == 0 {
             return Err("generated contact validation requires at least one step".to_owned());
         }
         scenario.validate().map_err(|error| error.to_string())?;
-        let body_count = u32::try_from(scenario.bodies.len())
+        let live_body_count = u32::try_from(scenario.bodies.len())
             .map_err(|_| "generated validation body count exceeds u32".to_owned())?;
+        if body_capacity < live_body_count {
+            return Err(format!(
+                "generated validation body capacity {body_capacity} cannot hold {live_body_count} live bodies"
+            ));
+        }
+        let body_count = body_capacity;
         let storage = GpuBodyStorage::new(
             &self.device,
             body_count,
@@ -5419,6 +5496,9 @@ pub struct GpuGeneratedContactBenchmarkOutput {
     pub adapter: crate::AdapterDiagnostics,
     pub source_scenario_hash: String,
     pub body_count: u32,
+    pub body_capacity: u32,
+    pub body_allocated_bytes: u64,
+    pub active_body_allocated_bytes: u64,
     pub warmup_steps: u32,
     pub samples: u32,
     pub gpu_collision_seconds: Option<Vec<f64>>,
@@ -5447,6 +5527,38 @@ pub async fn benchmark_gpu_generated_contacts(
         warmup_steps,
         samples,
         GpuGatherTopology::StableBodyEdge,
+    )
+    .await
+}
+
+/// Measures one fixed selected hard/direct graph at an explicit body reserve.
+///
+/// Unlike interactive construction, this probe deliberately keeps the
+/// scalable scheduling form at every reserve so 64/256/1K/10K rows differ
+/// only in allocation capacity. GPU-written live/candidate/point counts still
+/// own the encoded work, and correctness is replayed at the same reserve.
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn benchmark_gpu_sparse_capacity(
+    scenario: &ScenarioV1,
+    body_capacity: u32,
+    warmup_steps: u32,
+    samples: u32,
+) -> Result<GpuGeneratedContactBenchmarkOutput, String> {
+    validate_selected_settings(scenario)?;
+    if !matches!(body_capacity, 64 | 256 | 1_024 | 10_000) {
+        return Err(
+            "sparse-capacity benchmark requires a 64, 256, 1024, or 10000 body reserve".to_owned(),
+        );
+    }
+    benchmark_gpu_generated_contacts_with_execution_scheduling_identity_and_body_capacity(
+        scenario,
+        warmup_steps,
+        samples,
+        GpuGatherTopology::StableBodyEdge,
+        GpuSolverExecutionV4::SELECTED,
+        GpuSolverSchedulingPolicyV1::SELECTED,
+        ContactIdentityPolicyV1::SELECTED,
+        body_capacity,
     )
     .await
 }
@@ -5588,16 +5700,48 @@ async fn benchmark_gpu_generated_contacts_with_execution_scheduling_and_identity
     scheduling_policy: GpuSolverSchedulingPolicyV1,
     identity_policy: ContactIdentityPolicyV1,
 ) -> Result<GpuGeneratedContactBenchmarkOutput, String> {
+    let body_capacity = u32::try_from(scenario.bodies.len())
+        .map_err(|_| "generated benchmark body capacity exceeds u32".to_owned())?;
+    benchmark_gpu_generated_contacts_with_execution_scheduling_identity_and_body_capacity(
+        scenario,
+        warmup_steps,
+        samples,
+        gather_topology,
+        execution,
+        scheduling_policy,
+        identity_policy,
+        body_capacity,
+    )
+    .await
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[allow(clippy::too_many_arguments)]
+async fn benchmark_gpu_generated_contacts_with_execution_scheduling_identity_and_body_capacity(
+    scenario: &ScenarioV1,
+    warmup_steps: u32,
+    samples: u32,
+    gather_topology: GpuGatherTopology,
+    execution: GpuSolverExecutionV4,
+    scheduling_policy: GpuSolverSchedulingPolicyV1,
+    identity_policy: ContactIdentityPolicyV1,
+    body_capacity: u32,
+) -> Result<GpuGeneratedContactBenchmarkOutput, String> {
     if warmup_steps == 0 || samples == 0 {
         return Err("generated-contact benchmark requires non-zero warmup and samples".to_owned());
     }
     scenario.validate().map_err(|error| error.to_string())?;
     let body_count = u32::try_from(scenario.bodies.len())
         .map_err(|_| "generated benchmark body count exceeds u32".to_owned())?;
+    if body_capacity < body_count {
+        return Err(format!(
+            "generated benchmark body capacity {body_capacity} cannot hold {body_count} live bodies"
+        ));
+    }
     let (correctness, replay) = {
         let runner = GpuGeneratedContactRunner::new().await?;
         let run = || {
-            runner.run_with_topologies_execution_scheduling_and_identity_policy(
+            runner.run_with_topologies_execution_scheduling_identity_and_body_capacity(
                 scenario,
                 1,
                 GpuContactPersistenceTopology::StablePairSlot,
@@ -5608,6 +5752,7 @@ async fn benchmark_gpu_generated_contacts_with_execution_scheduling_and_identity
                 execution,
                 scheduling_policy,
                 identity_policy,
+                body_capacity,
             )
         };
         (run()?, run()?)
@@ -5631,7 +5776,7 @@ async fn benchmark_gpu_generated_contacts_with_execution_scheduling_and_identity
     }
     let scheduler_work = correctness
         .pass_evidence
-        .scheduler_work_vector(body_count)?;
+        .scheduler_work_vector(body_capacity)?;
 
     let query_count = samples
         .checked_mul(4)
@@ -5649,11 +5794,11 @@ async fn benchmark_gpu_generated_contacts_with_execution_scheduling_and_identity
         crate::gpu_context::request_device_with_features(&adapter, required_features).await?;
     let storage = GpuBodyStorage::new(
         &device,
-        body_count,
+        body_capacity,
         crate::BODY_COMMAND_CAPACITY,
         &scenario.bodies,
     )?;
-    let reset = crate::body_state::GpuBodyResetData::new(body_count, &scenario.bodies)?;
+    let reset = crate::body_state::GpuBodyResetData::new(body_capacity, &scenario.bodies)?;
     let graph =
         GpuGeneratedContactGraph::new_with_topologies_execution_scheduling_and_identity_policy(
             &device,
@@ -5850,6 +5995,11 @@ async fn benchmark_gpu_generated_contacts_with_execution_scheduling_and_identity
         adapter: diagnostics,
         source_scenario_hash: canonical_hash(scenario).map_err(|error| error.to_string())?,
         body_count,
+        body_capacity,
+        body_allocated_bytes: storage.body_capacity_record().allocated_bytes,
+        active_body_allocated_bytes: u64::from(
+            body_capacity + crate::body_state::ACTIVE_BODY_STATE_WORDS,
+        ) * size_of::<u32>() as u64,
         warmup_steps,
         samples,
         gpu_collision_seconds,

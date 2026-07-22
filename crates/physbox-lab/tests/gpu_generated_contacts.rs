@@ -11,8 +11,8 @@ use physbox_engine::{
     P5_2GeneratedScenarioKind, authority_gpu_probe_capacity_disposition,
     benchmark_gpu_generated_contact_experiment,
     benchmark_gpu_generated_contact_scheduling_experiment, benchmark_gpu_generated_contacts,
-    gpu_contact_softness_coefficients, p5_2_bucket_scenario, p5_2_candidate_scenario,
-    p5_2_centered_rectangle_stack_scenario, p5_2_coloring_churn_snapshots,
+    benchmark_gpu_sparse_capacity, gpu_contact_softness_coefficients, p5_2_bucket_scenario,
+    p5_2_candidate_scenario, p5_2_centered_rectangle_stack_scenario, p5_2_coloring_churn_snapshots,
     p5_2_contact_policy_candidate, p5_2_generated_performance_scenario, p5_2_generated_scenario,
     p5_2_minimized_mixed_pile_energy_scenario, p5_2_rectangle_pyramid_scenario,
     p5_2_s11_soft_depth_sweep_scenario, p5_2_s13_authority_overflow_scenario,
@@ -1034,6 +1034,30 @@ fn generated_contact_benchmark_uses_qualified_split_scopes() {
         (None, None, None) => {}
         mismatch => panic!("inconsistent generated timestamp evidence: {mismatch:?}"),
     }
+}
+
+#[test]
+fn sparse_capacity_benchmark_separates_live_work_from_reserve_allocation() {
+    let scenario = p5_2_generated_performance_scenario(2).unwrap();
+    let benchmark = pollster::block_on(benchmark_gpu_sparse_capacity(&scenario, 64, 1, 1)).unwrap();
+    assert_eq!(benchmark.body_count, 2);
+    assert_eq!(benchmark.body_capacity, 64);
+    assert_eq!(benchmark.body_allocated_bytes, 64 * 64);
+    assert_eq!(benchmark.correctness.work.bodies, 2);
+    assert_eq!(benchmark.correctness.work.candidate_pairs, 1);
+    assert!(benchmark.correctness.work.contact_points > 0);
+    assert!(benchmark.correctness.failure.is_none());
+    assert!(benchmark.replay_exact);
+    assert!(
+        benchmark
+            .correctness
+            .capacities
+            .iter()
+            .all(|capacity| capacity.accepted && !capacity.overflowed)
+    );
+    let scheduler = benchmark.scheduler_work.as_ref().unwrap();
+    assert_eq!(scheduler.body_slots, 64);
+    assert!(scheduler.conflict_winner_slots_visited > 0);
 }
 
 #[test]
