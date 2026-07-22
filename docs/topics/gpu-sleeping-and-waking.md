@@ -1,9 +1,9 @@
 # GPU sleeping and waking
 
-Status: active implementation, 2026-07-22. Tactical S23.1 through S23.5 are
-complete; S23.6 scale evidence is in progress and the manual promotion/default
-decision remains reserved for S23.7. Sleeping is effective when explicitly
-requested but remains off by default. This topic is the master record for the
+Status: manual checkpoint, 2026-07-22. Tactical S23.1 through S23.6 are
+complete; work is stopped before the manual promotion/default decision
+reserved for S23.7. Sleeping is effective when explicitly requested but
+remains off by default. This topic is the master record for the
 sleeping/waking feature: its motivation, the selected direction, the frozen
 experimental policy vocabulary, wake-trigger semantics, the toggle and
 experimentation surface, the validation contract, the execution plan, and the
@@ -47,7 +47,7 @@ change only with implementation and evidence, not because this design exists.
 | Automatic sleep admission | complete | The GPU applies the frozen integer outer-step predicate, zeroes transition velocities, and prevents dormant drift (S23.4). |
 | Awake-driven solve and integration | complete | Dense awake points and bounded solver bodies size solve/integration while live collision, persistence, and rendering retain sleepers (S23.5). |
 | Toggle and configuration surface | limited | Launch-owned state and the engine-rendered `MENU → WORLD` toggle make sleeping effective on request and persist the choice; the default remains off pending S23.7. |
-| Sleeping-city performance curves | proposed | Matched 1%/10%/100% awake evidence; conditional dormant-pair decision (S23.6). |
+| Sleeping-city performance curves | complete | Valid matched 1%/10%/100% awake curves show bounded work reduction; S23.6 retains live pair processing and makes no public product-rate claim. |
 | Cross-host qualification and promotion | proposed | Browser plus physical Android, mask-rule disclosure, human default review (S23.7). |
 
 ## The concern
@@ -259,9 +259,36 @@ fixed-support topology without reintroducing sleeping dynamics. Live SAP,
 narrowphase, persistence, support, and rendering still include sleepers.
 Focused readback observes zero body/point solve work for dormant contacts and
 full restoration on a grab wake. Exact replay across submission boundaries,
-the fixed-floor grab regression, the maintained 110-test product suite, and
-the ordinary fast/browser lane pass. S23.6 must still establish whether the
-serial correctness-first compactors yield a useful mostly-sleeping curve.
+the fixed-floor grab regression, the maintained product suite, and the
+ordinary fast/browser lane pass. S23.6 establishes that the correctness-first
+compactors yield a useful bounded mostly-sleeping curve on the named native
+adapter.
+
+### S23.6 sleeping-city evidence checkpoint
+
+The clean `d2a94fa` evidence artifact matches 1,000 live bodies at 1%, 10%,
+and 100% awake under one 1,024-slot configuration. Awake solver bodies are
+10/100/1,000 and awake points are 6/66/666 while live collision and
+persistence retain 666 points in every row. GPU end-to-end P50 is
+`5.307/6.563/7.450 ms`; the 1%-awake row is 28.8% below the dense control.
+Scheduler body slots and conflict-winner work follow the awake counts, all
+rows replay exactly, timestamps are valid, and no capacity overflows.
+
+The 1%-awake reserve comparison remains bounded across 256/1K/10K capacity
+with P50 `4.431/4.405/4.864 ms` (max/min `1.104`) while allocation grows
+honestly. Collision plus persistence occupies 26.9% of the matched 1%-awake
+P50 and persistence alone 0.9%. Although live points outnumber awake points
+111:1, the predeclared 50% dominance gate is not met, so S23.6 records
+`retain-live-pair-processing`. Dormant sleeping-pair records are not admitted.
+This measurement supports a limited mostly-sleeping capability, not a 60 Hz,
+10K, 100K, rendered-world, or CPU-crossover claim.
+
+Proportional native, browser, ARM64, APK, and authorized hardware-backed AVD
+gates pass. The browser and AVD both exercise the actual engine-rendered
+toggle; the AVD capture visibly reports `SLEEP REQUEST ON  EFFECTIVE ON`, the
+shared rigid-floor scenario completes, and the emulator shuts down. These
+checks validate the implementation boundary but do not replace S23.7's
+mask-rule disclosure and explicit human decision.
 
 ## Selected implementation direction
 
@@ -285,12 +312,11 @@ with its own GPU count and indirect arguments. Sleepers stay in the live list
 contacts and cached impulses, and keep providing collision support. Only
 solver body work and solver points compact to awake work.
 
-For the first correctness slice, SAP, narrowphase, and persistence continue to
-run over all live bodies including sleepers. Frozen or dormant sleeping-pair
-records are introduced only if the measured 1%-awake curve proves that
-sleeping–sleeping narrowphase or persistence dominates; that is a significant
-persistence-contract change owned by a separate explicit decision, not
-smuggled into the first implementation.
+SAP, narrowphase, and persistence continue to run over all live bodies
+including sleepers. S23.6 did not admit frozen or dormant sleeping-pair
+records: collision plus persistence was only 26.9% of the matched 1%-awake
+P50, below the predeclared dominance gate. Any later change remains a
+significant persistence-contract decision requiring new evidence.
 
 ### Versioned sleep state
 
@@ -418,7 +444,8 @@ Sleeping must be reversible and comparable from day one:
   conditional dormant-pair question.
 - Cross-host: this is an intentional cross-host physics-visible change, so
   qualification includes the ordinary browser representative, the ARM64
-  Android check, a release APK, and one physical Android validation.
+  Android check, a release APK, and one physical Android validation when
+  available; a hardware-backed AVD is the permitted recorded fallback.
 - The mask rule is a decisive quality gate in every package: any structure
   whose sleep-enabled outcome differs from its sleep-off outcome is reported
   as masked, with the sleep-off verdict retained as the solver verdict.
@@ -461,9 +488,9 @@ merely code existence.
 - **Reusing the ≤64-tier workgroup-island solver representation**: rejected;
   it would make wake semantics depend on the capacity preset instead of one
   shared algorithm.
-- **Immediately freezing sleeping-pair collision records**: deferred; it
-  changes the persistence contract and is admitted only by the measured
-  1%-awake curve.
+- **Immediately freezing sleeping-pair collision records**: not admitted;
+  S23.6 measured the 1%-awake curve below the predeclared dominance gate. It
+  remains a future persistence-contract change only if new evidence reopens it.
 - **Sleeping as a settling remedy**: rejected permanently by the
   awake-settling topic; the mask rule above is its enforcement here.
 
@@ -472,11 +499,10 @@ merely code existence.
 - Whether a later policy version needs an observed position-correction term;
   V1 intentionally freezes farthest-point speed only, and any expansion must
   preserve the S23.1 baseline rather than changing it in place.
-- The interaction between the frozen zero-velocity transition and retained
-  warm-start impulses on wake; evaluated once automatic transitions exist.
+- Whether a later policy should alter retained warm-start impulses on wake;
+  V1 retains them and the current wake-restoration/exact-replay gates pass.
 - Whether sleeping should be promoted from its off default after the S23.6
   evidence and S23.7 qualification package.
-- Whether the 1%-awake curve forces the dormant-pair persistence decision.
 
 ## Reconsideration triggers
 

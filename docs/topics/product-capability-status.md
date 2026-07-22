@@ -76,7 +76,7 @@ quality. Known limitations remain part of the row.
 | SCALE-1 | Small-world rigid scenes | **Implemented** | The safe 64-slot default, authored-scene headroom, and explicit 256/1K/10K opt-ins use selected SAP and reserve-independent active work; the 100-body diagnostic buckets execute correctly but are not sustained-rate claims on every device. |
 | SCALE-2 | Scalable broadphase | **Implemented** | SAP is selected and integrated; exact native 100/1K/10K curves, a zero-slip 100-body browser row, and physical Pixel bootstrap/bucket execution pass. This does not establish a 1K-plus rendered product-world rate. |
 | SCALE-3 | 1K-100K product-world claims | **Not implemented** | Existing authored-contact/isolated-solver measurements are not scalable end-to-end body claims. |
-| SCALE-4 | Mostly-sleeping scale | **Not implemented** | Awake-driven body and point work is implemented, but no mostly-sleeping claim exists until S23.6 produces valid matched 1%/10%/100% awake curves and takes the conditional dormant-pair decision. |
+| SCALE-4 | Mostly-sleeping scale | **Limited** | Valid named-adapter 1%/10%/100% awake curves show solver work and GPU time falling with awake bodies/points, and reserve probes remain bounded through 10K capacity. Live pair processing is retained; no rendered 10K/100K, 60 Hz, or cross-adapter product-rate claim exists. |
 | QUAL-1 | Box2D process oracle | **Implemented** | Clean pinned native process covers current circle/rectangle projections, public manifolds, selected actions, and deterministic results. |
 | QUAL-2 | Comprehensive rigid acceptance | **Limited** | Core fixtures and extensive research evidence exist; a compact current-default P5.4 acceptance suite is not yet closed. |
 | QUAL-3 | Correctness-qualified CPU/GPU crossover | **Not implemented** | Requires broadphase, sleeping, equivalent-quality worlds, and scoped solver/collision/end-to-end/full-frame curves. |
@@ -94,9 +94,9 @@ quality. Known limitations remain part of the row.
 
 ## Current execution order
 
-1. Continue sleeping/waking from the inert S23.2 checkpoint with explicit wake
-   roots/propagation, then sleep admission and awake-driven solve; close
-   current-default rigid acceptance and scale afterward.
+1. Hold sleeping/waking at the S23.6 measured checkpoint for S23.7 human
+   promotion/default review; close current-default rigid acceptance and scale
+   afterward.
 2. Extend the construction loop with editable selection, scene documents, and
    one joint.
 3. Begin bounded liquid and same-step rigid/fluid coupling.

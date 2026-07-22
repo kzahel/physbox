@@ -1,11 +1,11 @@
 # S23: GPU sleeping and waking
 
-Status: active implementation 2026-07-22. S23.1 through S23.5 are complete;
-S23.6 matched sleeping-city scale evidence is the current slice. Sleeping is
-effective when explicitly requested through the shared menu or launch
-configuration, but remains off by default. No physical Android device is
-available, so the user explicitly authorized a hardware-backed AVD for the
-later proportional qualification lane.
+Status: manual checkpoint 2026-07-22. S23.1 through S23.6 are complete and
+work is stopped before S23.7's reserved human promotion/default decision.
+Sleeping is effective when explicitly requested through the shared menu or
+launch configuration, but remains off by default. The user explicitly
+authorized the hardware-backed AVD in place of a physical-device lane for
+this unattended checkpoint.
 
 Governing topics:
 [GPU sleeping and waking](../topics/gpu-sleeping-and-waking.md),
@@ -236,13 +236,54 @@ assertion failure.
 
 ### S23.6 — scale evidence and dormant-pair decision
 
-- [ ] Produce valid matched sleeping-city curves at 1%, 10%, and 100% awake,
+- [x] Produce valid matched sleeping-city curves at 1%, 10%, and 100% awake,
   retain the sparse-capacity flatness probe, and include a dense awake control.
-- [ ] Attribute remaining work by stage and take the dormant sleeping-pair
+- [x] Attribute remaining work by stage and take the dormant sleeping-pair
   decision only if the 1%-awake row demonstrates that need.
 
 Gate: reports satisfy the performance topic's provenance, work-accounting,
 timer-validity, overflow, and cross-capacity comparison rules.
+
+Checkpoint evidence: `benchmark:sleeping-city` at clean revision `d2a94fa`
+records valid native GPU timestamps, exact replay, clean capacity, complete
+work vectors, four warmup steps, and 20 retained samples on AMD Radeon 890M
+RADV Vulkan. The matched 1,000-body/1,024-capacity rows at 1%/10%/100% awake
+report 10/100/1,000 awake solver bodies and 6/66/666 awake points while all
+retain 666 live points. GPU end-to-end P50 is
+`5.307/6.563/7.450 ms` (P95 `5.859/7.439/8.521 ms`); the 1%-awake row is
+28.8% below the dense control. Solver winner visits scale honestly from
+10,240 through 1,024,000. The 1%-awake reserve probe remains flat enough at
+256/1K/10K capacity (`4.431/4.405/4.864 ms`, max/min `1.104`) while accounted
+allocation grows from 3,556,548 to 125,073,624 bytes. The existing two-body
+sparse control remains bounded through the same 10K tier (max/min `1.220`).
+
+The predeclared dormant-pair gate is not met. Collision plus persistence is
+26.9% of 1%-awake GPU P50, persistence alone is 0.9%, and the live/awake point
+ratio is 111x; the recorded decision is therefore
+`retain-live-pair-processing`, not a persistence-contract change. This is a
+useful measured work-reduction result, not a rendered 60 Hz, 10K, 100K, CPU
+crossover, or public product-rate claim. Artifact
+`/tmp/physbox5-s23.6-d2a94fa.json` has SHA-256
+`8c3fd6d925fa62e3c9d3385973dc173eae5df137bce5923af7d71de17f080f2a`.
+
+Proportional qualification also exposed and fixed the zero-awake topology
+clear seam (`0e6168e`): a 120-step sleeping floor now decodes empty solver
+evidence without stale color state. `npm run test:fast` passes all 112
+maintained engine tests, production clippy passes with warnings denied, and
+the solver-lab browser lane exercises the real menu toggle including
+persistence and off restoration. ARM64 check, dual-ABI release-native/debug
+APK, and Gradle release APK builds pass. Clean headless revision `0e6168e`
+reports requested/effective sleeping on and a complete rigid-floor result;
+its visually inspected PNG/report SHA-256 values are
+`b7e1a8e0107d9ae777e4d804733002ee98574bf43b67d8e77dcd6165fac5349d` and
+`367308f80a9868452b7a930fd5ac176a2bc9b79afd8cb863bb739d00e052692b`.
+Clean AVD revision `d0f5de3` taps `MENU → WORLD → SLEEP REQUEST`, waits for
+requested/effective on and the complete shared rigid-floor result, captures
+the visible on-state, and shuts down successfully. Its PNG/provenance SHA-256
+values are `de3530c235b5d863481529de5d4b5865d640d3f5357a53702d9012804cfdbbbc`
+and `2e86565903ed77b5d7994ab60e84415ee2eee6d70b1456018550327952fec866`.
+These proportional gates do not complete S23.7's broader mask-rule and human
+promotion review.
 
 ### S23.7 — cross-host qualification and promotion review
 

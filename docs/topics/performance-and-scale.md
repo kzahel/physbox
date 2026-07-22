@@ -588,8 +588,33 @@ The prior browser and physical Pixel 7a comparisons also removed the original
 sparse 1K reserve cliff. The closing revision passes clean headless and Browser
 WebGPU validation; because no physical device was attached, its final Android
 delta used the permitted hardware-backed AVD fallback and shut the emulator
-down. S22 is complete. Sleeping remains unimplemented and is now the next
-consumer of this live-set foundation rather than part of the measured result.
+down. S22 is complete. At that closure sleeping remained the next consumer of
+this live-set foundation rather than part of the measured S22 result.
+
+Sleeping-city checkpoint, 2026-07-22: S23.6 adds a durable matched workload
+with 1,000 live bodies at 1%, 10%, and 100% awake, a 1%-awake reserve
+comparison, and the existing sparse control. Clean revision `d2a94fa` runs on
+AMD Radeon 890M RADV Vulkan with valid 10.019036 ns GPU timestamps, four
+warmup steps, 20 retained samples, exact replay, complete work accounting,
+and zero accepted overflow. The matched rows retain 666 live contact points
+but compact to 6/66/666 awake points and 10/100/1,000 solver bodies. GPU
+end-to-end P50 is `5.307/6.563/7.450 ms` and P95 is
+`5.859/7.439/8.521 ms`; the 1%-awake row is 28.8% below the dense control.
+Conflict-winner work grows from 10,240 to 1,024,000 visits, demonstrating that
+solver scheduling follows awake work rather than the live reserve.
+
+The 1%-awake 200-body row at 256/1K/10K capacity records GPU P50
+`4.431/4.405/4.864 ms`, a max/min ratio of `1.104`, while allocation grows
+honestly from 3,556,548 to 125,073,624 bytes. The two-body sparse control at
+64/256/1K/10K remains bounded at max/min `1.220`. The predeclared dormant-pair
+gate is not met: collision plus persistence is 26.9% of 1%-awake P50,
+persistence alone is 0.9%, and the 111x live/awake point ratio does not
+overrule the 50% stage-dominance requirement. The decision is
+`retain-live-pair-processing`. Artifact
+`/tmp/physbox5-s23.6-d2a94fa.json` has SHA-256
+`8c3fd6d925fa62e3c9d3385973dc173eae5df137bce5923af7d71de17f080f2a`.
+This is a named-adapter work-reduction result, not a public 60 Hz, rendered
+10K/100K, or CPU/GPU crossover claim.
 
 No LBVH arm is admitted from this matrix. Reopen that question only for a
 measured integrated-SAP miss or a specific sparse multiscale/active-window
