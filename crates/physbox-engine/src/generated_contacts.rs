@@ -6038,7 +6038,7 @@ async fn benchmark_gpu_generated_contacts_with_execution_scheduling_identity_and
     }
     let scheduler_work = correctness
         .pass_evidence
-        .scheduler_work_vector(body_count)?;
+        .scheduler_work_vector(correctness.solver_body_count)?;
 
     let query_count = samples
         .checked_mul(4)
