@@ -570,10 +570,6 @@ fn capture_world_step_trace(
         });
     }
 
-    if completed_step < 900 {
-        return Ok(());
-    }
-
     let mut contacts = BTreeMap::<(i32, u16, u32), ffi::b2ContactData>::new();
     for raw_body in raw_bodies {
         let capacity = unsafe { ffi::b2Body_GetContactCapacity(*raw_body) }.max(0) as usize;

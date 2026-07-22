@@ -247,7 +247,10 @@ impl SolverProfileConfig {
         }
     }
 
-    pub(crate) fn apply_to_scenario(&self, scenario: &mut ScenarioV1) -> Result<(), String> {
+    /// Projects the launch-owned configuration into an engine-owned neutral
+    /// scenario. Evidence tooling uses the same one-time projection as the
+    /// shared host instead of rebuilding solver coefficients independently.
+    pub fn apply_to_scenario(&self, scenario: &mut ScenarioV1) -> Result<(), String> {
         scenario.settings.fixed_dt = finite("fixed dt", self.physics.fixed_dt_seconds())?;
         scenario.settings.substeps = self.physics.substeps;
         scenario.settings.iterations = self.physics.biased_iterations;

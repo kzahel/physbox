@@ -15,9 +15,97 @@ pub const SETTLING_OBSERVATION_VERSION: u32 = 1;
 pub const SETTLING_OBSERVATION_V2_VERSION: u32 = 2;
 pub const CONTACT_IDENTITY_POLICY_VERSION: u32 = 1;
 pub const CONTACT_SOFTNESS_POLICY_VERSION: u32 = 1;
+pub const SLEEP_POLICY_VERSION: u32 = 1;
 pub const ORACLE_SUCCESS_SENTINEL: &str = "PHYSBOX5_ORACLE_SUCCESS";
 
 pub use collision::*;
+
+/// Velocity measure used to decide whether a dynamic body is quiet enough to
+/// accumulate sleep time. The first product policy deliberately has one
+/// auditable metric; adding position correction or another signal requires a
+/// new enum value and evidence rather than an unversioned shader constant.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SleepQuietMetricV1 {
+    FarthestPointSpeed,
+}
+
+/// The explicit velocity operation performed at an automatic sleep
+/// transition. It is separate from quiet evaluation so wake behavior cannot
+/// silently inherit stale sub-threshold motion.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SleepTransitionVelocityV1 {
+    ZeroLinearAndAngular,
+}
+
+/// Semantic grouping of sleep admission and wake expansion. S23 begins with
+/// per-body admission and later freezes the bounded contact-neighbor round
+/// count; this value distinguishes it from Box2D's whole-island behavior.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SleepGroupingV1 {
+    PerBodyBoundedContactNeighbors,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SleepPolicyV1 {
+    pub version: u32,
+    pub quiet_metric: SleepQuietMetricV1,
+    pub speed_threshold: FiniteF32,
+    pub quiet_duration_milliseconds: u32,
+    pub transition_velocity: SleepTransitionVelocityV1,
+    pub grouping: SleepGroupingV1,
+}
+
+impl SleepPolicyV1 {
+    /// Frozen S23 experimental seed. It is not a product default: the 0.02 m/s
+    /// threshold lies above the selected soft solver's recorded 0.007701 m/s
+    /// settled residual and below Box2D's 0.05 m/s authority seed.
+    pub fn experimental_s23() -> Self {
+        Self {
+            version: SLEEP_POLICY_VERSION,
+            quiet_metric: SleepQuietMetricV1::FarthestPointSpeed,
+            speed_threshold: FiniteF32::new(0.02).expect("finite sleep threshold"),
+            quiet_duration_milliseconds: 500,
+            transition_velocity: SleepTransitionVelocityV1::ZeroLinearAndAngular,
+            grouping: SleepGroupingV1::PerBodyBoundedContactNeighbors,
+        }
+    }
+
+    pub fn quiet_outer_steps(self, fixed_step_hz: u32) -> Result<u32, ContractError> {
+        self.validate()?;
+        if fixed_step_hz == 0 {
+            return Err(ContractError(
+                "sleep quiet-step conversion requires positive fixed-step hertz".to_owned(),
+            ));
+        }
+        let numerator = u64::from(self.quiet_duration_milliseconds)
+            .checked_mul(u64::from(fixed_step_hz))
+            .ok_or_else(|| ContractError("sleep quiet-step conversion overflowed".to_owned()))?;
+        u32::try_from(numerator.div_ceil(1_000))
+            .map_err(|_| ContractError("sleep quiet-step count exceeds u32".to_owned()))
+    }
+}
+
+impl Validate for SleepPolicyV1 {
+    fn validate(&self) -> Result<(), ContractError> {
+        self.speed_threshold.validate()?;
+        if self.version != SLEEP_POLICY_VERSION {
+            return Err(ContractError(format!(
+                "unsupported sleep policy version {}, expected {SLEEP_POLICY_VERSION}",
+                self.version
+            )));
+        }
+        if self.speed_threshold.get() <= 0.0 || self.quiet_duration_milliseconds == 0 {
+            return Err(ContractError(
+                "sleep speed threshold and quiet duration must be positive".to_owned(),
+            ));
+        }
+        Ok(())
+    }
+}
 
 /// Laboratory policy for choosing the reference face of a rectangle contact.
 ///
@@ -2174,6 +2262,25 @@ fn is_sha256(value: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn experimental_sleep_policy_is_versioned_serializable_and_step_exact() {
+        let policy = SleepPolicyV1::experimental_s23();
+        policy.validate().unwrap();
+        assert_eq!(policy.quiet_outer_steps(30).unwrap(), 15);
+        assert_eq!(policy.quiet_outer_steps(60).unwrap(), 30);
+        assert_eq!(policy.quiet_outer_steps(120).unwrap(), 60);
+        let bytes = canonical_json(&policy).unwrap();
+        assert_eq!(
+            serde_json::from_slice::<SleepPolicyV1>(&bytes).unwrap(),
+            policy
+        );
+
+        let mut wrong_version = policy;
+        wrong_version.version += 1;
+        assert!(wrong_version.validate().is_err());
+        assert!(policy.quiet_outer_steps(0).is_err());
+    }
 
     fn finite(value: f32) -> FiniteF32 {
         FiniteF32::new(value).unwrap()
