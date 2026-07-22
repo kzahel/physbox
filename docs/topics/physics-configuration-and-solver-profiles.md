@@ -76,7 +76,8 @@ S25's bounded configuration screen then qualifies the already-supported
 60/8/i1 alternative on 2/4/8/12, preserves 14, and reports first 16-stack loss
 at step 840. Browser WebGPU and physical Pixel 7a Vulkan complete the same
 six scenario/configuration identities. This supplies a real alternative for
-human review; it does not silently change the seed.
+human review. That review retains 60/4/i1 and accepts its 8-box awake quality
+limit for now; 60/8/i1 remains custom evidence and does not change the seed.
 
 Historical S6-S18 negative dispositions remain true within their frozen
 questions. They explain limitations and preserve useful implementations; they
@@ -176,11 +177,13 @@ increasing ordinary-stack motion; 8/i1 and 8/i2 delayed first loss but became
 violently active after loss and cost substantially more. S25 asks the narrower
 current question and establishes that 8/i1 does clear the 12-stack awake gate,
 with 15-43% higher fully observed validation-wall cost across the four blocker
-depths. That measured quality/cost trade-off is now ready for human default
-review, not automatic preset creation. The existing 30/10/staticx1 response
-remains representable as an ordinary custom soft configuration. Additional
-presets are admitted only when they offer a distinct, reviewed trade-off; a
-grid cell is not a product preset merely because it exists.
+depths. That measured quality/cost trade-off was presented for human default
+review. Human review declined promotion, retained 60/4/i1, and accepted the
+known 8-quality/14-structural boundary instead of creating a preset. The
+existing 30/10/staticx1 response remains representable as an ordinary custom
+soft configuration. Additional presets are admitted only when they offer a
+distinct, reviewed trade-off; a grid cell is not a product preset merely
+because it exists.
 
 ## Runtime and pacing semantics
 

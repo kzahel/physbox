@@ -5,7 +5,9 @@ configuration, 2026-07-22. This topic owns the awake rigid stack hierarchy for
 new implementation and promotion work. The ordinary soft-coupled default
 misses the native 12-stack quiet observation; a bounded eight-substep custom
 configuration now passes 2/4/8/12 and has matching browser/physical-Android
-product-path evidence. Promotion remains a human default decision.
+product-path evidence. Human review retains the four-substep default and
+accepts an 8-box awake quality claim plus demonstrated 14-box structural
+survival as the current limitation; the 12-stack target itself is unchanged.
 
 Governing direction:
 [one GPU-resident 2D physics world](physbox5-unified-gpu-physics.md).
@@ -99,10 +101,10 @@ motion than the accepted awake quiet band. Per S24's predeclared stop, no
 durable product package, browser row, or physical-Android row was produced.
 Those missing hosts are neither passes nor inferred failures.
 
-This blocks current product qualification without changing the target,
-threshold, solver, or default. S23.7 remains held until human review authorizes
-an awake solver/configuration follow-up and a fresh native 12-stack attempt.
-The exact commands and full disposition are recorded in S24.
+This blocked product qualification without changing the target, threshold,
+solver, or default. At that checkpoint S23.7 remained held until human review
+authorized an awake solver/configuration follow-up and a fresh native 12-stack
+attempt. The exact commands and full disposition are recorded in S24.
 
 Human review subsequently authorizes S25 as that bounded configuration-only
 follow-up. It freezes six evidence-driven rows, retains this topic's bands and
@@ -144,10 +146,14 @@ same configuration/scenario hashes, clean capacity, and final captures. The
 12 capture remains upright and the 16 capture exposes the diagnostic loss;
 native readback continues to own numerical quiet/structure.
 
-This is outcome evidence for a custom setting, not a default change. The
-ordinary default remains four substeps and therefore remains unqualified at
-12. Human review can now compare the passing quality margin and visibly
-higher work before deciding whether eight substeps should replace it.
+This is outcome evidence for a custom setting, not a default change. Human
+review compared its quality margin and visibly higher work, declined
+promotion, and retained four substeps. The default is described conservatively
+as an 8-box awake quality stack. Its 12- and 14-box rows demonstrate upright
+1,200-step structural survival but fail quietness; 15 is unmeasured in the
+final default run, and 16 loses structure at step 463. This accepts a current
+product limitation without moving the 12-stack acceptance target or claiming
+that 14 is a full quality pass.
 
 ## Why 16 is a diagnostic, not the product gate
 
@@ -204,8 +210,9 @@ is not qualified under the new hierarchy. S24 supplies its fresh native
 2/4/8/12/14/16 discriminator and 12-stack quiet failure. S25 does not rewrite
 that result: it qualifies the explicit 60/8/i1 custom alternative across the
 native, browser, and physical-Android paths. Its 16-stack loss at step 840
-remains diagnostic rather than blocking. Default promotion is the remaining
-decision.
+remains diagnostic rather than blocking. Human review declined promotion and
+retained the default with the explicit 8-quality/14-structural limitation
+above.
 
 ## Validation and reporting
 

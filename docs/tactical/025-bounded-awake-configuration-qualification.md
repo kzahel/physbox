@@ -1,10 +1,10 @@
 # S25 — Bounded awake configuration qualification
 
-Status: complete at human default-review checkpoint, 2026-07-22. The bounded
-screen selected one eight-substep custom finalist, and its native product,
-browser, and physical-Android qualification passes the blocking 2/4/8/12
-contract. The solver family, equation, awake bands, sleeping policy, and
-ordinary four-substep product default remain unchanged.
+Status: complete with human disposition, 2026-07-22. The bounded screen
+selected one eight-substep custom finalist, and its native product, browser,
+and physical-Android qualification passes the blocking 2/4/8/12 contract.
+Human review retains the ordinary four-substep default and accepts its lower
+awake stack quality as a known limitation for now.
 
 Governing topics:
 [rigid quality targets](../topics/rigid-quality-targets.md),
@@ -282,6 +282,17 @@ invocation could not locate the SDK; sourcing `android/toolchain.sh` and
 `physbox5_android_detect_sdk` made the declared release build pass. No AVD was
 started.
 
+Human disposition, 2026-07-22: do not promote the eight-substep finalist and
+do not add a named quality preset. Retain soft-coupled 60/4/i1, contact
+30 Hz/damping 10/static x2 as the ordinary default. Describe that default as
+an **8-box awake quality stack**: 2/4/8 pass the complete quiet/structure gate.
+Twelve and 14 remain standing for the exact 1,200-step observation but exceed
+the quiet band, so they are only demonstrated structural/visual survival, not
+quality passes. Sixteen loses structure at step 463. Fifteen was not measured
+in the final current-default run, so the structural boundary is only known to
+be at least 14 and below 16. The qualified 60/8/i1 result remains reproducible
+custom evidence, not a shipped default or continuing implementation task.
+
 ## S25.4 — disposition
 
 - [x] Update the quality topic, configuration topic, capability ledger,
@@ -292,6 +303,8 @@ started.
 - [x] If one S25.3 finalist passes, leave the default unchanged and stop at a
   human subjective/default decision with the exact interactive configuration
   available through the existing menu.
+- [x] Record the human decision to retain 60/4/i1 and accept an 8-box awake
+  quality claim plus demonstrated 14-box structural survival for now.
 - [x] Commit each admitted implementation boundary before producing clean
   evidence and finish with a clean worktree.
 

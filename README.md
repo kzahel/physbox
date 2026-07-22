@@ -45,10 +45,15 @@ minimum. See [rigid quality targets](docs/topics/rigid-quality-targets.md).
 
 The first clean current-default checkpoint passes the native 2/4/8 foundation,
 but its structurally upright 12-stack measures `0.029767 m/s` against the
-existing `0.025000 m/s` awake quiet band. The declared stop therefore skipped
-browser and physical-Android expansion; the next step is a human awake-
-solver/configuration decision, not sleep-assisted acceptance. S23.7 remains
-held. See [S24](docs/tactical/024-current-rigid-quality-qualification.md).
+existing `0.025000 m/s` awake quiet band. S25 qualified an eight-substep custom
+alternative across native, Browser WebGPU, and physical Pixel paths, but human
+review chose its lower-cost four-substep default and accepted the limitation
+for now. The conservative product description is therefore an **8-box awake
+quality stack** with demonstrated 14-box structural survival: 12 and 14 remain
+standing for 1,200 steps but are not quietness passes, 15 is unmeasured in the
+final default run, and 16 loses structure at step 463. Sleeping may not replace
+that awake result. See [S24](docs/tactical/024-current-rigid-quality-qualification.md)
+and [S25](docs/tactical/025-bounded-awake-configuration-qualification.md).
 
 The repository still contains no Rapier or CPU product physics backend, fluid
 solver, legacy settings UI, or PhysBox 4 scene compatibility.

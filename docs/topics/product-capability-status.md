@@ -54,9 +54,9 @@ quality. Known limitations remain part of the row.
 | COLL-6 | Collision filtering and sensors | **Not implemented** | No product category/mask/group filtering or trigger/sensor contract exists. |
 | COLL-7 | Contact/query events | **Not implemented** | No general begin/end/hit event stream, AABB query, ray cast, or shape cast API exists. |
 | COLL-8 | GPU picking | **Limited** | Shared grab/erase selection uses bounded GPU hit selection; it is not a general spatial-query API. |
-| SOLVE-1 | Soft-coupled rigid solver | **Implemented** | Reviewed 60/4/i1, contact 30 Hz/damping 10/static x2 default remains unchanged and misses the sleep-off 12 quiet gate. A qualified 60/8/i1 custom alternative passes 2/4/8/12, preserves 14, loses 16 at step 840, and has matching browser/physical-Pixel product-path evidence at 15-43% higher fully observed validation-wall cost across blocker depths. |
+| SOLVE-1 | Soft-coupled rigid solver | **Implemented** | Human review retains the lower-cost 60/4/i1, contact 30 Hz/damping 10/static x2 default. Its conservative claim is an 8-box awake quality stack with demonstrated 14-box structural survival: 12/14 exceed the quiet band, 15 is unmeasured in the final run, and 16 loses structure at step 463. Qualified 60/8/i1 remains custom evidence, not a preset. |
 | SOLVE-2 | Hard/direct comparison | **Implemented** | Explicit named comparator only; never an automatic fallback. |
-| SOLVE-3 | Sleeping and waking | **Limited** | Opt-in effective GPU sleeping has versioned generation-safe state, four-round wake propagation, integer outer-step admission, awake-driven solve/integration, and an engine-rendered persisted toggle. S23.7 now waits at the same human default-review checkpoint as the qualified S25 awake configuration; neither default changes automatically. |
+| SOLVE-3 | Sleeping and waking | **Limited** | Opt-in effective GPU sleeping has versioned generation-safe state, four-round wake propagation, integer outer-step admission, awake-driven solve/integration, and an engine-rendered persisted toggle. With the awake configuration disposition complete, S23.7 remains the separate next promotion/default review; sleeping may not replace the accepted awake limitation. |
 | JOINT-1 | Grab constraint | **Implemented** | Anchored GPU grab retains collision and bounded release velocity. |
 | JOINT-2 | General joints | **Not implemented** | Distance/revolute or another first authored joint follows accepted free-body rigid behavior. |
 
@@ -80,7 +80,7 @@ quality. Known limitations remain part of the row.
 | SCALE-3 | 1K-100K product-world claims | **Not implemented** | Existing authored-contact/isolated-solver measurements are not scalable end-to-end body claims. |
 | SCALE-4 | Mostly-sleeping scale | **Limited** | Valid named-adapter 1%/10%/100% awake curves show solver work and GPU time falling with awake bodies/points, and reserve probes remain bounded through 10K capacity. Live pair processing is retained; no rendered 10K/100K, 60 Hz, or cross-adapter product-rate claim exists. |
 | QUAL-1 | Box2D process oracle | **Implemented** | Clean pinned native process covers current circle/rectangle projections, public manifolds, selected actions, and deterministic results. |
-| QUAL-2 | Comprehensive rigid acceptance | **Limited** | The custom 60/8/i1 awake package passes native 2/4/8/12 with exact replay and matching Browser WebGPU/physical-Pixel configuration and scenario identities; 14 passes and 16 fails diagnostically at step 840. The ordinary 60/4/i1 default still fails 12, so P5.4 remains at a human default/subjective decision rather than claiming comprehensive parity. |
+| QUAL-2 | Comprehensive rigid acceptance | **Limited** | The ordinary 60/4/i1 default passes the 2/4/8 awake foundation but misses 12 quietness; human review accepts that gap for now and declines the qualified costlier 60/8/i1 alternative. Product wording is 8-box awake quality plus demonstrated 14-box structural survival, not comprehensive parity. The 12 target remains future work. |
 | QUAL-3 | Correctness-qualified CPU/GPU crossover | **Not implemented** | Requires broadphase, sleeping, equivalent-quality worlds, and scoped solver/collision/end-to-end/full-frame curves. |
 | TEST-1 | Everyday fast lane | **Implemented** | `npm run test:fast` runs format, maintained Rust plus performance smoke, tool tests, boundaries, and browser WebGPU under a 120-second hard budget. |
 | TEST-2 | Exhaustive research/audit lane | **Implemented** | Historical lab/oracle matrices remain opt-in; they are not ordinary pre-push gates. |
@@ -96,15 +96,14 @@ quality. Known limitations remain part of the row.
 
 ## Current execution order
 
-1. Review the qualified S25 60/8/i1 custom configuration interactively and
-   decide whether its 12-stack quality margin justifies the measured extra
-   work as the ordinary default. Keep 60/4/i1 until that explicit decision.
-2. Complete the held S23.7 sleeping promotion/default review without using
+1. Complete the held S23.7 sleeping promotion/default review without using
    sleep-enabled survival to replace the awake package.
-3. Close the remaining selected-default rigid acceptance and scale work.
-4. Extend the construction loop with editable selection, scene documents, and
+2. Close the remaining selected-default rigid acceptance and scale work while
+   preserving the accepted 8-quality/14-structural limitation.
+3. Extend the construction loop with editable selection, scene documents, and
    one joint.
-5. Begin bounded liquid and same-step rigid/fluid coupling.
+4. Begin bounded liquid and same-step rigid/fluid coupling only after the
+   remaining P5.4 prerequisite is explicitly resolved.
 
 ## Reconsideration triggers
 
