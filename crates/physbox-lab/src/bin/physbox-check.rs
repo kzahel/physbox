@@ -77,8 +77,11 @@ enum Scene {
 impl Scene {
     fn parse(value: &str) -> Result<Self, String> {
         match value {
+            "stack2" => Ok(Self::Stack(2)),
             "stack4" => Ok(Self::Stack(4)),
             "stack8" => Ok(Self::Stack(8)),
+            "stack12" => Ok(Self::Stack(12)),
+            "stack14" => Ok(Self::Stack(14)),
             "stack16" => Ok(Self::Stack(16)),
             "stack32" => Ok(Self::Stack(32)),
             "stack64" => Ok(Self::Stack(64)),
@@ -89,15 +92,18 @@ impl Scene {
             "restitution" => Ok(Self::Restitution),
             "short-stack" => Ok(Self::ShortStack),
             _ => Err(format!(
-                "invalid scene {value}; expected stack4, stack8, stack16, stack32, stack64, bucket, impact, off-center, friction, restitution, or short-stack"
+                "invalid scene {value}; expected stack2, stack4, stack8, stack12, stack14, stack16, stack32, stack64, bucket, impact, off-center, friction, restitution, or short-stack"
             )),
         }
     }
 
     const fn name(self) -> &'static str {
         match self {
+            Self::Stack(2) => "stack2",
             Self::Stack(4) => "stack4",
             Self::Stack(8) => "stack8",
+            Self::Stack(12) => "stack12",
+            Self::Stack(14) => "stack14",
             Self::Stack(16) => "stack16",
             Self::Stack(32) => "stack32",
             Self::Stack(64) => "stack64",
@@ -686,11 +692,12 @@ fn print_help() {
         "physbox-check [--sim-hz N] [--substeps N] [--iterations N] \
          [--hz N] [--damping N] [--static-scale N] \
          [--lane both|selected|candidate] \
-         [--scenes stack4,stack8,stack16,bucket,impact,off-center,friction,restitution,short-stack] [--steps N]\n\n\
+         [--scenes stack2,stack4,stack8,stack12,stack14,stack16,bucket,impact,off-center,friction,restitution,short-stack] [--steps N]\n\n\
          Defaults: --sim-hz 60 --substeps 4 --iterations 1 --hz 30 \
          --damping 10 --static-scale 2 --lane both \
          --scenes stack4,stack8,stack16,bucket. Stacks run 1200 steps and the \
          rectangle bucket runs 600; --steps overrides every selected scene. \
-         stack32, stack64, and the five response probes are optional diagnostics."
+         stack2/12/14 provide the current quality hierarchy; stack32, stack64, \
+         and the five response probes are optional diagnostics."
     );
 }

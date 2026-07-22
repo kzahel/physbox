@@ -35,7 +35,7 @@ configuration with sleeping disabled on 2/4/8/12 centered stacks, then report
 
 ## S24.1 — native blocking discriminator
 
-- [ ] Extend the maintained `physbox-check` vocabulary to 2/12/14 without
+- [x] Extend the maintained `physbox-check` vocabulary to 2/12/14 without
   changing its existing historical lanes or defaults.
 - [ ] Run the current soft tuple in release mode for exact 1,200-step
   2/4/8/12/14/16 sleep-off rows on a named native GPU.
