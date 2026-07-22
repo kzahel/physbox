@@ -774,6 +774,7 @@ impl GpuBodyWorld {
                 uniform_entry(3, wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT),
                 storage_entry(4, true, wgpu::ShaderStages::VERTEX),
                 storage_entry(5, true, wgpu::ShaderStages::VERTEX),
+                storage_entry(6, true, wgpu::ShaderStages::VERTEX),
             ],
         });
         let render_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -803,6 +804,10 @@ impl GpuBodyWorld {
                 wgpu::BindGroupEntry {
                     binding: 5,
                     resource: storage.sleep_state_buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: grab_state.as_entire_binding(),
                 },
             ],
         });

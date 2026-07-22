@@ -9,6 +9,13 @@ struct SleepStateV1 {
     provenance: vec4u,
 };
 
+struct GrabState {
+    identity_status: vec4u,
+    local_anchor_target: vec4f,
+    counters: vec4u,
+    activity: vec4u,
+};
+
 struct BodyVertexOutput {
     @builtin(position) position: vec4f,
     @location(0) local: vec2f,
@@ -30,17 +37,18 @@ struct GrabVertexOutput {
 @group(0) @binding(3) var<uniform> params: RenderParams;
 @group(0) @binding(4) var<storage, read> active_bodies: array<u32>;
 @group(0) @binding(5) var<storage, read> sleep_states: array<SleepStateV1>;
+@group(0) @binding(6) var<storage, read> grab: GrabState;
 
 const FLAG_LIVE: u32 = 1u << 0u;
 const FLAG_FIXED: u32 = 1u << 2u;
 const FLAG_RECTANGLE: u32 = 1u << 8u;
 const FLAG_CIRCLE: u32 = 1u << 9u;
 const SLEEP_FLAG_AWAKE: u32 = 1u << 0u;
-const SLEEP_FLAG_ELIGIBLE: u32 = 1u << 1u;
 const SLEEP_STATE_LAYOUT_VERSION: u32 = 1u;
 const CAUSE_INITIALIZATION: u32 = 1u << 0u;
 const CAUSE_CONFIGURATION: u32 = 1u << 1u;
 const CAUSE_AUTOMATIC: u32 = 1u << 9u;
+const GRAB_ACTIVE: u32 = 1u;
 const VISUAL_NORMAL: u32 = 0u;
 const VISUAL_QUIET: u32 = 1u;
 const VISUAL_ASLEEP: u32 = 2u;
@@ -93,12 +101,16 @@ fn body_vertex(
     var sleep_visual_state = VISUAL_NORMAL;
     var quiet_progress = 0.0;
     if (params.sleep_visualization.x != 0u && (flags & FLAG_FIXED) == 0u) {
+        let actively_grabbed = grab.identity_status.x == body_index &&
+            grab.identity_status.y == identity.x &&
+            grab.identity_status.z == GRAB_ACTIVE;
         let state = sleep_states[body_index];
         let state_flags = state.identity_flags.y;
         let valid = state.identity_flags.x == identity.x &&
-            state.provenance.z == SLEEP_STATE_LAYOUT_VERSION &&
-            (state_flags & SLEEP_FLAG_ELIGIBLE) != 0u;
-        if (valid && (state_flags & SLEEP_FLAG_AWAKE) == 0u) {
+            state.provenance.z == SLEEP_STATE_LAYOUT_VERSION;
+        if (actively_grabbed) {
+            sleep_visual_state = VISUAL_RECENTLY_WOKEN;
+        } else if (valid && (state_flags & SLEEP_FLAG_AWAKE) == 0u) {
             sleep_visual_state = VISUAL_ASLEEP;
         } else if (valid) {
             let transition_causes = state.provenance.x &
