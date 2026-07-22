@@ -1,12 +1,12 @@
 # GPU sleep-island connectivity research
 
-Status: observation stopping point complete under
-[S26](../tactical/026-exact-contact-component-observation.md), 2026-07-22.
-Exact GPU labels match an independent CPU traversal on the admitted graph,
-split/churn, dense-pile, sleeping-city, and capacity rows. The current K=4
+Status: decision-observation stopping point complete under
+[S27](../tactical/027-exact-sleep-decision-observation.md), 2026-07-22.
+Exact GPU labels and root reductions match independent CPU checks, and the
+observer leaves applied K=4 state byte-identical. The current K=4
 bounded-neighbor sleep policy remains implemented, opt-in, and off by default.
-No component label affects product behavior. Component reductions, a behavior
-switch, persistent optimization, and promotion remain unauthorized.
+No component label affects product behavior. A behavior switch, persistent
+optimization, and promotion remain unauthorized.
 
 Governing behavior and current implementation:
 [GPU sleeping and waking](gpu-sleeping-and-waking.md). Performance claims and
@@ -19,12 +19,72 @@ rigid behavior authority is [Box2D](box2d-rigid-authority.md), pinned at
 
 ## Recommendation
 
-Do not replace K=4 or increase K yet. The completed observation-only static
-rebuild is exact and capacity-clean. It uses deterministic monotonic min-root
-hooking, pointer shortcut dispatch barriers, a fixed
-`2 * ceil(log2(capacity)) + 1` phase bound, and independent final root/edge
-validation. Exact labels and structural counts replay; atomic work counts are
-reported as order-dependent contention proxies.
+Retain K=4 and do not begin an exact-island behavior switch. S27 proves that
+the exact reduction can change a decision: its synthetic eight-body path wakes
+three sleeping bodies beyond K=4. It does not show a material transition
+benefit in the evolved fixtures. The two-body control sleeps completely at
+step 30 with no disagreement. The eight- and fourteen-body towers and the
+100-body poured pile never admit any body during their measured horizons
+because local solver-motion blockers remain. Exact wake signals reach farther
+on those larger graphs, but every extra-signaled body is already awake.
+
+This distinction changes the recommendation. Exact connectivity would enforce
+the desired invariant, but it does not address the measured reason these
+fixtures stay awake. The next useful evidence is a deterministic reproduction
+of the interactive mixed sleep/wake transition, or awake solver/readiness work
+that lets a larger structure become locally ready. Do not pay for a static
+exact rebuild or design persistent dirty splits until such a row shows an
+actual exact-only new wake or K-only partial admission.
+
+The S27 observer adds four root reduction/comparison dispatches to S26's exact
+rebuild: 33 dispatches at a 64-body reserve and 41 at 256, versus the current
+nine-dispatch K=4 enabled-path delta. Exact reductions alone cost only
+0.007–0.008 ms GPU P50; connectivity dominates. Total observer P50 is
+0.251–0.268 ms on the 64-slot active towers and 0.394 ms on the 256-slot
+poured pile, respectively 15–22% and 4.73% of the measured unchanged physics
+step. The fixed working set is 5,632 and 11,264 bytes; multi-step body/stat
+trace storage is validation-only and not included in those figures.
+
+## S27 decision evidence
+
+Clean revision `98045db8bbff076661520b79bf3bca93056f3b16` produced
+`/tmp/physbox5-s27-sleep-decisions-98045db.json`, SHA-256
+`8c9e26cfe7ba671a6ae5717bae871cd880596cfcf4232f4f8621ca22cde4eedc`,
+on AMD Radeon 890M RADV Vulkan. One warmup and five retained timestamp samples
+make P95 and P99 the same maximum sample; use the tail values as diagnostic,
+not a release-quality distribution. All 3,601 traced steps pass exact root and
+edge checks, CPU reduction replay, impossible-direction checks, and
+byte-identical applied K=4 replay.
+
+| Row | Horizon | Exact-only wake signal | Changed transition | Observer P50 / P95 | Physics P50 / share |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| sleeping eight-body path | 1 | 3 bodies | 3 new wakes projected | 0.268 / 0.280 ms | 1.346 ms / 19.92% |
+| centered tower 2 | 600 | none | none; both sleep at step 30 | 0.260 / 0.847 ms | 1.178 ms / 22.07% |
+| centered tower 8 | 600 | 10 body-events over 10 steps | none; all were awake | 0.251 / 0.478 ms | 1.537 ms / 16.34% |
+| centered tower 14 | 1,200 | 1,484 body-events over 301 steps, peak 8 | none; all were awake | 0.258 / 0.440 ms | 1.710 ms / 15.09% |
+| poured pile 100 | 1,200 | 9,962 body-events over 836 steps, peak 82 | none; all were awake | 0.394 / 0.616 ms | 8.344 ms / 4.73% |
+
+No row records an invalid K-only wake, K-only blocker, or exact-only
+admission. No evolved row records a K-only partial admission. The 8- and
+14-body towers retain every body awake through steps 600 and 1,200; their last
+local wake roots occur at steps 493 and 1,190. The poured pile retains all 100
+bodies awake, has 99 local blockers at step 1,200, and still creates wake roots
+on that step. That is direct evidence for solver/readiness limitation in these
+fixtures, not evidence that exact islands would settle them.
+
+The counterfactual remains local to each observed K=4 step. Applying a broader
+wake could change later motion and readiness, so the trace cannot predict a
+long-run exact-island trajectory. Conversely, the absence of any changed
+natural transition means there is not yet evidence worth paying that causal
+experiment's product-adjacent cost.
+
+### Prior S26 component evidence
+
+The completed observation-only static rebuild remains exact and
+capacity-clean. It uses deterministic monotonic min-root hooking, pointer
+shortcut dispatch barriers, a fixed `2 * ceil(log2(capacity)) + 1` phase bound,
+and independent final root/edge validation. Exact labels and structural counts
+replay; atomic work counts are reported as order-dependent contention proxies.
 
 The static path costs 29 dispatches at a 64-body reserve, 37 at 256, 45 at
 1,024, and 61 at 10K. Representative GPU P50 is 0.219 ms for an eight-body
@@ -34,19 +94,8 @@ live bodies under a 10K reserve. Parent, size, statistics, and aligned
 parameter storage totals 4,160 bytes at 64, 13,888 bytes at 1,024, and 87,744
 bytes at 10K. The complete measurements and provenance are in
 [S26](../tactical/026-exact-contact-component-observation.md).
-The dense rows intentionally use deterministic initially touching packed
-piles; a time-evolved poured-pile decision trace belongs to the later
-component-reduction comparison and is not claimed by this observation.
-
-The recommended next experiment, if human review wants it, is stopping point
-2 only: reduce wake causes and post-solve readiness by exact root alongside
-the unchanged K=4 policy and compare decisions without applying them. The
-static rebuild is a credible upper-bound mechanism at dense scale, but its
-29–61 dispatches are materially larger than K=4's current nine-dispatch
-enabled-path delta and its cost reaches 11–18% of full physics on small/sparse
-rows. Do not begin a behavior switch. Do not begin persistent additions/dirty
-splits unless component reductions first demonstrate a material behavioral
-benefit that justifies optimizing the static cost.
+The dense S26 rows intentionally use deterministic initially touching packed
+piles; S27 now supplies the separate time-evolved decision trace.
 
 ## Observed problem and required invariant
 
@@ -405,12 +454,11 @@ persistent/deferred-split prototype, not for increasing K.
 
 1. **Observation-only static probe — complete:** exact labels and timestamps,
    no effect on sleep behavior. S26 passes and is stopped at human review.
-2. **Component reductions:** only after step 1 passes, derive component wake
-   causes and readiness alongside K=4 and compare decisions without applying
-   them.
-3. **Laboratory behavior switch:** only after reductions match the CPU
-   reference, allow an explicit lab-only exact-island policy; keep product
-   default and K=4 unchanged.
+2. **Component reductions — complete:** S27 exact wake/readiness reductions
+   match CPU checks beside K=4 and do not affect applied state.
+3. **Laboratory behavior switch — not admitted:** evolved rows show no changed
+   transition to justify the cost. A deterministic mixed-transition fixture or
+   new readiness evidence requires a separate human decision before this step.
 4. **Persistent optimization:** pursue additions plus deferred dirty splits
    only when static measurements demonstrate that maintenance, rather than
    broader whole-island solve work, is the limiting cost.
