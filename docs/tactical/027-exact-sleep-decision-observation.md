@@ -64,11 +64,11 @@ declared exact-only wake / K-only admission directions beyond four hops.
 
 ### S27.2 — opt-in GPU reductions
 
-- [ ] Extend the laboratory observer with root aggregation and comparison
+- [x] Extend the laboratory observer with root aggregation and comparison
   passes at the frozen pre-wake and pre-admission schedule points.
-- [ ] Emit compact per-step statistics and prove ordinary product graph
+- [x] Emit compact per-step statistics and prove ordinary product graph
   allocation, dispatch, and applied sleep state remain unchanged.
-- [ ] Differential-check GPU reductions against an independent CPU replay and
+- [x] Differential-check GPU reductions against an independent CPU replay and
   fail closed on invalid roots, cross-label edges, or impossible comparison
   directions.
 

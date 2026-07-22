@@ -142,7 +142,8 @@ pub use construction_validation::{
 };
 #[cfg(all(feature = "solver-lab", not(target_arch = "wasm32")))]
 pub use contact_components::{
-    GpuContactComponentObservationV1, GpuContactComponentStatsV1, observe_gpu_contact_components,
+    GpuContactComponentObservationV1, GpuContactComponentStatsV1, GpuSleepDecisionObservationV1,
+    GpuSleepDecisionStepV1, observe_gpu_contact_components, observe_gpu_sleep_decisions,
 };
 pub use frame::{
     FrameInput, InputEvent, PointerButton, PointerEvent, PointerPhase, StepRequest, WheelEvent,

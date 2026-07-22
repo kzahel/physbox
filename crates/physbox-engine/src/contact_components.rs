@@ -228,6 +228,7 @@ mod gpu {
     };
     use crate::{
         AdapterDiagnostics, BODY_COMMAND_CAPACITY, GpuBodyStorage,
+        awake_work::SleepExecutionConfig,
         body_floor_solver::{
             GpuGatherTopology, GpuSolverExecutionV4, GpuSolverSchedulingPolicyV1, PointInputRaw,
         },
@@ -237,7 +238,10 @@ mod gpu {
     const WORKGROUP_SIZE: u32 = 64;
     const POINT_DISPATCH_64_OFFSET: u64 = 10 * size_of::<u32>() as u64;
     const STAT_WORDS: usize = 16;
+    const DECISION_STAT_WORDS: usize = 32;
+    const DECISION_BODY_WORDS: usize = 4;
     const OUTPUT_VERSION: &str = "physbox5-contact-component-observation-v1";
+    const DECISION_OUTPUT_VERSION: &str = "physbox5-sleep-decision-observation-v1";
 
     #[repr(C)]
     #[derive(Clone, Copy, Debug, Pod, Zeroable)]
@@ -249,6 +253,18 @@ mod gpu {
     #[derive(Clone, Copy, Debug, Pod, Zeroable)]
     struct StatsRaw {
         values: [u32; STAT_WORDS],
+    }
+
+    #[repr(C)]
+    #[derive(Clone, Copy, Debug, Pod, Zeroable)]
+    struct DecisionParamsRaw {
+        counts: [u32; 4],
+    }
+
+    #[repr(C)]
+    #[derive(Clone, Copy, Debug, Pod, Zeroable)]
+    struct DecisionStatsRaw {
+        values: [u32; DECISION_STAT_WORDS],
     }
 
     #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
@@ -317,6 +333,92 @@ mod gpu {
         pub edges: Vec<[u32; 2]>,
         pub stats: Vec<GpuContactComponentStatsV1>,
         pub replay_exact: bool,
+        pub exact: bool,
+    }
+
+    #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct GpuSleepDecisionStepV1 {
+        pub step: u32,
+        pub component_count: u32,
+        pub largest_component_size: u32,
+        pub unique_edge_count: u32,
+        pub local_wake_root_bodies: u32,
+        pub wake_root_components: u32,
+        pub exact_wake_bodies: u32,
+        pub bounded_wake_bodies: u32,
+        pub exact_only_wake_bodies: u32,
+        pub invalid_bounded_only_wake_bodies: u32,
+        pub sleeping_before_wake: u32,
+        pub exact_new_wake_bodies: u32,
+        pub bounded_new_wake_bodies: u32,
+        pub exact_only_new_wake_bodies: u32,
+        pub local_blocker_bodies: u32,
+        pub blocked_components: u32,
+        pub exact_blocked_bodies: u32,
+        pub bounded_blocked_bodies: u32,
+        pub exact_only_blocked_bodies: u32,
+        pub invalid_bounded_only_blocked_bodies: u32,
+        pub locally_ready_bodies: u32,
+        pub exact_admission_bodies: u32,
+        pub bounded_admission_bodies: u32,
+        pub invalid_exact_only_admission_bodies: u32,
+        pub bounded_only_admission_bodies: u32,
+        pub awake_before_admission: u32,
+    }
+
+    impl GpuSleepDecisionStepV1 {
+        fn from_raw(step: u32, raw: DecisionStatsRaw, components: &StatsRaw) -> Self {
+            Self {
+                step,
+                component_count: components.values[6],
+                largest_component_size: components.values[7],
+                unique_edge_count: components.values[1],
+                local_wake_root_bodies: raw.values[2],
+                wake_root_components: raw.values[1],
+                exact_wake_bodies: raw.values[3],
+                bounded_wake_bodies: raw.values[4],
+                exact_only_wake_bodies: raw.values[5],
+                invalid_bounded_only_wake_bodies: raw.values[6],
+                sleeping_before_wake: raw.values[7],
+                exact_new_wake_bodies: raw.values[8],
+                bounded_new_wake_bodies: raw.values[9],
+                exact_only_new_wake_bodies: raw.values[10],
+                local_blocker_bodies: raw.values[11],
+                blocked_components: raw.values[24],
+                exact_blocked_bodies: raw.values[12],
+                bounded_blocked_bodies: raw.values[13],
+                exact_only_blocked_bodies: raw.values[14],
+                invalid_bounded_only_blocked_bodies: raw.values[15],
+                locally_ready_bodies: raw.values[16],
+                exact_admission_bodies: raw.values[17],
+                bounded_admission_bodies: raw.values[18],
+                invalid_exact_only_admission_bodies: raw.values[19],
+                bounded_only_admission_bodies: raw.values[20],
+                awake_before_admission: raw.values[21],
+            }
+        }
+    }
+
+    #[derive(Clone, Debug, serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct GpuSleepDecisionObservationV1 {
+        pub version: &'static str,
+        pub phase_bound_version: &'static str,
+        pub adapter: AdapterDiagnostics,
+        pub source_scenario_hash: String,
+        pub body_count: u32,
+        pub body_capacity: u32,
+        pub completed_steps: u32,
+        pub wake_propagation_rounds: u32,
+        pub observer_dispatches_per_step: u32,
+        pub observer_allocated_bytes: u64,
+        pub product_dispatches_per_step: u32,
+        pub product_allocated_bytes: u64,
+        pub steps: Vec<GpuSleepDecisionStepV1>,
+        pub cpu_reduction_exact: bool,
+        pub applied_replay_exact: bool,
+        pub invalid_direction_count: u32,
         pub exact: bool,
     }
 
@@ -583,6 +685,366 @@ mod gpu {
 
         fn allocated_bytes(&self) -> u64 {
             self.parents.size() + self.sizes.size() + self.stats.size() + self._params.size()
+        }
+    }
+
+    struct DecisionPipelines {
+        aggregate_wake_roots: wgpu::ComputePipeline,
+        compare_wake_decisions: wgpu::ComputePipeline,
+        aggregate_admission_blockers: wgpu::ComputePipeline,
+        compare_admission_decisions: wgpu::ComputePipeline,
+    }
+
+    pub(crate) struct GpuSleepDecisionObserver {
+        components: GpuContactComponentObserver,
+        pipelines: DecisionPipelines,
+        groups: [wgpu::BindGroup; 2],
+        decision_stats: wgpu::Buffer,
+        component_stats_trace: wgpu::Buffer,
+        body_trace: wgpu::Buffer,
+        _params: wgpu::Buffer,
+        params_stride: u32,
+        body_capacity: u32,
+        trace_capacity: u32,
+    }
+
+    impl GpuSleepDecisionObserver {
+        #[allow(clippy::too_many_arguments)]
+        pub(crate) fn new(
+            device: &wgpu::Device,
+            storage: &GpuBodyStorage,
+            solver_points: &wgpu::Buffer,
+            body_capacity: u32,
+            point_capacity: u32,
+            trace_capacity: u32,
+        ) -> Result<Self, String> {
+            if trace_capacity == 0 {
+                return Err("sleep-decision observer requires a non-zero trace".to_owned());
+            }
+            let components = GpuContactComponentObserver::new(
+                device,
+                storage,
+                solver_points,
+                body_capacity,
+                point_capacity,
+            )?;
+            let params_stride = device.limits().min_uniform_buffer_offset_alignment.max(16);
+            let params_bytes = params_stride
+                .checked_mul(trace_capacity)
+                .ok_or_else(|| "sleep-decision parameter bytes overflowed".to_owned())?;
+            let mut parameter_data = vec![0_u8; params_bytes as usize];
+            for trace_index in 0..trace_capacity {
+                let value = DecisionParamsRaw {
+                    counts: [
+                        body_capacity,
+                        trace_index,
+                        trace_capacity,
+                        DECISION_STAT_WORDS as u32,
+                    ],
+                };
+                let start = trace_index as usize * params_stride as usize;
+                parameter_data[start..start + size_of::<DecisionParamsRaw>()]
+                    .copy_from_slice(bytemuck::bytes_of(&value));
+            }
+            let buffer = |label, size, usage| {
+                device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some(label),
+                    size,
+                    usage,
+                    mapped_at_creation: false,
+                })
+            };
+            let storage_usage = wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST;
+            let decision_stats = buffer(
+                "physbox5_sleep_decision_stats",
+                u64::from(trace_capacity) * DECISION_STAT_WORDS as u64 * size_of::<u32>() as u64,
+                storage_usage,
+            );
+            let component_stats_trace = buffer(
+                "physbox5_sleep_decision_component_stats_trace",
+                u64::from(trace_capacity) * size_of::<StatsRaw>() as u64,
+                wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
+            );
+            let body_trace = buffer(
+                "physbox5_sleep_decision_body_trace",
+                u64::from(trace_capacity)
+                    .checked_mul(u64::from(body_capacity))
+                    .and_then(|value| value.checked_mul(DECISION_BODY_WORDS as u64))
+                    .and_then(|value| value.checked_mul(size_of::<u32>() as u64))
+                    .ok_or_else(|| "sleep-decision body trace bytes overflowed".to_owned())?,
+                storage_usage,
+            );
+            let params = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("physbox5_sleep_decision_params"),
+                contents: &parameter_data,
+                usage: wgpu::BufferUsages::UNIFORM,
+            });
+            let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("physbox5_sleep_decision_observer_layout"),
+                entries: &[
+                    storage_layout_entry(0, true),
+                    storage_layout_entry(1, false),
+                    storage_layout_entry(2, false),
+                    storage_layout_entry(3, true),
+                    storage_layout_entry(4, false),
+                    storage_layout_entry(5, false),
+                    storage_layout_entry(6, false),
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 7,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 8,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: true,
+                            min_binding_size: wgpu::BufferSize::new(
+                                size_of::<DecisionParamsRaw>() as u64
+                            ),
+                        },
+                        count: None,
+                    },
+                    storage_layout_entry(9, false),
+                ],
+            });
+            let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("physbox5_sleep_decision_observer_pipeline_layout"),
+                bind_group_layouts: &[&layout],
+                push_constant_ranges: &[],
+            });
+            let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("physbox5_sleep_decision_observer_shader"),
+                source: wgpu::ShaderSource::Wgsl(
+                    include_str!("sleep_decision_observer.wgsl").into(),
+                ),
+            });
+            let pipeline = |entry_point| {
+                device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                    label: Some(entry_point),
+                    layout: Some(&pipeline_layout),
+                    module: &shader,
+                    entry_point: Some(entry_point),
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    cache: None,
+                })
+            };
+            let pipelines = DecisionPipelines {
+                aggregate_wake_roots: pipeline("aggregate_wake_roots"),
+                compare_wake_decisions: pipeline("compare_wake_decisions"),
+                aggregate_admission_blockers: pipeline("aggregate_admission_blockers"),
+                compare_admission_decisions: pipeline("compare_admission_decisions"),
+            };
+            let awake_work = storage.awake_work_handle();
+            let group = |label, final_frontier| {
+                device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some(label),
+                    layout: &layout,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: storage.metadata_buffer().as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: components.parents.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 2,
+                            resource: components.sizes.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 3,
+                            resource: awake_work.sleep_state_buffer().as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 4,
+                            resource: awake_work.wake_frontier_buffer(0).as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 5,
+                            resource: awake_work
+                                .wake_frontier_buffer(final_frontier)
+                                .as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 6,
+                            resource: decision_stats.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 7,
+                            resource: awake_work.params_buffer().as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 8,
+                            resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                                buffer: &params,
+                                offset: 0,
+                                size: wgpu::BufferSize::new(size_of::<DecisionParamsRaw>() as u64),
+                            }),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 9,
+                            resource: body_trace.as_entire_binding(),
+                        },
+                    ],
+                })
+            };
+            let groups = [
+                group("physbox5_sleep_decision_frontier_a_group", 0),
+                group("physbox5_sleep_decision_frontier_b_group", 1),
+            ];
+            Ok(Self {
+                components,
+                pipelines,
+                groups,
+                decision_stats,
+                component_stats_trace,
+                body_trace,
+                _params: params,
+                params_stride,
+                body_capacity,
+                trace_capacity,
+            })
+        }
+
+        pub(crate) fn encode_components(
+            &self,
+            encoder: &mut wgpu::CommandEncoder,
+            point_capacity_state: &wgpu::Buffer,
+        ) {
+            self.components.encode(encoder, point_capacity_state, None);
+        }
+
+        pub(crate) fn encode_wake_aggregation(
+            &self,
+            encoder: &mut wgpu::CommandEncoder,
+            trace_index: u32,
+        ) {
+            self.clear_step(encoder, trace_index);
+            self.direct_pass(
+                encoder,
+                "physbox5_sleep_decision_aggregate_wake",
+                &self.pipelines.aggregate_wake_roots,
+                trace_index,
+                0,
+            );
+        }
+
+        pub(crate) fn encode_wake_comparison(
+            &self,
+            encoder: &mut wgpu::CommandEncoder,
+            trace_index: u32,
+            final_frontier: usize,
+        ) {
+            self.direct_pass(
+                encoder,
+                "physbox5_sleep_decision_compare_wake",
+                &self.pipelines.compare_wake_decisions,
+                trace_index,
+                final_frontier,
+            );
+        }
+
+        pub(crate) fn encode_admission_aggregation(
+            &self,
+            encoder: &mut wgpu::CommandEncoder,
+            trace_index: u32,
+        ) {
+            encoder.clear_buffer(&self.components.sizes, 0, None);
+            self.direct_pass(
+                encoder,
+                "physbox5_sleep_decision_aggregate_admission",
+                &self.pipelines.aggregate_admission_blockers,
+                trace_index,
+                0,
+            );
+        }
+
+        pub(crate) fn encode_admission_comparison(
+            &self,
+            encoder: &mut wgpu::CommandEncoder,
+            trace_index: u32,
+            final_frontier: usize,
+        ) {
+            self.direct_pass(
+                encoder,
+                "physbox5_sleep_decision_compare_admission",
+                &self.pipelines.compare_admission_decisions,
+                trace_index,
+                final_frontier,
+            );
+            encoder.copy_buffer_to_buffer(
+                &self.components.stats,
+                0,
+                &self.component_stats_trace,
+                u64::from(trace_index) * size_of::<StatsRaw>() as u64,
+                size_of::<StatsRaw>() as u64,
+            );
+        }
+
+        fn clear_step(&self, encoder: &mut wgpu::CommandEncoder, trace_index: u32) {
+            debug_assert!(trace_index < self.trace_capacity);
+            encoder.clear_buffer(&self.components.sizes, 0, None);
+            encoder.clear_buffer(
+                &self.decision_stats,
+                u64::from(trace_index) * size_of::<DecisionStatsRaw>() as u64,
+                Some(size_of::<DecisionStatsRaw>() as u64),
+            );
+            encoder.clear_buffer(
+                &self.body_trace,
+                u64::from(trace_index)
+                    * u64::from(self.body_capacity)
+                    * DECISION_BODY_WORDS as u64
+                    * size_of::<u32>() as u64,
+                Some(
+                    u64::from(self.body_capacity)
+                        * DECISION_BODY_WORDS as u64
+                        * size_of::<u32>() as u64,
+                ),
+            );
+        }
+
+        fn direct_pass(
+            &self,
+            encoder: &mut wgpu::CommandEncoder,
+            label: &'static str,
+            pipeline: &wgpu::ComputePipeline,
+            trace_index: u32,
+            final_frontier: usize,
+        ) {
+            debug_assert!(trace_index < self.trace_capacity);
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some(label),
+                timestamp_writes: None,
+            });
+            pass.set_pipeline(pipeline);
+            pass.set_bind_group(
+                0,
+                &self.groups[final_frontier],
+                &[trace_index * self.params_stride],
+            );
+            pass.dispatch_workgroups(self.body_capacity.div_ceil(WORKGROUP_SIZE), 1, 1);
+        }
+
+        fn dispatches_per_step(&self) -> u32 {
+            self.components.dispatches_per_sample() + 4
+        }
+
+        fn allocated_bytes(&self) -> u64 {
+            self.components.allocated_bytes()
+                + self.decision_stats.size()
+                + self.component_stats_trace.size()
+                + self.body_trace.size()
+                + self._params.size()
         }
     }
 
@@ -943,6 +1405,357 @@ mod gpu {
         })
     }
 
+    pub async fn observe_gpu_sleep_decisions(
+        scenario: &ScenarioV1,
+        body_capacity: u32,
+        completed_steps: u32,
+    ) -> Result<GpuSleepDecisionObservationV1, String> {
+        if completed_steps == 0 || completed_steps > scenario.requested_steps {
+            return Err("sleep-decision observation steps must lie inside the scenario".to_owned());
+        }
+        scenario.validate().map_err(|error| error.to_string())?;
+        let body_count = u32::try_from(scenario.bodies.len())
+            .map_err(|_| "sleep-decision body count exceeds u32".to_owned())?;
+        if body_capacity < body_count {
+            return Err(format!(
+                "sleep-decision capacity {body_capacity} cannot hold {body_count} bodies"
+            ));
+        }
+
+        let instance = crate::gpu_context::create_instance();
+        let adapter = crate::gpu_context::request_adapter(&instance, None).await?;
+        let diagnostics = AdapterDiagnostics::from_adapter(&adapter);
+        let (device, queue) = crate::gpu_context::request_device(&adapter).await?;
+        let sleep_config = SleepExecutionConfig::enabled(60);
+        let storage = GpuBodyStorage::new_with_sleeping(
+            &device,
+            body_capacity,
+            BODY_COMMAND_CAPACITY,
+            &scenario.bodies,
+            sleep_config,
+        )?;
+        let graph = GpuGeneratedContactGraph::new_with_topologies_execution_and_scheduling(
+            &device,
+            &storage,
+            scenario,
+            GpuContactPersistenceTopology::StablePairSlot,
+            GpuGatherTopology::StableBodyEdge,
+            false,
+            false,
+            u32::MAX,
+            GpuSolverExecutionV4::SELECTED,
+            GpuSolverSchedulingPolicyV1::selected_for_body_capacity(body_capacity),
+        )?;
+        let (solver_points, _, point_capacity) = graph.contact_component_sources();
+        let observer = GpuSleepDecisionObserver::new(
+            &device,
+            &storage,
+            solver_points,
+            body_capacity,
+            point_capacity,
+            completed_steps,
+        )?;
+
+        const STEPS_PER_SUBMISSION: u32 = 32;
+        let mut first_step = 1;
+        while first_step <= completed_steps {
+            let last_step = (first_step + STEPS_PER_SUBMISSION - 1).min(completed_steps);
+            let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("physbox5_sleep_decision_observation"),
+            });
+            for step in first_step..=last_step {
+                graph.encode_step_with_sleep_decision_observer(
+                    &mut encoder,
+                    step == 1,
+                    &observer,
+                    step - 1,
+                );
+            }
+            queue.submit([encoder.finish()]);
+            first_step = last_step + 1;
+        }
+        let decision_readback = readback_buffer(
+            &device,
+            "physbox5_sleep_decision_stats_readback",
+            observer.decision_stats.size(),
+        );
+        let component_readback = readback_buffer(
+            &device,
+            "physbox5_sleep_decision_component_readback",
+            observer.component_stats_trace.size(),
+        );
+        let body_readback = readback_buffer(
+            &device,
+            "physbox5_sleep_decision_body_readback",
+            observer.body_trace.size(),
+        );
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("physbox5_sleep_decision_readback_copy"),
+        });
+        encoder.copy_buffer_to_buffer(
+            &observer.decision_stats,
+            0,
+            &decision_readback,
+            0,
+            observer.decision_stats.size(),
+        );
+        encoder.copy_buffer_to_buffer(
+            &observer.component_stats_trace,
+            0,
+            &component_readback,
+            0,
+            observer.component_stats_trace.size(),
+        );
+        encoder.copy_buffer_to_buffer(
+            &observer.body_trace,
+            0,
+            &body_readback,
+            0,
+            observer.body_trace.size(),
+        );
+        queue.submit([encoder.finish()]);
+        device
+            .poll(wgpu::PollType::Wait)
+            .map_err(|error| format!("poll sleep-decision observation: {error}"))?;
+
+        let raw_decisions = crate::collision_candidates::map_values::<DecisionStatsRaw>(
+            &device,
+            &decision_readback,
+            completed_steps as usize,
+        )?;
+        let raw_components = crate::collision_candidates::map_values::<StatsRaw>(
+            &device,
+            &component_readback,
+            completed_steps as usize,
+        )?;
+        let body_trace = crate::collision_candidates::map_values::<u32>(
+            &device,
+            &body_readback,
+            completed_steps as usize * body_capacity as usize * DECISION_BODY_WORDS,
+        )?;
+        let observed_applied_state = capture_applied_state(&device, &queue, &storage)?;
+        let baseline_storage = GpuBodyStorage::new_with_sleeping(
+            &device,
+            body_capacity,
+            BODY_COMMAND_CAPACITY,
+            &scenario.bodies,
+            sleep_config,
+        )?;
+        let baseline_graph =
+            GpuGeneratedContactGraph::new_with_topologies_execution_and_scheduling(
+                &device,
+                &baseline_storage,
+                scenario,
+                GpuContactPersistenceTopology::StablePairSlot,
+                GpuGatherTopology::StableBodyEdge,
+                false,
+                false,
+                u32::MAX,
+                GpuSolverExecutionV4::SELECTED,
+                GpuSolverSchedulingPolicyV1::selected_for_body_capacity(body_capacity),
+            )?;
+        let mut first_step = 1;
+        while first_step <= completed_steps {
+            let last_step = (first_step + STEPS_PER_SUBMISSION - 1).min(completed_steps);
+            let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("physbox5_sleep_decision_baseline"),
+            });
+            for step in first_step..=last_step {
+                baseline_graph.encode_step(&mut encoder, step == 1);
+            }
+            queue.submit([encoder.finish()]);
+            first_step = last_step + 1;
+        }
+        device
+            .poll(wgpu::PollType::Wait)
+            .map_err(|error| format!("poll sleep-decision baseline: {error}"))?;
+        let baseline_applied_state = capture_applied_state(&device, &queue, &baseline_storage)?;
+        let applied_replay_exact = observed_applied_state == baseline_applied_state;
+        let live_dynamic = scenario
+            .bodies
+            .iter()
+            .filter(|body| body.inverse_mass.get() > 0.0)
+            .map(|body| body.id.slot as usize)
+            .collect::<Vec<_>>();
+        let mut steps = Vec::with_capacity(completed_steps as usize);
+        let cpu_reduction_exact = true;
+        let mut invalid_direction_count = 0_u32;
+        for trace_index in 0..completed_steps as usize {
+            let components = &raw_components[trace_index];
+            if components.values[8] != 0 || components.values[9] != 0 || components.values[10] != 0
+            {
+                return Err(format!(
+                    "sleep-decision component exactness failed at step {} with stats {:?}",
+                    trace_index + 1,
+                    components.values
+                ));
+            }
+            let trace_start = trace_index * body_capacity as usize * DECISION_BODY_WORDS;
+            let trace = &body_trace
+                [trace_start..trace_start + body_capacity as usize * DECISION_BODY_WORDS];
+            let mut component_wake = std::collections::BTreeMap::<u32, bool>::new();
+            let mut component_blocker = std::collections::BTreeMap::<u32, bool>::new();
+            for &body in &live_dynamic {
+                let values = &trace[body * DECISION_BODY_WORDS..][..DECISION_BODY_WORDS];
+                let label = values[0];
+                if label == INVALID_LABEL || label >= body_capacity {
+                    return Err(format!(
+                        "sleep-decision invalid label {label} for body {body} at step {}",
+                        trace_index + 1
+                    ));
+                }
+                *component_wake.entry(label).or_default() |= values[1] & 1 != 0;
+                *component_blocker.entry(label).or_default() |= values[2] & 1 != 0;
+            }
+            let mut expected = DecisionStatsRaw::zeroed();
+            expected.values[0] = component_wake.len() as u32;
+            expected.values[1] = component_wake.values().filter(|&&value| value).count() as u32;
+            expected.values[24] = component_blocker.values().filter(|&&value| value).count() as u32;
+            for &body in &live_dynamic {
+                let values = &trace[body * DECISION_BODY_WORDS..][..DECISION_BODY_WORDS];
+                let label = values[0];
+                let wake = values[1];
+                let admission = values[2];
+                let local_wake = wake & (1 << 0) != 0;
+                let exact_wake = wake & (1 << 1) != 0;
+                let bounded_wake = wake & (1 << 2) != 0;
+                let awake_before_wake = wake & (1 << 3) != 0;
+                let local_blocker = admission & (1 << 0) != 0;
+                let exact_blocked = admission & (1 << 1) != 0;
+                let bounded_blocked = admission & (1 << 2) != 0;
+                let locally_ready = admission & (1 << 3) != 0;
+                let exact_admit = admission & (1 << 4) != 0;
+                let bounded_admit = admission & (1 << 5) != 0;
+                let awake_before_admission = admission & (1 << 6) != 0;
+                let body_exact = exact_wake == component_wake[&label]
+                    && exact_blocked == component_blocker[&label]
+                    && exact_admit == (locally_ready && !component_blocker[&label])
+                    && bounded_admit == (locally_ready && !bounded_blocked);
+                if !body_exact {
+                    return Err(format!(
+                        "sleep-decision CPU body reduction differed at step {}, body {body}, label {label}, wake={wake:#x}, admission={admission:#x}, componentWake={}, componentBlocker={}",
+                        trace_index + 1,
+                        component_wake[&label],
+                        component_blocker[&label],
+                    ));
+                }
+                expected.values[2] += u32::from(local_wake);
+                expected.values[3] += u32::from(exact_wake);
+                expected.values[4] += u32::from(bounded_wake);
+                expected.values[5] += u32::from(exact_wake && !bounded_wake);
+                expected.values[6] += u32::from(bounded_wake && !exact_wake);
+                expected.values[7] += u32::from(!awake_before_wake);
+                expected.values[8] += u32::from(!awake_before_wake && exact_wake);
+                expected.values[9] += u32::from(!awake_before_wake && bounded_wake);
+                expected.values[10] += u32::from(!awake_before_wake && exact_wake && !bounded_wake);
+                expected.values[11] += u32::from(local_blocker);
+                expected.values[12] += u32::from(exact_blocked);
+                expected.values[13] += u32::from(bounded_blocked);
+                expected.values[14] += u32::from(exact_blocked && !bounded_blocked);
+                expected.values[15] += u32::from(bounded_blocked && !exact_blocked);
+                expected.values[16] += u32::from(locally_ready);
+                expected.values[17] += u32::from(exact_admit);
+                expected.values[18] += u32::from(bounded_admit);
+                expected.values[19] += u32::from(exact_admit && !bounded_admit);
+                expected.values[20] += u32::from(bounded_admit && !exact_admit);
+                expected.values[21] += u32::from(awake_before_admission);
+            }
+            let raw = raw_decisions[trace_index];
+            if raw.values[..25] != expected.values[..25] {
+                return Err(format!(
+                    "sleep-decision CPU statistics differed at step {}: gpu={:?}, cpu={:?}",
+                    trace_index + 1,
+                    &raw.values[..25],
+                    &expected.values[..25],
+                ));
+            }
+            invalid_direction_count = invalid_direction_count
+                .saturating_add(raw.values[6])
+                .saturating_add(raw.values[15])
+                .saturating_add(raw.values[19]);
+            steps.push(GpuSleepDecisionStepV1::from_raw(
+                trace_index as u32 + 1,
+                raw,
+                components,
+            ));
+        }
+        let exact = cpu_reduction_exact && applied_replay_exact && invalid_direction_count == 0;
+        if !exact {
+            return Err(format!(
+                "sleep-decision reduction gate failed: cpuExact={cpu_reduction_exact}, appliedReplayExact={applied_replay_exact}, invalidDirections={invalid_direction_count}"
+            ));
+        }
+        Ok(GpuSleepDecisionObservationV1 {
+            version: DECISION_OUTPUT_VERSION,
+            phase_bound_version: CONTACT_COMPONENT_PHASE_BOUND_VERSION,
+            adapter: diagnostics,
+            source_scenario_hash: canonical_hash(scenario).map_err(|error| error.to_string())?,
+            body_count,
+            body_capacity,
+            completed_steps,
+            wake_propagation_rounds: sleep_config.wake_propagation_rounds,
+            observer_dispatches_per_step: observer.dispatches_per_step(),
+            observer_allocated_bytes: observer.allocated_bytes(),
+            product_dispatches_per_step: graph.dispatches_per_step(),
+            product_allocated_bytes: graph.allocated_bytes(),
+            steps,
+            cpu_reduction_exact,
+            applied_replay_exact,
+            invalid_direction_count,
+            exact,
+        })
+    }
+
+    fn capture_applied_state(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        storage: &GpuBodyStorage,
+    ) -> Result<Vec<u32>, String> {
+        let sources = [
+            storage.pose_buffer(),
+            storage.motion_buffer(),
+            storage.metadata_buffer(),
+            storage.sleep_state_buffer(),
+            storage.awake_body_buffer(),
+        ];
+        let readbacks = sources
+            .iter()
+            .enumerate()
+            .map(|(index, source)| {
+                readback_buffer(
+                    device,
+                    match index {
+                        0 => "physbox5_sleep_decision_pose_readback",
+                        1 => "physbox5_sleep_decision_motion_readback",
+                        2 => "physbox5_sleep_decision_metadata_readback",
+                        3 => "physbox5_sleep_decision_sleep_state_readback",
+                        _ => "physbox5_sleep_decision_awake_readback",
+                    },
+                    source.size(),
+                )
+            })
+            .collect::<Vec<_>>();
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("physbox5_sleep_decision_applied_state_copy"),
+        });
+        for (source, readback) in sources.iter().zip(&readbacks) {
+            encoder.copy_buffer_to_buffer(source, 0, readback, 0, source.size());
+        }
+        queue.submit([encoder.finish()]);
+        device
+            .poll(wgpu::PollType::Wait)
+            .map_err(|error| format!("poll sleep-decision applied state: {error}"))?;
+        let mut words = Vec::new();
+        for readback in &readbacks {
+            words.extend(crate::collision_candidates::map_values::<u32>(
+                device,
+                readback,
+                (readback.size() / size_of::<u32>() as u64) as usize,
+            )?);
+        }
+        Ok(words)
+    }
+
     struct SampleCopies<'a> {
         labels: (&'a wgpu::Buffer, u64),
         stats: (&'a wgpu::Buffer, u64),
@@ -1117,13 +1930,52 @@ mod gpu {
                 );
             }
         }
+
+        #[test]
+        fn gpu_sleep_decision_reductions_match_cpu_without_invalid_directions() {
+            let scenario = crate::p5_2_centered_rectangle_stack_scenario(2, 40).unwrap();
+            let output =
+                pollster::block_on(observe_gpu_sleep_decisions(&scenario, 64, 40)).unwrap();
+            assert!(output.exact);
+            assert!(output.cpu_reduction_exact);
+            assert!(output.applied_replay_exact);
+            assert_eq!(output.wake_propagation_rounds, 4);
+            assert_eq!(output.invalid_direction_count, 0);
+            assert_eq!(output.steps.len(), 40);
+            assert!(
+                output
+                    .steps
+                    .iter()
+                    .all(|step| step.invalid_bounded_only_wake_bodies == 0
+                        && step.invalid_bounded_only_blocked_bodies == 0
+                        && step.invalid_exact_only_admission_bodies == 0)
+            );
+        }
+
+        #[test]
+        fn gpu_sleep_decision_observer_exposes_a_long_path_wake_gap() {
+            let mut scenario = crate::p5_2_centered_rectangle_stack_scenario(8, 1).unwrap();
+            for body in &mut scenario.bodies[1..] {
+                body.sleeping = true;
+            }
+            scenario.bodies[1].linear_velocity = physbox_contracts::Vec2::new(0.2, 0.0);
+            let output = pollster::block_on(observe_gpu_sleep_decisions(&scenario, 64, 1)).unwrap();
+            assert!(output.exact);
+            assert!(output.steps[0].exact_only_wake_bodies > 0);
+            assert!(output.steps[0].exact_only_new_wake_bodies > 0);
+            assert_eq!(output.steps[0].invalid_bounded_only_wake_bodies, 0);
+        }
     }
 }
 
 #[cfg(all(feature = "solver-lab", not(target_arch = "wasm32")))]
 pub use gpu::{
-    GpuContactComponentObservationV1, GpuContactComponentStatsV1, observe_gpu_contact_components,
+    GpuContactComponentObservationV1, GpuContactComponentStatsV1, GpuSleepDecisionObservationV1,
+    GpuSleepDecisionStepV1, observe_gpu_contact_components, observe_gpu_sleep_decisions,
 };
+
+#[cfg(all(feature = "solver-lab", not(target_arch = "wasm32")))]
+pub(crate) use gpu::GpuSleepDecisionObserver;
 
 #[cfg(test)]
 mod tests {

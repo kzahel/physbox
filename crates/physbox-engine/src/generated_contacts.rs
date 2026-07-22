@@ -41,6 +41,9 @@ use crate::body_floor_solver::{
     GpuSolverInstrumentedSampleV4, GpuSolverPassDescriptorV1, decode_prepared_contact_bytes,
 };
 
+#[cfg(all(feature = "solver-lab", not(target_arch = "wasm32")))]
+use crate::contact_components::GpuSleepDecisionObserver;
+
 const WORKGROUP_SIZE: u32 = 64;
 const VALIDATION_STEPS_PER_SUBMISSION: u32 = 64;
 #[cfg(not(target_arch = "wasm32"))]
@@ -781,6 +784,51 @@ impl GpuGeneratedContactGraph {
         self.encode_sleep_admission(encoder);
         self.persistence
             .encode_after_solver(encoder, parity, self.point_capacity, timestamps);
+        self.parity.set(1 - parity);
+    }
+
+    #[cfg(all(feature = "solver-lab", not(target_arch = "wasm32")))]
+    pub(crate) fn encode_step_with_sleep_decision_observer(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        invalidate_previous_cache: bool,
+        observer: &GpuSleepDecisionObserver,
+        trace_index: u32,
+    ) {
+        let parity = self.parity.get();
+        self.awake_work.encode_begin_step(encoder);
+        self.sleep_contacts.encode_erased_neighbor_roots(encoder);
+        self.broadphase
+            .encode(encoder, &self.broadphase_pipelines, None);
+        self.narrowphase
+            .encode(encoder, &self.narrowphase_pipelines);
+        self.persistence.encode_before_solver(
+            encoder,
+            parity,
+            invalidate_previous_cache,
+            self.point_capacity,
+            None,
+        );
+        observer.encode_components(encoder, self.narrowphase.point_capacity_buffer());
+        self.sleep_contacts.encode_contact_wake_roots(encoder);
+        observer.encode_wake_aggregation(encoder, trace_index);
+        let wake_frontier = self.sleep_contacts.encode_frontier_propagation(encoder);
+        observer.encode_wake_comparison(encoder, trace_index, wake_frontier);
+        self.awake_work
+            .encode_finalize_wakes(encoder, wake_frontier);
+        self.awake_work.encode_compaction(encoder);
+        self.awake_points.encode_compaction(encoder);
+        self.awake_points.encode_solver_body_compaction(encoder);
+        self.solver.encode_step(encoder);
+        self.awake_points.encode_scatter(encoder);
+        self.awake_work.encode_sleep_evaluation(encoder);
+        observer.encode_admission_aggregation(encoder, trace_index);
+        let blocker_frontier = self.sleep_contacts.encode_frontier_propagation(encoder);
+        observer.encode_admission_comparison(encoder, trace_index, blocker_frontier);
+        self.awake_work
+            .encode_sleep_admission_from_frontier(encoder, blocker_frontier);
+        self.persistence
+            .encode_after_solver(encoder, parity, self.point_capacity, None);
         self.parity.set(1 - parity);
     }
 

@@ -143,6 +143,11 @@ impl GpuSleepContacts {
     }
 
     pub(crate) fn encode_contact_wakes(&self, encoder: &mut wgpu::CommandEncoder) -> usize {
+        self.encode_contact_wake_roots(encoder);
+        self.encode_frontier_propagation(encoder)
+    }
+
+    pub(crate) fn encode_contact_wake_roots(&self, encoder: &mut wgpu::CommandEncoder) {
         {
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("physbox5_sleep_contact_impact_pass"),
@@ -152,7 +157,6 @@ impl GpuSleepContacts {
             pass.set_bind_group(0, &self.root_bind_group, &[]);
             pass.dispatch_workgroups_indirect(&self.point_state, 4 * size_of::<u32>() as u64);
         }
-        self.encode_frontier_propagation(encoder)
     }
 
     pub(crate) fn encode_frontier_propagation(&self, encoder: &mut wgpu::CommandEncoder) -> usize {
