@@ -3,11 +3,12 @@
 Status: manual checkpoint, 2026-07-22. Tactical S23.1 through S23.6 are
 complete; work is stopped before the manual promotion/default decision
 reserved for S23.7. Sleeping is effective when explicitly requested but
-remains off by default. This topic is the master record for the
-sleeping/waking feature: its motivation, the selected direction, the frozen
-experimental policy vocabulary, wake-trigger semantics, the toggle and
-experimentation surface, the validation contract, the execution plan, and the
-running status overview. Direction and step ordering below are provisional
+remains off by default. An opt-in GPU sleep-state visualization is available
+for interactive review; it does not change that default. This topic is the
+master record for the sleeping/waking feature: its motivation, the selected
+direction, the frozen experimental policy vocabulary, wake-trigger semantics,
+the toggle and experimentation surface, the validation contract, the execution
+plan, and the running status overview. Direction and step ordering below are provisional
 except where S23.1 freezes them; nothing here changes a product default, and
 enabling sleeping as the ordinary default requires a recorded human promotion
 review.
@@ -47,6 +48,7 @@ change only with implementation and evidence, not because this design exists.
 | Automatic sleep admission | complete | The GPU applies the frozen integer outer-step predicate, zeroes transition velocities, and prevents dormant drift (S23.4). |
 | Awake-driven solve and integration | complete | Dense awake points and bounded solver bodies size solve/integration while live collision, persistence, and rendering retain sleepers (S23.5). |
 | Toggle and configuration surface | limited | Launch-owned state and the engine-rendered `MENU → WORLD` toggle make sleeping effective on request and persist the choice; the default remains off pending S23.7. |
+| Interactive state visualization | complete | The engine-rendered `SLEEP VISUALS` toggle consumes GPU sleep/grab state directly and distinguishes active, quiet, sleeping, and forced/recently woken dynamics without readback. |
 | Sleeping-city performance curves | complete | Valid matched 1%/10%/100% awake curves show bounded work reduction; S23.6 retains live pair processing and makes no public product-rate claim. |
 | Cross-host qualification and promotion | proposed | Browser plus physical Android, mask-rule disclosure, human default review (S23.7). |
 
@@ -406,7 +408,7 @@ Sleeping must be reversible and comparable from day one:
   the S19 ownership pattern: one projection into `EngineConfig`, adapters
   transport it unchanged, and requested and effective values are both
   reported. The control changes only requested state and explicitly labels
-  effective state as off. The default remains off until a recorded human
+  effective state separately. The default remains off until a recorded human
   promotion review changes it.
 - Sleep-off and sleep-enabled share one operation graph. Sleep-off forces
   every live dynamic body into the awake list and resets/ignores timers; it
@@ -423,6 +425,33 @@ Sleeping must be reversible and comparable from day one:
   profiles and may be hidden behind laboratory access, but a hidden preset
   may not change the ordinary default. Thresholds and propagation policy are
   initially reported policy constants, not general user tuning knobs.
+
+### Interactive sleep-state visualization
+
+`MENU → WORLD → SLEEP VISUALS` is a presentation-only, engine-rendered review
+mode. It is off by default, is not part of `PhysicsConfigurationV2`, and
+survives an in-session scenario or physics-configuration rebuild so a reviewer
+can compare states without re-enabling it. Turning it on does not request
+sleeping; useful review normally enables `SLEEP REQUEST` as well.
+
+Four states are deliberately exposed. More permanent colors would make piles
+harder to read, while wake cause remains better represented as a short-lived
+transition or an interaction-held mark:
+
+- teal with the ordinary fill: active awake;
+- amber with a bottom progress bar: below the speed threshold and accumulating
+  quiet outer steps toward admission;
+- blue with a procedural `Z`: asleep;
+- pink with a procedural `!`: recently woken, or held visibly for the duration
+  of an active GPU grab that forces the body awake.
+
+Fixed bodies retain their gray styling. Classification reads generation- and
+layout-checked `SleepStateV1` plus the existing GPU grab state in the body
+vertex shader; it introduces no simulation-dependent CPU readback, no new
+physics state, and no alternate host path. UI report version 8 exposes
+`sleepVisualsEnabled`; the compact Android marker reserves bit 30 for the same
+presentation state. The normal renderer remains pixel-compatible when the
+mode is off.
 
 ## Validation contract
 

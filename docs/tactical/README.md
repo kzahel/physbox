@@ -147,9 +147,10 @@ pass. Sleeping can consume the deterministic live set as its awake-work
 foundation.
 S23 is at a manual checkpoint after completing S23.1 through S23.6. Effective
 opt-in sleeping, bounded wake propagation, automatic admission, awake-driven
-solve work, and valid matched sleeping-city evidence are implemented. The
-dormant-pair gate retains live processing; work is stopped before S23.7 for
-the reserved human promotion/default decision.
+solve work, valid matched sleeping-city evidence, and an opt-in GPU state
+visualization are implemented. Browser and physical Pixel captures show the
+sleep and forced-awake marks. The dormant-pair gate retains live processing;
+work is stopped before S23.7 for the reserved human promotion/default decision.
 
 Tactical filenames use a three-digit zero-padded prefix ordered by their first
 Git creation timestamp. This repository starts at `001`. Never renumber an
@@ -182,7 +183,7 @@ This README remains the unnumbered index.
 | S20 | Validation diet and feature ledger | [020-validation-diet-and-feature-ledger.md](020-validation-diet-and-feature-ledger.md) | complete; warm everyday lane 7.31 s, production matrices trimmed, exhaustive lanes retained opt-in, 2026-07-21 |
 | S21 | Scalable broadphase | [021-scalable-broadphase.md](021-scalable-broadphase.md) | complete; SAP integrated and qualified on Metal, browser, and physical Pixel 7a Vulkan, 2026-07-21 |
 | S22 | Active-work compaction | [022-active-work-compaction.md](022-active-work-compaction.md) | complete; committed persistence/topology work and durable sparse-capacity qualification pass, 2026-07-22 |
-| S23 | GPU sleeping and waking | [023-gpu-sleeping-and-waking.md](023-gpu-sleeping-and-waking.md) | manual checkpoint; S23.6 measured work reduction and retained live pair processing, S23.7 human decision held, 2026-07-22 |
+| S23 | GPU sleeping and waking | [023-gpu-sleeping-and-waking.md](023-gpu-sleeping-and-waking.md) | manual checkpoint; S23.6 measured work reduction, interactive GPU state visuals pass browser/Pixel, S23.7 human decision held, 2026-07-22 |
 
 ## Conventions
 

@@ -292,6 +292,46 @@ and `73743617bc11f87ddc7911a2772c501f2441babbc898a690223062ed7ad87840`.
 These proportional gates do not complete S23.7's broader mask-rule and human
 promotion review.
 
+#### Post-S23.6 interactive observability addendum
+
+Human review requested an interactive way to tell whether a body is sleeping.
+Commits `3c58e17`, `70bb606`, and `f45676d` add an independent engine-rendered
+`MENU → WORLD → SLEEP VISUALS` toggle and consume GPU sleep/grab state directly
+in body rendering. Teal is active, amber plus a progress bar is the quiet
+countdown, blue plus `Z` is asleep, and pink plus `!` is a recent or actively
+grab-forced wake. Fixed bodies remain gray; the visualization is off by
+default, does not enter the physics configuration or scenario hash, and adds
+no CPU readback. UI contract version 8 reports the mode and compact Android
+markers expose it at bit 30.
+
+Clean revision `f45676d` passes `npm run test:fast` with all 113 maintained
+engine tests, production clippy with warnings denied, `npm run test:web:lab`,
+the ARM64 Android check, release-native/debug APK construction, and Gradle
+`assembleRelease`. The ordinary browser lane taps both menu controls, verifies
+that the presentation mode survives the sleeping world rebuild without
+changing the physics preference, captures a visually complete blue-`Z` body,
+and restores both controls to off. Its visual PNG has SHA-256
+`b7dc078e8490b3d86592143c288160a24486413c64057bf9e857696ff3030dc7`.
+
+A fresh clean 120-step headless rigid-floor run reports sleeping requested and
+effective, the presentation mode off by default, and a complete shared result;
+its PNG/report SHA-256 values are
+`b7e1a8e0107d9ae777e4d804733002ee98574bf43b67d8e77dcd6165fac5349d` and
+`4ce99e54dbbcc5e985601716a0d4b8ce9f4cb00e6fd83b98b67667307ce52b02`.
+On the attached Pixel 7a, the maintained physical runner taps `SLEEP REQUEST`
+and `SLEEP VISUALS`, verifies bit 30 plus requested/effective sleeping and the
+complete rigid-floor result on Mali-G710 Vulkan, and captures the blue `Z`.
+Its PNG/provenance SHA-256 values are
+`795ad2ad81516bbefaa93c5d4dd0fe57a301fb398b7661a5f35d21bcafe5e4ed` and
+`cf32a14ecc53ed9d3658332c460016596326f5b0402846bc3ee05149e746fef8`.
+A follow-up held-grab capture verifies the same marker with grab active and a
+visible pink `!`; its PNG/provenance SHA-256 values are
+`06db41074008b10f67492aa1977c9ce9f04cf5925b35fd0aaf6344ca7aa38eac` and
+`3d77343991ac8f6f08bf25b0c58d81b303165ab3b0862991850586b345610b2d`.
+Both physical runs leave the app stopped. This addendum improves the review
+surface but deliberately neither executes nor completes S23.7's mask-rule and
+default-promotion decision.
+
 ### S23.7 — cross-host qualification and promotion review
 
 - [ ] Run the full proportional browser/Android qualification and record the

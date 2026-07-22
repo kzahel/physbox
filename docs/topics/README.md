@@ -48,8 +48,9 @@ a running log.
 - [GPU sleeping and waking](gpu-sleeping-and-waking.md) — master record for
   the sleeping/waking feature: per-body timers with bounded neighbor wake
   propagation, versioned sleep state, wake-trigger semantics, the
-  `sleeping_enabled` toggle and policy experimentation surface, the mask rule
-  against concealing awake losses, and the S23 execution overview.
+  `sleeping_enabled` toggle, GPU state visualization and policy experimentation
+  surface, the mask rule against concealing awake losses, and the S23 execution
+  overview.
 - [Awake settling and rest stability](awake-settling-and-rest-stability.md) —
   resting-contact identity, warm-start continuity, soft-contact damping,
   realistic drop fixtures, awake quality gates, and the required visible
