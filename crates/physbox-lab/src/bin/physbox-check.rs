@@ -9,7 +9,10 @@ use physbox_engine::{
     P5_2GeneratedScenarioKind, gpu_contact_softness_coefficients, p5_2_bucket_scenario,
     p5_2_centered_rectangle_stack_scenario,
 };
-use physbox_lab::settling::centered_stack_structure;
+use physbox_lab::settling::{
+    awake_settling_measurement_policy_v2, centered_stack_structure,
+    observe_generated_settling_series_v2, summarize_settling_v2,
+};
 
 const DEFAULT_HERTZ: f32 = 30.0;
 const DEFAULT_DAMPING: f32 = 10.0;
@@ -19,6 +22,106 @@ const DEFAULT_SUBSTEPS: u32 = 4;
 const DEFAULT_ITERATIONS: u32 = 1;
 const SUBMISSION_BATCH_STEPS: u32 = 64;
 const QUIET_SPEED_LIMIT: f32 = 0.025;
+const GEOMETRY_ABSOLUTE_BAND: f32 = 0.0002;
+const CURRENT_12_SCREEN_BUDGET_SECONDS: f64 = 60.0;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Screen {
+    Current12,
+}
+
+impl Screen {
+    fn parse(value: &str) -> Result<Self, String> {
+        match value {
+            "current-12" => Ok(Self::Current12),
+            _ => Err(format!("invalid --screen {value}; expected current-12")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ScreenConfiguration {
+    id: &'static str,
+    sim_hertz: u32,
+    substeps: u32,
+    iterations: u32,
+    hertz: f32,
+    damping: f32,
+    static_scale: f32,
+}
+
+impl ScreenConfiguration {
+    fn softness(self) -> Result<ContactSoftnessPolicyV1, String> {
+        let softness = ContactSoftnessPolicyV1 {
+            version: CONTACT_SOFTNESS_POLICY_VERSION,
+            contact_hertz: finite("screen contact hertz", self.hertz)?,
+            damping_ratio: finite("screen damping", self.damping)?,
+            static_contact_hertz_multiplier: finite(
+                "screen static-contact scale",
+                self.static_scale,
+            )?,
+        };
+        softness.validate().map_err(display)?;
+        Ok(softness)
+    }
+}
+
+const CURRENT_12_SCREEN: [ScreenConfiguration; 6] = [
+    ScreenConfiguration {
+        id: "baseline",
+        sim_hertz: 60,
+        substeps: 4,
+        iterations: 1,
+        hertz: 30.0,
+        damping: 10.0,
+        static_scale: 2.0,
+    },
+    ScreenConfiguration {
+        id: "static-frontier",
+        sim_hertz: 60,
+        substeps: 4,
+        iterations: 1,
+        hertz: 30.0,
+        damping: 10.0,
+        static_scale: 8.0,
+    },
+    ScreenConfiguration {
+        id: "damping-12",
+        sim_hertz: 60,
+        substeps: 4,
+        iterations: 1,
+        hertz: 30.0,
+        damping: 12.0,
+        static_scale: 2.0,
+    },
+    ScreenConfiguration {
+        id: "damping-16",
+        sim_hertz: 60,
+        substeps: 4,
+        iterations: 1,
+        hertz: 30.0,
+        damping: 16.0,
+        static_scale: 2.0,
+    },
+    ScreenConfiguration {
+        id: "damping-static",
+        sim_hertz: 60,
+        substeps: 4,
+        iterations: 1,
+        hertz: 30.0,
+        damping: 12.0,
+        static_scale: 8.0,
+    },
+    ScreenConfiguration {
+        id: "resolution-control",
+        sim_hertz: 60,
+        substeps: 8,
+        iterations: 1,
+        hertz: 30.0,
+        damping: 10.0,
+        static_scale: 2.0,
+    },
+];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum LaneSelection {
@@ -225,6 +328,7 @@ struct Arguments {
     lane: LaneSelection,
     scenes: Vec<Scene>,
     steps: Option<u32>,
+    screen: Option<Screen>,
 }
 
 impl Default for Arguments {
@@ -244,6 +348,7 @@ impl Default for Arguments {
                 Scene::Bucket,
             ],
             steps: None,
+            screen: None,
         }
     }
 }
@@ -252,6 +357,22 @@ impl Arguments {
     fn parse() -> Result<Option<Self>, String> {
         let mut arguments = Self::default();
         let values = env::args().skip(1).collect::<Vec<_>>();
+        if values.first().is_some_and(|value| value == "--screen") {
+            if values.len() != 2 {
+                return Err(
+                    "--screen is a named frozen matrix and cannot be combined with other flags"
+                        .to_owned(),
+                );
+            }
+            arguments.screen = Some(Screen::parse(&values[1])?);
+            for configuration in CURRENT_12_SCREEN {
+                configuration.softness()?;
+            }
+            return Ok(Some(arguments));
+        }
+        if values.iter().any(|value| value == "--screen") {
+            return Err("--screen must be the first and only flag".to_owned());
+        }
         let mut index = 0;
         while index < values.len() {
             let flag = &values[index];
@@ -322,13 +443,32 @@ struct ValidityResult {
     failure: Option<String>,
 }
 
+#[derive(Clone, Copy, Debug)]
+struct StackSettlingMetrics {
+    linear_speed_max: f32,
+    angular_edge_speed_max: f32,
+    penetration_max: f32,
+    final_stack_height: f32,
+    center_drift_max: f32,
+    energy_envelope_nonincreasing: bool,
+    time_to_rest_step: Option<u32>,
+}
+
 struct Row {
     scene: Scene,
     lane: Lane,
     structure: StructureResult,
     quiet_speed: Option<f32>,
+    stack_settling: Option<StackSettlingMetrics>,
     validity: ValidityResult,
     milliseconds_per_step: f64,
+}
+
+struct ScreenRow {
+    configuration: ScreenConfiguration,
+    row: Row,
+    geometry_pass: bool,
+    survivor: bool,
 }
 
 fn main() -> ExitCode {
@@ -342,6 +482,9 @@ fn main() -> ExitCode {
 }
 
 fn run(arguments: Arguments) -> Result<(), String> {
+    if arguments.screen == Some(Screen::Current12) {
+        return run_current_12_screen();
+    }
     let softness = arguments.softness()?;
     print_coefficients(&arguments, softness)?;
     println!(
@@ -380,6 +523,9 @@ fn run(arguments: Arguments) -> Result<(), String> {
                     || row
                         .quiet_speed
                         .is_some_and(|speed| speed <= QUIET_SPEED_LIMIT))
+                && row
+                    .stack_settling
+                    .is_none_or(|settling| settling.angular_edge_speed_max <= QUIET_SPEED_LIMIT)
                 && row.validity.passed
         });
         println!(
@@ -388,6 +534,214 @@ fn run(arguments: Arguments) -> Result<(), String> {
             if qualified { "PASS" } else { "FAIL" }
         );
     }
+    Ok(())
+}
+
+fn run_current_12_screen() -> Result<(), String> {
+    let screen_started = Instant::now();
+    let runner = pollster::block_on(GpuGeneratedContactRunner::new())?;
+    println!("physbox-check screen=current-12 steps=1200 sleeping=off");
+    println!("adapter {}", runner.diagnostics());
+    println!(
+        "screen contract: linear<=0.025000m/s angular-edge<=0.025000m/s; geometry relative to baseline penetration<=+0.000200m height>=-0.000200m"
+    );
+    let mut warmup = Scene::Stack(12).scenario(1)?;
+    apply_screen_configuration(&mut warmup, CURRENT_12_SCREEN[0])?;
+    run_series(&runner, Lane::Candidate, &warmup, 1)?;
+    println!("screen warmup: one baseline step excluded from rows and row timings");
+    let base = Scene::Stack(12).scenario(1_200)?;
+    let mut raw_rows = Vec::with_capacity(CURRENT_12_SCREEN.len());
+    for configuration in CURRENT_12_SCREEN {
+        print_screen_configuration(configuration)?;
+        let mut scenario = base.clone();
+        apply_screen_configuration(&mut scenario, configuration)?;
+        raw_rows.push((
+            configuration,
+            run_row(&runner, Scene::Stack(12), Lane::Candidate, &scenario)?,
+        ));
+    }
+
+    let baseline = raw_rows
+        .first()
+        .and_then(|(_, row)| row.stack_settling)
+        .ok_or("current-12 screen baseline has no settling metrics")?;
+    let rows = raw_rows
+        .into_iter()
+        .map(|(configuration, row)| {
+            let settling = row
+                .stack_settling
+                .ok_or_else(|| format!("{} has no settling metrics", configuration.id))?;
+            let geometry_pass = settling.penetration_max
+                <= baseline.penetration_max + GEOMETRY_ABSOLUTE_BAND
+                && settling.final_stack_height + GEOMETRY_ABSOLUTE_BAND
+                    >= baseline.final_stack_height;
+            let survivor = screen_quality_pass(&row) && geometry_pass;
+            Ok(ScreenRow {
+                configuration,
+                row,
+                geometry_pass,
+                survivor,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+
+    let mut advance = rows.iter().filter(|row| row.survivor).collect::<Vec<_>>();
+    advance.sort_by(|left, right| {
+        let left_settling = left.row.stack_settling.unwrap();
+        let right_settling = right.row.stack_settling.unwrap();
+        left_settling
+            .linear_speed_max
+            .max(left_settling.angular_edge_speed_max)
+            .total_cmp(
+                &right_settling
+                    .linear_speed_max
+                    .max(right_settling.angular_edge_speed_max),
+            )
+            .then_with(|| {
+                left.row
+                    .milliseconds_per_step
+                    .total_cmp(&right.row.milliseconds_per_step)
+            })
+    });
+    advance.truncate(2);
+    let advance_ids = advance
+        .iter()
+        .map(|row| row.configuration.id)
+        .collect::<Vec<_>>();
+
+    println!(
+        "{:<19} {:>2} {:>5} {:>6} {:<10} {:>9} {:>9} {:>9} {:>9} {:>9} {:>6} {:<7} {:>8} {:<8} RESULT",
+        "CONFIG",
+        "SS",
+        "DAMP",
+        "STATIC",
+        "STANDS",
+        "LINEAR",
+        "ANG-EDGE",
+        "PEN",
+        "HEIGHT",
+        "DRIFT",
+        "ENERGY",
+        "VALID",
+        "COST",
+        "GEOM",
+    );
+    for screen_row in &rows {
+        let settling = screen_row.row.stack_settling.unwrap();
+        let result = if advance_ids.contains(&screen_row.configuration.id) {
+            "ADVANCE"
+        } else if screen_row.survivor {
+            "SURVIVOR-CAPPED"
+        } else if !screen_quality_pass(&screen_row.row) {
+            "REJECT-QUALITY"
+        } else {
+            "REJECT-GEOMETRY"
+        };
+        println!(
+            "{:<19} {:>2} {:>5.1} {:>6.1} {:<10} {:>9.6} {:>9.6} {:>9.6} {:>9.6} {:>9.6} {:>6} {:<7} {:>7.3}ms {:<8} {}",
+            screen_row.configuration.id,
+            screen_row.configuration.substeps,
+            screen_row.configuration.damping,
+            screen_row.configuration.static_scale,
+            structure_label(screen_row.row.structure),
+            settling.linear_speed_max,
+            settling.angular_edge_speed_max,
+            settling.penetration_max,
+            settling.final_stack_height,
+            settling.center_drift_max,
+            if settling.energy_envelope_nonincreasing {
+                "PASS"
+            } else {
+                "FAIL"
+            },
+            validity_label(&screen_row.row.validity),
+            screen_row.row.milliseconds_per_step,
+            if screen_row.geometry_pass {
+                "PASS"
+            } else {
+                "FAIL"
+            },
+            result,
+        );
+    }
+
+    let elapsed = screen_started.elapsed().as_secs_f64();
+    println!(
+        "SCREEN current-12 survivors={} advance={} elapsed={:.3}s budget={}<=60.000s",
+        rows.iter().filter(|row| row.survivor).count(),
+        if advance_ids.is_empty() {
+            "none".to_owned()
+        } else {
+            advance_ids.join(",")
+        },
+        elapsed,
+        if elapsed <= CURRENT_12_SCREEN_BUDGET_SECONDS {
+            "PASS"
+        } else {
+            "FAIL"
+        },
+    );
+    if elapsed > CURRENT_12_SCREEN_BUDGET_SECONDS {
+        return Err(format!(
+            "current-12 screen exceeded its {:.3}s budget: {:.3}s",
+            CURRENT_12_SCREEN_BUDGET_SECONDS, elapsed
+        ));
+    }
+    Ok(())
+}
+
+fn apply_screen_configuration(
+    scenario: &mut ScenarioV1,
+    configuration: ScreenConfiguration,
+) -> Result<(), String> {
+    scenario.settings.fixed_dt = finite(
+        "screen simulation hertz",
+        1.0 / configuration.sim_hertz as f32,
+    )?;
+    scenario.settings.substeps = configuration.substeps;
+    scenario.settings.iterations = configuration.iterations;
+    scenario.settings.contact_softness = Some(configuration.softness()?);
+    Ok(())
+}
+
+fn screen_quality_pass(row: &Row) -> bool {
+    let Some(settling) = row.stack_settling else {
+        return false;
+    };
+    row.structure.final_pass
+        && row.structure.first_loss.is_none()
+        && row.validity.passed
+        && settling.linear_speed_max <= QUIET_SPEED_LIMIT
+        && settling.angular_edge_speed_max <= QUIET_SPEED_LIMIT
+}
+
+fn print_screen_configuration(configuration: ScreenConfiguration) -> Result<(), String> {
+    let softness = configuration.softness()?;
+    let fixed_dt = 1.0 / configuration.sim_hertz as f32;
+    let substep_dt = fixed_dt / configuration.substeps as f32;
+    let effective_dynamic_hertz = softness.contact_hertz.get().min(0.125 / substep_dt);
+    let effective_static_hertz =
+        effective_dynamic_hertz * softness.static_contact_hertz_multiplier.get();
+    let dynamic = gpu_contact_softness_coefficients(softness, substep_dt, false)?;
+    let static_contact = gpu_contact_softness_coefficients(softness, substep_dt, true)?;
+    println!(
+        "SCREEN_CONFIG id={} sim-hz={} substeps={} iterations={} requested={:.3}/{:.3}/{:.3} effective-hz={:.3}/{:.3} dynamic={:.8}/{:.8}/{:.8} static={:.8}/{:.8}/{:.8}",
+        configuration.id,
+        configuration.sim_hertz,
+        configuration.substeps,
+        configuration.iterations,
+        configuration.hertz,
+        configuration.damping,
+        configuration.static_scale,
+        effective_dynamic_hertz,
+        effective_static_hertz,
+        dynamic.bias_rate,
+        dynamic.mass_scale,
+        dynamic.impulse_scale,
+        static_contact.bias_rate,
+        static_contact.mass_scale,
+        static_contact.impulse_scale,
+    );
     Ok(())
 }
 
@@ -406,13 +760,27 @@ fn run_row(
         Ok(series) => {
             let structure = scene.stands(scenario, &series);
             let validity = series_validity(&series);
-            let quiet_speed = (validity.passed && scene.requires_quiet())
-                .then(|| last_quarter_maximum_linear_speed(&series));
+            let stack_settling = if validity.passed
+                && matches!(scene, Scene::Stack(_))
+                && series.completed_steps == 1_200
+                && series.observation_interval_steps == 1
+            {
+                Some(stack_settling_metrics(scenario, &series)?)
+            } else {
+                None
+            };
+            let quiet_speed = if let Some(settling) = stack_settling {
+                Some(settling.linear_speed_max)
+            } else {
+                (validity.passed && scene.requires_quiet())
+                    .then(|| last_quarter_maximum_linear_speed(&series))
+            };
             Ok(Row {
                 scene,
                 lane,
                 structure,
                 quiet_speed,
+                stack_settling,
                 validity,
                 milliseconds_per_step,
             })
@@ -442,6 +810,7 @@ fn run_row(
                 lane,
                 structure,
                 quiet_speed: None,
+                stack_settling: None,
                 validity: ValidityResult {
                     passed: false,
                     failure: Some(format!(
@@ -554,6 +923,40 @@ fn last_quarter_maximum_linear_speed(series: &GpuGeneratedContactSeriesV1) -> f3
         .fold(0.0, f32::max)
 }
 
+fn stack_settling_metrics(
+    scenario: &ScenarioV1,
+    series: &GpuGeneratedContactSeriesV1,
+) -> Result<StackSettlingMetrics, String> {
+    let policy = awake_settling_measurement_policy_v2();
+    let observations = observe_generated_settling_series_v2(scenario, series)?;
+    let summary = summarize_settling_v2(&observations, policy)?;
+    let settled = observations
+        .iter()
+        .filter(|observation| {
+            (policy.settled_start_step..=policy.settled_end_step)
+                .contains(&observation.base.completed_steps)
+        })
+        .collect::<Vec<_>>();
+    let final_observation = observations
+        .last()
+        .ok_or("stack settling series has no observations")?;
+    Ok(StackSettlingMetrics {
+        linear_speed_max: summary.settled_linear_speed_max.get(),
+        angular_edge_speed_max: summary.settled_angular_edge_speed_max.get(),
+        penetration_max: settled
+            .iter()
+            .map(|observation| observation.base.penetration_max.get())
+            .fold(0.0, f32::max),
+        final_stack_height: final_observation.base.stack_height.get(),
+        center_drift_max: settled
+            .iter()
+            .map(|observation| observation.base.center_drift_max.get())
+            .fold(0.0, f32::max),
+        energy_envelope_nonincreasing: summary.energy_envelope_nonincreasing,
+        time_to_rest_step: summary.time_to_rest_step,
+    })
+}
+
 fn print_coefficients(
     arguments: &Arguments,
     softness: ContactSoftnessPolicyV1,
@@ -590,11 +993,7 @@ fn print_coefficients(
 }
 
 fn print_row(row: &Row) {
-    let stands = match (row.structure.final_pass, row.structure.first_loss) {
-        (true, None) => "PASS".to_owned(),
-        (_, Some(step)) => format!("FAIL@{step}"),
-        _ => "FAIL".to_owned(),
-    };
+    let stands = structure_label(row.structure);
     let quiet = row.quiet_speed.map_or_else(
         || "N/A".to_owned(),
         |speed| {
@@ -609,14 +1008,7 @@ fn print_row(row: &Row) {
             )
         },
     );
-    let valid = if row.validity.passed {
-        "PASS".to_owned()
-    } else {
-        format!(
-            "FAIL {}",
-            row.validity.failure.as_deref().unwrap_or("unknown")
-        )
-    };
+    let valid = validity_label(&row.validity);
     println!(
         "{:<8} {:<9} {:<18} {:<18} {:<28} {:>7.3}ms",
         row.scene.name(),
@@ -626,6 +1018,39 @@ fn print_row(row: &Row) {
         valid,
         row.milliseconds_per_step,
     );
+    if let Some(settling) = row.stack_settling {
+        println!(
+            "  SETTLING angular-edge={:.6}m/s penetration={:.6}m final-height={:.6}m drift={:.6}m energy={} rest-step={}",
+            settling.angular_edge_speed_max,
+            settling.penetration_max,
+            settling.final_stack_height,
+            settling.center_drift_max,
+            if settling.energy_envelope_nonincreasing {
+                "PASS"
+            } else {
+                "FAIL"
+            },
+            settling
+                .time_to_rest_step
+                .map_or_else(|| "none".to_owned(), |step| step.to_string()),
+        );
+    }
+}
+
+fn structure_label(structure: StructureResult) -> String {
+    match (structure.final_pass, structure.first_loss) {
+        (true, None) => "PASS".to_owned(),
+        (_, Some(step)) => format!("FAIL@{step}"),
+        _ => "FAIL".to_owned(),
+    }
+}
+
+fn validity_label(validity: &ValidityResult) -> String {
+    if validity.passed {
+        "PASS".to_owned()
+    } else {
+        format!("FAIL {}", validity.failure.as_deref().unwrap_or("unknown"))
+    }
 }
 
 fn terminal_failure_kind(error: &str) -> &'static str {
@@ -693,7 +1118,8 @@ fn generated(kind: P5_2GeneratedScenarioKind, steps: u32) -> Result<ScenarioV1, 
 
 fn print_help() {
     println!(
-        "physbox-check [--sim-hz N] [--substeps N] [--iterations N] \
+        "physbox-check --screen current-12\n\
+         physbox-check [--sim-hz N] [--substeps N] [--iterations N] \
          [--hz N] [--damping N] [--static-scale N] \
          [--lane both|selected|candidate] \
          [--scenes stack2,stack4,stack8,stack12,stack14,stack16,bucket,impact,off-center,friction,restitution,short-stack] [--steps N]\n\n\
@@ -702,6 +1128,8 @@ fn print_help() {
          --scenes stack4,stack8,stack16,bucket. Stacks run 1200 steps and the \
          rectangle bucket runs 600; --steps overrides every selected scene. \
          stack2/12/14 provide the current quality hierarchy; stack32, stack64, \
-         and the five response probes are optional diagnostics."
+         and the five response probes are optional diagnostics. The named \
+         current-12 screen is a frozen six-configuration, one-runner matrix \
+         and cannot be combined with ad-hoc flags."
     );
 }

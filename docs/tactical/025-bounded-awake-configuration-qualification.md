@@ -60,15 +60,15 @@ more expensive than 8/i1. Those cells are deliberately absent.
 
 ## S25.1 — one-process blocking screen
 
-- [ ] Add a named `physbox-check` screen that constructs one GPU runner and
+- [x] Add a named `physbox-check` screen that constructs one GPU runner and
   executes the frozen six rows in order; reject conflicting ad-hoc flags.
-- [ ] Reuse the frozen settling observer to report settled maximum linear and
+- [x] Reuse the frozen settling observer to report settled maximum linear and
   angular-edge speed, maximum penetration, final stack height, maximum center
   drift, energy-envelope result, structure/first loss, validity, and wall cost.
-- [ ] Require every survivor to preserve structure at every observation,
+- [x] Require every survivor to preserve structure at every observation,
   remain finite/capacity-clean, and keep both settled linear and angular-edge
   speed at or below `0.025 m/s`.
-- [ ] For promotion beyond the screen, also require settled penetration no
+- [x] For promotion beyond the screen, also require settled penetration no
   more than `0.0002 m` above the same-run baseline and final stack height no
   more than `0.0002 m` below it. This reuses the established absolute geometry
   reporting band and prevents damping from winning only through additional
@@ -76,6 +76,12 @@ more expensive than 8/i1. Those cells are deliberately absent.
   gates.
 - [ ] Budget the complete screen at 60 seconds on the current AMD adapter. If
   it exceeds that warm budget, fix the loop before expanding evidence.
+
+Implementation checkpoint: the named screen owns its immutable configuration
+list, rejects every additional CLI flag, performs one excluded baseline warmup
+step for comparable row timing, and sorts at most two advances by worst quiet
+speed then cost. Ordinary ad-hoc checker use remains available and now reports
+the same frozen stack-settling facts for exact 1,200-step stack rows.
 
 ## S25.2 — survivor-only native guards
 
