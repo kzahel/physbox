@@ -60,6 +60,19 @@ fn settling_review_lane(scenario: ValidationScenario) -> Option<(u32, P5_2Settli
     }
 }
 
+#[cfg(feature = "solver-lab")]
+const fn solver_lab_stack_count(scenario: ValidationScenario) -> Option<u32> {
+    match scenario {
+        ValidationScenario::SolverLabStack2 => Some(2),
+        ValidationScenario::SolverLabStack4 => Some(4),
+        ValidationScenario::SolverLabStack8 => Some(8),
+        ValidationScenario::SolverLabStack12 => Some(12),
+        ValidationScenario::SolverLabStack14 => Some(14),
+        ValidationScenario::SolverLabStack16 => Some(16),
+        _ => None,
+    }
+}
+
 fn configured_solver_scenario(config: &EngineConfig, mut scenario: ScenarioV1) -> ScenarioV1 {
     config
         .solver_profile
@@ -699,7 +712,12 @@ impl EngineHost {
             | ValidationScenario::SettlingSoftness16
             | ValidationScenario::SettlingCandidate16 => None,
             #[cfg(feature = "solver-lab")]
-            ValidationScenario::SolverLabStack8 | ValidationScenario::SolverLabStack16 => None,
+            ValidationScenario::SolverLabStack2
+            | ValidationScenario::SolverLabStack4
+            | ValidationScenario::SolverLabStack8
+            | ValidationScenario::SolverLabStack12
+            | ValidationScenario::SolverLabStack14
+            | ValidationScenario::SolverLabStack16 => None,
             ValidationScenario::SolverJacobi => Some(GpuSolverCandidate::JacobiGather),
             ValidationScenario::SolverColored => Some(GpuSolverCandidate::ColoredSoftTgs),
         };
@@ -876,12 +894,14 @@ impl EngineHost {
                 )
             }
             #[cfg(feature = "solver-lab")]
-            ValidationScenario::SolverLabStack8 | ValidationScenario::SolverLabStack16 => {
-                let count = if config.scenario == ValidationScenario::SolverLabStack8 {
-                    8
-                } else {
-                    16
-                };
+            ValidationScenario::SolverLabStack2
+            | ValidationScenario::SolverLabStack4
+            | ValidationScenario::SolverLabStack8
+            | ValidationScenario::SolverLabStack12
+            | ValidationScenario::SolverLabStack14
+            | ValidationScenario::SolverLabStack16 => {
+                let count = solver_lab_stack_count(config.scenario)
+                    .expect("solver-lab stack scenario maps to a rectangle count");
                 let scenario = configured_solver_scenario(
                     &config,
                     p5_2_centered_rectangle_stack_scenario(
@@ -972,12 +992,14 @@ impl EngineHost {
                 canonical_hash(&scenario)
             }
             #[cfg(feature = "solver-lab")]
-            ValidationScenario::SolverLabStack8 | ValidationScenario::SolverLabStack16 => {
-                let count = if config.scenario == ValidationScenario::SolverLabStack8 {
-                    8
-                } else {
-                    16
-                };
+            ValidationScenario::SolverLabStack2
+            | ValidationScenario::SolverLabStack4
+            | ValidationScenario::SolverLabStack8
+            | ValidationScenario::SolverLabStack12
+            | ValidationScenario::SolverLabStack14
+            | ValidationScenario::SolverLabStack16 => {
+                let count = solver_lab_stack_count(config.scenario)
+                    .expect("solver-lab stack scenario maps to a rectangle count");
                 canonical_hash(&configured_solver_scenario(
                     &config,
                     p5_2_centered_rectangle_stack_scenario(
@@ -1008,7 +1030,12 @@ impl EngineHost {
                 Some(BodyInteractionState::new(Vec::new(), true))
             }
             #[cfg(feature = "solver-lab")]
-            ValidationScenario::SolverLabStack8 | ValidationScenario::SolverLabStack16 => {
+            ValidationScenario::SolverLabStack2
+            | ValidationScenario::SolverLabStack4
+            | ValidationScenario::SolverLabStack8
+            | ValidationScenario::SolverLabStack12
+            | ValidationScenario::SolverLabStack14
+            | ValidationScenario::SolverLabStack16 => {
                 Some(BodyInteractionState::new(Vec::new(), true))
             }
             ValidationScenario::ResetGrab => {
@@ -1653,7 +1680,12 @@ impl EngineHost {
                 }
             }
             #[cfg(feature = "solver-lab")]
-            ValidationScenario::SolverLabStack8 | ValidationScenario::SolverLabStack16 => {
+            ValidationScenario::SolverLabStack2
+            | ValidationScenario::SolverLabStack4
+            | ValidationScenario::SolverLabStack8
+            | ValidationScenario::SolverLabStack12
+            | ValidationScenario::SolverLabStack14
+            | ValidationScenario::SolverLabStack16 => {
                 let complete =
                     self.fixed_steps_total >= u64::from(P5_2_CENTERED_STACK_EVIDENCE_STEPS);
                 ScenarioResult {

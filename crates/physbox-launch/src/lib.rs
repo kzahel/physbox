@@ -267,7 +267,15 @@ pub enum ValidationScenario {
     SettlingSoftness16,
     SettlingCandidate16,
     #[cfg(feature = "solver-lab")]
+    SolverLabStack2,
+    #[cfg(feature = "solver-lab")]
+    SolverLabStack4,
+    #[cfg(feature = "solver-lab")]
     SolverLabStack8,
+    #[cfg(feature = "solver-lab")]
+    SolverLabStack12,
+    #[cfg(feature = "solver-lab")]
+    SolverLabStack14,
     #[cfg(feature = "solver-lab")]
     SolverLabStack16,
 }
@@ -293,7 +301,15 @@ impl ValidationScenario {
         Self::SettlingSoftness16,
         Self::SettlingCandidate16,
         #[cfg(feature = "solver-lab")]
+        Self::SolverLabStack2,
+        #[cfg(feature = "solver-lab")]
+        Self::SolverLabStack4,
+        #[cfg(feature = "solver-lab")]
         Self::SolverLabStack8,
+        #[cfg(feature = "solver-lab")]
+        Self::SolverLabStack12,
+        #[cfg(feature = "solver-lab")]
+        Self::SolverLabStack14,
         #[cfg(feature = "solver-lab")]
         Self::SolverLabStack16,
     ];
@@ -333,7 +349,15 @@ impl ValidationScenario {
             Self::SettlingSoftness16 => "settling-softness-16",
             Self::SettlingCandidate16 => "settling-candidate-16",
             #[cfg(feature = "solver-lab")]
+            Self::SolverLabStack2 => "solver-lab-stack-2",
+            #[cfg(feature = "solver-lab")]
+            Self::SolverLabStack4 => "solver-lab-stack-4",
+            #[cfg(feature = "solver-lab")]
             Self::SolverLabStack8 => "solver-lab-stack-8",
+            #[cfg(feature = "solver-lab")]
+            Self::SolverLabStack12 => "solver-lab-stack-12",
+            #[cfg(feature = "solver-lab")]
+            Self::SolverLabStack14 => "solver-lab-stack-14",
             #[cfg(feature = "solver-lab")]
             Self::SolverLabStack16 => "solver-lab-stack-16",
         }
@@ -489,7 +513,7 @@ pub fn usage(program: &str, host: LaunchHost) -> String {
     format!(
         "Usage: {program} [options]\n\n  --width PX       viewport width (default 960)\n  --height PX      viewport height (default 600)\n  --scenario NAME  bootstrap, body-free-flight, rigid-floor, rigid-stack, rectangle-stack, circle-bucket-100, rectangle-bucket-100, reset-grab, solver-jacobi, solver-colored, solver-manifold-i2, solver-parallel-coloring, settling-hard-8, settling-candidate-8, settling-hard-16, settling-identity-16, settling-softness-16, settling-candidate-16{}{solver}{frame_markers}{capture}\n  -h, --help       print this help",
         if cfg!(feature = "solver-lab") {
-            ", solver-lab-stack-8, or solver-lab-stack-16"
+            ", solver-lab-stack-2, solver-lab-stack-4, solver-lab-stack-8, solver-lab-stack-12, solver-lab-stack-14, or solver-lab-stack-16"
         } else {
             ""
         }
@@ -527,7 +551,15 @@ fn apply_option(
                 "settling-softness-16" => ValidationScenario::SettlingSoftness16,
                 "settling-candidate-16" => ValidationScenario::SettlingCandidate16,
                 #[cfg(feature = "solver-lab")]
+                "solver-lab-stack-2" => ValidationScenario::SolverLabStack2,
+                #[cfg(feature = "solver-lab")]
+                "solver-lab-stack-4" => ValidationScenario::SolverLabStack4,
+                #[cfg(feature = "solver-lab")]
                 "solver-lab-stack-8" => ValidationScenario::SolverLabStack8,
+                #[cfg(feature = "solver-lab")]
+                "solver-lab-stack-12" => ValidationScenario::SolverLabStack12,
+                #[cfg(feature = "solver-lab")]
+                "solver-lab-stack-14" => ValidationScenario::SolverLabStack14,
                 #[cfg(feature = "solver-lab")]
                 "solver-lab-stack-16" => ValidationScenario::SolverLabStack16,
                 _ => return Err(LaunchError(format!("unknown scenario: {value}"))),

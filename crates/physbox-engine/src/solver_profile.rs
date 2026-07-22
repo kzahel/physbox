@@ -170,7 +170,12 @@ impl SolverProfileConfig {
                 let product = product
                     || matches!(
                         scenario,
-                        ValidationScenario::SolverLabStack8 | ValidationScenario::SolverLabStack16
+                        ValidationScenario::SolverLabStack2
+                            | ValidationScenario::SolverLabStack4
+                            | ValidationScenario::SolverLabStack8
+                            | ValidationScenario::SolverLabStack12
+                            | ValidationScenario::SolverLabStack14
+                            | ValidationScenario::SolverLabStack16
                     );
                 product
             }
