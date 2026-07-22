@@ -114,18 +114,63 @@ S25.1 gate. The complete one-runner screen takes `32.891 s`, passing its
 This slice runs only for S25.1 survivors, sorted by quiet margin and then by
 unchanged/lower cost. Admit at most two.
 
-- [ ] Run exact 1,200-step 2/4/8/12 blockers and 14/16 stretch/diagnostic rows,
+- [x] Run exact 1,200-step 2/4/8/12 blockers and 14/16 stretch/diagnostic rows,
   plus bucket, bilateral impact, off-center response, friction, restitution,
   and short-stack guards with sleeping off.
-- [ ] Repeat the complete candidate rows and require exact structural,
+- [x] Repeat the complete candidate rows and require exact structural,
   validity, and measurement replay. Require 2/4/8/12 to meet both linear and
   angular-edge quiet limits and the baseline-relative geometry guard.
-- [ ] Keep 14/16 failures reported but non-blocking. Require every response
+- [x] Keep 14/16 failures reported but non-blocking. Require every response
   and bucket row to remain finite, capacity-clean, and inside its existing
   predicate.
-- [ ] Select at most one finalist. An 8-substep finalist must expose its
+- [x] Select at most one finalist. An 8-substep finalist must expose its
   increased per-step/per-simulated-second cost and may not be described as a
   free quality improvement.
+
+Clean S25.2 result at revision
+`77a5505d918e4ce762bfb8f0e4c454fa5f434dbb` runs the sole survivor twice:
+
+```sh
+cargo run --release -p physbox-lab --bin physbox-check -- --sim-hz 60 --substeps 8 --iterations 1 --hz 30 --damping 10 --static-scale 2 --lane candidate --scenes stack2,stack4,stack8,stack12,stack14,stack16,bucket,impact,off-center,friction,restitution,short-stack
+```
+
+| Scene | Structure | Linear | Angular edge | Penetration | Final height | Result |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| stack 2 | pass | `0.000957` | `0.000672` | `0.001176` | `0.498546` | blocking pass |
+| stack 4 | pass | `0.004333` | `0.001736` | `0.003453` | `0.992811` | blocking pass |
+| stack 8 | pass | `0.010482` | `0.002915` | `0.007986` | `1.968382` | blocking pass |
+| stack 12 | pass | `0.017233` | `0.005768` | `0.012868` | `2.925068` | blocking pass |
+| stack 14 | pass | `0.014716` | `0.006246` | `0.014782` | `3.397960` | stretch pass |
+| stack 16 | fail at step 840 | `1.868055` after loss | `1.783489` after loss | `0.004026` after loss | `0.992802` after loss | diagnostic failure |
+
+Every metric, structural result, validity result, bucket speed (`0.006988
+m/s`), and first-loss step replays exactly; timing is intentionally not an
+exact-replay field. Candidate penetration improves over the same-adapter
+baseline at every blocking depth. Final height improves at 4/8/12 and is only
+`0.000057 m` lower at depth 2, inside the `0.0002 m` guard. The rectangle
+bucket and all five short response predicates pass and remain capacity-clean.
+The checker's legacy all-requested-scenes footer says `QUALIFY candidate FAIL`
+because the command includes the intentionally non-blocking 16 diagnostic;
+the S25 blocker verdict is pass.
+
+Revision `2df1a06` expands the already-computed energy report before finalist
+selection. At depth 2 the candidate energy changes from `5.49e-7` to
+`5.54e-7 J` with a 15-step positive run, versus the baseline's decreasing
+`1.677e-6` to `1.398e-6 J`. At depth 4 it changes from `1.2418e-5` to
+`1.4257e-5 J`, versus the baseline's decreasing `6.4146e-5` to `4.7591e-5 J`.
+Thus the frozen envelope boolean regresses on the two shallow rows, but both
+candidate endpoints remain materially below the baseline's absolute energy
+while linear speed, the declared geometry guard, and time-to-rest all pass.
+This remains
+an explicit finalist limitation and a required S25.3/native-product report;
+energy was predeclared as visible ranking evidence, not an S25 blocker.
+
+Validation wall cost is higher for the eight-substep graph and varies with
+readback/runner state; recorded stack rows span approximately `4.76-5.49 ms`
+per authored step across the two full replays. S25.3 must publish qualified
+complete product cost per step and per simulated second before any default
+decision. The sole finalist is therefore `resolution-control`: soft-coupled
+60/8/i1, contact 30 Hz/damping 10/static x2, sleeping off.
 
 ## S25.3 — conditional shared-product qualification
 
