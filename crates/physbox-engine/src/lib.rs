@@ -25,6 +25,8 @@ mod collision_persistence;
 mod config;
 mod construction;
 mod construction_validation;
+#[cfg(any(test, feature = "solver-lab"))]
+mod contact_components;
 mod frame;
 mod generated_contacts;
 mod gpu_context;

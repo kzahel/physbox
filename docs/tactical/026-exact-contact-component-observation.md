@@ -48,9 +48,9 @@ product candidate.
 ### S26.1 — contract and scalar proof
 
 - [x] Freeze the graph, label, exclusion, failure, and evidence contracts.
-- [ ] Add exhaustive small-graph and adversarial chain/star/pile-model tests
+- [x] Add exhaustive small-graph and adversarial chain/star/pile-model tests
   for the fixed phase bound and deterministic minimum labels.
-- [ ] Record the bound beside the implementation and fail closed if capacity
+- [x] Record the bound beside the implementation and fail closed if capacity
   arithmetic cannot represent it.
 
 Gate: exhaustive connected and disconnected graphs through the practical
