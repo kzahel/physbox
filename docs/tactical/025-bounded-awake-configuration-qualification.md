@@ -74,7 +74,7 @@ more expensive than 8/i1. Those cells are deliberately absent.
   reporting band and prevents damping from winning only through additional
   sag. Drift and energy remain visible ranking facts, not silently averaged
   gates.
-- [ ] Budget the complete screen at 60 seconds on the current AMD adapter. If
+- [x] Budget the complete screen at 60 seconds on the current AMD adapter. If
   it exceeds that warm budget, fix the loop before expanding evidence.
 
 Implementation checkpoint: the named screen owns its immutable configuration
@@ -82,6 +82,32 @@ list, rejects every additional CLI flag, performs one excluded baseline warmup
 step for comparable row timing, and sorts at most two advances by worst quiet
 speed then cost. Ordinary ad-hoc checker use remains available and now reports
 the same frozen stack-settling facts for exact 1,200-step stack rows.
+
+Clean S25.1 result, revision
+`4ea83b50f7520924b5e1b126ceccb44f67ad005d`, AMD Radeon 890M Graphics
+RADV/Vulkan:
+
+```sh
+cargo run --release -p physbox-lab --bin physbox-check -- --screen current-12
+```
+
+| ID | Structure | Linear | Angular edge | Penetration | Final height | Drift | Energy | Geometry | Result |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- | --- |
+| `baseline` | pass | `0.029767` | `0.012892` | `0.013737` | `2.916734` | `0.085140` | fail | pass | reject quality |
+| `static-frontier` | pass | `0.025584` | `0.011555` | `0.014680` | `2.918886` | `0.085137` | fail | fail | reject quality |
+| `damping-12` | pass | `0.028617` | `0.009783` | `0.013898` | `2.916203` | `0.085139` | fail | fail | reject quality |
+| `damping-16` | pass | `0.026132` | `0.009708` | `0.013904` | `2.916845` | `0.085114` | fail | pass | reject quality |
+| `damping-static` | pass | `0.025955` | `0.010793` | `0.014183` | `2.919788` | `0.084313` | fail | fail | reject quality |
+| `resolution-control` | pass | `0.017233` | `0.005768` | `0.012868` | `2.925068` | `0.076357` | fail | pass | **advance** |
+
+Speeds are m/s and geometry values are meters. Every row is finite and
+capacity-clean. The same-run baseline exactly reproduces S24's `0.029767 m/s`
+linear result. All five four-substep rows miss the unchanged linear quiet
+limit; several additionally fail the geometry guard. The sole eight-substep
+control clears both quiet limits and improves baseline penetration, height,
+and drift. Energy-envelope failure is visible for every row but is not an
+S25.1 gate. The complete one-runner screen takes `32.891 s`, passing its
+60-second budget. Only `resolution-control` is admitted to S25.2.
 
 ## S25.2 — survivor-only native guards
 
