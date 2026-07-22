@@ -1497,10 +1497,11 @@ fn solve_normal_block(matrix: vec4f, base: vec2f, old: vec2f,
     return output;
 }
 
-fn store_block_trace(point_index: u32, matrix: vec4f, active_set: u32) {
+fn store_block_trace(point_index: u32, matrix: vec4f, active_set: u32,
+                     point_count: u32) {
     contributions[point_index * 2u].padding = bitcast<u32>(matrix.x);
     contributions[point_index * 2u + 1u].padding = bitcast<u32>(matrix.y);
-    if (point_index + 1u < solver_point_count()) {
+    if (point_count == 2u && point_index + 1u < solver_point_count()) {
         contributions[(point_index + 1u) * 2u].padding = bitcast<u32>(matrix.w);
         contributions[(point_index + 1u) * 2u + 1u].padding = active_set;
     }
@@ -1549,7 +1550,7 @@ fn emit_normal_block(@builtin(global_invocation_id) id: vec3u) {
     let impulse_scale = vec2f(equation0.impulse_scale,
         select(0.0, equation1.impulse_scale, point_count == 2u));
     let solution = solve_normal_block(matrix, base, old, impulse_scale, point_count);
-    store_block_trace(id.x, matrix, solution.active_set);
+    store_block_trace(id.x, matrix, solution.active_set, point_count);
 
     let applied0 = solution.impulses.x - old.x;
     point0.data1.z = solution.impulses.x;
@@ -1692,9 +1693,11 @@ fn solve_colored_manifold(point_index: u32, preserve_static_motion: bool) {
                 motion_b = apply_impulse(point1.ids.y, motion_b,
                     impulse1, point1.anchor_b);
                 emit_pair(point_index + 1u, point1, impulse1);
-                store_block_trace(point_index, vec4f(k11, 0.0, 0.0, k22), 4u);
+                store_block_trace(
+                    point_index, vec4f(k11, 0.0, 0.0, k22), 4u, point_count);
             } else {
-                store_block_trace(point_index, vec4f(k11, 0.0, 0.0, 0.0), 4u);
+                store_block_trace(
+                    point_index, vec4f(k11, 0.0, 0.0, 0.0), 4u, point_count);
             }
         } else {
             let k11 = block_matrix_entry(point0, point0, 1.0, 1.0);
@@ -1720,7 +1723,7 @@ fn solve_colored_manifold(point_index: u32, preserve_static_motion: bool) {
                 vec2f(equation0.impulse_scale,
                     select(0.0, equation1.impulse_scale, point_count == 2u)),
                 point_count);
-            store_block_trace(point_index, matrix, solution.active_set);
+            store_block_trace(point_index, matrix, solution.active_set, point_count);
 
             let applied0 = solution.impulses.x - old.x;
             point0.data1.z = solution.impulses.x;

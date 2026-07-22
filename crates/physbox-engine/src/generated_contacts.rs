@@ -6368,6 +6368,8 @@ fn map_range<T: Pod + Copy>(
 mod tests {
     #[cfg(not(feature = "production-validation"))]
     use super::VALIDATION_SNAPSHOTS_PER_READBACK_FLUSH;
+    #[cfg(not(feature = "production-validation"))]
+    use super::benchmark_gpu_sleeping_city;
     use super::{GpuGeneratedContactRunner, product_candidate_capacity};
     use crate::{
         GpuRestitutionTimingPolicyV1, GpuSubstepContactPolicyV1, P5_2SettlingFixtureKind,
@@ -6376,7 +6378,7 @@ mod tests {
     #[cfg(not(feature = "production-validation"))]
     use crate::{
         GpuSolverExecutionV4, GpuSolverSchedulingPolicyV1, P5_2SettlingReviewPolicy,
-        p5_2_settling_review_scenario,
+        p5_2_settling_review_scenario, p5_2_sleeping_city_scenario,
     };
 
     #[test]
@@ -7152,5 +7154,21 @@ mod tests {
             error.contains("standalone hard/direct selected i2"),
             "{error}"
         );
+    }
+
+    #[cfg(not(feature = "production-validation"))]
+    #[test]
+    fn sleeping_city_benchmark_observes_the_authored_one_percent_work() {
+        let scenario = p5_2_sleeping_city_scenario(1_000, 1).unwrap();
+        let output = pollster::block_on(benchmark_gpu_sleeping_city(&scenario, 1_024, 1, 1))
+            .expect("1%-awake sleeping-city benchmark");
+        assert_eq!(output.correctness.awake_dynamic_body_count, 10);
+        assert_eq!(output.correctness.solver_body_count, 10);
+        assert!(output.correctness.live_contact_point_count > 0);
+        assert!(
+            output.correctness.awake_contact_point_count
+                < output.correctness.live_contact_point_count
+        );
+        assert!(output.replay_exact);
     }
 }
