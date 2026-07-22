@@ -56,17 +56,17 @@ exact-equivalence gates reviewable before transition semantics exist.
 
 ### S23.1 — policy vocabulary and frozen baselines
 
-- [ ] Version the policy and transition vocabulary: farthest-point speed,
+- [x] Version the policy and transition vocabulary: farthest-point speed,
   quiet duration expressed in outer steps, threshold source, transition
   velocity treatment, transition/wake causes, requested/effective state, and
   declared Box2D-versus-PhysBox differences.
-- [ ] Extend the process-isolated Box2D lane to capture public per-step awake
+- [x] Extend the process-isolated Box2D lane to capture public per-step awake
   state and farthest-point speed without source instrumentation.
-- [ ] Record the governed authority fixtures at 30/60/120 Hz with four
+- [x] Record the governed authority fixtures at 30/60/120 Hz with four
   substeps and at 60 Hz with one/eight substeps: isolated circle and rectangle,
   stack, pyramid, two independent structures, applied impulse, projectile
   impact, and grab begin/hold/release where the neutral contract supports it.
-- [ ] Record matching PhysBox sleep-off motion histories and exact replay for
+- [x] Record matching PhysBox sleep-off motion histories and exact replay for
   the governed fixtures, naming any fixture that cannot share an action
   projection rather than manufacturing parity.
 
@@ -74,6 +74,18 @@ Gate: a clean, fresh manifest records source/oracle pins, complete
 configuration, trace hashes, first-sleep and wake observations, transition
 velocity evidence, and every declared unsupported comparison. The maintained
 oracle process tests and the directly affected evidence target pass.
+
+Evidence, 2026-07-22: clean revision `6c70367` produced
+`/tmp/tmp.uIcbmASFU9/s23.1/manifest.json` on AMD Radeon 890M RADV Vulkan. All
+40 Box2D rows and all 25 supported action-free PhysBox histories replay
+exactly. The five configurations are 30/60/120 Hz at four substeps plus 60 Hz
+at one/eight substeps. All authority fixtures sleep, every observed Box2D
+sleep transition has zero farthest-point speed, and the impulse, projectile,
+and grab rows report governed wake transitions. The generated-contact history
+runner's lack of neutral-action execution is retained as an explicit PhysBox
+limitation on those 15 rows. `cargo test -p physbox-contracts`,
+`cargo test -p physbox-box2d-oracle`, and warnings-denied clippy for the new
+evidence target pass.
 
 ### S23.2 — inert GPU state and awake compaction
 

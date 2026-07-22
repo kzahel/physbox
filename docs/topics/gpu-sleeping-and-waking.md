@@ -2,12 +2,11 @@
 
 Status: active design, 2026-07-22. Tactical S23 is authorized through its
 inert S23.2 checkpoint; no sleeping behavior is implemented yet. This topic is the
-master record for the sleeping/waking feature: its motivation, the provisional
-selected direction, the frozen policy vocabulary, wake-trigger semantics, the
+master record for the sleeping/waking feature: its motivation, the selected
+direction, the frozen experimental policy vocabulary, wake-trigger semantics, the
 toggle and experimentation surface, the validation contract, the execution
 plan, and the running status overview. Direction and step ordering below are
-provisional until the first tactical slice freezes them with oracle traces and
-sleep-off baselines; nothing here changes a product default, and enabling
+provisional except where the S23.1 evidence below freezes them; nothing here changes a product default, and enabling
 sleeping as the ordinary default requires a recorded human promotion review.
 
 Governing direction:
@@ -39,7 +38,7 @@ change only with implementation and evidence, not because this design exists.
 
 | Area | Status | Current state / next gate |
 | --- | --- | --- |
-| Policy vocabulary and oracle traces | active | Freeze quiet predicate, thresholds-as-policy, and Box2D behavioral captures (S23.1). |
+| Policy vocabulary and oracle traces | complete | S23.1 freezes experimental policy V1 and a replay-exact 40-row Box2D/PhysBox baseline matrix. |
 | Versioned GPU sleep state | authorized | `SleepStateV1` lane and deterministic awake compaction while sleep stays disabled (S23.2). |
 | Wake roots and bounded propagation | proposed | Generation-checked roots plus K-round contact-neighbor waves against authored sleepers (S23.3). |
 | Automatic sleep admission | proposed | Integer outer-step timers, cause bitsets, no-drift guarantees (S23.4). |
@@ -141,11 +140,49 @@ process-isolated oracle, not source instrumentation:
 - overlay Box2D transitions with PhysBox farthest-point-speed histories, using
   `0.05 m/s` / `0.5 s` as seeds for PhysBox's own declared policy.
 
+### S23.1 frozen experimental seed and evidence
+
+Clean revision `6c70367` produced
+`/tmp/tmp.uIcbmASFU9/s23.1/manifest.json` on the AMD Radeon 890M RADV Vulkan
+adapter. All 40 rows pass: eight governed fixtures at 30/60/120 Hz with four
+substeps and at 60 Hz with one/eight substeps. Every Box2D result and public
+per-step trace replays exactly against clean authority revision
+`3a4f0da8374af61293a03021c9a0b3ebcfe67948`; all 25 action-free PhysBox GPU
+histories also replay exactly. The bounded generated-contact history runner
+does not consume neutral actions, so its impulse, projectile, and grab rows
+are explicitly reported unsupported rather than silently projected without
+their action. Box2D owns those three behavioral transition traces.
+
+Experimental `SleepPolicyV1` is now version 1 and freezes:
+
+- quiet metric: farthest-point speed `|v| + |omega| * radial_extent`;
+- speed threshold: `0.02 m/s`, above the selected soft solver's recorded
+  `0.007701 m/s` settled residual and below Box2D's `0.05 m/s` seed;
+- quiet duration: 500 simulated milliseconds, converted without floating-
+  point rounding to `ceil(500 * fixed_hz / 1000)` integer outer steps;
+- transition velocity: zero linear and angular velocity;
+- grouping vocabulary: per-body admission with bounded contact-neighbor wake
+  propagation, whose round count remains an S23.3 decision.
+
+The evidence observes zero farthest-point speed at every Box2D sleep
+transition. At the ordinary 60 Hz/four-substep row, Box2D first sleeps the
+isolated circle/rectangle at step 62, the four-stack together at step 35, and
+the pyramid together at step 30. The PhysBox sleep-off overlay first reaches
+the experimental quiet-duration candidate at steps 57/67 for the isolated
+circle/rectangle; the four stack bodies qualify individually at steps 31 and
+40, exposing the intended per-body versus whole-island difference before any
+transition is implemented. Applied impulse and grab wake on the first
+completed step after the step-120 action (step 121); the projectile wakes its
+own body at step 121 and all four stack bodies together on contact at step 195.
+The public API exposes awake state but no internal transition cause, so the
+artifact labels those causes as stimulus inferences rather than authority
+facts.
+
 Construction, erase/reuse, reset, and automatic support-motion waking are
 specified primarily as PhysBox invariants because they do not map cleanly
 through the neutral Box2D scenario contract.
 
-## Provisional selected direction
+## Selected implementation direction
 
 Per-body sleep timers with bounded contact-neighbor wake propagation, executed
 entirely on the GPU, one shared algorithm at every capacity tier.
@@ -349,12 +386,11 @@ merely code existence.
 
 ## Open questions
 
-- The exact quiet predicate: farthest-point speed only, or also an observed
-  position-correction term as in the authority, and the declared threshold
-  values against the measured soft-default residual band.
-- Velocity treatment at the sleep transition (zeroed versus frozen) and its
-  interaction with warm-start impulses on wake; decided with oracle evidence
-  in slice 1.
+- Whether a later policy version needs an observed position-correction term;
+  V1 intentionally freezes farthest-point speed only, and any expansion must
+  preserve the S23.1 baseline rather than changing it in place.
+- The interaction between the frozen zero-velocity transition and retained
+  warm-start impulses on wake; evaluated once automatic transitions exist.
 - The impact-wake rule's declared closing-speed or predicted-impulse constant.
 - The selected `K` and whether 64-body wake waves meet mobile pacing.
 - Whether and when `sleeping_enabled` appears in the product menu versus
