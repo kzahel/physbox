@@ -109,6 +109,15 @@ test("ordinary AVD launchers bound shutdown and reap their emulator child", () =
   }
 });
 
+test("AVD sleep capture uses the engine menu and verifies effective state", () => {
+  const source = readFileSync(join(androidDir, "validate-avd.sh"), "utf8");
+  assert.match(source, /PHYSBOX5_ANDROID_SLEEP_TOGGLE/);
+  assert.match(source, /frame\.sceneContract\.w === false && frame\.sceneContract\.y === false/);
+  assert.match(source, /\[62, 50, 300, 104, 192, 331\]/);
+  assert.match(source, /frame\.sceneContract\.w === true && frame\.sceneContract\.y === true/);
+  assert.match(source, /sleep-request-on-menu/);
+});
+
 function check(payload) {
   return spawnSync(process.execPath, [checker], {
     encoding: "utf8",
