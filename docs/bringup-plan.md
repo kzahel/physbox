@@ -19,7 +19,9 @@ with opt-in effective sleeping, coordinated bounded-neighbor admission/wake,
 awake-driven solve work, and matched sleeping-city evidence. S24's current-
 default native discriminator passes 2/4/8 but the upright 12-stack misses the
 awake quiet band; cross-host expansion and S23.7 remain held for a human
-solver/configuration decision.
+solver/configuration decision. That decision authorizes S25's bounded six-row
+configuration-only screen while leaving the equation, bands, sleeping policy,
+and product default fixed.
 
 The [current rigid quality target](topics/rigid-quality-targets.md) supersedes
 the historical 16-stack promotion gate for new work: 2/4/8 remain the
@@ -452,9 +454,11 @@ solver/configuration decision.
   [S24 current rigid quality qualification](tactical/024-current-rigid-quality-qualification.md):
   the native 2/4/8 foundation passes, but the upright 12-stack exceeds the
   awake quiet band and stopped browser/physical expansion.
-- Authorize and execute a bounded awake solver/configuration follow-up, then
-  earn a fresh native, browser, and physical-Android 12-stack pass before the
-  sleeping default decision.
+- Execute
+  [S25 bounded awake configuration qualification](tactical/025-bounded-awake-configuration-qualification.md),
+  admitting no more than two native survivors and one cross-host custom
+  finalist. A negative result returns to human review without an automatic
+  solver-formulation successor.
 - Complete the S23.7 sleeping promotion/default review over the implemented
   bounded wake propagation, coordinated admission, awake-driven solve, compact
   diagnostics, and sleeping-city evidence.

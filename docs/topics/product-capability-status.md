@@ -96,11 +96,12 @@ quality. Known limitations remain part of the row.
 
 ## Current execution order
 
-1. Resolve the S24 human checkpoint: the current default passes native 2/4/8
-   but its upright 12-stack runs at `0.029767 m/s` against the `0.025000 m/s`
-   quiet band. Do not weaken the gate or use sleeping to conceal the result.
-2. Under an explicitly authorized awake solver/configuration workstream, earn
-   a fresh native 12-stack pass before admitting browser and physical Android.
+1. Execute S25's authorized six-row configuration-only screen against S24's
+   native 12-stack failure. Do not weaken the gate, change the equation/default,
+   or use sleeping to conceal the result.
+2. Advance at most two native survivors and one cross-host custom finalist;
+   otherwise record `no-configuration-only-solution` and return to human
+   review.
 3. Only after that cross-host awake package passes, return to the held S23.7
    sleeping promotion/default review and close the remaining current-default
    rigid acceptance and scale work.

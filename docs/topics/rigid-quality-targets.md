@@ -17,7 +17,9 @@ Sleeping boundary:
 Cost and scale claims:
 [performance and scale](performance-and-scale.md).
 Execution tracker:
-[S24 current rigid quality qualification](../tactical/024-current-rigid-quality-qualification.md).
+[S24 current rigid quality qualification](../tactical/024-current-rigid-quality-qualification.md)
+and the authorized
+[S25 bounded configuration follow-up](../tactical/025-bounded-awake-configuration-qualification.md).
 
 ## Decision
 
@@ -100,6 +102,11 @@ This blocks current product qualification without changing the target,
 threshold, solver, or default. S23.7 remains held until human review authorizes
 an awake solver/configuration follow-up and a fresh native 12-stack attempt.
 The exact commands and full disposition are recorded in S24.
+
+Human review subsequently authorizes S25 as that bounded configuration-only
+follow-up. It freezes six evidence-driven rows, retains this topic's bands and
+sleep-off rule, and leaves the default unchanged unless a later human decision
+promotes a fully qualified finalist.
 
 ## Why 16 is a diagnostic, not the product gate
 

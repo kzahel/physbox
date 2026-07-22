@@ -159,6 +159,11 @@ misses the existing quiet band (`0.029767` versus `0.025000 m/s`). Fourteen
 also misses the quiet band and 16 loses structure at step 463. The declared
 hard stop prevented durable/browser/physical-device expansion; S23.7 remains
 held at a human awake-solver/configuration checkpoint.
+Human review authorizes S25 as one configuration-only resolution attempt. Its
+six-row, one-process native shortlist keeps the equation, bands, sleeping
+policy, and product default fixed; no more than two survivors reach broader
+native guards and no more than one reaches conditional browser/physical
+qualification.
 
 Current target supersession, 2026-07-22: the
 [rigid quality target contract](../topics/rigid-quality-targets.md) governs new
@@ -202,6 +207,7 @@ This README remains the unnumbered index.
 | S22 | Active-work compaction | [022-active-work-compaction.md](022-active-work-compaction.md) | complete; committed persistence/topology work and durable sparse-capacity qualification pass, 2026-07-22 |
 | S23 | GPU sleeping and waking | [023-gpu-sleeping-and-waking.md](023-gpu-sleeping-and-waking.md) | manual checkpoint; contact sleep-cycle correction qualified on browser/headless/Pixel, S23.7 human decision held, 2026-07-22 |
 | S24 | Current rigid quality qualification | [024-current-rigid-quality-qualification.md](024-current-rigid-quality-qualification.md) | complete negative; native 2/4/8 pass, upright 12 misses quiet band, conditional cross-host work not admitted, 2026-07-22 |
+| S25 | Bounded awake configuration qualification | [025-bounded-awake-configuration-qualification.md](025-bounded-awake-configuration-qualification.md) | active; six-row native 12-stack screen, survivor-only expansion, default unchanged, 2026-07-22 |
 
 ## Conventions
 
