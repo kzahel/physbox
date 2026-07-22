@@ -103,6 +103,14 @@ fn run() -> Result<(), String> {
             completed_steps: 1,
         },
         Case {
+            label: "centered-tower-2",
+            family: "time-evolved-sleep-control",
+            scenario: p5_2_centered_rectangle_stack_scenario(2, 600)
+                .map_err(|error| error.to_string())?,
+            capacity: 64,
+            completed_steps: 600,
+        },
+        Case {
             label: "centered-tower-8",
             family: "time-evolved-tower",
             scenario: p5_2_centered_rectangle_stack_scenario(8, 600)

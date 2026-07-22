@@ -2229,6 +2229,26 @@ mod gpu {
                     .all(|sample| sample.is_finite() && *sample > 0.0)
             );
         }
+
+        #[test]
+        fn gpu_sleep_decision_trace_covers_complete_small_tower_sleep() {
+            let scenario = crate::p5_2_centered_rectangle_stack_scenario(2, 600).unwrap();
+            let output =
+                pollster::block_on(observe_gpu_sleep_decisions(&scenario, 64, 600)).unwrap();
+            let minimum_awake = output
+                .steps
+                .iter()
+                .map(|step| step.awake_before_admission - step.bounded_admission_bodies)
+                .min()
+                .unwrap();
+            let admission_steps = output
+                .steps
+                .iter()
+                .filter(|step| step.bounded_admission_bodies != 0)
+                .count();
+            assert_eq!(minimum_awake, 0);
+            assert_eq!(admission_steps, 1);
+        }
     }
 }
 
