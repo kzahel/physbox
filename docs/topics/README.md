@@ -21,6 +21,10 @@ a running log.
 - [Product capability status](product-capability-status.md) — compact current
   ledger of implemented, limited, missing, and deferred engine features plus
   the next execution order.
+- [Rigid quality targets](rigid-quality-targets.md) — current awake stack
+  hierarchy: 2/4/8 regression foundation, 12 blocking, 14 stretch, 16 as the
+  matched-Box2D frontier diagnostic, and the rule that sleep cannot earn an
+  awake pass.
 - [Simulation time and overload](simulation-time-and-overload.md) — fixed-delta
   slow motion under load, zero-or-one interactive steps, permanent wall-time
   slip, explicit-step validation, and scheduler diagnostics.

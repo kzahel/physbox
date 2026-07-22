@@ -1,6 +1,6 @@
 # PhysBox 5: One GPU-Resident 2D Physics World
 
-Status: active direction, updated 2026-07-21. The lean bootstrap and P5.0a solver
+Status: active direction, updated 2026-07-22. The lean bootstrap and P5.0a solver
 laboratory are complete at `~/code/physbox5`; the fresh-history root is commit
 `3de0b12001b2246e3966f7d1264225dd4da903f4`, and
 <https://physbox5.kzahel.com>. PhysBox 4 remains the preserved snapshot of the
@@ -47,6 +47,13 @@ Historical S6-S18 dispositions remain accurate for their frozen
 questions; they do not override the later human product decision. Invariants,
 capacity safety, exact replay within a configuration, portable WebGPU, one
 GPU-resident state, and honest cost/response reporting remain mandatory.
+
+The [rigid quality target contract](rigid-quality-targets.md) now makes the
+awake stack hierarchy explicit for new work: 2/4/8 are the regression
+foundation, 12 is blocking, 14 is stretch, and 16 is the non-blocking boundary
+diagnostic for the exact matched Box2D fixture. This supersedes the historical
+use of 16 as an automatic promotion veto without rewriting those experiments,
+weakening their findings, or allowing sleeping to satisfy an awake gate.
 
 The first simulation slice is a rigid-only foundation:
 
@@ -1701,7 +1708,10 @@ Fluid work does not begin until all of the following are true:
   sleep, wake, and respond to grabs without a CPU physics backend.
 - Flat, corner, and edge landings have bounded penetration and settle without
   persistent artificial jitter or energy growth.
-- Small stacks and pyramids remain coherent for their complete fixture window.
+- Small stacks and pyramids remain coherent for their complete fixture window;
+  the current centered-stack roles and cross-host gate are owned by
+  [rigid quality targets](rigid-quality-targets.md), with 12 blocking and
+  14/16 retained as stretch/diagnostic evidence.
 - The process-isolated native Box2D oracle consumes the projection generated
   from one shared scenario definition, emits a fresh canonical result, and is
   never used as a product or platform fallback.

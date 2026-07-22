@@ -1,6 +1,6 @@
 # Physics configuration and solver profiles
 
-Status: implemented product direction, 2026-07-21. Human review selected the
+Status: implemented product direction, updated 2026-07-22. Human review selected the
 soft-coupled solver family, and the shared code now uses its reviewed
 60/4/i1 seed as the fresh ordinary default. Product-owned fixed-step, substep,
 iteration, contact-response, and recovery settings form one versioned bounded
@@ -11,6 +11,7 @@ Governing direction:
 [one GPU-resident 2D physics world](physbox5-unified-gpu-physics.md).
 Related contracts:
 [simulation time and overload](simulation-time-and-overload.md),
+[rigid quality targets](rigid-quality-targets.md),
 [awake settling and rest stability](awake-settling-and-rest-stability.md),
 [contact solver parallelism](contact-solver-parallelism.md), and
 [performance and scale](performance-and-scale.md).
@@ -64,6 +65,12 @@ reported as Box2D parity, indefinite tall-tower support, or a final tuning.
 Penetration, stack height, first structural-loss step, and subjective review
 remain visible configuration characteristics.
 
+The later rigid-quality decision classifies 16 as the matched-Box2D frontier
+diagnostic rather than a blocking promotion gate. It does not infer that the
+current seed passes the new requirement: fresh selected-default 2/4/8/12
+sleep-off qualification is still required, and 14 remains a reported stretch
+result.
+
 Historical S6-S18 negative dispositions remain true within their frozen
 questions. They explain limitations and preserve useful implementations; they
 do not overrule the later human decision to build on the soft family.
@@ -79,7 +86,7 @@ The product configuration separates values whose effects and ownership differ:
 | Contact response | contact Hz, damping ratio, static-contact multiplier | Requested soft-contact behavior; effective values depend on substep `dt` and caps |
 | Contact recovery | speculative distance, maximum depenetration velocity | Collision anticipation and bounded recovery from overlap; initially reported, not placed in the primary editor |
 | Solver family | soft-coupled, hard/direct comparison, later explicit candidates | Discrete recurrence, ordering, preparation, and relaxation policy |
-| Sleeping request | off/on request, with separate effective state | Experimental S23 transport; off by default and ineffective at the S23.2 checkpoint |
+| Sleeping request | off/on request, with separate effective state | Effective on request after S23.3-S23.6; off by default pending the S23.7 promotion decision |
 
 One canonical versioned configuration must project into `EngineConfig` and the
 neutral scenario exactly once. `physbox-launch` owns names, parsing, defaults,
@@ -108,9 +115,12 @@ the request, and `MENU → WORLD → SLEEP REQUEST` provides the same
 engine-rendered control. It atomically rebuilds the shared configuration,
 preserves orthogonal solver/capacity/tool state, persists in the version-3
 browser preference, and reports requested and effective values separately.
-Effective sleeping remains hard-false. This is a representation/transport
-control, not an enabled feature or a default decision; later effectiveness and
-default promotion remain owned by the sleeping workstream's explicit gates.
+Effective sleeping was hard-false. This established the representation and
+transport control without enabling the feature or making a default decision.
+
+S23.3-S23.6 subsequently made the request effective through the same
+configuration and control. Sleeping remains off by default, and final
+promotion remains owned by S23.7.
 
 World capacity is a separate engine setting because it changes fixed GPU
 storage and broadphase work rather than the solver equation. The shared launch

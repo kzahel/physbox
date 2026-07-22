@@ -7,6 +7,8 @@ change that materially changes a feature status or product claim.
 
 Governing direction:
 [one GPU-resident 2D physics world](physbox5-unified-gpu-physics.md).
+Current awake acceptance:
+[rigid quality targets](rigid-quality-targets.md).
 Execution order:
 [bring-up plan](../bringup-plan.md). Validation scope:
 [build, validation, and evidence health](build-validation-and-evidence-health.md).
@@ -52,7 +54,7 @@ quality. Known limitations remain part of the row.
 | COLL-6 | Collision filtering and sensors | **Not implemented** | No product category/mask/group filtering or trigger/sensor contract exists. |
 | COLL-7 | Contact/query events | **Not implemented** | No general begin/end/hit event stream, AABB query, ray cast, or shape cast API exists. |
 | COLL-8 | GPU picking | **Limited** | Shared grab/erase selection uses bounded GPU hit selection; it is not a general spatial-query API. |
-| SOLVE-1 | Soft-coupled rigid solver | **Implemented** | Reviewed 60/4/i1, contact 30 Hz/damping 10/static x2 default; quiet feel accepted with visible tall-stack compliance and step-407 16-stack loss. |
+| SOLVE-1 | Soft-coupled rigid solver | **Implemented** | Reviewed 60/4/i1, contact 30 Hz/damping 10/static x2 default. Its sleep-off 16-stack loss at step 407 is a frontier diagnostic; fresh selected-default 12-stack blocking and 14-stack stretch results are not yet recorded. |
 | SOLVE-2 | Hard/direct comparison | **Implemented** | Explicit named comparator only; never an automatic fallback. |
 | SOLVE-3 | Sleeping and waking | **Limited** | Opt-in effective GPU sleeping has versioned generation-safe state, four-round wake propagation, integer outer-step admission, awake-driven solve/integration, and an engine-rendered persisted toggle. The default and final qualification remain held for S23.7 human review. |
 | JOINT-1 | Grab constraint | **Implemented** | Anchored GPU grab retains collision and bounded release velocity. |
@@ -78,7 +80,7 @@ quality. Known limitations remain part of the row.
 | SCALE-3 | 1K-100K product-world claims | **Not implemented** | Existing authored-contact/isolated-solver measurements are not scalable end-to-end body claims. |
 | SCALE-4 | Mostly-sleeping scale | **Limited** | Valid named-adapter 1%/10%/100% awake curves show solver work and GPU time falling with awake bodies/points, and reserve probes remain bounded through 10K capacity. Live pair processing is retained; no rendered 10K/100K, 60 Hz, or cross-adapter product-rate claim exists. |
 | QUAL-1 | Box2D process oracle | **Implemented** | Clean pinned native process covers current circle/rectangle projections, public manifolds, selected actions, and deterministic results. |
-| QUAL-2 | Comprehensive rigid acceptance | **Limited** | Core fixtures and extensive research evidence exist; a compact current-default P5.4 acceptance suite is not yet closed. |
+| QUAL-2 | Comprehensive rigid acceptance | **Limited** | Core fixtures and extensive research evidence exist. The current sleep-off hierarchy requires fresh selected-default 2/4/8 foundation and 12-stack blocking results across native, browser, and physical Android, with 14/16 reported as stretch/diagnostic evidence; that P5.4 package is not yet closed. |
 | QUAL-3 | Correctness-qualified CPU/GPU crossover | **Not implemented** | Requires broadphase, sleeping, equivalent-quality worlds, and scoped solver/collision/end-to-end/full-frame curves. |
 | TEST-1 | Everyday fast lane | **Implemented** | `npm run test:fast` runs format, maintained Rust plus performance smoke, tool tests, boundaries, and browser WebGPU under a 120-second hard budget. |
 | TEST-2 | Exhaustive research/audit lane | **Implemented** | Historical lab/oracle matrices remain opt-in; they are not ordinary pre-push gates. |

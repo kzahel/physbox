@@ -154,6 +154,15 @@ a post-review correction now coordinates admission within `K` and removes
 persisted-contact wake cycling. Work is stopped before S23.7 for the reserved
 human promotion/default decision.
 
+Current target supersession, 2026-07-22: the
+[rigid quality target contract](../topics/rigid-quality-targets.md) governs new
+acceptance work. Its centered-stack hierarchy uses 2/4/8 as the regression
+foundation, 12 as the blocking awake target, 14 as stretch, and 16 as a
+non-blocking matched-Box2D frontier diagnostic. The S5-S18 16-stack gates,
+checkboxes, failures, and conclusions remain immutable historical evidence
+under their original contracts; do not read them as the current product
+minimum or rewrite them to match the new target.
+
 Tactical filenames use a three-digit zero-padded prefix ordered by their first
 Git creation timestamp. This repository starts at `001`. Never renumber an
 existing tactical, recycle a number, or copy PhysBox 4's historical numbering.

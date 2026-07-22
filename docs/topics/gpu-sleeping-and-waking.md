@@ -28,6 +28,9 @@ Configuration ownership follows
 [physics configuration and solver profiles](physics-configuration-and-solver-profiles.md).
 The awake-quality boundary — sleeping must never conceal awake motion — is
 owned by [awake settling and rest stability](awake-settling-and-rest-stability.md).
+The current structural hierarchy — including the blocking 12-stack and the
+non-blocking 16-stack diagnostic — is owned by
+[rigid quality targets](rigid-quality-targets.md).
 The rigid behavior authority is
 [Box2D rigid authority](box2d-rigid-authority.md); contact identity is owned
 by [collision and contact persistence](collision-and-contact-persistence.md).
@@ -75,18 +78,25 @@ consequences of the selected algorithm and need their own fixtures and bands.
 
 ## Boundary with awake settling: the mask rule
 
-Sleeping must not rewrite the solver verdict. The selected soft default
-already quiets the governed 16-stack far below any plausible sleep threshold
-(`0.007701 m/s` settled maximum against the Box2D `0.05 m/s` seed) and then
-still loses the structure at step 407 in sleep-off execution. If sleep-enabled
-execution puts that stack to sleep before step 407 and preserves its shape,
-the result is reported as "sleep masked the awake loss," never as a stability
-fix. The same rule covers tall-stack compliance and any structure whose
-sleep-off outcome differs from its sleep-enabled outcome. Every promotion
-package and the final capability-ledger row must carry this limitation
-explicitly. The awake-settling topic's closed no-survivor record and the S18
-accepted residual band remain the measured awake input to threshold design;
-sleeping reports that provenance rather than erasing it.
+Sleeping must not rewrite the solver verdict. The current hierarchy requires
+sleep-off 2/4/8 foundation results and a blocking 12-stack pass; sleep-assisted
+survival cannot satisfy any of them. The 14-stack stretch and 16-stack
+frontier diagnostic likewise retain their sleep-off outcomes even when sleep
+changes what a reviewer sees.
+
+The selected soft default already quiets the historical governed 16-stack far
+below any plausible sleep threshold (`0.007701 m/s` settled maximum against
+the Box2D `0.05 m/s` seed) and then still loses the structure at step 407 in
+sleep-off execution. If sleep-enabled execution puts that stack to sleep
+before step 407 and preserves its shape, the result is reported as "sleep
+masked the awake loss," never as a stability fix. The sleep-off 16-stack
+diagnostic remains failed, but that failure is non-blocking under the current
+hierarchy. The same rule covers every structure whose sleep-off outcome
+differs from its sleep-enabled outcome.
+Every promotion package and the final capability-ledger row must carry this
+limitation explicitly. The awake-settling topic's closed no-survivor record
+and the S18 accepted residual band remain measured awake inputs to threshold
+design; sleeping reports that provenance rather than erasing it.
 
 The residual band also constrains the quiet predicate from the other side: a
 threshold below the measured settled residuals of the selected soft default

@@ -4,6 +4,8 @@ Status: active contract with provisional targets, updated 2026-07-21.
 
 Governing direction:
 [one GPU-resident 2D physics world](physbox5-unified-gpu-physics.md).
+Equivalent rigid quality:
+[rigid quality targets](rigid-quality-targets.md).
 Execution begins in the
 [rigid solver laboratory](../tactical/001-rigid-solver-laboratory.md) and
 continues through every stage of the [bring-up plan](../bringup-plan.md).
@@ -254,8 +256,11 @@ Equal iteration counts are not automatically equal quality. Compare engines at
 the declared product configuration and record penetration, stack-height error,
 jitter, energy, sleep behavior, and scenario-specific structural outcomes.
 Performance claims require both runs to remain inside their accepted
-behavioral bands. If an additional GPU substep is required to match behavior,
-its cost belongs in the comparison.
+behavioral bands. For the centered-stack lane, the current contract requires
+the 12-stack awake gate; the 14/16 stretch and diagnostic outcomes remain
+visible but do not silently invalidate an otherwise equivalent-quality row.
+If an additional GPU substep is required to match behavior, its cost belongs
+in the comparison.
 
 Every scalable scene has two related forms:
 

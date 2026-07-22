@@ -35,12 +35,21 @@ pass. Physical Pixel 7a bootstrap and 103-body bucket execution close S21;
 the bucket's `0.591` effective scale remains an explicit limitation rather
 than a sustained-rate claim. Interactive world capacity is now a shared
 64/256/1K/10K preset, with 64 retained as the safe default.
+
+The current awake rigid-quality hierarchy is explicit: 2/4/8-body stacks are
+the regression foundation, 12 is the blocking product target, 14 is stretch,
+and 16 is a non-blocking matched-Box2D frontier diagnostic. Sleeping can never
+satisfy an awake gate. Historical S5-S18 16-stack results remain evidence
+under their original contracts; they no longer define the current product
+minimum. See [rigid quality targets](docs/topics/rigid-quality-targets.md).
+
 The repository still contains no Rapier or CPU product physics backend, fluid
 solver, legacy settings UI, or PhysBox 4 scene compatibility.
 
 Read:
 
 - [Authoritative GPU-physics direction](docs/topics/physbox5-unified-gpu-physics.md)
+- [Current rigid quality targets](docs/topics/rigid-quality-targets.md)
 - [Performance and scale contract](docs/topics/performance-and-scale.md)
 - [Simulation time and overload contract](docs/topics/simulation-time-and-overload.md)
 - [Physics configuration and solver profiles](docs/topics/physics-configuration-and-solver-profiles.md)

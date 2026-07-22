@@ -1,29 +1,21 @@
 # Awake settling and rest stability
 
-Status: S6.5 and S9-S18 retain their recorded dispositions; the settling
-formulation program is closed without a promoted candidate, 2026-07-20.
-S18 fixed the validation-only authority-key ordering defect and swept 30
-branch-robust soft coefficient tuples. Every tuple is valid, but every tuple
-loses the governed 16-stack. The measured hard/direct residual-motion envelope
-is accepted as the state against which broadphase selection and sleeping
-design proceed. This does not make the awake gate pass, create a new numerical
-tolerance, authorize sleeping as evidence of awake stillness, or open a
-successor formulation study.
-Track B continues to own full authority parity; its next authority-robustness
-study is paused, not closed, and its authority bands remain unchanged.
-S12's coupled soft scalar authority endpoint qualifies, S13 rejects its one
-exact GPU execution candidate on frozen authority response quality, and S14
-rejects its sole branch-robust formulation at the scalar authority-robustness
-gate. Those facts are not rewritten by Track A.
-S11's measured rewind correction space is exhausted with no survivor. The
-comparator-engine trigger remains recorded but no comparator is authorized.
-The S6.5d soft candidate and all S9/S10/S11 material candidates are rejected;
-restitution timing is byte-inert on the governed controls.
-Hard/direct manifold-block i2 remains the product. Sleeping is not implemented
-by this decision; its design must begin from the measured awake motion and
-must report rather than erase that provenance. No contact-identity policy,
-soft-contact coefficient, penetration deadband, friction anchor, or sleep
-threshold is a product default by virtue of this document.
+Status: historical settling-program record with a current acceptance
+supersession, updated 2026-07-22. S6.5 and S9-S18 retain their recorded
+dispositions; S18 closed the formulation program without a survivor after all
+30 branch-robust soft tuples lost its governed 16-stack. S19 later selected the
+soft-coupled family as the product direction on explicit human review.
+
+For new work, [rigid quality targets](rigid-quality-targets.md) owns the stack
+gate: 2/4/8 are the regression foundation, 12 is blocking awake quality, 14 is
+stretch, and 16 is the non-blocking matched-Box2D frontier diagnostic. The
+S5-S18 16-stack gates below remain accurate historical evidence under their
+frozen scopes; they do not define the current product minimum. Track B's
+authority bands and every candidate rejection remain unchanged. Sleeping may
+not satisfy any awake gate or erase the recorded residuals. No contact-
+identity policy, coefficient, penetration deadband, friction anchor, sleep
+threshold, physical tolerance, or solver default changes by this
+supersession.
 
 Governing direction:
 [one GPU-resident 2D physics world](physbox5-unified-gpu-physics.md).
@@ -1446,7 +1438,12 @@ This order does not preselect a winner. A candidate that looks still because
 it sags, drifts, over-penetrates, loses friction, or dissipates legitimate
 impact response does not qualify.
 
-## Proposed awake completion gate
+## Historical S6-S18 awake completion gate
+
+This section records the S6-S18 formulation-program gate. Its residual,
+identity, and energy predicates remain useful evidence, but its historical
+all-or-nothing 16-stack role is superseded for current product acceptance by
+[rigid quality targets](rigid-quality-targets.md).
 
 The first instrumentation slice freezes the exact observation cadence and
 window arithmetic before candidate measurements. The blocking product gate is:

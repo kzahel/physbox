@@ -14,9 +14,16 @@ The compact [product capability ledger](topics/product-capability-status.md)
 records what is implemented, limited, missing, and deferred without requiring
 the historical tacticals to be reconstructed. S20 owns the validation diet;
 S21 owns the now-complete P5.3 broadphase bakeoff, winner integration, and
-physical-Android qualification. S23.2 has established inert GPU sleep state
-and the awake-work seam; wake propagation, sleep admission, awake-driven solve,
-and current-default rigid acceptance remain the next engine milestones.
+physical-Android qualification. S23 has reached its manual promotion checkpoint
+with opt-in effective sleeping, coordinated bounded-neighbor admission/wake,
+awake-driven solve work, and matched sleeping-city evidence. Current-default
+rigid acceptance remains a next engine milestone.
+
+The [current rigid quality target](topics/rigid-quality-targets.md) supersedes
+the historical 16-stack promotion gate for new work: 2/4/8 remain the
+regression foundation, 12 is the blocking awake product target, 14 is stretch,
+and 16 is a non-blocking matched-Box2D frontier diagnostic. Historical
+tacticals retain their original gates and results.
 
 Active cross-milestone execution from the remaining P5.2/S4 closure through
 P5.4 is tracked by
@@ -373,7 +380,10 @@ Human review on 2026-07-21 selects the soft-coupled point-sequential family as
 the product direction. Its initial 60 Hz/four-substep/one-biased-plus-
 relaxation 30/10/staticx2 seed is much quieter and subjectively closer to
 Box2D than hard/direct. Its visible tall-stack penetration and step-407
-16-stack loss are accepted starting limitations, not hidden successes.
+16-stack loss are accepted starting limitations, not hidden successes. Under
+the later [rigid quality target](topics/rigid-quality-targets.md), that
+16-stack result is diagnostic; the selected default still requires fresh
+sleep-off 2/4/8/12 qualification and a reported 14-stack stretch result.
 
 - Make soft-coupled the ordinary default on desktop, browser, Android, and
   headless; retain hard/direct as an explicit comparison only.
@@ -419,10 +429,11 @@ own integration, rendering, SAP, narrowphase, pair-slot lifecycle, topology,
 and solver dispatch. The durable 64/256/1K/10K probe is approximately flat for
 the same sparse scene while its dense control expands the work vector.
 [S23 GPU sleeping and waking](tactical/023-gpu-sleeping-and-waking.md) has now
-completed its inert checkpoint: generation-safe GPU sleep state and a sorted
-awake-dynamic list exist and replay exactly, but effective sleeping is false
-and the solver does not consume awake work. Work stops before wake propagation
-pending explicit continuation.
+reached its manual checkpoint: generation-safe GPU sleep state, coordinated
+four-round admission/wake propagation, awake-driven solve work, the persisted
+toggle, state visualization, and matched sleeping-city evidence are complete.
+Effective sleeping remains opt-in and off by default; S23.7's promotion/default
+decision is held for human review.
 
 - Preserve brute force as pair-completeness oracle.
 - Implement sorted sweep-and-prune and multi-cell grid candidates.
@@ -433,9 +444,12 @@ pending explicit continuation.
 
 ## P5.4 — rigid parity and performance gates
 
-- Continue sleeping/waking from S23.2: add bounded wake propagation, automatic
-  sleep admission, and awake-driven solving on S22's reserve-independent hot
-  execution, with compact asynchronous diagnostics.
+- Complete the S23.7 sleeping promotion/default review over the implemented
+  bounded wake propagation, coordinated admission, awake-driven solve, compact
+  diagnostics, and sleeping-city evidence.
+- Qualify the selected default against the current centered-stack hierarchy:
+  2/4/8 foundation, 12 blocking awake, 14 stretch, and 16 matched-Box2D
+  frontier diagnostic. Sleep-enabled survival may not satisfy the awake gate.
 - Accept landing, stack, pyramid, impact, friction, bounce, mass-ratio, and
   grab/release fixtures against Box2D and independent invariants.
 - Publish correctness-qualified Box2D CPU/GPU crossover curves for solver-only,
