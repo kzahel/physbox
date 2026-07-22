@@ -210,6 +210,7 @@ pub use scenario::{
     p5_2_settling_review_scenario, p5_2_settling_soft_fixture_scenario,
     p5_2_settling_soft_i1_comparator_scenario, p5_2_settling_soft_stack_matrix_scenario,
     p5_2_sleeping_city_scenario, p5_2_stale_reseed_reproducer_scenario, p5_3_broadphase_scenario,
-    p5_3_broadphase_snapshot,
+    p5_3_broadphase_snapshot, s26_bridge_components_scenario, s26_isolated_components_scenario,
+    s26_packed_pile_scenario,
 };
 pub use solver_profile::SolverProfileConfig;

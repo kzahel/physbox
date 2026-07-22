@@ -906,6 +906,121 @@ pub fn p5_2_rectangle_pyramid_scenario(
     Ok(scenario)
 }
 
+/// S26 contact-component control with two dynamic bodies and no current
+/// dynamic-dynamic edge. The fixed floor remains present to prove that static
+/// support cannot merge otherwise isolated vertices.
+pub fn s26_isolated_components_scenario(
+    requested_steps: u32,
+) -> Result<ScenarioV1, ScenarioBuildError> {
+    let mut scenario = p5_2_centered_rectangle_stack_scenario(2, requested_steps)?;
+    scenario.id = "s26-isolated-components".to_owned();
+    scenario.bodies[1].position = Vec2::new(-2.0, 1.5);
+    scenario.bodies[2].position = Vec2::new(2.0, 1.5);
+    scenario
+        .validate()
+        .map_err(|error| ScenarioBuildError(error.to_string()))?;
+    Ok(scenario)
+}
+
+/// S26 split/merge pair. Without the bridge this is two independent two-box
+/// piles on one floor; with it, one dynamic top stone connects both piles.
+pub fn s26_bridge_components_scenario(
+    bridged: bool,
+    requested_steps: u32,
+) -> Result<ScenarioV1, ScenarioBuildError> {
+    let mut scenario = p5_2_centered_rectangle_stack_scenario(4, requested_steps)?;
+    scenario.id = if bridged {
+        "s26-bridged-piles"
+    } else {
+        "s26-split-piles"
+    }
+    .to_owned();
+    let support_half_extents = Vec2::new(0.20, 0.125);
+    for (index, body) in scenario.bodies[1..].iter_mut().enumerate() {
+        let side = if index < 2 { -0.35 } else { 0.35 };
+        let level = index % 2;
+        body.shape = ShapeV1::Rectangle {
+            half_extents: support_half_extents,
+        };
+        body.position = Vec2::new(side, 0.125 + level as f32 * 0.25);
+        body.angle = finite(0.0);
+        body.linear_velocity = Vec2::ZERO;
+        body.angular_velocity = finite(0.0);
+        body.inverse_inertia = finite(12.0 / (0.40 * 0.40 + 0.25 * 0.25));
+    }
+    if bridged {
+        let mut bridge = scenario.bodies[1].clone();
+        bridge.id = BodyId {
+            slot: 5,
+            generation: 1,
+        };
+        bridge.shape = ShapeV1::Rectangle {
+            half_extents: Vec2::new(0.55, 0.125),
+        };
+        bridge.position = Vec2::new(0.0, 0.625);
+        bridge.inverse_inertia = finite(12.0 / (1.10 * 1.10 + 0.25 * 0.25));
+        scenario.bodies.push(bridge);
+    }
+    scenario
+        .validate()
+        .map_err(|error| ScenarioBuildError(error.to_string()))?;
+    Ok(scenario)
+}
+
+/// Deterministic touching rectangle pile used to measure exact-component
+/// edge traffic and atomic contention without making the fixture itself a
+/// platform adapter concern.
+pub fn s26_packed_pile_scenario(
+    dynamic_body_count: u32,
+    requested_steps: u32,
+) -> Result<ScenarioV1, ScenarioBuildError> {
+    if !matches!(dynamic_body_count, 100 | 1_000) {
+        return Err(ScenarioBuildError(
+            "S26 packed pile requires exactly 100 or 1000 dynamic bodies".to_owned(),
+        ));
+    }
+    let mut scenario = p5_2_generated_floor_scenario(requested_steps)?;
+    let dynamic_template = scenario.bodies[0].clone();
+    let mut floor = scenario.bodies[1].clone();
+    floor.id.slot = 0;
+    let columns = (dynamic_body_count as f32).sqrt().ceil() as u32;
+    let half_extents = Vec2::new(0.075, 0.055);
+    floor.shape = ShapeV1::Rectangle {
+        half_extents: Vec2::new(columns as f32 * half_extents.x + 0.1, 0.1),
+    };
+    let mut bodies = Vec::with_capacity(dynamic_body_count as usize + 1);
+    bodies.push(floor);
+    for index in 0..dynamic_body_count {
+        let column = index % columns;
+        let row = index / columns;
+        let row_count = (dynamic_body_count - row * columns).min(columns);
+        let row_start = -(row_count.saturating_sub(1) as f32) * half_extents.x;
+        let mut body = dynamic_template.clone();
+        body.id = BodyId {
+            slot: index + 1,
+            generation: 1,
+        };
+        body.shape = ShapeV1::Rectangle { half_extents };
+        body.position = Vec2::new(
+            row_start + column.min(row_count - 1) as f32 * half_extents.x * 2.0,
+            half_extents.y + row as f32 * half_extents.y * 2.0,
+        );
+        body.angle = finite(0.0);
+        body.linear_velocity = Vec2::ZERO;
+        body.angular_velocity = finite(0.0);
+        body.inverse_inertia = finite(12.0 / (0.15 * 0.15 + 0.11 * 0.11));
+        body.sleeping = false;
+        bodies.push(body);
+    }
+    scenario.id = format!("s26-packed-pile-{dynamic_body_count}");
+    scenario.seed = 0x5026_0000 + u64::from(dynamic_body_count);
+    scenario.bodies = bodies;
+    scenario
+        .validate()
+        .map_err(|error| ScenarioBuildError(error.to_string()))?;
+    Ok(scenario)
+}
+
 pub fn p5_2_bucket_scenario(
     shape: P5_2BucketShape,
     body_count: u32,
@@ -3150,6 +3265,45 @@ mod tests {
         }
         assert!(p5_2_sleeping_city_scenario(100, 1).is_err());
         assert!(p5_2_sleeping_city_scenario(200, 25).is_err());
+    }
+
+    #[test]
+    fn s26_component_scenarios_are_dense_shared_neutral_fixtures() {
+        let scenarios = [
+            s26_isolated_components_scenario(4).unwrap(),
+            s26_bridge_components_scenario(false, 4).unwrap(),
+            s26_bridge_components_scenario(true, 4).unwrap(),
+            s26_packed_pile_scenario(100, 4).unwrap(),
+            s26_packed_pile_scenario(1_000, 4).unwrap(),
+        ];
+        for scenario in scenarios {
+            scenario.validate().unwrap();
+            assert!(scenario.manifolds.is_empty());
+            assert!(scenario.contact_cache.is_empty());
+            assert!(scenario.actions.is_empty());
+            assert!(
+                scenario
+                    .bodies
+                    .iter()
+                    .enumerate()
+                    .all(|(slot, body)| body.id.slot == slot as u32)
+            );
+        }
+        assert_eq!(
+            s26_bridge_components_scenario(false, 1)
+                .unwrap()
+                .bodies
+                .len(),
+            5
+        );
+        assert_eq!(
+            s26_bridge_components_scenario(true, 1)
+                .unwrap()
+                .bodies
+                .len(),
+            6
+        );
+        assert!(s26_packed_pile_scenario(99, 1).is_err());
     }
 
     #[cfg(not(feature = "production-validation"))]

@@ -698,7 +698,9 @@ mod gpu {
         let replay_exact = all_labels
             .chunks_exact(body_capacity as usize)
             .all(|sample_labels| sample_labels == labels)
-            && stats.windows(2).all(|pair| pair[0] == pair[1]);
+            && stats
+                .iter()
+                .all(|sample_stats| structurally_equal(sample_stats, &stats[0]));
 
         let capacity_words = crate::collision_candidates::map_values::<u32>(
             &device,
@@ -878,6 +880,22 @@ mod gpu {
         capacity: Option<&'a wgpu::Buffer>,
     }
 
+    fn structurally_equal(
+        left: &GpuContactComponentStatsV1,
+        right: &GpuContactComponentStatsV1,
+    ) -> bool {
+        left.dynamic_body_count == right.dynamic_body_count
+            && left.unique_edge_count == right.unique_edge_count
+            && left.component_count == right.component_count
+            && left.largest_component_size == right.largest_component_size
+            && left.invalid_root_count == right.invalid_root_count
+            && left.cross_label_edge_count == right.cross_label_edge_count
+            && left.invalid_edge_count == right.invalid_edge_count
+            && left.phase_bound == right.phase_bound
+            && left.body_capacity == right.body_capacity
+            && left.point_capacity == right.point_capacity
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn encode_observation_sample(
         device: &wgpu::Device,
@@ -974,6 +992,60 @@ mod gpu {
             assert_eq!(output.stats[0].component_count, 1);
             assert_eq!(output.stats[0].largest_component_size, 2);
             assert_eq!(output.stats[0].unique_edge_count, 1);
+        }
+
+        #[test]
+        fn gpu_observer_matches_shared_split_bridge_and_pile_fixtures() {
+            let cases = [
+                (
+                    crate::s26_isolated_components_scenario(1).unwrap(),
+                    64,
+                    2,
+                    1,
+                ),
+                (
+                    crate::s26_bridge_components_scenario(false, 1).unwrap(),
+                    64,
+                    2,
+                    2,
+                ),
+                (
+                    crate::s26_bridge_components_scenario(true, 1).unwrap(),
+                    64,
+                    1,
+                    5,
+                ),
+                (
+                    crate::s26_packed_pile_scenario(100, 1).unwrap(),
+                    256,
+                    1,
+                    100,
+                ),
+                (
+                    crate::s26_packed_pile_scenario(1_000, 1).unwrap(),
+                    1_024,
+                    1,
+                    1_000,
+                ),
+            ];
+            for (scenario, capacity, component_count, largest_component) in cases {
+                let output = pollster::block_on(observe_gpu_contact_components(
+                    &scenario, capacity, 1, 0, 2,
+                ))
+                .unwrap();
+                assert!(output.exact, "{}", scenario.id);
+                assert!(output.replay_exact, "{}", scenario.id);
+                assert_eq!(
+                    output.stats[0].component_count, component_count,
+                    "{}",
+                    scenario.id
+                );
+                assert_eq!(
+                    output.stats[0].largest_component_size, largest_component,
+                    "{}",
+                    scenario.id
+                );
+            }
         }
     }
 }
