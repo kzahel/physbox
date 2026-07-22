@@ -1,18 +1,26 @@
-use std::{env, process::ExitCode, time::Instant};
+use std::{
+    env, fs,
+    path::{Path, PathBuf},
+    process::{Command, ExitCode},
+    time::{Instant, SystemTime, UNIX_EPOCH},
+};
 
 use physbox_contracts::{
-    CONTACT_SOFTNESS_POLICY_VERSION, ContactSoftnessPolicyV1, FailureKindV1, FiniteF32, ScenarioV1,
-    Validate,
+    CONTACT_SOFTNESS_POLICY_VERSION, CollisionCapacityV1, CollisionWorkV1, ContactSoftnessPolicyV1,
+    FailureKindV1, FiniteF32, ScenarioV1, Validate, sha256_bytes,
 };
 use physbox_engine::{
     GpuGeneratedContactRunner, GpuGeneratedContactSeriesV1, P5_2BucketShape,
-    P5_2GeneratedScenarioKind, gpu_contact_softness_coefficients, p5_2_bucket_scenario,
-    p5_2_centered_rectangle_stack_scenario,
+    P5_2GeneratedScenarioKind, SolverProfileConfig, gpu_contact_softness_coefficients,
+    p5_2_bucket_scenario, p5_2_centered_rectangle_stack_scenario,
 };
 use physbox_lab::settling::{
     awake_settling_measurement_policy_v2, centered_stack_structure,
     observe_generated_settling_series_v2, summarize_settling_v2,
 };
+use physbox_launch::PhysicsConfigurationV2;
+use serde::Serialize;
+use serde_json::json;
 
 const DEFAULT_HERTZ: f32 = 30.0;
 const DEFAULT_DAMPING: f32 = 10.0;
@@ -24,6 +32,9 @@ const SUBMISSION_BATCH_STEPS: u32 = 64;
 const QUIET_SPEED_LIMIT: f32 = 0.025;
 const GEOMETRY_ABSOLUTE_BAND: f32 = 0.0002;
 const CURRENT_12_SCREEN_BUDGET_SECONDS: f64 = 60.0;
+const S25_FINALIST_EVIDENCE: &str = "s25-awake-finalist";
+const S25_STACK_ROLES: [u32; 6] = [2, 4, 8, 12, 14, 16];
+const S25_BLOCKING_STACK_ROLES: [u32; 4] = [2, 4, 8, 12];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Screen {
@@ -63,6 +74,17 @@ impl ScreenConfiguration {
         };
         softness.validate().map_err(display)?;
         Ok(softness)
+    }
+
+    fn profile(self) -> Result<SolverProfileConfig, String> {
+        solver_profile(
+            self.sim_hertz,
+            self.substeps,
+            self.iterations,
+            self.hertz,
+            self.damping,
+            self.static_scale,
+        )
     }
 }
 
@@ -329,6 +351,7 @@ struct Arguments {
     scenes: Vec<Scene>,
     steps: Option<u32>,
     screen: Option<Screen>,
+    evidence_output: Option<PathBuf>,
 }
 
 impl Default for Arguments {
@@ -349,6 +372,7 @@ impl Default for Arguments {
             ],
             steps: None,
             screen: None,
+            evidence_output: None,
         }
     }
 }
@@ -357,6 +381,18 @@ impl Arguments {
     fn parse() -> Result<Option<Self>, String> {
         let mut arguments = Self::default();
         let values = env::args().skip(1).collect::<Vec<_>>();
+        if values.first().is_some_and(|value| value == "--evidence") {
+            if values.len() != 4 || values[1] != S25_FINALIST_EVIDENCE || values[2] != "--output" {
+                return Err(format!(
+                    "usage: physbox-check --evidence {S25_FINALIST_EVIDENCE} --output PATH"
+                ));
+            }
+            arguments.evidence_output = Some(PathBuf::from(&values[3]));
+            return Ok(Some(arguments));
+        }
+        if values.iter().any(|value| value == "--evidence") {
+            return Err("--evidence must be the first flag in its frozen command".to_owned());
+        }
         if values.first().is_some_and(|value| value == "--screen") {
             if values.len() != 2 {
                 return Err(
@@ -430,6 +466,17 @@ impl Arguments {
             static_contact_hertz_multiplier: finite("--static-scale", self.static_scale)?,
         })
     }
+
+    fn profile(&self) -> Result<SolverProfileConfig, String> {
+        solver_profile(
+            self.sim_hertz,
+            self.substeps,
+            self.iterations,
+            self.hertz,
+            self.damping,
+            self.static_scale,
+        )
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -443,7 +490,8 @@ struct ValidityResult {
     failure: Option<String>,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct StackSettlingMetrics {
     linear_speed_max: f32,
     angular_edge_speed_max: f32,
@@ -485,10 +533,14 @@ fn main() -> ExitCode {
 }
 
 fn run(arguments: Arguments) -> Result<(), String> {
+    if let Some(output) = arguments.evidence_output.as_deref() {
+        return run_s25_finalist_evidence(output);
+    }
     if arguments.screen == Some(Screen::Current12) {
         return run_current_12_screen();
     }
     let softness = arguments.softness()?;
+    let candidate_profile = arguments.profile()?;
     print_coefficients(&arguments, softness)?;
     println!(
         "{:<8} {:<9} {:<18} {:<18} {:<28} {:>10}",
@@ -507,10 +559,7 @@ fn run(arguments: Arguments) -> Result<(), String> {
         for lane in arguments.lane.lanes().iter().copied() {
             let mut scenario = base.clone();
             if lane == Lane::Candidate {
-                scenario.settings.fixed_dt = finite("--sim-hz", 1.0 / arguments.sim_hertz as f32)?;
-                scenario.settings.substeps = arguments.substeps;
-                scenario.settings.iterations = arguments.iterations;
-                scenario.settings.contact_softness = Some(softness);
+                candidate_profile.apply_to_scenario(&mut scenario)?;
             }
             let row = run_row(&runner, scene, lane, &scenario)?;
             print_row(&row);
@@ -693,18 +742,289 @@ fn run_current_12_screen() -> Result<(), String> {
     Ok(())
 }
 
+fn run_s25_finalist_evidence(output: &Path) -> Result<(), String> {
+    let revision = git_output(&["rev-parse", "HEAD"])
+        .ok_or("cannot resolve the source revision for S25 evidence")?;
+    let dirty = git_output(&["status", "--porcelain"])
+        .ok_or("cannot inspect the source worktree for S25 evidence")?;
+    if !dirty.is_empty() {
+        return Err("S25 finalist evidence requires a clean source worktree".to_owned());
+    }
+
+    let baseline_profile = solver_profile(60, 4, 1, 30.0, 10.0, 2.0)?;
+    let finalist_profile = solver_profile(60, 8, 1, 30.0, 10.0, 2.0)?;
+    let physics = finalist_profile.physics();
+    let physics_configuration_hash = sha256_bytes(
+        &serde_json::to_vec(&physics)
+            .map_err(|error| format!("failed to encode finalist physics: {error}"))?,
+    );
+    let started = Instant::now();
+    let runner = pollster::block_on(GpuGeneratedContactRunner::new())?;
+    println!(
+        "physbox-check evidence={S25_FINALIST_EVIDENCE} revision={revision} physics-hash={physics_configuration_hash}"
+    );
+    println!("adapter {}", runner.diagnostics());
+
+    let mut warmup = Scene::Stack(2).scenario(1)?;
+    finalist_profile.apply_to_scenario(&mut warmup)?;
+    run_series(&runner, Lane::Candidate, &warmup, 1)?;
+    println!("evidence warmup: one finalist step excluded from rows and timings");
+
+    let mut baseline_geometry = Vec::new();
+    for count in S25_BLOCKING_STACK_ROLES {
+        let scene = Scene::Stack(count);
+        let mut scenario = scene.scenario(1_200)?;
+        baseline_profile.apply_to_scenario(&mut scenario)?;
+        let series = run_series(&runner, Lane::Candidate, &scenario, 1_200)?;
+        series.validate()?;
+        let metrics = stack_settling_metrics(&scenario, &series)?;
+        let structure = scene.stands(&scenario, &series);
+        let validity = series_validity(&series);
+        if !structure.final_pass || structure.first_loss.is_some() || !validity.passed {
+            return Err(format!(
+                "default geometry control stack{count} lost structure or validity"
+            ));
+        }
+        println!(
+            "EVIDENCE_BASELINE stack{count} penetration={:.6}m height={:.6}m scenario-hash={}",
+            metrics.penetration_max, metrics.final_stack_height, series.source_scenario_hash
+        );
+        baseline_geometry.push((count, metrics, series.source_scenario_hash));
+    }
+
+    let mut rows = Vec::new();
+    let mut blocker_pass = true;
+    let mut replay_pass = true;
+    for count in S25_STACK_ROLES {
+        let scene = Scene::Stack(count);
+        let mut scenario = scene.scenario(1_200)?;
+        finalist_profile.apply_to_scenario(&mut scenario)?;
+
+        let primary_started = Instant::now();
+        let primary = run_series(&runner, Lane::Candidate, &scenario, 1_200)?;
+        let primary_elapsed = primary_started.elapsed();
+        primary.validate()?;
+        let replay_started = Instant::now();
+        let replay = run_series(&runner, Lane::Candidate, &scenario, 1_200)?;
+        let replay_elapsed = replay_started.elapsed();
+        replay.validate()?;
+
+        let primary_hash = serialized_hash(&primary)?;
+        let replay_hash = serialized_hash(&replay)?;
+        let exact_replay = primary_hash == replay_hash;
+        replay_pass &= exact_replay;
+        let structure = scene.stands(&scenario, &primary);
+        let validity = series_validity(&primary);
+        let metrics = stack_settling_metrics(&scenario, &primary)?;
+        let baseline = baseline_geometry
+            .iter()
+            .find(|(role, _, _)| *role == count)
+            .map(|(_, metrics, _)| *metrics);
+        let geometry_pass = baseline.is_none_or(|control| {
+            metrics.penetration_max <= control.penetration_max + GEOMETRY_ABSOLUTE_BAND
+                && metrics.final_stack_height + GEOMETRY_ABSOLUTE_BAND >= control.final_stack_height
+        });
+        let quality_pass = structure.final_pass
+            && structure.first_loss.is_none()
+            && validity.passed
+            && metrics.linear_speed_max <= QUIET_SPEED_LIMIT
+            && metrics.angular_edge_speed_max <= QUIET_SPEED_LIMIT
+            && geometry_pass;
+        if S25_BLOCKING_STACK_ROLES.contains(&count) {
+            blocker_pass &= quality_pass;
+        }
+        let milliseconds_per_step =
+            primary_elapsed.as_secs_f64() * 1_000.0 / f64::from(primary.completed_steps);
+        let replay_milliseconds_per_step =
+            replay_elapsed.as_secs_f64() * 1_000.0 / f64::from(replay.completed_steps);
+        println!(
+            "EVIDENCE_FINALIST stack{count} structure={} linear={:.6}m/s angular-edge={:.6}m/s geometry={} valid={} replay={} cost={milliseconds_per_step:.3}ms/step",
+            structure_label(structure),
+            metrics.linear_speed_max,
+            metrics.angular_edge_speed_max,
+            if geometry_pass { "PASS" } else { "N/A" },
+            validity_label(&validity),
+            if exact_replay { "EXACT" } else { "MISMATCH" },
+        );
+        rows.push(json!({
+            "role": format!("stack-{count}"),
+            "rectangleCount": count,
+            "blocking": S25_BLOCKING_STACK_ROLES.contains(&count),
+            "sourceScenarioHash": primary.source_scenario_hash,
+            "structure": {
+                "finalPass": structure.final_pass,
+                "firstLossStep": structure.first_loss,
+            },
+            "validity": {
+                "passed": validity.passed,
+                "failure": validity.failure,
+            },
+            "settling": metrics,
+            "geometry": {
+                "baseline": baseline,
+                "absoluteBandMeters": GEOMETRY_ABSOLUTE_BAND,
+                "passed": baseline.map(|_| geometry_pass),
+            },
+            "qualityPassed": quality_pass,
+            "seriesHash": primary_hash,
+            "replaySeriesHash": replay_hash,
+            "exactReplay": exact_replay,
+            "millisecondsPerStep": milliseconds_per_step,
+            "millisecondsPerSimulatedSecond": milliseconds_per_step * f64::from(physics.fixed_step_hz),
+            "replayMillisecondsPerStep": replay_milliseconds_per_step,
+            "dispatchesPerStep": primary.dispatches_per_step,
+            "allocatedBytes": primary.allocated_bytes,
+            "peakWork": peak_work(&primary),
+            "peakCapacities": peak_capacities(&primary),
+            "capacityCleanEveryObservation": validity.passed,
+            "solverSettings": primary.solver_settings,
+            "solverExecution": primary.solver_execution,
+            "solverSchedulingPolicy": primary.solver_scheduling_policy,
+            "contactCoefficientPolicy": primary.contact_coefficient_policy,
+            "substepContactPolicy": primary.substep_contact_policy,
+            "restitutionTimingPolicy": primary.restitution_timing_policy,
+            "contactIdentityPolicy": primary.contact_identity_policy,
+            "softFeedbackPolicy": primary.soft_feedback_policy,
+            "normalRelaxationPolicy": primary.normal_relaxation_policy,
+        }));
+    }
+
+    let passed = blocker_pass && replay_pass;
+    let evidence = json!({
+        "version": 1,
+        "runId": run_id(),
+        "sourceRevision": revision,
+        "sourceDirty": false,
+        "host": "native-vulkan",
+        "capturePhase": "s25-finalist-native-complete",
+        "evidenceName": S25_FINALIST_EVIDENCE,
+        "exactReplayCommand": env::args().collect::<Vec<_>>().join(" "),
+        "adapter": runner.diagnostics(),
+        "physicsConfiguration": physics,
+        "physicsConfigurationHash": physics_configuration_hash,
+        "projection": "SolverProfileConfig::apply_to_scenario exactly once per engine-owned stack",
+        "limits": {
+            "linearSpeedMetersPerSecond": QUIET_SPEED_LIMIT,
+            "angularEdgeSpeedMetersPerSecond": QUIET_SPEED_LIMIT,
+            "geometryAbsoluteBandMeters": GEOMETRY_ABSOLUTE_BAND,
+            "sleepingEnabled": false,
+        },
+        "defaultGeometryControls": baseline_geometry.into_iter().map(|(count, metrics, scenario_hash)| json!({
+            "role": format!("stack-{count}"),
+            "rectangleCount": count,
+            "sourceScenarioHash": scenario_hash,
+            "settling": metrics,
+        })).collect::<Vec<_>>(),
+        "rows": rows,
+        "blockerVerdict": if blocker_pass { "pass" } else { "fail" },
+        "exactReplayVerdict": if replay_pass { "pass" } else { "fail" },
+        "passed": passed,
+        "elapsedSeconds": started.elapsed().as_secs_f64(),
+    });
+    write_fresh_json(output, &evidence)?;
+    println!(
+        "PHYSBOX5_VALIDATION_{} host=native evidence={} output={} elapsed={:.3}s",
+        if passed { "SUCCESS" } else { "FAILURE" },
+        S25_FINALIST_EVIDENCE,
+        output.display(),
+        started.elapsed().as_secs_f64(),
+    );
+    if passed {
+        Ok(())
+    } else {
+        Err("S25 finalist native evidence did not pass its blocking contract".to_owned())
+    }
+}
+
+fn serialized_hash(value: &impl Serialize) -> Result<String, String> {
+    serde_json::to_vec(value)
+        .map(|bytes| sha256_bytes(&bytes))
+        .map_err(|error| format!("failed to encode exact-replay series: {error}"))
+}
+
+fn peak_work(series: &GpuGeneratedContactSeriesV1) -> CollisionWorkV1 {
+    let mut peak = CollisionWorkV1::default();
+    for work in series.snapshots.iter().map(|snapshot| &snapshot.work) {
+        peak.bodies = peak.bodies.max(work.bodies);
+        peak.pair_attempts = peak.pair_attempts.max(work.pair_attempts);
+        peak.fixed_fixed_rejected = peak.fixed_fixed_rejected.max(work.fixed_fixed_rejected);
+        peak.aabb_rejected = peak.aabb_rejected.max(work.aabb_rejected);
+        peak.candidate_pairs = peak.candidate_pairs.max(work.candidate_pairs);
+        peak.narrowphase_tests = peak.narrowphase_tests.max(work.narrowphase_tests);
+        peak.manifolds = peak.manifolds.max(work.manifolds);
+        peak.contact_points = peak.contact_points.max(work.contact_points);
+        peak.sort_elements = peak.sort_elements.max(work.sort_elements);
+        peak.sort_passes = peak.sort_passes.max(work.sort_passes);
+        peak.cache_previous = peak.cache_previous.max(work.cache_previous);
+        peak.cache_current = peak.cache_current.max(work.cache_current);
+        peak.cache_matched = peak.cache_matched.max(work.cache_matched);
+        peak.cache_cold = peak.cache_cold.max(work.cache_cold);
+        peak.cache_expired = peak.cache_expired.max(work.cache_expired);
+        peak.dispatches = peak.dispatches.max(work.dispatches);
+    }
+    peak
+}
+
+fn peak_capacities(series: &GpuGeneratedContactSeriesV1) -> Vec<CollisionCapacityV1> {
+    let mut peaks = std::collections::BTreeMap::<String, CollisionCapacityV1>::new();
+    for capacity in series
+        .snapshots
+        .iter()
+        .flat_map(|snapshot| &snapshot.capacities)
+    {
+        let replace = peaks
+            .get(&capacity.class)
+            .is_none_or(|peak| capacity.attempted_elements > peak.attempted_elements);
+        if replace {
+            peaks.insert(capacity.class.clone(), capacity.clone());
+        }
+    }
+    peaks.into_values().collect()
+}
+
+fn write_fresh_json(path: &Path, value: &impl Serialize) -> Result<(), String> {
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    fs::create_dir_all(parent)
+        .map_err(|error| format!("failed to create {}: {error}", parent.display()))?;
+    match fs::remove_file(path) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(format!("failed to remove {}: {error}", path.display())),
+    }
+    let temporary = path.with_extension(format!("tmp-{}", std::process::id()));
+    let bytes = serde_json::to_vec_pretty(value)
+        .map_err(|error| format!("failed to encode {}: {error}", path.display()))?;
+    fs::write(&temporary, bytes)
+        .map_err(|error| format!("failed to write {}: {error}", temporary.display()))?;
+    fs::rename(&temporary, path).map_err(|error| {
+        format!(
+            "failed to publish {} as {}: {error}",
+            temporary.display(),
+            path.display()
+        )
+    })
+}
+
+fn git_output(arguments: &[&str]) -> Option<String> {
+    let output = Command::new("git").args(arguments).output().ok()?;
+    output
+        .status
+        .success()
+        .then(|| String::from_utf8_lossy(&output.stdout).trim().to_owned())
+}
+
+fn run_id() -> String {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |duration| duration.as_nanos());
+    format!("s25-{nanos}-{}", std::process::id())
+}
+
 fn apply_screen_configuration(
     scenario: &mut ScenarioV1,
     configuration: ScreenConfiguration,
 ) -> Result<(), String> {
-    scenario.settings.fixed_dt = finite(
-        "screen simulation hertz",
-        1.0 / configuration.sim_hertz as f32,
-    )?;
-    scenario.settings.substeps = configuration.substeps;
-    scenario.settings.iterations = configuration.iterations;
-    scenario.settings.contact_softness = Some(configuration.softness()?);
-    Ok(())
+    configuration.profile()?.apply_to_scenario(scenario)
 }
 
 fn screen_quality_pass(row: &Row) -> bool {
@@ -1117,6 +1437,25 @@ fn finite(label: &str, value: f32) -> Result<FiniteF32, String> {
     FiniteF32::new(value).map_err(|error| format!("invalid {label}: {error}"))
 }
 
+fn solver_profile(
+    sim_hertz: u32,
+    substeps: u32,
+    iterations: u32,
+    hertz: f32,
+    damping: f32,
+    static_scale: f32,
+) -> Result<SolverProfileConfig, String> {
+    let mut physics = PhysicsConfigurationV2::SOFT_COUPLED;
+    physics.fixed_step_hz = sim_hertz;
+    physics.substeps = substeps;
+    physics.biased_iterations = iterations;
+    physics.contact_hertz = hertz;
+    physics.contact_damping_ratio = damping;
+    physics.static_contact_hertz_multiplier = static_scale;
+    physics.sleeping_enabled = false;
+    SolverProfileConfig::from_physics(physics)
+}
+
 fn display(error: impl std::fmt::Display) -> String {
     error.to_string()
 }
@@ -1128,6 +1467,7 @@ fn generated(kind: P5_2GeneratedScenarioKind, steps: u32) -> Result<ScenarioV1, 
 fn print_help() {
     println!(
         "physbox-check --screen current-12\n\
+         physbox-check --evidence s25-awake-finalist --output PATH\n\
          physbox-check [--sim-hz N] [--substeps N] [--iterations N] \
          [--hz N] [--damping N] [--static-scale N] \
          [--lane both|selected|candidate] \
@@ -1139,6 +1479,8 @@ fn print_help() {
          stack2/12/14 provide the current quality hierarchy; stack32, stack64, \
          and the five response probes are optional diagnostics. The named \
          current-12 screen is a frozen six-configuration, one-runner matrix \
-         and cannot be combined with ad-hoc flags."
+         and cannot be combined with ad-hoc flags. The named S25 evidence \
+         command requires a clean worktree and writes its durable native \
+         qualification package to PATH."
     );
 }
