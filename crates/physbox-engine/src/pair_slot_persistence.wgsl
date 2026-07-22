@@ -210,6 +210,7 @@ fn match_and_retire_pairs(@builtin(global_invocation_id) invocation: vec3u) {
                 cache.matched = 0u;
             }
             record.cache0 = cache.cache;
+            record.cache0.w = select(1u, 0u, retained);
             atomicAdd(&work[12], cache.matched);
             atomicAdd(&work[13], 1u - cache.matched);
         }
@@ -224,6 +225,7 @@ fn match_and_retire_pairs(@builtin(global_invocation_id) invocation: vec3u) {
                 cache.matched = 0u;
             }
             record.cache1 = cache.cache;
+            record.cache1.w = select(1u, 0u, retained);
             atomicAdd(&work[12], cache.matched);
             atomicAdd(&work[13], 1u - cache.matched);
         }

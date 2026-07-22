@@ -87,7 +87,7 @@ fn build_solver_points(@builtin(global_invocation_id) invocation: vec3u) {
     output.normal = manifold.normal_material.xy;
     output.local_anchor_a = point.anchors.xy;
     output.local_anchor_b = point.anchors.zw;
-    output.padding0 = vec2f(0.0);
+    output.padding0 = vec2f(bitcast<f32>(persistent.cache.w), 0.0);
     output.material = vec4f(point.world_separation.z,
                             manifold.normal_material.zw, 0.0);
     output.cache = vec2f(bitcast<f32>(persistent.cache.x),

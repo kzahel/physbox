@@ -66,12 +66,14 @@ pub(crate) struct GpuAwakeWork {
     begin_bind_group: wgpu::BindGroup,
     finalize_bind_groups: [wgpu::BindGroup; 2],
     compact_bind_group: wgpu::BindGroup,
-    admission_bind_group: wgpu::BindGroup,
+    admission_bind_groups: [wgpu::BindGroup; 2],
     begin_pipeline: wgpu::ComputePipeline,
     finalize_pipeline: wgpu::ComputePipeline,
     compact_pipeline: wgpu::ComputePipeline,
     refresh_pipeline: wgpu::ComputePipeline,
+    evaluation_pipeline: wgpu::ComputePipeline,
     admission_pipeline: wgpu::ComputePipeline,
+    uncoordinated_admission_pipeline: wgpu::ComputePipeline,
     live_bodies: Arc<wgpu::Buffer>,
     body_capacity: u32,
     initial_awake_count: u32,
@@ -244,23 +246,31 @@ impl GpuAwakeWork {
                 storage_entry(2, false),
                 storage_entry(4, false),
                 storage_entry(5, true),
+                storage_entry(7, false),
                 storage_entry(9, false),
                 uniform_entry(10),
             ],
         });
-        let admission_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("physbox5_sleep_admission_bind_group"),
-            layout: &admission_layout,
-            entries: &[
-                entry(0, metadata),
-                entry(1, active_bodies),
-                entry(2, &sleep_state),
-                entry(4, motion),
-                entry(5, properties),
-                entry(9, &control),
-                entry(10, &params),
-            ],
-        });
+        let admission_bind_group = |label, frontier: usize| {
+            device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some(label),
+                layout: &admission_layout,
+                entries: &[
+                    entry(0, metadata),
+                    entry(1, active_bodies),
+                    entry(2, &sleep_state),
+                    entry(4, motion),
+                    entry(5, properties),
+                    entry(7, &wake_frontiers[frontier]),
+                    entry(9, &control),
+                    entry(10, &params),
+                ],
+            })
+        };
+        let admission_bind_groups = [
+            admission_bind_group("physbox5_sleep_admission_a_bind_group", 0),
+            admission_bind_group("physbox5_sleep_admission_b_bind_group", 1),
+        ];
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("physbox5_awake_work_shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("awake_work.wgsl").into()),
@@ -300,9 +310,19 @@ impl GpuAwakeWork {
             "refresh_awake_bodies",
             &compact_layout,
         );
+        let evaluation_pipeline = pipeline(
+            "physbox5_sleep_evaluation_pipeline",
+            "evaluate_sleep_candidates",
+            &admission_layout,
+        );
         let admission_pipeline = pipeline(
             "physbox5_sleep_admission_pipeline",
             "admit_sleeping_bodies",
+            &admission_layout,
+        );
+        let uncoordinated_admission_pipeline = pipeline(
+            "physbox5_sleep_uncoordinated_admission_pipeline",
+            "admit_sleeping_bodies_uncoordinated",
             &admission_layout,
         );
         Ok(Arc::new(Self {
@@ -315,12 +335,14 @@ impl GpuAwakeWork {
             begin_bind_group,
             finalize_bind_groups,
             compact_bind_group,
-            admission_bind_group,
+            admission_bind_groups,
             begin_pipeline,
             finalize_pipeline,
             compact_pipeline,
             refresh_pipeline,
+            evaluation_pipeline,
             admission_pipeline,
+            uncoordinated_admission_pipeline,
             live_bodies: Arc::clone(active_bodies),
             body_capacity,
             initial_awake_count,
@@ -371,11 +393,42 @@ impl GpuAwakeWork {
     pub(crate) fn encode_sleep_admission(&self, encoder: &mut wgpu::CommandEncoder) {
         {
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("physbox5_sleep_uncoordinated_admission_pass"),
+                timestamp_writes: None,
+            });
+            pass.set_pipeline(&self.uncoordinated_admission_pipeline);
+            pass.set_bind_group(0, &self.admission_bind_groups[0], &[]);
+            pass.dispatch_workgroups_indirect(&self.live_bodies, ACTIVE_BODY_DISPATCH_64_OFFSET);
+        }
+        self.encode_sleep_refresh(encoder);
+    }
+
+    pub(crate) fn encode_sleep_evaluation(&self, encoder: &mut wgpu::CommandEncoder) {
+        self.encode_sleep_refresh(encoder);
+    }
+
+    fn encode_sleep_refresh(&self, encoder: &mut wgpu::CommandEncoder) {
+        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("physbox5_sleep_evaluation_pass"),
+            timestamp_writes: None,
+        });
+        pass.set_pipeline(&self.evaluation_pipeline);
+        pass.set_bind_group(0, &self.admission_bind_groups[0], &[]);
+        pass.dispatch_workgroups_indirect(&self.live_bodies, ACTIVE_BODY_DISPATCH_64_OFFSET);
+    }
+
+    pub(crate) fn encode_sleep_admission_from_frontier(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        frontier: usize,
+    ) {
+        {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("physbox5_sleep_admission_pass"),
                 timestamp_writes: None,
             });
             pass.set_pipeline(&self.admission_pipeline);
-            pass.set_bind_group(0, &self.admission_bind_group, &[]);
+            pass.set_bind_group(0, &self.admission_bind_groups[frontier], &[]);
             pass.dispatch_workgroups_indirect(&self.live_bodies, ACTIVE_BODY_DISPATCH_64_OFFSET);
         }
         let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -427,6 +480,10 @@ impl GpuAwakeWork {
 
     pub(crate) const fn wake_propagation_rounds(&self) -> u32 {
         self.config.wake_propagation_rounds
+    }
+
+    pub(crate) const fn sleeping_enabled(&self) -> bool {
+        self.config.enabled
     }
 
     pub(crate) fn sleep_state_capacity(&self) -> CapacityRecordV1 {

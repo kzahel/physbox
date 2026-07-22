@@ -221,7 +221,7 @@ fn merge_cache(@builtin(global_invocation_id) invocation: vec3u) {
     output.key0 = current.key0;
     output.key1 = current.key1;
     let completed_step = atomicLoad(&step_counter[0]);
-    output.cache = vec4u(0u, 0u, completed_step, 0u);
+    output.cache = vec4u(0u, 0u, completed_step, 1u);
     if (lower < previous_count) {
         let previous = previous_cache[lower];
         if (key_equal_values(previous.key0, previous.key1, current.key0, current.key1)) {

@@ -778,7 +778,7 @@ impl GpuGeneratedContactGraph {
         self.awake_points.encode_solver_body_compaction(encoder);
         self.solver.encode_step(encoder);
         self.awake_points.encode_scatter(encoder);
-        self.awake_work.encode_sleep_admission(encoder);
+        self.encode_sleep_admission(encoder);
         self.persistence
             .encode_after_solver(encoder, parity, self.point_capacity, timestamps);
         self.parity.set(1 - parity);
@@ -810,7 +810,7 @@ impl GpuGeneratedContactGraph {
             .solver
             .encode_step_with_pass_trace(encoder, storage, destination)?;
         self.awake_points.encode_scatter(encoder);
-        self.awake_work.encode_sleep_admission(encoder);
+        self.encode_sleep_admission(encoder);
         self.persistence
             .encode_after_solver(encoder, parity, self.point_capacity, None);
         self.parity.set(1 - parity);
@@ -847,7 +847,7 @@ impl GpuGeneratedContactGraph {
             destination_offset,
         )?;
         self.awake_points.encode_scatter(encoder);
-        self.awake_work.encode_sleep_admission(encoder);
+        self.encode_sleep_admission(encoder);
         self.persistence
             .encode_after_solver(encoder, parity, self.point_capacity, None);
         self.parity.set(1 - parity);
@@ -885,7 +885,7 @@ impl GpuGeneratedContactGraph {
         self.solver
             .encode_step_solver_phase_instrumented(encoder, query_sets, color_occupancy)?;
         self.awake_points.encode_scatter(encoder);
-        self.awake_work.encode_sleep_admission(encoder);
+        self.encode_sleep_admission(encoder);
         self.persistence
             .encode_after_solver(encoder, parity, self.point_capacity, None);
         self.parity.set(1 - parity);
@@ -915,8 +915,24 @@ impl GpuGeneratedContactGraph {
         )
     }
 
+    fn encode_sleep_admission(&self, encoder: &mut wgpu::CommandEncoder) {
+        if !self.awake_work.sleeping_enabled() {
+            self.awake_work.encode_sleep_admission(encoder);
+            return;
+        }
+        self.awake_work.encode_sleep_evaluation(encoder);
+        let blocker_frontier = self.sleep_contacts.encode_frontier_propagation(encoder);
+        self.awake_work
+            .encode_sleep_admission_from_frontier(encoder, blocker_frontier);
+    }
+
     pub(crate) fn dispatches_per_step(&self) -> u32 {
-        10 + 2 * self.awake_work.wake_propagation_rounds()
+        let sleep_dispatches = if self.awake_work.sleeping_enabled() {
+            11 + 4 * self.awake_work.wake_propagation_rounds()
+        } else {
+            10 + 2 * self.awake_work.wake_propagation_rounds()
+        };
+        sleep_dispatches
             + self.broadphase.dispatches()
             + self.persistence.dispatches()
             + BRIDGE_DISPATCHES

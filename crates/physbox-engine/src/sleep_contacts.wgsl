@@ -36,6 +36,7 @@ const FLAG_FIXED: u32 = 1u << 2u;
 const SLEEP_FLAG_AWAKE: u32 = 1u << 0u;
 const SLEEP_STATE_LAYOUT_VERSION: u32 = 1u;
 const CAUSE_ERASED_NEIGHBOR: u32 = 1u << 5u;
+const CAUSE_CONTACT: u32 = 1u << 6u;
 const CAUSE_IMPACT: u32 = 1u << 7u;
 const CAUSE_PROPAGATION: u32 = 1u << 8u;
 
@@ -92,6 +93,12 @@ fn seed_contact_impacts(@builtin(global_invocation_id) invocation: vec3u) {
     let point = points[point_index];
     if (!valid_point(point) || !state_matches(point.ids.x) || !state_matches(point.ids.y)) {
         return;
+    }
+    let awake_a = (sleep_state[point.ids.x].identity_flags.y & SLEEP_FLAG_AWAKE) != 0u;
+    let awake_b = (sleep_state[point.ids.y].identity_flags.y & SLEEP_FLAG_AWAKE) != 0u;
+    if (bitcast<u32>(point.padding0.x) != 0u && (awake_a || awake_b)) {
+        atomicOr(&source_frontier[point.ids.x], CAUSE_CONTACT);
+        atomicOr(&source_frontier[point.ids.y], CAUSE_CONTACT);
     }
     let relative = point_velocity(point.ids.y, point.local_anchor_b) -
         point_velocity(point.ids.x, point.local_anchor_a);

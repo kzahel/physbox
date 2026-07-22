@@ -689,7 +689,7 @@ mod tests {
                 .expect("generated-contact renderer initializes");
             let report = renderer.render(FrameInput::exact(4));
             assert_eq!(report.scene_contract.contact_point_count, 1_024);
-            assert_eq!(report.scene_contract.solver_dispatches_per_step, 145);
+            assert_eq!(report.scene_contract.solver_dispatches_per_step, 154);
             assert_eq!(report.scene_contract.solver_capacity_bytes, 819_252);
             assert!(!report.scene_contract.capacity_overflowed);
             assert!(report.scene_contract.requested_sleeping_enabled);

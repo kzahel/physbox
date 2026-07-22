@@ -2156,6 +2156,95 @@ mod tests {
     }
 
     #[test]
+    fn gpu_contact_neighbors_sleep_together_despite_misaligned_quiet_timers() {
+        let instance = crate::create_instance();
+        let adapter = pollster::block_on(crate::gpu_context::request_adapter(&instance, None))
+            .expect("test GPU adapter");
+        let (device, queue) =
+            pollster::block_on(crate::gpu_context::request_device(&adapter)).unwrap();
+        let mut scenario = crate::authored_chain_scenario(2, 71).unwrap();
+        crate::SolverProfileConfig::hard_direct()
+            .apply_to_scenario(&mut scenario)
+            .unwrap();
+        scenario.manifolds.clear();
+        scenario.settings.gravity = Vec2::ZERO;
+        for (index, body) in scenario.bodies.iter_mut().enumerate() {
+            body.position = Vec2::new(index as f32 * 0.9, 0.0);
+            body.linear_velocity = Vec2::ZERO;
+            body.angular_velocity = physbox_contracts::FiniteF32::new(0.0).unwrap();
+            body.sleeping = false;
+        }
+        let world = sleeping_chain_world(&device, &scenario, 4);
+        let quiet_steps = physbox_contracts::SleepPolicyV1::experimental_s23()
+            .quiet_outer_steps(60)
+            .unwrap();
+        for (body, initial_quiet_steps) in scenario.bodies.iter().zip([quiet_steps - 1, 0]) {
+            let state = [
+                body.id.generation,
+                3,
+                initial_quiet_steps,
+                0,
+                physbox_contracts::SLEEP_TRANSITION_CAUSE_INITIALIZATION,
+                physbox_contracts::SLEEP_POLICY_VERSION,
+                physbox_contracts::SLEEP_STATE_LAYOUT_VERSION,
+                0,
+            ];
+            queue.write_buffer(
+                world.storage.sleep_state_buffer(),
+                u64::from(body.id.slot) * u64::from(crate::awake_work::SLEEP_STATE_BYTES),
+                bytemuck::cast_slice(&state),
+            );
+        }
+
+        for _ in 0..quiet_steps - 1 {
+            encode(
+                &device,
+                &queue,
+                &world,
+                &grab_batch(Vec::new()),
+                &empty_construction_intent_batch(),
+            );
+        }
+        let (states, awake) = read_awake_work(&device, &queue, &world);
+        assert_eq!(awake[0], 2);
+        assert!(states[0].awake && states[1].awake);
+        assert_eq!(states[0].quiet_outer_steps, quiet_steps);
+        assert_eq!(states[1].quiet_outer_steps, quiet_steps - 1);
+
+        encode(
+            &device,
+            &queue,
+            &world,
+            &grab_batch(Vec::new()),
+            &empty_construction_intent_batch(),
+        );
+        let (states, awake) = read_awake_work(&device, &queue, &world);
+        assert_eq!(awake[0], 0);
+        for state in &states[..2] {
+            assert!(!state.awake);
+            assert_eq!(state.quiet_outer_steps, quiet_steps);
+            assert_eq!(state.last_transition_step, quiet_steps);
+            assert_ne!(
+                state.transition_causes & physbox_contracts::SLEEP_TRANSITION_CAUSE_AUTOMATIC,
+                0
+            );
+        }
+
+        for _ in 0..10 {
+            encode(
+                &device,
+                &queue,
+                &world,
+                &grab_batch(Vec::new()),
+                &empty_construction_intent_batch(),
+            );
+        }
+        let (states, awake) = read_awake_work(&device, &queue, &world);
+        assert_eq!(awake[0], 0);
+        assert!(states[..2].iter().all(|state| !state.awake));
+    }
+
+    #[test]
     fn gpu_solver_work_follows_awake_bodies_and_points_then_restores_on_wake() {
         let instance = crate::create_instance();
         let adapter = pollster::block_on(crate::gpu_context::request_adapter(&instance, None))
@@ -2214,6 +2303,43 @@ mod tests {
     }
 
     #[test]
+    fn gpu_new_contact_wakes_a_sleeping_endpoint() {
+        let instance = crate::create_instance();
+        let adapter = pollster::block_on(crate::gpu_context::request_adapter(&instance, None))
+            .expect("test GPU adapter");
+        let (device, queue) =
+            pollster::block_on(crate::gpu_context::request_device(&adapter)).unwrap();
+        let mut scenario = crate::authored_chain_scenario(2, 79).unwrap();
+        crate::SolverProfileConfig::hard_direct()
+            .apply_to_scenario(&mut scenario)
+            .unwrap();
+        scenario.manifolds.clear();
+        scenario.settings.gravity = Vec2::ZERO;
+        for (index, body) in scenario.bodies.iter_mut().enumerate() {
+            body.position = Vec2::new(index as f32 * 0.9, 0.0);
+            body.linear_velocity = Vec2::ZERO;
+            body.angular_velocity = physbox_contracts::FiniteF32::new(0.0).unwrap();
+            body.sleeping = index == 1;
+        }
+        let world = sleeping_chain_world(&device, &scenario, 4);
+        encode(
+            &device,
+            &queue,
+            &world,
+            &grab_batch(Vec::new()),
+            &empty_construction_intent_batch(),
+        );
+        let (states, awake) = read_awake_work(&device, &queue, &world);
+        assert_eq!(awake[0], 2);
+        assert!(states[1].awake);
+        assert_eq!(states[1].last_transition_step, 1);
+        assert_ne!(
+            states[1].transition_causes & physbox_contracts::SLEEP_TRANSITION_CAUSE_CONTACT,
+            0
+        );
+    }
+
+    #[test]
     fn gpu_wake_propagation_is_bounded_generation_safe_and_selects_four_rounds() {
         let instance = crate::create_instance();
         let adapter = pollster::block_on(crate::gpu_context::request_adapter(&instance, None))
@@ -2231,7 +2357,7 @@ mod tests {
                 body.position = Vec2::new(index as f32 * 0.89, 0.0);
                 body.linear_velocity = Vec2::ZERO;
                 body.angular_velocity = physbox_contracts::FiniteF32::new(0.0).unwrap();
-                body.sleeping = index != 0;
+                body.sleeping = true;
             }
             for rounds in [1, 2, 4, 8] {
                 let world = sleeping_chain_world(&device, &comparison, rounds);
@@ -2239,7 +2365,10 @@ mod tests {
                     &device,
                     &queue,
                     &world,
-                    &grab_batch(Vec::new()),
+                    &grab_batch(vec![GrabIntentV1::Begin {
+                        sequence: 1,
+                        world_target: Vec2::new(0.0, 0.0),
+                    }]),
                     &empty_construction_intent_batch(),
                 );
                 let (states, awake) = read_awake_work(&device, &queue, &world);
@@ -2275,14 +2404,17 @@ mod tests {
             body.position = Vec2::new(index as f32 * 0.89, 0.0);
             body.linear_velocity = Vec2::ZERO;
             body.angular_velocity = physbox_contracts::FiniteF32::new(0.0).unwrap();
-            body.sleeping = index != 0;
+            body.sleeping = true;
         }
         let world = sleeping_chain_world(&device, &scenario, 4);
         encode(
             &device,
             &queue,
             &world,
-            &grab_batch(Vec::new()),
+            &grab_batch(vec![GrabIntentV1::Begin {
+                sequence: 1,
+                world_target: Vec2::new(0.0, 0.0),
+            }]),
             &empty_construction_intent_batch(),
         );
         let (states, _) = read_awake_work(&device, &queue, &world);
@@ -2301,9 +2433,9 @@ mod tests {
             &empty_construction_intent_batch(),
         );
         let (states, awake) = read_awake_work(&device, &queue, &world);
-        assert!(awake[0] >= 6);
-        assert!(states[5].awake);
-        assert_eq!(states[5].last_transition_step, 2);
+        assert_eq!(awake[0], 5);
+        assert!(!states[5].awake);
+        assert_eq!(states[5].last_transition_step, 0);
     }
 
     #[test]

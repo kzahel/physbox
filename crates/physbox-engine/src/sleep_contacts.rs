@@ -152,6 +152,10 @@ impl GpuSleepContacts {
             pass.set_bind_group(0, &self.root_bind_group, &[]);
             pass.dispatch_workgroups_indirect(&self.point_state, 4 * size_of::<u32>() as u64);
         }
+        self.encode_frontier_propagation(encoder)
+    }
+
+    pub(crate) fn encode_frontier_propagation(&self, encoder: &mut wgpu::CommandEncoder) -> usize {
         let mut source = 0;
         for _ in 0..self.awake_work.wake_propagation_rounds() {
             let group = &self.propagation_bind_groups[source];
