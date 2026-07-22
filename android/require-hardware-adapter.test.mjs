@@ -115,6 +115,7 @@ test("AVD sleep capture uses the engine menu and verifies effective state", () =
   assert.match(source, /frame\.sceneContract\.w === false && frame\.sceneContract\.y === false/);
   assert.match(source, /\[62, 50, 300, 104, 192, 331\]/);
   assert.match(source, /frame\.sceneContract\.w === true && frame\.sceneContract\.y === true/);
+  assert.match(source, /frame\.scenario\.complete === true && frame\.scenario\.passed === true/);
   assert.match(source, /sleep-request-on-menu/);
 });
 

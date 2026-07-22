@@ -114,7 +114,8 @@ if [[ "${PHYSBOX5_ANDROID_SLEEP_TOGGLE:-0}" = "1" ]]; then
         REPORT="$(rg 'PHYSBOX5_MARK_FRAME_RENDERED ' "$LOG" | tail -1 | sed 's/^.*PHYSBOX5_MARK_FRAME_RENDERED //')"
         if node -e '
           const frame = JSON.parse(process.argv[1]);
-          process.exit(frame.sceneContract.w === true && frame.sceneContract.y === true ? 0 : 1);
+          process.exit(frame.sceneContract.w === true && frame.sceneContract.y === true
+            && frame.scenario.complete === true && frame.scenario.passed === true ? 0 : 1);
         ' "$REPORT"; then SLEEPING_EFFECTIVE=1; break; fi
         sleep 0.25
     done
