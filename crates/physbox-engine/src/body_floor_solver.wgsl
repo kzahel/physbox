@@ -952,9 +952,9 @@ fn build_solver_islands(@builtin(global_invocation_id) id: vec3u) {
         let body = solver_body_slot(dense_body);
         atomicStore(&topology[parent_base + body], 0xffffffffu);
         atomicStore(&topology[body_island_base + body], 0xffffffffu);
-        atomicStore(&topology[roots_base + body], 0xffffffffu);
-        atomicStore(&topology[body_counts_base + body], 0u);
-        atomicStore(&topology[manifold_counts_base + body], 0u);
+        atomicStore(&topology[roots_base + dense_body], 0xffffffffu);
+        atomicStore(&topology[body_counts_base + dense_body], 0u);
+        atomicStore(&topology[manifold_counts_base + dense_body], 0u);
     }
     for (var bin = 0u; bin < bin_capacity; bin += 1u) {
         atomicStore(&topology[bin_counts_base + bin], 0u);

@@ -5037,12 +5037,35 @@ pub(crate) fn decode_pass_evidence(
             )
         };
         let relative = |absolute: u32| (absolute - layout.topology_layout.color_base) as usize;
+        let active_body_slots = if layout.topology_layout.work_state_base != 0 {
+            let work_start = relative(layout.topology_layout.work_state_base);
+            let count = raw[work_start + 1];
+            if count > layout.body_count {
+                return Err("solver active body count exceeds capacity".to_owned());
+            }
+            let slots = raw[work_start + SOLVER_WORK_STATE_WORDS as usize
+                ..work_start + SOLVER_WORK_STATE_WORDS as usize + count as usize]
+                .to_vec();
+            let mut seen = vec![false; layout.body_count as usize];
+            for &slot in &slots {
+                let Some(seen_slot) = seen.get_mut(slot as usize) else {
+                    return Err("solver active body slot exceeds capacity".to_owned());
+                };
+                if *seen_slot {
+                    return Err("solver active body slots contain a duplicate".to_owned());
+                }
+                *seen_slot = true;
+            }
+            slots
+        } else {
+            (0..layout.body_count).collect()
+        };
         let (island_count, island_body_occupancy, island_manifold_occupancy) = if layout
             .topology_layout
             .has_island_dispatch
         {
             let island_count = raw[relative(layout.topology_layout.island_count_index)];
-            if island_count > layout.body_count || (overflowed && island_count != 0) {
+            if island_count > active_body_slots.len() as u32 || (overflowed && island_count != 0) {
                 return Err("solver island count is invalid".to_owned());
             }
             let island_count_usize = island_count as usize;
@@ -5061,7 +5084,8 @@ pub(crate) fn decode_pass_evidence(
             let body_islands =
                 &raw[body_islands_start..body_islands_start + layout.body_count as usize];
             let mut expected_body_occupancy = vec![0_u32; island_count_usize];
-            for &island in body_islands {
+            for body in active_body_slots.iter().copied() {
+                let island = body_islands[body as usize];
                 if island < island_count {
                     expected_body_occupancy[island as usize] += 1;
                 } else if island != u32::MAX {

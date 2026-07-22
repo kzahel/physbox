@@ -689,6 +689,13 @@ mod tests {
             assert_eq!(report.scene_contract.solver_dispatches_per_step, 127);
             assert_eq!(report.scene_contract.solver_capacity_bytes, 634_516);
             assert!(!report.scene_contract.capacity_overflowed);
+            assert!(
+                renderer
+                    .read_fixed_floor_pass_evidence()
+                    .expect("active-work pass evidence decodes")
+                    .coloring
+                    .is_some()
+            );
             (report, renderer.read_capture_state().unwrap())
         };
         let (first_report, first) = run();
