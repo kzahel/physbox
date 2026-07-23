@@ -479,22 +479,40 @@ try {
     await page.evaluate(() => {
       const url = new URL(location.href);
       for (const key of [...url.searchParams.keys()]) {
-        if (key !== "scenario") url.searchParams.delete(key);
+        if (key !== "scenario" && key !== "smoke-observer") url.searchParams.delete(key);
       }
       history.replaceState(null, "", url);
     });
     await page.reload({ waitUntil: "networkidle" });
-    await page.waitForFunction(
-      ({ initialScenario }) => {
-        const frame = globalThis.__physbox5?.frame;
-        return globalThis.__physbox5?.ready
-          && frame?.sceneContract?.scenario === initialScenario
-          && frame?.sceneContract?.solverProfile === "soft-coupled"
-          && frame?.sceneContract?.solverProfileOptions === "hz=30,damping=10,static-scale=2.5";
-      },
-      { initialScenario: scenario },
-      { timeout: 30_000 },
-    );
+    try {
+      await page.waitForFunction(
+        ({ initialScenario }) => {
+          const frame = globalThis.__physbox5?.frame;
+          return globalThis.__physbox5?.ready
+            && frame?.sceneContract?.scenario === initialScenario
+            && frame?.sceneContract?.solverProfile === "soft-coupled"
+            && frame?.sceneContract?.solverProfileOptions === "hz=30,damping=10,static-scale=2.5";
+        },
+        { initialScenario: scenario },
+        { timeout: 30_000 },
+      );
+    } catch (error) {
+      const state = await page.evaluate(() => globalThis.__physbox5);
+      const fatal = await page.locator("#fatal-error").textContent();
+      const documentState = await page.evaluate(() => ({
+        href: location.href,
+        readyState: document.readyState,
+        fatalHidden: document.querySelector("#fatal-error")?.hidden,
+        resources: performance.getEntriesByType("resource").map((entry) => ({
+          name: entry.name,
+          duration: entry.duration,
+          transferSize: entry.transferSize,
+        })),
+      }));
+      throw new Error(
+        `persisted solver reload did not become ready: ${error.message}; state=${JSON.stringify(state)}; fatal=${fatal}; document=${JSON.stringify(documentState)}; page=${errors.join("; ")}; console=${consoleErrors.join("; ")}`,
+      );
+    }
     await requirePhysicsPreference(page, {
       solver: "soft-coupled",
       simHz: 75,
@@ -516,7 +534,7 @@ try {
       }));
       const url = new URL(location.href);
       for (const key of [...url.searchParams.keys()]) {
-        if (key !== "scenario") url.searchParams.delete(key);
+        if (key !== "scenario" && key !== "smoke-observer") url.searchParams.delete(key);
       }
       history.replaceState(null, "", url);
     });
