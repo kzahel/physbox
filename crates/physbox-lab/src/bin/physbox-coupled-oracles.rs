@@ -3,13 +3,14 @@ use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use physbox_contracts::{
-    CoupledOracleRequestV1, CoupledOracleResultV1, FailureKindV1, ORACLE_SUCCESS_SENTINEL,
-    SCHEMA_VERSION, Validate, canonical_hash, canonical_json, sha256_bytes,
+    BodyStateV1, CoupledOracleRequestV1, CoupledOracleResultV1, FailureKindV1,
+    ORACLE_SUCCESS_SENTINEL, SCHEMA_VERSION, Validate, Vec2, canonical_hash, canonical_json,
+    sha256_bytes,
 };
 use physbox_engine::{CoupledScenarioKind, canonical_coupled_scenario};
 use serde::Serialize;
 
-const SUITE_VERSION: u32 = 1;
+const SUITE_VERSION: u32 = 2;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -30,7 +31,9 @@ struct OracleRow {
     expected_unsupported: bool,
     completed_steps: u32,
     particle_count: u32,
+    particle_centroid: Option<Vec2>,
     body_count: u32,
+    bodies: Vec<BodyStateV1>,
     density_error_rms: f32,
     fluid_motion_rms: f32,
     particle_body_contacts: u64,
@@ -183,6 +186,13 @@ fn run_row(
         result.particles.len(),
         result.metrics.work.particle_body_contacts,
     );
+    let particle_centroid = (!result.particles.is_empty()).then(|| {
+        let sum = result.particles.iter().fold(Vec2::ZERO, |sum, particle| {
+            Vec2::new(sum.x + particle.position.x, sum.y + particle.position.y)
+        });
+        let divisor = result.particles.len() as f32;
+        Vec2::new(sum.x / divisor, sum.y / divisor)
+    });
     Ok(OracleRow {
         lane,
         scenario: kind.id(),
@@ -190,7 +200,9 @@ fn run_row(
         expected_unsupported,
         completed_steps: result.completed_steps,
         particle_count: result.particles.len() as u32,
+        particle_centroid,
         body_count: result.bodies.len() as u32,
+        bodies: result.bodies.clone(),
         density_error_rms: result.metrics.density_error_rms.get(),
         fluid_motion_rms: result.metrics.fluid_motion_rms.get(),
         particle_body_contacts: result.metrics.work.particle_body_contacts,

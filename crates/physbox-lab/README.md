@@ -15,6 +15,8 @@ Cargo automatic binary discovery is disabled. The maintained commands are:
   1K/4K/16K/32K capacity/timing evidence;
 - `physbox-coupled-oracles`: process-isolated primary PhysBox 3 and secondary
   LiquidFun runs over every canonical coupled source;
+- `physbox-coupled-review`: joins canonical GPU, PhysBox 3, and LiquidFun
+  evidence into per-body deltas without inventing acceptance bands;
 - `physbox-broadphase-evidence`: focused brute/SAP/grid completeness, capacity,
   work, memory, and steady-state timing matrices;
 - `physbox-settling-backend-trace`: current settling diagnostics; and
