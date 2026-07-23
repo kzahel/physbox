@@ -88,6 +88,7 @@ Read:
 - [Simulation time and overload contract](docs/topics/simulation-time-and-overload.md)
 - [Physics configuration and solver profiles](docs/topics/physics-configuration-and-solver-profiles.md)
 - [Current product capability status](docs/topics/product-capability-status.md)
+- [PhysBox 3 and PhysBox 4 feature usage](docs/topics/predecessor-feature-usage.md)
 - [Coupled liquid/rigid constraint surface](docs/topics/coupled-liquid-rigid-constraint-surface.md)
 - [S31 coupled-liquid sandbox](docs/tactical/031-coupled-liquid-sandbox.md)
 - [Vision summary](docs/vision.md)

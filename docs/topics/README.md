@@ -26,6 +26,10 @@ a running log.
 - [Product capability status](product-capability-status.md) — compact current
   ledger of implemented, limited, missing, and deferred engine features plus
   the next execution order.
+- [PhysBox 3 and PhysBox 4 feature usage](predecessor-feature-usage.md) —
+  revision-pinned research separating predecessor product dependencies from
+  dormant APIs and plans, with lineage-backed implications for joints,
+  geometry, authoring, collision features, queries, and materials.
 - [Rigid quality targets](rigid-quality-targets.md) — current awake stack
   hierarchy: 2/4/8 regression foundation, 12 blocking, 14 stretch, 16 as the
   matched-Box2D frontier diagnostic, and the rule that sleep cannot earn an
