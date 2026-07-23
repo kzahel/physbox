@@ -7,7 +7,7 @@ use crate::GpuBodyStorage;
 
 const WORKGROUP_SIZE: u32 = 64;
 const COMPONENT_STAT_WORDS: u32 = 16;
-const POINT_DISPATCH_64_OFFSET: u64 = 10 * size_of::<u32>() as u64;
+const POINT_DISPATCH_64_OFFSET: u64 = 4 * size_of::<u32>() as u64;
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -49,7 +49,6 @@ pub(crate) struct GpuExactSleepGrouping {
     stats: wgpu::Buffer,
     _component_params: wgpu::Buffer,
     _exact_params: wgpu::Buffer,
-    component_params_stride: u32,
     body_capacity: u32,
     phase_bound: u32,
 }
@@ -63,22 +62,9 @@ impl GpuExactSleepGrouping {
         point_capacity: u32,
     ) -> Result<Self, String> {
         let phase_bound = component_phase_bound(body_capacity)?;
-        let component_params_stride = device.limits().min_uniform_buffer_offset_alignment.max(16);
-        let params_count = phase_bound
-            .checked_add(1)
-            .ok_or_else(|| "exact sleep component parameter count overflowed".to_owned())?;
-        let params_bytes = component_params_stride
-            .checked_mul(params_count)
-            .ok_or_else(|| "exact sleep component parameter bytes overflowed".to_owned())?;
-        let mut parameter_data = vec![0_u8; params_bytes as usize];
-        for phase in 0..=phase_bound {
-            let value = ComponentParamsRaw {
-                counts: [body_capacity, point_capacity, phase, phase_bound],
-            };
-            let start = phase as usize * component_params_stride as usize;
-            parameter_data[start..start + size_of::<ComponentParamsRaw>()]
-                .copy_from_slice(bytemuck::bytes_of(&value));
-        }
+        let component_params_value = ComponentParamsRaw {
+            counts: [body_capacity, point_capacity, 0, phase_bound],
+        };
 
         let storage_buffer = |label, elements: u32| -> Result<wgpu::Buffer, String> {
             let size = u64::from(elements)
@@ -99,7 +85,7 @@ impl GpuExactSleepGrouping {
         let stats = storage_buffer("physbox5_exact_sleep_component_stats", COMPONENT_STAT_WORDS)?;
         let component_params = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("physbox5_exact_sleep_component_params"),
-            contents: &parameter_data,
+            contents: bytemuck::bytes_of(&component_params_value),
             usage: wgpu::BufferUsages::UNIFORM,
         });
 
@@ -116,7 +102,7 @@ impl GpuExactSleepGrouping {
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: true,
+                        has_dynamic_offset: false,
                         min_binding_size: wgpu::BufferSize::new(
                             size_of::<ComponentParamsRaw>() as u64
                         ),
@@ -242,7 +228,6 @@ impl GpuExactSleepGrouping {
             stats,
             _component_params: component_params,
             _exact_params: exact_params,
-            component_params_stride,
             body_capacity,
             phase_bound,
         })
@@ -255,55 +240,37 @@ impl GpuExactSleepGrouping {
     ) {
         encoder.clear_buffer(&self.component_values, 0, None);
         encoder.clear_buffer(&self.stats, 0, None);
-        self.direct_component_pass(
-            encoder,
-            "physbox5_exact_sleep_component_initialize",
-            &self.component_pipelines.initialize,
-            0,
-        );
-        for phase in 1..=self.phase_bound {
-            self.indirect_component_pass(
-                encoder,
-                "physbox5_exact_sleep_component_hook",
-                &self.component_pipelines.hook,
-                phase,
-                point_capacity_state,
-            );
-            self.direct_component_pass(
-                encoder,
-                "physbox5_exact_sleep_component_shortcut",
-                &self.component_pipelines.shortcut,
-                phase,
-            );
+        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("physbox5_exact_sleep_components"),
+            timestamp_writes: None,
+        });
+        pass.set_bind_group(0, &self.component_group, &[]);
+        pass.set_pipeline(&self.component_pipelines.initialize);
+        pass.dispatch_workgroups(self.body_capacity.div_ceil(WORKGROUP_SIZE), 1, 1);
+        for _ in 1..=self.phase_bound {
+            pass.set_pipeline(&self.component_pipelines.hook);
+            pass.dispatch_workgroups_indirect(point_capacity_state, POINT_DISPATCH_64_OFFSET);
+            pass.set_pipeline(&self.component_pipelines.shortcut);
+            pass.dispatch_workgroups(self.body_capacity.div_ceil(WORKGROUP_SIZE), 1, 1);
         }
-        self.direct_component_pass(
-            encoder,
-            "physbox5_exact_sleep_component_finalize",
-            &self.component_pipelines.finalize,
-            0,
-        );
-        self.indirect_component_pass(
-            encoder,
-            "physbox5_exact_sleep_component_validate",
-            &self.component_pipelines.validate_edges,
-            0,
-            point_capacity_state,
-        );
+        pass.set_pipeline(&self.component_pipelines.finalize);
+        pass.dispatch_workgroups(self.body_capacity.div_ceil(WORKGROUP_SIZE), 1, 1);
+        pass.set_pipeline(&self.component_pipelines.validate_edges);
+        pass.dispatch_workgroups_indirect(point_capacity_state, POINT_DISPATCH_64_OFFSET);
     }
 
     /// Reduces frontier A by exact component and broadcasts into frontier B.
     pub(crate) fn encode_frontier(&self, encoder: &mut wgpu::CommandEncoder) -> usize {
         encoder.clear_buffer(&self.component_values, 0, None);
-        self.direct_exact_pass(
-            encoder,
-            "physbox5_exact_sleep_aggregate",
-            &self.exact_pipelines.aggregate,
-        );
-        self.direct_exact_pass(
-            encoder,
-            "physbox5_exact_sleep_broadcast",
-            &self.exact_pipelines.broadcast,
-        );
+        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("physbox5_exact_sleep_frontier"),
+            timestamp_writes: None,
+        });
+        pass.set_bind_group(0, &self.exact_group, &[]);
+        pass.set_pipeline(&self.exact_pipelines.aggregate);
+        pass.dispatch_workgroups(self.body_capacity.div_ceil(WORKGROUP_SIZE), 1, 1);
+        pass.set_pipeline(&self.exact_pipelines.broadcast);
+        pass.dispatch_workgroups(self.body_capacity.div_ceil(WORKGROUP_SIZE), 1, 1);
         1
     }
 
@@ -317,62 +284,6 @@ impl GpuExactSleepGrouping {
             + self.stats.size()
             + self._component_params.size()
             + self._exact_params.size()
-    }
-
-    fn direct_component_pass(
-        &self,
-        encoder: &mut wgpu::CommandEncoder,
-        label: &'static str,
-        pipeline: &wgpu::ComputePipeline,
-        phase: u32,
-    ) {
-        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-            label: Some(label),
-            timestamp_writes: None,
-        });
-        pass.set_pipeline(pipeline);
-        pass.set_bind_group(
-            0,
-            &self.component_group,
-            &[phase * self.component_params_stride],
-        );
-        pass.dispatch_workgroups(self.body_capacity.div_ceil(WORKGROUP_SIZE), 1, 1);
-    }
-
-    fn indirect_component_pass(
-        &self,
-        encoder: &mut wgpu::CommandEncoder,
-        label: &'static str,
-        pipeline: &wgpu::ComputePipeline,
-        phase: u32,
-        point_capacity_state: &wgpu::Buffer,
-    ) {
-        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-            label: Some(label),
-            timestamp_writes: None,
-        });
-        pass.set_pipeline(pipeline);
-        pass.set_bind_group(
-            0,
-            &self.component_group,
-            &[phase * self.component_params_stride],
-        );
-        pass.dispatch_workgroups_indirect(point_capacity_state, POINT_DISPATCH_64_OFFSET);
-    }
-
-    fn direct_exact_pass(
-        &self,
-        encoder: &mut wgpu::CommandEncoder,
-        label: &'static str,
-        pipeline: &wgpu::ComputePipeline,
-    ) {
-        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-            label: Some(label),
-            timestamp_writes: None,
-        });
-        pass.set_pipeline(pipeline);
-        pass.set_bind_group(0, &self.exact_group, &[]);
-        pass.dispatch_workgroups(self.body_capacity.div_ceil(WORKGROUP_SIZE), 1, 1);
     }
 }
 

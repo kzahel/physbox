@@ -25,7 +25,7 @@ struct Params {
 @group(0) @binding(3) var<storage, read> awake_bodies: array<u32>;
 @group(0) @binding(4) var<storage, read_write> control: array<atomic<u32>>;
 @group(0) @binding(5) var<storage, read> points: array<PointInput>;
-@group(0) @binding(6) var<storage, read_write> point_state: array<atomic<u32>>;
+@group(0) @binding(6) var<storage, read> point_state: array<u32>;
 @group(0) @binding(7) var<storage, read_write> metrics: array<atomic<u32>>;
 @group(0) @binding(8) var<uniform> params: Params;
 
@@ -84,7 +84,7 @@ fn count_body_metrics(@builtin(global_invocation_id) invocation: vec3u) {
 @compute @workgroup_size(64)
 fn count_mixed_contact_cuts(@builtin(global_invocation_id) invocation: vec3u) {
     let point_index = invocation.x;
-    if (point_index >= atomicLoad(&point_state[2])) { return; }
+    if (point_index >= point_state[2]) { return; }
     let point = points[point_index];
     if (point.ids.w != 0u || point.ids.x == INVALID || point.ids.y == INVALID ||
         point.ids.x == point.ids.y || !matching_state(point.ids.x) ||

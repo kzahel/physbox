@@ -141,8 +141,11 @@ impl SolverProfileName {
 #[serde(rename_all = "kebab-case")]
 pub enum SleepGrouping {
     #[default]
+    #[serde(rename = "local-4")]
     Local4,
+    #[serde(rename = "local-8")]
     Local8,
+    #[serde(rename = "exact")]
     Exact,
 }
 
@@ -938,6 +941,14 @@ mod tests {
             "soft-coupled"
         );
         assert_eq!(request.options.world_capacity, WorldCapacityPreset::Slots64);
+    }
+
+    #[test]
+    fn sleep_grouping_serializes_with_canonical_hyphenated_names() {
+        assert_eq!(
+            serde_json::to_string(&SleepGrouping::ALL).unwrap(),
+            r#"["local-4","local-8","exact"]"#
+        );
     }
 
     #[test]

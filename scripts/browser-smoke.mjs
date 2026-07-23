@@ -99,8 +99,11 @@ try {
     throw new Error(`browser comparator did not start in the default PhysBox view: ${JSON.stringify(before.frame.ui)}`);
   }
   if (
-    before.frame.sceneContract?.physicsConfigurationVersion !== 2
+    before.frame.sceneContract?.physicsConfigurationVersion !== 3
     || before.frame.sceneContract?.sleepPolicy !== "experimental-s23-v1"
+    || before.frame.sceneContract?.sleepSpeedThreshold !== 0.02
+    || before.frame.sceneContract?.sleepGrouping !== "local-4"
+    || before.frame.sceneContract?.box2dSleepSpeedThreshold !== 0.02
     || before.frame.sceneContract?.requestedSleepingEnabled !== false
     || before.frame.sceneContract?.effectiveSleepingEnabled !== false
     || before.frame.sceneContract?.awakeCompactionEnabled !== true
@@ -235,11 +238,29 @@ try {
     (compactLandscape ? 282 : 491) * uiScale,
   ];
   const solverApplyCenter = [279 * uiScale, (compactLandscape ? 316 : 541) * uiScale];
-  const worldSleepingCenter = [192 * uiScale, 331 * uiScale];
+  const worldSleepingCenter = [
+    (compactLandscape ? 496 : 192) * uiScale,
+    (compactLandscape ? 171 : 331) * uiScale,
+  ];
+  const worldCapacity64Center = [192 * uiScale, 171 * uiScale];
+  const worldSleepThresholdCenter = [
+    (compactLandscape ? 496 : 192) * uiScale,
+    (compactLandscape ? 217 : 377) * uiScale,
+  ];
+  const worldSleepGroupingCenter = [
+    (compactLandscape ? 496 : 192) * uiScale,
+    (compactLandscape ? 263 : 423) * uiScale,
+  ];
   const worldSleepVisualsCenter = [
     (compactLandscape ? 496 : 192) * uiScale,
-    (compactLandscape ? 331 : 377) * uiScale,
+    (compactLandscape ? 309 : 469) * uiScale,
   ];
+  const clickWorldControl = async (center) => {
+    await page.mouse.click(62 * uiScale, 50 * uiScale);
+    await page.waitForFunction(() => globalThis.__physbox5?.frame?.ui?.menuOpen, null, { timeout: 10_000 });
+    await page.mouse.click(300 * uiScale, 104 * uiScale);
+    await page.mouse.click(...center);
+  };
   await page.mouse.click(62 * uiScale, 50 * uiScale);
   await page.waitForFunction(() => globalThis.__physbox5?.frame?.ui?.menuOpen, null, { timeout: 10_000 });
   await page.evaluate(() => new Promise((resolveFrame) => {
@@ -280,13 +301,65 @@ try {
     await page.waitForFunction(() => globalThis.__physbox5?.frame?.ui?.menuOpen, null, { timeout: 10_000 });
     await page.mouse.click(300 * uiScale, 104 * uiScale);
     await page.mouse.click(...worldSleepingCenter);
+    try {
+      await page.waitForFunction(
+        () => {
+          const frame = globalThis.__physbox5?.frame;
+          return frame?.sceneContract?.requestedSleepingEnabled === true
+            && frame?.sceneContract?.effectiveSleepingEnabled === true
+            && !frame?.ui?.menuOpen;
+        },
+        null,
+        { timeout: 30_000 },
+      );
+    } catch (error) {
+      const state = await page.evaluate(() => globalThis.__physbox5);
+      throw new Error(`sleep enable did not apply: ${error.message}; state=${JSON.stringify(state)}`);
+    }
+    await requirePhysicsPreference(page, {
+      solver: "soft-coupled",
+      simHz: 60,
+      substeps: 4,
+      iterations: 1,
+      contactHz: 30,
+      contactDamping: 10,
+      staticContactScale: 2,
+      speculativeDistance: 0.02,
+      maxDepenetrationVelocity: 3,
+      sleeping: true,
+    });
+    await clickWorldControl(worldSleepThresholdCenter);
+    try {
+      await page.waitForFunction(
+        () => globalThis.__physbox5?.frame?.sceneContract?.sleepSpeedThreshold === 0.05
+          && globalThis.__physbox5?.frame?.sceneContract?.box2dSleepSpeedThreshold === 0.05
+          && !globalThis.__physbox5?.frame?.ui?.menuOpen,
+        null,
+        { timeout: 30_000 },
+      );
+    } catch (error) {
+      const state = await page.evaluate(() => globalThis.__physbox5);
+      throw new Error(`shared sleep threshold did not apply: ${error.message}; state=${JSON.stringify(state)}`);
+    }
+    await clickWorldControl(worldSleepGroupingCenter);
     await page.waitForFunction(
-      () => {
-        const frame = globalThis.__physbox5?.frame;
-        return frame?.sceneContract?.requestedSleepingEnabled === true
-          && frame?.sceneContract?.effectiveSleepingEnabled === true
-          && !frame?.ui?.menuOpen;
-      },
+      () => globalThis.__physbox5?.frame?.sceneContract?.sleepGrouping === "local-8"
+        && !globalThis.__physbox5?.frame?.ui?.menuOpen,
+      null,
+      { timeout: 30_000 },
+    );
+    await clickWorldControl(worldCapacity64Center);
+    await page.waitForFunction(
+      () => globalThis.__physbox5?.frame?.sceneContract?.requestedBodyCapacity === 64
+        && globalThis.__physbox5?.frame?.sceneContract?.bodyCapacity === 64
+        && !globalThis.__physbox5?.frame?.ui?.menuOpen,
+      null,
+      { timeout: 30_000 },
+    );
+    await clickWorldControl(worldSleepGroupingCenter);
+    await page.waitForFunction(
+      () => globalThis.__physbox5?.frame?.sceneContract?.sleepGrouping === "exact"
+        && !globalThis.__physbox5?.frame?.ui?.menuOpen,
       null,
       { timeout: 30_000 },
     );
@@ -301,12 +374,37 @@ try {
       speculativeDistance: 0.02,
       maxDepenetrationVelocity: 3,
       sleeping: true,
+      sleepThreshold: 0.05,
+      sleepGrouping: "exact",
     });
     await page.reload({ waitUntil: "networkidle" });
+    try {
+      await page.waitForFunction(
+        () => globalThis.__physbox5?.ready
+          && globalThis.__physbox5?.ok
+          && globalThis.__physbox5?.frame?.sceneContract?.requestedSleepingEnabled === true
+          && globalThis.__physbox5?.frame?.sceneContract?.effectiveSleepingEnabled === true
+          && globalThis.__physbox5?.frame?.sceneContract?.sleepSpeedThreshold === 0.05
+          && globalThis.__physbox5?.frame?.sceneContract?.sleepGrouping === "exact",
+        null,
+        { timeout: 30_000 },
+      );
+    } catch (error) {
+      const state = await page.evaluate(() => globalThis.__physbox5);
+      throw new Error(`persisted exact sleep configuration failed: ${error.message}; state=${JSON.stringify(state)}`);
+    }
     await page.waitForFunction(
-      () => globalThis.__physbox5?.ready
-        && globalThis.__physbox5?.frame?.sceneContract?.requestedSleepingEnabled === true
-        && globalThis.__physbox5?.frame?.sceneContract?.effectiveSleepingEnabled === true,
+      () => {
+        const diagnostics = globalThis.__physbox5?.frame?.sleepCycleDiagnostic;
+        const physbox = diagnostics?.state;
+        const box2d = diagnostics?.comparisonState;
+        return diagnostics?.source === "asynchronous-gpu"
+          && physbox?.version === 1
+          && physbox.mixedAwakeAsleepContactCuts !== null
+          && physbox.dynamicBodies === physbox.awakeBodies + physbox.sleepingBodies
+          && box2d?.version === 1
+          && box2d.mixedAwakeAsleepContactCuts === null;
+      },
       null,
       { timeout: 30_000 },
     );
@@ -315,7 +413,12 @@ try {
     await page.evaluate(() => new Promise((resolveFrame) => {
       requestAnimationFrame(() => requestAnimationFrame(resolveFrame));
     }));
-    await captureCompleteScreenshot(page, menuScreenshot, "browser sleeping request on menu");
+    try {
+      await captureCompleteScreenshot(page, menuScreenshot, "browser sleeping request on menu");
+    } catch (error) {
+      const state = await page.evaluate(() => globalThis.__physbox5);
+      throw new Error(`${error.message}; state=${JSON.stringify(state)}`);
+    }
     await page.mouse.click(...worldSleepVisualsCenter);
     await page.waitForFunction(
       () => {
@@ -330,6 +433,23 @@ try {
     );
     await page.waitForTimeout(750);
     await captureCompleteScreenshot(page, menuScreenshot, "browser sleep-state visualization");
+    for (const threshold of [0.1, 0.01, 0.02]) {
+      await clickWorldControl(worldSleepThresholdCenter);
+      await page.waitForFunction(
+        ({ expectedThreshold }) =>
+          globalThis.__physbox5?.frame?.sceneContract?.sleepSpeedThreshold === expectedThreshold
+          && !globalThis.__physbox5?.frame?.ui?.menuOpen,
+        { expectedThreshold: threshold },
+        { timeout: 30_000 },
+      );
+    }
+    await clickWorldControl(worldSleepGroupingCenter);
+    await page.waitForFunction(
+      () => globalThis.__physbox5?.frame?.sceneContract?.sleepGrouping === "local-4"
+        && !globalThis.__physbox5?.frame?.ui?.menuOpen,
+      null,
+      { timeout: 30_000 },
+    );
     await page.mouse.click(62 * uiScale, 50 * uiScale);
     await page.mouse.click(300 * uiScale, 104 * uiScale);
     await page.mouse.click(...worldSleepingCenter);
@@ -525,6 +645,7 @@ try {
       maxDepenetrationVelocity: 3,
     });
     await page.evaluate(() => {
+      localStorage.removeItem("physbox5.physics.v4");
       localStorage.removeItem("physbox5.physics.v3");
       localStorage.removeItem("physbox5.physics.v2");
       localStorage.setItem("physbox5.solver-lab.v1", JSON.stringify({
@@ -921,11 +1042,15 @@ async function requireComparatorStartupFailure(browser, url) {
 async function requirePhysicsPreference(page, expected, expectClean = false) {
   await page.waitForFunction(
     ({ expectedPhysics, clean }) => {
-      const saved = JSON.parse(localStorage.getItem("physbox5.physics.v3") ?? "null");
+      const saved = JSON.parse(localStorage.getItem("physbox5.physics.v4") ?? "null");
       const url = new URL(location.href);
       const expectedSleeping = expectedPhysics.sleeping ?? false;
-      const stored = saved?.version === 3
+      const expectedSleepThreshold = expectedPhysics.sleepThreshold ?? 0.02;
+      const expectedSleepGrouping = expectedPhysics.sleepGrouping ?? "local-4";
+      const stored = saved?.version === 4
         && saved.sleeping === expectedSleeping
+        && saved.sleepThreshold === expectedSleepThreshold
+        && saved.sleepGrouping === expectedSleepGrouping
         && Object.entries(expectedPhysics).every(([key, value]) => saved[key] === value);
       const keys = [
         "solver",
@@ -938,6 +1063,8 @@ async function requirePhysicsPreference(page, expected, expectClean = false) {
         "speculative-distance",
         "max-depenetration-velocity",
         "sleeping",
+        "sleep-threshold",
+        "sleep-grouping",
         "solver-options",
       ];
       const addressed = clean
@@ -952,6 +1079,8 @@ async function requirePhysicsPreference(page, expected, expectClean = false) {
           && url.searchParams.get("speculative-distance") === String(expectedPhysics.speculativeDistance)
           && url.searchParams.get("max-depenetration-velocity") === String(expectedPhysics.maxDepenetrationVelocity)
           && url.searchParams.get("sleeping") === (expectedSleeping ? "on" : "off")
+          && url.searchParams.get("sleep-threshold") === String(expectedSleepThreshold)
+          && url.searchParams.get("sleep-grouping") === expectedSleepGrouping
           && !url.searchParams.has("solver-options");
       return stored && addressed;
     },

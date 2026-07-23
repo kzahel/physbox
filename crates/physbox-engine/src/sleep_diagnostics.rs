@@ -10,7 +10,7 @@ pub const SLEEP_CYCLE_DIAGNOSTIC_VERSION: u32 = 1;
 pub const SLEEP_CYCLE_DIAGNOSTIC_WORDS: u32 = 16;
 pub const SLEEP_CYCLE_DIAGNOSTIC_BYTES: u32 =
     SLEEP_CYCLE_DIAGNOSTIC_WORDS * size_of::<u32>() as u32;
-const POINT_DISPATCH_64_OFFSET: u64 = 10 * size_of::<u32>() as u64;
+const POINT_DISPATCH_64_OFFSET: u64 = 4 * size_of::<u32>() as u64;
 const INVALID: u32 = u32::MAX;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -104,6 +104,7 @@ pub(crate) struct GpuSleepCycleDiagnostics {
     finalize: wgpu::ComputePipeline,
     live_bodies: std::sync::Arc<wgpu::Buffer>,
     point_state: std::sync::Arc<wgpu::Buffer>,
+    stable_confirmation_steps: u32,
 }
 
 impl GpuSleepCycleDiagnostics {
@@ -156,7 +157,7 @@ impl GpuSleepCycleDiagnostics {
                 storage_entry(3, true),
                 storage_entry(4, false),
                 storage_entry(5, true),
-                storage_entry(6, false),
+                storage_entry(6, true),
                 storage_entry(7, false),
                 uniform_entry(8),
             ],
@@ -207,6 +208,7 @@ impl GpuSleepCycleDiagnostics {
             finalize: pipeline("finalize_metrics"),
             live_bodies,
             point_state,
+            stable_confirmation_steps,
         }
     }
 
@@ -265,7 +267,7 @@ impl GpuSleepCycleDiagnostics {
                 0,
                 0,
                 0,
-                0,
+                self.stable_confirmation_steps,
                 0,
                 0,
             ]),
