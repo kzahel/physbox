@@ -8088,13 +8088,14 @@ mod tests {
             manifold_topology.element_count
                 + incremental_topology.color_identity_capacity * 6 * 2
                 + 4
-                + 2
+                + 4
         );
         assert_eq!(incremental_operations.len(), manifold_operations.len());
         assert_eq!(
             incremental_parameters[0].uints1[3],
-            incremental_topology.color_base
+            incremental_topology.color_cursors_base
         );
+        assert_eq!(incremental_parameters[0].floats0[3] as u32 & (1 << 2), 0);
         let island_topology = TopologyLayout::new(
             GpuGatherTopology::StableBodyEdge,
             2,
