@@ -41,6 +41,43 @@ message only. Cross-host validation scenarios are Rust-owned; Playwright and
 ADB may prove that one raw event crosses the adapter and then consume the
 shared result.
 
+## Browser leaf boundary
+
+Authored browser JavaScript and TypeScript are a leaf input/display provider.
+They may acquire a canvas, normalize browser pointer-button enums, forward raw
+pointer/wheel/resize/timestamp facts, drive `requestAnimationFrame`, apply an
+opaque URL replacement supplied by shared Rust, and show a startup-fatal
+message. They may not interpret or reproduce engine concepts. In particular,
+browser glue may not own or branch on:
+
+- tool, menu, camera, grab, hit-selection, placement, or construction state;
+- solver names, physics fields, capacity presets, configuration bounds,
+  defaults, migrations, storage schemas, or launch query mappings;
+- scenario completion, body commands, scene-contract contents, or validation
+  expectations; or
+- alternate clocks, frame admission, render passes, shaders, or diagnostics
+  panels.
+
+`physbox-launch` owns browser preference decoding, migration, validation,
+default elision, and query projection. The browser adapter can provide a
+domain-blind key/value store, but storage keys and serialized values are shared
+Rust policy. Effective engine configuration is the only value written back;
+the JavaScript layer never maintains a parallel settings model.
+
+Ordinary production operation does not publish the semantic frame report to
+JavaScript globals. Browser validation may load a separately named observer
+module only behind an explicit smoke-test opt-in. That observer may expose the
+shared Rust report for automation, but it may not feed product input, rendering,
+configuration, or frame admission. Removing the observer must leave product
+behavior unchanged.
+
+Boundary validation discovers every authored `.js`, `.mjs`, `.ts`, and `.tsx`
+file rather than relying on a fixed filename list. It rejects engine vocabulary
+in ordinary browser glue, locks the small raw-event/render bridge, and carries
+negative fixtures for newly discovered files. A new browser feature belongs in
+shared Rust whenever its implementation needs to know what a tool, grab,
+placement, solver, menu action, or scenario result means.
+
 The authorized S4 workbench adds an engine-rendered shared toolbar, scene menu,
 glyph diagnostics, and camera. One empty-world touch is inert; two touches pan
 and pinch, right mouse drag pans, wheel zooms around its cursor, and primary

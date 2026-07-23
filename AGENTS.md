@@ -52,6 +52,13 @@ time dilation, step admission, or alternate overload behavior.
 The browser document is a fullscreen canvas host. Do not add ordinary product
 UI, debug panels, status chrome, or diagnostics in HTML/CSS. A minimal DOM
 message is allowed only when WebGPU startup fails before the engine can render.
+Authored browser JavaScript/TypeScript is a leaf input/display bridge: it may
+forward raw browser facts and apply opaque engine results, but it may not know
+tool, menu, camera, grab, placement, solver, physics-configuration, scenario,
+or report semantics. Browser persistence schemas, migrations, defaults, and
+query mappings belong to shared Rust. Semantic browser reports may be exposed
+only by an explicitly smoke-gated observer that is not part of product
+operation.
 
 ## Physics direction
 
