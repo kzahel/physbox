@@ -66,3 +66,17 @@ Each implementation commit that copies or closely ports code must identify its
 exact source file and preserve any applicable license. Rapier state, PhysBox 4
 scene compatibility, fluid/settings tools, and its asynchronous coupling are
 excluded. At this planning commit no PhysBox 4 runtime source has been copied.
+
+The proposed
+[S31 coupled-liquid sandbox](tactical/031-coupled-liquid-sandbox.md) inspected
+the clean PhysBox 4 revision
+`92f745eb85908243c69080a4fa4dba24f05c22cf` as selective source and behavioral
+evidence. Candidate concepts are limited to its GPU particle slot lifecycle,
+water PBF/XPBD passes, fixed-grid diagnostics, circle/rectangle boundary math,
+water/erase/surface interactions, direct particle rendering, debug views, and
+shared-renderer styling ideas. Its Rapier runtime, CPU rigid step, collider
+snapshot upload, asynchronous reaction readback, delayed host impulses,
+catch-up scheduler, stabilizing clamps, scene compatibility, and platform
+semantics are explicitly excluded. No PhysBox 4 runtime source has been copied
+for S31 at the planning boundary; any later close port must cite its exact
+source file, this revision, and the applicable license.

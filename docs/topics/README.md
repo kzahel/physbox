@@ -11,6 +11,10 @@ a running log.
   — authoritative engine direction; rigid-first GPU pipeline, solver lab,
   contacts, broadphase, process-isolated native oracle hierarchy, and later
   coupled-fluid acceptance.
+- [Coupled liquid/rigid constraint surface](coupled-liquid-rigid-constraint-surface.md)
+  — accepted liquid-entry decision, one-GPU-world coupling and wake
+  invariants, PhysBox 4 reuse boundary, rigid-only Box2D comparison semantics,
+  first water/tool/render scope, oracle corpus, and cross-host gates.
 - [Performance and scale contract](performance-and-scale.md) — workload and
   scene matrix, CPU/GPU comparison lanes, timing/capacity validity, provisional
   scale expectations, and milestone/regression gates.
@@ -89,5 +93,6 @@ a running log.
   broadening an unrelated document.
 - Add every active topic to this index in the same commit that creates it.
 
-Likely next topics include broadphase bake-off results and the coupled
-liquid/rigid constraint surface.
+Likely next topics should be split from the coupled-material record only when
+smooth-surface rendering, authored scene documents, or multi-material behavior
+can evolve independently with their own evidence.

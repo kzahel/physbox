@@ -1,6 +1,6 @@
 # Vision: one GPU-resident 2D physics world
 
-Status: active direction, updated 2026-07-21.
+Status: active direction, updated 2026-07-23.
 
 This is the compact entry point. The authoritative, research-backed direction
 is [PhysBox 5: one GPU-resident 2D physics world](topics/physbox5-unified-gpu-physics.md),
@@ -11,6 +11,8 @@ scale claims. The [simulation time and overload contract](topics/simulation-time
 owns fixed-step pacing and the default slow-motion response to missed budgets.
 The [physics configuration and solver-profile topic](topics/physics-configuration-and-solver-profiles.md)
 owns the selected soft-coupled direction and bounded product settings.
+The [coupled liquid/rigid constraint topic](topics/coupled-liquid-rigid-constraint-surface.md)
+owns the accepted liquid-entry boundary and active S31 scope.
 
 PhysBox 5 is a small, purpose-built 2D physics world whose live mechanical
 state stays on the GPU. It should eventually feel like a deliberately
@@ -36,9 +38,9 @@ the product.
 PhysBox 4 remains the evidence archive. PhysBox 5 has fresh history and admits
 only code that serves this direction.
 
-## First product slice
+## Rigid foundation and liquid handoff
 
-Liquid is explicitly deferred. The rigid foundation eventually contains:
+The completed rigid foundation contains:
 
 - fixed and dynamic circles and oriented rectangles;
 - gravity, placement, erase, select, and grab;
@@ -48,9 +50,17 @@ Liquid is explicitly deferred. The rigid foundation eventually contains:
 - direct rendering from GPU-resident body state;
 - side-by-side validation against a test-only Box2D oracle.
 
-Joints, capsules, general polygons, chains, ragdolls, machines, soft bodies,
-terrain, CCD, fluid, and the PhysBox 4 tool catalog wait until this minimal
-world is trustworthy.
+Human review on 2026-07-23 accepts this foundation for a bounded water/UI phase
+while retaining its measured awake-stack, parity, and crossover limitations.
+The approved S31 plan adds one water material, same-step PhysBox coupling,
+Water/Surface/Erase interactions, and direct rendering. Joints, capsules,
+general polygons, chains, ragdolls, machines, soft bodies, terrain, CCD,
+multi-material fluid, and the complete PhysBox 4 tool catalog remain later
+breadth.
+
+The interactive Box2D shadow remains rigid-only. Water interacts only with the
+PhysBox GPU rigid solver; Box2D receives no particle state or fluid forces, and
+its visible mode hides PhysBox fluid and fluid-specific tools.
 
 ## State and frame contract
 
@@ -58,12 +68,11 @@ world is trustworthy.
 CPU authored commands and neutral input facts
     -> bounded GPU command records
     -> one shared fixed-step compute graph
-       -> predict bodies
-       -> generate canonical candidate pairs
-       -> generate and persist contact manifolds
-       -> solve equal-and-opposite constraints
-       -> integrate final poses and sleep/wake state
-    -> render directly from GPU buffers
+       -> predict bodies and particles
+       -> build rigid contacts and particle neighborhoods
+       -> solve bounded equal-and-opposite rigid/fluid constraints
+       -> integrate final poses, velocities, and sleep/wake state
+    -> render bodies and particles directly from GPU buffers
 ```
 
 The CPU owns authored records, UI policy, lifecycle, persistence, and compact
@@ -222,14 +231,20 @@ The reproducible checkout pins and the workspace-local paths into the PhysBox
   Box2D lane is established, not an initial dependency or implementation
   authority. See the [Rapier repository architecture](https://github.com/dimforge/rapier/blob/master/ARCHITECTURE.md).
 
-## Acceptance before liquid
+## Liquid-entry decision
 
-Liquid work requires all of the following: one GPU-owned rigid state on every
-host; the selected solver passes the scalar laboratory; broadphase has no false
-negatives; manifolds pass direct Box2D comparison; circles/rectangles collide,
-slide, roll, stack, bounce, sleep, wake, and grab convincingly; numerical bands
-and invariants pass; all accepted runs have zero overflow; and optional native
-acceleration changes performance rather than behavior.
+The original rigid-foundation gate required one GPU-owned rigid state on every
+host, a selected scalar-qualified solver, complete broadphase/manifold
+evidence, convincing circle/rectangle behavior, numerical bands and
+invariants, zero overflow, and cross-host equivalence before liquid. Most of
+that foundation now exists, but comprehensive rigid parity, the default
+12-stack quiet target, and correctness-qualified CPU/GPU crossover remain
+open.
+
+Human review explicitly accepts those limitations for the bounded
+[S31 coupled-liquid sandbox](tactical/031-coupled-liquid-sandbox.md). This is a
+product-priority decision, not a retroactive P5.4 pass. The open rigid results
+remain visible debt and liquid or sleeping may not be used to relabel them.
 
 Exact full-trajectory equality across GPU vendors is not required. Explicit
 invariants, narrow pass-level tolerances, durable behavioral bands, and fresh

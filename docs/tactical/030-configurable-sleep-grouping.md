@@ -209,5 +209,5 @@ interactive comparison for this failure mode, but one native adapter and one
 natural dense fixture do not justify silently replacing the compatibility
 default. Reconsider default selection after the same behavioral win and a
 non-regressing cost are repeated on broader natural fixtures and another
-physical or native mobile adapter. This disposition does not affect the
-separate S23.7 sleeping-off/on default review.
+physical or native mobile adapter. The subsequent 2026-07-23 S23.7 human
+review retained sleeping off and local-4 as the compatibility defaults.

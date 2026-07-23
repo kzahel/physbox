@@ -2,8 +2,10 @@
 
 Status: complete negative, 2026-07-22. The clean native discriminator misses
 the blocking 12-stack quiet-speed observation, so the conditional durable and
-cross-host slices were not admitted. S23.7 remains held at a human awake-
-solver/configuration checkpoint.
+cross-host slices were not admitted. At S24 closure, S23.7 remained held at a
+human awake-solver/configuration checkpoint. The later S25/S30 evidence and
+2026-07-23 human disposition close that hold while preserving this negative
+result unchanged.
 
 Governing topic:
 [rigid quality targets](../topics/rigid-quality-targets.md).

@@ -1,22 +1,18 @@
 # GPU sleeping and waking
 
-Status: manual checkpoint, updated 2026-07-23. Tactical S23.1 through S23.6
-are complete, the post-review contact sleep-cycle defect is corrected and
+Status: implemented opt-in product capability, updated 2026-07-23. Tactical
+S23 is complete, the post-review contact sleep-cycle defect is corrected and
 qualified, and S30's configurable shared threshold, local-4/local-8/exact
-grouping, and cycle diagnostics are complete. Work remains stopped before the
-manual promotion/default decision
-reserved for S23.7. S24's native awake 12-stack quiet failure now holds that
-decision behind a separate human solver/configuration checkpoint. Sleeping is
-effective when explicitly requested but remains off by default. An opt-in GPU
-sleep-state visualization is available for interactive review; it does not
-change that default. This topic is the master record for the sleeping/waking
-feature: its motivation, the selected
+grouping, cycle diagnostics, and cross-host comparison surface are complete.
+Human review retains sleeping off and local-4 as compatibility defaults while
+keeping exact as an explicit comparison. S24/S25's awake limitations remain
+the solver verdict and are not masked. An opt-in GPU sleep-state visualization
+is available for interactive review; it does not change those defaults. This
+topic is the master record for the sleeping/waking feature: its motivation, the selected
 direction, the frozen experimental policy vocabulary, wake-trigger semantics,
 the toggle and experimentation surface, the validation contract, the execution
-plan, and the running status overview. Direction and step ordering below are provisional
-except where S23.1 freezes them; nothing here changes a product default, and
-enabling sleeping as the ordinary default requires a recorded human promotion
-review.
+plan, and the accepted disposition. A future change that enables sleeping or
+exact grouping by default still requires a new recorded human promotion review.
 
 Governing direction:
 [one GPU-resident 2D physics world](physbox5-unified-gpu-physics.md), which
@@ -63,7 +59,7 @@ change only with implementation and evidence, not because this design exists.
 | Toggle and configuration surface | complete S30 follow-up | Launch-owned state and the engine-rendered `MENU → WORLD` controls make sleeping effective on request, configure one shared PhysBox/Box2D threshold, switch PhysBox among local-4/local-8/exact, and persist the choices. The sleeping request remains off and local-4 remains the compatibility grouping default. |
 | Interactive state visualization | complete | The engine-rendered `SLEEP VISUALS` toggle consumes GPU sleep/grab state directly and distinguishes active, quiet, sleeping, and forced/recently woken dynamics without readback. |
 | Sleeping-city performance curves | complete | Valid matched 1%/10%/100% awake curves show bounded work reduction; S23.6 retains live pair processing and makes no public product-rate claim. |
-| Cross-host qualification and promotion | held | S24 passes native 2/4/8 but misses the awake 12-stack quiet band; browser/physical awake expansion and the S23.7 human default review wait for an authorized solver/configuration follow-up. |
+| Cross-host qualification and promotion | complete | S23/S30 qualify the maintained implementation and comparison surface. Human review retains sleeping off/local-4 defaults, keeps exact explicit, and preserves the S24/S25 awake verdict. |
 
 ## The concern
 
@@ -313,8 +309,8 @@ Pixel 7a gates pass. Browser, AVD, and Pixel all exercise the actual
 engine-rendered toggle and visibly report `SLEEP REQUEST ON  EFFECTIVE ON`;
 the shared rigid-floor scenario completes, the emulator shuts down, and the
 physical product app is stopped after capture. These checks validate the
-implementation boundary but do not replace S23.7's mask-rule disclosure and
-explicit human decision.
+implementation boundary. S30's later qualification and the recorded S23.7
+human disposition complete that review without changing this evidence.
 
 ### S30 configurable grouping and cycle-diagnostic checkpoint
 
@@ -350,9 +346,10 @@ local-4/local-8/exact record 1,527/1,543/1,560 dispatches and GPU P50
 All rows replay exactly and remain capacity-clean. Because that evidence spans
 one adapter and the natural behavioral win spans one dense fixture, exact is
 retained as the recommended explicit comparison for this failure mode rather
-than silently replacing local-4 as the default. Sleeping itself remains off
-pending the separate S23.7 review. Complete provenance and cross-host gates
-are in [tactical S30](../tactical/030-configurable-sleep-grouping.md).
+than silently replacing local-4 as the default. The later S23.7 human
+disposition retains sleeping off and local-4 as defaults. Complete provenance
+and cross-host gates are in
+[tactical S30](../tactical/030-configurable-sleep-grouping.md).
 
 ### Post-review Box2D alignment correction
 
@@ -499,8 +496,8 @@ Sleeping must be reversible and comparable from day one:
   the S19 ownership pattern: one projection into `EngineConfig`, adapters
   transport it unchanged, and requested and effective values are both
   reported. The control changes only requested state and explicitly labels
-  effective state separately. The default remains off until a recorded human
-  promotion review changes it.
+  effective state separately. The recorded S23.7 review retains the off
+  default; a future promotion requires a new explicit review.
 - Sleep-off and sleep-enabled share one operation graph. Sleep-off forces
   every live dynamic body into the awake list and resets/ignores timers; it
   must not select another solver, pipeline layout, or compilation path.
@@ -593,7 +590,8 @@ table stays the feature-level overview:
 6. Produce matched 1%/10%/100% awake performance curves; take the
    dormant-pair optimization decision only from that measurement.
 7. Cross-host qualification, mask-rule disclosure, and the manual
-   default-promotion review.
+   default-promotion review. S30 plus the 2026-07-23 S23.7 disposition complete
+   this step while retaining sleeping off.
 
 A hard authoritative rejection in an early slice stops later expensive lanes.
 Slice completion requires the tactical's stated gates and fresh artifacts, not
@@ -624,10 +622,10 @@ merely code existence.
   preserve the S23.1 baseline rather than changing it in place.
 - Whether a later policy should alter retained warm-start impulses on wake;
   V1 retains them and the current wake-restoration/exact-replay gates pass.
-- Whether sleeping should be promoted from its off default after the S23.6
-  evidence, a passing cross-host awake 12-stack package, and the S23.7 human
-  review. S24's current native quiet failure prevents that sequence from
-  resuming automatically.
+- Whether later coupled-fluid or broader natural-pile evidence justifies a new
+  promotion review for sleeping or exact grouping. The current disposition
+  keeps sleeping off and local-4 as defaults and must not be changed
+  automatically.
 
 ## Reconsideration triggers
 

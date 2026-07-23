@@ -1,7 +1,7 @@
 # Physics configuration and solver profiles
 
 Status: implemented product direction with one qualified custom alternative,
-updated 2026-07-22. Human review selected the soft-coupled solver family, and
+updated 2026-07-23. Human review selected the soft-coupled solver family, and
 the shared code still uses its reviewed 60/4/i1 seed as the fresh ordinary
 default. Product-owned fixed-step, substep, iteration, contact-response, and
 recovery settings form one versioned bounded configuration. S25 now qualifies
@@ -18,7 +18,9 @@ Related contracts:
 [rigid quality targets](rigid-quality-targets.md),
 [awake settling and rest stability](awake-settling-and-rest-stability.md),
 [contact solver parallelism](contact-solver-parallelism.md), and
-[performance and scale](performance-and-scale.md).
+[performance and scale](performance-and-scale.md). The
+[coupled liquid/rigid constraint](coupled-liquid-rigid-constraint-surface.md)
+preserves these defaults for S31.
 
 ## Decision
 
@@ -94,7 +96,7 @@ The product configuration separates values whose effects and ownership differ:
 | Contact response | contact Hz, damping ratio, static-contact multiplier | Requested soft-contact behavior; effective values depend on substep `dt` and caps |
 | Contact recovery | speculative distance, maximum depenetration velocity | Collision anticipation and bounded recovery from overlap; initially reported, not placed in the primary editor |
 | Solver family | soft-coupled, hard/direct comparison, later explicit candidates | Discrete recurrence, ordering, preparation, and relaxation policy |
-| Sleeping request | off/on request, with separate effective state | Effective on request after S23.3-S23.6; off by default pending the S23.7 promotion decision |
+| Sleeping request | off/on request, with separate effective state | Effective on request; the completed S23.7 review retains it off by default |
 | Sleep threshold/grouping | shared bounded speed threshold; PhysBox local-4/local-8/exact | Threshold is projected into PhysBox and public Box2D state; grouping is PhysBox-only and local-4 remains the compatibility default |
 
 One canonical versioned configuration must project into `EngineConfig` and the
@@ -130,8 +132,8 @@ Effective sleeping was hard-false. This established the representation and
 transport control without enabling the feature or making a default decision.
 
 S23.3-S23.6 subsequently made the request effective through the same
-configuration and control. Sleeping remains off by default, and final
-promotion remains owned by S23.7.
+configuration and control. The completed S23.7 review retains sleeping off by
+default and requires a new explicit review for any later promotion.
 
 S30 extends the same WORLD page with `SLEEP THRESHOLD` and PhysBox-only
 `SLEEP GROUPING`. Threshold remains visible in Box2D view and is applied

@@ -1,14 +1,13 @@
 # S23: GPU sleeping and waking
 
-Status: manual checkpoint 2026-07-22. S23.1 through S23.6 are complete, and
-the post-review contact sleep-cycle defect is corrected and qualified. Work is
-stopped before S23.7's reserved human promotion/default decision. Sleeping is
-effective when explicitly requested through the shared menu or launch
-configuration, but remains off by default. The user initially authorized the
-hardware-backed AVD for this unattended checkpoint; an attached Pixel 7a later
-became available and also passed the proportional lane. Completed-negative S24
-now holds S23.7 behind a separate native awake 12-stack quiet failure and human
-solver/configuration decision.
+Status: complete, 2026-07-23. S23.1 through S23.6 and the post-review contact
+sleep-cycle correction are implemented and qualified. S30 subsequently
+qualified the shared threshold, local-4/local-8/exact grouping, cycle
+diagnostics, matched cost, browser/headless behavior, and the explicitly
+authorized hardware-backed AVD interaction. Human review retains sleeping off
+and local-4 as compatibility defaults, keeps exact explicit, accepts the
+documented awake limitation without allowing sleeping to mask it, and closes
+S23.7 so the product can move to coupled liquid and interaction work.
 
 Governing topics:
 [GPU sleeping and waking](../topics/gpu-sleeping-and-waking.md),
@@ -40,7 +39,7 @@ exact-equivalence gates reviewable before transition semantics exist.
   body or point, change contact persistence, or claim mostly-sleeping scale.
 - Sleeping remains off by default. A request may be transported and reported
   before it becomes effective, but ordinary default promotion is reserved for
-  the manual S23.7 review.
+  the manual S23.7 review. That review now retains the off default.
 - Sleeping cannot change an awake solver verdict. The topic's mask rule is a
   mandatory disclosure and gate; it may not reclassify the accepted awake
   settling residual or loss.
@@ -399,23 +398,36 @@ This correction does not execute S23.7 or change the off default.
 
 ### S23.7 — cross-host qualification and promotion review
 
-Not admitted: S24's fresh native awake 12-stack missed the existing quiet
-band, so browser/physical awake expansion and this promotion review remain
-held pending an explicitly authorized solver/configuration follow-up.
+S24's fresh native awake 12-stack missed the existing quiet band. S25 then
+qualified the costlier 60/8/i1 alternative across native, browser, and physical
+Pixel but human review retained the lower-cost 60/4/i1 default with its honest
+eight-quality/14-structural limitation. S30 later supplied the complete
+configurable grouping, cycle-diagnostic, matched-cost, browser/headless, and
+authorized Android comparison evidence needed to make the default disposition
+without pretending the awake failure passed.
 
-- [ ] Run the full proportional browser/Android qualification and record the
+- [x] Run the full proportional browser/Android qualification and record the
   mask-rule disclosure plus every accepted authority divergence.
-- [ ] Return effective menu behavior, default state, and any dormant-pair
+- [x] Return effective menu behavior, default state, and any dormant-pair
   follow-up to a human promotion decision.
 
 Gate: a human review explicitly promotes or retains sleeping as opt-in; no
 test, evidence tool, or unattended run may make that product decision.
 
+Disposition, 2026-07-23: human review retains sleeping as an effective opt-in
+feature and keeps the ordinary request off. Local-4 remains the compatibility
+grouping default, local-8 remains a bounded control, and exact remains the
+recommended explicit comparison for the governed poured-pile failure. The
+S24/S25 sleep-off awake results remain the solver verdict; no sleep-enabled
+survival satisfies the 12-stack gate. Live sleeping-pair processing remains
+selected from S23.6. These are accepted limitations for moving on to liquid,
+UI, and more playful interaction work, not a comprehensive parity or scale
+claim.
+
 ## Completion condition
 
-S23 is complete only when sleeping and waking are fully GPU-owned, versioned,
+S23 is complete because sleeping and waking are fully GPU-owned, versioned,
 observable, generation-safe, bounded, exact-replaying, capacity-clean,
 behaviorally disclosed against Box2D, measurably reducing mostly-asleep work,
-qualified on the maintained hosts, and given an explicit human default
-decision. The authorized S23.2 stopping point is an implementation checkpoint,
-not feature completion.
+qualified on the maintained hosts, and given the explicit human default
+decision above.

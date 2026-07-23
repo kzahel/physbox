@@ -27,11 +27,11 @@ menu choice:
 ENGINE: PHYSBOX / BOX2D
 ```
 
-Desktop, browser, and Android expose the same shared Rust UI, tools, camera,
-scene, settings projection, and behavior. Switching changes only the rendered
-and interactively selected shadow; it does not copy state between engines.
-Both worlds start from the same authored scenario and receive the same
-ordered, stable-identity actions.
+Desktop, browser, and Android expose the same current rigid UI, tools, camera,
+scene, settings projection, and behavior from shared Rust. Switching changes
+only the rendered and interactively selected shadow; it does not copy state
+between engines. Both rigid worlds start from the same authored scenario and
+receive the same ordered, stable-identity rigid actions.
 
 This is a validation feature, not a product fallback. PhysBox remains the only
 authoritative product state and the only state eligible for product behavior,
@@ -70,6 +70,28 @@ The browser loads the equivalent pinned Emscripten module through an opaque
 leaf bridge. Missing exports, revision mismatch, action overflow, or identity
 disagreement make the comparator visibly unavailable or failed; no case
 silently substitutes Box2D for PhysBox.
+
+## Decided coupled-liquid boundary
+
+The approved [S31 coupled-liquid sandbox](../tactical/031-coupled-liquid-sandbox.md)
+does not add particles to this shadow. Water is authoritative PhysBox state
+and interacts only with the PhysBox GPU rigid solver.
+
+When Box2D is visible:
+
+- PhysBox water is hidden rather than drawn over unrelated Box2D bodies;
+- water, particle erase, and other fluid-specific tools are hidden or
+  unavailable;
+- the engine-rendered HUD states `BOX2D RIGID ONLY` and `FLUID HIDDEN`;
+- only stable-identity rigid actions continue to be mirrored; and
+- Box2D transforms, contacts, sleeping, and response never feed PhysBox fluid
+  or rigid mechanics.
+
+The authoritative PhysBox rigid/liquid world may continue advancing offscreen,
+so returning to PhysBox reveals its own coherent current state rather than a
+state copied from Box2D. Comparator-enabled frames remain excluded from
+performance evidence. This is a decided implementation boundary for S31, not a
+claim that fluid or the corresponding UI exists yet.
 
 ## Compile and packaging contract
 

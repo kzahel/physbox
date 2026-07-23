@@ -55,10 +55,23 @@ final default run, and 16 loses structure at step 463. Sleeping may not replace
 that awake result. See [S24](docs/tactical/024-current-rigid-quality-qualification.md)
 and [S25](docs/tactical/025-bounded-awake-configuration-qualification.md).
 
+Human review now accepts that measured rigid foundation as sufficient to begin
+bounded liquid, UI, and interaction work without claiming that the remaining
+P5.4 parity or CPU/GPU crossover gates passed. S23 and S30 are complete;
+sleeping remains off and local-4 remains the compatibility default. The
+active [S31 coupled-liquid plan](docs/tactical/031-coupled-liquid-sandbox.md)
+starts with one GPU-resident water material, same-step response with the
+PhysBox GPU rigid solver, Water/Surface/Erase tools, direct rendering, and
+cross-host evidence. Human review approved continuous implementation on
+2026-07-23 and authorized a hardware-backed AVD whenever no physical Android
+device is available.
+
 The repository still contains no Rapier or CPU product physics fallback, fluid
 solver, legacy settings UI, or PhysBox 4 scene compatibility. The implemented
 default-on, compile-removable Box2D shadow comparator is validation
 presentation only: it never supplies PhysBox mechanics or performance results.
+It remains rigid-only during S31; PhysBox water is hidden in Box2D view and
+never exchanges state or forces with that shadow.
 
 Read:
 
@@ -68,6 +81,8 @@ Read:
 - [Simulation time and overload contract](docs/topics/simulation-time-and-overload.md)
 - [Physics configuration and solver profiles](docs/topics/physics-configuration-and-solver-profiles.md)
 - [Current product capability status](docs/topics/product-capability-status.md)
+- [Coupled liquid/rigid constraint surface](docs/topics/coupled-liquid-rigid-constraint-surface.md)
+- [Proposed S31 coupled-liquid sandbox](docs/tactical/031-coupled-liquid-sandbox.md)
 - [Vision summary](docs/vision.md)
 - [Bring-up plan](docs/bringup-plan.md)
 - [Platform architecture](docs/platform-architecture.md)
@@ -162,10 +177,11 @@ The experimental sleeping checkpoint accepts `--sleeping on|off` (or the
 matching web query). **MENU → WORLD → SLEEP REQUEST** provides the same
 engine-rendered control and applies it immediately while preserving the rest
 of the physics configuration. The browser persists the request and keeps the
-URL synchronized. Sleeping is effective when requested but remains off by
-default pending the S23.7 human promotion decision. **SLEEP VISUALS** is an
-independent presentation-only toggle: teal is active, amber is accumulating
-quiet time, blue `Z` is asleep, and pink `!` is recently or forcibly woken.
+URL synchronized. Sleeping is effective when requested. S23/S30 human review
+retains it off by default, with local-4 grouping as the compatibility default
+and local-8/exact available explicitly. **SLEEP VISUALS** is an independent
+presentation-only toggle: teal is active, amber is accumulating quiet time,
+blue `Z` is asleep, and pink `!` is recently or forcibly woken.
 
 Open **MENU → WORLD** to choose **64 SLOTS**, **256 SLOTS**, **1K SLOTS**, or
 **10K SLOTS**, and to change **SLEEP REQUEST**. A selection rebuilds and

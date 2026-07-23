@@ -1,6 +1,6 @@
 # PhysBox 5: One GPU-Resident 2D Physics World
 
-Status: active direction, updated 2026-07-22. The lean bootstrap and P5.0a solver
+Status: active direction, updated 2026-07-23. The lean bootstrap and P5.0a solver
 laboratory are complete at `~/code/physbox5`; the fresh-history root is commit
 `3de0b12001b2246e3966f7d1264225dd4da903f4`, and
 <https://physbox5.kzahel.com>. PhysBox 4 remains the preserved snapshot of the
@@ -59,6 +59,28 @@ diagnostic for the exact matched Box2D fixture. This supersedes the historical
 use of 16 as an automatic promotion veto without rewriting those experiments,
 weakening their findings, or allowing sleeping to satisfy an awake gate.
 
+### Liquid-entry decision, 2026-07-23
+
+Human review accepts the current measured rigid foundation as sufficient to
+begin bounded liquid, UI, and interaction work. This is a product-priority
+decision, not a retroactive pass of every P5.4 rigid-parity or performance
+gate. The selected 60/4/i1 default retains its eight-box awake quality claim,
+12/14 quietness failures, demonstrated 14-box structural survival, and
+16-stack loss. Comprehensive rigid parity and correctness-qualified CPU/GPU
+crossover remain open debt.
+
+S23 and S30 make sleeping an implemented opt-in capability. Sleeping remains
+off and local-4 remains the compatibility default; local-8 and exact grouping
+remain explicit review choices. Sleeping or liquid may not relabel an awake
+rigid failure.
+
+The [coupled liquid/rigid constraint surface](coupled-liquid-rigid-constraint-surface.md)
+owns the entry architecture, reuse limits, rigid-only Box2D boundary, and
+acceptance contract. The approved
+[S31 coupled-liquid sandbox](../tactical/031-coupled-liquid-sandbox.md) is the
+active end-to-end execution plan. Fluid remains unimplemented until its slices
+make and qualify the corresponding capability.
+
 The first simulation slice is a rigid-only foundation:
 
 - fixed and dynamic circles;
@@ -69,13 +91,13 @@ The first simulation slice is a rigid-only foundation:
 - direct rendering from GPU-resident body state;
 - side-by-side validation against a test-only Box2D oracle.
 
-Liquid begins only after the GPU rigid solver reproduces a deliberate suite of
-basic 2D behaviors convincingly. Particle coupling will then use the PhysBox 3
-sidecar compiled natively as its primary behavioral oracle, original LiquidFun
-as a secondary reference, and the web-only PhysBox 3 product as a calibration
-lane. Body joints, capsules, convex polygons, chains, ragdolls, machines, soft
-bodies, terrain, CCD, and the broader PhysBox tool set likewise follow only
-after the minimal rigid world is trustworthy.
+That rigid-only entry period is complete under the explicit liquid-entry
+decision above. Particle coupling now proceeds only through the bounded S31
+plan, using the PhysBox 3 sidecar compiled natively as its primary behavioral
+oracle, original LiquidFun as secondary evidence, and the web-only PhysBox 3
+product as a calibration lane. Body joints, capsules, convex polygons, chains,
+ragdolls, machines, soft bodies, terrain, CCD, multi-material fluid, and the
+complete PhysBox 4 tool set remain later breadth.
 
 ## Why this is a new engine direction
 
@@ -1255,8 +1277,10 @@ needs to reproduce; a complete Box2D world step is unnecessary for this layer.
 
 ### LiquidFun and PhysBox 3 fluid oracles
 
-Only after the rigid fixture set passes should PhysBox 5 restore liquid. Use
-LiquidFun and PhysBox 3 as the behavioral reference for:
+The original plan deferred liquid until the complete rigid fixture set passed.
+The 2026-07-23 entry decision now authorizes the bounded S31 phase while the
+remaining rigid failures stay explicit debt. Use LiquidFun and PhysBox 3 as the
+behavioral reference for:
 
 - synchronous particle/body momentum exchange;
 - displacement and buoyant support;
@@ -1587,14 +1611,17 @@ behavior is present until S3.2.
 
 ### P5.4: Rigid behavior parity
 
-- Add sleeping, waking, and compact asynchronous diagnostics.
+- Retain the implemented S23/S30 sleeping, waking, grouping, and compact
+  asynchronous diagnostics with sleeping off and local-4 as compatibility
+  defaults.
 - Validate flat and edge landings, stacks, pyramids, impacts, sliding, rolling,
   bounce, off-center rotation, wake propagation, and grab/release against the
   Box2D oracle.
 - Run fixed-step, substep, iteration, mass-ratio, material, capacity, and
   adapter sweeps without changing product behavior per host.
-- Require numerical acceptance and synchronized interactive review before
-  liquid work is authorized.
+- Preserve these numerical and synchronized-review rows as the complete
+  rigid-parity claim. The 2026-07-23 decision permits bounded S31 liquid work
+  before every row closes, without treating an open row as passed.
 
 ### P5.5: First construction loop
 
@@ -1604,10 +1631,16 @@ behavior is present until S3.2.
 - Add one joint only after free-body contact is stable.
 - Decide whether the solver foundation is sufficient for chains and ragdolls
   before restoring broader tools.
+- S31 may pull Water, Surface, particle-aware Erase, and a shared render-style
+  refresh forward because they are required to evaluate coupled behavior.
+  Persistent properties, save/load, joints, and the complete tool catalog
+  remain in this broader construction milestone.
 
 ### P5.6: LiquidFun-oracled fluid coupling
 
-- Restore a bounded water-like particle solver after rigid parity is accepted.
+- Restore a bounded water-like particle solver under the reviewed coupled
+  constraint topic and S31 plan. This explicit entry decision replaces the
+  former blanket “after rigid parity” blocker without claiming P5.4 completion.
 - Define fluid/body oracle fixtures in the shared projection rather than in
   any foreign adapter.
 - Add separate native adapters for the PhysBox 3 sidecar plus Box2D v3 and for
@@ -1622,6 +1655,8 @@ behavior is present until S3.2.
   response.
 - Prove that no compact fluid-impulse readback exists in the simulation
   dependency graph.
+- Keep the interactive Box2D shadow rigid-only: it receives no particle state,
+  fluid forces, or fluid-tool actions, and Box2D view hides PhysBox water.
 
 ## Oracle-driven development and failure artifacts
 
@@ -1705,7 +1740,12 @@ universal promise or a substitute for measured curves on named adapters.
 
 ### Rigid-foundation acceptance
 
-Fluid work does not begin until all of the following are true:
+The complete rigid-parity claim requires all of the following:
+
+The 2026-07-23 liquid-entry decision accepts the current partial foundation for
+the bounded S31 workstream before every item is true. It does not delete,
+weaken, or mark the remaining items complete; they remain the P5.4 acceptance
+and crossover debt, and coupled results may not substitute for them.
 
 - No GPU-to-CPU result is required to advance rigid simulation.
 - Interactive frames execute zero or one outer fixed step, slip excess wall
@@ -1823,9 +1863,12 @@ The first rigid work proceeds with these decisions:
   excluded from P5.0a and may become only a non-gating native comparator after
   a measured ambiguity and explicit decision. Box2D remains validation-only;
   its explicitly authorized interactive shadow is not product authority.
-- The later routine coupled oracle is the PhysBox 3 particle sidecar compiled
+- The S31 routine coupled oracle is the PhysBox 3 particle sidecar compiled
   natively with its Box2D v3 source. Original LiquidFun is secondary evidence,
   and the web-only PhysBox 3 product is a calibration lane.
+- The first coupled material is bounded water in the PhysBox GPU world only.
+  The interactive Box2D shadow remains rigid-only and receives no fluid state,
+  contact, forces, or fluid-tool actions.
 
 The solver laboratory and early pipeline must still answer:
 
@@ -1835,12 +1878,10 @@ The solver laboratory and early pipeline must still answer:
   global-barrier dispatches for portable WebGPU?
 - At what measured body/contact distributions does SAP, grid, or later LBVH win
   on browser, desktop, and Android adapters?
-- Which sleep and island policy fits GPU residency? Box2D's island-based
-  sleeping is a connected-components problem that is awkward without readback;
-  the likely shape is per-body sleep timers with bounded neighbor wake
-  propagation, whose behavioral differences from island sleeping
-  (partial-stack sleep, wake waves) need their own fixtures and bands before
-  P5.4 acceptance.
+- Which future evidence would justify changing the implemented S23/S30 sleep
+  policy? Local-4 is the compatibility default, local-8 and exact are explicit
+  choices, and sleeping remains off; coupled work must add GPU fluid wake roots
+  without changing those defaults implicitly.
 - Which scenario-specific trajectory, manifold, energy, penetration, and sleep
   bands distinguish healthy parallel ordering variation from a materially
   different or unstable result?
@@ -1850,9 +1891,9 @@ The solver laboratory and early pipeline must still answer:
   performance budget after relative regression tracking is operational?
 
 Fluid formulation, particle/body reduction, coupled-iteration count, and the
-exact PhysBox 3/LiquidFun oracle fixtures are later decisions. They should not
-shape the first rigid solver prematurely beyond preserving current-state,
-equal-and-opposite contribution and accumulation contracts.
+exact PhysBox 3/LiquidFun oracle fixtures are now bounded S31 decisions. The
+coupled topic limits the first schedule comparison, requires GPU body gather
+and same-step equal-and-opposite response, and defines seven initial sources.
 
 Answer the remaining questions with minimal GPU prototypes, shared scenarios,
 and recorded selection matrices, not by expanding the PhysBox 4 delayed

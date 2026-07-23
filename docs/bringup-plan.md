@@ -14,16 +14,23 @@ The compact [product capability ledger](topics/product-capability-status.md)
 records what is implemented, limited, missing, and deferred without requiring
 the historical tacticals to be reconstructed. S20 owns the validation diet;
 S21 owns the now-complete P5.3 broadphase bakeoff, winner integration, and
-physical-Android qualification. S23 has reached its manual promotion checkpoint
-with opt-in effective sleeping, coordinated bounded-neighbor admission/wake,
-awake-driven solve work, and matched sleeping-city evidence. S24's current-
+physical-Android qualification. S23 and S30 are complete: opt-in effective
+sleeping, local-4/local-8/exact GPU grouping, awake-driven work, shared
+thresholds, and matched sleep-cycle evidence are qualified. Human review
+retains sleeping off and local-4 as compatibility defaults. S24's current-
 default native discriminator passes 2/4/8 but the upright 12-stack misses the
-awake quiet band. The authorized S25 follow-up is now complete: 60/8/i1 passes
-the native 2/4/8/12 gate, preserves 14, reports 16 loss at step 840, and has
-matching Browser WebGPU/physical-Pixel identities. The equation, bands,
-sleeping policy, and 60/4/i1 product default remain fixed. Human review
-declined the costlier alternative and accepts an 8-box awake quality claim
-plus demonstrated 14-box structural survival as the current limitation.
+awake quiet band. The authorized S25 follow-up is complete: 60/8/i1 passes the
+native 2/4/8/12 gate, preserves 14, reports 16 loss at step 840, and has
+matching Browser WebGPU/physical-Pixel identities. Human review declined that
+costlier alternative and accepts an 8-box awake quality claim plus demonstrated
+14-box structural survival as the current limitation.
+
+The 2026-07-23 product-priority decision treats this measured rigid foundation
+as sufficient to begin bounded water, UI, and interaction work. It does not
+pass the retained 12/14 quietness failures, 16-stack loss, comprehensive rigid
+parity, or correctness-qualified CPU/GPU crossover. The approved
+[S31 coupled-liquid sandbox](tactical/031-coupled-liquid-sandbox.md) is the
+active end-to-end execution plan.
 
 The [current rigid quality target](topics/rigid-quality-targets.md) supersedes
 the historical 16-stack promotion gate for new work: 2/4/8 remain the
@@ -436,13 +443,14 @@ own integration, rendering, SAP, narrowphase, pair-slot lifecycle, topology,
 and solver dispatch. The durable 64/256/1K/10K probe is approximately flat for
 the same sparse scene while its dense control expands the work vector.
 [S23 GPU sleeping and waking](tactical/023-gpu-sleeping-and-waking.md) has now
-reached its manual checkpoint: generation-safe GPU sleep state, coordinated
+completed: generation-safe GPU sleep state, coordinated
 four-round admission/wake propagation, awake-driven solve work, the persisted
-toggle, state visualization, and matched sleeping-city evidence are complete.
-Effective sleeping remains opt-in and off by default; S23.7's promotion/default
-decision is the next separate human checkpoint. S25's qualified eight-substep
-setting was not promoted, and sleeping may not conceal the retained
-four-substep awake limitation.
+toggle, state visualization, and matched sleeping-city evidence pass.
+[S30 configurable sleep grouping](tactical/030-configurable-sleep-grouping.md)
+also qualifies local-4/local-8/exact grouping and public Box2D cycle
+observation. Human review retains sleeping off and local-4 as compatibility
+defaults. S25's qualified eight-substep setting was not promoted, and sleeping
+may not conceal the retained four-substep awake limitation.
 [S26 exact contact-component observation](tactical/026-exact-contact-component-observation.md)
 is complete as a no-behavior GPU measurement. Exact labels and structural
 counts match CPU through the admitted split/churn, 1K connected-pile, and 10K
@@ -479,9 +487,9 @@ policy.
 - Record the human decision to retain the unqualified 60/4/i1 default and
   accept its 8-quality/14-structural limitation without moving the 12-stack
   target.
-- Complete the S23.7 sleeping promotion/default review over the implemented
-  bounded wake propagation, coordinated admission, awake-driven solve, compact
-  diagnostics, and sleeping-city evidence.
+- Retain the completed S23.7/S30 human disposition: sleeping is an implemented
+  opt-in capability but remains off by default, local-4 remains the
+  compatibility grouping, and exact remains an explicit review choice.
 - Retain S26's completed observation-only exact contact-component correctness
   and cost report; its labels affect no sleep or solver decision.
 - Qualify the selected default against the current centered-stack hierarchy:
@@ -499,16 +507,28 @@ policy.
   capacity fails; slow-time pacing cannot be reported as sustained 60 Hz
   throughput.
 
+P5.4 remains the full rigid-parity and crossover claim. The 2026-07-23 entry
+decision deliberately stops treating its incomplete rows as a blanket blocker
+for the bounded S31 material phase; those rows remain open debt and keep their
+existing acceptance meaning.
+
 ## P5.5 — first construction loop
 
 - Extend the P5.2a minimal place/erase loop with selection, editable body
   properties, and deliberate shape sizing.
 - Add minimal authored save/load and scene-document semantics.
 - Add one joint only after free-body contact remains green.
+- S31 may pull the Water and Surface tools, particle-aware Erase, and a shared
+  render-style refresh forward because they are required to evaluate the
+  coupled sandbox. Persistent property editing, save/load, and joints remain
+  in this broader construction milestone.
 
 ## P5.6 — LiquidFun-oracled coupled material
 
-- Add bounded water only after P5.4 acceptance.
+- Begin bounded water under the reviewed
+  [coupled liquid/rigid constraint](topics/coupled-liquid-rigid-constraint-surface.md)
+  and S31 plan. This explicit entry decision replaces the former blanket
+  “after P5.4 acceptance” blocker without claiming P5.4 completion.
 - Generate fluid fixtures from the same shared scenario projection.
 - Add separate native oracle executables for the pinned PhysBox 3 particle
   sidecar plus Box2D v3 and for original LiquidFun/Box2D 2.3.
@@ -521,6 +541,9 @@ policy.
 - Compare displacement, float/sink, wave impact, and moving boundaries with
   PhysBox 3/LiquidFun.
 - Prove there is no simulation-dependent fluid impulse readback.
+- Keep the interactive Box2D shadow rigid-only. It receives no particles,
+  fluid contacts, fluid forces, or fluid-tool actions; Box2D view hides PhysBox
+  water and labels that boundary explicitly.
 
 ## Autonomous development loop
 

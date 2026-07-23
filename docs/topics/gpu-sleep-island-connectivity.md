@@ -464,8 +464,9 @@ persistent/deferred-split prototype, not for increasing K.
    broader whole-island solve work, is the limiting cost.
 5. **Promotion:** requires the ordinary browser representative, ARM64 and
    release APK, physical Android behavior/performance, mask-rule disclosure,
-   and a new explicit human decision. This research does not resume or satisfy
-   S23.7.
+   and a new explicit human decision. This research did not itself satisfy
+   S23.7; the subsequent 2026-07-23 review closed S23.7 while retaining
+   sleeping off and local-4 as defaults.
 
 ## Reconsideration triggers
 

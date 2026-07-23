@@ -145,20 +145,25 @@ and the earlier live-body/collision/solver stages. Browser, physical Pixel
 checkpoint, clean headless, and final hardware-backed AVD fallback evidence
 pass. Sleeping can consume the deterministic live set as its awake-work
 foundation.
-S23 is at a manual checkpoint after completing S23.1 through S23.6. Effective
-opt-in sleeping, bounded wake propagation, automatic admission, awake-driven
-solve work, valid matched sleeping-city evidence, and an opt-in GPU state
-visualization are implemented. Browser and physical Pixel captures show the
-sleep and forced-awake marks. The dormant-pair gate retains live processing;
-a post-review correction now coordinates admission within `K` and removes
-persisted-contact wake cycling. Work is stopped before S23.7 for the reserved
-human promotion/default decision.
+S23 is complete. Effective opt-in sleeping, bounded wake propagation,
+automatic admission, awake-driven solve work, valid matched sleeping-city
+evidence, and an opt-in GPU state visualization are implemented. Browser and
+physical Pixel captures show the sleep and forced-awake marks. The dormant-pair
+gate retains live processing; a post-review correction coordinates admission
+within `K` and removes persisted-contact wake cycling. S30 subsequently
+qualified configurable local-4/local-8/exact grouping, cycle diagnostics, and
+the rigid comparison surface. Human review on 2026-07-23 retains sleeping off
+and local-4 as compatibility defaults, keeps exact explicit, accepts the
+documented awake limitation without masking it, and closes S23.7 so liquid/UI
+work may proceed.
 S24 is complete as a bounded negative prerequisite to that decision. A clean
 native selected-default sleep-off run passes 2/4/8 but the upright 12-stack
 misses the existing quiet band (`0.029767` versus `0.025000 m/s`). Fourteen
 also misses the quiet band and 16 loses structure at step 463. The declared
-hard stop prevented durable/browser/physical-device expansion; S23.7 remains
-held at a human awake-solver/configuration checkpoint.
+hard stop prevented durable/browser/physical-device expansion; at S24 closure,
+S23.7 remained held at a human awake-solver/configuration checkpoint. The
+later S25/S30 evidence and decision above close that hold without changing the
+S24 result.
 Human review authorizes S25 as one configuration-only resolution attempt. Its
 six-row, one-process native shortlist keeps the equation, bands, sleeping
 policy, and product default fixed; no more than two survivors reach broader
@@ -180,6 +185,17 @@ a sparse 10K reserve. The static observer costs 29–61 dispatches and roughly
 0.110–0.577 ms GPU P50, so component reductions are the recommended next
 observation only if separately authorized; behavior switching and persistent
 optimization remain held.
+S30 is complete with shared threshold configuration, local-4/local-8/exact
+grouping, applied exact GPU decisions, cycle diagnostics, browser/headless/AVD
+qualification, and a measured pile result. Exact remains an explicit
+comparison rather than the default.
+Human roadmap review on 2026-07-23 opens S31 as an active bounded coupled
+liquid sandbox. The current eight-box awake quality and 14-box structural
+survival are accepted as an honest liquid-entry foundation; the 12/14
+quietness gap, 16 loss, comprehensive rigid parity, and CPU/GPU crossover
+remain open debt. Human review approves continuous implementation and
+authorizes a hardware-backed AVD whenever no physical Android device is
+available.
 
 Current target supersession, 2026-07-22: the
 [rigid quality target contract](../topics/rigid-quality-targets.md) governs new
@@ -221,7 +237,7 @@ This README remains the unnumbered index.
 | S20 | Validation diet and feature ledger | [020-validation-diet-and-feature-ledger.md](020-validation-diet-and-feature-ledger.md) | complete; warm everyday lane 7.31 s, production matrices trimmed, exhaustive lanes retained opt-in, 2026-07-21 |
 | S21 | Scalable broadphase | [021-scalable-broadphase.md](021-scalable-broadphase.md) | complete; SAP integrated and qualified on Metal, browser, and physical Pixel 7a Vulkan, 2026-07-21 |
 | S22 | Active-work compaction | [022-active-work-compaction.md](022-active-work-compaction.md) | complete; committed persistence/topology work and durable sparse-capacity qualification pass, 2026-07-22 |
-| S23 | GPU sleeping and waking | [023-gpu-sleeping-and-waking.md](023-gpu-sleeping-and-waking.md) | manual checkpoint; contact sleep-cycle correction qualified on browser/headless/Pixel, S23.7 human decision held, 2026-07-22 |
+| S23 | GPU sleeping and waking | [023-gpu-sleeping-and-waking.md](023-gpu-sleeping-and-waking.md) | complete; S30 qualification plus human review retain sleeping off/local-4 defaults and close S23.7, 2026-07-23 |
 | S24 | Current rigid quality qualification | [024-current-rigid-quality-qualification.md](024-current-rigid-quality-qualification.md) | complete negative; native 2/4/8 pass, upright 12 misses quiet band, conditional cross-host work not admitted, 2026-07-22 |
 | S25 | Bounded awake configuration qualification | [025-bounded-awake-configuration-qualification.md](025-bounded-awake-configuration-qualification.md) | complete; qualified 60/8/i1 not promoted, 60/4/i1 retained with accepted 8-quality/14-structural limitation, 2026-07-22 |
 | S26 | Exact contact-component observation | [026-exact-contact-component-observation.md](026-exact-contact-component-observation.md) | complete; exact labels/CPU differential pass, static cost recorded, stopped before reductions or behavior, 2026-07-22 |
@@ -229,6 +245,7 @@ This README remains the unnumbered index.
 | S28 | Browser platform-boundary hardening | [028-browser-platform-boundary-hardening.md](028-browser-platform-boundary-hardening.md) | complete; shared Rust owns preferences/query policy, semantic smoke observation is gated, and JS/TS source locks pass, 2026-07-23 |
 | S29 | Interactive Box2D comparison | [029-interactive-box2d-comparison.md](029-interactive-box2d-comparison.md) | complete; default-on shadow, stable actions, authority/feature-off gates, and authorized hardware-backed AVD substitute pass, 2026-07-23 |
 | S30 | Configurable sleep threshold and grouping | [030-configurable-sleep-grouping.md](030-configurable-sleep-grouping.md) | complete; shared threshold, local-4/local-8/exact behavior, cycle diagnostics, matched cost, browser/headless/AVD qualification, and explicit exact disposition pass, 2026-07-23 |
+| S31 | Coupled liquid sandbox | [031-coupled-liquid-sandbox.md](031-coupled-liquid-sandbox.md) | active; end-to-end water/coupling/tools/render/oracle plan approved with hardware-backed AVD fallback, 2026-07-23 |
 
 ## Conventions
 

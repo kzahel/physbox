@@ -56,7 +56,7 @@ quality. Known limitations remain part of the row.
 | COLL-8 | GPU picking | **Limited** | Shared grab/erase selection uses bounded GPU hit selection; it is not a general spatial-query API. |
 | SOLVE-1 | Soft-coupled rigid solver | **Implemented** | Human review retains the lower-cost 60/4/i1, contact 30 Hz/damping 10/static x2 default. Its conservative claim is an 8-box awake quality stack with demonstrated 14-box structural survival: 12/14 exceed the quiet band, 15 is unmeasured in the final run, and 16 loses structure at step 463. Qualified 60/8/i1 remains custom evidence, not a preset. |
 | SOLVE-2 | Hard/direct comparison | **Implemented** | Explicit named comparator only; never an automatic fallback. |
-| SOLVE-3 | Sleeping and waking | **Limited** | Opt-in effective GPU sleeping has versioned generation-safe state, configurable shared PhysBox/Box2D threshold, PhysBox local-4/local-8/exact GPU grouping, integer outer-step admission, awake-driven solve/integration, live cycle/cut/awake-time diagnostics, and persisted engine-rendered controls. Exact removes the bounded-grouping failure in the governed 100-body pile but remains explicit; sleeping stays off pending S23.7 and may not replace the accepted awake limitation. |
+| SOLVE-3 | Sleeping and waking | **Implemented** | S23 and S30 qualify opt-in GPU sleeping with versioned generation-safe state, configurable shared PhysBox/Box2D threshold, PhysBox local-4/local-8/exact GPU grouping, integer outer-step admission, awake-driven solve/integration, live cycle/cut/awake-time diagnostics, and persisted engine-rendered controls. Human review retains sleeping off and local-4 as compatibility defaults; exact removes the bounded-grouping failure in the governed 100-body pile but remains explicit. Sleeping may not replace the accepted awake limitation. |
 | JOINT-1 | Grab constraint | **Implemented** | Anchored GPU grab retains collision and bounded release velocity. |
 | JOINT-2 | General joints | **Not implemented** | Distance/revolute or another first authored joint follows accepted free-body rigid behavior. |
 
@@ -69,7 +69,7 @@ quality. Known limitations remain part of the row.
 | TOOL-3 | Solver/configuration inspection | **Implemented** | Engine-rendered responsive menu selects any registered solver profile, bounded physics settings, and 64/256/1K/10K world-capacity presets. Browser choices persist locally. |
 | TOOL-4 | Selection and property editing | **Not implemented** | No persistent user selection, transform/material editor, or deliberate drag-to-size authoring. |
 | TOOL-5 | Scene document and save/load | **Not implemented** | Validation scenarios are reproducible contracts, not an authored product document format. |
-| TOOL-6 | Undo/redo and broader sandbox tools | **Deferred** | Follow a minimal scene document and stable construction semantics. |
+| TOOL-6 | Undo/redo and broader sandbox tools | **Deferred** | S31 proposes only the Water, Surface, particle-aware Erase, and shared-style slice needed to evaluate liquid before a scene document. Undo/redo and the complete tool catalog still follow stable document semantics. |
 
 ## Scale, quality, and comparison
 
@@ -82,7 +82,7 @@ quality. Known limitations remain part of the row.
 | QUAL-1 | Box2D process oracle | **Implemented** | Clean pinned native process covers current circle/rectangle projections, public manifolds, selected actions, and deterministic results. |
 | QUAL-2 | Comprehensive rigid acceptance | **Limited** | The ordinary 60/4/i1 default passes the 2/4/8 awake foundation but misses 12 quietness; human review accepts that gap for now and declines the qualified costlier 60/8/i1 alternative. Product wording is 8-box awake quality plus demonstrated 14-box structural survival, not comprehensive parity. The 12 target remains future work. |
 | QUAL-3 | Correctness-qualified CPU/GPU crossover | **Not implemented** | Requires broadphase, sleeping, equivalent-quality worlds, and scoped solver/collision/end-to-end/full-frame curves. |
-| QUAL-4 | Interactive Box2D A/B comparison | **Implemented** | Default-on, compile-removable shared-host shadow switches the existing renderer between independently evolving PhysBox and pinned Box2D worlds and mirrors tools by stable ID. Desktop, headless, browser WebGPU, ARM64 build, APK, authority equivalence, feature-off, and explicitly authorized hardware-backed AVD substitution gates pass. Comparator-enabled runs are qualitative review and never performance or fallback evidence. |
+| QUAL-4 | Interactive Box2D A/B comparison | **Implemented** | Default-on, compile-removable shared-host shadow switches the existing renderer between independently evolving PhysBox and pinned Box2D rigid worlds and mirrors rigid tools by stable ID. Desktop, headless, browser WebGPU, ARM64 build, APK, authority equivalence, feature-off, and explicitly authorized hardware-backed AVD substitution gates pass. Comparator-enabled runs are qualitative review and never performance or fallback evidence. S31 keeps this lane rigid-only: PhysBox fluid is hidden and never exchanges mechanics with Box2D. |
 | TEST-1 | Everyday fast lane | **Implemented** | `npm run test:fast` runs format, maintained Rust plus performance smoke, tool tests, boundaries, and browser WebGPU under a 120-second hard budget. |
 | TEST-2 | Exhaustive research/audit lane | **Implemented** | Historical lab/oracle matrices remain opt-in; they are not ordinary pre-push gates. |
 
@@ -90,21 +90,24 @@ quality. Known limitations remain part of the row.
 
 | ID | Capability | Status | Current boundary / next gate |
 | --- | --- | --- | --- |
-| FLUID-1 | GPU liquid particles | **Deferred** | Begins only after P5.4 rigid acceptance. No product particle solver exists. |
-| FLUID-2 | Two-way rigid/liquid coupling | **Deferred** | Must exchange translation, torque, boundary pressure, and wake response within the same GPU step. |
-| FLUID-3 | PhysBox 3/LiquidFun coupled oracle | **Limited** | Sources and execution contract are pinned; routine native coupled adapters and acceptance corpus remain future work. |
+| FLUID-1 | GPU liquid particles | **Not implemented** | The approved S31 plan authorizes bounded water work. No product particle solver exists yet. |
+| FLUID-2 | Two-way rigid/liquid coupling | **Not implemented** | Proposed S31 must exchange translation, torque, boundary pressure, and wake response with the PhysBox GPU rigid solver within the same fixed step. Box2D remains rigid-only. |
+| FLUID-3 | PhysBox 3/LiquidFun coupled oracle | **Limited** | Sources and execution contract are pinned and native build feasibility is recorded; active S31 adds the routine PhysBox 3 sidecar, separate LiquidFun adapter, and coupled acceptance corpus. |
 | BREADTH-1 | Ragdolls, machines, soft bodies | **Deferred** | Depend on general joints, broader shapes, accepted scale, and stable rigid behavior. |
 
 ## Current execution order
 
-1. Complete the held S23.7 sleeping promotion/default review without using
-   sleep-enabled survival to replace the awake package.
-2. Close the remaining selected-default rigid acceptance and scale work while
-   preserving the accepted 8-quality/14-structural limitation.
-3. Extend the construction loop with editable selection, scene documents, and
-   one joint.
-4. Begin bounded liquid and same-step rigid/fluid coupling only after the
-   remaining P5.4 prerequisite is explicitly resolved.
+1. Establish the shared coupled contracts, native PhysBox 3/LiquidFun oracle
+   lane, bounded GPU water substrate, and direct rendering.
+2. Add same-step PhysBox rigid/liquid response, fluid wake roots, Water,
+   Surface, and particle Erase interactions, and the rigid-only Box2D boundary.
+3. Qualify the useful 4K scene across native, browser, headless, and Android,
+   then return mechanics, visual style, and product defaults to human review.
+
+The retained 12/14 quietness failures, 16-stack loss, comprehensive rigid
+parity, and correctness-qualified CPU/GPU crossover remain visible parallel
+debt. They no longer block the bounded liquid entry, and liquid evidence may
+not be used to relabel them as passed.
 
 ## Reconsideration triggers
 

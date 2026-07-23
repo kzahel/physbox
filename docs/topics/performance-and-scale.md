@@ -1,11 +1,13 @@
 # Performance and scale contract
 
-Status: active contract with provisional targets, updated 2026-07-21.
+Status: active contract with provisional targets, updated 2026-07-23.
 
 Governing direction:
 [one GPU-resident 2D physics world](physbox5-unified-gpu-physics.md).
 Equivalent rigid quality:
 [rigid quality targets](rigid-quality-targets.md).
+Coupled work-vector extension:
+[coupled liquid/rigid constraint surface](coupled-liquid-rigid-constraint-surface.md).
 Execution begins in the
 [rigid solver laboratory](../tactical/001-rigid-solver-laboratory.md) and
 continues through every stage of the [bring-up plan](../bringup-plan.md).
@@ -647,13 +649,17 @@ workload not resolved by the current corpus.
   brute force, SAP, grid, and any justified LBVH candidate; select from
   completeness, amplification, time, memory, and robustness.
 - **P5.4 rigid parity:** publish the first correctness-qualified Box2D CPU/GPU
-  crossover curves and full 32 through 100K performance envelope.
-- **P5.6 coupled material:** extend the work vector with particles,
+  crossover curves and full 32 through 100K performance envelope. The
+  2026-07-23 liquid-entry decision does not satisfy or remove this open claim.
+- **P5.6/S31 coupled material:** extend the work vector with particles,
   particle/body contacts, density/solver work, and fluid/rigid exchange without
   changing the timing or validity rules.
 
 Performance evidence is therefore required at every stage even though P5.4 is
-the first complete rigid-engine claim.
+the first complete rigid-engine claim. S31 may proceed before that complete
+claim only under its explicit bounded scope: retained rigid failures remain
+visible, coupled correctness is qualified independently, and no liquid result
+is reported as rigid crossover evidence.
 
 S3.1 contract checkpoint, 2026-07-15: the collision byte surface is fixed for
 measurement but remains provisional for S3.6 review: 32-byte AABB, 16-byte

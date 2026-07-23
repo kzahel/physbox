@@ -128,6 +128,16 @@ reporting. The browser bridge is a narrowly documented exception to the
 ordinary leaf vocabulary rule only for foreign ABI names; it still cannot
 know tools, menus, camera, scenarios, solver settings, or validation outcomes.
 
+The proposed coupled-liquid phase does not broaden this exception. Box2D
+remains rigid-only: it receives no particle state, fluid contacts, fluid
+forces, or fluid-tool actions. When Box2D is visible, shared Rust hides PhysBox
+fluid and fluid-specific tools and labels the engine-rendered view as a
+rigid-only comparison. The authoritative PhysBox rigid/liquid world may
+continue advancing offscreen, and shared rigid actions may still be mirrored
+by stable identity, but no Box2D result feeds PhysBox fluid or rigid mechanics.
+These semantics belong to the shared host; platform adapters and browser
+JavaScript remain unaware of them.
+
 Compiling without the feature removes the foreign runtime and engine selector
 completely. Comparator-enabled frames are validation operation and cannot
 produce PhysBox performance evidence.
