@@ -19,7 +19,7 @@ use crate::{
 
 pub(crate) const UI_CONTRACT_VERSION: u32 = 9;
 const STATIC_INSTANCE_CAPACITY: usize = 384;
-const DYNAMIC_INSTANCE_CAPACITY: usize = 224;
+const DYNAMIC_INSTANCE_CAPACITY: usize = 320;
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum UiAction {
@@ -121,6 +121,9 @@ pub(crate) struct UiFrameModel<'a> {
     pub box2d_action_queue_overflowed: Option<bool>,
     pub box2d_aligned: Option<bool>,
     pub box2d_failure: Option<&'a str>,
+    pub sleep_cycle: Option<&'a crate::SleepCycleMetricsV1>,
+    pub box2d_sleep_cycle: Option<&'a crate::SleepCycleMetricsV1>,
+    pub sleep_cycle_age_frames: Option<u64>,
 }
 
 struct UiViewState<'a> {
@@ -312,14 +315,16 @@ fn route_events(
                         action = Some(UiAction::Recenter);
                     }
                     UiHit::SolverProfile(profile) => {
-                        let sleeping_enabled = draft_solver_profile.physics().sleeping_enabled;
+                        let sleep = draft_solver_profile.physics();
                         remember_solver_profile(solver_profiles, draft_solver_profile.clone());
                         *draft_solver_profile = solver_profiles
                             .iter()
                             .find(|candidate| candidate.profile_name() == profile)
                             .cloned()
                             .unwrap_or_else(|| SolverProfileConfig::select(profile));
-                        draft_solver_profile.set_sleeping_enabled(sleeping_enabled);
+                        draft_solver_profile.set_sleeping_enabled(sleep.sleeping_enabled);
+                        draft_solver_profile.set_sleep_speed_threshold(sleep.sleep_speed_threshold);
+                        draft_solver_profile.set_sleep_grouping(sleep.sleep_grouping);
                     }
                     UiHit::SolverParameter(parameter, direction) => {
                         draft_solver_profile.adjust(parameter, direction);
@@ -347,6 +352,20 @@ fn route_events(
                     UiHit::ToggleSleeping => {
                         let enabled = !draft_solver_profile.physics().sleeping_enabled;
                         draft_solver_profile.set_sleeping_enabled(enabled);
+                        *menu_open = false;
+                        action = Some(UiAction::ActivateSolverProfile(
+                            draft_solver_profile.clone(),
+                        ));
+                    }
+                    UiHit::CycleSleepThreshold => {
+                        draft_solver_profile.cycle_sleep_speed_threshold();
+                        *menu_open = false;
+                        action = Some(UiAction::ActivateSolverProfile(
+                            draft_solver_profile.clone(),
+                        ));
+                    }
+                    UiHit::CycleSleepGrouping => {
+                        draft_solver_profile.cycle_sleep_grouping();
                         *menu_open = false;
                         action = Some(UiAction::ActivateSolverProfile(
                             draft_solver_profile.clone(),
@@ -404,6 +423,8 @@ enum UiHit {
     SolverScene(ValidationScenario),
     WorldCapacity(WorldCapacityPreset),
     ToggleSleeping,
+    CycleSleepThreshold,
+    CycleSleepGrouping,
     ToggleSleepVisuals,
     #[cfg(feature = "box2d-comparator")]
     Engine(ComparisonEngine),
@@ -526,6 +547,14 @@ impl UiLayout {
                 if contains(self.world_sleeping_button(), pixel) {
                     return Some(UiHit::ToggleSleeping);
                 }
+                if contains(self.world_sleep_threshold_button(), pixel) {
+                    return Some(UiHit::CycleSleepThreshold);
+                }
+                if selected_engine == ComparisonEngine::PhysBox
+                    && contains(self.world_sleep_grouping_button(), pixel)
+                {
+                    return Some(UiHit::CycleSleepGrouping);
+                }
                 if contains(self.world_sleep_visuals_button(), pixel) {
                     return Some(UiHit::ToggleSleepVisuals);
                 }
@@ -634,6 +663,14 @@ impl UiLayout {
     }
 
     fn world_sleeping_button(self) -> [f32; 4] {
+        if self.compact_landscape() {
+            return [
+                372.0 * self.scale,
+                154.0 * self.scale,
+                248.0 * self.scale,
+                34.0 * self.scale,
+            ];
+        }
         let last = self.world_capacity_button(WorldCapacityPreset::ALL.len() - 1);
         [
             24.0 * self.scale,
@@ -643,21 +680,33 @@ impl UiLayout {
         ]
     }
 
-    fn world_sleep_visuals_button(self) -> [f32; 4] {
+    fn world_sleep_threshold_button(self) -> [f32; 4] {
         let sleeping = self.world_sleeping_button();
-        if self.compact_landscape() {
-            return [
-                372.0 * self.scale,
-                sleeping[1],
-                248.0 * self.scale,
-                sleeping[3],
-            ];
-        }
         [
-            24.0 * self.scale,
+            sleeping[0],
             sleeping[1] + sleeping[3] + 12.0 * self.scale,
-            336.0 * self.scale,
-            34.0 * self.scale,
+            sleeping[2],
+            sleeping[3],
+        ]
+    }
+
+    fn world_sleep_grouping_button(self) -> [f32; 4] {
+        let threshold = self.world_sleep_threshold_button();
+        [
+            threshold[0],
+            threshold[1] + threshold[3] + 12.0 * self.scale,
+            threshold[2],
+            threshold[3],
+        ]
+    }
+
+    fn world_sleep_visuals_button(self) -> [f32; 4] {
+        let grouping = self.world_sleep_grouping_button();
+        [
+            grouping[0],
+            grouping[1] + grouping[3] + 12.0 * self.scale,
+            grouping[2],
+            grouping[3],
         ]
     }
 
@@ -884,6 +933,8 @@ impl UiLayout {
             "world-tab" => self.menu_tab(MenuPage::World),
             "world-capacity" => self.world_capacity_button(index),
             "world-sleeping" => self.world_sleeping_button(),
+            "world-sleep-threshold" => self.world_sleep_threshold_button(),
+            "world-sleep-grouping" => self.world_sleep_grouping_button(),
             "world-sleep-visuals" => self.world_sleep_visuals_button(),
             #[cfg(feature = "box2d-comparator")]
             "world-engine" => self.world_engine_button(index),
@@ -1646,6 +1697,36 @@ fn static_batch(target_size: [u32; 2], model: StaticBatchModel<'_>) -> Batch {
                     1.35 * scale,
                     if sleeping_requested { accent } else { text },
                 );
+                let sleep_threshold = layout.world_sleep_threshold_button();
+                batch.push_quad(sleep_threshold, button);
+                batch.push_text(
+                    &format!(
+                        "SLEEP THRESHOLD {:.3} M/S",
+                        draft_solver_profile.physics().sleep_speed_threshold
+                    ),
+                    [
+                        sleep_threshold[0] + 9.0 * scale,
+                        sleep_threshold[1] + 10.0 * scale,
+                    ],
+                    1.35 * scale,
+                    text,
+                );
+                if selected_engine == ComparisonEngine::PhysBox {
+                    let sleep_grouping = layout.world_sleep_grouping_button();
+                    batch.push_quad(sleep_grouping, button);
+                    batch.push_text(
+                        &format!(
+                            "SLEEP GROUPING {}",
+                            draft_solver_profile.physics().sleep_grouping.label()
+                        ),
+                        [
+                            sleep_grouping[0] + 9.0 * scale,
+                            sleep_grouping[1] + 10.0 * scale,
+                        ],
+                        1.35 * scale,
+                        text,
+                    );
+                }
                 let visuals = layout.world_sleep_visuals_button();
                 batch.push_text(
                     "HIGH TIERS MAY RUN SLOW",
@@ -1695,7 +1776,7 @@ fn dynamic_batch(
         return batch;
     }
     let width = 310.0 * scale;
-    let height = 256.0 * scale;
+    let height = 336.0 * scale;
     let logical_width = target_size[0] as f32 / scale;
     let origin = [
         target_size[0] as f32 - width - 12.0 * scale,
@@ -1805,7 +1886,31 @@ fn dynamic_batch(
                     model.box2d_resolved_actions.unwrap_or(0),
                     model.box2d_identity_disagreements.unwrap_or(0),
                 ),
-                "SLEEP BOX2D PUBLIC".to_owned(),
+                format!("SLEEP BOX2D T{:.3} PUBLIC", physics.sleep_speed_threshold),
+                model.box2d_sleep_cycle.map_or_else(
+                    || "CYCLE WAIT".to_owned(),
+                    |cycle| {
+                        format!(
+                            "AWAKE {} SLEEP {} D{} W{}",
+                            cycle.awake_bodies,
+                            cycle.sleeping_bodies,
+                            cycle.slept_this_step,
+                            cycle.woke_this_step
+                        )
+                    },
+                ),
+                model.box2d_sleep_cycle.map_or_else(
+                    || "AWT N/A STABLE N/A".to_owned(),
+                    |cycle| {
+                        format!(
+                            "AWT {} STABLE {}",
+                            cycle.awake_body_time,
+                            cycle
+                                .first_stable_sleep_step
+                                .map_or_else(|| "N/A".to_owned(), |step| step.to_string())
+                        )
+                    },
+                ),
                 format!("RENDER {}", model.adapter_backend),
                 model.box2d_failure.map_or_else(
                     || "SHADOW OK".to_owned(),
@@ -1813,49 +1918,95 @@ fn dynamic_batch(
                 ),
             ]);
         }
-        ComparisonEngine::PhysBox => lines.extend([
-            format!("SOLVER {}", model.solver_profile.label()),
-            format!(
-                "CFG {}HZ DT{:.2}MS",
-                physics.fixed_step_hz,
-                physics.fixed_dt_seconds() * 1_000.0
-            ),
-            contact,
-            format!(
-                "FPS {:.0}",
-                model.pacing.presented_frame_hz.clamp(0.0, 999.0)
-            ),
-            format!(
-                "SIM {:.0}% {} SLIP {:.0}MS",
-                (model.pacing.effective_simulation_scale * 100.0).clamp(0.0, 999.0),
-                simulation_status,
-                (model.pacing.overload_slipped_wall_seconds_total * 1000.0).clamp(0.0, 999_999.0)
-            ),
-            format!(
-                "INNER {}HZ X{} I{}",
-                physics.fixed_step_hz * physics.substeps,
-                physics.substeps,
-                physics.biased_iterations
-            ),
-            format!(
-                "BODY {}/{} POINTCAP {}",
-                live_bodies, model.body_capacity, model.contact_count
-            ),
-            format!(
-                "CAP {}KB OVERFLOW {}",
-                model.capacity_bytes.div_ceil(1024),
-                if model.overflowed { "YES" } else { "NO" }
-            ),
-            format!("GPU {}", model.adapter_backend),
-            format!(
-                "BUILD {} FAIL {} AGE {}",
-                construction_result,
-                construction_failures,
-                model
-                    .construction_age_frames
-                    .map_or_else(|| "N/A".to_owned(), |age| age.to_string())
-            ),
-        ]),
+        ComparisonEngine::PhysBox => {
+            lines.extend([
+                format!("SOLVER {}", model.solver_profile.label()),
+                format!(
+                    "CFG {}HZ DT{:.2}MS",
+                    physics.fixed_step_hz,
+                    physics.fixed_dt_seconds() * 1_000.0
+                ),
+                contact,
+                format!(
+                    "FPS {:.0}",
+                    model.pacing.presented_frame_hz.clamp(0.0, 999.0)
+                ),
+                format!(
+                    "SIM {:.0}% {} SLIP {:.0}MS",
+                    (model.pacing.effective_simulation_scale * 100.0).clamp(0.0, 999.0),
+                    simulation_status,
+                    (model.pacing.overload_slipped_wall_seconds_total * 1000.0)
+                        .clamp(0.0, 999_999.0)
+                ),
+                format!(
+                    "INNER {}HZ X{} I{}",
+                    physics.fixed_step_hz * physics.substeps,
+                    physics.substeps,
+                    physics.biased_iterations
+                ),
+                format!(
+                    "BODY {}/{} POINTCAP {}",
+                    live_bodies, model.body_capacity, model.contact_count
+                ),
+                format!(
+                    "CAP {}KB OVERFLOW {}",
+                    model.capacity_bytes.div_ceil(1024),
+                    if model.overflowed { "YES" } else { "NO" }
+                ),
+                format!("GPU {}", model.adapter_backend),
+                format!(
+                    "BUILD {} FAIL {} AGE {}",
+                    construction_result,
+                    construction_failures,
+                    model
+                        .construction_age_frames
+                        .map_or_else(|| "N/A".to_owned(), |age| age.to_string())
+                ),
+                format!(
+                    "SLEEP {} T{:.3}",
+                    physics.sleep_grouping.label(),
+                    physics.sleep_speed_threshold
+                ),
+                model.sleep_cycle.map_or_else(
+                    || "CYCLE WAIT".to_owned(),
+                    |cycle| {
+                        format!(
+                            "AWAKE {} SLEEP {} D{} W{}",
+                            cycle.awake_bodies,
+                            cycle.sleeping_bodies,
+                            cycle.slept_this_step,
+                            cycle.woke_this_step
+                        )
+                    },
+                ),
+                model.sleep_cycle.map_or_else(
+                    || "CUT N/A AWT N/A".to_owned(),
+                    |cycle| {
+                        format!(
+                            "CUT {} AWT {}",
+                            cycle
+                                .mixed_awake_asleep_contact_cuts
+                                .map_or_else(|| "N/A".to_owned(), |cuts| cuts.to_string()),
+                            cycle.awake_body_time
+                        )
+                    },
+                ),
+                model.sleep_cycle.map_or_else(
+                    || "STABLE N/A AGE N/A".to_owned(),
+                    |cycle| {
+                        format!(
+                            "STABLE {} AGE {}",
+                            cycle
+                                .first_stable_sleep_step
+                                .map_or_else(|| "N/A".to_owned(), |step| step.to_string()),
+                            model
+                                .sleep_cycle_age_frames
+                                .map_or_else(|| "N/A".to_owned(), |age| age.to_string())
+                        )
+                    },
+                ),
+            ]);
+        }
     }
     let color = [0.72, 0.84, 0.96, 1.0];
     for (index, line) in lines.iter().enumerate() {
@@ -1922,6 +2073,8 @@ mod tests {
                 layout.world_capacity_button(2),
                 layout.world_capacity_button(3),
                 layout.world_sleeping_button(),
+                layout.world_sleep_threshold_button(),
+                layout.world_sleep_grouping_button(),
                 layout.world_sleep_visuals_button(),
             ] {
                 assert!(bounds[0] >= 0.0 && bounds[1] >= 0.0);
@@ -2004,6 +2157,99 @@ mod tests {
         assert_eq!(profile.profile_name(), SolverProfileName::SoftCoupled);
         assert_eq!(routed.selected_tool, WorkbenchTool::Rectangle);
         assert!(!menu_open);
+    }
+
+    #[cfg(feature = "box2d-comparator")]
+    #[test]
+    fn world_menu_applies_shared_threshold_and_physbox_only_grouping() {
+        let target = [960, 600];
+        let layout = UiLayout::for_target(target);
+        let mut captured = BTreeSet::new();
+        let mut menu_open = true;
+        let mut menu_page = MenuPage::World;
+        let mut selected_tool = WorkbenchTool::Grab;
+        let mut profiles = SolverProfileConfig::available();
+        let mut draft = SolverProfileConfig::default();
+
+        let threshold = route_events(
+            UiRouteState {
+                menu_open: &mut menu_open,
+                menu_page: &mut menu_page,
+                selected_tool: &mut selected_tool,
+                solver_profiles: &mut profiles,
+                draft_solver_profile: &mut draft,
+                captured_pointers: &mut captured,
+                selected_engine: ComparisonEngine::Box2d,
+            },
+            &[pointer(
+                1,
+                PointerPhase::Down,
+                PointerButton::Primary,
+                layout.center_normalized("world-sleep-threshold", 0),
+            )],
+            target,
+        );
+        let Some(UiAction::ActivateSolverProfile(profile)) = threshold.action else {
+            panic!("shared threshold must apply one complete configuration");
+        };
+        assert_eq!(profile.physics().sleep_speed_threshold, 0.05);
+        assert_eq!(
+            profile.physics().sleep_grouping,
+            physbox_launch::SleepGrouping::Local4
+        );
+
+        menu_open = true;
+        let grouping = route_events(
+            UiRouteState {
+                menu_open: &mut menu_open,
+                menu_page: &mut menu_page,
+                selected_tool: &mut selected_tool,
+                solver_profiles: &mut profiles,
+                draft_solver_profile: &mut draft,
+                captured_pointers: &mut captured,
+                selected_engine: ComparisonEngine::PhysBox,
+            },
+            &[pointer(
+                2,
+                PointerPhase::Down,
+                PointerButton::Primary,
+                layout.center_normalized("world-sleep-grouping", 0),
+            )],
+            target,
+        );
+        let Some(UiAction::ActivateSolverProfile(profile)) = grouping.action else {
+            panic!("PhysBox grouping must apply one complete configuration");
+        };
+        assert_eq!(
+            profile.physics().sleep_grouping,
+            physbox_launch::SleepGrouping::Local8
+        );
+        assert_eq!(profile.physics().sleep_speed_threshold, 0.05);
+
+        menu_open = true;
+        let hidden = route_events(
+            UiRouteState {
+                menu_open: &mut menu_open,
+                menu_page: &mut menu_page,
+                selected_tool: &mut selected_tool,
+                solver_profiles: &mut profiles,
+                draft_solver_profile: &mut draft,
+                captured_pointers: &mut captured,
+                selected_engine: ComparisonEngine::Box2d,
+            },
+            &[pointer(
+                3,
+                PointerPhase::Down,
+                PointerButton::Primary,
+                layout.center_normalized("world-sleep-grouping", 0),
+            )],
+            target,
+        );
+        assert!(hidden.action.is_none());
+        assert_eq!(
+            draft.physics().sleep_grouping,
+            physbox_launch::SleepGrouping::Local8
+        );
     }
 
     #[test]
@@ -2327,7 +2573,7 @@ mod tests {
         );
         assert!(restored.action.is_none());
         assert!(draft.is_preset());
-        let mut expected = physbox_launch::PhysicsConfigurationV2::SOFT_COUPLED;
+        let mut expected = physbox_launch::PhysicsConfigurationV3::SOFT_COUPLED;
         expected.sleeping_enabled = true;
         assert_eq!(draft.physics(), expected);
     }

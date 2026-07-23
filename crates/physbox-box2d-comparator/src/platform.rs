@@ -16,6 +16,7 @@ struct RawWorldDef {
     restitution_threshold: f32,
     capacity: u32,
     sleeping_enabled: u32,
+    sleep_speed_threshold: f32,
 }
 
 #[repr(C)]
@@ -101,6 +102,11 @@ unsafe extern "C" {
         output: *mut RawSnapshot,
         capacity: u32,
     ) -> u32;
+    fn pb5_box2d_world_body_sleep_threshold(
+        world: *const c_void,
+        slot: u32,
+        generation: u32,
+    ) -> f32;
     fn pb5_box2d_world_last_error(world: *const c_void) -> *const c_char;
 }
 
@@ -116,6 +122,7 @@ impl World {
             restitution_threshold: settings.restitution_threshold,
             capacity: settings.capacity,
             sleeping_enabled: u32::from(settings.sleeping_enabled),
+            sleep_speed_threshold: settings.sleep_speed_threshold,
         };
         // SAFETY: definition is fully initialized and borrowed for the duration of the call.
         let raw = unsafe { pb5_box2d_world_create(&raw const definition) };
@@ -309,6 +316,18 @@ impl World {
                 })
             })
             .collect()
+    }
+
+    pub(crate) fn body_sleep_threshold(&self, body: BodyId) -> Result<f32, String> {
+        // SAFETY: the world is exclusively owned and the identity is a scalar value.
+        let threshold = unsafe {
+            pb5_box2d_world_body_sleep_threshold(self.raw.as_ptr(), body.slot, body.generation)
+        };
+        if threshold.is_finite() && threshold >= 0.0 {
+            Ok(threshold)
+        } else {
+            Err(self.last_error())
+        }
     }
 
     fn last_error(&self) -> String {

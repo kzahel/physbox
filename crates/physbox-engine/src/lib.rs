@@ -30,6 +30,7 @@ mod construction_validation;
 #[cfg(any(test, feature = "solver-lab"))]
 mod contact_components;
 mod engine_selection;
+mod exact_sleep_grouping;
 mod frame;
 mod generated_contacts;
 mod gpu_context;
@@ -44,6 +45,7 @@ mod renderer;
 mod report;
 mod scenario;
 mod sleep_contacts;
+mod sleep_diagnostics;
 mod solver_profile;
 mod ui;
 mod ui_font;
@@ -217,5 +219,8 @@ pub use scenario::{
     p5_2_sleeping_city_scenario, p5_2_stale_reseed_reproducer_scenario, p5_3_broadphase_scenario,
     p5_3_broadphase_snapshot, s26_bridge_components_scenario, s26_isolated_components_scenario,
     s26_packed_pile_scenario, s27_long_path_wake_scenario, s27_poured_pile_scenario,
+};
+pub use sleep_diagnostics::{
+    SLEEP_CYCLE_DIAGNOSTIC_BYTES, SLEEP_CYCLE_DIAGNOSTIC_VERSION, SleepCycleMetricsV1,
 };
 pub use solver_profile::SolverProfileConfig;

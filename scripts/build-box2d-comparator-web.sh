@@ -35,7 +35,7 @@ mapfile -t BOX2D_SOURCES < <(find "$SOURCE_ROOT/src" -maxdepth 1 -type f -name '
     -s MODULARIZE=1 \
     -s ALLOW_MEMORY_GROWTH=1 \
     -s EXPORTED_RUNTIME_METHODS='["HEAPU8"]' \
-    -s EXPORTED_FUNCTIONS='["_malloc","_free","_pb5_box2d_world_create","_pb5_box2d_world_destroy","_pb5_box2d_world_add_body","_pb5_box2d_world_remove_body","_pb5_box2d_world_apply_impulse","_pb5_box2d_world_reset_body","_pb5_box2d_world_begin_grab","_pb5_box2d_world_update_grab","_pb5_box2d_world_end_grab","_pb5_box2d_world_set_gravity","_pb5_box2d_world_step","_pb5_box2d_world_snapshot","_pb5_box2d_world_last_error"]' \
+    -s EXPORTED_FUNCTIONS='["_malloc","_free","_pb5_box2d_world_create","_pb5_box2d_world_destroy","_pb5_box2d_world_add_body","_pb5_box2d_world_remove_body","_pb5_box2d_world_apply_impulse","_pb5_box2d_world_reset_body","_pb5_box2d_world_begin_grab","_pb5_box2d_world_update_grab","_pb5_box2d_world_end_grab","_pb5_box2d_world_set_gravity","_pb5_box2d_world_step","_pb5_box2d_world_snapshot","_pb5_box2d_world_body_sleep_threshold","_pb5_box2d_world_last_error"]' \
     -o "$OUTPUT_ROOT/box2d-comparator.mjs"
 
 EMCC_VERSION="$("$EMCC_BIN" --version | head -n 1)"

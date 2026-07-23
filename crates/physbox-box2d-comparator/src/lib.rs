@@ -18,6 +18,7 @@ pub struct WorldSettings {
     pub restitution_threshold: f32,
     pub capacity: u32,
     pub sleeping_enabled: bool,
+    pub sleep_speed_threshold: f32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -68,6 +69,7 @@ impl Box2dWorld {
         scenario: &ScenarioV1,
         capacity: u32,
         sleeping_enabled: bool,
+        sleep_speed_threshold: f32,
     ) -> Result<Self, String> {
         scenario.validate().map_err(|error| error.to_string())?;
         if capacity == 0 || scenario.bodies.len() > capacity as usize {
@@ -76,11 +78,15 @@ impl Box2dWorld {
                 scenario.bodies.len()
             ));
         }
+        if !sleep_speed_threshold.is_finite() || sleep_speed_threshold <= 0.0 {
+            return Err("Box2D comparator sleep threshold must be finite and positive".to_owned());
+        }
         let settings = WorldSettings {
             gravity: scenario.settings.gravity,
             restitution_threshold: scenario.settings.restitution_threshold.get(),
             capacity,
             sleeping_enabled,
+            sleep_speed_threshold,
         };
         let mut platform = platform::World::new(settings)?;
         for body in &scenario.bodies {
@@ -159,6 +165,10 @@ impl Box2dWorld {
 
     pub fn snapshots(&self) -> Result<Vec<BodySnapshot>, String> {
         self.platform.snapshots(self.capacity)
+    }
+
+    pub fn body_sleep_threshold(&self, body: BodyId) -> Result<f32, String> {
+        self.platform.body_sleep_threshold(body)
     }
 
     pub fn hit_test(&self, point: Vec2, dynamic_only: bool) -> Result<Option<BodyId>, String> {
@@ -275,7 +285,7 @@ mod tests {
         let _guard = box2d_test_guard();
         let scenario = scenario();
         scenario.validate().unwrap();
-        let mut world = Box2dWorld::new(&scenario, 8, true).unwrap();
+        let mut world = Box2dWorld::new(&scenario, 8, true, 0.02).unwrap();
         for _ in 0..180 {
             world.step(1.0 / 60.0, 4).unwrap();
         }
@@ -289,13 +299,14 @@ mod tests {
             Some(circle.id)
         );
         assert_eq!(BOX2D_REVISION.len(), 40);
+        assert_eq!(world.body_sleep_threshold(circle.id).unwrap(), 0.02);
     }
 
     #[test]
     fn stable_identity_survives_remove_and_recreate() {
         let _guard = box2d_test_guard();
         let scenario = scenario();
-        let mut world = Box2dWorld::new(&scenario, 8, true).unwrap();
+        let mut world = Box2dWorld::new(&scenario, 8, true, 0.05).unwrap();
         let old = BodyId {
             slot: 3,
             generation: 4,
@@ -308,5 +319,6 @@ mod tests {
         let bodies = world.snapshots().unwrap();
         assert!(bodies.iter().any(|body| body.id == replacement.id));
         assert!(!bodies.iter().any(|body| body.id == old));
+        assert_eq!(world.body_sleep_threshold(replacement.id).unwrap(), 0.05);
     }
 }

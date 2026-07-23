@@ -28,11 +28,13 @@ use crate::{
     collision_candidates::CandidateSource,
     collision_narrowphase::{NarrowphaseCase, NarrowphasePipelines, TemporalIdentityStage},
     collision_persistence::{PersistenceCase, PersistencePipelines},
+    exact_sleep_grouping::GpuExactSleepGrouping,
     pair_slot_persistence::{
         PAIR_RECORD_BYTES, PAIR_SLOT_DISPATCHES, PairRecordRaw, PairSlotAllocator, PairSlotCase,
         PairSlotPipelines, invalid_pair, pair_output,
     },
     sleep_contacts::GpuSleepContacts,
+    sleep_diagnostics::GpuSleepCycleDiagnostics,
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -196,6 +198,8 @@ pub(crate) struct GpuGeneratedContactGraph {
     awake_work: Arc<GpuAwakeWork>,
     sleep_contacts: GpuSleepContacts,
     awake_points: GpuAwakePoints,
+    exact_sleep_grouping: Option<GpuExactSleepGrouping>,
+    sleep_diagnostics: Option<GpuSleepCycleDiagnostics>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
@@ -721,6 +725,30 @@ impl GpuGeneratedContactGraph {
             &solver_points,
             narrowphase.point_capacity_handle(),
         );
+        let awake_work = storage.awake_work_handle();
+        let exact_sleep_grouping = (awake_work.sleeping_enabled()
+            && awake_work.grouping() == physbox_launch::SleepGrouping::Exact)
+            .then(|| {
+                GpuExactSleepGrouping::new(
+                    device,
+                    storage,
+                    &solver_points,
+                    body_count,
+                    point_capacity,
+                )
+            })
+            .transpose()?;
+        let sleep_diagnostics = awake_work.sleeping_enabled().then(|| {
+            GpuSleepCycleDiagnostics::new(
+                device,
+                storage,
+                &solver_points,
+                narrowphase.point_capacity_handle(),
+                body_count,
+                point_capacity,
+                awake_work.stable_confirmation_steps(),
+            )
+        });
         Ok(Self {
             broadphase_pipelines,
             broadphase,
@@ -736,9 +764,11 @@ impl GpuGeneratedContactGraph {
             substep_contact_policy,
             restitution_timing_policy,
             authority_identity,
-            awake_work: storage.awake_work_handle(),
+            awake_work,
             sleep_contacts,
             awake_points,
+            exact_sleep_grouping,
+            sleep_diagnostics,
         })
     }
 
@@ -773,7 +803,15 @@ impl GpuGeneratedContactGraph {
             self.point_capacity,
             timestamps,
         );
-        let wake_frontier = self.sleep_contacts.encode_contact_wakes(encoder);
+        if let Some(exact) = &self.exact_sleep_grouping {
+            exact.encode_components(encoder, self.narrowphase.point_capacity_buffer());
+        }
+        self.sleep_contacts.encode_contact_wake_roots(encoder);
+        let wake_frontier = if let Some(exact) = &self.exact_sleep_grouping {
+            exact.encode_frontier(encoder)
+        } else {
+            self.sleep_contacts.encode_frontier_propagation(encoder)
+        };
         self.awake_work
             .encode_finalize_wakes(encoder, wake_frontier);
         self.awake_work.encode_compaction(encoder);
@@ -782,6 +820,9 @@ impl GpuGeneratedContactGraph {
         self.solver.encode_step(encoder);
         self.awake_points.encode_scatter(encoder);
         self.encode_sleep_admission(encoder);
+        if let Some(diagnostics) = &self.sleep_diagnostics {
+            diagnostics.encode(encoder);
+        }
         self.persistence
             .encode_after_solver(encoder, parity, self.point_capacity, timestamps);
         self.parity.set(1 - parity);
@@ -1001,18 +1042,29 @@ impl GpuGeneratedContactGraph {
             return;
         }
         self.awake_work.encode_sleep_evaluation(encoder);
-        let blocker_frontier = self.sleep_contacts.encode_frontier_propagation(encoder);
+        let blocker_frontier = if let Some(exact) = &self.exact_sleep_grouping {
+            exact.encode_frontier(encoder)
+        } else {
+            self.sleep_contacts.encode_frontier_propagation(encoder)
+        };
         self.awake_work
             .encode_sleep_admission_from_frontier(encoder, blocker_frontier);
     }
 
     pub(crate) fn dispatches_per_step(&self) -> u32 {
-        let sleep_dispatches = if self.awake_work.sleeping_enabled() {
+        let sleep_dispatches = if let Some(exact) = &self.exact_sleep_grouping {
+            11 + exact.dispatches_per_step()
+        } else if self.awake_work.sleeping_enabled() {
             11 + 4 * self.awake_work.wake_propagation_rounds()
         } else {
             10 + 2 * self.awake_work.wake_propagation_rounds()
         };
         sleep_dispatches
+            + if self.sleep_diagnostics.is_some() {
+                4
+            } else {
+                0
+            }
             + self.broadphase.dispatches()
             + self.persistence.dispatches()
             + BRIDGE_DISPATCHES
@@ -1044,6 +1096,33 @@ impl GpuGeneratedContactGraph {
                 .solver_body_capacity_record()
                 .allocated_bytes
             + self.solver.allocated_bytes()
+            + self
+                .exact_sleep_grouping
+                .as_ref()
+                .map_or(0, GpuExactSleepGrouping::allocated_bytes)
+            + self
+                .sleep_diagnostics
+                .as_ref()
+                .map_or(0, GpuSleepCycleDiagnostics::allocated_bytes)
+    }
+
+    pub(crate) fn copy_sleep_cycle_metrics(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        destination: &wgpu::Buffer,
+    ) -> Result<(), String> {
+        let diagnostics = self
+            .sleep_diagnostics
+            .as_ref()
+            .ok_or_else(|| "sleep-cycle diagnostics require sleeping to be enabled".to_owned())?;
+        diagnostics.copy_to(encoder, destination);
+        Ok(())
+    }
+
+    pub(crate) fn reset_sleep_cycle_metrics(&self, queue: &wgpu::Queue) {
+        if let Some(diagnostics) = &self.sleep_diagnostics {
+            diagnostics.reset(queue);
+        }
     }
 
     pub(crate) fn awake_point_capacity_record(&self) -> CapacityRecordV1 {

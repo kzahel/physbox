@@ -3,7 +3,8 @@ use physbox_box2d_comparator::{BOX2D_REVISION, BodySnapshot, Box2dWorld, GrabTun
 use physbox_contracts::{
     ANALYTIC_SHAPE_FLAG_CIRCLE, ANALYTIC_SHAPE_FLAG_RECTANGLE, BodyCommandV1, BodyId, BodyStateV1,
     ConstructionIntentV1, ConstructionResultV1, ConstructionStateV1, FiniteF32, GrabIntentV1,
-    MaterialV1, NeutralActionV1, SLEEP_STATE_LAYOUT_VERSION, ScenarioV1, ShapeV1, Vec2,
+    MaterialV1, NeutralActionV1, SLEEP_STATE_LAYOUT_VERSION, ScenarioV1, ShapeV1, SleepPolicyV1,
+    Vec2,
 };
 use std::collections::{BTreeMap, VecDeque};
 use wgpu::util::DeviceExt;
@@ -55,6 +56,10 @@ pub(crate) struct ComparisonShadow {
     fixed_dt: f32,
     substeps: u32,
     completed_steps: u64,
+    sleep_speed_threshold: f32,
+    sleep_cycle_metrics: crate::SleepCycleMetricsV1,
+    previous_awake: BTreeMap<BodyId, bool>,
+    stable_sleep_streak: u32,
     live_bodies: u32,
     slots: BodySlotRegistry,
     active_grab: Option<BodyId>,
@@ -76,9 +81,23 @@ impl ComparisonShadow {
         scenario: &ScenarioV1,
         capacity: u32,
         sleeping_enabled: bool,
+        sleep_speed_threshold: f32,
     ) -> Result<Self, String> {
-        let world = Box2dWorld::new(scenario, capacity, sleeping_enabled)?;
+        let world = Box2dWorld::new(scenario, capacity, sleeping_enabled, sleep_speed_threshold)?;
         let snapshots = world.snapshots()?;
+        let previous_awake = snapshots
+            .iter()
+            .filter(|body| !body.fixed)
+            .map(|body| (body.id, body.awake))
+            .collect::<BTreeMap<_, _>>();
+        let dynamic_bodies = previous_awake.len() as u32;
+        let awake_bodies = previous_awake.values().filter(|awake| **awake).count() as u32;
+        let stable_confirmation_steps = SleepPolicyV1::experimental_s23()
+            .quiet_outer_steps(
+                u32::try_from((1.0 / scenario.settings.fixed_dt.get()).round() as u64)
+                    .map_err(|_| "Box2D comparator fixed-step hertz overflowed".to_owned())?,
+            )
+            .map_err(|error| error.to_string())?;
         let mut slots = BodySlotRegistry::with_capacity(capacity)?;
         for body in &scenario.bodies {
             slots.reserve(body.id)?;
@@ -92,6 +111,15 @@ impl ComparisonShadow {
             fixed_dt: scenario.settings.fixed_dt.get(),
             substeps: scenario.settings.substeps,
             completed_steps: 0,
+            sleep_speed_threshold,
+            sleep_cycle_metrics: crate::SleepCycleMetricsV1::initial(
+                awake_bodies,
+                dynamic_bodies,
+                stable_confirmation_steps,
+                false,
+            ),
+            previous_awake,
+            stable_sleep_streak: 0,
             live_bodies: snapshots.len() as u32,
             slots,
             active_grab: None,
@@ -379,11 +407,80 @@ impl ComparisonShadow {
         match self.world.snapshots() {
             Ok(snapshots) => {
                 self.live_bodies = snapshots.len() as u32;
+                self.update_sleep_cycle_metrics(&snapshots);
                 self.renderer
                     .update_snapshots(&snapshots, self.completed_steps as u32);
             }
             Err(error) => self.failed = Some(error),
         }
+    }
+
+    fn update_sleep_cycle_metrics(&mut self, snapshots: &[BodySnapshot]) {
+        if self.completed_steps <= u64::from(self.sleep_cycle_metrics.observed_step) {
+            return;
+        }
+        let current = snapshots
+            .iter()
+            .filter(|body| !body.fixed)
+            .map(|body| (body.id, body.awake))
+            .collect::<BTreeMap<_, _>>();
+        let awake_bodies = current.values().filter(|awake| **awake).count() as u32;
+        let slept_this_step = current
+            .iter()
+            .filter(|(body, awake)| {
+                !**awake && self.previous_awake.get(body).is_some_and(|old| *old)
+            })
+            .count() as u32;
+        let woke_this_step = current
+            .iter()
+            .filter(|(body, awake)| {
+                **awake && !self.previous_awake.get(body).is_some_and(|old| *old)
+            })
+            .count() as u32;
+        let elapsed = self
+            .completed_steps
+            .saturating_sub(u64::from(self.sleep_cycle_metrics.observed_step));
+        let added_awake_time = u64::from(awake_bodies).saturating_mul(elapsed);
+        self.sleep_cycle_metrics.awake_body_time = self
+            .sleep_cycle_metrics
+            .awake_body_time
+            .checked_add(added_awake_time)
+            .unwrap_or_else(|| {
+                self.sleep_cycle_metrics.overflowed = true;
+                u64::MAX
+            });
+        self.sleep_cycle_metrics.observed_step = u32::try_from(self.completed_steps)
+            .unwrap_or_else(|_| {
+                self.sleep_cycle_metrics.overflowed = true;
+                u32::MAX
+            });
+        self.sleep_cycle_metrics.awake_bodies = awake_bodies;
+        self.sleep_cycle_metrics.sleeping_bodies =
+            (current.len() as u32).saturating_sub(awake_bodies);
+        self.sleep_cycle_metrics.slept_this_step = slept_this_step;
+        self.sleep_cycle_metrics.woke_this_step = woke_this_step;
+        self.sleep_cycle_metrics.dynamic_bodies = current.len() as u32;
+
+        if !current.is_empty() && awake_bodies == 0 {
+            if self.stable_sleep_streak == 0 {
+                self.sleep_cycle_metrics.stable_candidate_step =
+                    Some(self.sleep_cycle_metrics.observed_step);
+            }
+            self.stable_sleep_streak = self
+                .stable_sleep_streak
+                .saturating_add(u32::try_from(elapsed).unwrap_or(u32::MAX))
+                .min(self.sleep_cycle_metrics.stable_confirmation_steps);
+            if self.stable_sleep_streak >= self.sleep_cycle_metrics.stable_confirmation_steps
+                && self.sleep_cycle_metrics.first_stable_sleep_step.is_none()
+            {
+                self.sleep_cycle_metrics.first_stable_sleep_step =
+                    self.sleep_cycle_metrics.stable_candidate_step;
+            }
+        } else {
+            self.stable_sleep_streak = 0;
+            self.sleep_cycle_metrics.stable_candidate_step = None;
+        }
+        self.previous_awake = current;
     }
 
     fn apply_body_command(&mut self, command: &BodyCommandV1) -> Result<(), String> {
@@ -827,6 +924,14 @@ impl ComparisonShadow {
 
     pub(crate) const fn completed_steps(&self) -> u64 {
         self.completed_steps
+    }
+
+    pub(crate) const fn sleep_speed_threshold(&self) -> f32 {
+        self.sleep_speed_threshold
+    }
+
+    pub(crate) fn sleep_cycle_metrics(&self) -> &crate::SleepCycleMetricsV1 {
+        &self.sleep_cycle_metrics
     }
 
     pub(crate) const fn live_bodies(&self) -> u32 {

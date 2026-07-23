@@ -18,7 +18,7 @@ use physbox_engine::{
 use physbox_lab::oracle_transport::{
     OracleProcess, OracleRunConfig, run_oracle, verify_clean_git_pin,
 };
-use physbox_launch::PhysicsConfigurationV2;
+use physbox_launch::PhysicsConfigurationV3;
 use serde::Serialize;
 
 const ARTIFACT_VERSION: u32 = 1;
@@ -657,7 +657,7 @@ fn fixture_scenario(
     scenario.manifolds.clear();
     scenario.contact_cache.clear();
     scenario.actions.clear();
-    let mut physics = PhysicsConfigurationV2::SOFT_COUPLED;
+    let mut physics = PhysicsConfigurationV3::SOFT_COUPLED;
     physics.fixed_step_hz = configuration.fixed_step_hz;
     physics.substeps = configuration.substeps;
     SolverProfileConfig::from_physics(physics)?.apply_to_scenario(&mut scenario)?;

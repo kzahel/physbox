@@ -33,6 +33,7 @@ pub struct SurfaceRenderer {
     diagnostics: AdapterDiagnostics,
     construction_epoch: Option<(String, u64, u64)>,
     pending_construction_diagnostics: VecDeque<PendingInteractionDiagnostic>,
+    pending_sleep_diagnostic: Option<PendingInteractionDiagnostic>,
     #[cfg(feature = "box2d-comparator")]
     pending_grab_diagnostics: VecDeque<PendingInteractionDiagnostic>,
 }
@@ -91,6 +92,7 @@ impl SurfaceRenderer {
             diagnostics,
             construction_epoch: None,
             pending_construction_diagnostics: VecDeque::new(),
+            pending_sleep_diagnostic: None,
             #[cfg(feature = "box2d-comparator")]
             pending_grab_diagnostics: VecDeque::new(),
         })
@@ -155,6 +157,7 @@ impl SurfaceRenderer {
         if self.construction_epoch.as_ref() != Some(&epoch) {
             self.construction_epoch = Some(epoch.clone());
             self.pending_construction_diagnostics.clear();
+            self.pending_sleep_diagnostic = None;
             #[cfg(feature = "box2d-comparator")]
             self.pending_grab_diagnostics.clear();
         }
@@ -187,6 +190,24 @@ impl SurfaceRenderer {
         } else {
             None
         };
+        let scheduled_sleep = if report.scene_contract.effective_sleeping_enabled
+            && self.pending_sleep_diagnostic.is_none()
+        {
+            let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("physbox5_async_sleep_cycle_diagnostic"),
+                size: u64::from(crate::SLEEP_CYCLE_DIAGNOSTIC_BYTES),
+                usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+                mapped_at_creation: false,
+            });
+            self.host.copy_sleep_cycle_metrics(&mut encoder, &buffer)?;
+            Some(PendingInteractionDiagnostic::new(
+                buffer,
+                epoch.clone(),
+                report.frame_index,
+            ))
+        } else {
+            None
+        };
         #[cfg(feature = "box2d-comparator")]
         let scheduled_grab = if report.body_commands.grab_intent_dispatches_this_frame != 0 {
             if self.pending_grab_diagnostics.len() == ASYNC_INTERACTION_DIAGNOSTIC_CAPACITY {
@@ -216,6 +237,10 @@ impl SurfaceRenderer {
             pending.start_mapping();
             self.pending_construction_diagnostics.push_back(pending);
         }
+        if let Some(pending) = scheduled_sleep {
+            pending.start_mapping();
+            self.pending_sleep_diagnostic = Some(pending);
+        }
         #[cfg(feature = "box2d-comparator")]
         if let Some(pending) = scheduled_grab {
             pending.start_mapping();
@@ -244,6 +269,25 @@ impl SurfaceRenderer {
             if self.host.construction_diagnostic_epoch() == epoch {
                 self.host.publish_construction_diagnostic(
                     crate::construction_state_from_bytes(&bytes)?,
+                    observed_frame_index,
+                );
+            }
+        }
+        if self
+            .pending_sleep_diagnostic
+            .as_ref()
+            .is_some_and(PendingInteractionDiagnostic::is_ready)
+        {
+            let pending = self
+                .pending_sleep_diagnostic
+                .take()
+                .expect("ready sleep diagnostic exists");
+            let epoch = pending.epoch.clone();
+            let observed_frame_index = pending.observed_frame_index;
+            let bytes = pending.finish()?;
+            if self.host.construction_diagnostic_epoch() == epoch {
+                self.host.publish_sleep_cycle_diagnostic(
+                    crate::sleep_diagnostics::decode_sleep_cycle_metrics(&bytes)?,
                     observed_frame_index,
                 );
             }
@@ -454,6 +498,27 @@ impl OffscreenRenderer {
         self.queue.submit([encoder.finish()]);
         let mapped = map_buffer(&self.device, &buffer)?;
         let state = crate::construction_state_from_bytes(&mapped)?;
+        drop(mapped);
+        buffer.unmap();
+        Ok(state)
+    }
+
+    pub fn read_sleep_cycle_metrics(&self) -> Result<crate::SleepCycleMetricsV1, String> {
+        let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("physbox5_sleep_cycle_readback"),
+            size: u64::from(crate::SLEEP_CYCLE_DIAGNOSTIC_BYTES),
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("physbox5_sleep_cycle_copy"),
+            });
+        self.host.copy_sleep_cycle_metrics(&mut encoder, &buffer)?;
+        self.queue.submit([encoder.finish()]);
+        let mapped = map_buffer(&self.device, &buffer)?;
+        let state = crate::sleep_diagnostics::decode_sleep_cycle_metrics(&mapped)?;
         drop(mapped);
         buffer.unmap();
         Ok(state)
@@ -745,7 +810,7 @@ mod tests {
 
     #[test]
     fn soft_floor_pipeline_performance_smoke_is_finite_and_deterministic() {
-        let mut physics = physbox_launch::PhysicsConfigurationV2::SOFT_COUPLED;
+        let mut physics = physbox_launch::PhysicsConfigurationV3::SOFT_COUPLED;
         physics.sleeping_enabled = true;
         let config = EngineConfig {
             scenario: ValidationScenario::RigidFloor,
@@ -757,8 +822,8 @@ mod tests {
                 .expect("generated-contact renderer initializes");
             let report = renderer.render(FrameInput::exact(4));
             assert_eq!(report.scene_contract.contact_point_count, 1_024);
-            assert_eq!(report.scene_contract.solver_dispatches_per_step, 154);
-            assert_eq!(report.scene_contract.solver_capacity_bytes, 819_252);
+            assert_eq!(report.scene_contract.solver_dispatches_per_step, 158);
+            assert_eq!(report.scene_contract.solver_capacity_bytes, 819_332);
             assert!(!report.scene_contract.capacity_overflowed);
             assert!(report.scene_contract.requested_sleeping_enabled);
             assert!(report.scene_contract.effective_sleeping_enabled);
@@ -787,7 +852,7 @@ mod tests {
 
     #[test]
     fn sleeping_floor_pass_evidence_clears_zero_work_topology() {
-        let mut physics = physbox_launch::PhysicsConfigurationV2::SOFT_COUPLED;
+        let mut physics = physbox_launch::PhysicsConfigurationV3::SOFT_COUPLED;
         physics.sleeping_enabled = true;
         let mut renderer = pollster::block_on(OffscreenRenderer::new(
             320,
@@ -814,7 +879,7 @@ mod tests {
     }
 
     fn assert_soft_resolution_replays(substeps: u32, iterations: u32) -> u32 {
-        let mut physics = physbox_launch::PhysicsConfigurationV2::SOFT_COUPLED;
+        let mut physics = physbox_launch::PhysicsConfigurationV3::SOFT_COUPLED;
         physics.substeps = substeps;
         physics.biased_iterations = iterations;
         let config = EngineConfig {
@@ -874,7 +939,7 @@ mod tests {
     #[test]
     fn soft_rate_anchors_replay_with_the_declared_fixed_and_internal_rates() {
         for fixed_step_hz in [30, 60, 120] {
-            let mut physics = physbox_launch::PhysicsConfigurationV2::SOFT_COUPLED;
+            let mut physics = physbox_launch::PhysicsConfigurationV3::SOFT_COUPLED;
             physics.fixed_step_hz = fixed_step_hz;
             let config = EngineConfig {
                 scenario: ValidationScenario::Bootstrap,
@@ -928,7 +993,7 @@ mod tests {
             .world_to_screen([-0.8, 0.72]);
 
         for &(substeps, iterations) in configurations {
-            let mut physics = physbox_launch::PhysicsConfigurationV2::SOFT_COUPLED;
+            let mut physics = physbox_launch::PhysicsConfigurationV3::SOFT_COUPLED;
             physics.substeps = substeps;
             physics.biased_iterations = iterations;
             let profile = crate::SolverProfileConfig::from_physics(physics).unwrap();
@@ -1589,7 +1654,7 @@ mod tests {
             unchanged.ui.parameter_writes_total,
             initial.ui.parameter_writes_total
         );
-        assert_eq!(initial.ui.allocated_bytes, 42_000);
+        assert_eq!(initial.ui.allocated_bytes, 48_144);
 
         renderer.render(FrameInput::exact(0).with_input_events(vec![
             crate::InputEvent::Pointer(crate::PointerEvent {

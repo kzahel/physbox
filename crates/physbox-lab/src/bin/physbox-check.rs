@@ -18,7 +18,7 @@ use physbox_lab::settling::{
     awake_settling_measurement_policy_v2, centered_stack_structure,
     observe_generated_settling_series_v2, summarize_settling_v2,
 };
-use physbox_launch::PhysicsConfigurationV2;
+use physbox_launch::PhysicsConfigurationV3;
 use serde::Serialize;
 use serde_json::json;
 
@@ -1439,7 +1439,7 @@ fn solver_profile(
     damping: f32,
     static_scale: f32,
 ) -> Result<SolverProfileConfig, String> {
-    let mut physics = PhysicsConfigurationV2::SOFT_COUPLED;
+    let mut physics = PhysicsConfigurationV3::SOFT_COUPLED;
     physics.fixed_step_hz = sim_hertz;
     physics.substeps = substeps;
     physics.biased_iterations = iterations;

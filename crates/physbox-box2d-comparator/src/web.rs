@@ -8,7 +8,7 @@ use crate::{
     BODY_AWAKE, BODY_FIXED, BodySnapshot, GrabTuning, SHAPE_CIRCLE, SHAPE_RECTANGLE, WorldSettings,
 };
 
-const WORLD_DEFINITION_BYTES: usize = 20;
+const WORLD_DEFINITION_BYTES: usize = 24;
 const BODY_BYTES: usize = 64;
 const SNAPSHOT_BYTES: usize = 48;
 
@@ -35,6 +35,7 @@ pub(crate) fn install(runtime: JsValue) -> Result<(), String> {
         "_pb5_box2d_world_set_gravity",
         "_pb5_box2d_world_step",
         "_pb5_box2d_world_snapshot",
+        "_pb5_box2d_world_body_sleep_threshold",
         "_pb5_box2d_world_last_error",
     ] {
         function(&runtime, name)?;
@@ -62,6 +63,7 @@ impl World {
         push_f32(&mut definition, settings.restitution_threshold);
         push_u32(&mut definition, settings.capacity);
         push_u32(&mut definition, u32::from(settings.sleeping_enabled));
+        push_f32(&mut definition, settings.sleep_speed_threshold);
         let pointer = allocate_and_write(&runtime, &definition)?;
         let raw = call(
             &runtime,
@@ -267,6 +269,23 @@ impl World {
         (0..count as usize)
             .map(|index| snapshot_from_bytes(&bytes[index * SNAPSHOT_BYTES..][..SNAPSHOT_BYTES]))
             .collect()
+    }
+
+    pub(crate) fn body_sleep_threshold(&self, body: BodyId) -> Result<f32, String> {
+        let threshold = call(
+            &self.runtime,
+            "_pb5_box2d_world_body_sleep_threshold",
+            &[
+                JsValue::from(self.raw),
+                JsValue::from(body.slot),
+                JsValue::from(body.generation),
+            ],
+        )? as f32;
+        if threshold.is_finite() && threshold >= 0.0 {
+            Ok(threshold)
+        } else {
+            Err(self.last_error())
+        }
     }
 
     fn truthy(&self, name: &str, arguments: &[JsValue]) -> Result<(), String> {

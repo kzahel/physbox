@@ -6,13 +6,13 @@ use physbox_launch::{
     MAX_BIASED_ITERATIONS, MAX_CONTACT_DAMPING_RATIO, MAX_CONTACT_HZ, MAX_FIXED_STEP_HZ,
     MAX_SOLVER_SUBSTEPS, MAX_STATIC_CONTACT_HZ_MULTIPLIER, MIN_BIASED_ITERATIONS,
     MIN_CONTACT_DAMPING_RATIO, MIN_CONTACT_HZ, MIN_FIXED_STEP_HZ, MIN_SOLVER_SUBSTEPS,
-    MIN_STATIC_CONTACT_HZ_MULTIPLIER, PhysicsConfigurationV2, SolverProfileName,
+    MIN_STATIC_CONTACT_HZ_MULTIPLIER, PhysicsConfigurationV3, SleepGrouping, SolverProfileName,
     ValidationScenario,
 };
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct SolverProfileConfig {
-    physics: PhysicsConfigurationV2,
+    physics: PhysicsConfigurationV3,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -49,13 +49,13 @@ impl SolverParameter {
 
 impl Default for SolverProfileConfig {
     fn default() -> Self {
-        Self::from_physics(PhysicsConfigurationV2::default())
+        Self::from_physics(PhysicsConfigurationV3::default())
             .expect("launch-owned default physics configuration is valid")
     }
 }
 
 impl SolverProfileConfig {
-    pub fn from_physics(physics: PhysicsConfigurationV2) -> Result<Self, String> {
+    pub fn from_physics(physics: PhysicsConfigurationV3) -> Result<Self, String> {
         physics.validate().map_err(|error| error.to_string())?;
         let profile = Self { physics };
         profile.validate()?;
@@ -63,21 +63,48 @@ impl SolverProfileConfig {
     }
 
     pub fn hard_direct() -> Self {
-        Self::from_physics(PhysicsConfigurationV2::HARD_DIRECT)
+        Self::from_physics(PhysicsConfigurationV3::HARD_DIRECT)
             .expect("hard-direct preset is valid")
     }
 
     pub fn soft_coupled() -> Self {
-        Self::from_physics(PhysicsConfigurationV2::SOFT_COUPLED)
+        Self::from_physics(PhysicsConfigurationV3::SOFT_COUPLED)
             .expect("soft-coupled preset is valid")
     }
 
-    pub const fn physics(&self) -> PhysicsConfigurationV2 {
+    pub const fn physics(&self) -> PhysicsConfigurationV3 {
         self.physics
     }
 
     pub(crate) fn set_sleeping_enabled(&mut self, enabled: bool) {
         self.physics.sleeping_enabled = enabled;
+    }
+
+    pub(crate) fn set_sleep_speed_threshold(&mut self, threshold: f32) {
+        self.physics.sleep_speed_threshold = threshold;
+    }
+
+    pub(crate) fn set_sleep_grouping(&mut self, grouping: SleepGrouping) {
+        self.physics.sleep_grouping = grouping;
+    }
+
+    pub(crate) fn cycle_sleep_speed_threshold(&mut self) {
+        const VALUES: [f32; 4] = [0.01, 0.02, 0.05, 0.1];
+        let current = self.physics.sleep_speed_threshold;
+        let next = VALUES
+            .iter()
+            .position(|candidate| (current - candidate).abs() < f32::EPSILON)
+            .map_or(VALUES[0], |index| VALUES[(index + 1) % VALUES.len()]);
+        self.set_sleep_speed_threshold(next);
+    }
+
+    pub(crate) fn cycle_sleep_grouping(&mut self) {
+        let next = match self.physics.sleep_grouping {
+            SleepGrouping::Local4 => SleepGrouping::Local8,
+            SleepGrouping::Local8 => SleepGrouping::Exact,
+            SleepGrouping::Exact => SleepGrouping::Local4,
+        };
+        self.set_sleep_grouping(next);
     }
 
     pub const fn name(&self) -> &'static str {
@@ -104,15 +131,21 @@ impl SolverProfileConfig {
     }
 
     pub fn is_preset(&self) -> bool {
-        let mut expected = PhysicsConfigurationV2::for_profile(self.physics.solver_profile);
+        let mut expected = PhysicsConfigurationV3::for_profile(self.physics.solver_profile);
         expected.sleeping_enabled = self.physics.sleeping_enabled;
+        expected.sleep_speed_threshold = self.physics.sleep_speed_threshold;
+        expected.sleep_grouping = self.physics.sleep_grouping;
         self.physics == expected
     }
 
     pub(crate) fn restore_preset(&mut self) {
         let sleeping_enabled = self.physics.sleeping_enabled;
-        self.physics = PhysicsConfigurationV2::for_profile(self.physics.solver_profile);
+        let sleep_speed_threshold = self.physics.sleep_speed_threshold;
+        let sleep_grouping = self.physics.sleep_grouping;
+        self.physics = PhysicsConfigurationV3::for_profile(self.physics.solver_profile);
         self.physics.sleeping_enabled = sleeping_enabled;
+        self.physics.sleep_speed_threshold = sleep_speed_threshold;
+        self.physics.sleep_grouping = sleep_grouping;
     }
 
     pub(crate) fn effective_dynamic_contact_hz(&self) -> f32 {
@@ -133,7 +166,7 @@ impl SolverProfileConfig {
 
     pub(crate) fn configuration_key(&self) -> String {
         format!(
-            "{}:{}:{}:{}:{}:{}:{}:{}:{}:{}",
+            "{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}",
             self.name(),
             self.physics.fixed_step_hz,
             self.physics.substeps,
@@ -144,6 +177,8 @@ impl SolverProfileConfig {
             self.physics.speculative_distance,
             self.physics.max_depenetration_velocity,
             self.physics.sleeping_enabled,
+            self.physics.sleep_speed_threshold,
+            self.physics.sleep_grouping.name(),
         )
     }
 
@@ -362,7 +397,7 @@ mod tests {
 
     #[test]
     fn soft_configuration_is_concrete_and_encodes_legacy_contact_options() {
-        let mut physics = PhysicsConfigurationV2::SOFT_COUPLED;
+        let mut physics = PhysicsConfigurationV3::SOFT_COUPLED;
         physics.static_contact_hertz_multiplier = 8.0;
         let profile = SolverProfileConfig::from_physics(physics).unwrap();
         assert_eq!(profile.name(), "soft-coupled");
@@ -380,7 +415,7 @@ mod tests {
 
     #[test]
     fn hard_comparison_rejects_resolution_changes_before_gpu_allocation() {
-        let mut physics = PhysicsConfigurationV2::HARD_DIRECT;
+        let mut physics = PhysicsConfigurationV3::HARD_DIRECT;
         physics.substeps = 8;
         let error = SolverProfileConfig::from_physics(physics).unwrap_err();
         assert!(error.contains("hard-direct comparison is fixed"));
@@ -388,7 +423,7 @@ mod tests {
 
     #[test]
     fn complete_soft_configuration_projects_into_the_neutral_scenario_once() {
-        let mut physics = PhysicsConfigurationV2::SOFT_COUPLED;
+        let mut physics = PhysicsConfigurationV3::SOFT_COUPLED;
         physics.fixed_step_hz = 120;
         physics.substeps = 8;
         physics.biased_iterations = 2;

@@ -23,7 +23,7 @@ use crate::{
     renderer::RenderFrameContext,
     report::{
         BodyCommandReport, CameraReport, ConstructionDiagnosticReport, FrameReport,
-        SCENE_CONTRACT_VERSION, ScenarioResult, SceneContract,
+        SCENE_CONTRACT_VERSION, ScenarioResult, SceneContract, SleepCycleDiagnosticReport,
     },
     scenario::{
         P5_2_BUCKET_EVIDENCE_STEPS, P5_2_CENTERED_STACK_EVIDENCE_STEPS,
@@ -820,6 +820,7 @@ pub struct EngineHost {
     scenario_restarts_total: u64,
     solver_profiles: Vec<crate::SolverProfileConfig>,
     construction_diagnostic: Option<(ConstructionStateV1, u64)>,
+    sleep_cycle_diagnostic: Option<(crate::SleepCycleMetricsV1, u64)>,
 }
 
 impl EngineHost {
@@ -1042,6 +1043,7 @@ impl EngineHost {
                 &scenario,
                 capacity,
                 config.solver_profile.physics().sleeping_enabled,
+                config.solver_profile.physics().sleep_speed_threshold,
             )
             .expect("pinned Box2D comparator accepts the configured shared scenario")
         };
@@ -1118,6 +1120,7 @@ impl EngineHost {
             scenario_restarts_total: 0,
             solver_profiles,
             construction_diagnostic: None,
+            sleep_cycle_diagnostic: None,
         }
     }
 
@@ -1592,11 +1595,19 @@ impl EngineHost {
             sleep_policy: "experimental-s23-v1",
             sleep_policy_version: physbox_contracts::SLEEP_POLICY_VERSION,
             sleep_state_layout_version: physbox_contracts::SLEEP_STATE_LAYOUT_VERSION,
-            sleep_speed_threshold: sleep_policy.speed_threshold.get(),
+            sleep_speed_threshold: physics.sleep_speed_threshold,
+            sleep_grouping: physics.sleep_grouping.name(),
+            #[cfg(feature = "box2d-comparator")]
+            box2d_sleep_speed_threshold: Some(self.comparison_shadow.sleep_speed_threshold()),
+            #[cfg(not(feature = "box2d-comparator"))]
+            box2d_sleep_speed_threshold: None,
             sleep_quiet_outer_steps: sleep_policy
                 .quiet_outer_steps(physics.fixed_step_hz)
                 .expect("validated sleep policy and fixed-step hertz"),
-            sleep_wake_propagation_rounds: sleep_policy.wake_propagation_rounds,
+            sleep_wake_propagation_rounds: physics
+                .sleep_grouping
+                .wake_propagation_rounds()
+                .unwrap_or(0),
             sleep_impact_wake_speed: sleep_policy.impact_wake_speed.get(),
             requested_sleeping_enabled: physics.sleeping_enabled,
             effective_sleeping_enabled: self
@@ -1825,6 +1836,7 @@ impl EngineHost {
             }
         };
         let construction_diagnostic = self.construction_diagnostic_report();
+        let sleep_cycle_diagnostic = self.sleep_cycle_diagnostic_report();
         #[cfg(feature = "box2d-comparator")]
         let (
             comparator_available,
@@ -1913,6 +1925,9 @@ impl EngineHost {
                 box2d_action_queue_overflowed,
                 box2d_aligned,
                 box2d_failure,
+                sleep_cycle: sleep_cycle_diagnostic.state.as_ref(),
+                box2d_sleep_cycle: sleep_cycle_diagnostic.comparison_state.as_ref(),
+                sleep_cycle_age_frames: sleep_cycle_diagnostic.age_frames,
             },
         );
         FrameReport {
@@ -1940,6 +1955,7 @@ impl EngineHost {
                     interaction.report.clone()
                 }),
             construction_diagnostic,
+            sleep_cycle_diagnostic,
             scene_contract: contract,
             scenario,
         }
@@ -2008,6 +2024,17 @@ impl EngineHost {
         Ok(())
     }
 
+    pub(crate) fn copy_sleep_cycle_metrics(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        destination: &wgpu::Buffer,
+    ) -> Result<(), String> {
+        self.body_world
+            .as_ref()
+            .ok_or_else(|| "sleep-cycle diagnostics require the GPU body world".to_owned())?
+            .copy_sleep_cycle_metrics(encoder, destination)
+    }
+
     pub(crate) fn construction_diagnostic_epoch(&self) -> (String, u64, u64) {
         (
             self.scenario_hash.clone(),
@@ -2024,6 +2051,14 @@ impl EngineHost {
         #[cfg(feature = "box2d-comparator")]
         self.comparison_shadow.publish_construction_feedback(&state);
         self.construction_diagnostic = Some((state, observed_frame_index));
+    }
+
+    pub(crate) fn publish_sleep_cycle_diagnostic(
+        &mut self,
+        state: crate::SleepCycleMetricsV1,
+        observed_frame_index: u64,
+    ) {
+        self.sleep_cycle_diagnostic = Some((state, observed_frame_index));
     }
 
     #[cfg(feature = "box2d-comparator")]
@@ -2051,6 +2086,34 @@ impl EngineHost {
             },
             age_frames: observed_frame_index.map(|frame| self.frame_index.saturating_sub(frame)),
             state,
+            observed_frame_index,
+            blocking_readback_for_advancement: false,
+        }
+    }
+
+    fn sleep_cycle_diagnostic_report(&self) -> SleepCycleDiagnosticReport {
+        let (state, observed_frame_index) = self
+            .sleep_cycle_diagnostic
+            .as_ref()
+            .map_or((None, None), |(state, frame)| {
+                (Some(state.clone()), Some(*frame))
+            });
+        SleepCycleDiagnosticReport {
+            source: if self
+                .body_world
+                .as_ref()
+                .is_some_and(GpuBodyWorld::sleeping_enabled)
+            {
+                "asynchronous-gpu"
+            } else {
+                "unavailable"
+            },
+            age_frames: observed_frame_index.map(|frame| self.frame_index.saturating_sub(frame)),
+            state,
+            #[cfg(feature = "box2d-comparator")]
+            comparison_state: Some(self.comparison_shadow.sleep_cycle_metrics().clone()),
+            #[cfg(not(feature = "box2d-comparator"))]
+            comparison_state: None,
             observed_frame_index,
             blocking_readback_for_advancement: false,
         }

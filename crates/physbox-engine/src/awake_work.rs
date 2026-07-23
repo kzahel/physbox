@@ -5,6 +5,7 @@ use physbox_contracts::{
     BodyStateV1, CapacityRecordV1, SLEEP_POLICY_VERSION, SLEEP_STATE_LAYOUT_VERSION,
     SLEEP_TRANSITION_CAUSE_CONFIGURATION, SLEEP_TRANSITION_CAUSE_INITIALIZATION, SleepPolicyV1,
 };
+use physbox_launch::SleepGrouping;
 use wgpu::util::DeviceExt;
 
 use crate::body_state::{ACTIVE_BODY_DISPATCH_64_OFFSET, ACTIVE_BODY_STATE_WORDS};
@@ -21,6 +22,8 @@ pub(crate) struct SleepExecutionConfig {
     pub(crate) enabled: bool,
     pub(crate) fixed_step_hz: u32,
     pub(crate) wake_propagation_rounds: u32,
+    pub(crate) speed_threshold: f32,
+    pub(crate) grouping: SleepGrouping,
 }
 
 impl SleepExecutionConfig {
@@ -29,6 +32,8 @@ impl SleepExecutionConfig {
             enabled: false,
             fixed_step_hz,
             wake_propagation_rounds: SleepPolicyV1::experimental_s23().wake_propagation_rounds,
+            speed_threshold: SleepPolicyV1::experimental_s23().speed_threshold.get(),
+            grouping: SleepGrouping::Local4,
         }
     }
 
@@ -36,6 +41,21 @@ impl SleepExecutionConfig {
         Self {
             enabled: true,
             ..Self::disabled(fixed_step_hz)
+        }
+    }
+
+    pub(crate) fn configured(
+        enabled: bool,
+        fixed_step_hz: u32,
+        speed_threshold: f32,
+        grouping: SleepGrouping,
+    ) -> Self {
+        Self {
+            enabled,
+            fixed_step_hz,
+            wake_propagation_rounds: grouping.wake_propagation_rounds().unwrap_or(0),
+            speed_threshold,
+            grouping,
         }
     }
 }
@@ -151,7 +171,7 @@ impl GpuAwakeWork {
                     config.wake_propagation_rounds,
                 ],
                 thresholds: [
-                    policy.speed_threshold.get(),
+                    config.speed_threshold,
                     policy.impact_wake_speed.get(),
                     0.0,
                     0.0,
@@ -478,12 +498,26 @@ impl GpuAwakeWork {
         &self.params
     }
 
+    pub(crate) fn control_buffer(&self) -> &wgpu::Buffer {
+        &self.control
+    }
+
+    pub(crate) fn stable_confirmation_steps(&self) -> u32 {
+        SleepPolicyV1::experimental_s23()
+            .quiet_outer_steps(self.config.fixed_step_hz)
+            .expect("validated fixed-step hertz")
+    }
+
     pub(crate) const fn wake_propagation_rounds(&self) -> u32 {
         self.config.wake_propagation_rounds
     }
 
     pub(crate) const fn sleeping_enabled(&self) -> bool {
         self.config.enabled
+    }
+
+    pub(crate) const fn grouping(&self) -> SleepGrouping {
+        self.config.grouping
     }
 
     pub(crate) fn sleep_state_capacity(&self) -> CapacityRecordV1 {

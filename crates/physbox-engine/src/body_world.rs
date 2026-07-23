@@ -249,11 +249,12 @@ impl GpuBodyWorld {
         profile: &crate::SolverProfileConfig,
     ) -> Result<Self, String> {
         let physics = profile.physics();
-        let sleep_config = if physics.sleeping_enabled {
-            SleepExecutionConfig::enabled(physics.fixed_step_hz)
-        } else {
-            SleepExecutionConfig::disabled(physics.fixed_step_hz)
-        };
+        let sleep_config = SleepExecutionConfig::configured(
+            physics.sleeping_enabled,
+            physics.fixed_step_hz,
+            physics.sleep_speed_threshold,
+            physics.sleep_grouping,
+        );
         if profile.is_selected() {
             let scheduling_policy = selected_interactive_scheduling(scenario, world_capacity)?;
             return Self::new_with_generated_contacts(
@@ -1354,6 +1355,20 @@ impl GpuBodyWorld {
 
     pub(crate) fn reset_from_authored(&self, queue: &wgpu::Queue, data: &GpuBodyResetData) {
         self.storage.upload_reset_data(queue, data);
+        if let Some(generated) = &self.generated_contacts {
+            generated.reset_sleep_cycle_metrics(queue);
+        }
+    }
+
+    pub(crate) fn copy_sleep_cycle_metrics(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        destination: &wgpu::Buffer,
+    ) -> Result<(), String> {
+        self.generated_contacts
+            .as_ref()
+            .ok_or_else(|| "sleep-cycle diagnostics require generated contacts".to_owned())?
+            .copy_sleep_cycle_metrics(encoder, destination)
     }
 
     pub(crate) fn benchmark_capacities(&self, width: u32, height: u32) -> Vec<CapacityRecordV1> {
@@ -2006,12 +2021,44 @@ mod tests {
         bytemuck::cast_slice(&read_buffer(device, &buffer)).to_vec()
     }
 
+    fn read_sleep_cycle_metrics(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        world: &GpuBodyWorld,
+    ) -> crate::SleepCycleMetricsV1 {
+        let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("sleep_cycle_test_readback"),
+            size: u64::from(crate::SLEEP_CYCLE_DIAGNOSTIC_BYTES),
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("sleep_cycle_test_copy"),
+        });
+        world
+            .copy_sleep_cycle_metrics(&mut encoder, &buffer)
+            .unwrap();
+        queue.submit([encoder.finish()]);
+        crate::sleep_diagnostics::decode_sleep_cycle_metrics(&read_buffer(device, &buffer)).unwrap()
+    }
+
     fn sleeping_chain_world(
         device: &wgpu::Device,
         scenario: &ScenarioV1,
         wake_propagation_rounds: u32,
     ) -> GpuBodyWorld {
-        sleeping_world(device, scenario, 60, wake_propagation_rounds, true)
+        sleeping_world_with_grouping(
+            device,
+            scenario,
+            60,
+            wake_propagation_rounds,
+            true,
+            if wake_propagation_rounds == 8 {
+                physbox_launch::SleepGrouping::Local8
+            } else {
+                physbox_launch::SleepGrouping::Local4
+            },
+        )
     }
 
     fn sleeping_world(
@@ -2020,6 +2067,24 @@ mod tests {
         fixed_step_hz: u32,
         wake_propagation_rounds: u32,
         enabled: bool,
+    ) -> GpuBodyWorld {
+        sleeping_world_with_grouping(
+            device,
+            scenario,
+            fixed_step_hz,
+            wake_propagation_rounds,
+            enabled,
+            physbox_launch::SleepGrouping::Local4,
+        )
+    }
+
+    fn sleeping_world_with_grouping(
+        device: &wgpu::Device,
+        scenario: &ScenarioV1,
+        fixed_step_hz: u32,
+        wake_propagation_rounds: u32,
+        enabled: bool,
+        grouping: physbox_launch::SleepGrouping,
     ) -> GpuBodyWorld {
         let scheduling = GpuSolverSchedulingPolicyV1::SELECTED_SMALL_WORLD;
         GpuBodyWorld::new_with_generated_contacts(
@@ -2032,6 +2097,8 @@ mod tests {
                     enabled,
                     fixed_step_hz,
                     wake_propagation_rounds,
+                    speed_threshold: 0.02,
+                    grouping,
                 },
                 branch_robust_tunable: fixed_step_hz != 60,
                 ..GeneratedContactBuildOptions::selected(scheduling, fixed_step_hz)
@@ -2152,6 +2219,19 @@ mod tests {
                 sleeping_state,
                 "sleeping body drifted at {fixed_step_hz} Hz"
             );
+            for _ in 11..quiet_steps {
+                encode(
+                    &device,
+                    &queue,
+                    &enabled,
+                    &grab_batch(Vec::new()),
+                    &empty_construction_intent_batch(),
+                );
+            }
+            let metrics = read_sleep_cycle_metrics(&device, &queue, &enabled);
+            assert_eq!(metrics.first_stable_sleep_step, Some(quiet_steps));
+            assert_eq!(metrics.stable_confirmation_steps, quiet_steps);
+            assert_eq!(metrics.awake_body_time, u64::from(quiet_steps - 1));
         }
     }
 
@@ -2436,6 +2516,112 @@ mod tests {
         assert_eq!(awake[0], 5);
         assert!(!states[5].awake);
         assert_eq!(states[5].last_transition_step, 0);
+    }
+
+    #[test]
+    fn gpu_exact_sleep_grouping_wakes_the_whole_contact_component() {
+        let instance = crate::create_instance();
+        let adapter = pollster::block_on(crate::gpu_context::request_adapter(&instance, None))
+            .expect("test GPU adapter");
+        let (device, queue) =
+            pollster::block_on(crate::gpu_context::request_device(&adapter)).unwrap();
+        let body_count = 16;
+        let mut scenario = crate::authored_chain_scenario(body_count, 31).unwrap();
+        crate::SolverProfileConfig::hard_direct()
+            .apply_to_scenario(&mut scenario)
+            .unwrap();
+        scenario.manifolds.clear();
+        scenario.settings.gravity = Vec2::ZERO;
+        for (index, body) in scenario.bodies.iter_mut().enumerate() {
+            body.position = Vec2::new(index as f32 * 0.89, 0.0);
+            body.linear_velocity = Vec2::ZERO;
+            body.angular_velocity = physbox_contracts::FiniteF32::new(0.0).unwrap();
+            body.sleeping = true;
+        }
+        let world = sleeping_world_with_grouping(
+            &device,
+            &scenario,
+            60,
+            0,
+            true,
+            physbox_launch::SleepGrouping::Exact,
+        );
+        encode(
+            &device,
+            &queue,
+            &world,
+            &grab_batch(vec![GrabIntentV1::Begin {
+                sequence: 1,
+                world_target: Vec2::new(0.0, 0.0),
+            }]),
+            &empty_construction_intent_batch(),
+        );
+        let (states, awake) = read_awake_work(&device, &queue, &world);
+        assert_eq!(awake[0], body_count);
+        assert!(
+            states[..body_count as usize]
+                .iter()
+                .all(|state| state.awake)
+        );
+    }
+
+    #[test]
+    fn gpu_sleep_cycle_metrics_distinguish_local_four_local_eight_and_exact() {
+        let instance = crate::create_instance();
+        let adapter = pollster::block_on(crate::gpu_context::request_adapter(&instance, None))
+            .expect("test GPU adapter");
+        let (device, queue) =
+            pollster::block_on(crate::gpu_context::request_device(&adapter)).unwrap();
+        let body_count = 16;
+        let mut scenario = crate::authored_chain_scenario(body_count, 37).unwrap();
+        crate::SolverProfileConfig::hard_direct()
+            .apply_to_scenario(&mut scenario)
+            .unwrap();
+        scenario.manifolds.clear();
+        scenario.settings.gravity = Vec2::ZERO;
+        for (index, body) in scenario.bodies.iter_mut().enumerate() {
+            body.position = Vec2::new(index as f32 * 0.89, 0.0);
+            body.linear_velocity = Vec2::ZERO;
+            body.angular_velocity = physbox_contracts::FiniteF32::new(0.0).unwrap();
+            body.sleeping = true;
+        }
+        for (grouping, rounds, expected_awake, expected_cuts) in [
+            (physbox_launch::SleepGrouping::Local4, 4, 5, 1),
+            (physbox_launch::SleepGrouping::Local8, 8, 9, 1),
+            (physbox_launch::SleepGrouping::Exact, 0, 16, 0),
+        ] {
+            let world =
+                sleeping_world_with_grouping(&device, &scenario, 60, rounds, true, grouping);
+            encode(
+                &device,
+                &queue,
+                &world,
+                &grab_batch(vec![GrabIntentV1::Begin {
+                    sequence: 1,
+                    world_target: Vec2::new(0.0, 0.0),
+                }]),
+                &empty_construction_intent_batch(),
+            );
+            let metrics = read_sleep_cycle_metrics(&device, &queue, &world);
+            assert_eq!(metrics.observed_step, 1, "{grouping:?}");
+            assert_eq!(metrics.awake_bodies, expected_awake, "{grouping:?}");
+            assert_eq!(
+                metrics.sleeping_bodies,
+                body_count - expected_awake,
+                "{grouping:?}"
+            );
+            assert_eq!(metrics.woke_this_step, expected_awake, "{grouping:?}");
+            assert_eq!(
+                metrics.mixed_awake_asleep_contact_cuts,
+                Some(expected_cuts),
+                "{grouping:?}"
+            );
+            assert_eq!(
+                metrics.awake_body_time,
+                u64::from(expected_awake),
+                "{grouping:?}"
+            );
+        }
     }
 
     #[test]

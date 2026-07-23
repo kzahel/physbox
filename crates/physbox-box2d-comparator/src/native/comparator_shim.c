@@ -20,6 +20,7 @@ struct pb5_box2d_world {
     b2WorldId world;
     pb5_box2d_slot* slots;
     uint32_t capacity;
+    float sleep_speed_threshold;
     b2BodyId grab_target;
     b2JointId grab_joint;
     float grab_x;
@@ -59,6 +60,7 @@ pb5_box2d_world* pb5_box2d_world_create(const pb5_box2d_world_def* definition) {
         return NULL;
     }
     world->capacity = definition->capacity;
+    world->sleep_speed_threshold = definition->sleep_speed_threshold;
 
     b2WorldDef world_def = b2DefaultWorldDef();
     world_def.gravity = (b2Vec2){definition->gravity_x, definition->gravity_y};
@@ -114,6 +116,7 @@ bool pb5_box2d_world_add_body(pb5_box2d_world* world, const pb5_box2d_body* body
     body_def.angularVelocity = body->angular_velocity;
     body_def.isAwake = (body->flags & PB5_BOX2D_BODY_AWAKE) != 0;
     body_def.enableSleep = true;
+    body_def.sleepThreshold = world->sleep_speed_threshold;
     b2BodyId raw_body = b2CreateBody(world->world, &body_def);
 
     b2ShapeDef shape_def = b2DefaultShapeDef();
@@ -329,6 +332,17 @@ uint32_t pb5_box2d_world_snapshot(
         };
     }
     return count;
+}
+
+float pb5_box2d_world_body_sleep_threshold(
+    const pb5_box2d_world* world,
+    uint32_t slot,
+    uint32_t generation
+) {
+    if (!pb5_slot_matches(world, slot, generation)) {
+        return NAN;
+    }
+    return b2Body_GetSleepThreshold(world->slots[slot].body);
 }
 
 const char* pb5_box2d_world_last_error(const pb5_box2d_world* world) {

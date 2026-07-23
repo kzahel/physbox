@@ -17,7 +17,7 @@ pub const DEFAULT_WIDTH: u32 = 960;
 pub const DEFAULT_HEIGHT: u32 = 600;
 pub const DEFAULT_CAPTURE_FRAMES: u32 = 12;
 pub const DEFAULT_CAPTURE_FPS: u32 = 60;
-pub const PHYSICS_CONFIGURATION_VERSION: u32 = 2;
+pub const PHYSICS_CONFIGURATION_VERSION: u32 = 3;
 pub const MIN_FIXED_STEP_HZ: u32 = 15;
 pub const MAX_FIXED_STEP_HZ: u32 = 240;
 pub const MIN_SOLVER_SUBSTEPS: u32 = 1;
@@ -34,6 +34,8 @@ pub const MIN_SPECULATIVE_DISTANCE: f32 = 0.0;
 pub const MAX_SPECULATIVE_DISTANCE: f32 = 1.0;
 pub const MIN_MAX_DEPENETRATION_VELOCITY: f32 = 0.1;
 pub const MAX_MAX_DEPENETRATION_VELOCITY: f32 = 100.0;
+pub const MIN_SLEEP_SPEED_THRESHOLD: f32 = 0.001;
+pub const MAX_SLEEP_SPEED_THRESHOLD: f32 = 1.0;
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -135,9 +137,57 @@ impl SolverProfileName {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SleepGrouping {
+    #[default]
+    Local4,
+    Local8,
+    Exact,
+}
+
+impl SleepGrouping {
+    pub const ALL: [Self; 3] = [Self::Local4, Self::Local8, Self::Exact];
+
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Local4 => "local-4",
+            Self::Local8 => "local-8",
+            Self::Exact => "exact",
+        }
+    }
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Local4 => "LOCAL 4",
+            Self::Local8 => "LOCAL 8",
+            Self::Exact => "EXACT",
+        }
+    }
+
+    pub const fn wake_propagation_rounds(self) -> Option<u32> {
+        match self {
+            Self::Local4 => Some(4),
+            Self::Local8 => Some(8),
+            Self::Exact => None,
+        }
+    }
+
+    fn parse(value: &str) -> Result<Self, LaunchError> {
+        match value {
+            "local-4" => Ok(Self::Local4),
+            "local-8" => Ok(Self::Local8),
+            "exact" => Ok(Self::Exact),
+            _ => Err(LaunchError(
+                "--sleep-grouping requires local-4, local-8, or exact".to_owned(),
+            )),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PhysicsConfigurationV2 {
+pub struct PhysicsConfigurationV3 {
     pub version: u32,
     pub solver_profile: SolverProfileName,
     pub fixed_step_hz: u32,
@@ -149,9 +199,11 @@ pub struct PhysicsConfigurationV2 {
     pub speculative_distance: f32,
     pub max_depenetration_velocity: f32,
     pub sleeping_enabled: bool,
+    pub sleep_speed_threshold: f32,
+    pub sleep_grouping: SleepGrouping,
 }
 
-impl PhysicsConfigurationV2 {
+impl PhysicsConfigurationV3 {
     pub const HARD_DIRECT: Self = Self {
         version: PHYSICS_CONFIGURATION_VERSION,
         solver_profile: SolverProfileName::HardDirect,
@@ -164,6 +216,8 @@ impl PhysicsConfigurationV2 {
         speculative_distance: 0.02,
         max_depenetration_velocity: 3.0,
         sleeping_enabled: false,
+        sleep_speed_threshold: 0.02,
+        sleep_grouping: SleepGrouping::Local4,
     };
 
     pub const SOFT_COUPLED: Self = Self {
@@ -238,11 +292,17 @@ impl PhysicsConfigurationV2 {
             MIN_MAX_DEPENETRATION_VELOCITY,
             MAX_MAX_DEPENETRATION_VELOCITY,
         )?;
+        bounded_float(
+            "--sleep-threshold",
+            self.sleep_speed_threshold,
+            MIN_SLEEP_SPEED_THRESHOLD,
+            MAX_SLEEP_SPEED_THRESHOLD,
+        )?;
         Ok(())
     }
 }
 
-impl Default for PhysicsConfigurationV2 {
+impl Default for PhysicsConfigurationV3 {
     fn default() -> Self {
         Self::SOFT_COUPLED
     }
@@ -379,7 +439,7 @@ pub struct LaunchOptions {
     pub report: Option<PathBuf>,
     pub scenario: ValidationScenario,
     pub world_capacity: WorldCapacityPreset,
-    pub physics: PhysicsConfigurationV2,
+    pub physics: PhysicsConfigurationV3,
     pub frame_markers: FrameMarkerMode,
 }
 
@@ -395,7 +455,7 @@ impl Default for LaunchOptions {
             report: None,
             scenario: ValidationScenario::Bootstrap,
             world_capacity: WorldCapacityPreset::default(),
-            physics: PhysicsConfigurationV2::default(),
+            physics: PhysicsConfigurationV3::default(),
             frame_markers: FrameMarkerMode::Milestones,
         }
     }
@@ -440,7 +500,7 @@ where
     let args = args.into_iter().map(Into::into).collect::<Vec<_>>();
     let solver_profile = preparse_solver_profile(&args)?.unwrap_or_default();
     let mut options = LaunchOptions {
-        physics: PhysicsConfigurationV2::for_profile(solver_profile),
+        physics: PhysicsConfigurationV3::for_profile(solver_profile),
         ..LaunchOptions::default()
     };
     let mut help_requested = false;
@@ -488,6 +548,8 @@ pub fn parse_web_query(query: &str) -> Result<LaunchRequest, LaunchError> {
             "speculative-distance" => "--speculative-distance",
             "max-depenetration-velocity" => "--max-depenetration-velocity",
             "sleeping" => "--sleeping",
+            "sleep-threshold" => "--sleep-threshold",
+            "sleep-grouping" => "--sleep-grouping",
             unknown => return Err(LaunchError(format!("unknown web query option: {unknown}"))),
         };
         tokens.push(argument.to_owned());
@@ -513,7 +575,7 @@ pub fn usage(program: &str, host: LaunchHost) -> String {
     } else {
         ""
     };
-    let solver = "\n  --body-capacity N  interactive slots: 64 (default), 256, 1000, or 10000\n  --solver NAME    soft-coupled or hard-direct (aliases: branch-robust, selected)\n  --sim-hz N       outer fixed rate, 15..=240 (default 60)\n  --substeps N     solver substeps, 1..=8 (default 4)\n  --iterations N   biased iterations, 1..=4 (soft default 1, hard default 2)\n  --contact-hz N   requested soft contact hertz, 1..=120\n  --contact-damping N  soft damping ratio, 0.5..=20\n  --static-contact-scale N  static contact hertz multiplier, 0.5..=16\n  --speculative-distance N  contact anticipation distance, 0..=1\n  --max-depenetration-velocity N  overlap recovery speed, 0.1..=100\n  --sleeping MODE  experimental sleeping: off (default) or on";
+    let solver = "\n  --body-capacity N  interactive slots: 64 (default), 256, 1000, or 10000\n  --solver NAME    soft-coupled or hard-direct (aliases: branch-robust, selected)\n  --sim-hz N       outer fixed rate, 15..=240 (default 60)\n  --substeps N     solver substeps, 1..=8 (default 4)\n  --iterations N   biased iterations, 1..=4 (soft default 1, hard default 2)\n  --contact-hz N   requested soft contact hertz, 1..=120\n  --contact-damping N  soft damping ratio, 0.5..=20\n  --static-contact-scale N  static contact hertz multiplier, 0.5..=16\n  --speculative-distance N  contact anticipation distance, 0..=1\n  --max-depenetration-velocity N  overlap recovery speed, 0.1..=100\n  --sleeping MODE  experimental sleeping: off (default) or on\n  --sleep-threshold N  shared sleep speed threshold, 0.001..=1 (default 0.02)\n  --sleep-grouping MODE  PhysBox local-4 (default), local-8, or exact";
     format!(
         "Usage: {program} [options]\n\n  --width PX       viewport width (default 960)\n  --height PX      viewport height (default 600)\n  --scenario NAME  bootstrap, body-free-flight, rigid-floor, rigid-stack, rectangle-stack, circle-bucket-100, rectangle-bucket-100, reset-grab, solver-jacobi, solver-colored, solver-manifold-i2, solver-parallel-coloring, settling-hard-8, settling-candidate-8, settling-hard-16, settling-identity-16, settling-softness-16, settling-candidate-16{}{solver}{frame_markers}{capture}\n  -h, --help       print this help",
         if cfg!(feature = "solver-lab") {
@@ -620,6 +682,14 @@ fn apply_option(
                 _ => return Err(LaunchError("--sleeping requires off or on".to_owned())),
             };
         }
+        "--sleep-threshold" => {
+            mark_physics_field(seen_physics_fields, "sleep-threshold")?;
+            options.physics.sleep_speed_threshold = parse_float(argument, &value)?;
+        }
+        "--sleep-grouping" => {
+            mark_physics_field(seen_physics_fields, "sleep-grouping")?;
+            options.physics.sleep_grouping = SleepGrouping::parse(&value)?;
+        }
         "--frame-markers" if host.supports_frame_markers() => {
             options.frame_markers = match value.as_str() {
                 "off" => FrameMarkerMode::Off,
@@ -680,7 +750,7 @@ fn mark_physics_field(
 }
 
 fn apply_legacy_solver_options(
-    physics: &mut PhysicsConfigurationV2,
+    physics: &mut PhysicsConfigurationV3,
     seen: &mut BTreeSet<&'static str>,
     encoded: &str,
 ) -> Result<(), LaunchError> {
@@ -861,7 +931,7 @@ mod tests {
         let request = parse_tokens(LaunchHost::Desktop, std::iter::empty::<&str>()).unwrap();
         assert_eq!(
             request.options.physics,
-            PhysicsConfigurationV2::SOFT_COUPLED
+            PhysicsConfigurationV3::SOFT_COUPLED
         );
         assert_eq!(
             request.options.physics.solver_profile.name(),
@@ -935,21 +1005,27 @@ mod tests {
                 "4",
                 "--sleeping",
                 "on",
+                "--sleep-threshold",
+                "0.05",
+                "--sleep-grouping",
+                "exact",
             ],
         )
         .unwrap();
         let web = parse_web_query(
-            "?solver=soft-coupled&sim-hz=120&substeps=8&iterations=2&contact-hz=45.5&contact-damping=8&static-contact-scale=3&speculative-distance=0.03&max-depenetration-velocity=4&sleeping=on",
+            "?solver=soft-coupled&sim-hz=120&substeps=8&iterations=2&contact-hz=45.5&contact-damping=8&static-contact-scale=3&speculative-distance=0.03&max-depenetration-velocity=4&sleeping=on&sleep-threshold=0.05&sleep-grouping=exact",
         )
         .unwrap();
         let android = parse_android_json(
-            r#"["--solver","soft-coupled","--sim-hz","120","--substeps","8","--iterations","2","--contact-hz","45.5","--contact-damping","8","--static-contact-scale","3","--speculative-distance","0.03","--max-depenetration-velocity","4","--sleeping","on"]"#,
+            r#"["--solver","soft-coupled","--sim-hz","120","--substeps","8","--iterations","2","--contact-hz","45.5","--contact-damping","8","--static-contact-scale","3","--speculative-distance","0.03","--max-depenetration-velocity","4","--sleeping","on","--sleep-threshold","0.05","--sleep-grouping","exact"]"#,
         )
         .unwrap();
         assert_eq!(native.options.physics, web.options.physics);
         assert_eq!(native.options.physics, android.options.physics);
         assert_eq!(native.options.physics.fixed_dt_seconds(), 1.0 / 120.0);
         assert!(native.options.physics.sleeping_enabled);
+        assert_eq!(native.options.physics.sleep_speed_threshold, 0.05);
+        assert_eq!(native.options.physics.sleep_grouping, SleepGrouping::Exact);
     }
 
     #[test]
@@ -966,7 +1042,7 @@ mod tests {
         assert_eq!(request.options.physics.biased_iterations, 3);
 
         let seed = parse_tokens(LaunchHost::Desktop, ["--solver", "soft-coupled"]).unwrap();
-        assert_eq!(seed.options.physics, PhysicsConfigurationV2::SOFT_COUPLED);
+        assert_eq!(seed.options.physics, PhysicsConfigurationV3::SOFT_COUPLED);
     }
 
     #[test]
@@ -983,6 +1059,11 @@ mod tests {
                 "unknown legacy solver option",
             ),
             (vec!["--sleeping", "yes"], "requires off or on"),
+            (vec!["--sleep-threshold", "0"], "between 0.001 and 1"),
+            (
+                vec!["--sleep-grouping", "local-16"],
+                "requires local-4, local-8, or exact",
+            ),
         ] {
             let error = parse_tokens(LaunchHost::Desktop, arguments).unwrap_err();
             assert!(error.to_string().contains(expected), "{error}");

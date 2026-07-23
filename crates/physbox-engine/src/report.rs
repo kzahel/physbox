@@ -7,9 +7,10 @@ use crate::{
     GpuColorMaintenanceV1, GpuColorOrderV4, GpuColorScheduleV4, GpuColorUnitV4,
     GpuColoredDispatchV1, GpuContactCoefficientPolicyV1, GpuNormalSolverV4,
     GpuSolverAccumulationV4, GpuSolverExecutionV4, GpuSolverSchedulingPolicyV1,
+    SleepCycleMetricsV1,
 };
 
-pub const SCENE_CONTRACT_VERSION: u32 = 10;
+pub const SCENE_CONTRACT_VERSION: u32 = 11;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -35,6 +36,8 @@ pub struct SceneContract {
     pub sleep_policy_version: u32,
     pub sleep_state_layout_version: u32,
     pub sleep_speed_threshold: f32,
+    pub sleep_grouping: &'static str,
+    pub box2d_sleep_speed_threshold: Option<f32>,
     pub sleep_quiet_outer_steps: u32,
     pub sleep_wake_propagation_rounds: u32,
     pub sleep_impact_wake_speed: f32,
@@ -158,6 +161,17 @@ pub struct ConstructionDiagnosticReport {
     pub blocking_readback_for_advancement: bool,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SleepCycleDiagnosticReport {
+    pub source: &'static str,
+    pub state: Option<SleepCycleMetricsV1>,
+    pub comparison_state: Option<SleepCycleMetricsV1>,
+    pub observed_frame_index: Option<u64>,
+    pub age_frames: Option<u64>,
+    pub blocking_readback_for_advancement: bool,
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FrameReport {
@@ -171,6 +185,7 @@ pub struct FrameReport {
     pub ui: UiReport,
     pub body_commands: BodyCommandReport,
     pub construction_diagnostic: ConstructionDiagnosticReport,
+    pub sleep_cycle_diagnostic: SleepCycleDiagnosticReport,
     pub scene_contract: SceneContract,
     pub scenario: ScenarioResult,
 }
@@ -249,6 +264,10 @@ impl FrameReport {
             requested_sleeping_enabled: bool,
             #[serde(rename = "y")]
             effective_sleeping_enabled: bool,
+            #[serde(rename = "z")]
+            sleep_speed_threshold: f32,
+            #[serde(rename = "j")]
+            sleep_grouping: u32,
             #[serde(rename = "n")]
             scenario: &'static str,
             #[serde(rename = "h")]
@@ -360,6 +379,13 @@ impl FrameReport {
                 physics_configuration_hash: &self.scene_contract.physics_configuration_hash,
                 requested_sleeping_enabled: self.scene_contract.requested_sleeping_enabled,
                 effective_sleeping_enabled: self.scene_contract.effective_sleeping_enabled,
+                sleep_speed_threshold: self.scene_contract.sleep_speed_threshold,
+                sleep_grouping: match self.scene_contract.sleep_grouping {
+                    "local-4" => 4,
+                    "local-8" => 8,
+                    "exact" => 0,
+                    _ => u32::MAX,
+                },
                 scenario: self.scene_contract.scenario,
                 scenario_hash: &self.scene_contract.scenario_hash,
             },
@@ -549,6 +575,14 @@ mod tests {
                 age_frames: None,
                 blocking_readback_for_advancement: false,
             },
+            sleep_cycle_diagnostic: SleepCycleDiagnosticReport {
+                source: "asynchronous-gpu",
+                state: Some(SleepCycleMetricsV1::initial(1, 1, 30, true)),
+                comparison_state: None,
+                observed_frame_index: Some(0),
+                age_frames: Some(0),
+                blocking_readback_for_advancement: false,
+            },
             scene_contract: SceneContract {
                 version: SCENE_CONTRACT_VERSION,
                 engine: "physbox5",
@@ -571,6 +605,8 @@ mod tests {
                 sleep_policy_version: physbox_contracts::SLEEP_POLICY_VERSION,
                 sleep_state_layout_version: physbox_contracts::SLEEP_STATE_LAYOUT_VERSION,
                 sleep_speed_threshold: 0.02,
+                sleep_grouping: "local-4",
+                box2d_sleep_speed_threshold: Some(0.02),
                 sleep_quiet_outer_steps: 30,
                 sleep_wake_propagation_rounds: 4,
                 sleep_impact_wake_speed: 0.05,

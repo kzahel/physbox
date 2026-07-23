@@ -12,6 +12,7 @@ typedef struct pb5_box2d_world_def {
     float restitution_threshold;
     uint32_t capacity;
     uint32_t sleeping_enabled;
+    float sleep_speed_threshold;
 } pb5_box2d_world_def;
 
 typedef struct pb5_box2d_body {
@@ -104,6 +105,11 @@ uint32_t pb5_box2d_world_snapshot(
     const pb5_box2d_world* world,
     pb5_box2d_snapshot* output,
     uint32_t capacity
+);
+float pb5_box2d_world_body_sleep_threshold(
+    const pb5_box2d_world* world,
+    uint32_t slot,
+    uint32_t generation
 );
 const char* pb5_box2d_world_last_error(const pb5_box2d_world* world);
 

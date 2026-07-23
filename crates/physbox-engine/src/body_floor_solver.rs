@@ -6898,7 +6898,7 @@ mod tests {
     fn soft_coupled_graph_uses_configured_substeps_and_biased_iterations() {
         let operation_count = |substeps, iterations| {
             let mut scenario = crate::p5_2_centered_rectangle_stack_scenario(4, 120).unwrap();
-            let mut physics = physbox_launch::PhysicsConfigurationV2::SOFT_COUPLED;
+            let mut physics = physbox_launch::PhysicsConfigurationV3::SOFT_COUPLED;
             physics.substeps = substeps;
             physics.biased_iterations = iterations;
             crate::SolverProfileConfig::from_physics(physics)
