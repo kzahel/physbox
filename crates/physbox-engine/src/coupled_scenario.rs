@@ -227,6 +227,70 @@ pub fn liquid_sandbox_scenario() -> Result<CoupledScenarioV1, ScenarioBuildError
     Ok(scenario)
 }
 
+pub fn coupled_capacity_scenario(
+    particle_count: u32,
+) -> Result<CoupledScenarioV1, ScenarioBuildError> {
+    let columns = match particle_count {
+        1_024 => 32,
+        4_096 => 64,
+        16_384 => 128,
+        32_768 => 256,
+        _ => {
+            return Err(ScenarioBuildError(
+                "coupled capacity evidence supports exactly 1024, 4096, 16384, or 32768 particles"
+                    .to_owned(),
+            ));
+        }
+    };
+    let rows = particle_count / columns;
+    let spacing = 0.1;
+    let width = columns as f32 * spacing;
+    let height = rows as f32 * spacing;
+    let lower = Vec2::new(-0.5 * width, -6.0);
+    let upper = Vec2::new(lower.x + width, lower.y + height);
+    let center_y = 0.5 * (lower.y + upper.y);
+    let mut scenario = canonical_coupled_scenario(CoupledScenarioKind::ContainedWater)?;
+    scenario.id = format!("coupled-capacity-{particle_count}-v1");
+    scenario.seed = 0x5035_3200 + u64::from(particle_count);
+    scenario.requested_steps = 120;
+    scenario.particle_capacity = particle_count;
+    scenario.rigid.id = format!("{}-rigid", scenario.id);
+    scenario.rigid.seed = scenario.seed;
+    scenario.rigid.requested_steps = scenario.requested_steps;
+    scenario.rigid.bodies = vec![
+        fixed_rectangle(
+            0,
+            Vec2::new(0.0, lower.y - 0.5),
+            Vec2::new(0.5 * width + 1.0, 0.5),
+        ),
+        fixed_rectangle(
+            1,
+            Vec2::new(lower.x - 0.5, center_y),
+            Vec2::new(0.5, 0.5 * height + 0.5),
+        ),
+        fixed_rectangle(
+            2,
+            Vec2::new(upper.x + 0.5, center_y),
+            Vec2::new(0.5, 0.5 * height + 0.5),
+        ),
+    ];
+    let mut water = ParticleMaterialV1::water_v1(0);
+    water.radius = finite(0.05);
+    scenario.materials = vec![water];
+    scenario.regions = vec![ParticleRegionV1 {
+        id: 0,
+        material_id: 0,
+        lower,
+        upper,
+        spacing: finite(spacing),
+        initial_velocity: Vec2::ZERO,
+    }];
+    scenario
+        .validate()
+        .map_err(|error| ScenarioBuildError(error.to_string()))?;
+    Ok(scenario)
+}
+
 pub fn canonical_coupled_scenario_hashes() -> Result<Vec<(&'static str, String)>, ScenarioBuildError>
 {
     CoupledScenarioKind::ALL
@@ -406,5 +470,20 @@ mod tests {
             crate::particle_world::PRODUCT_PARTICLE_CAPACITY
         );
         assert_eq!(scenario.regions.len(), 1);
+    }
+
+    #[test]
+    fn capacity_sources_author_exact_declared_particle_rows() {
+        for (count, columns) in [(1_024, 32), (4_096, 64), (16_384, 128), (32_768, 256)] {
+            let scenario = coupled_capacity_scenario(count).unwrap();
+            let region = scenario.regions[0];
+            let spacing = region.spacing.get();
+            let authored_columns = ((region.upper.x - region.lower.x) / spacing).round() as u32;
+            let authored_rows = ((region.upper.y - region.lower.y) / spacing).round() as u32;
+            assert_eq!(authored_columns, columns);
+            assert_eq!(authored_columns * authored_rows, count);
+            assert_eq!(scenario.particle_capacity, count);
+        }
+        assert!(coupled_capacity_scenario(2_048).is_err());
     }
 }

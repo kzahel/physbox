@@ -11,6 +11,10 @@ Cargo automatic binary discovery is disabled. The maintained commands are:
   projection and playback;
 - `physbox-solver-evidence` and `physbox-scheduler-benchmark`: selected-solver
   evidence and scheduling cost;
+- `physbox-coupled-evidence`: comparator-free canonical liquid corpus and
+  1K/4K/16K/32K capacity/timing evidence;
+- `physbox-coupled-oracles`: process-isolated primary PhysBox 3 and secondary
+  LiquidFun runs over every canonical coupled source;
 - `physbox-broadphase-evidence`: focused brute/SAP/grid completeness, capacity,
   work, memory, and steady-state timing matrices;
 - `physbox-settling-backend-trace`: current settling diagnostics; and

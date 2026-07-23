@@ -71,6 +71,16 @@ path = "src/bin/physbox-contact-components.rs"
 test = false
 
 [[bin]]
+name = "physbox-coupled-evidence"
+path = "src/bin/physbox-coupled-evidence.rs"
+test = false
+
+[[bin]]
+name = "physbox-coupled-oracles"
+path = "src/bin/physbox-coupled-oracles.rs"
+test = false
+
+[[bin]]
 name = "physbox-sleep-decisions"
 path = "src/bin/physbox-sleep-decisions.rs"
 test = false

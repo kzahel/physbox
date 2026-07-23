@@ -2539,6 +2539,7 @@ mod tests {
                 world_capacity: WorldCapacityPreset::Slots64,
                 sleeping_effective: false,
                 sleep_visuals_enabled: false,
+                selected_engine: ComparisonEngine::PhysBox,
             },
         );
         assert!(!batch.overflowed);

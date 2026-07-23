@@ -645,7 +645,7 @@ impl OffscreenRenderer {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn read_texture(
+pub(crate) fn read_texture(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     texture: &wgpu::Texture,
@@ -755,7 +755,7 @@ fn read_identity(
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn map_buffer<'a>(
+pub(crate) fn map_buffer<'a>(
     device: &wgpu::Device,
     buffer: &'a wgpu::Buffer,
 ) -> Result<wgpu::BufferView<'a>, String> {

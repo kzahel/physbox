@@ -29,6 +29,8 @@ mod construction;
 mod construction_validation;
 #[cfg(any(test, feature = "solver-lab"))]
 mod contact_components;
+#[cfg(all(feature = "solver-lab", not(target_arch = "wasm32")))]
+mod coupled_evidence;
 mod coupled_scenario;
 mod engine_selection;
 mod exact_sleep_grouping;
@@ -153,9 +155,16 @@ pub use contact_components::{
     GpuSleepDecisionStepV1, GpuSleepDecisionTimingV1, benchmark_gpu_sleep_decision_observer,
     observe_gpu_contact_components, observe_gpu_sleep_decisions,
 };
+#[cfg(all(feature = "solver-lab", not(target_arch = "wasm32")))]
+pub use coupled_evidence::{
+    GPU_COUPLED_EVIDENCE_VERSION, GpuCoupledBodyObservationV1, GpuCoupledEvidenceConfigV1,
+    GpuCoupledEvidenceRun, GpuCoupledEvidenceV1, GpuCoupledTimingSummaryV1, GpuCoupledTimingV1,
+    GpuParticleAggregateV1, run_gpu_coupled_evidence,
+};
 pub use coupled_scenario::{
     COUPLED_CANONICAL_SOURCE_COUNT, COUPLED_CANONICAL_SOURCE_HASHES_V1, CoupledScenarioKind,
-    canonical_coupled_scenario, canonical_coupled_scenario_hashes, liquid_sandbox_scenario,
+    canonical_coupled_scenario, canonical_coupled_scenario_hashes, coupled_capacity_scenario,
+    liquid_sandbox_scenario,
 };
 pub use frame::{
     FrameInput, InputEvent, PointerButton, PointerEvent, PointerPhase, StepRequest, WheelEvent,
