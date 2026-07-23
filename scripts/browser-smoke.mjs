@@ -14,6 +14,9 @@ const captureDirectory = resolve(process.env.PHYSBOX5_CAPTURE_DIRECTORY ?? "/tmp
 const screenshot = join(captureDirectory, `physbox5-web${captureSuffix}.png`);
 const initialScreenshot = join(captureDirectory, `physbox5-web-initial${captureSuffix}.png`);
 const menuScreenshot = join(captureDirectory, `physbox5-web-menu${captureSuffix}.png`);
+const scenesMenuScreenshot = join(captureDirectory, `physbox5-web-scenes-menu${captureSuffix}.png`);
+const worldMenuScreenshot = join(captureDirectory, `physbox5-web-world-menu${captureSuffix}.png`);
+const solverMenuScreenshot = join(captureDirectory, `physbox5-web-solver-menu${captureSuffix}.png`);
 const sleepScreenshot = join(captureDirectory, `physbox5-web-sleep${captureSuffix}.png`);
 const box2dScreenshot = join(captureDirectory, `physbox5-web-box2d${captureSuffix}.png`);
 const solverScreenshot = join(captureDirectory, `physbox5-web-solver${captureSuffix}.png`);
@@ -35,6 +38,9 @@ await mkdir(captureDirectory, { recursive: true });
 await rm(screenshot, { force: true });
 await rm(initialScreenshot, { force: true });
 await rm(menuScreenshot, { force: true });
+await rm(scenesMenuScreenshot, { force: true });
+await rm(worldMenuScreenshot, { force: true });
+await rm(solverMenuScreenshot, { force: true });
 await rm(sleepScreenshot, { force: true });
 await rm(box2dScreenshot, { force: true });
 await rm(solverScreenshot, { force: true });
@@ -282,6 +288,7 @@ try {
     requestAnimationFrame(() => requestAnimationFrame(resolveFrame));
   }));
   await captureCompleteScreenshot(page, menuScreenshot, "browser menu");
+  await captureCompleteScreenshot(page, scenesMenuScreenshot, "browser scenes menu");
   let activeScenario = scenario;
   if (!solverLab && scenario === "bootstrap" && requestedBodyCapacity === 64) {
     const restarts = before.frame.ui.scenarioRestartsTotal;
@@ -290,6 +297,7 @@ try {
       requestAnimationFrame(() => requestAnimationFrame(resolveFrame));
     }));
     await captureCompleteScreenshot(page, menuScreenshot, "browser world-capacity menu");
+    await captureCompleteScreenshot(page, worldMenuScreenshot, "browser world-capacity menu");
     await page.mouse.click(192 * uiScale, 209 * uiScale);
     await page.waitForFunction(
       ({ previousRestarts }) => {
@@ -448,7 +456,8 @@ try {
       requestAnimationFrame(() => requestAnimationFrame(resolveFrame));
     }));
     try {
-      await captureCompleteScreenshot(page, menuScreenshot, "browser sleeping request on menu");
+    await captureCompleteScreenshot(page, menuScreenshot, "browser sleeping request on menu");
+    await captureCompleteScreenshot(page, worldMenuScreenshot, "browser sleeping request on menu");
     } catch (error) {
       const state = await page.evaluate(() => globalThis.__physbox5);
       throw new Error(`${error.message}; state=${JSON.stringify(state)}`);
@@ -539,6 +548,7 @@ try {
       requestAnimationFrame(() => requestAnimationFrame(resolveFrame));
     }));
     await captureCompleteScreenshot(page, menuScreenshot, "browser solver menu");
+    await captureCompleteScreenshot(page, solverMenuScreenshot, "browser solver menu");
     await page.mouse.click(...solverSceneCenter(1));
     activeScenario = "solver-lab-stack-16";
     try {
@@ -1025,6 +1035,9 @@ try {
     viewport: final.viewport,
     initialScreenshot,
     menuScreenshot,
+    scenesMenuScreenshot,
+    worldMenuScreenshot,
+    solverMenuScreenshot: solverLab ? solverMenuScreenshot : null,
     sleepScreenshot,
     box2dScreenshot,
     box2dFrame,
@@ -1063,6 +1076,9 @@ try {
       initialScreenshot,
       screenshot,
       menuScreenshot,
+      scenesMenuScreenshot,
+      worldMenuScreenshot,
+      solverMenuScreenshot: solverLab ? solverMenuScreenshot : null,
       sleepScreenshot,
       box2dScreenshot,
       grabScreenshot: capturedGrab ? grabScreenshot : null,
