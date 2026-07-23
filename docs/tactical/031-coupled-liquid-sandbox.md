@@ -308,7 +308,7 @@ interaction/reset behavior, and host dependency proof remain open.
   and continue mirroring only stable-ID rigid actions to Box2D.
 - [ ] Prove the comparator-off build contains no Box2D runtime while retaining
   the complete PhysBox liquid product.
-- [ ] Refresh body/particle/UI palette, outlines, and glyphs through the shared
+- [x] Refresh body/particle/UI palette, outlines, and glyphs through the shared
   renderer without changing mechanics or introducing DOM product chrome.
 
 Interaction checkpoint: the shared workbench now exposes Water and Surface
@@ -339,6 +339,14 @@ The midpoint/angle/fixed-box interaction was independently implemented after
 consulting PhysBox 4 `input.rs`, `scene.rs`, and `surface_preview.wgsl` at clean
 revision `92f745eb85908243c69080a4fa4dba24f05c22cf`. No PhysBox 4 runtime,
 backend, source file, or readback path was copied into PhysBox 5.
+
+Presentation refresh: shared WGSL now renders water with a softer
+coverage-blended blue/cyan body and compact highlight, while an active Surface
+preview uses a distinct green interaction color before becoming the ordinary
+fixed-body style. The existing R8 engine glyph atlas and selected-tool
+highlight remain the one UI typography/palette path on every host. PhysBox 4
+`particles_render.wgsl` was consulted at the same clean revision for visual
+calibration; the PhysBox 5 shader remains an independent implementation.
 
 Gate: shared input tests cover mouse/touch cancellation, held emission, erase,
 surface preview/commit, engine switching, hidden fluid tools, and return to the

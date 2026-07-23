@@ -26,7 +26,9 @@ const BODY_FLAG_LIVE: u32 = 1u << 0u;
 const BODY_FLAG_FIXED: u32 = 1u << 2u;
 const BODY_FLAG_RECTANGLE: u32 = 1u << 8u;
 const BODY_FLAG_CIRCLE: u32 = 1u << 9u;
-const NO_BODY: u32 = 0xffffffffu;
+// This identity is bitcast through a float storage lane. Keep the bit pattern
+// finite so every WebGPU WGSL frontend accepts the constant.
+const NO_BODY: u32 = 0x7f7fffffu;
 
 fn rotate(value: vec2f, angle: f32) -> vec2f {
     let c = cos(angle);

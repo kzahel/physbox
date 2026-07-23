@@ -23,7 +23,7 @@ while (($#)); do
     esac
 done
 case "$SCENARIO" in
-    bootstrap|body-free-flight|rigid-floor|rigid-stack|rectangle-stack|circle-bucket-100|rectangle-bucket-100|reset-grab|solver-jacobi|solver-colored|solver-manifold-i2|solver-parallel-coloring|settling-hard-8|settling-candidate-8|settling-hard-16|settling-identity-16|settling-softness-16|settling-candidate-16) ;;
+    bootstrap|body-free-flight|rigid-floor|rigid-stack|liquid-sandbox|rectangle-stack|circle-bucket-100|rectangle-bucket-100|reset-grab|solver-jacobi|solver-colored|solver-manifold-i2|solver-parallel-coloring|settling-hard-8|settling-candidate-8|settling-hard-16|settling-identity-16|settling-softness-16|settling-candidate-16) ;;
     *) echo "error: unsupported shared scenario: $SCENARIO" >&2; exit 2 ;;
 esac
 "$EMULATOR" -list-avds | grep -qx "$AVD_NAME" || { echo "error: AVD $AVD_NAME not found" >&2; exit 1; }
@@ -91,6 +91,14 @@ if [[ "${PHYSBOX5_ANDROID_SLEEP_VISUALS:-0}" = "1" && "${PHYSBOX5_ANDROID_SLEEP_
 fi
 if [[ "${PHYSBOX5_ANDROID_SLEEP_CONFIG:-0}" = "1" && "${PHYSBOX5_ANDROID_SLEEP_TOGGLE:-0}" != "1" ]]; then
     echo "error: Android sleep configuration requires PHYSBOX5_ANDROID_SLEEP_TOGGLE=1" >&2; exit 2
+fi
+if [[ "${PHYSBOX5_ANDROID_LIQUID_CAPTURE:-0}" = "1" ]]; then
+    [[ "$SCENARIO" = "liquid-sandbox" ]] || { echo "error: Android liquid capture requires liquid-sandbox" >&2; exit 2; }
+    [[ "${PHYSBOX5_ANDROID_SLEEP_TOGGLE:-0}" != "1" \
+        && "${PHYSBOX5_ANDROID_CONSTRUCTION_CAPTURE:-0}" != "1" \
+        && "${PHYSBOX5_ANDROID_GRAB_CAPTURE:-0}" != "1" ]] || {
+        echo "error: choose only one Android interaction capture" >&2; exit 2;
+    }
 fi
 if [[ "${PHYSBOX5_ANDROID_SLEEP_TOGGLE:-0}" = "1" ]]; then
     [[ "${PHYSBOX5_ANDROID_CONSTRUCTION_CAPTURE:-0}" != "1" && "${PHYSBOX5_ANDROID_GRAB_CAPTURE:-0}" != "1" ]] || {
@@ -214,6 +222,73 @@ if [[ "${PHYSBOX5_ANDROID_CONSTRUCTION_CAPTURE:-0}" = "1" ]]; then
     done
     [[ "$CONSTRUCTION_VISIBLE" -eq 1 ]] || { echo "error: Android construction diagnostic did not become visible; see $LOG" >&2; exit 1; }
     CAPTURE_PHASE="${SCENARIO}-construction-placed"
+fi
+if [[ "${PHYSBOX5_ANDROID_LIQUID_CAPTURE:-0}" = "1" ]]; then
+    SIZE="$($ADB -s "$SERIAL" shell wm size | sed -n 's/.*Physical size: //p' | tail -1 | tr -d '\r')"
+    WIDTH="${SIZE%x*}"; HEIGHT="${SIZE#*x}"
+    [[ "$WIDTH" =~ ^[0-9]+$ && "$HEIGHT" =~ ^[0-9]+$ ]] || { echo "error: could not determine Android display size" >&2; exit 1; }
+    TOOL_POINTS="$(node -e '
+      const w = +process.argv[1], h = +process.argv[2];
+      const scale = Math.max(1, Math.min(2, Math.min(w, h) / 600));
+      const logicalWidth = w / scale;
+      const stride = logicalWidth < 580 ? Math.max(1, (logicalWidth - 130) / 6) : 76;
+      const width = logicalWidth < 580 ? Math.max(1, stride - 6) : 70;
+      const center = (index) => Math.round((118 + index * stride + width * 0.5) * scale);
+      console.log(`${center(4)} ${center(3)} ${center(5)} ${Math.round(50 * scale)}`);
+    ' "$WIDTH" "$HEIGHT")"
+    read -r WATER_X ERASE_X SURFACE_X TOOL_Y <<< "$TOOL_POINTS"
+    TARGET_X=$((WIDTH * 68 / 100)); TARGET_Y=$((HEIGHT * 34 / 100))
+    BEFORE_PARTICLES="$(node -e 'console.log(JSON.parse(process.argv[1]).bodyCommands.e)' "$REPORT")"
+    "$ADB" -s "$SERIAL" shell input tap "$WATER_X" "$TOOL_Y"
+    "$ADB" -s "$SERIAL" shell input tap "$TARGET_X" "$TARGET_Y"
+    WATER_EXECUTED=0
+    for _ in $(seq 1 30); do
+        "$ADB" -s "$SERIAL" logcat -d -t 10000 > "$LOG"
+        REPORT="$(rg 'PHYSBOX5_MARK_FRAME_RENDERED ' "$LOG" | tail -1 | sed 's/^.*PHYSBOX5_MARK_FRAME_RENDERED //')"
+        if node -e '
+          const frame = JSON.parse(process.argv[1]); const before = Number(process.argv[2]);
+          process.exit(frame.bodyCommands.e > before ? 0 : 1);
+        ' "$REPORT" "$BEFORE_PARTICLES"; then WATER_EXECUTED=1; break; fi
+        sleep 0.25
+    done
+    [[ "$WATER_EXECUTED" -eq 1 ]] || { echo "error: Android Water tool did not execute; see $LOG" >&2; exit 1; }
+
+    AFTER_WATER="$(node -e 'console.log(JSON.parse(process.argv[1]).bodyCommands.e)' "$REPORT")"
+    "$ADB" -s "$SERIAL" shell input tap "$ERASE_X" "$TOOL_Y"
+    "$ADB" -s "$SERIAL" shell input tap "$TARGET_X" "$TARGET_Y"
+    ERASE_EXECUTED=0
+    for _ in $(seq 1 30); do
+        "$ADB" -s "$SERIAL" logcat -d -t 10000 > "$LOG"
+        REPORT="$(rg 'PHYSBOX5_MARK_FRAME_RENDERED ' "$LOG" | tail -1 | sed 's/^.*PHYSBOX5_MARK_FRAME_RENDERED //')"
+        if node -e '
+          const frame = JSON.parse(process.argv[1]); const before = Number(process.argv[2]);
+          process.exit(frame.bodyCommands.e > before ? 0 : 1);
+        ' "$REPORT" "$AFTER_WATER"; then ERASE_EXECUTED=1; break; fi
+        sleep 0.25
+    done
+    [[ "$ERASE_EXECUTED" -eq 1 ]] || { echo "error: Android particle Erase did not execute; see $LOG" >&2; exit 1; }
+
+    BEFORE_SURFACE="$(node -e 'console.log(JSON.parse(process.argv[1]).bodyCommands.c)' "$REPORT")"
+    "$ADB" -s "$SERIAL" shell input tap "$SURFACE_X" "$TOOL_Y"
+    X1=$((WIDTH * 58 / 100)); Y1=$((HEIGHT * 48 / 100))
+    X2=$((WIDTH * 80 / 100)); Y2=$((HEIGHT * 40 / 100))
+    "$ADB" -s "$SERIAL" shell input motionevent DOWN "$X1" "$Y1"
+    "$ADB" -s "$SERIAL" shell input motionevent MOVE "$X2" "$Y2"
+    sleep 0.2
+    "$ADB" -s "$SERIAL" shell input motionevent UP "$X2" "$Y2"
+    SURFACE_EXECUTED=0
+    for _ in $(seq 1 40); do
+        "$ADB" -s "$SERIAL" logcat -d -t 10000 > "$LOG"
+        REPORT="$(rg 'PHYSBOX5_MARK_FRAME_RENDERED ' "$LOG" | tail -1 | sed 's/^.*PHYSBOX5_MARK_FRAME_RENDERED //')"
+        if node -e '
+          const frame = JSON.parse(process.argv[1]); const before = Number(process.argv[2]);
+          process.exit(frame.bodyCommands.c > before
+            && frame.d?.r === "placed" && frame.d?.b === false ? 0 : 1);
+        ' "$REPORT" "$BEFORE_SURFACE"; then SURFACE_EXECUTED=1; break; fi
+        sleep 0.25
+    done
+    [[ "$SURFACE_EXECUTED" -eq 1 ]] || { echo "error: Android Surface tool did not commit; see $LOG" >&2; exit 1; }
+    CAPTURE_PHASE="${SCENARIO}-water-erase-surface"
 fi
 if [[ "${PHYSBOX5_ANDROID_GRAB_CAPTURE:-0}" = "1" ]]; then
     [[ "$SCENARIO" = "rigid-floor" ]] || { echo "error: Android grab capture requires rigid-floor" >&2; exit 2; }

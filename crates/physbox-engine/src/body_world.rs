@@ -1942,25 +1942,25 @@ fn surface_preview_vertices(preview: SurfacePreview) -> Option<[[f32; 4]; 6]> {
         preview.start.x - perpendicular[0],
         preview.start.y - perpendicular[1],
         1.0,
-        0.0,
+        1.0,
     ];
     let start_high = [
         preview.start.x + perpendicular[0],
         preview.start.y + perpendicular[1],
         1.0,
-        0.0,
+        1.0,
     ];
     let end_low = [
         preview.end.x - perpendicular[0],
         preview.end.y - perpendicular[1],
         1.0,
-        0.0,
+        1.0,
     ];
     let end_high = [
         preview.end.x + perpendicular[0],
         preview.end.y + perpendicular[1],
         1.0,
-        0.0,
+        1.0,
     ];
     Some([
         start_low, end_low, start_high, start_high, end_low, end_high,
@@ -3185,8 +3185,8 @@ mod tests {
             end: Vec2::new(1.0, 0.5),
         })
         .unwrap();
-        assert_eq!(vertices[0], [-1.0, 0.46, 1.0, 0.0]);
-        assert_eq!(vertices[5], [1.0, 0.54, 1.0, 0.0]);
+        assert_eq!(vertices[0], [-1.0, 0.46, 1.0, 1.0]);
+        assert_eq!(vertices[5], [1.0, 0.54, 1.0, 1.0]);
         assert!(
             surface_preview_vertices(SurfacePreview {
                 start: Vec2::ZERO,

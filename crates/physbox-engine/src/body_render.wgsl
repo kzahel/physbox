@@ -233,7 +233,7 @@ fn grab_vertex(
     if (world_active.z < 0.5) {
         return GrabVertexOutput(vec4f(2.0, 2.0, 0.0, 1.0), vec2f(0.0), 0u, 0u);
     }
-    let primitive = u32(vertex_index >= 6u);
+    let primitive = select(u32(vertex_index >= 6u), 2u, world_active.w > 0.5);
     let local = corners[vertex_index % 6u];
     return GrabVertexOutput(world_to_clip(world_active.xy), local, primitive, 1u);
 }
@@ -243,7 +243,12 @@ fn grab_fragment(input: GrabVertexOutput) -> @location(0) vec4f {
     if (input.is_active == 0u || (input.primitive == 1u && dot(input.local, input.local) > 1.0)) {
         discard;
     }
-    let color = select(vec3f(0.22, 0.92, 1.0), vec3f(0.72, 1.0, 0.88),
+    var color = select(vec3f(0.22, 0.92, 1.0), vec3f(0.72, 1.0, 0.88),
                        input.primitive == 1u);
-    return vec4f(color, select(0.72, 0.94, input.primitive == 1u));
+    var alpha = select(0.72, 0.94, input.primitive == 1u);
+    if (input.primitive == 2u) {
+        color = vec3f(0.38, 0.96, 0.62);
+        alpha = 0.78;
+    }
+    return vec4f(color, alpha);
 }

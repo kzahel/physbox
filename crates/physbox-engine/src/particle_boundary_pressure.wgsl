@@ -27,8 +27,10 @@ const BODY_FLAG_LIVE: u32 = 1u << 0u;
 const BODY_FLAG_RECTANGLE: u32 = 1u << 8u;
 const BODY_FLAG_CIRCLE: u32 = 1u << 9u;
 const PRESSURE_BODY_BIT: u32 = 1u << 31u;
-const OVERFLOW_BODY: u32 = 0xfffffffeu;
-const NO_BODY: u32 = 0xffffffffu;
+// These identities are bitcast through a float storage lane. Keep both bit
+// patterns finite and outside every supported body capacity.
+const OVERFLOW_BODY: u32 = 0x7f7ffffeu;
+const NO_BODY: u32 = 0x7f7fffffu;
 
 fn rotate(value: vec2f, angle: f32) -> vec2f {
     let c = cos(angle);

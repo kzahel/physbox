@@ -18,6 +18,7 @@ const box2dScreenshot = join(captureDirectory, `physbox5-web-box2d${captureSuffi
 const solverScreenshot = join(captureDirectory, `physbox5-web-solver${captureSuffix}.png`);
 const grabScreenshot = join(captureDirectory, `physbox5-web-grab${captureSuffix}.png`);
 const constructionScreenshot = join(captureDirectory, `physbox5-web-construction${captureSuffix}.png`);
+const liquidInteractionScreenshot = join(captureDirectory, `physbox5-web-liquid-tools${captureSuffix}.png`);
 const provenancePath = join(captureDirectory, `physbox5-web${captureSuffix}.json`);
 const scenario = process.env.PHYSBOX5_SCENARIO ?? "bootstrap";
 const requestedBodyCapacity = Number.parseInt(process.env.PHYSBOX5_BODY_CAPACITY ?? "64", 10);
@@ -37,6 +38,7 @@ await rm(box2dScreenshot, { force: true });
 await rm(solverScreenshot, { force: true });
 await rm(grabScreenshot, { force: true });
 await rm(constructionScreenshot, { force: true });
+await rm(liquidInteractionScreenshot, { force: true });
 await rm(provenancePath, { force: true });
 run(process.execPath, [
   resolve(root, "scripts/build-web.mjs"),
@@ -87,8 +89,8 @@ try {
   if (before.frame.sceneContract?.solverProfile !== "soft-coupled") {
     throw new Error(`fresh browser did not use soft-coupled: ${JSON.stringify(before.frame.sceneContract)}`);
   }
-  if (before.frame.ui?.version !== 9 || before.frame.ui?.sleepVisualsEnabled !== false) {
-    throw new Error(`browser did not expose UI contract 9 defaults: ${JSON.stringify(before.frame.ui)}`);
+  if (before.frame.ui?.version !== 10 || before.frame.ui?.sleepVisualsEnabled !== false) {
+    throw new Error(`browser did not expose UI contract 10 defaults: ${JSON.stringify(before.frame.ui)}`);
   }
   if (
     before.frame.ui?.selectedEngine !== "physbox"
@@ -756,6 +758,7 @@ try {
   }
   let capturedGrab = null;
   let capturedConstruction = null;
+  let capturedLiquidInteraction = null;
   if (process.env.PHYSBOX5_CONSTRUCTION_CAPTURE === "1") {
     if (scenario !== "bootstrap") {
       throw new Error("PHYSBOX5_CONSTRUCTION_CAPTURE currently requires bootstrap");
@@ -806,6 +809,87 @@ try {
       null,
       { timeout: 10_000 },
     );
+  }
+  if (scenario === "liquid-sandbox") {
+    const logicalWidth = viewportWidth / uiScale;
+    const toolStride = logicalWidth < 580
+      ? Math.max(1, (logicalWidth - 130) / 6)
+      : 76;
+    const toolWidth = logicalWidth < 580 ? Math.max(1, toolStride - 6) : 70;
+    const toolCenter = (index) => [
+      (118 + index * toolStride + toolWidth * 0.5) * uiScale,
+      50 * uiScale,
+    ];
+    const beforeLiquid = await page.evaluate(() => globalThis.__physbox5.frame);
+    const target = [viewportWidth * 0.68, viewportHeight * 0.34];
+
+    await page.mouse.click(...toolCenter(4));
+    await page.waitForFunction(
+      () => globalThis.__physbox5?.frame?.ui?.currentTool === "water",
+      null,
+      { timeout: 10_000 },
+    );
+    await page.mouse.click(...target);
+    await page.waitForFunction(
+      (executed) => globalThis.__physbox5?.frame?.bodyCommands
+        ?.executedParticleCommandsTotal > executed,
+      beforeLiquid.bodyCommands.executedParticleCommandsTotal,
+      { timeout: 10_000 },
+    );
+
+    const afterWater = await page.evaluate(() => globalThis.__physbox5.frame);
+    await page.mouse.click(...toolCenter(3));
+    await page.waitForFunction(
+      () => globalThis.__physbox5?.frame?.ui?.currentTool === "erase",
+      null,
+      { timeout: 10_000 },
+    );
+    await page.mouse.click(...target);
+    await page.waitForFunction(
+      (executed) => globalThis.__physbox5?.frame?.bodyCommands
+        ?.executedParticleCommandsTotal > executed,
+      afterWater.bodyCommands.executedParticleCommandsTotal,
+      { timeout: 10_000 },
+    );
+
+    const beforeSurface = await page.evaluate(() => globalThis.__physbox5.frame);
+    await page.mouse.click(...toolCenter(5));
+    await page.waitForFunction(
+      () => globalThis.__physbox5?.frame?.ui?.currentTool === "surface",
+      null,
+      { timeout: 10_000 },
+    );
+    await page.mouse.move(viewportWidth * 0.56, viewportHeight * 0.48);
+    await page.mouse.down();
+    await page.mouse.move(viewportWidth * 0.80, viewportHeight * 0.40, { steps: 4 });
+    await captureCompleteScreenshot(
+      page,
+      liquidInteractionScreenshot,
+      "browser liquid Surface preview",
+      consoleErrors,
+    );
+    await page.mouse.up();
+    await page.waitForFunction(
+      (executed) => {
+        const frame = globalThis.__physbox5?.frame;
+        return frame?.bodyCommands?.executedConstructionIntentsTotal > executed
+          && frame?.constructionDiagnostic?.state?.lastResult === "placed"
+          && frame?.constructionDiagnostic?.blockingReadbackForAdvancement === false;
+      },
+      beforeSurface.bodyCommands.executedConstructionIntentsTotal,
+      { timeout: 10_000 },
+    );
+    capturedLiquidInteraction = await page.evaluate(() => globalThis.__physbox5.frame);
+    if (
+      capturedLiquidInteraction.bodyCommands.executedParticleCommandsTotal
+        < beforeLiquid.bodyCommands.executedParticleCommandsTotal + 2
+      || capturedLiquidInteraction.bodyCommands.overflowed
+      || capturedLiquidInteraction.sceneContract.particleReadbackForFrameAdvancement
+      || capturedLiquidInteraction.ui.box2dIdentityDisagreements !== 0
+      || capturedLiquidInteraction.ui.box2dFailure !== null
+    ) {
+      throw new Error(`browser liquid tools violated their bounded contract: ${JSON.stringify(capturedLiquidInteraction)}`);
+    }
   }
   if (process.env.PHYSBOX5_GRAB_CAPTURE === "1") {
     if (scenario !== "rigid-floor") {
@@ -918,6 +1002,8 @@ try {
     grabFrame: capturedGrab,
     constructionScreenshot: capturedConstruction ? constructionScreenshot : null,
     constructionFrame: capturedConstruction,
+    liquidInteractionScreenshot: capturedLiquidInteraction ? liquidInteractionScreenshot : null,
+    liquidInteractionFrame: capturedLiquidInteraction,
     report: final.frame,
   };
   await writeFile(provenancePath, `${JSON.stringify(provenance, null, 2)}\n`);
@@ -949,6 +1035,7 @@ try {
       box2dScreenshot,
       grabScreenshot: capturedGrab ? grabScreenshot : null,
       constructionScreenshot: capturedConstruction ? constructionScreenshot : null,
+      liquidInteractionScreenshot: capturedLiquidInteraction ? liquidInteractionScreenshot : null,
       provenancePath,
       frame: final.frame,
     };

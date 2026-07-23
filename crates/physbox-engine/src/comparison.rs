@@ -194,6 +194,9 @@ impl ComparisonShadow {
                 construction_intents
                     .iter()
                     .copied()
+                    .filter(|intent| {
+                        !matches!(intent, ConstructionIntentV1::PlaceSurface { .. })
+                    })
                     .map(PendingAction::Construction),
             )
             .collect::<Vec<_>>();

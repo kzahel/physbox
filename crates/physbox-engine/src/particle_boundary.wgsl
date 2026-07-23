@@ -31,7 +31,9 @@ const COUNTER_BODY_CONTACTS: u32 = 6u;
 const COUNTER_BODY_CONTRIBUTIONS: u32 = 16u;
 const COUNTER_BODY_CONTRIBUTION_OVERFLOW: u32 = 18u;
 const OVERFLOW_BODY_CONTRIBUTIONS: u32 = 1u << 4u;
-const NO_BODY: u32 = 0xffffffffu;
+// This identity is bitcast through a float storage lane. Keep the bit pattern
+// finite so every WebGPU WGSL frontend accepts the constant.
+const NO_BODY: u32 = 0x7f7fffffu;
 
 fn rotate(value: vec2f, angle: f32) -> vec2f {
     let c = cos(angle);

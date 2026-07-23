@@ -2045,6 +2045,23 @@ mod tests {
     }
 
     #[test]
+    fn body_identity_float_lane_sentinels_are_webgpu_finite() {
+        for bits in [0x7f7f_fffe_u32, 0x7f7f_ffff_u32] {
+            assert!(f32::from_bits(bits).is_finite());
+            assert!(bits > physbox_launch::WorldCapacityPreset::Slots10000.slots());
+        }
+        for shader in [
+            include_str!("particle_boundary.wgsl"),
+            include_str!("particle_boundary_pressure.wgsl"),
+            include_str!("particle_body_velocity.wgsl"),
+            include_str!("particle_body_reduce.wgsl"),
+        ] {
+            assert!(shader.contains("0x7f7fffff"));
+            assert!(!shader.contains("0xffffffffu"));
+        }
+    }
+
+    #[test]
     fn gpu_particle_pipelines_compile_and_encode_on_the_product_device_contract() {
         let instance = crate::create_instance();
         let adapter = pollster::block_on(crate::gpu_context::request_adapter(&instance, None))

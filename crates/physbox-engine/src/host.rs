@@ -636,6 +636,10 @@ impl BodyInteractionState {
             .report
             .executed_commands_total
             .saturating_add(construction_batch.intents.len() as u64);
+        self.report.executed_commands_total = self
+            .report
+            .executed_commands_total
+            .saturating_add(particle_commands.len() as u64);
         self.report.executed_construction_intents_total = self
             .report
             .executed_construction_intents_total

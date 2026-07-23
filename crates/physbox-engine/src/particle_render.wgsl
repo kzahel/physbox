@@ -30,9 +30,9 @@ fn particle_vertex(
     let local = corners[vertex_index];
     let world = positions[index].xy + local * params.material.x;
     let clip = (world - params.camera.xy) / max(params.camera.zw, vec2f(0.0001));
-    let speed = clamp(length(velocities[index].xy) * 0.08, 0.0, 1.0);
+    let speed = clamp(length(velocities[index].xy) * 0.16, 0.0, 1.0);
     let density = density_states[index].x;
-    var color = mix(vec3f(0.035, 0.34, 0.86), vec3f(0.18, 0.92, 1.0), speed);
+    var color = mix(vec3f(0.025, 0.28, 0.72), vec3f(0.16, 0.88, 1.0), speed);
     if params.debug.x == 1u {
         color = select(
             mix(vec3f(0.03, 0.12, 0.48), vec3f(0.08, 0.84, 1.0),
@@ -51,7 +51,14 @@ fn particle_fragment(input: VertexOutput) -> @location(0) vec4f {
     if radius > 1.0 {
         discard;
     }
-    let rim = smoothstep(0.68, 1.0, radius);
-    let color = mix(input.color + vec3f(0.10, 0.16, 0.20), input.color * 0.72, rim);
-    return vec4f(color, 0.92);
+    let coverage = 1.0 - smoothstep(0.76, 1.0, radius);
+    let body = mix(input.color * 0.76, input.color + vec3f(0.08, 0.15, 0.18),
+                   1.0 - smoothstep(0.0, 0.86, radius));
+    let highlight = 1.0 - smoothstep(
+        0.12,
+        0.34,
+        length(input.local - vec2f(-0.28, 0.32)),
+    );
+    let color = mix(body, vec3f(0.72, 0.96, 1.0), highlight * 0.42);
+    return vec4f(color, coverage * 0.90);
 }
