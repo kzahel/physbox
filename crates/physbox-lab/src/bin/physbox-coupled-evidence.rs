@@ -193,14 +193,11 @@ fn capacity(output: &Path) -> Result<Vec<EvidenceRow>, String> {
         },
     ))?;
     require_capacity_clean(&run.evidence)?;
-    rows.push(write_row(
-        output,
-        "product-coupled-3952-cap32768".to_owned(),
-        run,
-        true,
-        None,
-        None,
-    )?);
+    let product_label = format!(
+        "product-coupled-{}-cap{}",
+        run.evidence.initial_particles.active_particles, run.evidence.particle_diagnostics.capacity
+    );
+    rows.push(write_row(output, product_label, run, true, None, None)?);
 
     for particles in [1_024, 4_096, 16_384, 32_768] {
         let source = coupled_capacity_scenario(particles).map_err(|error| error.to_string())?;

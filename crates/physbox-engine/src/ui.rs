@@ -67,6 +67,7 @@ pub(crate) enum WorkbenchTool {
 }
 
 impl WorkbenchTool {
+    #[cfg(feature = "box2d-comparator")]
     const BASE: [Self; 4] = [Self::Grab, Self::Circle, Self::Rectangle, Self::Erase];
     const PHYSBOX: [Self; 5] = [
         Self::Grab,

@@ -10,7 +10,8 @@ use wgpu::util::DeviceExt;
 
 use crate::{CameraFrame2d, GpuBodyStorage, renderer::RenderFrameTarget};
 
-pub(crate) const PRODUCT_PARTICLE_CAPACITY: u32 = 32_768;
+pub(crate) const MAX_PRODUCT_PARTICLE_CAPACITY: u32 = 32_768;
+pub(crate) const LIQUID_SANDBOX_PARTICLE_CAPACITY: u32 = 8_192;
 pub(crate) const PARTICLE_COMMAND_CAPACITY: u32 = 64;
 const PARTICLE_COUNTER_WORDS: u32 = 21;
 const GRID_WIDTH: u32 = 64;
@@ -260,9 +261,9 @@ impl GpuParticleWorld {
         }
         let material = scenario.materials[0];
         let capacity = scenario.particle_capacity;
-        if capacity == 0 || capacity > PRODUCT_PARTICLE_CAPACITY {
+        if capacity == 0 || capacity > MAX_PRODUCT_PARTICLE_CAPACITY {
             return Err(format!(
-                "particle capacity {capacity} is outside the first product bound 1..={PRODUCT_PARTICLE_CAPACITY}"
+                "particle capacity {capacity} is outside the product bound 1..={MAX_PRODUCT_PARTICLE_CAPACITY}"
             ));
         }
         let initial = initial_particle_data(&scenario.regions, material, capacity)?;

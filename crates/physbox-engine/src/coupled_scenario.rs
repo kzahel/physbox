@@ -200,7 +200,7 @@ pub fn liquid_sandbox_scenario() -> Result<CoupledScenarioV1, ScenarioBuildError
     scenario.id = "liquid-sandbox-v1".to_owned();
     scenario.seed = 0x5035_31ff;
     scenario.requested_steps = 600;
-    scenario.particle_capacity = crate::particle_world::PRODUCT_PARTICLE_CAPACITY;
+    scenario.particle_capacity = crate::particle_world::LIQUID_SANDBOX_PARTICLE_CAPACITY;
     scenario.rigid.id = "liquid-sandbox-v1-rigid".to_owned();
     scenario.rigid.seed = scenario.seed;
     scenario.rigid.requested_steps = scenario.requested_steps;
@@ -463,12 +463,13 @@ mod tests {
     }
 
     #[test]
-    fn liquid_sandbox_uses_the_bounded_product_capacity() {
+    fn liquid_sandbox_keeps_painting_headroom_below_the_capacity_frontier() {
         let scenario = liquid_sandbox_scenario().unwrap();
         assert_eq!(
             scenario.particle_capacity,
-            crate::particle_world::PRODUCT_PARTICLE_CAPACITY
+            crate::particle_world::LIQUID_SANDBOX_PARTICLE_CAPACITY
         );
+        assert!(scenario.particle_capacity < crate::particle_world::MAX_PRODUCT_PARTICLE_CAPACITY);
         assert_eq!(scenario.regions.len(), 1);
     }
 
