@@ -56,7 +56,7 @@ that awake result. See [S24](docs/tactical/024-current-rigid-quality-qualificati
 and [S25](docs/tactical/025-bounded-awake-configuration-qualification.md).
 
 The repository still contains no Rapier or CPU product physics fallback, fluid
-solver, legacy settings UI, or PhysBox 4 scene compatibility. An authorized
+solver, legacy settings UI, or PhysBox 4 scene compatibility. The implemented
 default-on, compile-removable Box2D shadow comparator is validation
 presentation only: it never supplies PhysBox mechanics or performance results.
 
@@ -178,6 +178,43 @@ the real product graph can be constructed and executed, not that every device
 can simulate or render 10K bodies at 60 Hz. The cross-host default remains 64;
 an authored scenario that starts larger receives the minimum power-of-two
 headroom needed to load and reports both requested and effective capacity.
+
+### Interactive PhysBox / Box2D comparison
+
+Open **MENU → WORLD → ENGINE** and choose **PHYSBOX** or **BOX2D**. PhysBox is
+selected initially. Both engines start from the same configured world and
+continue advancing, so switching is immediate and does not copy state.
+Placement, painting, erase, grab/throw, gravity, reset, scenario, and
+configuration actions are mirrored by stable body identity. Camera, tools,
+shared world settings, renderer, and layout stay the same; PhysBox-only solver
+controls are hidden while Box2D is visible and reappear unchanged on return.
+
+**SLEEP VISUALS** also works in Box2D mode using Box2D's public authoritative
+awake/asleep state. Box2D does not expose PhysBox's quiet-candidate and
+internal wake-cause states, so those marks are omitted rather than guessed.
+The HUD identifies **ENGINE BOX2D**, the exact pinned revision, step alignment,
+live bodies, and any pending, overflow, or identity-disagreement failure.
+
+This is a qualitative validation tool, not a CPU fallback or performance mode.
+Comparator-enabled frames intentionally execute both worlds and are excluded
+from PhysBox timing and capacity claims. That exclusion does not mean sleeping
+is unhelpful: the matched 1,000-body sleeping-city probe measured a 28.8%
+end-to-end GPU P50 reduction at 1% awake while solver work followed the awake
+set.
+
+The comparator is on by default. A release web package without any Box2D
+dependency, asset, menu vocabulary, or runtime work can be built with:
+
+```sh
+node scripts/build-web.mjs --release --no-box2d-comparator
+npm run test:box2d-feature-off
+```
+
+Native maintained crates expose the corresponding default
+`box2d-comparator` Cargo feature and support `--no-default-features` for an
+explicit comparator-free build. See
+[interactive Box2D comparison](docs/topics/interactive-box2d-comparison.md)
+for authority, equivalence, platform, and remaining physical-device evidence.
 
 The same opt-in profile is available to the shared desktop host when direct
 launch control is useful:

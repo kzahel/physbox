@@ -1,6 +1,7 @@
 # S29 — Interactive Box2D comparison
 
-Status: active, 2026-07-23.
+Status: active with implementation and all available qualification complete;
+physical Android execution is pending device availability, 2026-07-23.
 
 Governing topic:
 [interactive Box2D comparison](../topics/interactive-box2d-comparison.md).
@@ -58,7 +59,7 @@ Gate: documentation links and whitespace pass; no product code changes.
 - [x] Add an enumerated pinned source/runtime distribution with license,
   provenance manifest, reproducible build entry point, and artifact hashes.
 - [x] Implement one shared Box2D world API for native/Android and browser.
-- [ ] Add a feature-off boundary test proving removal of dependencies, assets,
+- [x] Add a feature-off boundary test proving removal of dependencies, assets,
   menu vocabulary, and runtime work.
 
 Gate: direct runtime tests create, step, inspect awake state, destroy, and
@@ -78,11 +79,11 @@ independently evolved states at one step identity.
 
 ### S29.4 — Stable-identity interaction mirroring
 
-- [ ] Mirror placement and hold-repeat results with exact allocated IDs.
-- [ ] Mirror erase and grab selection by stable ID after trajectories diverge.
-- [ ] Mirror target/release/throw, gravity, reset, restart, and configuration.
-- [ ] Keep GPU-origin identity feedback compact and asynchronous.
-- [ ] Fail closed and report any action/result queue overflow or identity
+- [x] Mirror placement and hold-repeat results with exact allocated IDs.
+- [x] Mirror erase and grab selection by stable ID after trajectories diverge.
+- [x] Mirror target/release/throw, gravity, reset, restart, and configuration.
+- [x] Keep GPU-origin identity feedback compact and asynchronous.
+- [x] Fail closed and report any action/result queue overflow or identity
   disagreement.
 
 Gate: deterministic construction/erase/reuse/grab traces preserve complete
@@ -90,11 +91,11 @@ ordered identity equality without a blocking PhysBox readback.
 
 ### S29.5 — Existing-menu integration and sleep visualization
 
-- [ ] Add `ENGINE: PHYSBOX / BOX2D` to the current engine-rendered menu.
-- [ ] Keep PhysBox initially selected and both shadows continuously advanced.
-- [ ] Hide PhysBox-only solver controls in Box2D mode while preserving values.
-- [ ] Retain shared settings, tools, camera, and layout across switches.
-- [ ] Render Box2D awake/asleep state and only explicitly derived public-state
+- [x] Add `ENGINE: PHYSBOX / BOX2D` to the current engine-rendered menu.
+- [x] Keep PhysBox initially selected and both shadows continuously advanced.
+- [x] Hide PhysBox-only solver controls in Box2D mode while preserving values.
+- [x] Retain shared settings, tools, camera, and layout across switches.
+- [x] Render Box2D awake/asleep state and only explicitly derived public-state
   observations through the existing sleep-visual language.
 
 Gate: shared UI tests cover visibility, hit routing, engine switching, hidden
@@ -102,11 +103,11 @@ settings, state persistence, and feature-off absence.
 
 ### S29.6 — Cross-host packaging and boundary validation
 
-- [ ] Integrate desktop native, browser WebAssembly, Android ARM64, and
+- [x] Integrate desktop native, browser WebAssembly, Android ARM64, and
   headless validation through the shared host.
-- [ ] Keep browser glue opaque and add a negative fixture for semantic leakage.
-- [ ] Make build/deploy scripts carry comparator assets only when enabled.
-- [ ] Verify clean startup failure reporting for a missing or mismatched
+- [x] Keep browser glue opaque and add a negative fixture for semantic leakage.
+- [x] Make build/deploy scripts carry comparator assets only when enabled.
+- [x] Verify clean startup failure reporting for a missing or mismatched
   comparator runtime without falling back silently.
 
 Gate: native, real Browser WebGPU, ARM64, release APK, and one physical Android
@@ -114,11 +115,11 @@ run select both engines and exercise one shared raw-event validation.
 
 ### S29.7 — Qualification and closure
 
-- [ ] Compare governed interactive-runtime results with fresh process-isolated
+- [x] Compare governed interactive-runtime results with fresh process-isolated
   authority output.
-- [ ] Run the feature-off package inspection and default PhysBox regression.
+- [x] Run the feature-off package inspection and default PhysBox regression.
 - [ ] Publish fresh provenance and representative cross-host captures.
-- [ ] Update the topic, capability ledger, README, and this tactical with the
+- [x] Update the topic, capability ledger, README, and this tactical with the
   exact completed state and limitations.
 
 Gate: `npm run test:fast`, production clippy with warnings denied,
@@ -134,3 +135,40 @@ interactive actions retain stable identity in both; Box2D sleep state is
 visible; the compile feature is default-on and cleanly removable; the
 authority process still owns acceptance; and no PhysBox behavior or
 performance claim depends on the comparator.
+
+## Qualification record
+
+Implementation commits `314884e` through `50a58d1` add the pinned runtime,
+shared scenario source, dual-world lifecycle, stable-identity actions,
+engine-rendered UI, web packaging, feature-off proof, and Android raw-event
+lane. Follow-up commits `ab15939` and `ea12317` preserve semantic observation
+across solver-lab reloads and compare the packaged runtime with a fresh clean
+authority process. The source revision is
+`3a4f0da8374af61293a03021c9a0b3ebcfe67948`.
+
+Passed on 2026-07-23:
+
+- `npm run test:fast` in 30.22 seconds;
+- `npm run clippy:rust:production`;
+- `npm run test:web:lab`, run
+  `6e3bae95-a308-4bbb-9957-2a9ff1a1e307`;
+- `npm run test:box2d-feature-off`;
+- focused comparator, engine interaction, Android-tool, and fresh-process
+  authority tests;
+- fresh headless bootstrap report `/tmp/physbox5-box2d-headless.json`;
+- desktop shared-host run
+  `357e0936-77b4-4894-b8f2-e4cd691fc17a`;
+- Android ARM64 NDK check; and
+- release-native debug APK at
+  `android/app/build/outputs/apk/debug/app-debug.apk`.
+
+Representative Browser WebGPU capture
+`/tmp/physbox5-web-box2d.png` shows the selected Box2D renderer, exact
+revision, aligned step identity, shared floor, and a placed body. Browser
+startup also rejects a deliberately mismatched runtime. No physical Android
+device was present in USB or ADB discovery on 2026-07-23. The implemented
+device validation will select Box2D, place a body, verify live/alignment and
+failure diagnostics, and capture `/tmp/physbox5-android-box2d.png`; until that
+run passes, the cross-host capture checkbox and completion condition remain
+open. The hardware-backed AVD is not used as a substitute for this
+user-requested physical lane.

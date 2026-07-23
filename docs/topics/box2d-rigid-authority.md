@@ -108,6 +108,13 @@ fixtures. If a future failure cannot be localized, the microscope must use a
 separate worktree, record this base revision plus its patch digest, and remain
 diagnostic rather than acceptance truth.
 
+The S29 packaged-runtime drift test runs the same governed 180-step
+circle/floor source through the interactive native library and through a fresh
+process-isolated clean-pin authority executable. Revision, stable body IDs,
+shape, fixed/awake state, transforms, and velocities agree within `1e-6`.
+This qualifies packaging equivalence for the current projection; it does not
+change which lane owns acceptance.
+
 ## Validation
 
 The authority crate tests direct manifold geometry, deterministic world replay,
