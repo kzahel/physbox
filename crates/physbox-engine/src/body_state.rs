@@ -28,6 +28,7 @@ const COMMAND_RESET: u32 = 1;
 const COMMAND_GRAB_BEGIN: u32 = 2;
 const COMMAND_GRAB_TARGET: u32 = 3;
 const COMMAND_GRAB_END: u32 = 4;
+const COMMAND_GRAB_CLEAR: u32 = 5;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod, Zeroable)]
@@ -469,8 +470,9 @@ impl GpuBodyStorage {
             ));
         }
         for command in &batch.commands {
-            if !self.slots.matches(command.body()) {
-                let body = command.body();
+            if let Some(body) = command.body()
+                && !self.slots.matches(body)
+            {
                 return Err(format!(
                     "body command targets stale handle {}:{}",
                     body.slot, body.generation
@@ -680,7 +682,12 @@ fn layout_artifact(capacity: u32, attempted: u64, live: u32) -> Result<BodyLayou
 fn command_raw(command: &BodyCommandV1) -> BodyCommandRaw {
     let body = command.body();
     let mut raw = BodyCommandRaw {
-        kind_slot_generation_sequence: [0, body.slot, body.generation, command.sequence()],
+        kind_slot_generation_sequence: [
+            0,
+            body.map_or(u32::MAX, |body| body.slot),
+            body.map_or(0, |body| body.generation),
+            command.sequence(),
+        ],
         data0: [0.0; 4],
         data1: [0.0; 4],
     };
@@ -711,6 +718,9 @@ fn command_raw(command: &BodyCommandV1) -> BodyCommandRaw {
         }
         BodyCommandV1::GrabEnd { .. } => {
             raw.kind_slot_generation_sequence[0] = COMMAND_GRAB_END;
+        }
+        BodyCommandV1::GrabClear { .. } => {
+            raw.kind_slot_generation_sequence[0] = COMMAND_GRAB_CLEAR;
         }
     }
     raw

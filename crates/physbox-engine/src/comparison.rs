@@ -2,13 +2,14 @@ use bytemuck::{Pod, Zeroable};
 use physbox_box2d_comparator::{BOX2D_REVISION, BodySnapshot, Box2dWorld, GrabTuning};
 use physbox_contracts::{
     ANALYTIC_SHAPE_FLAG_CIRCLE, ANALYTIC_SHAPE_FLAG_RECTANGLE, BodyCommandV1, BodyId, BodyStateV1,
-    ConstructionIntentV1, FiniteF32, GrabIntentV1, MaterialV1, NeutralActionV1,
-    SLEEP_STATE_LAYOUT_VERSION, ScenarioV1, ShapeV1, Vec2,
+    ConstructionIntentV1, ConstructionResultV1, ConstructionStateV1, FiniteF32, GrabIntentV1,
+    MaterialV1, NeutralActionV1, SLEEP_STATE_LAYOUT_VERSION, ScenarioV1, ShapeV1, Vec2,
 };
+use std::collections::{BTreeMap, VecDeque};
 use wgpu::util::DeviceExt;
 
 use crate::{
-    BodySlotRegistry, CameraFrame2d,
+    BodySlotRegistry, CameraFrame2d, GrabValidationState,
     construction::{
         CONSTRUCTION_CIRCLE_RADIUS, CONSTRUCTION_FRICTION, CONSTRUCTION_RECTANGLE_HALF_EXTENTS,
         CONSTRUCTION_RESTITUTION,
@@ -22,6 +23,30 @@ const BODY_FLAG_FIXED: u32 = 1 << 2;
 const SLEEP_FLAG_AWAKE: u32 = 1 << 0;
 const OBSERVED_WAKE_TRANSITION: u32 = 1 << 6;
 const ACTIVE_BODY_HEADER_WORDS: usize = 20;
+const PENDING_ACTION_CAPACITY: usize = 128;
+
+#[derive(Clone)]
+enum PendingAction {
+    Body(BodyCommandV1),
+    Grab(GrabIntentV1),
+    Construction(ConstructionIntentV1),
+}
+
+impl PendingAction {
+    fn sequence(&self) -> u32 {
+        match self {
+            Self::Body(command) => command.sequence(),
+            Self::Grab(intent) => intent.sequence(),
+            Self::Construction(intent) => intent.sequence(),
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct ConstructionFeedback {
+    result: ConstructionResultV1,
+    body: Option<BodyId>,
+}
 
 pub(crate) struct ComparisonShadow {
     world: Box2dWorld,
@@ -33,6 +58,14 @@ pub(crate) struct ComparisonShadow {
     live_bodies: u32,
     slots: BodySlotRegistry,
     active_grab: Option<BodyId>,
+    pending_actions: VecDeque<PendingAction>,
+    construction_feedback: BTreeMap<u32, ConstructionFeedback>,
+    grab_feedback: BTreeMap<u32, Option<BodyId>>,
+    box2d_construction_expectations: BTreeMap<u32, ConstructionFeedback>,
+    box2d_grab_expectations: BTreeMap<u32, Option<BodyId>>,
+    resolved_actions: u64,
+    identity_disagreements: u64,
+    queue_overflowed: bool,
     failed: Option<String>,
 }
 
@@ -62,6 +95,14 @@ impl ComparisonShadow {
             live_bodies: snapshots.len() as u32,
             slots,
             active_grab: None,
+            pending_actions: VecDeque::new(),
+            construction_feedback: BTreeMap::new(),
+            grab_feedback: BTreeMap::new(),
+            box2d_construction_expectations: BTreeMap::new(),
+            box2d_grab_expectations: BTreeMap::new(),
+            resolved_actions: 0,
+            identity_disagreements: 0,
+            queue_overflowed: false,
             failed: None,
         })
     }
@@ -85,23 +126,233 @@ impl ComparisonShadow {
         if self.failed.is_some() {
             return;
         }
-        for command in commands {
-            if let Err(error) = self.apply_body_command(command) {
+        let mut actions = commands
+            .iter()
+            .cloned()
+            .map(PendingAction::Body)
+            .chain(grab_intents.iter().copied().map(PendingAction::Grab))
+            .chain(
+                construction_intents
+                    .iter()
+                    .copied()
+                    .map(PendingAction::Construction),
+            )
+            .collect::<Vec<_>>();
+        actions.sort_by_key(PendingAction::sequence);
+        for action in actions {
+            if let Err(error) = self.apply_action(action) {
                 self.failed = Some(error);
                 return;
             }
         }
-        for intent in construction_intents {
-            if let Err(error) = self.apply_construction_intent(*intent) {
-                self.failed = Some(error);
+    }
+
+    pub(crate) fn enqueue_physbox_interactions(
+        &mut self,
+        commands: &[BodyCommandV1],
+        grab_intents: &[GrabIntentV1],
+        construction_intents: &[ConstructionIntentV1],
+    ) {
+        if self.failed.is_some() {
+            return;
+        }
+        let mut actions = commands
+            .iter()
+            .cloned()
+            .map(PendingAction::Body)
+            .chain(grab_intents.iter().copied().map(PendingAction::Grab))
+            .chain(
+                construction_intents
+                    .iter()
+                    .copied()
+                    .map(PendingAction::Construction),
+            )
+            .collect::<Vec<_>>();
+        actions.sort_by_key(PendingAction::sequence);
+        if self.pending_actions.len().saturating_add(actions.len()) > PENDING_ACTION_CAPACITY {
+            self.queue_overflowed = true;
+            self.fail(
+                "PhysBox identity feedback queue exceeded its bounded 128-action capacity"
+                    .to_owned(),
+            );
+            return;
+        }
+        self.pending_actions.extend(actions);
+        self.drain_pending_actions();
+    }
+
+    pub(crate) fn publish_construction_feedback(&mut self, state: &ConstructionStateV1) {
+        if self.failed.is_some() || state.last_result == ConstructionResultV1::None {
+            return;
+        }
+        for result in state.recent_results.iter().rev() {
+            let Some(expected) = self
+                .box2d_construction_expectations
+                .remove(&result.sequence)
+            else {
+                continue;
+            };
+            if expected.result != result.result || expected.body != result.body {
+                self.identity_disagreements = self.identity_disagreements.saturating_add(1);
+                self.fail(format!(
+                    "Box2D construction sequence {} expected {:?}/{:?}, but PhysBox reported {:?}/{:?}",
+                    result.sequence,
+                    expected.result,
+                    expected.body,
+                    result.result,
+                    result.body
+                ));
                 return;
+            }
+            self.resolved_actions = self.resolved_actions.saturating_add(1);
+        }
+        if let Some((&oldest, _)) = self.box2d_construction_expectations.first_key_value()
+            && state.last_sequence > oldest
+            && !state
+                .recent_results
+                .iter()
+                .any(|result| result.sequence == oldest)
+        {
+            self.identity_disagreements = self.identity_disagreements.saturating_add(1);
+            self.fail(format!(
+                "PhysBox construction feedback exceeded its four-result window before Box2D expectation {oldest}"
+            ));
+            return;
+        }
+        let Some(expected_sequence) = self.pending_actions.iter().find_map(|action| {
+            matches!(action, PendingAction::Construction(_)).then(|| action.sequence())
+        }) else {
+            return;
+        };
+        let includes_expected = state
+            .recent_results
+            .iter()
+            .any(|result| result.sequence == expected_sequence);
+        if state.last_sequence > expected_sequence && !includes_expected {
+            self.identity_disagreements = self.identity_disagreements.saturating_add(1);
+            self.fail(format!(
+                "PhysBox construction feedback exceeded its four-result window before sequence {expected_sequence}; latest is {}",
+                state.last_sequence
+            ));
+            return;
+        }
+        if state.last_sequence < expected_sequence {
+            return;
+        }
+        for result in state.recent_results.iter().rev() {
+            if self.pending_actions.iter().any(|action| {
+                matches!(action, PendingAction::Construction(_))
+                    && action.sequence() == result.sequence
+            }) {
+                self.construction_feedback.insert(
+                    result.sequence,
+                    ConstructionFeedback {
+                        result: result.result,
+                        body: result.body,
+                    },
+                );
             }
         }
-        for intent in grab_intents {
-            if let Err(error) = self.apply_grab_intent(*intent) {
-                self.failed = Some(error);
+        self.drain_pending_actions();
+    }
+
+    pub(crate) fn publish_grab_feedback(&mut self, state: &GrabValidationState) {
+        if self.failed.is_some() {
+            return;
+        }
+        if let Some(expected) = self
+            .box2d_grab_expectations
+            .remove(&state.last_selection_sequence)
+        {
+            if expected != state.last_selected_body {
+                self.identity_disagreements = self.identity_disagreements.saturating_add(1);
+                self.fail(format!(
+                    "Box2D grab sequence {} expected {:?}, but PhysBox reported {:?}",
+                    state.last_selection_sequence, expected, state.last_selected_body
+                ));
                 return;
             }
+            self.resolved_actions = self.resolved_actions.saturating_add(1);
+        }
+        let Some(expected_sequence) = self.pending_actions.iter().find_map(|action| {
+            matches!(action, PendingAction::Grab(GrabIntentV1::Begin { .. }))
+                .then(|| action.sequence())
+        }) else {
+            return;
+        };
+        if state.last_selection_sequence > expected_sequence {
+            self.identity_disagreements = self.identity_disagreements.saturating_add(1);
+            self.fail(format!(
+                "PhysBox grab feedback skipped sequence {expected_sequence} and reported {}",
+                state.last_selection_sequence
+            ));
+            return;
+        }
+        if state.last_selection_sequence < expected_sequence {
+            return;
+        }
+        self.grab_feedback
+            .insert(state.last_selection_sequence, state.last_selected_body);
+        self.drain_pending_actions();
+    }
+
+    pub(crate) fn fail(&mut self, message: String) {
+        if self.failed.is_none() {
+            self.failed = Some(message);
+        }
+    }
+
+    fn drain_pending_actions(&mut self) {
+        while self.failed.is_none() {
+            let Some(action) = self.pending_actions.front().cloned() else {
+                break;
+            };
+            let ready = match action {
+                PendingAction::Body(command) => self.apply_body_command(&command).map(|_| true),
+                PendingAction::Grab(GrabIntentV1::Begin {
+                    sequence,
+                    world_target,
+                }) => {
+                    let Some(body) = self.grab_feedback.remove(&sequence) else {
+                        break;
+                    };
+                    self.world.end_grab();
+                    self.active_grab = None;
+                    if let Some(body) = body {
+                        self.begin_grab(body, world_target).map(|_| true)
+                    } else {
+                        Ok(true)
+                    }
+                }
+                PendingAction::Grab(intent) => self.apply_grab_intent(intent).map(|_| true),
+                PendingAction::Construction(intent) => {
+                    let Some(feedback) = self.construction_feedback.remove(&intent.sequence())
+                    else {
+                        break;
+                    };
+                    self.apply_resolved_construction_intent(intent, feedback)
+                        .map(|_| true)
+                }
+            };
+            match ready {
+                Ok(true) => {
+                    self.pending_actions.pop_front();
+                    self.resolved_actions = self.resolved_actions.saturating_add(1);
+                }
+                Ok(false) => break,
+                Err(error) => {
+                    self.fail(error);
+                    break;
+                }
+            }
+        }
+    }
+
+    fn apply_action(&mut self, action: PendingAction) -> Result<(), String> {
+        match action {
+            PendingAction::Body(command) => self.apply_body_command(&command),
+            PendingAction::Grab(intent) => self.apply_grab_intent(intent),
+            PendingAction::Construction(intent) => self.apply_construction_intent(intent),
         }
     }
 
@@ -172,6 +423,11 @@ impl ComparisonShadow {
                 }
                 Ok(())
             }
+            BodyCommandV1::GrabClear { .. } => {
+                self.world.end_grab();
+                self.active_grab = None;
+                Ok(())
+            }
         }
     }
 
@@ -233,6 +489,30 @@ impl ComparisonShadow {
                     3.0 / (x * x + y * y),
                 )?;
             }
+            ConstructionIntentV1::PlaceCircleBody {
+                body,
+                result,
+                world_target,
+                ..
+            } => {
+                self.apply_resolved_construction_intent(
+                    intent,
+                    ConstructionFeedback { result, body },
+                )?;
+                let _ = world_target;
+            }
+            ConstructionIntentV1::PlaceRectangleBody {
+                body,
+                result,
+                world_target,
+                ..
+            } => {
+                self.apply_resolved_construction_intent(
+                    intent,
+                    ConstructionFeedback { result, body },
+                )?;
+                let _ = world_target;
+            }
             ConstructionIntentV1::EraseAt { world_target, .. } => {
                 let Some(body) = self.world.hit_test(world_target, true)? else {
                     return Ok(());
@@ -246,6 +526,153 @@ impl ComparisonShadow {
             }
         }
         Ok(())
+    }
+
+    pub(crate) fn resolve_box2d_construction(
+        &mut self,
+        intent: ConstructionIntentV1,
+    ) -> Result<ConstructionIntentV1, String> {
+        if self.box2d_construction_expectations.len() == PENDING_ACTION_CAPACITY {
+            self.queue_overflowed = true;
+            return Err("Box2D construction expectation queue exceeded 128 actions".to_owned());
+        }
+        match intent {
+            ConstructionIntentV1::PlaceCircle {
+                sequence,
+                world_target,
+            } => {
+                let feedback = self.place_body_resolved(
+                    ShapeV1::Circle {
+                        radius: finite(CONSTRUCTION_CIRCLE_RADIUS),
+                    },
+                    world_target,
+                    2.0 / (CONSTRUCTION_CIRCLE_RADIUS * CONSTRUCTION_CIRCLE_RADIUS),
+                )?;
+                let targeted = ConstructionIntentV1::PlaceCircleBody {
+                    sequence,
+                    body: feedback.body,
+                    world_target,
+                    result: feedback.result,
+                };
+                self.box2d_construction_expectations
+                    .insert(sequence, feedback);
+                Ok(targeted)
+            }
+            ConstructionIntentV1::PlaceRectangle {
+                sequence,
+                world_target,
+            } => {
+                let [x, y] = CONSTRUCTION_RECTANGLE_HALF_EXTENTS;
+                let feedback = self.place_body_resolved(
+                    ShapeV1::Rectangle {
+                        half_extents: Vec2::new(x, y),
+                    },
+                    world_target,
+                    3.0 / (x * x + y * y),
+                )?;
+                let targeted = ConstructionIntentV1::PlaceRectangleBody {
+                    sequence,
+                    body: feedback.body,
+                    world_target,
+                    result: feedback.result,
+                };
+                self.box2d_construction_expectations
+                    .insert(sequence, feedback);
+                Ok(targeted)
+            }
+            ConstructionIntentV1::EraseAt {
+                sequence,
+                world_target,
+            } => {
+                let body = self.world.hit_test(world_target, true)?;
+                if let Some(body) = body {
+                    self.erase_body(body)?;
+                }
+                self.box2d_construction_expectations.insert(
+                    sequence,
+                    ConstructionFeedback {
+                        result: if body.is_some() {
+                            ConstructionResultV1::Erased
+                        } else {
+                            ConstructionResultV1::EraseMiss
+                        },
+                        body,
+                    },
+                );
+                Ok(ConstructionIntentV1::EraseBody {
+                    sequence,
+                    body,
+                    world_target,
+                })
+            }
+            ConstructionIntentV1::PlaceCircleBody { .. }
+            | ConstructionIntentV1::PlaceRectangleBody { .. }
+            | ConstructionIntentV1::EraseBody { .. } => {
+                self.apply_construction_intent(intent)?;
+                Ok(intent)
+            }
+        }
+    }
+
+    fn apply_resolved_construction_intent(
+        &mut self,
+        intent: ConstructionIntentV1,
+        feedback: ConstructionFeedback,
+    ) -> Result<(), String> {
+        match (intent, feedback.result, feedback.body) {
+            (
+                ConstructionIntentV1::PlaceCircle { world_target, .. },
+                ConstructionResultV1::Placed,
+                Some(body),
+            ) => self.place_body_exact(
+                body,
+                ShapeV1::Circle {
+                    radius: finite(CONSTRUCTION_CIRCLE_RADIUS),
+                },
+                world_target,
+                2.0 / (CONSTRUCTION_CIRCLE_RADIUS * CONSTRUCTION_CIRCLE_RADIUS),
+            ),
+            (
+                ConstructionIntentV1::PlaceRectangle { world_target, .. },
+                ConstructionResultV1::Placed,
+                Some(body),
+            ) => {
+                let [x, y] = CONSTRUCTION_RECTANGLE_HALF_EXTENTS;
+                self.place_body_exact(
+                    body,
+                    ShapeV1::Rectangle {
+                        half_extents: Vec2::new(x, y),
+                    },
+                    world_target,
+                    3.0 / (x * x + y * y),
+                )
+            }
+            (
+                ConstructionIntentV1::EraseAt { .. } | ConstructionIntentV1::EraseBody { .. },
+                ConstructionResultV1::Erased,
+                Some(body),
+            ) => self.erase_body(body),
+            (
+                ConstructionIntentV1::PlaceCircle { .. }
+                | ConstructionIntentV1::PlaceRectangle { .. },
+                ConstructionResultV1::CapacityFull
+                | ConstructionResultV1::DeepOverlap
+                | ConstructionResultV1::GenerationExhausted,
+                None,
+            )
+            | (
+                ConstructionIntentV1::EraseAt { .. } | ConstructionIntentV1::EraseBody { .. },
+                ConstructionResultV1::EraseMiss | ConstructionResultV1::GenerationExhausted,
+                None,
+            ) => Ok(()),
+            (intent, result, body) => {
+                self.identity_disagreements = self.identity_disagreements.saturating_add(1);
+                Err(format!(
+                    "PhysBox construction feedback disagreed with sequence {}: intent={intent:?} result={result:?} body={body:?}",
+                    intent.sequence()
+                ))
+            }
+        }
     }
 
     fn erase_body(&mut self, body: BodyId) -> Result<(), String> {
@@ -263,17 +690,35 @@ impl ComparisonShadow {
         position: Vec2,
         inverse_inertia: f32,
     ) -> Result<(), String> {
+        self.place_body_resolved(shape, position, inverse_inertia)
+            .map(|_| ())
+    }
+
+    fn place_body_resolved(
+        &mut self,
+        shape: ShapeV1,
+        position: Vec2,
+        inverse_inertia: f32,
+    ) -> Result<ConstructionFeedback, String> {
         if self
             .world
             .snapshots()?
             .into_iter()
             .any(|body| body.contains(position))
         {
-            return Ok(());
+            return Ok(ConstructionFeedback {
+                result: ConstructionResultV1::DeepOverlap,
+                body: None,
+            });
         }
         let id = match self.slots.allocate_lowest() {
             Ok(id) => id,
-            Err(_) => return Ok(()),
+            Err(_) => {
+                return Ok(ConstructionFeedback {
+                    result: ConstructionResultV1::CapacityFull,
+                    body: None,
+                });
+            }
         };
         let body = BodyStateV1 {
             id,
@@ -294,7 +739,43 @@ impl ComparisonShadow {
             self.slots.release(id)?;
             return Err(error);
         }
-        Ok(())
+        Ok(ConstructionFeedback {
+            result: ConstructionResultV1::Placed,
+            body: Some(id),
+        })
+    }
+
+    fn place_body_exact(
+        &mut self,
+        expected: BodyId,
+        shape: ShapeV1,
+        position: Vec2,
+        inverse_inertia: f32,
+    ) -> Result<(), String> {
+        let allocated = self.slots.allocate_lowest()?;
+        if allocated != expected {
+            self.identity_disagreements = self.identity_disagreements.saturating_add(1);
+            return Err(format!(
+                "PhysBox selected body {}:{} while Box2D's next stable identity was {}:{}",
+                expected.slot, expected.generation, allocated.slot, allocated.generation
+            ));
+        }
+        let body = BodyStateV1 {
+            id: expected,
+            shape,
+            position,
+            angle: finite(0.0),
+            linear_velocity: Vec2::ZERO,
+            angular_velocity: finite(0.0),
+            inverse_mass: finite(1.0),
+            inverse_inertia: finite(inverse_inertia),
+            material: MaterialV1 {
+                friction: finite(CONSTRUCTION_FRICTION),
+                restitution: finite(CONSTRUCTION_RESTITUTION),
+            },
+            sleeping: false,
+        };
+        self.world.add_body(&body)
     }
 
     fn apply_neutral_actions(&mut self, step: u32) -> Result<(), String> {
@@ -362,6 +843,34 @@ impl ComparisonShadow {
 
     pub(crate) const fn active_grab(&self) -> Option<BodyId> {
         self.active_grab
+    }
+
+    pub(crate) fn expect_box2d_grab_feedback(&mut self, sequence: u32, body: BodyId) {
+        if self.box2d_grab_expectations.len() == PENDING_ACTION_CAPACITY {
+            self.queue_overflowed = true;
+            self.fail("Box2D grab expectation queue exceeded 128 actions".to_owned());
+            return;
+        }
+        self.box2d_grab_expectations.insert(sequence, Some(body));
+    }
+
+    pub(crate) fn pending_action_count(&self) -> u32 {
+        self.pending_actions
+            .len()
+            .saturating_add(self.box2d_construction_expectations.len())
+            .saturating_add(self.box2d_grab_expectations.len()) as u32
+    }
+
+    pub(crate) const fn resolved_action_count(&self) -> u64 {
+        self.resolved_actions
+    }
+
+    pub(crate) const fn identity_disagreement_count(&self) -> u64 {
+        self.identity_disagreements
+    }
+
+    pub(crate) const fn queue_overflowed(&self) -> bool {
+        self.queue_overflowed
     }
 
     pub(crate) const fn revision() -> &'static str {

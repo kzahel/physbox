@@ -9,7 +9,7 @@ use serde::Serialize;
 
 pub const GRAB_INTENT_CAPACITY: u32 = 64;
 pub const GRAB_INTENT_BYTES: u32 = 32;
-pub const GRAB_STATE_BYTES: u32 = 64;
+pub const GRAB_STATE_BYTES: u32 = 80;
 pub const GRAB_PARAMETER_BYTES: u32 = 48;
 pub const GRAB_SPRING_ACCELERATION: f32 = 45.0;
 pub const GRAB_DAMPING_RATE: f32 = 10.0;
@@ -44,6 +44,7 @@ pub(crate) struct GrabStateRaw {
     pub(crate) local_anchor_target: [f32; 4],
     pub(crate) counters: [u32; 4],
     pub(crate) activity: [u32; 4],
+    pub(crate) last_selection: [u32; 4],
 }
 
 #[repr(C)]
@@ -65,6 +66,8 @@ pub struct GrabValidationState {
     pub active: bool,
     pub selected_body: Option<BodyId>,
     pub last_sequence: u32,
+    pub last_selection_sequence: u32,
+    pub last_selected_body: Option<BodyId>,
     pub local_anchor: [f32; 2],
     pub world_target: [f32; 2],
     pub begin_attempts: u32,
@@ -90,11 +93,17 @@ pub(crate) fn decode_grab_state(bytes: &[u8]) -> Result<GrabValidationState, Str
         slot: raw.identity_status[0],
         generation: raw.identity_status[1],
     });
+    let last_selected_body = (raw.last_selection[1] != NO_GRAB_SLOT).then_some(BodyId {
+        slot: raw.last_selection[1],
+        generation: raw.last_selection[2],
+    });
     Ok(GrabValidationState {
         contract_version: GRAB_INTENT_CONTRACT_VERSION,
         active,
         selected_body,
         last_sequence: raw.identity_status[3],
+        last_selection_sequence: raw.last_selection[0],
+        last_selected_body,
         local_anchor: [raw.local_anchor_target[0], raw.local_anchor_target[1]],
         world_target: [raw.local_anchor_target[2], raw.local_anchor_target[3]],
         begin_attempts: raw.counters[0],

@@ -548,7 +548,9 @@ impl BodyInteractionState {
                 BodyCommandV1::GrabBegin { .. } | BodyCommandV1::GrabTarget { .. } => {
                     self.report.grab_pointer_active = true;
                 }
-                BodyCommandV1::GrabEnd { .. } => self.report.grab_pointer_active = false,
+                BodyCommandV1::GrabEnd { .. } | BodyCommandV1::GrabClear { .. } => {
+                    self.report.grab_pointer_active = false;
+                }
             }
         }
         self.report.executed_commands_total = self
@@ -685,7 +687,7 @@ fn empty_command_batch() -> BodyCommandBatchV1 {
 #[cfg(feature = "box2d-comparator")]
 fn target_visible_box2d_interactions(
     commands: &mut PreparedBodyCommands,
-    shadow: &ComparisonShadow,
+    shadow: &mut ComparisonShadow,
 ) -> (
     Vec<BodyCommandV1>,
     Vec<BodyCommandStepRange>,
@@ -693,16 +695,9 @@ fn target_visible_box2d_interactions(
     Vec<BodyCommandStepRange>,
 ) {
     for intent in &mut commands.construction_batch.intents {
-        if let ConstructionIntentV1::EraseAt {
-            sequence,
-            world_target,
-        } = *intent
-        {
-            *intent = ConstructionIntentV1::EraseBody {
-                sequence,
-                body: shadow.hit_test(world_target).unwrap_or(None),
-                world_target,
-            };
+        match shadow.resolve_box2d_construction(*intent) {
+            Ok(targeted) => *intent = targeted,
+            Err(error) => shadow.fail(error),
         }
     }
 
@@ -730,11 +725,18 @@ fn target_visible_box2d_interactions(
                     world_target,
                 } => {
                     active = shadow.hit_test(world_target).unwrap_or(None);
-                    active.map(|body| BodyCommandV1::GrabBegin {
-                        sequence,
-                        body,
-                        world_target,
-                    })
+                    if let Some(body) = active {
+                        shadow.expect_box2d_grab_feedback(sequence, body);
+                    }
+                    Some(
+                        active.map_or(BodyCommandV1::GrabClear { sequence }, |body| {
+                            BodyCommandV1::GrabBegin {
+                                sequence,
+                                body,
+                                world_target,
+                            }
+                        }),
+                    )
                 }
                 GrabIntentV1::Target {
                     sequence,
@@ -745,7 +747,11 @@ fn target_visible_box2d_interactions(
                     world_target,
                 }),
                 GrabIntentV1::End { sequence } => {
-                    let command = active.map(|body| BodyCommandV1::GrabEnd { sequence, body });
+                    let command = Some(
+                        active.map_or(BodyCommandV1::GrabClear { sequence }, |body| {
+                            BodyCommandV1::GrabEnd { sequence, body }
+                        }),
+                    );
                     active = None;
                     command
                 }
@@ -764,6 +770,17 @@ fn target_visible_box2d_interactions(
         commands.batch.commands = targeted;
         commands.batch.attempted_commands = commands.batch.commands.len() as u64;
         commands.ranges = ranges;
+        commands.grab_batch = empty_grab_intent_batch();
+        commands.grab_ranges =
+            vec![BodyCommandStepRange { start: 0, count: 0 }; original_grab_ranges.len()];
+    } else {
+        shadow.fail(format!(
+            "Box2D stable-ID targeting produced {} commands for GPU capacity {BODY_COMMAND_CAPACITY}",
+            targeted.len()
+        ));
+        commands.batch = empty_command_batch();
+        commands.ranges =
+            vec![BodyCommandStepRange { start: 0, count: 0 }; original_body_ranges.len()];
         commands.grab_batch = empty_grab_intent_batch();
         commands.grab_ranges =
             vec![BodyCommandStepRange { start: 0, count: 0 }; original_grab_ranges.len()];
@@ -1351,7 +1368,7 @@ impl EngineHost {
                 comparison_grab_intents,
                 comparison_grab_ranges,
             ) = if self.selected_engine == ComparisonEngine::Box2d {
-                target_visible_box2d_interactions(&mut commands, &self.comparison_shadow)
+                target_visible_box2d_interactions(&mut commands, &mut self.comparison_shadow)
             } else {
                 (
                     commands.batch.commands.clone(),
@@ -1380,16 +1397,25 @@ impl EngineHost {
                 for step in 0..steps as usize {
                     let body = comparison_body_ranges[step];
                     let construction = commands.construction_ranges[step];
-                    self.comparison_shadow.apply_interactions(
-                        &comparison_body_commands
-                            [body.start as usize..(body.start + body.count) as usize],
-                        &comparison_grab_intents[comparison_grab_ranges[step].start as usize
-                            ..(comparison_grab_ranges[step].start
-                                + comparison_grab_ranges[step].count)
-                                as usize],
+                    let body_commands = &comparison_body_commands
+                        [body.start as usize..(body.start + body.count) as usize];
+                    let grab_intents = &comparison_grab_intents[comparison_grab_ranges[step].start
+                        as usize
+                        ..(comparison_grab_ranges[step].start + comparison_grab_ranges[step].count)
+                            as usize];
+                    let construction_intents =
                         &commands.construction_batch.intents[construction.start as usize
-                            ..(construction.start + construction.count) as usize],
-                    );
+                            ..(construction.start + construction.count) as usize];
+                    if self.selected_engine == ComparisonEngine::Box2d {
+                        self.comparison_shadow
+                            .apply_interactions(body_commands, grab_intents, &[]);
+                    } else {
+                        self.comparison_shadow.enqueue_physbox_interactions(
+                            body_commands,
+                            grab_intents,
+                            construction_intents,
+                        );
+                    }
                     self.comparison_shadow.advance_one();
                 }
                 self.comparison_shadow.refresh_snapshots();
@@ -1805,6 +1831,10 @@ impl EngineHost {
             box2d_revision,
             box2d_completed_steps,
             box2d_live_bodies,
+            box2d_pending_actions,
+            box2d_resolved_actions,
+            box2d_identity_disagreements,
+            box2d_action_queue_overflowed,
             box2d_aligned,
             box2d_failure,
             visible_body_count,
@@ -1813,6 +1843,10 @@ impl EngineHost {
             Some(ComparisonShadow::revision()),
             Some(self.comparison_shadow.completed_steps()),
             Some(self.comparison_shadow.live_bodies()),
+            Some(self.comparison_shadow.pending_action_count()),
+            Some(self.comparison_shadow.resolved_action_count()),
+            Some(self.comparison_shadow.identity_disagreement_count()),
+            Some(self.comparison_shadow.queue_overflowed()),
             Some(self.comparison_shadow.completed_steps() == self.fixed_steps_total),
             self.comparison_shadow.failure(),
             if self.selected_engine == ComparisonEngine::Box2d {
@@ -1827,10 +1861,26 @@ impl EngineHost {
             box2d_revision,
             box2d_completed_steps,
             box2d_live_bodies,
+            box2d_pending_actions,
+            box2d_resolved_actions,
+            box2d_identity_disagreements,
+            box2d_action_queue_overflowed,
             box2d_aligned,
             box2d_failure,
             visible_body_count,
-        ) = (false, None, None, None, None, None, contract.body_count);
+        ) = (
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            contract.body_count,
+        );
         let ui = self.ui.encode(
             context.queue,
             context.encoder,
@@ -1857,6 +1907,10 @@ impl EngineHost {
                 box2d_revision,
                 box2d_completed_steps,
                 box2d_live_bodies,
+                box2d_pending_actions,
+                box2d_resolved_actions,
+                box2d_identity_disagreements,
+                box2d_action_queue_overflowed,
                 box2d_aligned,
                 box2d_failure,
             },
@@ -1928,7 +1982,6 @@ impl EngineHost {
         Ok(())
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn copy_grab_state(
         &self,
         encoder: &mut wgpu::CommandEncoder,
@@ -1967,7 +2020,19 @@ impl EngineHost {
         state: ConstructionStateV1,
         observed_frame_index: u64,
     ) {
+        #[cfg(feature = "box2d-comparator")]
+        self.comparison_shadow.publish_construction_feedback(&state);
         self.construction_diagnostic = Some((state, observed_frame_index));
+    }
+
+    #[cfg(feature = "box2d-comparator")]
+    pub(crate) fn publish_grab_diagnostic(&mut self, state: crate::GrabValidationState) {
+        self.comparison_shadow.publish_grab_feedback(&state);
+    }
+
+    #[cfg(feature = "box2d-comparator")]
+    pub(crate) fn fail_comparison(&mut self, message: String) {
+        self.comparison_shadow.fail(message);
     }
 
     fn construction_diagnostic_report(&self) -> ConstructionDiagnosticReport {
@@ -2089,6 +2154,8 @@ mod body_interaction_tests {
         match intent {
             ConstructionIntentV1::PlaceCircle { world_target, .. }
             | ConstructionIntentV1::PlaceRectangle { world_target, .. }
+            | ConstructionIntentV1::PlaceCircleBody { world_target, .. }
+            | ConstructionIntentV1::PlaceRectangleBody { world_target, .. }
             | ConstructionIntentV1::EraseAt { world_target, .. }
             | ConstructionIntentV1::EraseBody { world_target, .. } => *world_target,
         }

@@ -14,6 +14,7 @@ struct GrabState {
     local_anchor_target: vec4f,
     counters: vec4u,
     activity: vec4u,
+    last_selection: vec4u,
 };
 
 struct CommandParams {
@@ -47,6 +48,7 @@ const COMMAND_RESET: u32 = 1u;
 const COMMAND_GRAB_BEGIN: u32 = 2u;
 const COMMAND_GRAB_TARGET: u32 = 3u;
 const COMMAND_GRAB_END: u32 = 4u;
+const COMMAND_GRAB_CLEAR: u32 = 5u;
 const INTENT_BEGIN: u32 = 1u;
 const INTENT_TARGET: u32 = 2u;
 const INTENT_END: u32 = 3u;
@@ -105,6 +107,7 @@ fn activate_slot(slot: u32, point: vec2f, sequence: u32) {
 fn begin_specific(slot: u32, generation: u32, point: vec2f, sequence: u32) {
     grab.counters.x += 1u;
     clear_active(sequence);
+    grab.last_selection = vec4u(sequence, NO_SLOT, 0u, 0u);
     if (slot >= grab_params.counts.x) {
         grab.counters.z += 1u;
         return;
@@ -118,6 +121,7 @@ fn begin_specific(slot: u32, generation: u32, point: vec2f, sequence: u32) {
         return;
     }
     activate_slot(slot, point, sequence);
+    grab.last_selection = vec4u(sequence, slot, generation, 1u);
     grab.counters.y += 1u;
 }
 
@@ -145,6 +149,11 @@ fn process_commands() {
         let slot = command.kind_slot_generation_sequence.y;
         let generation = command.kind_slot_generation_sequence.z;
         let sequence = command.kind_slot_generation_sequence.w;
+        if (kind == COMMAND_GRAB_CLEAR) {
+            grab.activity.y += 1u;
+            clear_active(sequence);
+            continue;
+        }
         if (slot >= grab_params.counts.x) { continue; }
         let identity = metadata[slot];
         if (identity.x != generation || (identity.y & (FLAG_LIVE | FLAG_FIXED)) != FLAG_LIVE) {
@@ -201,6 +210,7 @@ fn process_grab_intents() {
             grab.counters.x += 1u;
             grab.activity.w = max(grab.activity.w, grab_params.counts.x);
             clear_active(sequence);
+            grab.last_selection = vec4u(sequence, NO_SLOT, 0u, 0u);
             if (best_slot == NO_SLOT) {
                 grab.identity_status.x = NO_SLOT;
                 grab.identity_status.y = 0u;
@@ -208,6 +218,7 @@ fn process_grab_intents() {
                 grab.counters.w += saw_fixed;
             } else {
                 activate_slot(best_slot, point, sequence);
+                grab.last_selection = vec4u(sequence, best_slot, best_generation, 1u);
                 grab.counters.y += 1u;
             }
         } else {

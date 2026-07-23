@@ -2,13 +2,13 @@ use std::mem::size_of;
 
 use bytemuck::{Pod, Zeroable};
 use physbox_contracts::{
-    CONSTRUCTION_INTENT_CONTRACT_VERSION, ConstructionIntentBatchV1, ConstructionIntentV1,
-    ConstructionResultV1, ConstructionStateV1, SCHEMA_VERSION, Validate,
+    CONSTRUCTION_INTENT_CONTRACT_VERSION, ConstructionActionResultV1, ConstructionIntentBatchV1,
+    ConstructionIntentV1, ConstructionResultV1, ConstructionStateV1, SCHEMA_VERSION, Validate,
 };
 
 pub const CONSTRUCTION_INTENT_CAPACITY: u32 = 64;
 pub const CONSTRUCTION_INTENT_BYTES: u32 = 32;
-pub const CONSTRUCTION_STATE_BYTES: u32 = 80;
+pub const CONSTRUCTION_STATE_BYTES: u32 = 144;
 pub const CONSTRUCTION_CIRCLE_RADIUS: f32 = 0.10;
 pub const CONSTRUCTION_RECTANGLE_HALF_EXTENTS: [f32; 2] = [0.12, 0.08];
 pub const CONSTRUCTION_FRICTION: f32 = 0.5;
@@ -26,6 +26,8 @@ const INTENT_PLACE_CIRCLE: u32 = 1;
 const INTENT_PLACE_RECTANGLE: u32 = 2;
 const INTENT_ERASE_AT: u32 = 3;
 const INTENT_ERASE_BODY: u32 = 4;
+const INTENT_PLACE_CIRCLE_BODY: u32 = 5;
+const INTENT_PLACE_RECTANGLE_BODY: u32 = 6;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod, Zeroable)]
@@ -42,6 +44,7 @@ pub(crate) struct ConstructionStateRaw {
     pub(crate) success_counts: [u32; 4],
     pub(crate) outcome_counts: [u32; 4],
     pub(crate) extra_counts: [u32; 4],
+    pub(crate) recent_results: [[u32; 4]; 4],
 }
 
 const _: () = assert!(size_of::<ConstructionIntentRaw>() == CONSTRUCTION_INTENT_BYTES as usize);
@@ -137,13 +140,24 @@ pub(crate) fn construction_intent_raw(intent: ConstructionIntentV1) -> Construct
     let kind = match intent {
         ConstructionIntentV1::PlaceCircle { .. } => INTENT_PLACE_CIRCLE,
         ConstructionIntentV1::PlaceRectangle { .. } => INTENT_PLACE_RECTANGLE,
+        ConstructionIntentV1::PlaceCircleBody { .. } => INTENT_PLACE_CIRCLE_BODY,
+        ConstructionIntentV1::PlaceRectangleBody { .. } => INTENT_PLACE_RECTANGLE_BODY,
         ConstructionIntentV1::EraseAt { .. } => INTENT_ERASE_AT,
         ConstructionIntentV1::EraseBody { .. } => INTENT_ERASE_BODY,
     };
     let target = intent.world_target();
     let body = match intent {
-        ConstructionIntentV1::EraseBody { body, .. } => body,
+        ConstructionIntentV1::PlaceCircleBody { body, .. }
+        | ConstructionIntentV1::PlaceRectangleBody { body, .. }
+        | ConstructionIntentV1::EraseBody { body, .. } => body,
         _ => None,
+    };
+    let result = match intent {
+        ConstructionIntentV1::PlaceCircleBody { result, .. }
+        | ConstructionIntentV1::PlaceRectangleBody { result, .. } => {
+            construction_result_raw(result)
+        }
+        _ => 0,
     };
     ConstructionIntentRaw {
         kind_sequence_padding: [
@@ -152,7 +166,19 @@ pub(crate) fn construction_intent_raw(intent: ConstructionIntentV1) -> Construct
             body.map_or(u32::MAX, |body| body.slot),
             body.map_or(0, |body| body.generation),
         ],
-        target_padding: [target.x, target.y, 0.0, 0.0],
+        target_padding: [target.x, target.y, f32::from_bits(result), 0.0],
+    }
+}
+
+fn construction_result_raw(result: ConstructionResultV1) -> u32 {
+    match result {
+        ConstructionResultV1::None => CONSTRUCTION_RESULT_NONE,
+        ConstructionResultV1::Placed => CONSTRUCTION_RESULT_PLACED,
+        ConstructionResultV1::Erased => CONSTRUCTION_RESULT_ERASED,
+        ConstructionResultV1::CapacityFull => CONSTRUCTION_RESULT_CAPACITY_FULL,
+        ConstructionResultV1::DeepOverlap => CONSTRUCTION_RESULT_DEEP_OVERLAP,
+        ConstructionResultV1::EraseMiss => CONSTRUCTION_RESULT_ERASE_MISS,
+        ConstructionResultV1::GenerationExhausted => CONSTRUCTION_RESULT_GENERATION_EXHAUSTED,
     }
 }
 
@@ -163,24 +189,28 @@ pub(crate) fn initial_construction_state(capacity: u32, live: u32) -> Constructi
         success_counts: [0; 4],
         outcome_counts: [0; 4],
         extra_counts: [0; 4],
+        recent_results: [[0; 4]; 4],
     }
 }
 
 fn construction_state(raw: ConstructionStateRaw) -> Result<ConstructionStateV1, String> {
-    let last_result = match raw.header[3] {
-        CONSTRUCTION_RESULT_NONE => ConstructionResultV1::None,
-        CONSTRUCTION_RESULT_PLACED => ConstructionResultV1::Placed,
-        CONSTRUCTION_RESULT_ERASED => ConstructionResultV1::Erased,
-        CONSTRUCTION_RESULT_CAPACITY_FULL => ConstructionResultV1::CapacityFull,
-        CONSTRUCTION_RESULT_DEEP_OVERLAP => ConstructionResultV1::DeepOverlap,
-        CONSTRUCTION_RESULT_ERASE_MISS => ConstructionResultV1::EraseMiss,
-        CONSTRUCTION_RESULT_GENERATION_EXHAUSTED => ConstructionResultV1::GenerationExhausted,
-        code => {
-            return Err(format!(
-                "GPU construction state emitted unknown result {code}"
-            ));
-        }
+    let result_from_raw = |raw_result| {
+        Ok(match raw_result {
+            CONSTRUCTION_RESULT_NONE => ConstructionResultV1::None,
+            CONSTRUCTION_RESULT_PLACED => ConstructionResultV1::Placed,
+            CONSTRUCTION_RESULT_ERASED => ConstructionResultV1::Erased,
+            CONSTRUCTION_RESULT_CAPACITY_FULL => ConstructionResultV1::CapacityFull,
+            CONSTRUCTION_RESULT_DEEP_OVERLAP => ConstructionResultV1::DeepOverlap,
+            CONSTRUCTION_RESULT_ERASE_MISS => ConstructionResultV1::EraseMiss,
+            CONSTRUCTION_RESULT_GENERATION_EXHAUSTED => ConstructionResultV1::GenerationExhausted,
+            code => {
+                return Err(format!(
+                    "GPU construction state emitted unknown result {code}"
+                ));
+            }
+        })
     };
+    let last_result = result_from_raw(raw.header[3])?;
     let last_body = matches!(
         last_result,
         ConstructionResultV1::Placed | ConstructionResultV1::Erased
@@ -189,6 +219,27 @@ fn construction_state(raw: ConstructionStateRaw) -> Result<ConstructionStateV1, 
         slot: raw.last_identity_kind[0],
         generation: raw.last_identity_kind[1],
     });
+    let recent_results = raw
+        .recent_results
+        .into_iter()
+        .take_while(|result| result[1] != CONSTRUCTION_RESULT_NONE)
+        .map(|result| {
+            let decoded = result_from_raw(result[1])?;
+            let body = matches!(
+                decoded,
+                ConstructionResultV1::Placed | ConstructionResultV1::Erased
+            )
+            .then_some(physbox_contracts::BodyId {
+                slot: result[2],
+                generation: result[3],
+            });
+            Ok(ConstructionActionResultV1 {
+                sequence: result[0],
+                result: decoded,
+                body,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
     let state = ConstructionStateV1 {
         schema_version: SCHEMA_VERSION,
         contract_version: CONSTRUCTION_INTENT_CONTRACT_VERSION,
@@ -207,6 +258,7 @@ fn construction_state(raw: ConstructionStateRaw) -> Result<ConstructionStateV1, 
         last_sequence: raw.header[2],
         last_result,
         last_body,
+        recent_results,
     };
     state
         .validate()
@@ -274,6 +326,12 @@ mod tests {
             success_counts: [3, 2, 1, 0],
             outcome_counts: [1, 0, 1, 0],
             extra_counts: [0, 1, 0, 0],
+            recent_results: [
+                [9, CONSTRUCTION_RESULT_ERASED, 2, 4],
+                [8, CONSTRUCTION_RESULT_DEEP_OVERLAP, u32::MAX, 0],
+                [0; 4],
+                [0; 4],
+            ],
         };
         let state = construction_state(raw).unwrap();
         assert_eq!(state.live_bodies, 3);

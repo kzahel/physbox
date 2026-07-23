@@ -454,6 +454,7 @@ impl GpuBodyWorld {
             local_anchor_target: [0.0; 4],
             counters: [0; 4],
             activity: [0; 4],
+            last_selection: [0, NO_GRAB_SLOT, 0, 0],
         };
         let grab_state = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("physbox5_grab_state"),
@@ -1281,7 +1282,6 @@ impl GpuBodyWorld {
         self.initial_live_count
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn copy_grab_state(
         &self,
         encoder: &mut wgpu::CommandEncoder,

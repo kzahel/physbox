@@ -9,6 +9,7 @@ struct ConstructionState {
     success_counts: vec4u,
     outcome_counts: vec4u,
     extra_counts: vec4u,
+    recent_results: array<vec4u, 4>,
 };
 
 struct GrabState {
@@ -16,6 +17,7 @@ struct GrabState {
     local_anchor_target: vec4f,
     counters: vec4u,
     activity: vec4u,
+    last_selection: vec4u,
 };
 
 struct ConstructionParams {
@@ -45,6 +47,8 @@ const PLACE_CIRCLE: u32 = 1u;
 const PLACE_RECTANGLE: u32 = 2u;
 const ERASE_AT: u32 = 3u;
 const ERASE_BODY: u32 = 4u;
+const PLACE_CIRCLE_BODY: u32 = 5u;
+const PLACE_RECTANGLE_BODY: u32 = 6u;
 const RESULT_NONE: u32 = 0u;
 const RESULT_PLACED: u32 = 1u;
 const RESULT_ERASED: u32 = 2u;
@@ -165,6 +169,20 @@ fn fail_result(current: ConstructionState, result: u32) -> ConstructionState {
     return output;
 }
 
+fn record_result(current: ConstructionState) -> ConstructionState {
+    var output = current;
+    output.recent_results[3] = output.recent_results[2];
+    output.recent_results[2] = output.recent_results[1];
+    output.recent_results[1] = output.recent_results[0];
+    output.recent_results[0] = vec4u(
+        output.header.z,
+        output.header.w,
+        output.last_identity_kind.x,
+        output.last_identity_kind.y,
+    );
+    return output;
+}
+
 fn place_body(current: ConstructionState, kind: u32,
               point: vec2f) -> ConstructionState {
     var output = current;
@@ -218,6 +236,53 @@ fn place_body(current: ConstructionState, kind: u32,
     output.header.y = increment(output.header.y);
     output.header.w = RESULT_PLACED;
     output.last_identity_kind = vec4u(free_slot, generation, kind, 0u);
+    output.success_counts.y = increment(output.success_counts.y);
+    return output;
+}
+
+fn place_specific(current: ConstructionState, kind: u32, point: vec2f,
+                  slot: u32, generation: u32,
+                  authoritative_result: u32) -> ConstructionState {
+    var output = current;
+    if (authoritative_result != RESULT_PLACED) {
+        return fail_result(output, authoritative_result);
+    }
+    if (slot == NO_SLOT || slot >= params.counts.z) {
+        return fail_result(output, RESULT_GENERATION_EXHAUSTED);
+    }
+    let identity = metadata[slot];
+    let available_generation = select(identity.x, 1u, identity.x == 0u);
+    if ((identity.y & FLAG_LIVE) != 0u || available_generation != generation) {
+        return fail_result(output, RESULT_GENERATION_EXHAUSTED);
+    }
+    poses[slot] = vec4f(point, 0.0, 0.0);
+    motions[slot] = vec4f(0.0);
+    var flags = FLAG_LIVE;
+    if (kind == PLACE_CIRCLE_BODY) {
+        let radius = params.circle_material.x;
+        properties[slot] = vec4f(
+            radius,
+            radius,
+            params.circle_material.y,
+            params.circle_material.z,
+        );
+        flags |= FLAG_CIRCLE;
+        output.success_counts.z = increment(output.success_counts.z);
+    } else {
+        properties[slot] = params.rectangle_mass;
+        flags |= FLAG_RECTANGLE;
+        output.success_counts.w = increment(output.success_counts.w);
+    }
+    metadata[slot] = vec4u(
+        generation,
+        flags,
+        bitcast<u32>(params.circle_material.w),
+        bitcast<u32>(params.material_padding.x),
+    );
+    insert_active_slot(slot, output.header.y);
+    output.header.y = increment(output.header.y);
+    output.header.w = RESULT_PLACED;
+    output.last_identity_kind = vec4u(slot, generation, kind, 0u);
     output.success_counts.y = increment(output.success_counts.y);
     return output;
 }
@@ -312,6 +377,15 @@ fn apply_construction_intents(@builtin(global_invocation_id) id: vec3u) {
         current = begin_result(current, kind, intent.kind_sequence_padding.y);
         if (kind == PLACE_CIRCLE || kind == PLACE_RECTANGLE) {
             current = place_body(current, kind, intent.target_padding.xy);
+        } else if (kind == PLACE_CIRCLE_BODY || kind == PLACE_RECTANGLE_BODY) {
+            current = place_specific(
+                current,
+                kind,
+                intent.target_padding.xy,
+                intent.kind_sequence_padding.z,
+                intent.kind_sequence_padding.w,
+                bitcast<u32>(intent.target_padding.z),
+            );
         } else if (kind == ERASE_AT) {
             current = erase_body(current, kind, intent.target_padding.xy);
         } else if (kind == ERASE_BODY) {
@@ -322,6 +396,7 @@ fn apply_construction_intents(@builtin(global_invocation_id) id: vec3u) {
                 intent.kind_sequence_padding.w,
             );
         }
+        current = record_result(current);
     }
     update_active_arguments(current.header.y);
     state = current;

@@ -5,7 +5,10 @@ use crate::{
     gpu_context::{request_adapter, request_device, surface_format},
     host::EngineHost,
 };
+use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
+
+const ASYNC_INTERACTION_DIAGNOSTIC_CAPACITY: usize = 8;
 
 #[derive(Clone, Copy)]
 pub(crate) struct RenderFrameTarget<'a> {
@@ -29,8 +32,9 @@ pub struct SurfaceRenderer {
     host: EngineHost,
     diagnostics: AdapterDiagnostics,
     construction_epoch: Option<(String, u64, u64)>,
-    construction_scheduled_total: u64,
-    pending_construction_diagnostic: Option<PendingConstructionDiagnostic>,
+    pending_construction_diagnostics: VecDeque<PendingInteractionDiagnostic>,
+    #[cfg(feature = "box2d-comparator")]
+    pending_grab_diagnostics: VecDeque<PendingInteractionDiagnostic>,
 }
 
 impl SurfaceRenderer {
@@ -86,8 +90,9 @@ impl SurfaceRenderer {
             host,
             diagnostics,
             construction_epoch: None,
-            construction_scheduled_total: 0,
-            pending_construction_diagnostic: None,
+            pending_construction_diagnostics: VecDeque::new(),
+            #[cfg(feature = "box2d-comparator")]
+            pending_grab_diagnostics: VecDeque::new(),
         })
     }
 
@@ -109,7 +114,7 @@ impl SurfaceRenderer {
     }
 
     pub fn render(&mut self, input: FrameInput) -> Result<FrameReport, String> {
-        self.resolve_construction_diagnostic()?;
+        self.resolve_interaction_diagnostics()?;
         let frame = match self.surface.get_current_texture() {
             Ok(frame) => frame,
             Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
@@ -149,73 +154,127 @@ impl SurfaceRenderer {
         );
         if self.construction_epoch.as_ref() != Some(&epoch) {
             self.construction_epoch = Some(epoch.clone());
-            self.construction_scheduled_total = 0;
-            self.pending_construction_diagnostic = None;
+            self.pending_construction_diagnostics.clear();
+            #[cfg(feature = "box2d-comparator")]
+            self.pending_grab_diagnostics.clear();
         }
-        let executed_total = report.body_commands.executed_construction_intents_total;
-        let scheduled = if self.pending_construction_diagnostic.is_none()
-            && executed_total > self.construction_scheduled_total
+        let scheduled_construction = if report
+            .body_commands
+            .construction_intent_dispatches_this_frame
+            != 0
         {
-            let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("physbox5_async_construction_diagnostic"),
-                size: u64::from(crate::CONSTRUCTION_STATE_BYTES),
-                usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-                mapped_at_creation: false,
-            });
-            self.host.copy_construction_state(&mut encoder, &buffer)?;
-            Some((buffer, epoch, executed_total, report.frame_index))
+            if self.pending_construction_diagnostics.len() == ASYNC_INTERACTION_DIAGNOSTIC_CAPACITY
+            {
+                #[cfg(feature = "box2d-comparator")]
+                self.host.fail_comparison(
+                    "asynchronous construction feedback queue exceeded 8 snapshots".to_owned(),
+                );
+                None
+            } else {
+                let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("physbox5_async_construction_diagnostic"),
+                    size: u64::from(crate::CONSTRUCTION_STATE_BYTES),
+                    usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+                    mapped_at_creation: false,
+                });
+                self.host.copy_construction_state(&mut encoder, &buffer)?;
+                Some(PendingInteractionDiagnostic::new(
+                    buffer,
+                    epoch.clone(),
+                    report.frame_index,
+                ))
+            }
+        } else {
+            None
+        };
+        #[cfg(feature = "box2d-comparator")]
+        let scheduled_grab = if report.body_commands.grab_intent_dispatches_this_frame != 0 {
+            if self.pending_grab_diagnostics.len() == ASYNC_INTERACTION_DIAGNOSTIC_CAPACITY {
+                self.host.fail_comparison(
+                    "asynchronous grab feedback queue exceeded 8 snapshots".to_owned(),
+                );
+                None
+            } else {
+                let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("physbox5_async_grab_diagnostic"),
+                    size: u64::from(crate::grab::GRAB_STATE_BYTES),
+                    usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+                    mapped_at_creation: false,
+                });
+                self.host.copy_grab_state(&mut encoder, &buffer)?;
+                Some(PendingInteractionDiagnostic::new(
+                    buffer,
+                    epoch,
+                    report.frame_index,
+                ))
+            }
         } else {
             None
         };
         self.queue.submit([encoder.finish()]);
-        if let Some((buffer, epoch, executed_total, observed_frame_index)) = scheduled {
-            self.construction_scheduled_total = executed_total;
-            self.pending_construction_diagnostic = Some(PendingConstructionDiagnostic::new(
-                buffer,
-                epoch,
-                observed_frame_index,
-            ));
+        if let Some(pending) = scheduled_construction {
+            self.pending_construction_diagnostics.push_back(pending);
+        }
+        #[cfg(feature = "box2d-comparator")]
+        if let Some(pending) = scheduled_grab {
+            self.pending_grab_diagnostics.push_back(pending);
         }
         frame.present();
         Ok(report)
     }
 
-    fn resolve_construction_diagnostic(&mut self) -> Result<(), String> {
+    fn resolve_interaction_diagnostics(&mut self) -> Result<(), String> {
         self.device
             .poll(wgpu::PollType::Poll)
-            .map_err(|error| format!("poll construction diagnostic: {error}"))?;
-        let ready = self
-            .pending_construction_diagnostic
-            .as_ref()
-            .is_some_and(PendingConstructionDiagnostic::is_ready);
-        if !ready {
-            return Ok(());
+            .map_err(|error| format!("poll interaction diagnostics: {error}"))?;
+        while self
+            .pending_construction_diagnostics
+            .front()
+            .is_some_and(PendingInteractionDiagnostic::is_ready)
+        {
+            let pending = self
+                .pending_construction_diagnostics
+                .pop_front()
+                .expect("ready construction diagnostic exists");
+            let epoch = pending.epoch.clone();
+            let observed_frame_index = pending.observed_frame_index;
+            let bytes = pending.finish()?;
+            if self.host.construction_diagnostic_epoch() == epoch {
+                self.host.publish_construction_diagnostic(
+                    crate::construction_state_from_bytes(&bytes)?,
+                    observed_frame_index,
+                );
+            }
         }
-        let pending = self
-            .pending_construction_diagnostic
-            .take()
-            .expect("ready construction diagnostic exists");
-        let epoch = pending.epoch.clone();
-        let observed_frame_index = pending.observed_frame_index;
-        let bytes = pending.finish()?;
-        if self.host.construction_diagnostic_epoch() == epoch {
-            self.host.publish_construction_diagnostic(
-                crate::construction_state_from_bytes(&bytes)?,
-                observed_frame_index,
-            );
+        #[cfg(feature = "box2d-comparator")]
+        while self
+            .pending_grab_diagnostics
+            .front()
+            .is_some_and(PendingInteractionDiagnostic::is_ready)
+        {
+            let pending = self
+                .pending_grab_diagnostics
+                .pop_front()
+                .expect("ready grab diagnostic exists");
+            let epoch = pending.epoch.clone();
+            let bytes = pending.finish()?;
+            if self.host.construction_diagnostic_epoch() == epoch {
+                self.host
+                    .publish_grab_diagnostic(crate::grab::decode_grab_state(&bytes)?);
+            }
         }
         Ok(())
     }
 }
 
-struct PendingConstructionDiagnostic {
+struct PendingInteractionDiagnostic {
     buffer: wgpu::Buffer,
     result: Arc<Mutex<Option<Result<(), String>>>>,
     epoch: (String, u64, u64),
     observed_frame_index: u64,
 }
 
-impl PendingConstructionDiagnostic {
+impl PendingInteractionDiagnostic {
     fn new(buffer: wgpu::Buffer, epoch: (String, u64, u64), observed_frame_index: u64) -> Self {
         let result = Arc::new(Mutex::new(None));
         let callback = Arc::clone(&result);
@@ -224,7 +283,7 @@ impl PendingConstructionDiagnostic {
             .map_async(wgpu::MapMode::Read, move |mapped| {
                 *callback
                     .lock()
-                    .expect("construction diagnostic callback lock") =
+                    .expect("interaction diagnostic callback lock") =
                     Some(mapped.map_err(|error| error.to_string()));
             });
         Self {
@@ -238,16 +297,16 @@ impl PendingConstructionDiagnostic {
     fn is_ready(&self) -> bool {
         self.result
             .lock()
-            .expect("construction diagnostic readiness lock")
+            .expect("interaction diagnostic readiness lock")
             .is_some()
     }
 
     fn finish(self) -> Result<Vec<u8>, String> {
         self.result
             .lock()
-            .map_err(|_| "construction diagnostic result lock poisoned".to_owned())?
+            .map_err(|_| "interaction diagnostic result lock poisoned".to_owned())?
             .take()
-            .ok_or_else(|| "construction diagnostic is not ready".to_owned())??;
+            .ok_or_else(|| "interaction diagnostic is not ready".to_owned())??;
         let mapped = self.buffer.slice(..).get_mapped_range();
         let bytes = mapped.to_vec();
         drop(mapped);
@@ -1711,7 +1770,11 @@ mod tests {
         renderer.render(FrameInput::exact(0).with_input_events(click(2, placement)));
         let placed = renderer.render(FrameInput::exact(1));
         assert_eq!(placed.body_commands.executed_construction_intents_total, 1);
-        assert_eq!(renderer.read_construction_state().unwrap().live_bodies, 3);
+        let placement_feedback = renderer.read_construction_state().unwrap();
+        assert_eq!(placement_feedback.live_bodies, 3);
+        renderer
+            .host
+            .publish_construction_diagnostic(placement_feedback, placed.frame_index);
 
         renderer.render(
             FrameInput::exact(0).with_input_events(click(3, layout.center_normalized("menu", 0))),
@@ -1738,6 +1801,158 @@ mod tests {
         assert_eq!(renderer.read_construction_state().unwrap().live_bodies, 2);
         assert!(erased.ui.box2d_failure.is_none());
         assert_eq!(erased.ui.box2d_live_bodies, Some(2));
+    }
+
+    #[cfg(feature = "box2d-comparator")]
+    #[test]
+    fn physbox_visible_gpu_identity_feedback_mirrors_divergent_erase_asynchronously() {
+        let target = [960, 600];
+        let mut renderer = pollster::block_on(OffscreenRenderer::new(
+            target[0],
+            target[1],
+            EngineConfig::default(),
+        ))
+        .unwrap();
+        let click = |id, at| {
+            [crate::PointerPhase::Down, crate::PointerPhase::Up]
+                .into_iter()
+                .map(|phase| {
+                    crate::InputEvent::Pointer(crate::PointerEvent {
+                        id,
+                        phase,
+                        button: crate::PointerButton::Primary,
+                        normalized_position: at,
+                    })
+                })
+                .collect::<Vec<_>>()
+        };
+        let layout = crate::ui::UiLayout::for_target(target);
+        renderer
+            .host
+            .overwrite_body_pose_for_test(&renderer.queue, 0, [1.2, 0.65, 0.0, 0.0]);
+        renderer.render(
+            FrameInput::exact(0).with_input_events(click(1, layout.center_normalized("tool", 3))),
+        );
+        let at_physbox_body = crate::Camera2d::fixed()
+            .resolve(target)
+            .unwrap()
+            .world_to_screen([1.2, 0.65]);
+        renderer.render(FrameInput::exact(0).with_input_events(click(2, at_physbox_body)));
+        let dispatched = renderer.render(FrameInput::exact(1));
+        assert_eq!(dispatched.ui.box2d_pending_actions, Some(1));
+        assert_eq!(dispatched.ui.box2d_live_bodies, Some(2));
+
+        let feedback = renderer.read_construction_state().unwrap();
+        assert_eq!(
+            feedback.last_body,
+            Some(physbox_contracts::BodyId {
+                slot: 0,
+                generation: 1,
+            })
+        );
+        renderer
+            .host
+            .publish_construction_diagnostic(feedback, dispatched.frame_index);
+        let resolved = renderer.render(FrameInput::exact(0));
+        assert_eq!(resolved.ui.box2d_pending_actions, Some(0));
+        assert_eq!(resolved.ui.box2d_resolved_actions, Some(1));
+        assert_eq!(resolved.ui.box2d_live_bodies, Some(1));
+        assert_eq!(resolved.ui.box2d_identity_disagreements, Some(0));
+        assert!(resolved.ui.box2d_failure.is_none());
+    }
+
+    #[cfg(feature = "box2d-comparator")]
+    #[test]
+    fn physbox_visible_gpu_identity_feedback_mirrors_divergent_grab_asynchronously() {
+        let target = [960, 600];
+        let mut renderer = pollster::block_on(OffscreenRenderer::new(
+            target[0],
+            target[1],
+            EngineConfig::default(),
+        ))
+        .unwrap();
+        renderer
+            .host
+            .overwrite_body_pose_for_test(&renderer.queue, 0, [1.2, 0.65, 0.0, 0.0]);
+        let at_physbox_body = crate::Camera2d::fixed()
+            .resolve(target)
+            .unwrap()
+            .world_to_screen([1.2, 0.65]);
+        let dispatched = renderer.render(FrameInput {
+            step_request: crate::StepRequest::Exact { steps: 1 },
+            input_events: [crate::PointerPhase::Down, crate::PointerPhase::Up]
+                .into_iter()
+                .map(|phase| {
+                    crate::InputEvent::Pointer(crate::PointerEvent {
+                        id: 1,
+                        phase,
+                        button: crate::PointerButton::Primary,
+                        normalized_position: at_physbox_body,
+                    })
+                })
+                .collect(),
+        });
+        assert_eq!(dispatched.ui.box2d_pending_actions, Some(2));
+        let feedback = renderer.read_grab_state().unwrap();
+        assert!(!feedback.active);
+        assert_eq!(
+            feedback.last_selected_body,
+            Some(physbox_contracts::BodyId {
+                slot: 0,
+                generation: 1,
+            })
+        );
+        renderer.host.publish_grab_diagnostic(feedback);
+        let resolved = renderer.render(FrameInput::exact(0));
+        assert_eq!(resolved.ui.box2d_pending_actions, Some(0));
+        assert_eq!(resolved.ui.box2d_resolved_actions, Some(2));
+        assert_eq!(resolved.ui.box2d_identity_disagreements, Some(0));
+        assert!(resolved.ui.box2d_failure.is_none());
+    }
+
+    #[cfg(feature = "box2d-comparator")]
+    #[test]
+    fn compact_gpu_feedback_preserves_multiple_construction_results_in_one_frame() {
+        let target = [960, 600];
+        let mut renderer = pollster::block_on(OffscreenRenderer::new(
+            target[0],
+            target[1],
+            EngineConfig::default(),
+        ))
+        .unwrap();
+        let click = |id, at| {
+            [crate::PointerPhase::Down, crate::PointerPhase::Up]
+                .into_iter()
+                .map(|phase| {
+                    crate::InputEvent::Pointer(crate::PointerEvent {
+                        id,
+                        phase,
+                        button: crate::PointerButton::Primary,
+                        normalized_position: at,
+                    })
+                })
+                .collect::<Vec<_>>()
+        };
+        let layout = crate::ui::UiLayout::for_target(target);
+        renderer.render(
+            FrameInput::exact(0).with_input_events(click(1, layout.center_normalized("tool", 1))),
+        );
+        let mut clicks = click(2, [0.80, 0.20]);
+        clicks.extend(click(3, [0.80, 0.35]));
+        renderer.render(FrameInput::exact(0).with_input_events(clicks));
+        let dispatched = renderer.render(FrameInput::exact(1));
+        assert_eq!(dispatched.ui.box2d_pending_actions, Some(2));
+        let feedback = renderer.read_construction_state().unwrap();
+        assert_eq!(feedback.recent_results.len(), 2);
+        assert_eq!(feedback.live_bodies, 4);
+        renderer
+            .host
+            .publish_construction_diagnostic(feedback, dispatched.frame_index);
+        let resolved = renderer.render(FrameInput::exact(0));
+        assert_eq!(resolved.ui.box2d_pending_actions, Some(0));
+        assert_eq!(resolved.ui.box2d_resolved_actions, Some(2));
+        assert_eq!(resolved.ui.box2d_live_bodies, Some(4));
+        assert!(resolved.ui.box2d_failure.is_none());
     }
 
     #[cfg(feature = "box2d-comparator")]
@@ -1860,6 +2075,134 @@ mod tests {
         assert_eq!(construction.live_bodies, 1);
         assert_eq!(erased.ui.box2d_live_bodies, Some(1));
         assert!(erased.ui.box2d_failure.is_none());
+    }
+
+    #[cfg(feature = "box2d-comparator")]
+    #[test]
+    fn box2d_visible_placement_miss_is_authoritative_after_trajectories_diverge() {
+        let target = [960, 600];
+        let mut renderer = pollster::block_on(OffscreenRenderer::new(
+            target[0],
+            target[1],
+            EngineConfig::default(),
+        ))
+        .unwrap();
+        let click = |id, at| {
+            [crate::PointerPhase::Down, crate::PointerPhase::Up]
+                .into_iter()
+                .map(|phase| {
+                    crate::InputEvent::Pointer(crate::PointerEvent {
+                        id,
+                        phase,
+                        button: crate::PointerButton::Primary,
+                        normalized_position: at,
+                    })
+                })
+                .collect::<Vec<_>>()
+        };
+        let layout = crate::ui::UiLayout::for_target(target);
+        renderer
+            .host
+            .overwrite_body_pose_for_test(&renderer.queue, 0, [1.2, 0.65, 0.0, 0.0]);
+        renderer.render(
+            FrameInput::exact(0).with_input_events(click(1, layout.center_normalized("menu", 0))),
+        );
+        renderer.render(
+            FrameInput::exact(0)
+                .with_input_events(click(2, layout.center_normalized("world-tab", 0))),
+        );
+        renderer.render(
+            FrameInput::exact(0)
+                .with_input_events(click(3, layout.center_normalized("world-engine", 1))),
+        );
+        renderer.render(
+            FrameInput::exact(0).with_input_events(click(4, layout.center_normalized("tool", 1))),
+        );
+
+        let at_box2d_body = crate::Camera2d::fixed()
+            .resolve(target)
+            .unwrap()
+            .world_to_screen([0.0, 0.65]);
+        renderer.render(FrameInput::exact(0).with_input_events(click(5, at_box2d_body)));
+        let rejected = renderer.render(FrameInput::exact(1));
+        let construction = renderer.read_construction_state().unwrap();
+        assert_eq!(
+            construction.last_result,
+            physbox_contracts::ConstructionResultV1::DeepOverlap
+        );
+        assert_eq!(construction.live_bodies, 2);
+        assert_eq!(rejected.ui.box2d_live_bodies, Some(2));
+        assert!(rejected.ui.box2d_failure.is_none());
+        renderer
+            .host
+            .publish_construction_diagnostic(construction, rejected.frame_index);
+        let verified = renderer.render(FrameInput::exact(0));
+        assert_eq!(verified.ui.box2d_pending_actions, Some(0));
+        assert_eq!(verified.ui.box2d_resolved_actions, Some(1));
+        assert_eq!(verified.ui.box2d_identity_disagreements, Some(0));
+    }
+
+    #[cfg(feature = "box2d-comparator")]
+    #[test]
+    fn box2d_visible_successful_placement_is_verified_by_gpu_identity_feedback() {
+        let target = [960, 600];
+        let mut renderer = pollster::block_on(OffscreenRenderer::new(
+            target[0],
+            target[1],
+            EngineConfig::default(),
+        ))
+        .unwrap();
+        let click = |id, at| {
+            [crate::PointerPhase::Down, crate::PointerPhase::Up]
+                .into_iter()
+                .map(|phase| {
+                    crate::InputEvent::Pointer(crate::PointerEvent {
+                        id,
+                        phase,
+                        button: crate::PointerButton::Primary,
+                        normalized_position: at,
+                    })
+                })
+                .collect::<Vec<_>>()
+        };
+        let layout = crate::ui::UiLayout::for_target(target);
+        renderer.render(
+            FrameInput::exact(0).with_input_events(click(1, layout.center_normalized("menu", 0))),
+        );
+        renderer.render(
+            FrameInput::exact(0)
+                .with_input_events(click(2, layout.center_normalized("world-tab", 0))),
+        );
+        renderer.render(
+            FrameInput::exact(0)
+                .with_input_events(click(3, layout.center_normalized("world-engine", 1))),
+        );
+        renderer.render(
+            FrameInput::exact(0).with_input_events(click(4, layout.center_normalized("tool", 1))),
+        );
+        renderer.render(FrameInput::exact(0).with_input_events(click(5, [0.80, 0.20])));
+        let dispatched = renderer.render(FrameInput::exact(1));
+        let construction = renderer.read_construction_state().unwrap();
+        assert_eq!(
+            construction.last_result,
+            physbox_contracts::ConstructionResultV1::Placed
+        );
+        assert_eq!(
+            construction.last_body,
+            Some(physbox_contracts::BodyId {
+                slot: 2,
+                generation: 1,
+            })
+        );
+        assert_eq!(dispatched.ui.box2d_pending_actions, Some(1));
+        renderer
+            .host
+            .publish_construction_diagnostic(construction, dispatched.frame_index);
+        let verified = renderer.render(FrameInput::exact(0));
+        assert_eq!(verified.ui.box2d_pending_actions, Some(0));
+        assert_eq!(verified.ui.box2d_resolved_actions, Some(1));
+        assert_eq!(verified.ui.box2d_live_bodies, Some(3));
+        assert!(verified.ui.box2d_failure.is_none());
     }
 
     #[test]

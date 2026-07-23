@@ -519,6 +519,9 @@ pub enum BodyCommandV1 {
         sequence: u32,
         body: BodyId,
     },
+    GrabClear {
+        sequence: u32,
+    },
 }
 
 impl BodyCommandV1 {
@@ -527,23 +530,25 @@ impl BodyCommandV1 {
             Self::Reset { sequence, .. }
             | Self::GrabBegin { sequence, .. }
             | Self::GrabTarget { sequence, .. }
-            | Self::GrabEnd { sequence, .. } => *sequence,
+            | Self::GrabEnd { sequence, .. }
+            | Self::GrabClear { sequence } => *sequence,
         }
     }
 
-    pub const fn body(&self) -> BodyId {
+    pub const fn body(&self) -> Option<BodyId> {
         match self {
             Self::Reset { body, .. }
             | Self::GrabBegin { body, .. }
             | Self::GrabTarget { body, .. }
-            | Self::GrabEnd { body, .. } => *body,
+            | Self::GrabEnd { body, .. } => Some(*body),
+            Self::GrabClear { .. } => None,
         }
     }
 }
 
 impl Validate for BodyCommandV1 {
     fn validate(&self) -> Result<(), ContractError> {
-        if self.body().generation == 0 {
+        if self.body().is_some_and(|body| body.generation == 0) {
             return Err(ContractError(
                 "body commands require a nonzero target generation".to_owned(),
             ));
@@ -564,7 +569,7 @@ impl Validate for BodyCommandV1 {
             Self::GrabBegin { world_target, .. } | Self::GrabTarget { world_target, .. } => {
                 world_target.validate()
             }
-            Self::GrabEnd { .. } => Ok(()),
+            Self::GrabEnd { .. } | Self::GrabClear { .. } => Ok(()),
         }
     }
 }
@@ -637,6 +642,18 @@ pub enum ConstructionIntentV1 {
         sequence: u32,
         world_target: Vec2,
     },
+    PlaceCircleBody {
+        sequence: u32,
+        body: Option<BodyId>,
+        world_target: Vec2,
+        result: ConstructionResultV1,
+    },
+    PlaceRectangleBody {
+        sequence: u32,
+        body: Option<BodyId>,
+        world_target: Vec2,
+        result: ConstructionResultV1,
+    },
     EraseAt {
         sequence: u32,
         world_target: Vec2,
@@ -653,6 +670,8 @@ impl ConstructionIntentV1 {
         match self {
             Self::PlaceCircle { sequence, .. }
             | Self::PlaceRectangle { sequence, .. }
+            | Self::PlaceCircleBody { sequence, .. }
+            | Self::PlaceRectangleBody { sequence, .. }
             | Self::EraseAt { sequence, .. }
             | Self::EraseBody { sequence, .. } => sequence,
         }
@@ -662,6 +681,8 @@ impl ConstructionIntentV1 {
         match self {
             Self::PlaceCircle { world_target, .. }
             | Self::PlaceRectangle { world_target, .. }
+            | Self::PlaceCircleBody { world_target, .. }
+            | Self::PlaceRectangleBody { world_target, .. }
             | Self::EraseAt { world_target, .. }
             | Self::EraseBody { world_target, .. } => world_target,
         }
@@ -679,6 +700,31 @@ impl Validate for ConstructionIntentV1 {
             return Err(ContractError(
                 "explicit erase identities require a nonzero generation".to_owned(),
             ));
+        }
+        if let Self::PlaceCircleBody { body, result, .. }
+        | Self::PlaceRectangleBody { body, result, .. } = self
+        {
+            let valid = matches!(
+                (body, result),
+                (
+                    Some(BodyId {
+                        generation: 1..,
+                        ..
+                    }),
+                    ConstructionResultV1::Placed
+                ) | (
+                    None,
+                    ConstructionResultV1::CapacityFull
+                        | ConstructionResultV1::DeepOverlap
+                        | ConstructionResultV1::GenerationExhausted
+                )
+            );
+            if !valid {
+                return Err(ContractError(
+                    "explicit placement requires a nonzero body with placed, or no body with a placement failure"
+                        .to_owned(),
+                ));
+            }
         }
         Ok(())
     }
@@ -744,6 +790,14 @@ pub enum ConstructionResultV1 {
     GenerationExhausted,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConstructionActionResultV1 {
+    pub sequence: u32,
+    pub result: ConstructionResultV1,
+    pub body: Option<BodyId>,
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConstructionStateV1 {
@@ -764,6 +818,7 @@ pub struct ConstructionStateV1 {
     pub last_sequence: u32,
     pub last_result: ConstructionResultV1,
     pub last_body: Option<BodyId>,
+    pub recent_results: Vec<ConstructionActionResultV1>,
 }
 
 impl Validate for ConstructionStateV1 {
@@ -802,6 +857,46 @@ impl Validate for ConstructionStateV1 {
         if self.attempted_intents != accounted {
             return Err(ContractError(
                 "construction attempt total does not match successes and failures".to_owned(),
+            ));
+        }
+        if self.recent_results.len() > 4
+            || self
+                .recent_results
+                .windows(2)
+                .any(|pair| pair[0].sequence <= pair[1].sequence)
+        {
+            return Err(ContractError(
+                "construction feedback must contain at most four newest-first ordered results"
+                    .to_owned(),
+            ));
+        }
+        for result in &self.recent_results {
+            let valid_body = matches!(
+                (result.result, result.body),
+                (
+                    ConstructionResultV1::Placed | ConstructionResultV1::Erased,
+                    Some(_)
+                ) | (
+                    ConstructionResultV1::CapacityFull
+                        | ConstructionResultV1::DeepOverlap
+                        | ConstructionResultV1::EraseMiss
+                        | ConstructionResultV1::GenerationExhausted,
+                    None
+                )
+            );
+            if result.result == ConstructionResultV1::None || !valid_body {
+                return Err(ContractError(
+                    "construction feedback result has an invalid body/result pairing".to_owned(),
+                ));
+            }
+        }
+        if let Some(latest) = self.recent_results.first()
+            && (latest.sequence != self.last_sequence
+                || latest.result != self.last_result
+                || latest.body != self.last_body)
+        {
+            return Err(ContractError(
+                "latest construction feedback does not match the summary fields".to_owned(),
             ));
         }
         if let Some(body) = self.last_body {
@@ -893,12 +988,12 @@ impl Validate for BodyCommandScenarioV1 {
                     scheduled.step, self.scenario.requested_steps
                 )));
             }
-            if self
-                .scenario
-                .bodies
-                .binary_search_by_key(&scheduled.command.body(), |body| body.id)
-                .is_err()
-            {
+            if scheduled.command.body().is_some_and(|target| {
+                self.scenario
+                    .bodies
+                    .binary_search_by_key(&target, |body| body.id)
+                    .is_err()
+            }) {
                 return Err(ContractError(format!(
                     "body command references missing body {:?}",
                     scheduled.command.body()

@@ -3,6 +3,7 @@ struct GrabState {
     local_anchor_target: vec4f,
     counters: vec4u,
     activity: vec4u,
+    last_selection: vec4u,
 };
 
 struct RenderParams {
