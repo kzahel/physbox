@@ -118,7 +118,7 @@ the approved plan has no unresolved ownership decision.
   its resolved Box2D v3/box2cpp sources.
 - [x] Build original LiquidFun/Box2D 2.3 as a separate native secondary
   adapter; do not combine foreign source generations in one process.
-- [ ] Calibrate the sidecar with a small fresh PhysBox 3 web corpus for
+- [x] Calibrate the sidecar with a small fresh PhysBox 3 web corpus for
   contained water, displacement, and one dynamic-body interaction.
 - [x] Freeze canonical hashes for the first seven coupled sources before GPU
   acceptance uses them.
@@ -149,6 +149,24 @@ PhysBox-owned projection runner; no foreign source generations or native state
 are linked into one process. Focused library and process tests pass for both
 executables, including deterministic rejection of the unsupported grab
 projection.
+
+PhysBox 3 browser-calibration checkpoint: `npm run
+calibrate:physbox3:web` launches the unchanged product through Vite and
+Chromium, uses only its engine-rendered toolbar and raw canvas pointer events,
+and writes an untracked fresh report plus synchronized screenshots. Fresh run
+`physbox3-web-1784805413797` used clean PhysBox 3
+`b11d73dae7dfe96f2efcba9dc5e3e53d10390867`, bridge
+`ee2a63be0a911feeedce8f2972a95972a2b389d4`, Box2D
+`3a4f0da8374af61293a03021c9a0b3ebcfe67948`, and Chromium
+149.0.7827.55. The contained, displacement, and dynamic-ball captures each
+retained 870 finite render particles and emitted no browser error. Subjective
+inspection also records visible side-wall escape in the nominal contained
+scene; this is useful calibration behavior, not an acceptance band or a reason
+to reproduce the defect.
+
+S31.1 is complete. Both process-isolated native lanes, the scalar contract,
+frozen source hashes, and the small product-browser calibration corpus now
+satisfy the slice gate. S31.2 is the active delivery slice.
 
 Gate: both native processes consume the shared projection or reject unsupported
 features deterministically, emit fresh canonical results with exact source and

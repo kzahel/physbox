@@ -24,6 +24,7 @@
     "benchmark:sleep-decisions": "cargo run --release -p physbox-lab --bin physbox-sleep-decisions --",
     "benchmark:sparse-capacity": "cargo run --release -p physbox-lab --bin physbox-sparse-capacity --",
     "benchmark:sleeping-city": "cargo run --release -p physbox-lab --bin physbox-sleeping-city-evidence --",
+    "calibrate:physbox3:web": "node scripts/calibrate-physbox3-web.mjs",
     "check:boundaries": "node scripts/check-platform-boundaries.mjs",
     "deploy": "bash scripts/deploy-web.sh",
     "deploy:dry-run": "bash scripts/deploy-web.sh --dry-run",
