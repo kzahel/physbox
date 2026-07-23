@@ -4166,6 +4166,7 @@ impl GpuGeneratedContactRunner {
             substep_contact_policy,
             restitution_timing_policy,
             false,
+            None,
         )
     }
 
@@ -4194,6 +4195,7 @@ impl GpuGeneratedContactRunner {
             crate::GpuSubstepContactPolicyV1::AuthorityFixedAnchorAnalyticalSeparation,
             crate::GpuRestitutionTimingPolicyV1::AfterEachSubstep,
             true,
+            None,
         )
     }
 
@@ -4239,6 +4241,7 @@ impl GpuGeneratedContactRunner {
             crate::GpuSubstepContactPolicyV1::AuthorityBranchRobustFixedAnchorAnalyticalSeparation,
             crate::GpuRestitutionTimingPolicyV1::AfterEachSubstep,
             true,
+            None,
         )
     }
 
@@ -4269,6 +4272,47 @@ impl GpuGeneratedContactRunner {
             crate::GpuSubstepContactPolicyV1::AuthorityBranchRobustFixedAnchorAnalyticalSeparation,
             crate::GpuRestitutionTimingPolicyV1::AfterEachSubstep,
             true,
+            None,
+        )
+    }
+
+    /// Laboratory-only replay of the current tunable soft path with the
+    /// product sleep execution enabled. The solver path stays identical while
+    /// the existing launch-owned sleep choices are varied for diagnosis.
+    #[allow(clippy::too_many_arguments)]
+    pub fn run_branch_robust_tunable_sleeping_observation_series_with_submission_batch(
+        &self,
+        scenario: &ScenarioV1,
+        observation_interval_steps: u32,
+        completed_steps: u32,
+        submission_batch_steps: u32,
+        fixed_step_hz: u32,
+        sleep_speed_threshold: f32,
+        sleep_grouping: physbox_launch::SleepGrouping,
+    ) -> Result<GpuGeneratedContactSeriesV1, String> {
+        crate::BranchRobustGpuPromotionPolicyV1::AUTHORIZED.validate_product_selection(false)?;
+        self.run_contact_policy_observation_series_with_authority_mode(
+            scenario,
+            observation_interval_steps,
+            completed_steps,
+            ContactIdentityPolicyV1::SELECTED,
+            submission_batch_steps,
+            GpuSolverExecutionV4::AUTHORITY_GPU_PROBE,
+            GpuSolverSchedulingPolicyV1::authority_gpu_probe_for_body_capacity(
+                scenario.bodies.len() as u32,
+            ),
+            crate::GpuSoftFeedbackPolicyV1::EveryBiasedIteration,
+            crate::GpuNormalRelaxationPolicyV1::PointSequential,
+            crate::GpuContactCoefficientPolicyV1::AuthorityTunableSoft,
+            crate::GpuSubstepContactPolicyV1::AuthorityBranchRobustFixedAnchorAnalyticalSeparation,
+            crate::GpuRestitutionTimingPolicyV1::AfterEachSubstep,
+            true,
+            Some(crate::awake_work::SleepExecutionConfig::configured(
+                true,
+                fixed_step_hz,
+                sleep_speed_threshold,
+                sleep_grouping,
+            )),
         )
     }
 
@@ -4288,6 +4332,7 @@ impl GpuGeneratedContactRunner {
         substep_contact_policy: crate::GpuSubstepContactPolicyV1,
         restitution_timing_policy: crate::GpuRestitutionTimingPolicyV1,
         authority_gpu_probe: bool,
+        sleep_config: Option<crate::awake_work::SleepExecutionConfig>,
     ) -> Result<GpuGeneratedContactSeriesV1, String> {
         if observation_interval_steps == 0
             || completed_steps == 0
@@ -4307,12 +4352,21 @@ impl GpuGeneratedContactRunner {
         scenario.validate().map_err(|error| error.to_string())?;
         let body_count = u32::try_from(scenario.bodies.len())
             .map_err(|_| "generated settling body count exceeds u32".to_owned())?;
-        let storage = GpuBodyStorage::new(
-            &self.device,
-            body_count,
-            crate::BODY_COMMAND_CAPACITY,
-            &scenario.bodies,
-        )?;
+        let storage = match sleep_config {
+            Some(config) => GpuBodyStorage::new_with_sleeping(
+                &self.device,
+                body_count,
+                crate::BODY_COMMAND_CAPACITY,
+                &scenario.bodies,
+                config,
+            )?,
+            None => GpuBodyStorage::new(
+                &self.device,
+                body_count,
+                crate::BODY_COMMAND_CAPACITY,
+                &scenario.bodies,
+            )?,
+        };
         let graph = if authority_gpu_probe {
             if substep_contact_policy
                 == crate::GpuSubstepContactPolicyV1::AuthorityBranchRobustFixedAnchorAnalyticalSeparation
@@ -4577,6 +4631,7 @@ impl GpuGeneratedContactRunner {
                 body.linear_velocity.y = motion[1];
                 body.angular_velocity = physbox_contracts::FiniteF32::new(motion[2])
                     .map_err(|error| error.to_string())?;
+                body.sleeping = metadata[1] & crate::body_state::FLAG_SLEEPING != 0;
             }
             let work = crate::collision_persistence::work_record(work_raw[index]);
             let mut capacities = vec![

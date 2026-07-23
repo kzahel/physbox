@@ -21,7 +21,7 @@ pub(crate) const ACTIVE_BODY_WINNER_DISPATCH_OFFSET: u64 = 10 * size_of::<u32>()
 pub(crate) const ACTIVE_BODY_DRAW_OFFSET: u64 = 13 * size_of::<u32>() as u64;
 
 const FLAG_LIVE: u32 = 1 << 0;
-const FLAG_SLEEPING: u32 = 1 << 1;
+pub(crate) const FLAG_SLEEPING: u32 = 1 << 1;
 const FLAG_FIXED: u32 = 1 << 2;
 
 const COMMAND_RESET: u32 = 1;

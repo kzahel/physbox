@@ -91,6 +91,11 @@ path = "src/bin/physbox-sleep-decisions.rs"
 test = false
 
 [[bin]]
+name = "physbox-circle-sleep-diagnostic"
+path = "src/bin/physbox-circle-sleep-diagnostic.rs"
+test = false
+
+[[bin]]
 name = "physbox-s17-product-relative"
 path = "src/bin/physbox-s17-product-relative.rs"
 test = false
