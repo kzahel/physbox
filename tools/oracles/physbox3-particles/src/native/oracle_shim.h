@@ -60,11 +60,13 @@ int32_t pb3_oracle_add_rectangle(
     float restitution,
     uint32_t sleeping);
 
-uint32_t pb3_oracle_spawn_circle(
+uint32_t pb3_oracle_spawn_rectangle(
     void* handle,
-    float center_x,
-    float center_y,
-    float radius,
+    float lower_x,
+    float lower_y,
+    float upper_x,
+    float upper_y,
+    float particle_radius,
     float spacing,
     float velocity_x,
     float velocity_y);

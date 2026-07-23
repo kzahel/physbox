@@ -228,26 +228,55 @@ extern "C" int32_t pb3_oracle_add_rectangle(
         halfExtentY);
 }
 
-extern "C" std::uint32_t pb3_oracle_spawn_circle(
+extern "C" std::uint32_t pb3_oracle_spawn_rectangle(
     void* handle,
-    float centerX,
-    float centerY,
-    float radius,
+    float lowerX,
+    float lowerY,
+    float upperX,
+    float upperY,
+    float particleRadius,
     float spacing,
     float velocityX,
     float velocityY)
 {
     OracleWorld* oracle = static_cast<OracleWorld*>(handle);
-    if (oracle == nullptr || oracle->particles == nullptr)
+    if (
+        oracle == nullptr ||
+        oracle->particles == nullptr ||
+        upperX <= lowerX ||
+        upperY <= lowerY ||
+        particleRadius <= 0.0f ||
+        spacing <= 0.0f)
     {
         return 0;
     }
-    const int created = oracle->particles->SpawnParticlesInCircle(
-        {centerX, centerY},
-        radius,
-        spacing,
-        {velocityX, velocityY});
-    return created > 0 ? static_cast<std::uint32_t>(created) : 0;
+
+    // The pinned first-party sidecar intentionally exposes only circle
+    // spawning. A radius r with stride 1.5r emits exactly one lattice point at
+    // center + (0.5r, 0.5r). Use bounded one-point calls to project the neutral
+    // authored rectangle exactly without patching or reaching into the clean
+    // sidecar implementation.
+    const float microRadius = std::min(particleRadius, spacing) * 0.001f;
+    const float microStride = microRadius * 1.5f;
+    const b2Vec2 velocity = {velocityX, velocityY};
+    std::uint32_t created = 0;
+    for (float y = lowerY + particleRadius; y <= upperY - particleRadius + 1.0e-6f; y += spacing)
+    {
+        for (float x = lowerX + particleRadius; x <= upperX - particleRadius + 1.0e-6f; x += spacing)
+        {
+            const int pointCount = oracle->particles->SpawnParticlesInCircle(
+                {x - 0.5f * microRadius, y - 0.5f * microRadius},
+                microRadius,
+                microStride,
+                velocity);
+            if (pointCount != 1)
+            {
+                return 0;
+            }
+            ++created;
+        }
+    }
+    return created;
 }
 
 extern "C" void pb3_oracle_set_gravity(void* handle, float gravityX, float gravityY)

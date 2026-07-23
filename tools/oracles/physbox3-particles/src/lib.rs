@@ -97,11 +97,13 @@ unsafe extern "C" {
         restitution: f32,
         sleeping: u32,
     ) -> i32;
-    fn pb3_oracle_spawn_circle(
+    fn pb3_oracle_spawn_rectangle(
         handle: *mut c_void,
-        center_x: f32,
-        center_y: f32,
-        radius: f32,
+        lower_x: f32,
+        lower_y: f32,
+        upper_x: f32,
+        upper_y: f32,
+        particle_radius: f32,
         spacing: f32,
         velocity_x: f32,
         velocity_y: f32,
@@ -124,6 +126,66 @@ unsafe extern "C" {
 
 struct NativeWorld {
     handle: *mut c_void,
+    pending_bodies: Vec<BodyStateV1>,
+    bodies_realized: bool,
+}
+
+impl NativeWorld {
+    fn realize_bodies(&mut self) -> Result<(), AdapterError> {
+        if self.bodies_realized {
+            return Ok(());
+        }
+        for (expected_index, body) in self.pending_bodies.iter().enumerate() {
+            let dynamic_body = u32::from(body.inverse_mass.get() > 0.0);
+            let sleeping = u32::from(body.sleeping);
+            let index = unsafe {
+                match body.shape {
+                    ShapeV1::Circle { radius } => pb3_oracle_add_circle(
+                        self.handle,
+                        dynamic_body,
+                        body.position.x,
+                        body.position.y,
+                        body.angle.get(),
+                        body.linear_velocity.x,
+                        body.linear_velocity.y,
+                        body.angular_velocity.get(),
+                        radius.get(),
+                        body.inverse_mass.get(),
+                        body.inverse_inertia.get(),
+                        body.material.friction.get(),
+                        body.material.restitution.get(),
+                        sleeping,
+                    ),
+                    ShapeV1::Rectangle { half_extents } => pb3_oracle_add_rectangle(
+                        self.handle,
+                        dynamic_body,
+                        body.position.x,
+                        body.position.y,
+                        body.angle.get(),
+                        body.linear_velocity.x,
+                        body.linear_velocity.y,
+                        body.angular_velocity.get(),
+                        half_extents.x,
+                        half_extents.y,
+                        body.inverse_mass.get(),
+                        body.inverse_inertia.get(),
+                        body.material.friction.get(),
+                        body.material.restitution.get(),
+                        sleeping,
+                    ),
+                }
+            };
+            let actual_index = u32::try_from(index)
+                .map_err(|_| AdapterError::Native("could not create body".to_owned()))?;
+            if actual_index != expected_index as u32 {
+                return Err(AdapterError::Native(
+                    "native body realization did not preserve stable source order".to_owned(),
+                ));
+            }
+        }
+        self.bodies_realized = true;
+        Ok(())
+    }
 }
 
 impl ParticleOracleWorld for NativeWorld {
@@ -151,50 +213,23 @@ impl ParticleOracleWorld for NativeWorld {
                 "could not create native particle world".to_owned(),
             ));
         }
-        Ok(Self { handle })
+        Ok(Self {
+            handle,
+            pending_bodies: Vec::new(),
+            bodies_realized: false,
+        })
     }
 
     fn add_body(&mut self, body: &BodyStateV1) -> Result<u32, AdapterError> {
-        let dynamic_body = u32::from(body.inverse_mass.get() > 0.0);
-        let sleeping = u32::from(body.sleeping);
-        let index = unsafe {
-            match body.shape {
-                ShapeV1::Circle { radius } => pb3_oracle_add_circle(
-                    self.handle,
-                    dynamic_body,
-                    body.position.x,
-                    body.position.y,
-                    body.angle.get(),
-                    body.linear_velocity.x,
-                    body.linear_velocity.y,
-                    body.angular_velocity.get(),
-                    radius.get(),
-                    body.inverse_mass.get(),
-                    body.inverse_inertia.get(),
-                    body.material.friction.get(),
-                    body.material.restitution.get(),
-                    sleeping,
-                ),
-                ShapeV1::Rectangle { half_extents } => pb3_oracle_add_rectangle(
-                    self.handle,
-                    dynamic_body,
-                    body.position.x,
-                    body.position.y,
-                    body.angle.get(),
-                    body.linear_velocity.x,
-                    body.linear_velocity.y,
-                    body.angular_velocity.get(),
-                    half_extents.x,
-                    half_extents.y,
-                    body.inverse_mass.get(),
-                    body.inverse_inertia.get(),
-                    body.material.friction.get(),
-                    body.material.restitution.get(),
-                    sleeping,
-                ),
-            }
-        };
-        u32::try_from(index).map_err(|_| AdapterError::Native("could not create body".to_owned()))
+        if self.bodies_realized {
+            return Err(AdapterError::Native(
+                "cannot add a body after native realization".to_owned(),
+            ));
+        }
+        let index = u32::try_from(self.pending_bodies.len())
+            .map_err(|_| AdapterError::Native("body count exceeds u32".to_owned()))?;
+        self.pending_bodies.push(body.clone());
+        Ok(index)
     }
 
     fn spawn_region(
@@ -202,55 +237,29 @@ impl ParticleOracleWorld for NativeWorld {
         region: &ParticleRegionV1,
         particle_radius: f32,
     ) -> Result<u32, AdapterError> {
-        let width = region.upper.x - region.lower.x;
-        let height = region.upper.y - region.lower.y;
-        let fill_radius = (0.5 * width.min(height) - particle_radius).max(particle_radius);
-        let mut centers = Vec::new();
-        if width >= height {
-            let start = region.lower.x + fill_radius + particle_radius;
-            let end = region.upper.x - fill_radius - particle_radius;
-            let mut x = start;
-            while x <= end {
-                centers.push(Vec2::new(x, 0.5 * (region.lower.y + region.upper.y)));
-                x += 2.0 * fill_radius;
-            }
-        } else {
-            let start = region.lower.y + fill_radius + particle_radius;
-            let end = region.upper.y - fill_radius - particle_radius;
-            let mut y = start;
-            while y <= end {
-                centers.push(Vec2::new(0.5 * (region.lower.x + region.upper.x), y));
-                y += 2.0 * fill_radius;
-            }
-        }
-        if centers.is_empty() {
-            centers.push(Vec2::new(
-                0.5 * (region.lower.x + region.upper.x),
-                0.5 * (region.lower.y + region.upper.y),
+        let created = unsafe {
+            pb3_oracle_spawn_rectangle(
+                self.handle,
+                region.lower.x,
+                region.lower.y,
+                region.upper.x,
+                region.upper.y,
+                particle_radius,
+                region.spacing.get(),
+                region.initial_velocity.x,
+                region.initial_velocity.y,
+            )
+        };
+        if created == 0 {
+            return Err(AdapterError::Native(
+                "PhysBox 3 rejected an exact authored particle lattice".to_owned(),
             ));
-        }
-        let mut created = 0u32;
-        for center in centers {
-            created = created
-                .checked_add(unsafe {
-                    pb3_oracle_spawn_circle(
-                        self.handle,
-                        center.x,
-                        center.y,
-                        fill_radius,
-                        region.spacing.get(),
-                        region.initial_velocity.x,
-                        region.initial_velocity.y,
-                    )
-                })
-                .ok_or_else(|| {
-                    AdapterError::Native("native region spawn count overflowed".to_owned())
-                })?;
         }
         Ok(created)
     }
 
     fn apply_action(&mut self, action: &NeutralActionV1) -> Result<(), AdapterError> {
+        self.realize_bodies()?;
         match action {
             NeutralActionV1::ApplyImpulse {
                 body,
@@ -290,6 +299,7 @@ impl ParticleOracleWorld for NativeWorld {
     }
 
     fn step(&mut self, dt: f32, substeps: u32) -> Result<(), AdapterError> {
+        self.realize_bodies()?;
         if unsafe { pb3_oracle_step(self.handle, dt, substeps) } == 0 {
             return Err(AdapterError::Native(
                 "native particle step failed".to_owned(),
@@ -368,7 +378,15 @@ impl ParticleOracleWorld for NativeWorld {
             ],
             runtime_settings: vec![
                 named("coupling-order", "particle-then-box2d-per-rigid-substep"),
+                named(
+                    "initialization-order",
+                    "authored particle lattice before native bodies",
+                ),
                 named("particle-radius", &format!("{particle_radius:.9}")),
+                named(
+                    "region-projection",
+                    "exact authored lattice via bounded one-point sidecar circle calls",
+                ),
                 named(
                     "rigid-substeps",
                     &request.scenario.rigid.settings.substeps.to_string(),
@@ -390,8 +408,8 @@ impl Drop for NativeWorld {
 mod tests {
     use super::*;
     use physbox_contracts::{
-        CoupledOracleRequestV1, FailureKindV1, SCHEMA_VERSION, canonical_hash, canonical_json,
-        sha256_bytes,
+        CoupledOracleRequestV1, FailureKindV1, FiniteF32, ParticleRegionV1, SCHEMA_VERSION,
+        canonical_hash, canonical_json, sha256_bytes,
     };
     use physbox_engine::{CoupledScenarioKind, canonical_coupled_scenario};
 
@@ -407,10 +425,41 @@ mod tests {
         let bytes = canonical_json(&request).unwrap();
         let result = execute_request(&request, &bytes).unwrap();
         assert_eq!(result.completed_steps, request.scenario.requested_steps);
-        assert!(!result.particles.is_empty());
+        assert_eq!(result.particles.len(), 456);
         assert_eq!(result.projection_hash, sha256_bytes(&bytes));
         assert!(result.failure.is_none());
         result.validate().unwrap();
+    }
+
+    #[test]
+    fn rectangle_projection_preserves_the_authored_lattice() {
+        let mut world = NativeWorld::create(Vec2::ZERO, 0.1, 1.0, 1.0, 16).unwrap();
+        let region = ParticleRegionV1 {
+            id: 0,
+            material_id: 0,
+            lower: Vec2::ZERO,
+            upper: Vec2::new(0.6, 0.6),
+            spacing: FiniteF32::new(0.2).unwrap(),
+            initial_velocity: Vec2::ZERO,
+        };
+        assert_eq!(world.spawn_region(&region, 0.1).unwrap(), 9);
+        let positions = world.particle_positions().unwrap();
+        let expected = [
+            Vec2::new(0.1, 0.1),
+            Vec2::new(0.3, 0.1),
+            Vec2::new(0.5, 0.1),
+            Vec2::new(0.1, 0.3),
+            Vec2::new(0.3, 0.3),
+            Vec2::new(0.5, 0.3),
+            Vec2::new(0.1, 0.5),
+            Vec2::new(0.3, 0.5),
+            Vec2::new(0.5, 0.5),
+        ];
+        assert_eq!(positions.len(), expected.len());
+        for (actual, expected) in positions.iter().zip(expected) {
+            assert!((actual.x - expected.x).abs() <= 1.0e-6);
+            assert!((actual.y - expected.y).abs() <= 1.0e-6);
+        }
     }
 
     #[test]
