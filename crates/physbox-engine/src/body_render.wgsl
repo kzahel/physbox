@@ -68,12 +68,8 @@ fn background_fragment(@builtin(position) pixel: vec4f) -> @location(0) vec4f {
     let clip = vec2f(pixel.x / size.x * 2.0 - 1.0,
                      1.0 - pixel.y / size.y * 2.0);
     let world = params.camera.xy + clip * params.camera.zw;
-    let horizon = clamp(0.48 + world.y * 0.18, 0.0, 1.0);
-    var color = mix(vec3f(0.018, 0.035, 0.085), vec3f(0.075, 0.16, 0.25), horizon);
-    let grid_x = abs(fract(world.x * 5.0 + 0.5) - 0.5);
-    let grid_y = abs(fract(world.y * 5.0 + 0.5) - 0.5);
-    let grid = 1.0 - smoothstep(0.012, 0.025, min(grid_x, grid_y));
-    color += vec3f(0.03, 0.055, 0.08) * grid;
+    let horizon = clamp(0.52 + world.y * 0.08, 0.0, 1.0);
+    let color = mix(vec3f(0.018, 0.024, 0.040), vec3f(0.038, 0.052, 0.078), horizon);
     return vec4f(color, 1.0);
 }
 
@@ -179,11 +175,17 @@ fn body_fragment(input: BodyVertexOutput) -> @location(0) vec4f {
     let rectangle_edge = 1.0 - max(abs(input.local.x), abs(input.local.y));
     let circle_edge = 1.0 - length(input.local);
     let edge_distance = select(rectangle_edge, circle_edge, circle);
-    let rim = 1.0 - smoothstep(0.0, 0.10, edge_distance);
+    let edge_width = max(fwidth(edge_distance), 0.002);
+    let rim = 1.0 - smoothstep(edge_width, edge_width * 2.6, edge_distance);
     let fixed = (input.flags & FLAG_FIXED) != 0u;
-    var low = select(vec3f(0.10, 0.76, 0.88), vec3f(0.12, 0.20, 0.28), fixed);
-    var high = select(vec3f(0.44, 0.96, 0.78), vec3f(0.24, 0.34, 0.42), fixed);
-    var rim_color = select(vec3f(0.55, 1.0, 0.92), vec3f(0.34, 0.46, 0.56), fixed);
+    let ordinary = select(vec3f(0.48, 0.36, 0.82), vec3f(0.16, 0.48, 0.82), circle);
+    var low = select(ordinary, vec3f(0.20, 0.24, 0.31), fixed);
+    var high = low;
+    var rim_color = select(
+        select(vec3f(0.64, 0.54, 0.94), vec3f(0.30, 0.66, 0.96), circle),
+        vec3f(0.36, 0.42, 0.52),
+        fixed,
+    );
     if (input.sleep_visual_state == VISUAL_QUIET) {
         low = vec3f(0.82, 0.34, 0.035);
         high = vec3f(1.0, 0.73, 0.13);
@@ -198,7 +200,7 @@ fn body_fragment(input: BodyVertexOutput) -> @location(0) vec4f {
         rim_color = vec3f(1.0, 0.88, 0.32);
     }
     var color = mix(low, high, clamp(input.local.y * 0.5 + 0.5, 0.0, 1.0));
-    color += rim_color * rim * 0.48;
+    color = mix(color, rim_color, rim * 0.78);
     if (input.sleep_visual_state == VISUAL_QUIET) {
         let bar = 1.0 - smoothstep(
             0.045,

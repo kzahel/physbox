@@ -32,12 +32,12 @@ fn particle_vertex(
     let clip = (world - params.camera.xy) / max(params.camera.zw, vec2f(0.0001));
     let speed = clamp(length(velocities[index].xy) * 0.16, 0.0, 1.0);
     let density = density_states[index].x;
-    var color = mix(vec3f(0.025, 0.28, 0.72), vec3f(0.16, 0.88, 1.0), speed);
+    var color = mix(vec3f(0.035, 0.24, 0.58), vec3f(0.12, 0.58, 0.86), speed);
     if params.debug.x == 1u {
         color = select(
-            mix(vec3f(0.03, 0.12, 0.48), vec3f(0.08, 0.84, 1.0),
+            mix(vec3f(0.03, 0.12, 0.42), vec3f(0.10, 0.58, 0.86),
                 clamp(density / max(params.material.z, 0.0001), 0.0, 1.0)),
-            mix(vec3f(0.08, 0.84, 1.0), vec3f(1.0, 0.18, 0.06),
+            mix(vec3f(0.10, 0.58, 0.86), vec3f(1.0, 0.25, 0.08),
                 clamp((density - params.material.z) * 0.5, 0.0, 1.0)),
             density > params.material.z,
         );
@@ -59,6 +59,6 @@ fn particle_fragment(input: VertexOutput) -> @location(0) vec4f {
         0.34,
         length(input.local - vec2f(-0.28, 0.32)),
     );
-    let color = mix(body, vec3f(0.72, 0.96, 1.0), highlight * 0.42);
+    let color = mix(body, vec3f(0.66, 0.88, 1.0), highlight * 0.36);
     return vec4f(color, coverage * 0.90);
 }

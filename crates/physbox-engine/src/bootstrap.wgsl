@@ -63,23 +63,17 @@ fn fragment_main(@builtin(position) pixel: vec4f) -> @location(0) vec4f {
                      1.0 - pixel.y / size.y * 2.0);
     let world = params.camera.xy + clip * params.camera.zw;
 
-    let horizon = clamp(0.48 + world.y * 0.18, 0.0, 1.0);
-    var color = mix(vec3f(0.018, 0.035, 0.085), vec3f(0.075, 0.16, 0.25), horizon);
-
-    let grid_x = abs(fract(world.x * 5.0 + 0.5) - 0.5);
-    let grid_y = abs(fract(world.y * 5.0 + 0.5) - 0.5);
-    let grid = 1.0 - smoothstep(0.012, 0.025, min(grid_x, grid_y));
-    color += vec3f(0.03, 0.055, 0.08) * grid;
+    let horizon = clamp(0.52 + world.y * 0.08, 0.0, 1.0);
+    var color = mix(vec3f(0.018, 0.024, 0.040), vec3f(0.038, 0.052, 0.078), horizon);
 
     let local = rotate(world - state.position, state.angle);
     let distance = box_distance(local, vec2f(0.16, 0.105));
     let edge = max(fwidth(distance), 0.0015);
     let fill = 1.0 - smoothstep(-edge, edge, distance);
-    let rim = 1.0 - smoothstep(edge, edge * 3.5, abs(distance));
-    let body_color = mix(vec3f(0.10, 0.76, 0.88), vec3f(0.44, 0.96, 0.78),
-                         clamp(local.y * 2.5 + 0.5, 0.0, 1.0));
+    let rim = 1.0 - smoothstep(edge, edge * 2.6, abs(distance));
+    let body_color = vec3f(0.48, 0.36, 0.82);
     color = mix(color, body_color, fill);
-    color += vec3f(0.55, 1.0, 0.92) * rim * 0.48;
+    color = mix(color, vec3f(0.64, 0.54, 0.94), rim * 0.78);
 
     return vec4f(color, 1.0);
 }

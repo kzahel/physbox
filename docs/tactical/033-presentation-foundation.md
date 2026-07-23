@@ -181,25 +181,36 @@ one UI pass and two draws, and report no overflow.
 
 ### S33.4 — Toolbar and world visual refresh
 
-- [ ] Port or independently implement rounded, batched procedural icons for
+- [x] Port or independently implement rounded, batched procedural icons for
   Menu, Grab, Circle, Rectangle, Erase, Water, and Surface with exact
   provenance for any closely reused PhysBox 4 implementation.
-- [ ] Apply a coherent dark neutral UI theme with restrained selected states,
+- [x] Apply a coherent dark neutral UI theme with restrained selected states,
   borders, cards, radii, and touch-sized targets.
-- [ ] Remove the ordinary background grid and use a quiet dark navy background
+- [x] Remove the ordinary background grid and use a quiet dark navy background
   with at most subtle lighting.
-- [ ] Replace the ordinary neon body gradient with flat blue circle, violet
+- [x] Replace the ordinary neon body gradient with flat blue circle, violet
   rectangle, and muted fixed-surface families plus pixel-stable outlines.
-- [ ] Align direct water presentation with the selected palette without adding
+- [x] Align direct water presentation with the selected palette without adding
   smooth-surface mechanics or passes.
-- [ ] Preserve quiet/asleep/recently-woken colors and markers as a conspicuous
+- [x] Preserve quiet/asleep/recently-woken colors and markers as a conspicuous
   debug override in PhysBox view and public awake/asleep state in Box2D view.
-- [ ] Keep both comparison engines on the same selected world renderer and
+- [x] Keep both comparison engines on the same selected world renderer and
   visual theme.
 
 Gate: the intended style is present in shared offscreen, desktop, browser, and
 Android paths; sleep/comparator semantics are unchanged; no physics or
 configuration hash changes.
+
+S33.4 evidence: the procedural toolbar distance fields carry an inline source
+note for PhysBox 4 revision
+`92f745eb85908243c69080a4fa4dba24f05c22cf`
+(`crates/physbox-render/src/toolbar.wgsl`); PhysBox 5 assigns neutral icon IDs
+and independently composes the workbench. Browser WebGPU run
+`00b56608-e284-4652-9bc7-091030090a51` captures the refreshed liquid and
+surface-tool presentation. Run `d1a968f8-b717-4e0f-8f6e-c0f743e8fe55`
+captures the authoritative asleep `Z` override separately from the menu.
+Wide/narrow S33.3 runs capture the same flat world palette and selected
+renderer in PhysBox and Box2D views.
 
 ### S33.5 — Cross-host and performance qualification
 

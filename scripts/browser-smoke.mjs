@@ -14,6 +14,7 @@ const captureDirectory = resolve(process.env.PHYSBOX5_CAPTURE_DIRECTORY ?? "/tmp
 const screenshot = join(captureDirectory, `physbox5-web${captureSuffix}.png`);
 const initialScreenshot = join(captureDirectory, `physbox5-web-initial${captureSuffix}.png`);
 const menuScreenshot = join(captureDirectory, `physbox5-web-menu${captureSuffix}.png`);
+const sleepScreenshot = join(captureDirectory, `physbox5-web-sleep${captureSuffix}.png`);
 const box2dScreenshot = join(captureDirectory, `physbox5-web-box2d${captureSuffix}.png`);
 const solverScreenshot = join(captureDirectory, `physbox5-web-solver${captureSuffix}.png`);
 const grabScreenshot = join(captureDirectory, `physbox5-web-grab${captureSuffix}.png`);
@@ -34,6 +35,7 @@ await mkdir(captureDirectory, { recursive: true });
 await rm(screenshot, { force: true });
 await rm(initialScreenshot, { force: true });
 await rm(menuScreenshot, { force: true });
+await rm(sleepScreenshot, { force: true });
 await rm(box2dScreenshot, { force: true });
 await rm(solverScreenshot, { force: true });
 await rm(grabScreenshot, { force: true });
@@ -464,7 +466,7 @@ try {
       { timeout: 30_000 },
     );
     await page.waitForTimeout(750);
-    await captureCompleteScreenshot(page, menuScreenshot, "browser sleep-state visualization");
+    await captureCompleteScreenshot(page, sleepScreenshot, "browser sleep-state visualization");
     for (const threshold of [0.1, 0.01, 0.02]) {
       await clickWorldControl(worldSleepThresholdCenter);
       await page.waitForFunction(
@@ -1023,6 +1025,7 @@ try {
     viewport: final.viewport,
     initialScreenshot,
     menuScreenshot,
+    sleepScreenshot,
     box2dScreenshot,
     box2dFrame,
     solverScreenshot: solverLab ? solverScreenshot : null,
@@ -1060,6 +1063,7 @@ try {
       initialScreenshot,
       screenshot,
       menuScreenshot,
+      sleepScreenshot,
       box2dScreenshot,
       grabScreenshot: capturedGrab ? grabScreenshot : null,
       constructionScreenshot: capturedConstruction ? constructionScreenshot : null,
