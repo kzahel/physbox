@@ -63,19 +63,15 @@ impl WebPreferenceController {
         let has_explicit_physics = query
             .iter()
             .any(|(key, _)| PHYSICS_QUERY_KEYS.contains(&key.as_str()));
-        if !has_explicit_physics {
-            if let Some(physics) = load_physics_preference(store) {
-                append_physics_query(&mut query, physics);
-            }
+        if !has_explicit_physics && let Some(physics) = load_physics_preference(store) {
+            append_physics_query(&mut query, physics);
         }
         let has_explicit_capacity = query.iter().any(|(key, _)| key == WORLD_CAPACITY_QUERY_KEY);
-        if !has_explicit_capacity {
-            if let Some(capacity) = load_world_preference(store) {
-                query.push((
-                    WORLD_CAPACITY_QUERY_KEY.to_owned(),
-                    capacity.slots().to_string(),
-                ));
-            }
+        if !has_explicit_capacity && let Some(capacity) = load_world_preference(store) {
+            query.push((
+                WORLD_CAPACITY_QUERY_KEY.to_owned(),
+                capacity.slots().to_string(),
+            ));
         }
 
         let request = parse_web_query(&encode_query(&query))?;

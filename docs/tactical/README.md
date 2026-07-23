@@ -226,7 +226,7 @@ This README remains the unnumbered index.
 | S25 | Bounded awake configuration qualification | [025-bounded-awake-configuration-qualification.md](025-bounded-awake-configuration-qualification.md) | complete; qualified 60/8/i1 not promoted, 60/4/i1 retained with accepted 8-quality/14-structural limitation, 2026-07-22 |
 | S26 | Exact contact-component observation | [026-exact-contact-component-observation.md](026-exact-contact-component-observation.md) | complete; exact labels/CPU differential pass, static cost recorded, stopped before reductions or behavior, 2026-07-22 |
 | S27 | Exact sleep-decision observation | [027-exact-sleep-decision-observation.md](027-exact-sleep-decision-observation.md) | complete; reductions match CPU, evolved rows change no transitions, K=4 retained before behavior switch, 2026-07-22 |
-| S28 | Browser platform-boundary hardening | [028-browser-platform-boundary-hardening.md](028-browser-platform-boundary-hardening.md) | active; contract recorded, implementation and source locks in progress, 2026-07-23 |
+| S28 | Browser platform-boundary hardening | [028-browser-platform-boundary-hardening.md](028-browser-platform-boundary-hardening.md) | complete; shared Rust owns preferences/query policy, semantic smoke observation is gated, and JS/TS source locks pass, 2026-07-23 |
 
 ## Conventions
 

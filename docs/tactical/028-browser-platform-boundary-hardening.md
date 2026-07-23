@@ -1,6 +1,6 @@
 # S28: Browser platform-boundary hardening
 
-Status: active, 2026-07-23
+Status: complete, 2026-07-23
 
 ## Goal
 
@@ -89,9 +89,9 @@ reject each declared duplication shape.
 
 ### S28.5 Production qualification and closure
 
-- [ ] Run `npm run test:fast`.
-- [ ] Run production clippy with warnings denied for the maintained workspace.
-- [ ] Record exact validation and close the workstream.
+- [x] Run `npm run test:fast`.
+- [x] Run production clippy with warnings denied for the maintained workspace.
+- [x] Record exact validation and close the workstream.
 
 ## Completion condition
 
@@ -120,3 +120,9 @@ declared duplication fixtures, and all S28.5 gates pass.
   120-line product/40-line observer ceilings, observer read-only checks, and
   targeted TypeScript, semantic-glue, call-surface, and observer-mutation
   negative fixtures.
+- 2026-07-23 S28.5: final `npm run test:fast` passed in 17.36 seconds,
+  including 124 engine tests, both bounded performance smokes, host/tool tests,
+  the hardened platform-boundary lane, and real Browser WebGPU with
+  `PHYSBOX5_VALIDATION_SUCCESS`. `npm run clippy:rust:production` passed with
+  warnings denied after the only two style findings were corrected; the
+  focused 20-test launch suite also passed after that correction.
