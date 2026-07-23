@@ -127,6 +127,19 @@ if (!webAppImpl) {
 const workspace = await readFile(join(root, "Cargo.toml"), "utf8");
 if (/\brapier\b|physbox-rigid/i.test(workspace)) failures.push("Cargo.toml: inherited CPU rigid backend is forbidden");
 
+const uiManifestPath = join(root, "crates", "physbox-ui", "Cargo.toml");
+const uiManifest = await readFile(uiManifestPath, "utf8");
+const uiForbiddenDependencies = /\bphysbox-(?:engine|launch|contracts|box2d-comparator|shell)\s*=/i;
+if (uiForbiddenDependencies.test(uiManifest)) {
+  failures.push("crates/physbox-ui/Cargo.toml: neutral UI crate depends on product policy");
+}
+const uiProductVocabulary = /\b(?:SolverProfile|ValidationScenario|WorkbenchTool|ComparisonEngine|SleepGrouping|UiAction)\b/;
+for (const path of await files(join(root, "crates", "physbox-ui", "src"))) {
+  if (extname(path) === ".rs" && uiProductVocabulary.test(await readFile(path, "utf8"))) {
+    failures.push(`${relative(root, path)}: product vocabulary belongs to physbox-engine`);
+  }
+}
+
 const oracleDependency = /physbox-box2d-oracle\s*=/i;
 for (const rootName of ["apps", "crates"]) {
   for (const path of await files(join(root, rootName))) {
@@ -138,6 +151,12 @@ for (const rootName of ["apps", "crates"]) {
 
 if (!oracleDependency.test('physbox-box2d-oracle = { path = "../../tools/oracles/box2d" }')) {
   failures.push("boundary self-test failed: native Box2D oracle dependency");
+}
+if (!uiForbiddenDependencies.test("physbox-engine = { path = \"../physbox-engine\" }")) {
+  failures.push("boundary self-test failed: UI dependency direction");
+}
+if (!uiProductVocabulary.test("enum WorkbenchTool { Grab }")) {
+  failures.push("boundary self-test failed: UI product vocabulary");
 }
 for (const rule of rules) {
   const negativeFixture = rule.name.includes("WGSL")

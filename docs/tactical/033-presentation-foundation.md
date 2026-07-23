@@ -1,10 +1,9 @@
 # S33 — Presentation foundation and modular canvas UI
 
-Status: proposed, 2026-07-23. Human direction approves the governing visual
-and modularity direction and requests this executable plan. Product
-implementation has not yet been authorized. Once activated, the work may run
-continuously through technical and cross-host qualification and stop at the
-final subjective capture review.
+Status: active, 2026-07-23. Human direction approves the governing visual and
+modularity direction and authorizes continuous implementation through
+technical and cross-host qualification. The work stops at the final subjective
+capture review.
 
 Governing topic:
 [presentation and modular workbench architecture](../topics/presentation-and-workbench-architecture.md).
@@ -90,18 +89,34 @@ aesthetic preference cannot be established solely by automated tests.
 
 ### S33.1 — Baseline and neutral crate contract
 
-- [ ] Record clean PhysBox 5, PhysBox 3, and PhysBox 4 revisions and dirty
+- [x] Record clean PhysBox 5, PhysBox 3, and PhysBox 4 revisions and dirty
   states before relying on presentation source.
-- [ ] Capture the existing closed-toolbar, open-menu, sleeping-debug, Box2D,
+- [x] Capture the existing closed-toolbar, open-menu, sleeping-debug, Box2D,
   desktop/browser, and narrow/mobile baselines.
-- [ ] Record current UI render passes, draw calls, static/dynamic instances,
+- [x] Record current UI render passes, draw calls, static/dynamic instances,
   upload behavior, overflow state, and a bounded full-frame smoke.
-- [ ] Add `physbox-ui` as a default workspace member with no dependency on
+- [x] Add `physbox-ui` as a default workspace member with no dependency on
   engine, launch, contracts, comparator, shell, or app crates.
-- [ ] Define neutral geometry, input, widget-ID/event, theme, frame-description,
+- [x] Define neutral geometry, input, widget-ID/event, theme, frame-description,
   capacity, and render-report types with crate-level ownership documentation.
-- [ ] Add dependency-boundary negatives so physics/product vocabulary cannot
+- [x] Add dependency-boundary negatives so physics/product vocabulary cannot
   silently enter the UI crate.
+
+S33.1 baseline: clean PhysBox 5 revision
+`8f7ca0553ecf436974aebe70a95f91ec83625b73`; clean PhysBox 3
+`b11d73dae7dfe96f2efcba9dc5e3e53d10390867`; clean PhysBox 4
+`92f745eb85908243c69080a4fa4dba24f05c22cf`. `npm run
+references:status` passes every managed and sibling pin. Browser WebGPU run
+`e35da22d-c002-4c62-9afa-245a5e51dff4` at 960×600 records the closed toolbar,
+open solver menu, sleep visualization, and Box2D captures under
+`/tmp/physbox5-s33-baseline`. The ordinary final frame uses one UI pass, two
+draws, 31/238 static/dynamic instances, 25/237 glyphs, one static write,
+37 dynamic writes, 1,984/562,304 static/dynamic upload bytes, 48,144 allocated
+bytes, and no overflow. The Box2D frame also uses one pass and two draws with
+26/250 instances and no overflow. Native Vulkan headless capture
+`native-bootstrap.png` passes 40 frames at full simulated time. Narrow Browser
+WebGPU run `a1f84dab-fac8-41cd-9445-a5634ceea856` repeats the capture flow at
+456×1024 with the same one-pass/two-draw bound and no overflow.
 
 Gate: the new crate builds on maintained native and WASM targets, its dependency
 direction is enforced, baseline artifacts are fresh, and no product call site

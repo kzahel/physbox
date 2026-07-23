@@ -1555,6 +1555,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "physbox-ui"
+version = "0.1.0"
+
+[[package]]
 name = "physbox-web"
 version = "0.1.0"
 dependencies = [

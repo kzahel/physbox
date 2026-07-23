@@ -10,6 +10,7 @@ members = [
   "crates/physbox-lab",
   "crates/physbox-launch",
   "crates/physbox-shell",
+  "crates/physbox-ui",
   "tools/oracles/box2d",
   "tools/oracles/particle-common",
   "tools/oracles/physbox3-particles",
@@ -27,6 +28,7 @@ default-members = [
   "crates/physbox-contracts",
   "crates/physbox-launch",
   "crates/physbox-shell",
+  "crates/physbox-ui",
 ]
 resolver = "2"
 
