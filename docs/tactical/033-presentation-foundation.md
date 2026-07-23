@@ -124,20 +124,31 @@ uses it yet.
 
 ### S33.2 — Mechanical renderer and input extraction
 
-- [ ] Move the glyph atlas, UI shader/pipeline, instance formats, bounded
+- [x] Move the glyph atlas, UI shader/pipeline, instance formats, bounded
   buffers, static-key caching, upload accounting, and UI render pass into
   `physbox-ui`.
-- [ ] Move neutral rectangle/hit testing and pointer capture into the crate.
-- [ ] Preserve one UI pass, no more than two instance draws, and explicit
+- [x] Move neutral rectangle/hit testing and pointer capture into the crate.
+- [x] Preserve one UI pass, no more than two instance draws, and explicit
   overflow.
-- [ ] Keep `WorkbenchUi` as an engine-owned adapter that produces neutral UI
+- [x] Keep `WorkbenchUi` as an engine-owned adapter that produces neutral UI
   frames and maps neutral events to existing `UiAction` values.
-- [ ] Prove the same current menu/tool actions and comparator visibility before
+- [x] Prove the same current menu/tool actions and comparator visibility before
   deliberately changing layout or style.
 
 Gate: the complete existing UI runs through `physbox-ui`, semantic interaction
 tests pass, the old engine module no longer owns generic WGPU UI machinery, and
 baseline pass/draw/upload bounds do not regress.
+
+S33.2 evidence: `physbox-ui` owns the atlas, pipeline, shader, neutral
+primitives, bounded retained/live buffers, upload accounting, hit targets, and
+multi-pointer capture. The engine adapter retains all product mappings.
+Focused crate and engine UI tests pass. Browser WebGPU run
+`08b93869-7fe9-4212-9843-c711a11ae5de` under
+`/tmp/physbox5-s33-input-extraction` preserves the baseline one UI pass, two
+draw calls, 31/238 retained/live instances, 25/237 glyphs, 1,984 retained
+upload bytes, 48,144 allocated bytes, and no overflow. The preceding native
+Vulkan 40-frame extraction capture is stored under
+`/tmp/physbox5-s33-extraction`.
 
 ### S33.3 — Generic widgets and compact menu migration
 

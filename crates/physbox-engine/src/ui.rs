@@ -1,10 +1,11 @@
-use std::collections::BTreeSet;
-
 use physbox_contracts::{ConstructionResultV1, ConstructionStateV1};
 use physbox_launch::{SolverProfileName, ValidationScenario, WorldCapacityPreset};
 use physbox_ui::{
-    CanvasRenderer, InstanceCapacities, Point, Primitive, Rect, RenderReport as CanvasRenderReport,
-    RenderTarget as CanvasRenderTarget, text_width,
+    CanvasRenderer, HitTarget, InstanceCapacities, InteractionState, Point,
+    PointerButton as CanvasPointerButton, PointerEvent as CanvasPointerEvent,
+    PointerId as CanvasPointerId, PointerPhase as CanvasPointerPhase, Primitive, Rect,
+    RenderReport as CanvasRenderReport, RenderTarget as CanvasRenderTarget, WidgetEventKind,
+    WidgetId, WidgetRole, text_width,
 };
 
 use crate::{
@@ -179,7 +180,7 @@ pub(crate) struct WorkbenchUi {
     sleep_visuals_enabled: bool,
     solver_profiles: Vec<SolverProfileConfig>,
     draft_solver_profile: SolverProfileConfig,
-    captured_pointers: BTreeSet<u64>,
+    interactions: InteractionState,
 }
 
 impl WorkbenchUi {
@@ -206,7 +207,7 @@ impl WorkbenchUi {
             sleep_visuals_enabled: false,
             solver_profiles,
             draft_solver_profile: solver_profile,
-            captured_pointers: BTreeSet::new(),
+            interactions: InteractionState::default(),
         }
     }
 
@@ -224,7 +225,7 @@ impl WorkbenchUi {
                 selected_tool: &mut self.selected_tool,
                 solver_profiles: &mut self.solver_profiles,
                 draft_solver_profile: &mut self.draft_solver_profile,
-                captured_pointers: &mut self.captured_pointers,
+                interactions: &mut self.interactions,
                 scenario,
                 selected_engine,
             },
@@ -340,7 +341,7 @@ struct UiRouteState<'a> {
     selected_tool: &'a mut WorkbenchTool,
     solver_profiles: &'a mut Vec<SolverProfileConfig>,
     draft_solver_profile: &'a mut SolverProfileConfig,
-    captured_pointers: &'a mut BTreeSet<u64>,
+    interactions: &'a mut InteractionState,
     scenario: ValidationScenario,
     selected_engine: ComparisonEngine,
 }
@@ -356,7 +357,7 @@ fn route_events(
         selected_tool,
         solver_profiles,
         draft_solver_profile,
-        captured_pointers,
+        interactions,
         scenario,
         selected_engine,
     } = state;
@@ -368,28 +369,50 @@ fn route_events(
             forwarded.push(event);
             continue;
         };
-        if captured_pointers.contains(&pointer.id) {
-            if matches!(pointer.phase, PointerPhase::Up | PointerPhase::Cancel) {
-                captured_pointers.remove(&pointer.id);
-            }
-            continue;
-        }
-        let activates_ui = matches!(
+        let pointer_id = CanvasPointerId(pointer.id);
+        let eligible_button = matches!(
             pointer.button,
             PointerButton::Primary | PointerButton::Contact
-        ) && pointer.phase == PointerPhase::Down;
-        if activates_ui {
-            let layout = UiLayout::for_target(target_size);
-            if let Some(hit) = layout.hit_test(
-                pointer.normalized_position,
-                *menu_open,
-                *menu_page,
-                solver_profiles,
-                scenario,
-                selected_engine,
-            ) {
-                captured_pointers.insert(pointer.id);
-                match hit {
+        );
+        let layout = UiLayout::for_target(target_size);
+        let hits = layout.hit_targets(
+            *menu_open,
+            *menu_page,
+            solver_profiles,
+            scenario,
+            selected_engine,
+        );
+        let targets = hits.iter().map(|(target, _)| *target).collect::<Vec<_>>();
+        let canvas_event = CanvasPointerEvent {
+            id: pointer_id,
+            phase: match pointer.phase {
+                PointerPhase::Down => CanvasPointerPhase::Down,
+                PointerPhase::Move => CanvasPointerPhase::Move,
+                PointerPhase::Up => CanvasPointerPhase::Up,
+                PointerPhase::Cancel => CanvasPointerPhase::Cancel,
+            },
+            button: match pointer.button {
+                PointerButton::Primary | PointerButton::Contact => CanvasPointerButton::Primary,
+                PointerButton::Secondary => CanvasPointerButton::Secondary,
+                PointerButton::Auxiliary => CanvasPointerButton::Middle,
+            },
+            position: Point::new(
+                pointer.normalized_position[0] * target_size[0] as f32,
+                pointer.normalized_position[1] * target_size[1] as f32,
+            ),
+        };
+        let route_targets = if eligible_button || interactions.is_captured(pointer_id) {
+            targets.as_slice()
+        } else {
+            &[]
+        };
+        let report = interactions.route(&[canvas_event], route_targets);
+        for widget_event in report.widget_events {
+            if widget_event.kind != WidgetEventKind::Pressed {
+                continue;
+            }
+            if let Some((_, hit)) = hits.iter().find(|(target, _)| target.id == widget_event.id) {
+                match *hit {
                     UiHit::Menu => *menu_open = !*menu_open,
                     UiHit::MenuPage(page) => *menu_page = page,
                     UiHit::Tool(tool) => *selected_tool = tool,
@@ -473,10 +496,11 @@ fn route_events(
                     }
                     UiHit::Panel => {}
                 }
-                continue;
             }
         }
-        forwarded.push(event);
+        if !report.unhandled_events.is_empty() {
+            forwarded.push(event);
+        }
     }
     UiRouting {
         events: forwarded,
@@ -539,6 +563,121 @@ impl UiLayout {
         }
     }
 
+    fn hit_targets(
+        self,
+        menu_open: bool,
+        menu_page: MenuPage,
+        solver_profiles: &[SolverProfileConfig],
+        scenario: ValidationScenario,
+        selected_engine: ComparisonEngine,
+    ) -> Vec<(HitTarget, UiHit)> {
+        let mut hits = Vec::with_capacity(48);
+        let mut push = |bounds: [f32; 4], hit| {
+            hits.push((
+                HitTarget {
+                    id: WidgetId::new(hits.len() as u64 + 1),
+                    bounds: Rect::from_array(bounds),
+                    role: WidgetRole::Button,
+                },
+                hit,
+            ));
+        };
+        push(self.menu_button(), UiHit::Menu);
+        for tool in available_tools(scenario, selected_engine) {
+            push(self.tool_button(*tool), UiHit::Tool(*tool));
+        }
+        if !menu_open {
+            return hits;
+        }
+        push(
+            self.menu_panel(menu_page, solver_profiles.len()),
+            UiHit::Panel,
+        );
+        for page in menu_pages(selected_engine) {
+            push(self.menu_tab(*page), UiHit::MenuPage(*page));
+        }
+        match menu_page {
+            MenuPage::Scenes => {
+                for (index, scenario) in ValidationScenario::MENU.iter().copied().enumerate() {
+                    push(self.scenario_button(index), UiHit::Scenario(scenario));
+                }
+                push(self.restart_button(), UiHit::Restart);
+                push(self.recenter_button(), UiHit::Recenter);
+            }
+            MenuPage::Solvers => {
+                if selected_engine != ComparisonEngine::PhysBox {
+                    return hits;
+                }
+                let profile_count = solver_profiles.len();
+                for (index, profile) in solver_profiles.iter().enumerate() {
+                    push(
+                        self.solver_profile_button(index, profile_count),
+                        UiHit::SolverProfile(profile.profile_name()),
+                    );
+                }
+                for (index, parameter) in crate::solver_profile::SolverParameter::ALL
+                    .iter()
+                    .copied()
+                    .enumerate()
+                {
+                    push(
+                        self.solver_parameter_minus(index, profile_count),
+                        UiHit::SolverParameter(parameter, -1),
+                    );
+                    push(
+                        self.solver_parameter_plus(index, profile_count),
+                        UiHit::SolverParameter(parameter, 1),
+                    );
+                }
+                #[cfg(feature = "solver-lab")]
+                {
+                    push(
+                        self.solver_scene_button(0, profile_count),
+                        UiHit::SolverScene(ValidationScenario::SolverLabStack8),
+                    );
+                    push(
+                        self.solver_scene_button(1, profile_count),
+                        UiHit::SolverScene(ValidationScenario::SolverLabStack16),
+                    );
+                }
+                push(
+                    self.restore_solver_button(profile_count),
+                    UiHit::RestoreSolverPreset,
+                );
+                push(self.apply_solver_button(profile_count), UiHit::ApplySolver);
+            }
+            MenuPage::World => {
+                #[cfg(feature = "box2d-comparator")]
+                for (index, engine) in [ComparisonEngine::PhysBox, ComparisonEngine::Box2d]
+                    .into_iter()
+                    .enumerate()
+                {
+                    push(self.world_engine_button(index), UiHit::Engine(engine));
+                }
+                for (index, capacity) in WorldCapacityPreset::ALL.into_iter().enumerate() {
+                    push(
+                        self.world_capacity_button(index),
+                        UiHit::WorldCapacity(capacity),
+                    );
+                }
+                push(self.world_sleeping_button(), UiHit::ToggleSleeping);
+                push(
+                    self.world_sleep_threshold_button(),
+                    UiHit::CycleSleepThreshold,
+                );
+                if selected_engine == ComparisonEngine::PhysBox {
+                    push(
+                        self.world_sleep_grouping_button(),
+                        UiHit::CycleSleepGrouping,
+                    );
+                }
+                push(self.world_sleep_visuals_button(), UiHit::ToggleSleepVisuals);
+            }
+        }
+        hits
+    }
+
+    #[cfg(test)]
     fn hit_test(
         self,
         normalized: [f32; 2],
@@ -548,111 +687,20 @@ impl UiLayout {
         scenario: ValidationScenario,
         selected_engine: ComparisonEngine,
     ) -> Option<UiHit> {
-        let pixel = [
+        let point = Point::new(
             normalized[0] * self.target_size[0] as f32,
             normalized[1] * self.target_size[1] as f32,
-        ];
-        if contains(self.menu_button(), pixel) {
-            return Some(UiHit::Menu);
-        }
-        for tool in available_tools(scenario, selected_engine) {
-            if contains(self.tool_button(*tool), pixel) {
-                return Some(UiHit::Tool(*tool));
-            }
-        }
-        if !menu_open {
-            return None;
-        }
-        for page in menu_pages(selected_engine) {
-            if contains(self.menu_tab(*page), pixel) {
-                return Some(UiHit::MenuPage(*page));
-            }
-        }
-        match menu_page {
-            MenuPage::Scenes => {
-                for (index, scenario) in ValidationScenario::MENU.iter().copied().enumerate() {
-                    if contains(self.scenario_button(index), pixel) {
-                        return Some(UiHit::Scenario(scenario));
-                    }
-                }
-                if contains(self.restart_button(), pixel) {
-                    return Some(UiHit::Restart);
-                }
-                if contains(self.recenter_button(), pixel) {
-                    return Some(UiHit::Recenter);
-                }
-            }
-            MenuPage::Solvers => {
-                if selected_engine != ComparisonEngine::PhysBox {
-                    return contains(self.menu_panel(menu_page, solver_profiles.len()), pixel)
-                        .then_some(UiHit::Panel);
-                }
-                let profile_count = solver_profiles.len();
-                for (index, profile) in solver_profiles.iter().enumerate() {
-                    if contains(self.solver_profile_button(index, profile_count), pixel) {
-                        return Some(UiHit::SolverProfile(profile.profile_name()));
-                    }
-                }
-                for (index, parameter) in crate::solver_profile::SolverParameter::ALL
-                    .iter()
-                    .copied()
-                    .enumerate()
-                {
-                    if contains(self.solver_parameter_minus(index, profile_count), pixel) {
-                        return Some(UiHit::SolverParameter(parameter, -1));
-                    }
-                    if contains(self.solver_parameter_plus(index, profile_count), pixel) {
-                        return Some(UiHit::SolverParameter(parameter, 1));
-                    }
-                }
-                #[cfg(feature = "solver-lab")]
-                {
-                    if contains(self.solver_scene_button(0, profile_count), pixel) {
-                        return Some(UiHit::SolverScene(ValidationScenario::SolverLabStack8));
-                    }
-                    if contains(self.solver_scene_button(1, profile_count), pixel) {
-                        return Some(UiHit::SolverScene(ValidationScenario::SolverLabStack16));
-                    }
-                }
-                if contains(self.restore_solver_button(profile_count), pixel) {
-                    return Some(UiHit::RestoreSolverPreset);
-                }
-                if contains(self.apply_solver_button(profile_count), pixel) {
-                    return Some(UiHit::ApplySolver);
-                }
-            }
-            MenuPage::World => {
-                #[cfg(feature = "box2d-comparator")]
-                for (index, engine) in [ComparisonEngine::PhysBox, ComparisonEngine::Box2d]
-                    .into_iter()
-                    .enumerate()
-                {
-                    if contains(self.world_engine_button(index), pixel) {
-                        return Some(UiHit::Engine(engine));
-                    }
-                }
-                for (index, capacity) in WorldCapacityPreset::ALL.into_iter().enumerate() {
-                    if contains(self.world_capacity_button(index), pixel) {
-                        return Some(UiHit::WorldCapacity(capacity));
-                    }
-                }
-                if contains(self.world_sleeping_button(), pixel) {
-                    return Some(UiHit::ToggleSleeping);
-                }
-                if contains(self.world_sleep_threshold_button(), pixel) {
-                    return Some(UiHit::CycleSleepThreshold);
-                }
-                if selected_engine == ComparisonEngine::PhysBox
-                    && contains(self.world_sleep_grouping_button(), pixel)
-                {
-                    return Some(UiHit::CycleSleepGrouping);
-                }
-                if contains(self.world_sleep_visuals_button(), pixel) {
-                    return Some(UiHit::ToggleSleepVisuals);
-                }
-            }
-        }
-        contains(self.menu_panel(menu_page, solver_profiles.len()), pixel).then_some(UiHit::Panel)
+        );
+        self.hit_targets(
+            menu_open,
+            menu_page,
+            solver_profiles,
+            scenario,
+            selected_engine,
+        )
+        .into_iter()
+        .rev()
+        .find_map(|(target, hit)| target.bounds.contains(point).then_some(hit))
     }
 
     fn menu_button(self) -> [f32; 4] {
@@ -1061,13 +1109,6 @@ impl UiLayout {
             (bounds[1] + bounds[3] * 0.5) / self.target_size[1] as f32,
         ]
     }
-}
-
-fn contains(bounds: [f32; 4], pixel: [f32; 2]) -> bool {
-    pixel[0] >= bounds[0]
-        && pixel[1] >= bounds[1]
-        && pixel[0] <= bounds[0] + bounds[2]
-        && pixel[1] <= bounds[1] + bounds[3]
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1864,7 +1905,7 @@ mod tests {
     fn world_menu_emits_one_explicit_capacity_restart_action() {
         let target = [960, 600];
         let layout = UiLayout::for_target(target);
-        let mut captured = BTreeSet::new();
+        let mut interactions = InteractionState::default();
         let mut menu_open = true;
         let mut menu_page = MenuPage::World;
         let mut selected_tool = WorkbenchTool::Circle;
@@ -1877,7 +1918,7 @@ mod tests {
                 selected_tool: &mut selected_tool,
                 solver_profiles: &mut profiles,
                 draft_solver_profile: &mut draft,
-                captured_pointers: &mut captured,
+                interactions: &mut interactions,
                 scenario: ValidationScenario::Bootstrap,
                 selected_engine: ComparisonEngine::PhysBox,
             },
@@ -1903,7 +1944,7 @@ mod tests {
     fn world_menu_can_disable_the_default_sleeping_request_immediately() {
         let target = [960, 600];
         let layout = UiLayout::for_target(target);
-        let mut captured = BTreeSet::new();
+        let mut interactions = InteractionState::default();
         let mut menu_open = true;
         let mut menu_page = MenuPage::World;
         let mut selected_tool = WorkbenchTool::Rectangle;
@@ -1916,7 +1957,7 @@ mod tests {
                 selected_tool: &mut selected_tool,
                 solver_profiles: &mut profiles,
                 draft_solver_profile: &mut draft,
-                captured_pointers: &mut captured,
+                interactions: &mut interactions,
                 scenario: ValidationScenario::Bootstrap,
                 selected_engine: ComparisonEngine::PhysBox,
             },
@@ -1942,7 +1983,7 @@ mod tests {
     fn world_menu_applies_shared_threshold_and_physbox_only_grouping() {
         let target = [960, 600];
         let layout = UiLayout::for_target(target);
-        let mut captured = BTreeSet::new();
+        let mut interactions = InteractionState::default();
         let mut menu_open = true;
         let mut menu_page = MenuPage::World;
         let mut selected_tool = WorkbenchTool::Grab;
@@ -1956,7 +1997,7 @@ mod tests {
                 selected_tool: &mut selected_tool,
                 solver_profiles: &mut profiles,
                 draft_solver_profile: &mut draft,
-                captured_pointers: &mut captured,
+                interactions: &mut interactions,
                 scenario: ValidationScenario::Bootstrap,
                 selected_engine: ComparisonEngine::Box2d,
             },
@@ -1985,7 +2026,7 @@ mod tests {
                 selected_tool: &mut selected_tool,
                 solver_profiles: &mut profiles,
                 draft_solver_profile: &mut draft,
-                captured_pointers: &mut captured,
+                interactions: &mut interactions,
                 scenario: ValidationScenario::Bootstrap,
                 selected_engine: ComparisonEngine::PhysBox,
             },
@@ -2014,7 +2055,7 @@ mod tests {
                 selected_tool: &mut selected_tool,
                 solver_profiles: &mut profiles,
                 draft_solver_profile: &mut draft,
-                captured_pointers: &mut captured,
+                interactions: &mut interactions,
                 scenario: ValidationScenario::Bootstrap,
                 selected_engine: ComparisonEngine::Box2d,
             },
@@ -2037,7 +2078,7 @@ mod tests {
     fn world_menu_toggles_sleep_visuals_without_a_physics_action() {
         let target = [960, 600];
         let layout = UiLayout::for_target(target);
-        let mut captured = BTreeSet::new();
+        let mut interactions = InteractionState::default();
         let mut menu_open = true;
         let mut menu_page = MenuPage::World;
         let mut selected_tool = WorkbenchTool::Grab;
@@ -2050,7 +2091,7 @@ mod tests {
                 selected_tool: &mut selected_tool,
                 solver_profiles: &mut profiles,
                 draft_solver_profile: &mut draft,
-                captured_pointers: &mut captured,
+                interactions: &mut interactions,
                 scenario: ValidationScenario::Bootstrap,
                 selected_engine: ComparisonEngine::PhysBox,
             },
@@ -2073,7 +2114,7 @@ mod tests {
     fn world_menu_switches_engine_and_hides_physbox_solver_page() {
         let target = [960, 600];
         let layout = UiLayout::for_target(target);
-        let mut captured = BTreeSet::new();
+        let mut interactions = InteractionState::default();
         let mut menu_open = true;
         let mut menu_page = MenuPage::World;
         let mut selected_tool = WorkbenchTool::Grab;
@@ -2086,7 +2127,7 @@ mod tests {
                 selected_tool: &mut selected_tool,
                 solver_profiles: &mut profiles,
                 draft_solver_profile: &mut draft,
-                captured_pointers: &mut captured,
+                interactions: &mut interactions,
                 scenario: ValidationScenario::Bootstrap,
                 selected_engine: ComparisonEngine::PhysBox,
             },
@@ -2277,7 +2318,7 @@ mod tests {
     fn solver_menu_edits_a_draft_and_applies_it_as_one_action() {
         let target = [960, 600];
         let layout = UiLayout::for_target(target);
-        let mut captured = BTreeSet::new();
+        let mut interactions = InteractionState::default();
         let mut menu_open = true;
         let mut menu_page = MenuPage::Solvers;
         let mut selected_tool = WorkbenchTool::Grab;
@@ -2301,7 +2342,7 @@ mod tests {
                     selected_tool: &mut selected_tool,
                     solver_profiles: &mut profiles,
                     draft_solver_profile: &mut draft,
-                    captured_pointers: &mut captured,
+                    interactions: &mut interactions,
                     scenario: ValidationScenario::Bootstrap,
                     selected_engine: ComparisonEngine::PhysBox,
                 },
@@ -2322,7 +2363,7 @@ mod tests {
                 selected_tool: &mut selected_tool,
                 solver_profiles: &mut profiles,
                 draft_solver_profile: &mut draft,
-                captured_pointers: &mut captured,
+                interactions: &mut interactions,
                 scenario: ValidationScenario::Bootstrap,
                 selected_engine: ComparisonEngine::PhysBox,
             },
@@ -2356,7 +2397,7 @@ mod tests {
                 selected_tool: &mut selected_tool,
                 solver_profiles: &mut profiles,
                 draft_solver_profile: &mut draft,
-                captured_pointers: &mut captured,
+                interactions: &mut interactions,
                 scenario: ValidationScenario::Bootstrap,
                 selected_engine: ComparisonEngine::PhysBox,
             },
@@ -2379,8 +2420,7 @@ mod tests {
     fn ui_capture_precedes_world_input_and_secondary_stays_camera_owned() {
         let target = [960, 600];
         let menu = UiLayout::for_target(target).center_normalized("menu", 0);
-        let mut captured = BTreeSet::new();
-        captured.insert(99);
+        let mut interactions = InteractionState::default();
         let mut menu_open = false;
         let mut menu_page = MenuPage::Scenes;
         let mut selected_tool = WorkbenchTool::Grab;
@@ -2402,7 +2442,7 @@ mod tests {
                 selected_tool: &mut selected_tool,
                 solver_profiles: &mut profiles,
                 draft_solver_profile: &mut solver_profile,
-                captured_pointers: &mut captured,
+                interactions: &mut interactions,
                 scenario: ValidationScenario::Bootstrap,
                 selected_engine: ComparisonEngine::PhysBox,
             },
@@ -2420,7 +2460,7 @@ mod tests {
         let target = [430, 932];
         let layout = UiLayout::for_target(target);
         let rectangle = layout.center_normalized("tool", 2);
-        let mut captured = BTreeSet::new();
+        let mut interactions = InteractionState::default();
         let mut menu_open = false;
         let mut menu_page = MenuPage::Scenes;
         let mut selected_tool = WorkbenchTool::Grab;
@@ -2433,7 +2473,7 @@ mod tests {
                 selected_tool: &mut selected_tool,
                 solver_profiles: &mut profiles,
                 draft_solver_profile: &mut solver_profile,
-                captured_pointers: &mut captured,
+                interactions: &mut interactions,
                 scenario: ValidationScenario::Bootstrap,
                 selected_engine: ComparisonEngine::PhysBox,
             },
@@ -2446,7 +2486,7 @@ mod tests {
         assert_eq!(selected_tool, WorkbenchTool::Rectangle);
         assert_eq!(routed.selected_tool, WorkbenchTool::Rectangle);
         assert!(routed.events.is_empty());
-        assert!(captured.is_empty());
+        assert_eq!(interactions.captured_pointers(), 0);
     }
 
     #[test]

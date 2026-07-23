@@ -175,6 +175,10 @@ impl InteractionState {
         self.captures.len()
     }
 
+    pub fn is_captured(&self, pointer: PointerId) -> bool {
+        self.captures.contains_key(&pointer)
+    }
+
     fn current_target(&mut self, pointer: PointerId, targets: &[HitTarget]) -> Option<HitTarget> {
         let captured = *self.captures.get(&pointer)?;
         let current = targets
