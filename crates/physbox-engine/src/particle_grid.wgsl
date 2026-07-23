@@ -10,13 +10,14 @@ struct ParticleParams {
 @group(0) @binding(0) var<storage, read> positions: array<vec4f>;
 @group(0) @binding(1) var<storage, read_write> metadata: array<vec4u>;
 @group(0) @binding(2) var<storage, read_write> active_flags: array<atomic<u32>>;
-@group(0) @binding(3) var<storage, read_write> cell_counts: array<atomic<u32>>;
-@group(0) @binding(4) var<storage, read_write> cell_offsets: array<u32>;
-@group(0) @binding(5) var<storage, read_write> cell_cursors: array<atomic<u32>>;
+@group(0) @binding(3) var<storage, read> active_indices: array<u32>;
+@group(0) @binding(4) var<storage, read_write> cell_counts: array<atomic<u32>>;
+@group(0) @binding(5) var<storage, read_write> cell_offsets: array<atomic<u32>>;
 @group(0) @binding(6) var<storage, read_write> cell_records: array<u32>;
 @group(0) @binding(7) var<storage, read_write> counters: array<atomic<u32>>;
 @group(0) @binding(8) var<uniform> params: ParticleParams;
 
+const COUNTER_ACTIVE: u32 = 0u;
 const COUNTER_OVERFLOW_FLAGS: u32 = 1u;
 const COUNTER_GRID_INSERTS: u32 = 2u;
 const COUNTER_GRID_OVERFLOW: u32 = 3u;
@@ -45,17 +46,17 @@ fn clear_grid(@builtin(global_invocation_id) invocation: vec3u) {
     let cell_count = params.counts.z * params.counts.w;
     if index < cell_count {
         atomicStore(&cell_counts[index], 0u);
-        atomicStore(&cell_cursors[index], 0u);
-        cell_offsets[index] = 0u;
+        atomicStore(&cell_offsets[index], 0u);
     }
 }
 
 @compute @workgroup_size(64)
 fn count_grid(@builtin(global_invocation_id) invocation: vec3u) {
-    let index = invocation.x;
-    if index >= params.counts.x || atomicLoad(&active_flags[index]) == 0u {
+    let active_index = invocation.x;
+    if active_index >= atomicLoad(&counters[COUNTER_ACTIVE]) {
         return;
     }
+    let index = active_indices[active_index];
     let cell = cell_for(positions[index].xy);
     if !cell_is_valid(cell) {
         let removed = atomicCompareExchangeWeak(&active_flags[index], 1u, 0u);
@@ -115,8 +116,8 @@ fn scan_grid_ranges(
     }
     var running = scan_values[local.x] - lane_sum;
     for (var index = lane_begin; index < lane_end; index += 1u) {
-        cell_offsets[index] = running;
         running += atomicLoad(&cell_counts[index]);
+        atomicStore(&cell_offsets[index], running);
     }
     if local.x == 255u && scan_values[local.x] > params.limits.x {
         atomicAdd(&counters[COUNTER_GRID_OVERFLOW], 1u);
@@ -126,20 +127,18 @@ fn scan_grid_ranges(
 
 @compute @workgroup_size(64)
 fn scatter_grid(@builtin(global_invocation_id) invocation: vec3u) {
-    let index = invocation.x;
-    if index >= params.counts.x || atomicLoad(&active_flags[index]) == 0u {
+    let active_index = invocation.x;
+    if active_index >= atomicLoad(&counters[COUNTER_ACTIVE]) {
         return;
     }
-    let target_cell = metadata[index].z;
-    let cell_count = params.counts.z * params.counts.w;
-    if target_cell >= cell_count {
-        atomicAdd(&counters[COUNTER_GRID_OVERFLOW], 1u);
-        atomicOr(&counters[COUNTER_OVERFLOW_FLAGS], 4u);
+    let index = active_indices[active_index];
+    let cell = cell_for(positions[index].xy);
+    if !cell_is_valid(cell) || atomicLoad(&active_flags[index]) == 0u {
         return;
     }
-    let slot = atomicAdd(&cell_cursors[target_cell], 1u);
-    let destination = cell_offsets[target_cell] + slot;
-    if destination < params.limits.x && slot < atomicLoad(&cell_counts[target_cell]) {
+    let target_cell = cell_index(cell);
+    let destination = atomicSub(&cell_offsets[target_cell], 1u) - 1u;
+    if destination < params.limits.x {
         cell_records[destination] = index;
     } else {
         atomicAdd(&counters[COUNTER_GRID_OVERFLOW], 1u);

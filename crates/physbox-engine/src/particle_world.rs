@@ -199,7 +199,6 @@ pub(crate) struct GpuParticleWorld {
     _initial_metadata: wgpu::Buffer,
     _cell_counts: wgpu::Buffer,
     _cell_offsets: wgpu::Buffer,
-    _cell_cursors: wgpu::Buffer,
     _cell_bins: wgpu::Buffer,
     command_batch: wgpu::Buffer,
     _params: wgpu::Buffer,
@@ -387,12 +386,6 @@ impl GpuParticleWorld {
             u64::from(GRID_CELL_COUNT) * 4,
             wgpu::BufferUsages::COPY_SRC,
         );
-        let cell_cursors = empty_storage(
-            device,
-            "physbox5_particle_grid_cursors",
-            u64::from(GRID_CELL_COUNT) * 4,
-            wgpu::BufferUsages::empty(),
-        );
         let cell_bins = empty_storage(
             device,
             "physbox5_particle_grid_records",
@@ -524,7 +517,7 @@ impl GpuParticleWorld {
                 (0, true),
                 (1, false),
                 (2, false),
-                (3, false),
+                (3, true),
                 (4, false),
                 (5, false),
                 (6, false),
@@ -541,9 +534,9 @@ impl GpuParticleWorld {
                 &positions,
                 &metadata,
                 &active_flags,
+                &active_indices,
                 &cell_counts,
                 &cell_offsets,
-                &cell_cursors,
                 &cell_bins,
                 &counters,
                 &params,
@@ -1159,7 +1152,6 @@ impl GpuParticleWorld {
             _initial_metadata: initial_metadata,
             _cell_counts: cell_counts,
             _cell_offsets: cell_offsets,
-            _cell_cursors: cell_cursors,
             _cell_bins: cell_bins,
             command_batch,
             _params: params,
@@ -1412,7 +1404,7 @@ impl GpuParticleWorld {
     pub(crate) fn allocated_bytes(&self) -> u64 {
         u64::from(self.capacity) * (PARTICLE_BYTES_PER_SLOT + 20)
             + u64::from(self.body_capacity) * u64::from(self.body_tile_count) * 16
-            + u64::from(GRID_CELL_COUNT) * 12
+            + u64::from(GRID_CELL_COUNT) * 8
             + u64::from(self.capacity) * 4
             + size_of::<ParticleCommandBatchRaw>() as u64
             + u64::from(PARTICLE_COUNTER_WORDS) * 4
@@ -1683,7 +1675,7 @@ impl GpuParticleWorld {
             &self.grid_group,
             [GRID_CELL_COUNT.div_ceil(PARTICLE_WORKGROUP_SIZE), 1, 1],
         );
-        self.dispatch_capacity(
+        self.dispatch_active(
             encoder,
             "particle_grid_count",
             &self.grid_count,
@@ -1696,7 +1688,7 @@ impl GpuParticleWorld {
             &self.grid_group,
             [1, 1, 1],
         );
-        self.dispatch_capacity(
+        self.dispatch_active(
             encoder,
             "particle_grid_scatter",
             &self.grid_scatter,
@@ -1807,6 +1799,25 @@ impl GpuParticleWorld {
             pipeline,
             group,
             [self.capacity.div_ceil(PARTICLE_WORKGROUP_SIZE), 1, 1],
+        );
+    }
+
+    fn dispatch_active(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        label: &'static str,
+        pipeline: &wgpu::ComputePipeline,
+        group: &wgpu::BindGroup,
+    ) {
+        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some(label),
+            timestamp_writes: None,
+        });
+        pass.set_pipeline(pipeline);
+        pass.set_bind_group(0, group, &[]);
+        pass.dispatch_workgroups_indirect(
+            &self.indirect,
+            4 * size_of::<u32>() as wgpu::BufferAddress,
         );
     }
 
