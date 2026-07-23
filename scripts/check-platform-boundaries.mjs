@@ -201,7 +201,7 @@ function productWebSourceFailures(path, source) {
   if (lines > maxProductWebLines) {
     sourceFailures.push(`${path}: authored product glue is ${lines} lines; maximum is ${maxProductWebLines}`);
   }
-  if (!/import init, \{ PointerButtonCode, start \} from "\.\/pkg\/physbox_web\.js";/.test(source)) {
+  if (!/import init, \{ box2dComparatorEnabled, PointerButtonCode, start \} from "\.\/pkg\/physbox_web\.js";/.test(source)) {
     sourceFailures.push(`${path}: WASM import surface changed`);
   }
   const calls = [...source.matchAll(/\bapp\.([A-Za-z_$][\w$]*)\s*\(/g)]

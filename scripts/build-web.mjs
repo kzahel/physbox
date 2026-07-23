@@ -6,11 +6,13 @@ import { spawnSync } from "node:child_process";
 const root = resolve(import.meta.dirname, "..");
 let release = false;
 let solverLab = false;
+let box2dComparator = true;
 let output = join(root, "target", "web");
 for (let index = 2; index < process.argv.length; index += 1) {
   const argument = process.argv[index];
   if (argument === "--release") release = true;
   else if (argument === "--solver-lab") solverLab = true;
+  else if (argument === "--no-box2d-comparator") box2dComparator = false;
   else if (argument === "--output") {
     if (!process.argv[index + 1]) throw new Error("--output requires a path");
     output = resolve(root, process.argv[++index]);
@@ -27,6 +29,7 @@ run("cargo", [
   ...(release ? ["--release"] : []),
   "--target", "wasm32-unknown-unknown",
   "-p", "physbox-web",
+  ...(!box2dComparator ? ["--no-default-features"] : []),
   ...(solverLab ? ["--features", "solver-lab"] : []),
 ]);
 if (!existsSync(bindgen)) {
@@ -35,11 +38,20 @@ if (!existsSync(bindgen)) {
 await rm(output, { recursive: true, force: true });
 await mkdir(packageOutput, { recursive: true });
 await cp(join(root, "web"), output, { recursive: true });
+if (box2dComparator) {
+  await cp(
+    join(root, "third_party", "box2d-comparator", "web"),
+    join(output, "box2d-comparator"),
+    { recursive: true },
+  );
+}
 run(bindgen, [
   join(root, "target", "wasm32-unknown-unknown", release ? "release" : "debug", "physbox_web.wasm"),
   "--target", "web", "--out-dir", packageOutput,
 ]);
-console.log(`${release ? "release" : "debug"}${solverLab ? " solver-lab" : ""} PhysBox 5 web build ready at ${output}`);
+console.log(
+  `${release ? "release" : "debug"}${solverLab ? " solver-lab" : ""}${box2dComparator ? " Box2D-comparator" : " comparator-off"} PhysBox 5 web build ready at ${output}`,
+);
 
 function run(command, args) {
   const result = spawnSync(command, args, {

@@ -1531,6 +1531,7 @@ dependencies = [
  "console_error_panic_hook",
  "form_urlencoded",
  "js-sys",
+ "physbox-box2d-comparator",
  "physbox-engine",
  "physbox-launch",
  "serde_json",

@@ -48,12 +48,6 @@ typedef struct pb5_box2d_snapshot {
     float half_extent_y;
 } pb5_box2d_snapshot;
 
-typedef struct pb5_box2d_grab_tuning {
-    float spring_acceleration;
-    float damping_rate;
-    float max_acceleration;
-} pb5_box2d_grab_tuning;
-
 enum {
     PB5_BOX2D_SHAPE_CIRCLE = 1,
     PB5_BOX2D_SHAPE_RECTANGLE = 2,
@@ -87,7 +81,9 @@ bool pb5_box2d_world_begin_grab(
     float anchor_y,
     float target_x,
     float target_y,
-    pb5_box2d_grab_tuning tuning
+    float spring_acceleration,
+    float damping_rate,
+    float max_acceleration
 );
 bool pb5_box2d_world_update_grab(pb5_box2d_world* world, float target_x, float target_y);
 void pb5_box2d_world_end_grab(pb5_box2d_world* world);

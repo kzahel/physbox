@@ -55,13 +55,6 @@ struct RawSnapshot {
     half_extent_y: f32,
 }
 
-#[repr(C)]
-struct RawGrabTuning {
-    spring_acceleration: f32,
-    damping_rate: f32,
-    max_acceleration: f32,
-}
-
 unsafe extern "C" {
     fn pb5_box2d_world_create(definition: *const RawWorldDef) -> *mut c_void;
     fn pb5_box2d_world_destroy(world: *mut c_void);
@@ -84,7 +77,9 @@ unsafe extern "C" {
         anchor_y: f32,
         target_x: f32,
         target_y: f32,
-        tuning: RawGrabTuning,
+        spring_acceleration: f32,
+        damping_rate: f32,
+        max_acceleration: f32,
     ) -> bool;
     fn pb5_box2d_world_update_grab(world: *mut c_void, target_x: f32, target_y: f32) -> bool;
     fn pb5_box2d_world_end_grab(world: *mut c_void);
@@ -193,11 +188,6 @@ impl World {
         world_target: Vec2,
         tuning: GrabTuning,
     ) -> Result<(), String> {
-        let raw_tuning = RawGrabTuning {
-            spring_acceleration: tuning.spring_acceleration,
-            damping_rate: tuning.damping_rate,
-            max_acceleration: tuning.max_acceleration,
-        };
         // SAFETY: the world is exclusively owned and scalar arguments are finite by contract.
         if unsafe {
             pb5_box2d_world_begin_grab(
@@ -208,7 +198,9 @@ impl World {
                 world_anchor.y,
                 world_target.x,
                 world_target.y,
-                raw_tuning,
+                tuning.spring_acceleration,
+                tuning.damping_rate,
+                tuning.max_acceleration,
             )
         } {
             Ok(())

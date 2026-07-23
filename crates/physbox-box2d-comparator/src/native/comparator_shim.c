@@ -202,7 +202,9 @@ bool pb5_box2d_world_begin_grab(
     float anchor_y,
     float target_x,
     float target_y,
-    pb5_box2d_grab_tuning tuning
+    float spring_acceleration,
+    float damping_rate,
+    float max_acceleration
 ) {
     if (!pb5_slot_matches(world, slot, generation) ||
         (world->slots[slot].flags & PB5_BOX2D_BODY_FIXED) != 0) {
@@ -222,12 +224,12 @@ bool pb5_box2d_world_begin_grab(
     joint_def.base.bodyIdB = body;
     joint_def.base.localFrameB.p =
         b2Body_GetLocalPoint(body, (b2Vec2){anchor_x, anchor_y});
-    const float angular_frequency = sqrtf(tuning.spring_acceleration);
+    const float angular_frequency = sqrtf(spring_acceleration);
     joint_def.linearHertz = angular_frequency / (2.0f * B2_PI);
     joint_def.linearDampingRatio =
-        tuning.damping_rate / (2.0f * angular_frequency);
+        damping_rate / (2.0f * angular_frequency);
     b2MassData mass_data = b2Body_GetMassData(body);
-    joint_def.maxSpringForce = mass_data.mass * tuning.max_acceleration;
+    joint_def.maxSpringForce = mass_data.mass * max_acceleration;
     world->grab_joint = b2CreateMotorJoint(world->world, &joint_def);
     world->grab_x = target_x;
     world->grab_y = target_y;

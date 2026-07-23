@@ -7,6 +7,11 @@ pub const BODY_LIVE: u32 = 1 << 0;
 pub const BODY_FIXED: u32 = 1 << 1;
 pub const BODY_AWAKE: u32 = 1 << 2;
 
+#[cfg(target_arch = "wasm32")]
+pub fn install_web_runtime(runtime: wasm_bindgen::JsValue) -> Result<(), String> {
+    platform::install(runtime)
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct WorldSettings {
     pub gravity: Vec2,

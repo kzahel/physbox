@@ -1,4 +1,4 @@
-import init, { PointerButtonCode, start } from "./pkg/physbox_web.js";
+import init, { box2dComparatorEnabled, PointerButtonCode, start } from "./pkg/physbox_web.js";
 
 const canvas = document.querySelector("#physbox-canvas");
 const fatalError = document.querySelector("#fatal-error");
@@ -9,7 +9,12 @@ let renderingPaused = false;
 async function boot() {
   if (!navigator.gpu) throw new Error("WebGPU is not available in this browser");
   await init();
-  app = await start(canvas, location.search);
+  let comparatorRuntime;
+  if (box2dComparatorEnabled()) {
+    const { loadBox2dComparator } = await import("./box2d-comparator/loader.js");
+    comparatorRuntime = await loadBox2dComparator();
+  }
+  app = await start(canvas, location.search, comparatorRuntime);
   if (app.observerEnabled()) {
     const { installSmokeObserver } = await import("./smoke-observer.js");
     observer = installSmokeObserver(app, {

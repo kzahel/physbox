@@ -36,6 +36,11 @@ pub fn solver_lab_enabled() -> bool {
     cfg!(feature = "solver-lab")
 }
 
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen(js_name = box2dComparatorEnabled))]
+pub fn box2d_comparator_enabled() -> bool {
+    cfg!(feature = "box2d-comparator")
+}
+
 #[cfg(any(target_arch = "wasm32", test))]
 fn decode_pointer_button(code: u8) -> Result<PointerButton, String> {
     match code {
@@ -156,8 +161,16 @@ impl WebApp {
 
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
-pub async fn start(canvas: HtmlCanvasElement, search: String) -> Result<WebApp, JsValue> {
+pub async fn start(
+    canvas: HtmlCanvasElement,
+    search: String,
+    comparator_runtime: JsValue,
+) -> Result<WebApp, JsValue> {
     console_error_panic_hook::set_once();
+    #[cfg(feature = "box2d-comparator")]
+    physbox_box2d_comparator::install_web_runtime(comparator_runtime).map_err(js_error)?;
+    #[cfg(not(feature = "box2d-comparator"))]
+    let _ = comparator_runtime;
     let (search, smoke_observer_enabled) = split_smoke_observer_query(&search);
     let (preferences, request) = WebPreferenceController::restore(&search, &BrowserPreferenceStore)
         .map_err(|error| js_error(error.to_string()))?;

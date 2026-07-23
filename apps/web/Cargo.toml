@@ -7,7 +7,10 @@ publish.workspace = true
 
 [features]
 default = ["box2d-comparator"]
-box2d-comparator = ["physbox-engine/box2d-comparator"]
+box2d-comparator = [
+  "dep:physbox-box2d-comparator",
+  "physbox-engine/box2d-comparator",
+]
 solver-lab = ["physbox-engine/solver-lab", "physbox-launch/solver-lab"]
 
 [lib]
@@ -17,6 +20,7 @@ crate-type = ["cdylib", "rlib"]
 console_error_panic_hook.workspace = true
 form_urlencoded.workspace = true
 js-sys.workspace = true
+physbox-box2d-comparator = { path = "../../crates/physbox-box2d-comparator", optional = true }
 physbox-engine = { path = "../../crates/physbox-engine", default-features = false }
 physbox-launch = { path = "../../crates/physbox-launch" }
 serde_json.workspace = true
