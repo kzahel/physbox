@@ -76,12 +76,12 @@ Gate: the maintained real-browser smoke passes through the gated observer.
 
 ### S28.4 Durable source locks
 
-- [ ] Discover all authored `.js`, `.mjs`, `.ts`, and `.tsx` browser files.
-- [ ] Reject engine vocabulary and browser-owned configuration policy outside
+- [x] Discover all authored `.js`, `.mjs`, `.ts`, and `.tsx` browser files.
+- [x] Reject engine vocabulary and browser-owned configuration policy outside
       the named observer exception.
-- [ ] Lock the raw pointer/wheel/resize/timestamp/render shape and a small
+- [x] Lock the raw pointer/wheel/resize/timestamp/render shape and a small
       authored-glue size/file budget.
-- [ ] Add negative fixtures proving a newly added TypeScript file and semantic
+- [x] Add negative fixtures proving a newly added TypeScript file and semantic
       product glue fail the boundary check.
 
 Gate: `npm run check:boundaries` passes and its negative fixtures
@@ -115,3 +115,8 @@ declared duplication fixtures, and all S28.5 gates pass.
   `PHYSBOX5_VALIDATION_SUCCESS`. The smoke also loaded a second ordinary page,
   confirmed both semantic globals were absent, and passed the rendered-pixel
   gate without the observer.
+- 2026-07-23 S28.4: `npm run check:boundaries` passed with discovered
+  JavaScript/TypeScript inventory, the exact five-call product bridge, the
+  120-line product/40-line observer ceilings, observer read-only checks, and
+  targeted TypeScript, semantic-glue, call-surface, and observer-mutation
+  negative fixtures.

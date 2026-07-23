@@ -5,6 +5,7 @@ import { promisify } from "node:util";
 
 const root = resolve(import.meta.dirname, "..");
 const appRoot = join(root, "apps");
+const webRoot = join(root, "web");
 const failures = [];
 const execFileAsync = promisify(execFile);
 const rules = [
@@ -23,6 +24,40 @@ const rules = [
 ];
 const scenarioPayloadPattern = /\b(?:worldTarget|linearVelocity|angularVelocity|halfExtents|normalImpulse|biasRate|massCoefficient|impulseCoefficient)\b/;
 const evidencePathPattern = /^evidence(?:\/|$)/;
+const authoredWebExtensions = new Set([".js", ".mjs", ".ts", ".tsx"]);
+const productWebPath = "web/app.js";
+const observerWebPath = "web/smoke-observer.js";
+const maxProductWebLines = 120;
+const maxObserverWebLines = 40;
+const productWebSemanticRules = [
+  {
+    name: "tool, menu, grab, placement, or construction semantic",
+    pattern: /\b(?:currentTool|menuOpen|WorkbenchTool|GrabBegin|GrabTarget|GrabEnd|grabPointerActive|ConstructionIntent|PlaceCircle|PlaceBox|PlacePolygon|placement|construction)\b/i,
+  },
+  {
+    name: "physics configuration or preference policy",
+    pattern: /\b(?:solverProfile|fixedStepHz|solverSubsteps|solverBiasedIterations|requestedContactHz|requestedStaticContactHz|requestedSleepingEnabled|bodyCapacity|physicsPreference|worldPreference)\b|physbox5\.(?:physics|world|solver)|["'](?:soft-coupled|hard-direct|body-capacity|solver-options|sim-hz|substeps|iterations|contact-hz|contact-damping|static-contact-scale|speculative-distance|max-depenetration-velocity|sleeping)["']/i,
+  },
+  {
+    name: "semantic engine report access",
+    pattern: /\b(?:sceneContract|bodyCommands|scenarioHash|markerJson|observerSnapshot|diagnosticsJson)\b/,
+  },
+  {
+    name: "product-global diagnostic publication",
+    pattern: /\bglobalThis\b|__physbox5/,
+  },
+  {
+    name: "browser-owned persistence schema",
+    pattern: /\blocalStorage\b/,
+  },
+];
+const requiredProductCalls = [
+  "observerEnabled",
+  "pointerEvent",
+  "render",
+  "resize",
+  "wheelEvent",
+];
 
 const { stdout: trackedEvidence } = await execFileAsync("git", ["ls-files", "--", "evidence"], { cwd: root });
 for (const path of trackedEvidence.split("\n").filter(Boolean)) {
@@ -40,21 +75,53 @@ for (const path of await files(appRoot)) {
   }
 }
 
-for (const directory of [join(root, "web"), join(root, "android")]) {
-  for (const path of await files(directory)) {
-    if (![".js", ".sh"].includes(extname(path))) continue;
-    if (scenarioPayloadPattern.test(await readFile(path, "utf8"))) {
-      failures.push(`${relative(root, path)}: engine-owned scenario payload`);
-    }
+const authoredWebPaths = (await files(webRoot))
+  .filter(isAuthoredWebSource)
+  .filter((path) => !relative(webRoot, path).startsWith(`pkg${process.platform === "win32" ? "\\" : "/"}`));
+const relativeAuthoredWebPaths = authoredWebPaths.map((path) => relative(root, path));
+failures.push(...productWebInventoryFailures(relativeAuthoredWebPaths));
+
+for (const path of authoredWebPaths) {
+  const source = await readFile(path, "utf8");
+  const repoPath = relative(root, path);
+  if (scenarioPayloadPattern.test(source)) {
+    failures.push(`${repoPath}: engine-owned scenario payload`);
+  }
+  if (repoPath === productWebPath) {
+    failures.push(...productWebSourceFailures(repoPath, source));
+  } else if (repoPath === observerWebPath) {
+    failures.push(...observerWebSourceFailures(repoPath, source));
   }
 }
 
-const webHtml = await readFile(join(root, "web", "index.html"), "utf8");
+for (const path of await files(join(root, "android"))) {
+  if (![".js", ".mjs", ".ts", ".tsx", ".sh"].includes(extname(path))) continue;
+  if (scenarioPayloadPattern.test(await readFile(path, "utf8"))) {
+    failures.push(`${relative(root, path)}: engine-owned scenario payload`);
+  }
+}
+
+const webHtml = await readFile(join(webRoot, "index.html"), "utf8");
 if ((webHtml.match(/<canvas\b/g) ?? []).length !== 1 || (webHtml.match(/<p\b/g) ?? []).length !== 1) {
   failures.push("web/index.html: browser body must remain one canvas plus one startup-fatal paragraph");
 }
 if (/<(?:button|nav|aside|header|footer|section|form)\b/i.test(webHtml)) {
   failures.push("web/index.html: product DOM chrome belongs to the shared renderer");
+}
+if (webHtml.includes("smoke-observer")) {
+  failures.push("web/index.html: smoke observer must not load during ordinary product operation");
+}
+
+const webAppRust = await readFile(join(appRoot, "web", "src", "lib.rs"), "utf8");
+const webAppImpl = sourceSection(
+  webAppRust,
+  "impl WebApp {",
+  "#[cfg(target_arch = \"wasm32\")]\n#[wasm_bindgen]\npub async fn start",
+);
+if (!webAppImpl) {
+  failures.push("apps/web/src/lib.rs: WebApp boundary section was not found");
+} else if (/\b(?:WorkbenchTool|GrabIntent|ConstructionIntent|UiAction|scene_contract|body_commands|current_tool|menu_open|place_circle|place_box|place_polygon)\b/i.test(webAppImpl)) {
+  failures.push("apps/web/src/lib.rs: WebApp bridge contains engine-owned interaction semantics");
 }
 
 const workspace = await readFile(join(root, "Cargo.toml"), "utf8");
@@ -68,10 +135,10 @@ for (const rootName of ["apps", "crates"]) {
     }
   }
 }
+
 if (!oracleDependency.test('physbox-box2d-oracle = { path = "../../tools/oracles/box2d" }')) {
   failures.push("boundary self-test failed: native Box2D oracle dependency");
 }
-
 for (const rule of rules) {
   const negativeFixture = rule.name.includes("WGSL")
     ? "app.create_compute_pipeline();"
@@ -86,12 +153,104 @@ if (!scenarioPayloadPattern.test("const worldTarget = [0.4, 0.7];")) {
 if (!evidencePathPattern.test("evidence/accidental-force-add/manifest.json")) {
   failures.push("boundary self-test failed: tracked evidence path");
 }
+if (!isAuthoredWebSource("web/future-glue.ts") || !isAuthoredWebSource("web/future-glue.tsx")) {
+  failures.push("boundary self-test failed: TypeScript source discovery");
+}
+if (productWebInventoryFailures([productWebPath, observerWebPath, "web/future-glue.ts"]).length === 0) {
+  failures.push("boundary self-test failed: added TypeScript product-glue inventory");
+}
+if (!productWebSourceFailures("web/future-glue.ts", 'const currentTool = "grab";')
+  .some((failure) => failure.includes("tool, menu, grab"))) {
+  failures.push("boundary self-test failed: TypeScript interaction semantics");
+}
+if (!productWebSourceFailures(productWebPath, "app.selectTool();")
+  .some((failure) => failure.includes("WASM calls must be exactly"))) {
+  failures.push("boundary self-test failed: expanded WASM call surface");
+}
+if (!observerWebSourceFailures(observerWebPath, "app.pointerEvent(1, 0, 0, 0, 0);")
+  .some((failure) => failure.includes("may not drive product"))) {
+  failures.push("boundary self-test failed: observer product mutation");
+}
 
 if (failures.length) {
   console.error(failures.join("\n"));
   process.exit(1);
 }
-console.log("PhysBox 5 platform boundaries passed (including negative fixtures)");
+console.log("PhysBox 5 platform boundaries passed (including JS/TS discovery and negative fixtures)");
+
+function productWebInventoryFailures(paths) {
+  const productPaths = paths.filter((path) => path !== observerWebPath);
+  if (
+    productPaths.length === 1
+    && productPaths[0] === productWebPath
+    && paths.includes(observerWebPath)
+  ) {
+    return [];
+  }
+  return [
+    `web: authored product glue must remain ${productWebPath} plus the sole ${observerWebPath} test exception; found ${paths.join(", ")}`,
+  ];
+}
+
+function productWebSourceFailures(path, source) {
+  const sourceFailures = [];
+  for (const rule of productWebSemanticRules) {
+    if (rule.pattern.test(source)) sourceFailures.push(`${path}: ${rule.name}`);
+  }
+  const lines = lineCount(source);
+  if (lines > maxProductWebLines) {
+    sourceFailures.push(`${path}: authored product glue is ${lines} lines; maximum is ${maxProductWebLines}`);
+  }
+  if (!/import init, \{ PointerButtonCode, start \} from "\.\/pkg\/physbox_web\.js";/.test(source)) {
+    sourceFailures.push(`${path}: WASM import surface changed`);
+  }
+  const calls = [...source.matchAll(/\bapp\.([A-Za-z_$][\w$]*)\s*\(/g)]
+    .map((match) => match[1]);
+  const uniqueCalls = [...new Set(calls)].sort();
+  if (uniqueCalls.join(",") !== requiredProductCalls.join(",")) {
+    sourceFailures.push(`${path}: WASM calls must be exactly ${requiredProductCalls.join(", ")}; found ${uniqueCalls.join(", ")}`);
+  }
+  if (
+    !source.includes("if (app.observerEnabled())")
+    || !source.includes('await import("./smoke-observer.js")')
+  ) {
+    sourceFailures.push(`${path}: smoke observer must remain dynamically and explicitly gated`);
+  }
+  return sourceFailures;
+}
+
+function observerWebSourceFailures(path, source) {
+  const sourceFailures = [];
+  const lines = lineCount(source);
+  if (lines > maxObserverWebLines) {
+    sourceFailures.push(`${path}: smoke observer is ${lines} lines; maximum is ${maxObserverWebLines}`);
+  }
+  for (const required of ["app.diagnosticsJson()", "app.observerSnapshot()", "__physbox5", "__physbox5FrameControl"]) {
+    if (!source.includes(required)) sourceFailures.push(`${path}: missing observer surface ${required}`);
+  }
+  if (/\bapp\.(?:pointerEvent|wheelEvent|resize|render)\s*\(/.test(source)) {
+    sourceFailures.push(`${path}: smoke observer may not drive product input, resize, or rendering`);
+  }
+  if (/\b(?:localStorage|sessionStorage|history|document|canvas|addEventListener)\b/.test(source)) {
+    sourceFailures.push(`${path}: smoke observer may not own product storage, DOM, or event handling`);
+  }
+  return sourceFailures;
+}
+
+function sourceSection(source, startMarker, endMarker) {
+  const start = source.indexOf(startMarker);
+  if (start < 0) return "";
+  const end = source.indexOf(endMarker, start);
+  return end < 0 ? "" : source.slice(start, end);
+}
+
+function isAuthoredWebSource(path) {
+  return authoredWebExtensions.has(extname(path));
+}
+
+function lineCount(source) {
+  return source.replace(/\n$/, "").split(/\r?\n/).length;
+}
 
 async function files(directory) {
   const output = [];
