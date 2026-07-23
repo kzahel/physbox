@@ -81,6 +81,96 @@ fn configured_solver_scenario(config: &EngineConfig, mut scenario: ScenarioV1) -
     scenario
 }
 
+fn configured_host_scenario(config: &EngineConfig) -> ScenarioV1 {
+    match config.scenario {
+        ValidationScenario::BodyFreeFlight => {
+            p5_1_direct_render_scenario(3).expect("engine-owned body free-flight scenario is valid")
+        }
+        ValidationScenario::Bootstrap | ValidationScenario::RigidFloor => {
+            let expected_steps = if config.scenario == ValidationScenario::Bootstrap {
+                3
+            } else {
+                120
+            };
+            configured_solver_scenario(
+                config,
+                p5_2_generated_floor_scenario(expected_steps)
+                    .expect("engine-owned generated-floor scenario is valid"),
+            )
+        }
+        ValidationScenario::ResetGrab => configured_solver_scenario(
+            config,
+            p5_2_generated_reset_grab_scenario()
+                .expect("engine-owned generated reset/grab scenario is valid")
+                .scenario,
+        ),
+        ValidationScenario::RigidStack => configured_solver_scenario(
+            config,
+            p5_2_generated_scenario(P5_2GeneratedScenarioKind::SmallStack, 180)
+                .expect("engine-owned generated stack scenario is valid"),
+        ),
+        ValidationScenario::RectangleStack => configured_solver_scenario(
+            config,
+            p5_2_centered_rectangle_stack_scenario(4, P5_2_CENTERED_STACK_EVIDENCE_STEPS)
+                .expect("engine-owned centered rectangle stack scenario is valid"),
+        ),
+        ValidationScenario::CircleBucket100 | ValidationScenario::RectangleBucket100 => {
+            let shape = if config.scenario == ValidationScenario::CircleBucket100 {
+                P5_2BucketShape::Circle
+            } else {
+                P5_2BucketShape::Rectangle
+            };
+            configured_solver_scenario(
+                config,
+                p5_2_bucket_scenario(shape, 100, P5_2_BUCKET_EVIDENCE_STEPS)
+                    .expect("engine-owned all-pairs bucket scenario is valid"),
+            )
+        }
+        ValidationScenario::SolverManifoldI2 | ValidationScenario::SolverParallelColoring => {
+            configured_solver_scenario(
+                config,
+                p5_2_manifold_color_validation_scenario()
+                    .expect("engine-owned manifold-color validation scenario is valid"),
+            )
+        }
+        ValidationScenario::SettlingHard8
+        | ValidationScenario::SettlingCandidate8
+        | ValidationScenario::SettlingHard16
+        | ValidationScenario::SettlingIdentity16
+        | ValidationScenario::SettlingSoftness16
+        | ValidationScenario::SettlingCandidate16 => {
+            let (rectangle_count, policy) = settling_review_lane(config.scenario)
+                .expect("settling review launch scenario maps to a shared policy");
+            configured_solver_scenario(
+                config,
+                p5_2_settling_review_scenario(rectangle_count, policy)
+                    .expect("engine-owned settling review scenario is valid"),
+            )
+        }
+        ValidationScenario::SolverJacobi | ValidationScenario::SolverColored => {
+            let mut scenario = authored_chain_scenario(64, 91)
+                .expect("engine-owned solver validation scenario is valid");
+            scenario.settings.gravity = Vec2::ZERO;
+            scenario
+        }
+        #[cfg(feature = "solver-lab")]
+        ValidationScenario::SolverLabStack2
+        | ValidationScenario::SolverLabStack4
+        | ValidationScenario::SolverLabStack8
+        | ValidationScenario::SolverLabStack12
+        | ValidationScenario::SolverLabStack14
+        | ValidationScenario::SolverLabStack16 => {
+            let count = solver_lab_stack_count(config.scenario)
+                .expect("solver-lab stack scenario maps to a rectangle count");
+            configured_solver_scenario(
+                config,
+                p5_2_centered_rectangle_stack_scenario(count, P5_2_CENTERED_STACK_EVIDENCE_STEPS)
+                    .expect("engine-owned solver-lab stack scenario is valid"),
+            )
+        }
+    }
+}
+
 fn profiled_generated_world(
     device: &wgpu::Device,
     color_format: wgpu::TextureFormat,
@@ -698,6 +788,7 @@ impl EngineHost {
             multiview: None,
             cache: None,
         });
+        let scenario = configured_host_scenario(&config);
         let solver_candidate = match config.scenario {
             ValidationScenario::Bootstrap
             | ValidationScenario::BodyFreeFlight
@@ -726,9 +817,6 @@ impl EngineHost {
             ValidationScenario::SolverColored => Some(GpuSolverCandidate::ColoredSoftTgs),
         };
         let solver_lab = solver_candidate.map(|candidate| {
-            let mut scenario = authored_chain_scenario(64, 91)
-                .expect("engine-owned solver validation scenario is valid");
-            scenario.settings.gravity = physbox_contracts::Vec2::ZERO;
             GpuSolverLab::new(device, &scenario, candidate, GpuSolverMode::SoftStep)
                 .expect("engine-owned solver validation lab is valid")
         });
@@ -749,113 +837,27 @@ impl EngineHost {
             })
         });
         let body_world = match config.scenario {
-            ValidationScenario::BodyFreeFlight => {
-                let scenario = p5_1_direct_render_scenario(3)
-                    .expect("engine-owned body free-flight scenario is valid");
-                Some(
-                    GpuBodyWorld::new(device, color_format, &scenario)
-                        .expect("engine-owned body free-flight GPU world is valid"),
+            ValidationScenario::BodyFreeFlight => Some(
+                GpuBodyWorld::new(device, color_format, &scenario)
+                    .expect("engine-owned body free-flight GPU world is valid"),
+            ),
+            ValidationScenario::Bootstrap
+            | ValidationScenario::RigidFloor
+            | ValidationScenario::ResetGrab
+            | ValidationScenario::RigidStack
+            | ValidationScenario::RectangleStack
+            | ValidationScenario::CircleBucket100
+            | ValidationScenario::RectangleBucket100 => Some(
+                profiled_generated_world(
+                    device,
+                    color_format,
+                    &scenario,
+                    &config.solver_profile,
+                    config.world_capacity,
                 )
-            }
-            ValidationScenario::Bootstrap | ValidationScenario::RigidFloor => {
-                let expected_steps = if config.scenario == ValidationScenario::Bootstrap {
-                    3
-                } else {
-                    120
-                };
-                let scenario = configured_solver_scenario(
-                    &config,
-                    p5_2_generated_floor_scenario(expected_steps)
-                        .expect("engine-owned generated-floor scenario is valid"),
-                );
-                Some(
-                    profiled_generated_world(
-                        device,
-                        color_format,
-                        &scenario,
-                        &config.solver_profile,
-                        config.world_capacity,
-                    )
-                    .expect("engine-owned generated-contact GPU world is valid"),
-                )
-            }
-            ValidationScenario::ResetGrab => {
-                let script = p5_2_generated_reset_grab_scenario()
-                    .expect("engine-owned generated reset/grab scenario is valid");
-                let scenario = configured_solver_scenario(&config, script.scenario);
-                Some(
-                    profiled_generated_world(
-                        device,
-                        color_format,
-                        &scenario,
-                        &config.solver_profile,
-                        config.world_capacity,
-                    )
-                    .expect("engine-owned generated reset/grab GPU world is valid"),
-                )
-            }
-            ValidationScenario::RigidStack => {
-                let scenario = configured_solver_scenario(
-                    &config,
-                    p5_2_generated_scenario(P5_2GeneratedScenarioKind::SmallStack, 180)
-                        .expect("engine-owned generated stack scenario is valid"),
-                );
-                Some(
-                    profiled_generated_world(
-                        device,
-                        color_format,
-                        &scenario,
-                        &config.solver_profile,
-                        config.world_capacity,
-                    )
-                    .expect("engine-owned generated stack GPU world is valid"),
-                )
-            }
-            ValidationScenario::RectangleStack => {
-                let scenario = configured_solver_scenario(
-                    &config,
-                    p5_2_centered_rectangle_stack_scenario(4, P5_2_CENTERED_STACK_EVIDENCE_STEPS)
-                        .expect("engine-owned centered rectangle stack scenario is valid"),
-                );
-                Some(
-                    profiled_generated_world(
-                        device,
-                        color_format,
-                        &scenario,
-                        &config.solver_profile,
-                        config.world_capacity,
-                    )
-                    .expect("engine-owned centered rectangle stack GPU world is valid"),
-                )
-            }
-            ValidationScenario::CircleBucket100 | ValidationScenario::RectangleBucket100 => {
-                let shape = if config.scenario == ValidationScenario::CircleBucket100 {
-                    P5_2BucketShape::Circle
-                } else {
-                    P5_2BucketShape::Rectangle
-                };
-                let scenario = configured_solver_scenario(
-                    &config,
-                    p5_2_bucket_scenario(shape, 100, P5_2_BUCKET_EVIDENCE_STEPS)
-                        .expect("engine-owned all-pairs bucket scenario is valid"),
-                );
-                Some(
-                    profiled_generated_world(
-                        device,
-                        color_format,
-                        &scenario,
-                        &config.solver_profile,
-                        config.world_capacity,
-                    )
-                    .expect("engine-owned all-pairs bucket GPU world is valid"),
-                )
-            }
+                .expect("engine-owned generated GPU world is valid"),
+            ),
             ValidationScenario::SolverManifoldI2 | ValidationScenario::SolverParallelColoring => {
-                let scenario = configured_solver_scenario(
-                    &config,
-                    p5_2_manifold_color_validation_scenario()
-                        .expect("engine-owned manifold-color validation scenario is valid"),
-                );
                 let scheduling_policy =
                     if config.scenario == ValidationScenario::SolverParallelColoring {
                         GpuSolverSchedulingPolicyV1::SELECTED
@@ -878,13 +880,8 @@ impl EngineHost {
             | ValidationScenario::SettlingIdentity16
             | ValidationScenario::SettlingSoftness16
             | ValidationScenario::SettlingCandidate16 => {
-                let (rectangle_count, policy) = settling_review_lane(config.scenario)
+                let (_, policy) = settling_review_lane(config.scenario)
                     .expect("settling review launch scenario maps to a shared policy");
-                let scenario = configured_solver_scenario(
-                    &config,
-                    p5_2_settling_review_scenario(rectangle_count, policy)
-                        .expect("engine-owned settling review scenario is valid"),
-                );
                 Some(
                     profiled_generated_world_with_contact_policy(
                         device,
@@ -903,118 +900,19 @@ impl EngineHost {
             | ValidationScenario::SolverLabStack8
             | ValidationScenario::SolverLabStack12
             | ValidationScenario::SolverLabStack14
-            | ValidationScenario::SolverLabStack16 => {
-                let count = solver_lab_stack_count(config.scenario)
-                    .expect("solver-lab stack scenario maps to a rectangle count");
-                let scenario = configured_solver_scenario(
-                    &config,
-                    p5_2_centered_rectangle_stack_scenario(
-                        count,
-                        P5_2_CENTERED_STACK_EVIDENCE_STEPS,
-                    )
-                    .expect("engine-owned solver-lab stack scenario is valid"),
-                );
-                Some(
-                    profiled_generated_world(
-                        device,
-                        color_format,
-                        &scenario,
-                        &config.solver_profile,
-                        config.world_capacity,
-                    )
-                    .expect("engine-owned solver-lab GPU world is valid"),
+            | ValidationScenario::SolverLabStack16 => Some(
+                profiled_generated_world(
+                    device,
+                    color_format,
+                    &scenario,
+                    &config.solver_profile,
+                    config.world_capacity,
                 )
-            }
+                .expect("engine-owned solver-lab GPU world is valid"),
+            ),
             _ => None,
         };
-        let scenario_hash = match config.scenario {
-            ValidationScenario::BodyFreeFlight => canonical_hash(
-                &p5_1_direct_render_scenario(3)
-                    .expect("engine-owned body free-flight scenario is valid"),
-            ),
-            ValidationScenario::Bootstrap => canonical_hash(&configured_solver_scenario(
-                &config,
-                p5_2_generated_floor_scenario(3)
-                    .expect("engine-owned bootstrap generated scenario is valid"),
-            )),
-            ValidationScenario::RigidFloor => canonical_hash(&configured_solver_scenario(
-                &config,
-                p5_2_generated_floor_scenario(120)
-                    .expect("engine-owned generated-floor scenario is valid"),
-            )),
-            ValidationScenario::RigidStack => canonical_hash(&configured_solver_scenario(
-                &config,
-                p5_2_generated_scenario(P5_2GeneratedScenarioKind::SmallStack, 180)
-                    .expect("engine-owned generated stack scenario is valid"),
-            )),
-            ValidationScenario::RectangleStack => canonical_hash(&configured_solver_scenario(
-                &config,
-                p5_2_centered_rectangle_stack_scenario(4, P5_2_CENTERED_STACK_EVIDENCE_STEPS)
-                    .expect("engine-owned centered rectangle stack scenario is valid"),
-            )),
-            ValidationScenario::CircleBucket100 | ValidationScenario::RectangleBucket100 => {
-                let shape = if config.scenario == ValidationScenario::CircleBucket100 {
-                    P5_2BucketShape::Circle
-                } else {
-                    P5_2BucketShape::Rectangle
-                };
-                canonical_hash(&configured_solver_scenario(
-                    &config,
-                    p5_2_bucket_scenario(shape, 100, P5_2_BUCKET_EVIDENCE_STEPS)
-                        .expect("engine-owned all-pairs bucket scenario is valid"),
-                ))
-            }
-            ValidationScenario::ResetGrab => canonical_hash(
-                &p5_2_generated_reset_grab_scenario()
-                    .expect("engine-owned generated reset/grab scenario is valid"),
-            ),
-            ValidationScenario::SolverManifoldI2 | ValidationScenario::SolverParallelColoring => {
-                canonical_hash(&configured_solver_scenario(
-                    &config,
-                    p5_2_manifold_color_validation_scenario()
-                        .expect("engine-owned manifold-color validation scenario is valid"),
-                ))
-            }
-            ValidationScenario::SettlingHard8
-            | ValidationScenario::SettlingCandidate8
-            | ValidationScenario::SettlingHard16
-            | ValidationScenario::SettlingIdentity16
-            | ValidationScenario::SettlingSoftness16
-            | ValidationScenario::SettlingCandidate16 => {
-                let (rectangle_count, policy) = settling_review_lane(config.scenario)
-                    .expect("settling review launch scenario maps to a shared policy");
-                canonical_hash(&configured_solver_scenario(
-                    &config,
-                    p5_2_settling_review_scenario(rectangle_count, policy)
-                        .expect("engine-owned settling review scenario is valid"),
-                ))
-            }
-            ValidationScenario::SolverJacobi | ValidationScenario::SolverColored => {
-                let mut scenario = authored_chain_scenario(64, 91)
-                    .expect("engine-owned solver validation scenario is valid");
-                scenario.settings.gravity = Vec2::ZERO;
-                canonical_hash(&scenario)
-            }
-            #[cfg(feature = "solver-lab")]
-            ValidationScenario::SolverLabStack2
-            | ValidationScenario::SolverLabStack4
-            | ValidationScenario::SolverLabStack8
-            | ValidationScenario::SolverLabStack12
-            | ValidationScenario::SolverLabStack14
-            | ValidationScenario::SolverLabStack16 => {
-                let count = solver_lab_stack_count(config.scenario)
-                    .expect("solver-lab stack scenario maps to a rectangle count");
-                canonical_hash(&configured_solver_scenario(
-                    &config,
-                    p5_2_centered_rectangle_stack_scenario(
-                        count,
-                        P5_2_CENTERED_STACK_EVIDENCE_STEPS,
-                    )
-                    .expect("engine-owned solver-lab stack scenario is valid"),
-                ))
-            }
-        }
-        .expect("engine-owned scenario hash is valid");
+        let scenario_hash = canonical_hash(&scenario).expect("engine-owned scenario hash is valid");
         let body_interaction = match config.scenario {
             ValidationScenario::BodyFreeFlight
             | ValidationScenario::Bootstrap
