@@ -94,7 +94,7 @@ if [[ "${PHYSBOX5_ANDROID_COMPARATOR_TOGGLE:-0}" = "1" ]]; then
     UI_POINTS="$(node -e '
       const w = +process.argv[1], h = +process.argv[2];
       const s = Math.max(1, Math.min(2, Math.min(w, h) / 600));
-      console.log([62, 50, 300, 104, 291, 135, 229, 50]
+      console.log([38, 50, 300, 104, 291, 135, 154, 50]
         .map((value) => Math.round(value * s)).join(" "));
     ' "$WIDTH" "$HEIGHT")"
     read -r MENU_X MENU_Y WORLD_X WORLD_Y BOX2D_X BOX2D_Y CIRCLE_X CIRCLE_Y <<< "$UI_POINTS"
@@ -150,6 +150,17 @@ fi
 if [[ "${PHYSBOX5_ANDROID_SLEEP_VISUALS:-0}" = "1" && "${PHYSBOX5_ANDROID_SLEEP_TOGGLE:-0}" != "1" ]]; then
     echo "error: Android sleep visuals require PHYSBOX5_ANDROID_SLEEP_TOGGLE=1" >&2; exit 2
 fi
+if [[ "${PHYSBOX5_ANDROID_SOLVER_SLIDER:-0}" = "1" ]]; then
+    [[ "$SCENARIO" = "bootstrap" ]] || {
+        echo "error: Android solver slider validation requires bootstrap" >&2; exit 2;
+    }
+    [[ "${PHYSBOX5_ANDROID_COMPARATOR_TOGGLE:-0}" != "1" \
+        && "${PHYSBOX5_ANDROID_SLEEP_TOGGLE:-0}" != "1" \
+        && "${PHYSBOX5_ANDROID_CONSTRUCTION_CAPTURE:-0}" != "1" \
+        && "${PHYSBOX5_ANDROID_GRAB_CAPTURE:-0}" != "1" ]] || {
+        echo "error: choose only the Android solver slider interaction" >&2; exit 2;
+    }
+fi
 if [[ "${PHYSBOX5_ANDROID_SLEEP_CONFIG:-0}" = "1" && "${PHYSBOX5_ANDROID_SLEEP_TOGGLE:-0}" != "1" ]]; then
     echo "error: Android sleep configuration requires PHYSBOX5_ANDROID_SLEEP_TOGGLE=1" >&2; exit 2
 fi
@@ -170,7 +181,7 @@ if [[ "${PHYSBOX5_ANDROID_SLEEP_TOGGLE:-0}" = "1" ]]; then
       const s = Math.max(1, Math.min(2, Math.min(w, h) / 600));
       const compact = h < 520 && w > h;
       const points = [
-        62, 50, 300, 104, 192, 331,
+        38, 50, 300, 104, 192, 331,
         compact ? 496 : 192, compact ? 217 : 377,
         compact ? 496 : 192, compact ? 263 : 423,
         compact ? 496 : 192, compact ? 309 : 469,
@@ -270,6 +281,60 @@ if [[ "${PHYSBOX5_ANDROID_SLEEP_TOGGLE:-0}" = "1" ]]; then
     "$ADB" -s "$SERIAL" logcat -d -t 10000 > "$LOG"
     REPORT="$(rg 'PHYSBOX5_MARK_FRAME_RENDERED ' "$LOG" | tail -1 | sed 's/^.*PHYSBOX5_MARK_FRAME_RENDERED //')"
 fi
+if [[ "${PHYSBOX5_ANDROID_SOLVER_SLIDER:-0}" = "1" ]]; then
+    SIZE="$(physbox5_android_product_window_size "$ADB" "$SERIAL")"
+    WIDTH="${SIZE%x*}"; HEIGHT="${SIZE#*x}"
+    [[ "$WIDTH" =~ ^[0-9]+$ && "$HEIGHT" =~ ^[0-9]+$ ]] || {
+        echo "error: could not determine Android display size" >&2; exit 1;
+    }
+    SLIDER_POINTS="$(node -e '
+      const w = +process.argv[1], h = +process.argv[2];
+      const s = Math.max(1, Math.min(2, Math.min(w, h) / 600));
+      const compact = h < 520 && w > h;
+      const sliderX = compact ? 160 : 166;
+      const sliderWidth = compact ? 128 : 194;
+      const sliderY = (compact ? 176 + 30 : 236 + 38) + (compact ? 28 : 34) * 0.5;
+      const x = (normalized) => Math.round((sliderX + sliderWidth * normalized) * s);
+      console.log([
+        38, 50, 188, 104,
+        x((4 - 1) / (8 - 1)) / s, sliderY,
+        x((5 - 1) / (8 - 1)) / s, sliderY,
+        279, compact ? 316 : 541,
+      ].map((value) => Math.round(value * s)).join(" "));
+    ' "$WIDTH" "$HEIGHT")"
+    read -r MENU_X MENU_Y SOLVERS_X SOLVERS_Y SLIDER_START_X SLIDER_START_Y \
+        SLIDER_END_X SLIDER_END_Y APPLY_X APPLY_Y <<< "$SLIDER_POINTS"
+    BEFORE_DISPATCHES="$(node -e 'console.log(JSON.parse(process.argv[1]).sceneContract.d)' "$REPORT")"
+    BEFORE_HASH="$(node -e 'console.log(JSON.parse(process.argv[1]).sceneContract.k)' "$REPORT")"
+    "$ADB" -s "$SERIAL" shell input tap "$MENU_X" "$MENU_Y"
+    sleep 0.25
+    "$ADB" -s "$SERIAL" shell input tap "$SOLVERS_X" "$SOLVERS_Y"
+    sleep 0.25
+    "$ADB" -s "$SERIAL" shell input swipe \
+        "$SLIDER_START_X" "$SLIDER_START_Y" "$SLIDER_END_X" "$SLIDER_END_Y" 500
+    sleep 0.25
+    "$ADB" -s "$SERIAL" shell input tap "$APPLY_X" "$APPLY_Y"
+    SLIDER_APPLIED=0
+    for _ in $(seq 1 40); do
+        "$ADB" -s "$SERIAL" logcat -d -t 10000 > "$LOG"
+        REPORT="$(rg 'PHYSBOX5_MARK_FRAME_RENDERED ' "$LOG" | tail -1 | sed 's/^.*PHYSBOX5_MARK_FRAME_RENDERED //')"
+        if node -e '
+          const frame = JSON.parse(process.argv[1]);
+          const beforeDispatches = Number(process.argv[2]);
+          const beforeHash = process.argv[3];
+          process.exit(frame.sceneContract.d !== beforeDispatches
+            && frame.sceneContract.k !== beforeHash
+            && frame.scenario.complete === true && frame.scenario.passed === true ? 0 : 1);
+        ' "$REPORT" "$BEFORE_DISPATCHES" "$BEFORE_HASH"; then
+            SLIDER_APPLIED=1; break
+        fi
+        sleep 0.25
+    done
+    [[ "$SLIDER_APPLIED" -eq 1 ]] || {
+        echo "error: Android solver slider did not apply a changed configuration; see $LOG" >&2; exit 1;
+    }
+    CAPTURE_PHASE="${SCENARIO}-solver-slider-applied"
+fi
 if [[ "${PHYSBOX5_ANDROID_CONSTRUCTION_CAPTURE:-0}" = "1" ]]; then
     [[ "$SCENARIO" = "bootstrap" ]] || { echo "error: Android construction capture requires bootstrap" >&2; exit 2; }
     [[ "${PHYSBOX5_ANDROID_GRAB_CAPTURE:-0}" != "1" ]] || { echo "error: choose either grab or construction capture" >&2; exit 2; }
@@ -277,7 +342,7 @@ if [[ "${PHYSBOX5_ANDROID_CONSTRUCTION_CAPTURE:-0}" = "1" ]]; then
     WIDTH="${SIZE%x*}"; HEIGHT="${SIZE#*x}"
     [[ "$WIDTH" =~ ^[0-9]+$ && "$HEIGHT" =~ ^[0-9]+$ ]] || { echo "error: could not determine Android display size" >&2; exit 1; }
     BEFORE_CONSTRUCTION="$(node -e 'console.log(JSON.parse(process.argv[1]).bodyCommands.c)' "$REPORT")"
-    TOOL_POINT="$(node -e 'const w=+process.argv[1],h=+process.argv[2],s=Math.max(1,Math.min(2,Math.min(w,h)/600)); console.log(`${Math.round(229*s)} ${Math.round(50*s)}`)' "$WIDTH" "$HEIGHT")"
+    TOOL_POINT="$(node -e 'const w=+process.argv[1],h=+process.argv[2],s=Math.max(1,Math.min(2,Math.min(w,h)/600)); console.log(`${Math.round(154*s)} ${Math.round(50*s)}`)' "$WIDTH" "$HEIGHT")"
     read -r TOOL_X TOOL_Y <<< "$TOOL_POINT"
     "$ADB" -s "$SERIAL" shell input tap "$TOOL_X" "$TOOL_Y"
     PLACE_X=$((WIDTH * 75 / 100)); PLACE_Y=$((HEIGHT * 30 / 100))

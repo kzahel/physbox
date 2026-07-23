@@ -117,7 +117,7 @@ if [[ "${PHYSBOX5_ANDROID_SLEEP_TOGGLE:-0}" = "1" ]]; then
       const s = Math.max(1, Math.min(2, Math.min(w, h) / 600));
       const compact = h < 520 && w > h;
       const points = [
-        62, 50, 300, 104, 192, 331,
+        38, 50, 300, 104, 192, 331,
         compact ? 496 : 192, compact ? 217 : 377,
         compact ? 496 : 192, compact ? 263 : 423,
         compact ? 496 : 192, compact ? 309 : 469,
@@ -249,9 +249,9 @@ if [[ "${PHYSBOX5_ANDROID_LIQUID_CAPTURE:-0}" = "1" ]]; then
       const w = +process.argv[1], h = +process.argv[2];
       const scale = Math.max(1, Math.min(2, Math.min(w, h) / 600));
       const logicalWidth = w / scale;
-      const stride = logicalWidth < 580 ? Math.max(1, (logicalWidth - 130) / 6) : 76;
-      const width = logicalWidth < 580 ? Math.max(1, stride - 6) : 70;
-      const center = (index) => Math.round((118 + index * stride + width * 0.5) * scale);
+      const stride = logicalWidth < 460 ? Math.max(1, (logicalWidth - 78) / 6) : 58;
+      const width = logicalWidth < 460 ? Math.max(1, stride - 6) : 52;
+      const center = (index) => Math.round((70 + index * stride + width * 0.5) * scale);
       console.log(`${center(4)} ${center(3)} ${center(5)} ${Math.round(50 * scale)}`);
     ' "$WIDTH" "$HEIGHT")"
     read -r WATER_X ERASE_X SURFACE_X TOOL_Y <<< "$TOOL_POINTS"
