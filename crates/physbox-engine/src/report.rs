@@ -186,6 +186,52 @@ pub struct SleepCycleDiagnosticReport {
     pub blocking_readback_for_advancement: bool,
 }
 
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FrameTimingReport {
+    pub source: &'static str,
+    pub timestamp_queries_supported: bool,
+    pub sample_interval_steps: u32,
+    pub sample_submitted_this_frame: bool,
+    pub sample_frame_index: Option<u64>,
+    pub sample_fixed_steps: Option<u32>,
+    pub age_frames: Option<u64>,
+    pub pending_samples: u32,
+    pub cpu_encode_ms: Option<f64>,
+    pub rigid_compute_ms: Option<f64>,
+    pub liquid_compute_ms: Option<f64>,
+    pub body_render_ms: Option<f64>,
+    pub particle_render_ms: Option<f64>,
+    pub ui_render_ms: Option<f64>,
+    pub total_gpu_ms: Option<f64>,
+    pub blocking_readback_for_advancement: bool,
+    pub error: Option<String>,
+}
+
+impl FrameTimingReport {
+    pub(crate) const fn unavailable() -> Self {
+        Self {
+            source: "surface-timing-unavailable",
+            timestamp_queries_supported: false,
+            sample_interval_steps: crate::gpu_timing::FRAME_TIMING_SAMPLE_INTERVAL_STEPS,
+            sample_submitted_this_frame: false,
+            sample_frame_index: None,
+            sample_fixed_steps: None,
+            age_frames: None,
+            pending_samples: 0,
+            cpu_encode_ms: None,
+            rigid_compute_ms: None,
+            liquid_compute_ms: None,
+            body_render_ms: None,
+            particle_render_ms: None,
+            ui_render_ms: None,
+            total_gpu_ms: None,
+            blocking_readback_for_advancement: false,
+            error: None,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FrameReport {
@@ -200,6 +246,7 @@ pub struct FrameReport {
     pub body_commands: BodyCommandReport,
     pub construction_diagnostic: ConstructionDiagnosticReport,
     pub sleep_cycle_diagnostic: SleepCycleDiagnosticReport,
+    pub frame_timing: FrameTimingReport,
     pub scene_contract: SceneContract,
     pub scenario: ScenarioResult,
 }
@@ -601,6 +648,7 @@ mod tests {
                 age_frames: Some(0),
                 blocking_readback_for_advancement: false,
             },
+            frame_timing: FrameTimingReport::unavailable(),
             scene_contract: SceneContract {
                 version: SCENE_CONTRACT_VERSION,
                 engine: "physbox5",

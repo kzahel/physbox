@@ -501,6 +501,10 @@ portability and pixels, not physical-device speed.
 - [x] Attribute the reported physical-phone 4K smoothness gap between fixed
   pacing, particle solve capacity, and direct rendering; retain a measured
   product-capacity correction if it improves cost without changing mechanics.
+- [x] Add sparse nonblocking GPU timestamp attribution for rigid compute,
+  liquid compute, body render, particle render, and shared UI render; expose
+  total GPU time, prior-frame CPU encode time, asynchronous sample age, and
+  pending readbacks in the engine-rendered debug HUD.
 - [ ] Record whether the 4K water scene, Water/Surface tools, and direct visual
   style become ordinary product defaults or remain explicit preview choices.
 - [x] Record whether a smooth-water renderer, sorted-cell replacement,
@@ -573,6 +577,39 @@ the observed phone complaint. Clean PhysBox 4 revision
 `92f745eb85908243c69080a4fa4dba24f05c22cf` also defaults to 60 Hz but its
 historical clock may execute up to eight catch-up steps per frame; that policy
 remains intentionally excluded from PhysBox 5.
+
+Interactive attribution follow-up: supported surface adapters now request
+WebGPU timestamp queries and sample one admitted step out of every 30. Six
+boundaries separate rigid/command work, the 92-dispatch liquid/coupling graph,
+body/background rendering, direct particle rendering, and the shared canvas
+UI. Three persistent asynchronous readback slots retain the latest result
+without waiting; the HUD shows each bucket, total GPU, prior-frame CPU encode,
+sample age, and pending count, while unsupported adapters say timing is
+unavailable. This path reads only timestamp diagnostics and cannot advance,
+delay, or modify the simulation. Its sparse HUD values are attribution
+evidence, not replacement acceptance benchmarks or portable performance
+claims.
+
+Timing-diagnostic qualification used the dirty implementation tree based on
+`b5bd3a8df6f71e698f0456bd95aa79d32ccd7bf0`; the artifacts validate this
+change but are not clean performance evidence. Browser WebGPU liquid run
+`6318f5b2-0b1c-412a-9142-d993e5fce91e` retained timestamp-query support,
+nonblocking readback, finite stage buckets, zero pending readbacks at capture,
+and a non-overflowing 512-instance dynamic UI allocation. Fresh headless
+600-step liquid artifacts
+`/tmp/physbox5-frame-timing-liquid-600-20260723.{png,json}` pass and report
+timing unavailable on the intentionally untimed offscreen path rather than
+inventing GPU time. The maintained fast lane, production clippy with warnings
+denied, NDK ARM64 check, dual-ABI native/APK build, and Gradle release APK
+pass. Debug APK SHA-256 is
+`7d2728d7479c547e4312c53f4ed3153c22eb7dba2e18667049292f1621948f52`;
+unsigned release APK SHA-256 is
+`0f421704d2cd5ef6b9ce3adae856284285c53dc01bec67c2af53b40a8eddc3eb`.
+With phone hardware unavailable, approved hardware-backed AVD substitution run
+`1784829011-2813687` exercised Water, held Erase, and Surface, captured the
+visible timing HUD at `/tmp/physbox5-android-frame-timing.png`, passed
+mechanics/pixels/hardware-adapter checks, and emitted
+`PHYSBOX5_ANDROID_AVD_SHUTDOWN_SUCCESS`.
 
 Native presentation follow-up: hands-on macOS review found that immediate
 post-frame `request_redraw` calls could drive application frames faster than

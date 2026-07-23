@@ -23,6 +23,7 @@ use crate::construction::{
     CONSTRUCTION_STATE_BYTES, CONSTRUCTION_SURFACE_HALF_THICKNESS, ConstructionIntentRaw,
     construction_intent_raw, empty_construction_intent_batch, initial_construction_state,
 };
+use crate::gpu_timing::{GpuFrameTimestampPlan, write_timestamp_marker};
 use crate::grab::{
     GRAB_DAMPING_RATE, GRAB_INTENT_BYTES, GRAB_INTENT_CAPACITY, GRAB_MAX_ACCELERATION,
     GRAB_MAX_ANGULAR_SPEED, GRAB_MAX_LINEAR_SPEED, GRAB_SPRING_ACCELERATION, GRAB_STATE_BYTES,
@@ -84,6 +85,7 @@ pub(crate) struct BodyStepPlan<'a> {
     pub(crate) construction_ranges: &'a [BodyCommandStepRange],
     pub(crate) particle_commands: &'a [crate::particle_world::ParticleCommand],
     pub(crate) particle_ranges: &'a [BodyCommandStepRange],
+    pub(crate) frame_timestamps: Option<GpuFrameTimestampPlan<'a>>,
 }
 
 pub(crate) struct BodyRenderPlan<'a> {
@@ -96,6 +98,7 @@ pub(crate) struct BodyRenderPlan<'a> {
     pub(crate) quiet_outer_steps: u32,
     pub(crate) wake_flash_outer_steps: u32,
     pub(crate) ending_timestamp: Option<(&'a wgpu::QuerySet, u32)>,
+    pub(crate) frame_timestamps: Option<GpuFrameTimestampPlan<'a>>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -1011,6 +1014,7 @@ impl GpuBodyWorld {
             plan.construction_ranges,
             plan.particle_commands,
             plan.particle_ranges,
+            plan.frame_timestamps,
             None,
         )
     }
@@ -1041,6 +1045,7 @@ impl GpuBodyWorld {
             &construction_ranges,
             &[],
             &particle_ranges,
+            None,
             beginning_timestamp,
         )
     }
@@ -1059,9 +1064,10 @@ impl GpuBodyWorld {
         construction_ranges: &[BodyCommandStepRange],
         particle_commands: &[crate::particle_world::ParticleCommand],
         particle_ranges: &[BodyCommandStepRange],
+        frame_timestamps: Option<GpuFrameTimestampPlan<'_>>,
         beginning_timestamp: Option<(&wgpu::QuerySet, u32)>,
     ) -> Result<CapacityRecordV1, String> {
-        if beginning_timestamp.is_some() && steps != 1 {
+        if (beginning_timestamp.is_some() || frame_timestamps.is_some()) && steps != 1 {
             return Err("timed body encoding requires exactly one step".to_owned());
         }
         if ranges.len() != steps as usize
@@ -1202,6 +1208,11 @@ impl GpuBodyWorld {
         }
         queue.write_buffer(&self.construction_params, 0, &construction_bytes);
         let mut beginning_timestamp = beginning_timestamp;
+        write_timestamp_marker(
+            encoder,
+            frame_timestamps.map(GpuFrameTimestampPlan::frame_start),
+            "physbox5_frame_timing_start",
+        );
         for step_index in 0..steps as usize {
             let particle_range = particle_ranges[step_index];
             if particle_range
@@ -1289,6 +1300,11 @@ impl GpuBodyWorld {
                 drop(pass);
                 self.storage.encode_sleep_admission(encoder);
             }
+            write_timestamp_marker(
+                encoder,
+                frame_timestamps.map(GpuFrameTimestampPlan::rigid_end),
+                "physbox5_frame_timing_rigid_end",
+            );
             if let Some(particles) = &self.particles {
                 if particle_range.count != 0 {
                     particles.encode_commands(
@@ -1302,6 +1318,11 @@ impl GpuBodyWorld {
             } else if particle_range.count != 0 {
                 return Err("particle commands require a coupled particle world".to_owned());
             }
+            write_timestamp_marker(
+                encoder,
+                frame_timestamps.map(GpuFrameTimestampPlan::liquid_end),
+                "physbox5_frame_timing_liquid_end",
+            );
         }
         Ok(capacity)
     }
@@ -1394,6 +1415,12 @@ impl GpuBodyWorld {
             pass.draw(0..6, 0..1);
         }
         drop(pass);
+        write_timestamp_marker(
+            encoder,
+            plan.frame_timestamps
+                .map(GpuFrameTimestampPlan::body_render_end),
+            "physbox5_frame_timing_body_render_end",
+        );
         if let Some(particles) = &self.particles {
             particles.encode_render(queue, encoder, target, plan.camera, plan.frame_index, false);
         }
@@ -2119,6 +2146,7 @@ mod tests {
                     construction_ranges: &construction_ranges,
                     particle_commands: &[],
                     particle_ranges: &[BodyCommandStepRange { start: 0, count: 0 }],
+                    frame_timestamps: None,
                 },
             )
             .unwrap();

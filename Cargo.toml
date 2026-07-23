@@ -56,5 +56,6 @@ sha2 = "0.10"
 wasm-bindgen = "=0.2.125"
 wasm-bindgen-futures = "=0.4.75"
 web-sys = "0.3.102"
+web-time = "1.1"
 wgpu = { version = "25", features = ["metal", "vulkan", "vulkan-portability"] }
 winit = { version = "0.30", features = ["android-native-activity"] }

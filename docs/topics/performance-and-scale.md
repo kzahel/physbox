@@ -327,6 +327,23 @@ Every result contains P50/P95/P99 total physics time, applicable per-pass GPU
 time, CPU encode/submit time, full-frame time, dispatch count, the complete
 work vector, and memory/capacity high-water. Average FPS alone is insufficient.
 
+Interactive attribution checkpoint, 2026-07-23: the shared surface renderer
+now requests `timestamp-query` only when the selected adapter advertises it.
+Every 30 admitted outer steps, six pass-boundary timestamps split the submitted
+frame into rigid/command compute, liquid/coupling compute, body/background
+rendering, particle rendering, and canvas UI rendering. Results return through
+three persistent resolve/readback slots; an unresolved ring never blocks,
+waits, or changes step admission, and unsupported adapters report GPU timing
+as unavailable. The engine-rendered debug HUD shows every bucket, total GPU
+time, prior-frame CPU encode time, sample age, and pending asynchronous
+readbacks. The full `FrameReport` retains the same values and explicitly says
+that readback is not required for frame advancement.
+
+These sparse interactive samples are attribution diagnostics, not benchmark
+rows: they include pass boundaries and the selected presentation path, may be
+quantized by the host, and do not supply P50/P95/P99 or dedicated-run
+provenance. Performance claims continue to use the benchmark protocol below.
+
 P5.0a implementation note, 2026-07-14: the authored-contact GPU benchmark mode
 uses the exact Soft-Step operation schedule while disabling full trace writes,
 resets both solver body buffers before (and outside) every timed step, and

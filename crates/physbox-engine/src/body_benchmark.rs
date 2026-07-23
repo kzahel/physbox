@@ -317,6 +317,7 @@ impl GpuBodyBenchmarkSession {
                 quiet_outer_steps: 0,
                 wake_flash_outer_steps: 0,
                 ending_timestamp: ending,
+                frame_timestamps: None,
             },
         );
         self.queue.submit([encoder.finish()]);

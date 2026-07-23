@@ -72,6 +72,10 @@ pub(crate) async fn request_adapter(
         .map_err(|error| format!("failed to find a WebGPU adapter: {error}"))
 }
 
+#[cfg_attr(
+    all(target_arch = "wasm32", not(feature = "solver-lab")),
+    allow(dead_code)
+)]
 pub(crate) async fn request_device(
     adapter: &wgpu::Adapter,
 ) -> Result<(wgpu::Device, wgpu::Queue), String> {

@@ -20,6 +20,9 @@ use crate::{
     },
     engine_selection::ComparisonEngine,
     gpu_solver::{GpuSolverCandidate, GpuSolverLab, GpuSolverMode},
+    gpu_timing::{
+        FRAME_TIMING_SAMPLE_INTERVAL_STEPS, GpuFrameTimestampPlan, write_timestamp_marker,
+    },
     grab::{BoundedGrabIntents, GRAB_INTENT_CAPACITY, empty_grab_intent_batch},
     input::{SharedInputState, WorldPointerEvent},
     liquid_sandbox_scenario,
@@ -27,7 +30,8 @@ use crate::{
     renderer::RenderFrameContext,
     report::{
         BodyCommandReport, CameraReport, ConstructionDiagnosticReport, FrameReport,
-        SCENE_CONTRACT_VERSION, ScenarioResult, SceneContract, SleepCycleDiagnosticReport,
+        FrameTimingReport, SCENE_CONTRACT_VERSION, ScenarioResult, SceneContract,
+        SleepCycleDiagnosticReport,
     },
     scenario::{
         P5_2_BUCKET_EVIDENCE_STEPS, P5_2_CENTERED_STACK_EVIDENCE_STEPS,
@@ -971,6 +975,8 @@ pub struct EngineHost {
     solver_profiles: Vec<crate::SolverProfileConfig>,
     construction_diagnostic: Option<(ConstructionStateV1, u64)>,
     sleep_cycle_diagnostic: Option<(crate::SleepCycleMetricsV1, u64)>,
+    frame_timing: FrameTimingReport,
+    next_frame_timing_sample_step: u64,
 }
 
 impl EngineHost {
@@ -1303,7 +1309,13 @@ impl EngineHost {
             solver_profiles,
             construction_diagnostic: None,
             sleep_cycle_diagnostic: None,
+            frame_timing: FrameTimingReport::unavailable(),
+            next_frame_timing_sample_step: 1,
         }
+    }
+
+    pub(crate) fn publish_frame_timing(&mut self, report: FrameTimingReport) {
+        self.frame_timing = report;
     }
 
     fn replace_configuration(
@@ -1323,6 +1335,7 @@ impl EngineHost {
         let camera = self.camera;
         let sleep_visuals_enabled = self.ui.sleep_visuals_enabled();
         let selected_engine = self.selected_engine;
+        let frame_timing = self.frame_timing.clone();
         let mut replacement = Self::new(
             device,
             queue,
@@ -1345,6 +1358,7 @@ impl EngineHost {
             .ui
             .set_sleep_visuals_enabled(sleep_visuals_enabled);
         replacement.selected_engine = selected_engine;
+        replacement.frame_timing = frame_timing;
         if preserve_camera {
             replacement.camera = camera;
         }
@@ -1510,6 +1524,14 @@ impl EngineHost {
             }),
             StepRequest::Exact { steps } => (steps, self.clock.admit_exact(steps)),
         };
+        let completed_step = self.fixed_steps_total.saturating_add(u64::from(steps));
+        let frame_timestamps = (steps == 1 && completed_step >= self.next_frame_timing_sample_step)
+            .then_some(context.frame_timestamps)
+            .flatten();
+        if frame_timestamps.is_some() {
+            self.next_frame_timing_sample_step =
+                completed_step.saturating_add(u64::from(FRAME_TIMING_SAMPLE_INTERVAL_STEPS));
+        }
 
         let camera_frame = self
             .camera
@@ -1534,10 +1556,25 @@ impl EngineHost {
             .write_buffer(&self.params_buffer, 0, bytemuck::bytes_of(&params));
 
         if let Some(lab) = &self.solver_lab {
+            write_timestamp_marker(
+                context.encoder,
+                frame_timestamps.map(GpuFrameTimestampPlan::frame_start),
+                "physbox5_frame_timing_start",
+            );
             for _ in 0..steps {
                 lab.encode(context.encoder);
                 self.solver_executed = true;
             }
+            write_timestamp_marker(
+                context.encoder,
+                frame_timestamps.map(GpuFrameTimestampPlan::rigid_end),
+                "physbox5_frame_timing_rigid_end",
+            );
+            write_timestamp_marker(
+                context.encoder,
+                frame_timestamps.map(GpuFrameTimestampPlan::liquid_end),
+                "physbox5_frame_timing_liquid_end",
+            );
             #[cfg(feature = "box2d-comparator")]
             self.comparison_shadow.advance(steps);
         } else if let Some(world) = &self.body_world {
@@ -1582,6 +1619,7 @@ impl EngineHost {
                         construction_ranges: &commands.construction_ranges,
                         particle_commands: &commands.particle_commands,
                         particle_ranges: &commands.particle_ranges,
+                        frame_timestamps,
                     },
                 )
                 .expect("engine-owned body command plan is valid");
@@ -1680,6 +1718,7 @@ impl EngineHost {
                     quiet_outer_steps,
                     wake_flash_outer_steps,
                     ending_timestamp: None,
+                    frame_timestamps,
                 },
             );
         } else {
@@ -1713,7 +1752,25 @@ impl EngineHost {
                 &[],
             );
             pass.draw(0..3, 0..1);
+            drop(pass);
+            write_timestamp_marker(
+                context.encoder,
+                frame_timestamps.map(GpuFrameTimestampPlan::body_render_end),
+                "physbox5_frame_timing_body_render_end",
+            );
         }
+        if render_box2d {
+            write_timestamp_marker(
+                context.encoder,
+                frame_timestamps.map(GpuFrameTimestampPlan::body_render_end),
+                "physbox5_frame_timing_body_render_end",
+            );
+        }
+        write_timestamp_marker(
+            context.encoder,
+            frame_timestamps.map(GpuFrameTimestampPlan::particle_render_end),
+            "physbox5_frame_timing_particle_render_end",
+        );
 
         self.frame_index += 1;
         self.fixed_steps_total += u64::from(steps);
@@ -2132,6 +2189,8 @@ impl EngineHost {
             None,
             contract.body_count,
         );
+        let mut frame_timing = self.frame_timing.clone();
+        frame_timing.sample_submitted_this_frame = frame_timestamps.is_some();
         let ui = self.ui.encode(
             context.queue,
             context.encoder,
@@ -2171,7 +2230,13 @@ impl EngineHost {
                 #[cfg(feature = "box2d-comparator")]
                 box2d_sleep_cycle: sleep_cycle_diagnostic.comparison_state.as_ref(),
                 sleep_cycle_age_frames: sleep_cycle_diagnostic.age_frames,
+                frame_timing: &frame_timing,
             },
+        );
+        write_timestamp_marker(
+            context.encoder,
+            frame_timestamps.map(GpuFrameTimestampPlan::ui_render_end),
+            "physbox5_frame_timing_ui_render_end",
         );
         FrameReport {
             frame_index: self.frame_index,
@@ -2199,6 +2264,7 @@ impl EngineHost {
                 }),
             construction_diagnostic,
             sleep_cycle_diagnostic,
+            frame_timing,
             scene_contract: contract,
             scenario,
         }

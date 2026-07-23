@@ -245,6 +245,14 @@ Use `slipped wall time` or `effective simulation scale`, not an ambiguous
 `dropped steps` counter. No physics work existed for the slipped interval, and
 the engine will never execute it later.
 
+Current shared-surface implementation samples GPU stage timestamps every 30
+admitted outer steps when the adapter exposes `timestamp-query`. A persistent
+three-slot asynchronous ring reports rigid, liquid, body-render, particle-
+render, UI-render, total-GPU, prior-frame CPU-encode, sample-age, and pending
+counts in the engine-rendered debug HUD and full frame report. Busy or
+unsupported timing transport produces missing diagnostics, never a wait,
+catch-up step, alternate `dt`, or simulation-dependent result.
+
 Fresh artifacts record the pacing mode. Cross-host timing tests cover 120, 60,
 50, 30, and 15 Hz input sequences, long stalls, pause/single-step, suspend and
 resume, and requested time scales below one. Structural tests assert that an

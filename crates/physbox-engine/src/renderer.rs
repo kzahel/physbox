@@ -1,12 +1,14 @@
 #[cfg(not(target_arch = "wasm32"))]
-use crate::gpu_context::create_instance;
+use crate::gpu_context::{create_instance, request_device};
 use crate::{
     AdapterDiagnostics, EngineConfig, FrameInput, FrameReport,
-    gpu_context::{request_adapter, request_device, surface_format},
+    gpu_context::{request_adapter, request_device_with_features, surface_format},
+    gpu_timing::{GpuFrameTimestampPlan, SurfaceFrameTiming},
     host::EngineHost,
 };
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
+use web_time::Instant;
 
 const ASYNC_INTERACTION_DIAGNOSTIC_CAPACITY: usize = 8;
 
@@ -21,6 +23,7 @@ pub(crate) struct RenderFrameContext<'a> {
     pub queue: &'a wgpu::Queue,
     pub encoder: &'a mut wgpu::CommandEncoder,
     pub target: RenderFrameTarget<'a>,
+    pub frame_timestamps: Option<GpuFrameTimestampPlan<'a>>,
 }
 
 pub struct SurfaceRenderer {
@@ -31,6 +34,7 @@ pub struct SurfaceRenderer {
     view_format: wgpu::TextureFormat,
     host: EngineHost,
     diagnostics: AdapterDiagnostics,
+    frame_timing: SurfaceFrameTiming,
     construction_epoch: Option<(String, u64, u64)>,
     pending_construction_diagnostics: VecDeque<PendingInteractionDiagnostic>,
     pending_sleep_diagnostic: Option<PendingInteractionDiagnostic>,
@@ -48,7 +52,14 @@ impl SurfaceRenderer {
     ) -> Result<Self, String> {
         let adapter = request_adapter(instance, Some(&surface)).await?;
         let diagnostics = AdapterDiagnostics::from_adapter(&adapter);
-        let (device, queue) = request_device(&adapter).await?;
+        let timestamp_queries_supported =
+            adapter.features().contains(wgpu::Features::TIMESTAMP_QUERY);
+        let required_features = if timestamp_queries_supported {
+            wgpu::Features::TIMESTAMP_QUERY
+        } else {
+            wgpu::Features::empty()
+        };
+        let (device, queue) = request_device_with_features(&adapter, required_features).await?;
         let capabilities = surface.get_capabilities(&adapter);
         let format = surface_format(&capabilities.formats)
             .ok_or_else(|| "WebGPU surface reported no texture formats".to_owned())?;
@@ -75,13 +86,15 @@ impl SurfaceRenderer {
             desired_maximum_frame_latency: 2,
         };
         surface.configure(&device, &surface_config);
-        let host = EngineHost::new(
+        let frame_timing = SurfaceFrameTiming::new(&device, &queue, timestamp_queries_supported);
+        let mut host = EngineHost::new(
             &device,
             &queue,
             view_format,
             engine_config,
             diagnostics.clone(),
         );
+        host.publish_frame_timing(frame_timing.report());
         Ok(Self {
             surface,
             device,
@@ -90,6 +103,7 @@ impl SurfaceRenderer {
             view_format,
             host,
             diagnostics,
+            frame_timing,
             construction_epoch: None,
             pending_construction_diagnostics: VecDeque::new(),
             pending_sleep_diagnostic: None,
@@ -117,6 +131,8 @@ impl SurfaceRenderer {
 
     pub fn render(&mut self, input: FrameInput) -> Result<FrameReport, String> {
         self.resolve_interaction_diagnostics()?;
+        self.frame_timing.resolve_ready();
+        self.host.publish_frame_timing(self.frame_timing.report());
         let frame = match self.surface.get_current_texture() {
             Ok(frame) => frame,
             Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
@@ -137,18 +153,30 @@ impl SurfaceRenderer {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("physbox5_surface_encoder"),
             });
-        let report = self.host.render_frame(
-            input,
-            RenderFrameContext {
-                device: &self.device,
-                queue: &self.queue,
-                encoder: &mut encoder,
-                target: RenderFrameTarget {
-                    color_view: &view,
-                    size: [self.surface_config.width, self.surface_config.height],
+        let (timing_slot, report, cpu_encode_ms) = {
+            let candidate = self.frame_timing.candidate();
+            let timing_slot = candidate.map(|(slot, _)| slot);
+            let encode_started = Instant::now();
+            let report = self.host.render_frame(
+                input,
+                RenderFrameContext {
+                    device: &self.device,
+                    queue: &self.queue,
+                    encoder: &mut encoder,
+                    target: RenderFrameTarget {
+                        color_view: &view,
+                        size: [self.surface_config.width, self.surface_config.height],
+                    },
+                    frame_timestamps: candidate.map(|(_, plan)| plan),
                 },
-            },
-        );
+            );
+            (
+                timing_slot,
+                report,
+                encode_started.elapsed().as_secs_f64() * 1_000.0,
+            )
+        };
+        self.frame_timing.record_cpu_encode(cpu_encode_ms);
         let epoch = (
             report.scene_contract.scenario_hash.clone(),
             report.ui.scenario_activations_total,
@@ -232,6 +260,18 @@ impl SurfaceRenderer {
         } else {
             None
         };
+        let mapped_timing_slot = if report.frame_timing.sample_submitted_this_frame {
+            let slot = timing_slot.expect("submitted frame timing used an idle query slot");
+            self.frame_timing.encode_resolve(
+                &mut encoder,
+                slot,
+                report.frame_index,
+                report.fixed_steps_this_frame,
+            );
+            Some(slot)
+        } else {
+            None
+        };
         self.queue.submit([encoder.finish()]);
         if let Some(pending) = scheduled_construction {
             pending.start_mapping();
@@ -246,7 +286,11 @@ impl SurfaceRenderer {
             pending.start_mapping();
             self.pending_grab_diagnostics.push_back(pending);
         }
+        if let Some(slot) = mapped_timing_slot {
+            self.frame_timing.start_mapping(slot);
+        }
         frame.present();
+        self.frame_timing.finish_surface_frame();
         Ok(report)
     }
 
@@ -435,6 +479,7 @@ impl OffscreenRenderer {
                     color_view: &self.view,
                     size: [self.width, self.height],
                 },
+                frame_timestamps: None,
             },
         );
         self.queue.submit([encoder.finish()]);
@@ -1680,7 +1725,7 @@ mod tests {
             unchanged.ui.parameter_writes_total,
             initial.ui.parameter_writes_total
         );
-        assert_eq!(initial.ui.allocated_bytes, 48_144);
+        assert_eq!(initial.ui.allocated_bytes, 60_432);
 
         renderer.render(FrameInput::exact(0).with_input_events(vec![
             crate::InputEvent::Pointer(crate::PointerEvent {

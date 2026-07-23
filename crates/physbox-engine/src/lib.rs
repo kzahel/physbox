@@ -40,6 +40,7 @@ mod gpu_context;
 #[cfg(all(feature = "solver-lab", not(target_arch = "wasm32")))]
 mod gpu_primitives;
 mod gpu_solver;
+mod gpu_timing;
 mod grab;
 mod host;
 mod input;
@@ -208,8 +209,8 @@ pub use particle_world::{GPU_PARTICLE_DIAGNOSTICS_VERSION, GpuParticleDiagnostic
 pub use renderer::OffscreenRenderer;
 pub use renderer::SurfaceRenderer;
 pub use report::{
-    BodyCommandReport, CameraReport, ConstructionDiagnosticReport, FrameReport, ScenarioResult,
-    SceneContract, UiReport,
+    BodyCommandReport, CameraReport, ConstructionDiagnosticReport, FrameReport, FrameTimingReport,
+    ScenarioResult, SceneContract, UiReport,
 };
 pub use scenario::{
     AnalyticFixtureKind, P5_2_BUCKET_EVIDENCE_STEPS, P5_2_CENTERED_STACK_EVIDENCE_STEPS,

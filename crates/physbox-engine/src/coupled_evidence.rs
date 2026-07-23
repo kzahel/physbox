@@ -486,6 +486,7 @@ fn submit_samples(
                 construction_ranges: &construction_ranges,
                 particle_commands: &[],
                 particle_ranges: &particle_ranges,
+                frame_timestamps: None,
             },
         )?;
         let next_completed = completed_steps
@@ -508,6 +509,7 @@ fn submit_samples(
                 quiet_outer_steps: 30,
                 wake_flash_outer_steps: 10,
                 ending_timestamp: None,
+                frame_timestamps: None,
             },
         );
         queue.submit([encoder.finish()]);

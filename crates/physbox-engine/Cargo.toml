@@ -20,6 +20,7 @@ physbox-ui = { path = "../physbox-ui" }
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
+web-time.workspace = true
 wgpu.workspace = true
 
 [dev-dependencies]
