@@ -37,6 +37,7 @@ impl SleepExecutionConfig {
         }
     }
 
+    #[cfg(all(feature = "solver-lab", not(target_arch = "wasm32")))]
     pub(crate) fn enabled(fixed_step_hz: u32) -> Self {
         Self {
             enabled: true,

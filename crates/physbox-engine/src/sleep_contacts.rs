@@ -142,6 +142,7 @@ impl GpuSleepContacts {
         pass.dispatch_workgroups_indirect(&self.point_state, 4 * size_of::<u32>() as u64);
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn encode_contact_wakes(&self, encoder: &mut wgpu::CommandEncoder) -> usize {
         self.encode_contact_wake_roots(encoder);
         self.encode_frontier_propagation(encoder)
