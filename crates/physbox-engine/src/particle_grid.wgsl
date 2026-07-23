@@ -12,19 +12,20 @@ struct ParticleParams {
 @group(0) @binding(2) var<storage, read_write> active_flags: array<atomic<u32>>;
 @group(0) @binding(3) var<storage, read> active_indices: array<u32>;
 @group(0) @binding(4) var<storage, read_write> cell_counts: array<atomic<u32>>;
-@group(0) @binding(5) var<storage, read_write> cell_offsets: array<atomic<u32>>;
-@group(0) @binding(6) var<storage, read_write> cell_records: array<u32>;
-@group(0) @binding(7) var<storage, read_write> counters: array<atomic<u32>>;
-@group(0) @binding(8) var<uniform> params: ParticleParams;
+@group(0) @binding(5) var<storage, read_write> cell_block_keys: array<u32>;
+@group(0) @binding(6) var<storage, read_write> counters: array<atomic<u32>>;
+@group(0) @binding(7) var<uniform> params: ParticleParams;
 
 const COUNTER_ACTIVE: u32 = 0u;
 const COUNTER_OVERFLOW_FLAGS: u32 = 1u;
 const COUNTER_GRID_INSERTS: u32 = 2u;
-const COUNTER_GRID_OVERFLOW: u32 = 3u;
 const COUNTER_ESCAPED: u32 = 7u;
 const COUNTER_KILLED: u32 = 11u;
+const GRID_BLOCK_SPAN: u32 = 512u;
+const GRID_BLOCK_SHIFT: u32 = 9u;
+const INVALID_KEY: u32 = 0xffffffffu;
 
-var<workgroup> scan_values: array<u32, 256>;
+var<workgroup> sort_keys: array<u32, 512>;
 
 fn cell_for(position: vec2f) -> vec2i {
     return vec2i(floor((position - params.grid.xy) / params.grid.z));
@@ -46,120 +47,101 @@ fn increment(value: u32) -> u32 {
 
 @compute @workgroup_size(64)
 fn clear_grid(@builtin(global_invocation_id) invocation: vec3u) {
-    let index = invocation.x;
     let cell_count = params.counts.z * params.counts.w;
-    if index < cell_count {
-        atomicStore(&cell_counts[index], 0u);
-        atomicStore(&cell_offsets[index], 0u);
+    if invocation.x < cell_count {
+        atomicStore(&cell_counts[invocation.x], 0u);
     }
 }
 
 @compute @workgroup_size(64)
-fn count_grid(@builtin(global_invocation_id) invocation: vec3u) {
-    let active_index = invocation.x;
-    if active_index >= atomicLoad(&counters[COUNTER_ACTIVE]) {
-        return;
-    }
-    let index = active_indices[active_index];
-    if (positions[index].y < params.grid.w) {
-        let removed = atomicCompareExchangeWeak(&active_flags[index], 1u, 0u);
-        if (removed.exchanged) {
-            let previous_metadata = metadata[index];
-            metadata[index] = vec4u(
-                increment(previous_metadata.x),
-                previous_metadata.y,
-                previous_metadata.z,
-                0u,
-            );
-            atomicAdd(&counters[COUNTER_KILLED], 1u);
-        }
-        return;
-    }
-    let cell = cell_for(positions[index].xy);
-    if !cell_is_valid(cell) {
-        let removed = atomicCompareExchangeWeak(&active_flags[index], 1u, 0u);
-        if removed.exchanged {
-            let previous_metadata = metadata[index];
-            metadata[index] = vec4u(
-                previous_metadata.x + 1u,
-                previous_metadata.y,
-                previous_metadata.z,
-                0u,
-            );
-            atomicAdd(&counters[COUNTER_ESCAPED], 1u);
-            atomicAdd(&counters[COUNTER_KILLED], 1u);
-            atomicOr(&counters[COUNTER_OVERFLOW_FLAGS], 2u);
-        }
-        return;
-    }
-    let target_cell = cell_index(cell);
-    let previous_metadata = metadata[index];
-    metadata[index] = vec4u(
-        previous_metadata.x,
-        previous_metadata.y,
-        target_cell,
-        previous_metadata.w,
-    );
-    atomicAdd(&cell_counts[target_cell], 1u);
-    atomicAdd(&counters[COUNTER_GRID_INSERTS], 1u);
-}
-
-@compute @workgroup_size(256)
-fn scan_grid_ranges(
+fn count_grid(
     @builtin(local_invocation_id) local: vec3u,
+    @builtin(workgroup_id) group: vec3u,
 ) {
-    let cell_count = params.counts.z * params.counts.w;
-    let cells_per_lane = (cell_count + 255u) / 256u;
-    let lane_begin = local.x * cells_per_lane;
-    let lane_end = min(lane_begin + cells_per_lane, cell_count);
-    var lane_sum = 0u;
-    for (var index = lane_begin; index < lane_end; index += 1u) {
-        lane_sum += atomicLoad(&cell_counts[index]);
+    let active_count = atomicLoad(&counters[COUNTER_ACTIVE]);
+    for (var item = 0u; item < GRID_BLOCK_SPAN / 64u; item += 1u) {
+        let local_index = item * 64u + local.x;
+        let active_index = group.x * GRID_BLOCK_SPAN + local_index;
+        var key = INVALID_KEY;
+        if active_index < active_count {
+            let index = active_indices[active_index];
+            if atomicLoad(&active_flags[index]) != 0u {
+                if positions[index].y < params.grid.w {
+                    atomicStore(&active_flags[index], 0u);
+                    let previous_metadata = metadata[index];
+                    metadata[index] = vec4u(
+                        increment(previous_metadata.x),
+                        previous_metadata.y,
+                        previous_metadata.z,
+                        0u,
+                    );
+                    atomicAdd(&counters[COUNTER_KILLED], 1u);
+                } else {
+                    let cell = cell_for(positions[index].xy);
+                    if !cell_is_valid(cell) {
+                        atomicStore(&active_flags[index], 0u);
+                        let previous_metadata = metadata[index];
+                        metadata[index] = vec4u(
+                            increment(previous_metadata.x),
+                            previous_metadata.y,
+                            previous_metadata.z,
+                            0u,
+                        );
+                        atomicAdd(&counters[COUNTER_ESCAPED], 1u);
+                        atomicAdd(&counters[COUNTER_KILLED], 1u);
+                        atomicOr(&counters[COUNTER_OVERFLOW_FLAGS], 2u);
+                    } else {
+                        let target_cell = cell_index(cell);
+                        let previous_metadata = metadata[index];
+                        metadata[index] = vec4u(
+                            previous_metadata.x,
+                            previous_metadata.y,
+                            target_cell,
+                            previous_metadata.w,
+                        );
+                        atomicAdd(&cell_counts[target_cell], 1u);
+                        atomicAdd(&counters[COUNTER_GRID_INSERTS], 1u);
+                        key = (target_cell << GRID_BLOCK_SHIFT) | local_index;
+                    }
+                }
+            }
+        }
+        sort_keys[local_index] = key;
     }
-    scan_values[local.x] = lane_sum;
     workgroupBarrier();
-    var offset = 1u;
+
+    var width = 2u;
     loop {
-        if offset >= 256u {
+        if width > GRID_BLOCK_SPAN {
             break;
         }
-        var addition = 0u;
-        if local.x >= offset {
-            addition = scan_values[local.x - offset];
+        var stride = width / 2u;
+        loop {
+            for (var item = 0u; item < GRID_BLOCK_SPAN / 64u; item += 1u) {
+                let index = item * 64u + local.x;
+                let other = index ^ stride;
+                if other > index {
+                    let ascending = (index & width) == 0u;
+                    let left = sort_keys[index];
+                    let right = sort_keys[other];
+                    if (left > right) == ascending {
+                        sort_keys[index] = right;
+                        sort_keys[other] = left;
+                    }
+                }
+            }
+            workgroupBarrier();
+            if stride == 1u {
+                break;
+            }
+            stride /= 2u;
         }
-        workgroupBarrier();
-        scan_values[local.x] += addition;
-        workgroupBarrier();
-        offset *= 2u;
+        width *= 2u;
     }
-    var running = scan_values[local.x] - lane_sum;
-    for (var index = lane_begin; index < lane_end; index += 1u) {
-        running += atomicLoad(&cell_counts[index]);
-        atomicStore(&cell_offsets[index], running);
-    }
-    if local.x == 255u && scan_values[local.x] > params.limits.x {
-        atomicAdd(&counters[COUNTER_GRID_OVERFLOW], 1u);
-        atomicOr(&counters[COUNTER_OVERFLOW_FLAGS], 4u);
-    }
-}
 
-@compute @workgroup_size(64)
-fn scatter_grid(@builtin(global_invocation_id) invocation: vec3u) {
-    let active_index = invocation.x;
-    if active_index >= atomicLoad(&counters[COUNTER_ACTIVE]) {
-        return;
-    }
-    let index = active_indices[active_index];
-    let cell = cell_for(positions[index].xy);
-    if !cell_is_valid(cell) || atomicLoad(&active_flags[index]) == 0u {
-        return;
-    }
-    let target_cell = cell_index(cell);
-    let destination = atomicSub(&cell_offsets[target_cell], 1u) - 1u;
-    if destination < params.limits.x {
-        cell_records[destination] = index;
-    } else {
-        atomicAdd(&counters[COUNTER_GRID_OVERFLOW], 1u);
-        atomicOr(&counters[COUNTER_OVERFLOW_FLAGS], 4u);
+    let block_base = group.x * GRID_BLOCK_SPAN;
+    for (var item = 0u; item < GRID_BLOCK_SPAN / 64u; item += 1u) {
+        let local_index = item * 64u + local.x;
+        cell_block_keys[block_base + local_index] = sort_keys[local_index];
     }
 }

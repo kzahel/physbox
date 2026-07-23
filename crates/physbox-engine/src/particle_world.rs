@@ -20,6 +20,8 @@ const GRID_WIDTH: u32 = 64;
 const GRID_HEIGHT: u32 = 68;
 const GRID_CELL_COUNT: u32 = GRID_WIDTH * GRID_HEIGHT;
 const PARTICLE_WORKGROUP_SIZE: u32 = 64;
+const PARTICLE_ACTIVE_SCAN_WORKGROUP_SIZE: u32 = 256;
+const PARTICLE_GRID_BLOCK_SPAN: u32 = 512;
 const PARTICLE_SUBSTEPS: u32 = 2;
 const PARTICLE_BYTES_PER_SLOT: u64 = 64;
 pub const GPU_PARTICLE_DIAGNOSTICS_VERSION: u32 = 4;
@@ -190,6 +192,8 @@ pub(crate) struct GpuParticleWorld {
     metadata: wgpu::Buffer,
     active_flags: wgpu::Buffer,
     _active_indices: wgpu::Buffer,
+    _active_prefixes: wgpu::Buffer,
+    _active_block_offsets: wgpu::Buffer,
     density_states: wgpu::Buffer,
     _corrections: wgpu::Buffer,
     _body_contributions: wgpu::Buffer,
@@ -203,18 +207,21 @@ pub(crate) struct GpuParticleWorld {
     _cell_counts: wgpu::Buffer,
     _cell_offsets: wgpu::Buffer,
     _cell_bins: wgpu::Buffer,
+    _cell_block_keys: wgpu::Buffer,
     command_batch: wgpu::Buffer,
     _params: wgpu::Buffer,
     render_params: wgpu::Buffer,
     core_group: wgpu::BindGroup,
     core_begin_step: wgpu::ComputePipeline,
     core_integrate: wgpu::ComputePipeline,
-    core_clear_active: wgpu::ComputePipeline,
-    core_compact_active: wgpu::ComputePipeline,
-    core_finalize_active: wgpu::ComputePipeline,
+    active_group: wgpu::BindGroup,
+    core_count_active: wgpu::ComputePipeline,
+    core_scan_active_blocks: wgpu::ComputePipeline,
+    core_scatter_active: wgpu::ComputePipeline,
     grid_group: wgpu::BindGroup,
     grid_clear: wgpu::ComputePipeline,
     grid_count: wgpu::ComputePipeline,
+    grid_order_group: wgpu::BindGroup,
     grid_scan_ranges: wgpu::ComputePipeline,
     grid_scatter: wgpu::ComputePipeline,
     density_group: wgpu::BindGroup,
@@ -311,6 +318,18 @@ impl GpuParticleWorld {
             &initial.active_indices,
             wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
         );
+        let active_prefixes = empty_storage(
+            device,
+            "physbox5_particle_active_prefixes",
+            u64::from(capacity) * 4,
+            wgpu::BufferUsages::empty(),
+        );
+        let active_block_offsets = empty_storage(
+            device,
+            "physbox5_particle_active_block_offsets",
+            u64::from(capacity.div_ceil(PARTICLE_ACTIVE_SCAN_WORKGROUP_SIZE)) * 4,
+            wgpu::BufferUsages::empty(),
+        );
         let density_states = empty_storage(
             device,
             "physbox5_particle_density_states",
@@ -393,6 +412,14 @@ impl GpuParticleWorld {
             device,
             "physbox5_particle_grid_records",
             u64::from(capacity) * 4,
+            wgpu::BufferUsages::empty(),
+        );
+        let cell_block_keys = empty_storage(
+            device,
+            "physbox5_particle_grid_block_keys",
+            u64::from(capacity.div_ceil(PARTICLE_GRID_BLOCK_SPAN))
+                * u64::from(PARTICLE_GRID_BLOCK_SPAN)
+                * 4,
             wgpu::BufferUsages::empty(),
         );
         let command_batch = device.create_buffer(&wgpu::BufferDescriptor {
@@ -491,26 +518,59 @@ impl GpuParticleWorld {
             &core_shader,
             "integrate",
         );
-        let core_clear_active = compute(
+        let active_layout = layout(
             device,
-            "particle_clear_active",
-            &core_layout,
-            &core_shader,
-            "clear_active",
+            "physbox5_particle_active_compaction_layout",
+            &[
+                (0, false),
+                (1, false),
+                (2, false),
+                (3, false),
+                (4, false),
+                (5, false),
+            ],
+            6,
+            wgpu::ShaderStages::COMPUTE,
         );
-        let core_compact_active = compute(
+        let active_group = bind_group(
             device,
-            "particle_compact_active",
-            &core_layout,
-            &core_shader,
-            "compact_active",
+            "physbox5_particle_active_compaction_group",
+            &active_layout,
+            &[
+                &active_flags,
+                &active_indices,
+                &active_prefixes,
+                &active_block_offsets,
+                &counters,
+                &indirect,
+                &params,
+            ],
         );
-        let core_finalize_active = compute(
+        let active_shader = shader(
             device,
-            "particle_finalize_active",
-            &core_layout,
-            &core_shader,
-            "finalize_active",
+            "physbox5_particle_active_compaction",
+            include_str!("particle_active_compaction.wgsl"),
+        );
+        let core_count_active = compute(
+            device,
+            "particle_count_active",
+            &active_layout,
+            &active_shader,
+            "count_active",
+        );
+        let core_scan_active_blocks = compute(
+            device,
+            "particle_scan_active_blocks",
+            &active_layout,
+            &active_shader,
+            "scan_active_blocks",
+        );
+        let core_scatter_active = compute(
+            device,
+            "particle_scatter_active",
+            &active_layout,
+            &active_shader,
+            "scatter_active",
         );
 
         let grid_layout = layout(
@@ -524,9 +584,8 @@ impl GpuParticleWorld {
                 (4, false),
                 (5, false),
                 (6, false),
-                (7, false),
             ],
-            8,
+            7,
             wgpu::ShaderStages::COMPUTE,
         );
         let grid_group = bind_group(
@@ -539,8 +598,7 @@ impl GpuParticleWorld {
                 &active_flags,
                 &active_indices,
                 &cell_counts,
-                &cell_offsets,
-                &cell_bins,
+                &cell_block_keys,
                 &counters,
                 &params,
             ],
@@ -564,18 +622,55 @@ impl GpuParticleWorld {
             &grid_shader,
             "count_grid",
         );
+        let grid_order_layout = layout(
+            device,
+            "physbox5_particle_grid_order_layout",
+            &[
+                (0, true),
+                (1, false),
+                (2, true),
+                (3, true),
+                (4, false),
+                (5, false),
+                (6, true),
+                (7, false),
+            ],
+            8,
+            wgpu::ShaderStages::COMPUTE,
+        );
+        let grid_order_group = bind_group(
+            device,
+            "physbox5_particle_grid_order_group",
+            &grid_order_layout,
+            &[
+                &metadata,
+                &active_flags,
+                &active_indices,
+                &cell_counts,
+                &cell_offsets,
+                &cell_bins,
+                &cell_block_keys,
+                &counters,
+                &params,
+            ],
+        );
+        let grid_order_shader = shader(
+            device,
+            "physbox5_particle_grid_order",
+            include_str!("particle_grid_order.wgsl"),
+        );
         let grid_scan_ranges = compute(
             device,
             "particle_grid_scan_ranges",
-            &grid_layout,
-            &grid_shader,
+            &grid_order_layout,
+            &grid_order_shader,
             "scan_grid_ranges",
         );
         let grid_scatter = compute(
             device,
             "particle_grid_scatter",
-            &grid_layout,
-            &grid_shader,
+            &grid_order_layout,
+            &grid_order_shader,
             "scatter_grid",
         );
 
@@ -1143,6 +1238,8 @@ impl GpuParticleWorld {
             metadata,
             active_flags,
             _active_indices: active_indices,
+            _active_prefixes: active_prefixes,
+            _active_block_offsets: active_block_offsets,
             density_states,
             _corrections: corrections,
             _body_contributions: body_contributions,
@@ -1156,18 +1253,21 @@ impl GpuParticleWorld {
             _cell_counts: cell_counts,
             _cell_offsets: cell_offsets,
             _cell_bins: cell_bins,
+            _cell_block_keys: cell_block_keys,
             command_batch,
             _params: params,
             render_params,
             core_group,
             core_begin_step,
             core_integrate,
-            core_clear_active,
-            core_compact_active,
-            core_finalize_active,
+            active_group,
+            core_count_active,
+            core_scan_active_blocks,
+            core_scatter_active,
             grid_group,
             grid_clear,
             grid_count,
+            grid_order_group,
             grid_scan_ranges,
             grid_scatter,
             density_group,
@@ -1405,7 +1505,11 @@ impl GpuParticleWorld {
     }
 
     pub(crate) fn allocated_bytes(&self) -> u64 {
-        u64::from(self.capacity) * (PARTICLE_BYTES_PER_SLOT + 20)
+        u64::from(self.capacity) * (PARTICLE_BYTES_PER_SLOT + 24)
+            + u64::from(self.capacity.div_ceil(PARTICLE_ACTIVE_SCAN_WORKGROUP_SIZE)) * 4
+            + u64::from(self.capacity.div_ceil(PARTICLE_GRID_BLOCK_SPAN))
+                * u64::from(PARTICLE_GRID_BLOCK_SPAN)
+                * 4
             + u64::from(self.body_capacity) * u64::from(self.body_tile_count) * 16
             + u64::from(GRID_CELL_COUNT) * 8
             + u64::from(self.capacity) * 4
@@ -1420,6 +1524,18 @@ impl GpuParticleWorld {
 
     pub(crate) fn capacities(&self) -> Vec<CapacityRecordV1> {
         let mut records = vec![
+            capacity(
+                "particle-active-compaction-blocks",
+                u64::from(self.capacity.div_ceil(PARTICLE_ACTIVE_SCAN_WORKGROUP_SIZE)),
+                u64::from(self.capacity.div_ceil(PARTICLE_ACTIVE_SCAN_WORKGROUP_SIZE)),
+                4,
+            ),
+            capacity(
+                "particle-active-prefixes",
+                u64::from(self.capacity),
+                u64::from(self.initial_count),
+                4,
+            ),
             capacity(
                 "particle-body-contributions",
                 u64::from(self.capacity),
@@ -1454,6 +1570,14 @@ impl GpuParticleWorld {
                 "particle-grid-records",
                 u64::from(self.capacity),
                 u64::from(self.initial_count),
+                4,
+            ),
+            capacity(
+                "particle-grid-stable-block-keys",
+                u64::from(self.capacity.div_ceil(PARTICLE_GRID_BLOCK_SPAN))
+                    * u64::from(PARTICLE_GRID_BLOCK_SPAN),
+                u64::from(self.initial_count.div_ceil(PARTICLE_GRID_BLOCK_SPAN))
+                    * u64::from(PARTICLE_GRID_BLOCK_SPAN),
                 4,
             ),
             capacity(
@@ -1688,14 +1812,14 @@ impl GpuParticleWorld {
             encoder,
             "particle_grid_scan_ranges",
             &self.grid_scan_ranges,
-            &self.grid_group,
+            &self.grid_order_group,
             [1, 1, 1],
         );
         self.dispatch_active(
             encoder,
             "particle_grid_scatter",
             &self.grid_scatter,
-            &self.grid_group,
+            &self.grid_order_group,
         );
     }
 
@@ -1767,25 +1891,27 @@ impl GpuParticleWorld {
     }
 
     fn encode_active_compaction(&self, encoder: &mut wgpu::CommandEncoder) {
+        let workgroups = self.capacity.div_ceil(PARTICLE_ACTIVE_SCAN_WORKGROUP_SIZE);
         self.dispatch(
             encoder,
-            "particle_active_clear",
-            &self.core_clear_active,
-            &self.core_group,
-            [1, 1, 1],
-        );
-        self.dispatch_capacity(
-            encoder,
-            "particle_active_compact",
-            &self.core_compact_active,
-            &self.core_group,
+            "particle_active_count",
+            &self.core_count_active,
+            &self.active_group,
+            [workgroups, 1, 1],
         );
         self.dispatch(
             encoder,
-            "particle_active_finalize",
-            &self.core_finalize_active,
-            &self.core_group,
+            "particle_active_scan_blocks",
+            &self.core_scan_active_blocks,
+            &self.active_group,
             [1, 1, 1],
+        );
+        self.dispatch(
+            encoder,
+            "particle_active_scatter",
+            &self.core_scatter_active,
+            &self.active_group,
+            [workgroups, 1, 1],
         );
     }
 
@@ -2371,6 +2497,63 @@ mod tests {
         assert_eq!(reset_counters[8], first.initial_count());
         assert!(reset_counters[1..8].iter().all(|value| *value == 0));
         assert!(reset_counters[9..].iter().all(|value| *value == 0));
+    }
+
+    #[test]
+    fn gpu_particle_solver_replays_exactly_with_canonical_work_order() {
+        let instance = crate::create_instance();
+        let adapter = pollster::block_on(crate::gpu_context::request_adapter(&instance, None))
+            .expect("test GPU adapter");
+        let (device, queue) =
+            pollster::block_on(crate::gpu_context::request_device(&adapter)).unwrap();
+        let scenario = canonical_coupled_scenario(CoupledScenarioKind::Displacement).unwrap();
+        let first_bodies = GpuBodyStorage::new(
+            &device,
+            scenario.rigid.bodies.len() as u32,
+            BODY_COMMAND_CAPACITY,
+            &scenario.rigid.bodies,
+        )
+        .unwrap();
+        let second_bodies = GpuBodyStorage::new(
+            &device,
+            scenario.rigid.bodies.len() as u32,
+            BODY_COMMAND_CAPACITY,
+            &scenario.rigid.bodies,
+        )
+        .unwrap();
+        let first = GpuParticleWorld::new(
+            &device,
+            wgpu::TextureFormat::Rgba8UnormSrgb,
+            &scenario,
+            &first_bodies,
+        )
+        .unwrap();
+        let second = GpuParticleWorld::new(
+            &device,
+            wgpu::TextureFormat::Rgba8UnormSrgb,
+            &scenario,
+            &second_bodies,
+        )
+        .unwrap();
+
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("physbox5_particle_canonical_order_replay"),
+        });
+        for _ in 0..8 {
+            first.encode_step(&mut encoder);
+            second.encode_step(&mut encoder);
+        }
+        queue.submit([encoder.finish()]);
+        device.poll(wgpu::PollType::Wait).unwrap();
+
+        assert_eq!(
+            capture_particle_bytes(&device, &queue, &first),
+            capture_particle_bytes(&device, &queue, &second)
+        );
+        assert_eq!(
+            capture_body_kinematics(&device, &queue, &first_bodies),
+            capture_body_kinematics(&device, &queue, &second_bodies)
+        );
     }
 
     #[test]
