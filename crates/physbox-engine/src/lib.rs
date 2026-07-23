@@ -157,8 +157,9 @@ pub use contact_components::{
 };
 #[cfg(all(feature = "solver-lab", not(target_arch = "wasm32")))]
 pub use coupled_evidence::{
-    GPU_COUPLED_EVIDENCE_VERSION, GpuCoupledBodyObservationV1, GpuCoupledEvidenceConfigV1,
-    GpuCoupledEvidenceRun, GpuCoupledEvidenceV1, GpuCoupledTimingSummaryV1, GpuCoupledTimingV1,
+    GPU_COUPLED_EVIDENCE_VERSION, GpuCoupledBodyObservationV1, GpuCoupledBodyTrajectoryV1,
+    GpuCoupledEvidenceConfigV1, GpuCoupledEvidenceRun, GpuCoupledEvidenceV2, GpuCoupledExchangeV1,
+    GpuCoupledMechanicalStateV1, GpuCoupledTimingSummaryV1, GpuCoupledTimingV1,
     GpuParticleAggregateV1, run_gpu_coupled_evidence,
 };
 pub use coupled_scenario::{

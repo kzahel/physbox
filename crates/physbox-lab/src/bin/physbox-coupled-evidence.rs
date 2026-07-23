@@ -5,7 +5,7 @@ use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use physbox_engine::{
-    CoupledScenarioKind, GpuCoupledEvidenceConfigV1, GpuCoupledEvidenceV1, SolverProfileConfig,
+    CoupledScenarioKind, GpuCoupledEvidenceConfigV1, GpuCoupledEvidenceV2, SolverProfileConfig,
     canonical_coupled_scenario, coupled_capacity_scenario, liquid_sandbox_scenario,
     run_gpu_coupled_evidence,
 };
@@ -37,7 +37,7 @@ struct EvidenceRow {
     accepted: bool,
     failure: Option<String>,
     exact_replay: Option<ExactReplay>,
-    evidence: GpuCoupledEvidenceV1,
+    evidence: GpuCoupledEvidenceV2,
 }
 
 #[derive(Serialize)]
@@ -124,6 +124,7 @@ fn corpus(output: &Path) -> Result<Vec<EvidenceRow>, String> {
             warmup_steps: 0,
             measured_steps: source.requested_steps,
             steps_per_sample: 64,
+            capture_body_trajectory: true,
         };
         let label = kind.id().to_owned();
         let first = pollster::block_on(run_gpu_coupled_evidence(
@@ -154,6 +155,7 @@ fn corpus(output: &Path) -> Result<Vec<EvidenceRow>, String> {
             warmup_steps: 0,
             measured_steps: source.requested_steps,
             steps_per_sample: 64,
+            capture_body_trajectory: true,
         };
         let run = pollster::block_on(run_gpu_coupled_evidence(source, profile, config))?;
         require_capacity_clean(&run.evidence)?;
@@ -187,6 +189,7 @@ fn capacity(output: &Path) -> Result<Vec<EvidenceRow>, String> {
             warmup_steps: 30,
             measured_steps: 60,
             steps_per_sample: 1,
+            capture_body_trajectory: false,
         },
     ))?;
     require_capacity_clean(&run.evidence)?;
@@ -209,6 +212,7 @@ fn capacity(output: &Path) -> Result<Vec<EvidenceRow>, String> {
                 warmup_steps: 30,
                 measured_steps: 60,
                 steps_per_sample: 1,
+                capture_body_trajectory: false,
             },
         ))?;
         let disposition = require_capacity_clean(&run.evidence);
@@ -229,7 +233,7 @@ fn capacity(output: &Path) -> Result<Vec<EvidenceRow>, String> {
     Ok(rows)
 }
 
-fn compare_replay(first: &GpuCoupledEvidenceV1, second: &GpuCoupledEvidenceV1) -> ExactReplay {
+fn compare_replay(first: &GpuCoupledEvidenceV2, second: &GpuCoupledEvidenceV2) -> ExactReplay {
     let particle_centroid_delta = distance(
         first.final_particles.centroid,
         second.final_particles.centroid,
@@ -271,7 +275,7 @@ fn distance(left: physbox_contracts::Vec2, right: physbox_contracts::Vec2) -> f3
     (x * x + y * y).sqrt()
 }
 
-fn require_capacity_clean(evidence: &GpuCoupledEvidenceV1) -> Result<(), String> {
+fn require_capacity_clean(evidence: &GpuCoupledEvidenceV2) -> Result<(), String> {
     let diagnostics = &evidence.particle_diagnostics;
     if !diagnostics.state_finite
         || !diagnostics.capacity_clean

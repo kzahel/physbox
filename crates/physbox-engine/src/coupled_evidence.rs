@@ -21,7 +21,7 @@ use crate::{
     SolverProfileConfig, create_instance,
 };
 
-pub const GPU_COUPLED_EVIDENCE_VERSION: u32 = 1;
+pub const GPU_COUPLED_EVIDENCE_VERSION: u32 = 2;
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -30,6 +30,7 @@ pub struct GpuCoupledEvidenceConfigV1 {
     pub warmup_steps: u32,
     pub measured_steps: u32,
     pub steps_per_sample: u32,
+    pub capture_body_trajectory: bool,
 }
 
 impl GpuCoupledEvidenceConfigV1 {
@@ -85,9 +86,62 @@ pub struct GpuCoupledBodyObservationV1 {
     pub nearby_particle_count: u32,
 }
 
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GpuCoupledBodyTrajectoryV1 {
+    pub body: BodyId,
+    pub sample_count: u32,
+    pub max_displacement_from_initial: f32,
+    pub max_abs_angle_delta: f32,
+    pub max_linear_speed: f32,
+    pub max_abs_angular_speed: f32,
+    pub first_wake_observed_step: Option<u32>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GpuCoupledMechanicalStateV1 {
+    pub particle_linear_momentum: Vec2,
+    pub dynamic_body_linear_momentum: Vec2,
+    pub particle_kinetic_energy: f32,
+    pub dynamic_body_kinetic_energy: f32,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GpuCoupledExchangeV1 {
+    pub initial: GpuCoupledMechanicalStateV1,
+    pub final_state: GpuCoupledMechanicalStateV1,
+    pub particle_linear_momentum_delta: Vec2,
+    pub dynamic_body_linear_momentum_delta: Vec2,
+    pub particle_kinetic_energy_delta: f32,
+    pub dynamic_body_kinetic_energy_delta: f32,
+}
+
+impl GpuCoupledExchangeV1 {
+    fn new(initial: GpuCoupledMechanicalStateV1, final_state: GpuCoupledMechanicalStateV1) -> Self {
+        Self {
+            particle_linear_momentum_delta: subtract(
+                final_state.particle_linear_momentum,
+                initial.particle_linear_momentum,
+            ),
+            dynamic_body_linear_momentum_delta: subtract(
+                final_state.dynamic_body_linear_momentum,
+                initial.dynamic_body_linear_momentum,
+            ),
+            particle_kinetic_energy_delta: final_state.particle_kinetic_energy
+                - initial.particle_kinetic_energy,
+            dynamic_body_kinetic_energy_delta: final_state.dynamic_body_kinetic_energy
+                - initial.dynamic_body_kinetic_energy,
+            initial,
+            final_state,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct GpuCoupledEvidenceV1 {
+pub struct GpuCoupledEvidenceV2 {
     pub version: u32,
     pub source_scenario_id: String,
     pub source_scenario_hash: String,
@@ -102,17 +156,20 @@ pub struct GpuCoupledEvidenceV1 {
     pub particle_centroid_displacement: f32,
     pub particle_diagnostics: GpuParticleDiagnosticsV4,
     pub bodies: Vec<GpuCoupledBodyObservationV1>,
+    pub body_trajectories: Vec<GpuCoupledBodyTrajectoryV1>,
+    pub exchange: GpuCoupledExchangeV1,
     pub sleep_cycle: Option<SleepCycleMetricsV1>,
     pub capacities: Vec<CapacityRecordV1>,
     pub timing: GpuCoupledTimingV1,
     pub exact_state_sha256: String,
     pub action_projection: &'static str,
+    pub trajectory_sampling: &'static str,
     pub comparator_compiled: bool,
     pub blocking_readback_for_advancement: bool,
 }
 
 pub struct GpuCoupledEvidenceRun {
-    pub evidence: GpuCoupledEvidenceV1,
+    pub evidence: GpuCoupledEvidenceV2,
     pub rgba8: Vec<u8>,
 }
 
@@ -174,9 +231,16 @@ pub async fn run_gpu_coupled_evidence(
         world.particle_validation_layout().unwrap(),
         &initial_particle_bytes,
     )?;
+    let initial_body_bytes = read_body_bytes(&device, &queue, &world)?;
+    let initial_body_states = decode_body_states(
+        &configured.rigid.bodies,
+        world.body_capacity(),
+        &initial_body_bytes,
+    )?;
     let camera = evidence_camera(&configured, config.viewport)?;
 
     let mut completed_steps = 0u32;
+    let mut body_samples = vec![(0, initial_body_states.clone())];
     submit_samples(
         &device,
         &queue,
@@ -189,6 +253,8 @@ pub async fn run_gpu_coupled_evidence(
         &scheduled,
         &mut completed_steps,
         None,
+        &configured.rigid.bodies,
+        config.capture_body_trajectory.then_some(&mut body_samples),
     )?;
     let mut timing_samples = Vec::new();
     submit_samples(
@@ -203,6 +269,8 @@ pub async fn run_gpu_coupled_evidence(
         &scheduled,
         &mut completed_steps,
         Some(&mut timing_samples),
+        &configured.rigid.bodies,
+        config.capture_body_trajectory.then_some(&mut body_samples),
     )?;
 
     let particle_bytes = read_particle_bytes(&device, &queue, &world)?;
@@ -220,6 +288,31 @@ pub async fn run_gpu_coupled_evidence(
         &particle_bytes,
         configured.materials[0].radius.get(),
     )?;
+    let final_body_states = bodies
+        .iter()
+        .map(|observation| observation.state.clone())
+        .collect::<Vec<_>>();
+    if body_samples
+        .last()
+        .is_none_or(|(step, _)| *step != completed_steps)
+    {
+        body_samples.push((completed_steps, final_body_states.clone()));
+    }
+    let body_trajectories = body_trajectories(&configured.rigid.bodies, &body_samples)?;
+    let exchange = GpuCoupledExchangeV1::new(
+        mechanical_state(
+            particle_layout,
+            &initial_particle_bytes,
+            configured.materials[0].particle_mass(),
+            &initial_body_states,
+        )?,
+        mechanical_state(
+            particle_layout,
+            &particle_bytes,
+            configured.materials[0].particle_mass(),
+            &final_body_states,
+        )?,
+    );
     let sleep_cycle = world
         .sleeping_enabled()
         .then(|| read_sleep_cycle(&device, &queue, &world))
@@ -248,7 +341,7 @@ pub async fn run_gpu_coupled_evidence(
     ));
     let timing = timing(timing_samples);
     Ok(GpuCoupledEvidenceRun {
-        evidence: GpuCoupledEvidenceV1 {
+        evidence: GpuCoupledEvidenceV2 {
             version: GPU_COUPLED_EVIDENCE_VERSION,
             source_scenario_id: source.id,
             source_scenario_hash,
@@ -263,11 +356,18 @@ pub async fn run_gpu_coupled_evidence(
             particle_centroid_displacement,
             particle_diagnostics,
             bodies,
+            body_trajectories,
+            exchange,
             sleep_cycle,
             capacities,
             timing,
             exact_state_sha256,
             action_projection: "stable-body grab commands with product grab tuning",
+            trajectory_sampling: if config.capture_body_trajectory {
+                "initial and every completed host-wait evidence sample"
+            } else {
+                "initial and final state only"
+            },
             comparator_compiled: cfg!(feature = "box2d-comparator"),
             blocking_readback_for_advancement: false,
         },
@@ -355,6 +455,8 @@ fn submit_samples(
     scheduled: &[ScheduledCommand],
     completed_steps: &mut u32,
     mut timing_samples: Option<&mut Vec<TimingSample>>,
+    authored_bodies: &[BodyStateV1],
+    mut body_samples: Option<&mut Vec<(u32, Vec<BodyStateV1>)>>,
 ) -> Result<(), String> {
     let mut remaining = steps;
     while remaining != 0 {
@@ -422,6 +524,13 @@ fn submit_samples(
             });
         }
         *completed_steps = next_completed;
+        if let Some(samples) = &mut body_samples {
+            let bytes = read_body_bytes(device, queue, world)?;
+            samples.push((
+                next_completed,
+                decode_body_states(authored_bodies, world.body_capacity(), &bytes)?,
+            ));
+        }
         remaining -= sample_steps;
     }
     Ok(())
@@ -639,17 +748,7 @@ fn body_observations(
     particle_bytes: &[u8],
     particle_radius: f32,
 ) -> Result<Vec<GpuCoupledBodyObservationV1>, String> {
-    let lane_bytes = capacity as usize * size_of::<[u32; 4]>();
-    if body_bytes.len() != lane_bytes * 3 {
-        return Err("coupled body readback has the wrong byte count".to_owned());
-    }
-    let poses = bytemuck::try_cast_slice::<u8, [f32; 4]>(&body_bytes[..lane_bytes])
-        .map_err(|error| format!("decode coupled body poses: {error}"))?;
-    let motions = bytemuck::try_cast_slice::<u8, [f32; 4]>(&body_bytes[lane_bytes..lane_bytes * 2])
-        .map_err(|error| format!("decode coupled body motions: {error}"))?;
-    let metadata =
-        bytemuck::try_cast_slice::<u8, [u32; 4]>(&body_bytes[lane_bytes * 2..lane_bytes * 3])
-            .map_err(|error| format!("decode coupled body metadata: {error}"))?;
+    let states = decode_body_states(authored, capacity, body_bytes)?;
     let particle_lane = particle_layout.capacity as usize * size_of::<[f32; 4]>();
     let positions = bytemuck::try_cast_slice::<u8, [f32; 4]>(
         &particle_bytes[particle_layout.positions_offset as usize
@@ -663,38 +762,9 @@ fn body_observations(
     )
     .map_err(|error| format!("decode body-overlap particle flags: {error}"))?;
 
-    authored
-        .iter()
-        .map(|body| {
-            let index = usize::try_from(body.id.slot)
-                .map_err(|_| "body slot does not fit usize".to_owned())?;
-            let pose = *poses
-                .get(index)
-                .ok_or_else(|| "authored body exceeds GPU capacity".to_owned())?;
-            let motion = motions[index];
-            let meta = metadata[index];
-            if meta[0] != body.id.generation || meta[1] & 1 == 0 {
-                return Err(format!(
-                    "authored body {}:{} is not live in final GPU state",
-                    body.id.slot, body.id.generation
-                ));
-            }
-            if !pose.into_iter().all(f32::is_finite) || !motion.into_iter().all(f32::is_finite) {
-                return Err("coupled body observation found non-finite state".to_owned());
-            }
-            let mut state = body.clone();
-            state.id = BodyId {
-                slot: body.id.slot,
-                generation: meta[0],
-            };
-            state.position = Vec2::new(pose[0], pose[1]);
-            state.angle =
-                physbox_contracts::FiniteF32::new(pose[2]).map_err(|error| error.to_string())?;
-            state.linear_velocity = Vec2::new(motion[0], motion[1]);
-            state.angular_velocity =
-                physbox_contracts::FiniteF32::new(motion[2]).map_err(|error| error.to_string())?;
-            state.sleeping = meta[1] & (1 << 1) != 0;
-            state.validate().map_err(|error| error.to_string())?;
+    states
+        .into_iter()
+        .map(|state| {
             let nearby_particle_count = positions
                 .iter()
                 .zip(flags)
@@ -715,6 +785,176 @@ fn body_observations(
             })
         })
         .collect()
+}
+
+fn decode_body_states(
+    authored: &[BodyStateV1],
+    capacity: u32,
+    bytes: &[u8],
+) -> Result<Vec<BodyStateV1>, String> {
+    let lane_bytes = capacity as usize * size_of::<[u32; 4]>();
+    if bytes.len() != lane_bytes * 3 {
+        return Err("coupled body readback has the wrong byte count".to_owned());
+    }
+    let poses = bytemuck::try_cast_slice::<u8, [f32; 4]>(&bytes[..lane_bytes])
+        .map_err(|error| format!("decode coupled body poses: {error}"))?;
+    let motions = bytemuck::try_cast_slice::<u8, [f32; 4]>(&bytes[lane_bytes..lane_bytes * 2])
+        .map_err(|error| format!("decode coupled body motions: {error}"))?;
+    let metadata = bytemuck::try_cast_slice::<u8, [u32; 4]>(&bytes[lane_bytes * 2..lane_bytes * 3])
+        .map_err(|error| format!("decode coupled body metadata: {error}"))?;
+    authored
+        .iter()
+        .map(|body| {
+            let index = usize::try_from(body.id.slot)
+                .map_err(|_| "body slot does not fit usize".to_owned())?;
+            let pose = *poses
+                .get(index)
+                .ok_or_else(|| "authored body exceeds GPU capacity".to_owned())?;
+            let motion = motions[index];
+            let meta = metadata[index];
+            if meta[0] != body.id.generation || meta[1] & 1 == 0 {
+                return Err(format!(
+                    "authored body {}:{} is not live in sampled GPU state",
+                    body.id.slot, body.id.generation
+                ));
+            }
+            if !pose.into_iter().all(f32::is_finite) || !motion.into_iter().all(f32::is_finite) {
+                return Err("coupled body sample found non-finite state".to_owned());
+            }
+            let mut state = body.clone();
+            state.id = BodyId {
+                slot: body.id.slot,
+                generation: meta[0],
+            };
+            state.position = Vec2::new(pose[0], pose[1]);
+            state.angle =
+                physbox_contracts::FiniteF32::new(pose[2]).map_err(|error| error.to_string())?;
+            state.linear_velocity = Vec2::new(motion[0], motion[1]);
+            state.angular_velocity =
+                physbox_contracts::FiniteF32::new(motion[2]).map_err(|error| error.to_string())?;
+            state.sleeping = meta[1] & (1 << 1) != 0;
+            state.validate().map_err(|error| error.to_string())?;
+            Ok(state)
+        })
+        .collect()
+}
+
+fn body_trajectories(
+    authored: &[BodyStateV1],
+    samples: &[(u32, Vec<BodyStateV1>)],
+) -> Result<Vec<GpuCoupledBodyTrajectoryV1>, String> {
+    if samples.is_empty() {
+        return Err("coupled body trajectory has no samples".to_owned());
+    }
+    authored
+        .iter()
+        .enumerate()
+        .filter(|(_, body)| body.inverse_mass.get() > 0.0)
+        .map(|(index, initial)| {
+            let mut result = GpuCoupledBodyTrajectoryV1 {
+                body: initial.id,
+                sample_count: 0,
+                max_displacement_from_initial: 0.0,
+                max_abs_angle_delta: 0.0,
+                max_linear_speed: 0.0,
+                max_abs_angular_speed: 0.0,
+                first_wake_observed_step: None,
+            };
+            for (step, states) in samples {
+                let state = states
+                    .get(index)
+                    .ok_or_else(|| "coupled body sample is incomplete".to_owned())?;
+                if state.id != initial.id {
+                    return Err("coupled body sample identity changed".to_owned());
+                }
+                result.sample_count += 1;
+                result.max_displacement_from_initial = result
+                    .max_displacement_from_initial
+                    .max(distance(state.position, initial.position));
+                result.max_abs_angle_delta = result
+                    .max_abs_angle_delta
+                    .max((state.angle.get() - initial.angle.get()).abs());
+                result.max_linear_speed =
+                    result.max_linear_speed.max(length(state.linear_velocity));
+                result.max_abs_angular_speed = result
+                    .max_abs_angular_speed
+                    .max(state.angular_velocity.get().abs());
+                if initial.sleeping && !state.sleeping && result.first_wake_observed_step.is_none()
+                {
+                    result.first_wake_observed_step = Some(*step);
+                }
+            }
+            Ok(result)
+        })
+        .collect()
+}
+
+fn mechanical_state(
+    layout: ParticleValidationLayout,
+    particle_bytes: &[u8],
+    particle_mass: f32,
+    bodies: &[BodyStateV1],
+) -> Result<GpuCoupledMechanicalStateV1, String> {
+    let lane_bytes = layout.capacity as usize * size_of::<[f32; 4]>();
+    let velocities = bytemuck::try_cast_slice::<u8, [f32; 4]>(
+        &particle_bytes
+            [layout.velocities_offset as usize..layout.velocities_offset as usize + lane_bytes],
+    )
+    .map_err(|error| format!("decode exchange particle velocities: {error}"))?;
+    let flag_bytes = layout.capacity as usize * size_of::<u32>();
+    let flags = bytemuck::try_cast_slice::<u8, u32>(
+        &particle_bytes
+            [layout.active_flags_offset as usize..layout.active_flags_offset as usize + flag_bytes],
+    )
+    .map_err(|error| format!("decode exchange particle flags: {error}"))?;
+    let mut particle_linear_momentum = Vec2::ZERO;
+    let mut particle_kinetic_energy = 0.0f32;
+    for (velocity, flag) in velocities.iter().zip(flags) {
+        if *flag == 0 {
+            continue;
+        }
+        let value = Vec2::new(velocity[0], velocity[1]);
+        value.validate().map_err(|error| error.to_string())?;
+        particle_linear_momentum.x += particle_mass * value.x;
+        particle_linear_momentum.y += particle_mass * value.y;
+        particle_kinetic_energy += 0.5 * particle_mass * dot(value, value);
+    }
+    let mut dynamic_body_linear_momentum = Vec2::ZERO;
+    let mut dynamic_body_kinetic_energy = 0.0f32;
+    for body in bodies {
+        if body.inverse_mass.get() <= 0.0 {
+            continue;
+        }
+        let mass = body.inverse_mass.get().recip();
+        dynamic_body_linear_momentum.x += mass * body.linear_velocity.x;
+        dynamic_body_linear_momentum.y += mass * body.linear_velocity.y;
+        dynamic_body_kinetic_energy += 0.5 * mass * dot(body.linear_velocity, body.linear_velocity);
+        if body.inverse_inertia.get() > 0.0 {
+            let inertia = body.inverse_inertia.get().recip();
+            dynamic_body_kinetic_energy +=
+                0.5 * inertia * body.angular_velocity.get() * body.angular_velocity.get();
+        }
+    }
+    let state = GpuCoupledMechanicalStateV1 {
+        particle_linear_momentum,
+        dynamic_body_linear_momentum,
+        particle_kinetic_energy,
+        dynamic_body_kinetic_energy,
+    };
+    if ![
+        state.particle_linear_momentum.x,
+        state.particle_linear_momentum.y,
+        state.dynamic_body_linear_momentum.x,
+        state.dynamic_body_linear_momentum.y,
+        state.particle_kinetic_energy,
+        state.dynamic_body_kinetic_energy,
+    ]
+    .into_iter()
+    .all(f32::is_finite)
+    {
+        return Err("coupled mechanical state is non-finite".to_owned());
+    }
+    Ok(state)
 }
 
 fn particle_near_body(
@@ -857,6 +1097,18 @@ fn length(value: Vec2) -> f32 {
     (value.x * value.x + value.y * value.y).sqrt()
 }
 
+fn distance(left: Vec2, right: Vec2) -> f32 {
+    length(subtract(left, right))
+}
+
+fn subtract(left: Vec2, right: Vec2) -> Vec2 {
+    Vec2::new(left.x - right.x, left.y - right.y)
+}
+
+fn dot(left: Vec2, right: Vec2) -> f32 {
+    left.x * right.x + left.y * right.y
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -890,6 +1142,7 @@ mod tests {
             warmup_steps: 0,
             measured_steps: 1,
             steps_per_sample: 65,
+            capture_body_trajectory: false,
         };
         assert!(config.validate().is_err());
     }
