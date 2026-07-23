@@ -330,6 +330,18 @@ refresh may selectively adapt PhysBox 4 glyph, outline, palette, and procedural
 render ideas, but it must preserve current mechanics and keep the comparator
 label unmistakable.
 
+The first hands-on review makes three interaction refinements explicit. Erase
+is a continuous admitted-step brush while held, including both bodies and
+particles where particles exist. Surface is a general PhysBox construction
+tool and is therefore available in rigid-only PhysBox scenes as well as the
+liquid sandbox; Water remains available only in a world that actually owns
+particle storage. The liquid home view needs the same useful relative
+zoom-out range as the smaller rigid home, so the shared finite maximum
+orthographic half-height is `32`. Engine diagnostics label the authored water
+population and slot capacity as `START` and `CAP`; they do not misrepresent
+that static CPU-known value as a live GPU count or introduce interactive
+readback.
+
 Reduced-resolution density/thickness water rendering is a later S31 slice only
 after direct rendering and mechanics pass. It must be optional presentation,
 consume current GPU particle state, preserve a direct/debug mode, and stay

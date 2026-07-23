@@ -493,6 +493,13 @@ portability and pixels, not physical-device speed.
 - [x] Update the capability ledger, authoritative direction, performance
   record, README, vision summary, topic index, and this tactical with measured
   implementation state and retained failures.
+- [x] Address the first hands-on interaction review with continuous held
+  Erase, Surface in every PhysBox scene, a wider liquid-scene zoom range, and
+  an immediately legible water start/capacity HUD label without adding
+  particle readback.
+- [ ] Attribute the reported physical-phone 4K smoothness gap between fixed
+  pacing, particle solve capacity, and direct rendering; retain a measured
+  product-capacity correction if it improves cost without changing mechanics.
 - [ ] Record whether the 4K water scene, Water/Surface tools, and direct visual
   style become ordinary product defaults or remain explicit preview choices.
 - [x] Record whether a smooth-water renderer, sorted-cell replacement,
@@ -515,6 +522,21 @@ debug mode. Multiple materials remain blocked on accepted single-water
 behavior bands. Save/load and property editing remain P5.5 document/selection
 work; the current Surface tool does not create a measured reason to pull them
 forward automatically.
+
+First subjective-review correction, 2026-07-23: held Erase now emits one
+bounded body/particle brush command on every admitted interactive step,
+beginning with the first step after pointer-down and stopping on release.
+Quick taps still commit exactly once, zero-step frames accumulate no command
+backlog, and Box2D-visible Erase remains rigid-only. `Surface` is now available
+in every PhysBox scene because it authors an ordinary fixed GPU rectangle;
+`Water` remains limited to the particle-backed liquid sandbox, avoiding a dead
+tool or an implicit scene reset. The shared camera maximum half-height rises
+from `8` to `32`: PhysBox 4 at clean revision
+`92f745eb85908243c69080a4fa4dba24f05c22cf` also used `8`, but its usual
+half-height-`1` home provided much more relative zoom than the liquid
+sandbox's half-height-`3.5` home. The liquid HUD now says
+`WATER START 3952 CAP ...`; it deliberately does not claim a live active count
+because interactive particle readback remains excluded.
 
 ## Required validation by changed boundary
 

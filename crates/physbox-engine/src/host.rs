@@ -296,7 +296,7 @@ struct BodyInteractionState {
     pending_construction: BoundedConstructionIntents,
     pending_particles: Vec<ParticleCommand>,
     fluid_tools_enabled: bool,
-    fluid_commands_enabled: bool,
+    physbox_commands_enabled: bool,
     next_sequence: u32,
     report: BodyCommandReport,
 }
@@ -341,7 +341,7 @@ impl BodyInteractionState {
                 .expect("construction intent capacity is valid"),
             pending_particles: Vec::with_capacity(PARTICLE_COMMAND_CAPACITY as usize),
             fluid_tools_enabled,
-            fluid_commands_enabled: fluid_tools_enabled,
+            physbox_commands_enabled: true,
             next_sequence,
             report: BodyCommandReport {
                 grab_intent_contract_version: physbox_contracts::GRAB_INTENT_CONTRACT_VERSION,
@@ -376,13 +376,13 @@ impl BodyInteractionState {
         self.tool = tool;
     }
 
-    fn set_fluid_commands_enabled(&mut self, enabled: bool) {
-        self.fluid_commands_enabled = self.fluid_tools_enabled && enabled;
+    fn set_physbox_commands_enabled(&mut self, enabled: bool) {
+        self.physbox_commands_enabled = enabled;
     }
 
     fn surface_preview(&self) -> Option<SurfacePreview> {
         self.active_pointer
-            .filter(|active| active.tool == WorkbenchTool::Surface && self.fluid_commands_enabled)
+            .filter(|active| active.tool == WorkbenchTool::Surface && self.physbox_commands_enabled)
             .map(|active| SurfacePreview {
                 start: active.down_target,
                 end: active.current_target,
@@ -720,7 +720,7 @@ impl BodyInteractionState {
         if let Some(intent) = construction_intent(tool, sequence, target) {
             self.push_construction(intent);
         }
-        if !self.fluid_commands_enabled {
+        if !self.fluid_tools_enabled || !self.physbox_commands_enabled {
             return;
         }
         match tool {
@@ -742,7 +742,7 @@ impl BodyInteractionState {
     }
 
     fn push_surface(&mut self, sequence: u32, start: Vec2, end: Vec2) {
-        if !self.fluid_commands_enabled {
+        if !self.physbox_commands_enabled {
             return;
         }
         let delta = Vec2::new(end.x - start.x, end.y - start.y);
@@ -764,15 +764,22 @@ impl BodyInteractionState {
         };
         if !matches!(
             active.tool,
-            WorkbenchTool::Circle | WorkbenchTool::Rectangle | WorkbenchTool::Water
+            WorkbenchTool::Circle
+                | WorkbenchTool::Rectangle
+                | WorkbenchTool::Erase
+                | WorkbenchTool::Water
         ) {
             return;
         }
         if active.just_started {
             active.just_started = false;
-            return;
+            if active.tool != WorkbenchTool::Erase {
+                return;
+            }
         }
-        let delay_seconds = if active.repeated {
+        let delay_seconds = if active.tool == WorkbenchTool::Erase {
+            0.0
+        } else if active.repeated {
             CONSTRUCTION_REPEAT_INTERVAL_SECONDS
         } else {
             CONSTRUCTION_HOLD_DELAY_SECONDS
@@ -1487,7 +1494,7 @@ impl EngineHost {
                 .apply_events(&mut self.camera, &routing.events, context.target.size);
         if let Some(interaction) = &mut self.body_interaction {
             interaction
-                .set_fluid_commands_enabled(self.selected_engine == ComparisonEngine::PhysBox);
+                .set_physbox_commands_enabled(self.selected_engine == ComparisonEngine::PhysBox);
             interaction.select_tool(routing.selected_tool);
             interaction.capture_pointer_events(&world_events);
         }
@@ -2583,26 +2590,35 @@ mod body_interaction_tests {
     }
 
     #[test]
-    fn erase_remains_release_committed_without_hold_repeat() {
+    fn held_erase_starts_immediately_repeats_at_the_pointer_and_stops_on_release() {
         let mut interaction = BodyInteractionState::new(Vec::new(), true, true);
         interaction.select_tool(WorkbenchTool::Erase);
-        let target = Vec2::new(0.0, 0.5);
-        interaction.capture_pointer_events(&[pointer(1, PointerPhase::Down, target)]);
-        let held = interaction.prepare(120, 0, 2.0);
-        assert!(held.construction_batch.intents.is_empty());
-
-        interaction.capture_pointer_events(&[pointer(1, PointerPhase::Up, target)]);
-        let released = interaction.prepare(1, 120, 1.0 / 60.0);
-        assert_eq!(released.construction_batch.intents.len(), 1);
+        let down = Vec2::new(0.0, 0.5);
+        let moved = Vec2::new(0.4, 0.7);
+        interaction.capture_pointer_events(&[pointer(1, PointerPhase::Down, down)]);
+        let first = interaction.prepare(1, 0, 1.0 / 60.0);
+        assert_eq!(first.construction_batch.intents.len(), 1);
         assert!(matches!(
-            released.construction_batch.intents[0],
-            ConstructionIntentV1::EraseAt { .. }
+            first.construction_batch.intents[0],
+            ConstructionIntentV1::EraseAt { world_target, .. } if world_target == down
         ));
         assert!(matches!(
-            released.particle_commands[0],
+            first.particle_commands[0],
             ParticleCommand::EraseCircle { .. }
         ));
-        assert_eq!(released.particle_ranges[0].count, 1);
+        interaction.capture_pointer_events(&[pointer(1, PointerPhase::Move, moved)]);
+        let repeated = interaction.prepare(1, 1, 1.0 / 60.0);
+        assert!(matches!(
+            repeated.construction_batch.intents[0],
+            ConstructionIntentV1::EraseAt { world_target, .. } if world_target == moved
+        ));
+
+        interaction.capture_pointer_events(&[pointer(1, PointerPhase::Up, moved)]);
+        let released = interaction.prepare(60, 2, 1.0);
+        assert!(released.construction_batch.intents.is_empty());
+        assert!(released.particle_commands.is_empty());
+        assert_eq!(interaction.report.queued_construction_intents_total, 2);
+        assert_eq!(interaction.report.queued_particle_commands_total, 2);
     }
 
     #[test]
@@ -2636,7 +2652,7 @@ mod body_interaction_tests {
     #[test]
     fn box2d_visible_erase_does_not_mutate_hidden_particle_storage() {
         let mut interaction = BodyInteractionState::new(Vec::new(), true, true);
-        interaction.set_fluid_commands_enabled(false);
+        interaction.set_physbox_commands_enabled(false);
         interaction.select_tool(WorkbenchTool::Erase);
         let target = Vec2::new(0.0, 0.5);
         interaction.capture_pointer_events(&[
@@ -2650,7 +2666,7 @@ mod body_interaction_tests {
 
     #[test]
     fn surface_drag_previews_then_commits_one_fixed_boundary_intent() {
-        let mut interaction = BodyInteractionState::new(Vec::new(), true, true);
+        let mut interaction = BodyInteractionState::new(Vec::new(), true, false);
         interaction.select_tool(WorkbenchTool::Surface);
         let start = Vec2::new(-0.7, 0.8);
         let end = Vec2::new(0.6, 1.1);
@@ -2683,7 +2699,7 @@ mod body_interaction_tests {
             (PointerPhase::Up, false),
         ] {
             let mut interaction = BodyInteractionState::new(Vec::new(), true, true);
-            interaction.set_fluid_commands_enabled(fluid_commands_enabled);
+            interaction.set_physbox_commands_enabled(fluid_commands_enabled);
             interaction.select_tool(WorkbenchTool::Surface);
             interaction.capture_pointer_events(&[
                 pointer(1, PointerPhase::Down, target),
@@ -2697,5 +2713,24 @@ mod body_interaction_tests {
                     .is_empty()
             );
         }
+
+        let mut box2d = BodyInteractionState::new(Vec::new(), true, true);
+        box2d.set_physbox_commands_enabled(false);
+        box2d.select_tool(WorkbenchTool::Surface);
+        let start = Vec2::new(-0.5, 0.7);
+        let end = Vec2::new(0.5, 0.9);
+        box2d.capture_pointer_events(&[
+            pointer(1, PointerPhase::Down, start),
+            pointer(1, PointerPhase::Move, end),
+        ]);
+        assert!(box2d.surface_preview().is_none());
+        box2d.capture_pointer_events(&[pointer(1, PointerPhase::Up, end)]);
+        assert!(
+            box2d
+                .prepare(1, 0, 1.0 / 60.0)
+                .construction_batch
+                .intents
+                .is_empty()
+        );
     }
 }

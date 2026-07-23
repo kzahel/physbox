@@ -17,7 +17,7 @@ use crate::{
     },
 };
 
-pub(crate) const UI_CONTRACT_VERSION: u32 = 10;
+pub(crate) const UI_CONTRACT_VERSION: u32 = 11;
 const STATIC_INSTANCE_CAPACITY: usize = 384;
 const DYNAMIC_INSTANCE_CAPACITY: usize = 320;
 
@@ -68,6 +68,13 @@ pub(crate) enum WorkbenchTool {
 
 impl WorkbenchTool {
     const BASE: [Self; 4] = [Self::Grab, Self::Circle, Self::Rectangle, Self::Erase];
+    const PHYSBOX: [Self; 5] = [
+        Self::Grab,
+        Self::Circle,
+        Self::Rectangle,
+        Self::Erase,
+        Self::Surface,
+    ];
     const ALL: [Self; 6] = [
         Self::Grab,
         Self::Circle,
@@ -104,11 +111,13 @@ fn available_tools(
     scenario: ValidationScenario,
     selected_engine: ComparisonEngine,
 ) -> &'static [WorkbenchTool] {
-    if scenario == ValidationScenario::LiquidSandbox && selected_engine == ComparisonEngine::PhysBox
-    {
-        &WorkbenchTool::ALL
-    } else {
-        &WorkbenchTool::BASE
+    match selected_engine {
+        ComparisonEngine::PhysBox if scenario == ValidationScenario::LiquidSandbox => {
+            &WorkbenchTool::ALL
+        }
+        ComparisonEngine::PhysBox => &WorkbenchTool::PHYSBOX,
+        #[cfg(feature = "box2d-comparator")]
+        ComparisonEngine::Box2d => &WorkbenchTool::BASE,
     }
 }
 
@@ -2093,12 +2102,14 @@ fn dynamic_batch(
             if model.scenario == ValidationScenario::LiquidSandbox {
                 lines.extend([
                     format!(
-                        "PART INIT{}/{} WORK{}",
-                        model.particle_count,
-                        model.particle_capacity,
-                        model.particle_dispatches_per_step
+                        "WATER START {} CAP {}",
+                        model.particle_count, model.particle_capacity
                     ),
-                    format!("MAT WATER0 TOOL {}", selected_tool.name()),
+                    format!(
+                        "WATER WORK {} TOOL {}",
+                        model.particle_dispatches_per_step,
+                        selected_tool.name()
+                    ),
                     format!(
                         "FLUID OVF DECL {} RB0",
                         if model.overflowed { "YES" } else { "NO" }
@@ -2768,14 +2779,14 @@ mod tests {
     }
 
     #[test]
-    fn liquid_tools_are_visible_only_in_the_physbox_liquid_sandbox() {
+    fn surface_is_shared_across_physbox_scenes_while_water_requires_particles() {
         assert_eq!(
             available_tools(ValidationScenario::LiquidSandbox, ComparisonEngine::PhysBox),
             &WorkbenchTool::ALL
         );
         assert_eq!(
             available_tools(ValidationScenario::Bootstrap, ComparisonEngine::PhysBox),
-            &WorkbenchTool::BASE
+            &WorkbenchTool::PHYSBOX
         );
         #[cfg(feature = "box2d-comparator")]
         assert_eq!(

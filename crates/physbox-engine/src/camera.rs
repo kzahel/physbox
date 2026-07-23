@@ -2,7 +2,7 @@ use std::fmt;
 
 pub const CAMERA_STATE_VERSION: u32 = 1;
 pub const MIN_ORTHOGRAPHIC_HALF_HEIGHT: f32 = 0.08;
-pub const MAX_ORTHOGRAPHIC_HALF_HEIGHT: f32 = 8.0;
+pub const MAX_ORTHOGRAPHIC_HALF_HEIGHT: f32 = 32.0;
 
 /// Shared world-space camera state.
 ///
