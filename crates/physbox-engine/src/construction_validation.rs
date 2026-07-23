@@ -81,7 +81,7 @@ pub fn construction_interaction_validation_script() -> ConstructionValidationScr
         events,
     };
     let mut high_cadence = Vec::new();
-    for x in [-1.35, -1.05, -0.75, -0.45, -0.15, 0.15, 0.45, 0.75] {
+    for x in [-1.45, -1.15, -0.85, -0.55, 0.55, 0.85, 1.15, 1.45] {
         high_cadence.extend(click(PointerButton::Primary, world([x, 0.72])));
     }
     let touch_a = world([0.2, 0.7]);
@@ -369,10 +369,9 @@ pub fn construction_capacity_validation_script() -> ConstructionValidationScript
     let camera = Camera2d::fixed().resolve(target_size).unwrap();
     let mut events = Vec::new();
     let mut id = 2_u64;
-    'rows: for y in [-0.82, -0.58, -0.34, 0.34, 0.58] {
+    'rows: for y in [-0.80, -0.52, -0.24, 0.04, 0.32, 0.60] {
         for x in [
-            -1.43, -1.21, -0.99, -0.77, -0.55, -0.33, -0.11, 0.11, 0.33, 0.55, 0.77, 0.99, 1.21,
-            1.43,
+            -1.40, -1.12, -0.84, -0.56, -0.28, 0.0, 0.28, 0.56, 0.84, 1.12, 1.40,
         ] {
             let x: f32 = x;
             if x.abs() <= 0.35_f32 && (y - 0.65_f32).abs() <= 0.2_f32 {

@@ -13,7 +13,9 @@ use crate::{
     BodySlotRegistry, CameraFrame2d, GrabValidationState,
     body_lifecycle::KILL_ZONE_Y,
     construction::{
+        CONSTRUCTION_CIRCLE_INVERSE_INERTIA, CONSTRUCTION_CIRCLE_INVERSE_MASS,
         CONSTRUCTION_CIRCLE_RADIUS, CONSTRUCTION_FRICTION, CONSTRUCTION_RECTANGLE_HALF_EXTENTS,
+        CONSTRUCTION_RECTANGLE_INVERSE_INERTIA, CONSTRUCTION_RECTANGLE_INVERSE_MASS,
         CONSTRUCTION_RESTITUTION,
     },
     grab::{GRAB_DAMPING_RATE, GRAB_MAX_ACCELERATION, GRAB_SPRING_ACCELERATION, GRAB_STATE_BYTES},
@@ -593,7 +595,8 @@ impl ComparisonShadow {
                         radius: finite(CONSTRUCTION_CIRCLE_RADIUS),
                     },
                     world_target,
-                    2.0 / (CONSTRUCTION_CIRCLE_RADIUS * CONSTRUCTION_CIRCLE_RADIUS),
+                    CONSTRUCTION_CIRCLE_INVERSE_MASS,
+                    CONSTRUCTION_CIRCLE_INVERSE_INERTIA,
                 )?;
             }
             ConstructionIntentV1::PlaceRectangle { world_target, .. } => {
@@ -603,7 +606,8 @@ impl ComparisonShadow {
                         half_extents: Vec2::new(x, y),
                     },
                     world_target,
-                    3.0 / (x * x + y * y),
+                    CONSTRUCTION_RECTANGLE_INVERSE_MASS,
+                    CONSTRUCTION_RECTANGLE_INVERSE_INERTIA,
                 )?;
             }
             ConstructionIntentV1::PlaceSurface { .. } => {
@@ -666,7 +670,8 @@ impl ComparisonShadow {
                         radius: finite(CONSTRUCTION_CIRCLE_RADIUS),
                     },
                     world_target,
-                    2.0 / (CONSTRUCTION_CIRCLE_RADIUS * CONSTRUCTION_CIRCLE_RADIUS),
+                    CONSTRUCTION_CIRCLE_INVERSE_MASS,
+                    CONSTRUCTION_CIRCLE_INVERSE_INERTIA,
                 )?;
                 let targeted = ConstructionIntentV1::PlaceCircleBody {
                     sequence,
@@ -688,7 +693,8 @@ impl ComparisonShadow {
                         half_extents: Vec2::new(x, y),
                     },
                     world_target,
-                    3.0 / (x * x + y * y),
+                    CONSTRUCTION_RECTANGLE_INVERSE_MASS,
+                    CONSTRUCTION_RECTANGLE_INVERSE_INERTIA,
                 )?;
                 let targeted = ConstructionIntentV1::PlaceRectangleBody {
                     sequence,
@@ -753,7 +759,8 @@ impl ComparisonShadow {
                     radius: finite(CONSTRUCTION_CIRCLE_RADIUS),
                 },
                 world_target,
-                2.0 / (CONSTRUCTION_CIRCLE_RADIUS * CONSTRUCTION_CIRCLE_RADIUS),
+                CONSTRUCTION_CIRCLE_INVERSE_MASS,
+                CONSTRUCTION_CIRCLE_INVERSE_INERTIA,
             ),
             (
                 ConstructionIntentV1::PlaceRectangle { world_target, .. },
@@ -767,7 +774,8 @@ impl ComparisonShadow {
                         half_extents: Vec2::new(x, y),
                     },
                     world_target,
-                    3.0 / (x * x + y * y),
+                    CONSTRUCTION_RECTANGLE_INVERSE_MASS,
+                    CONSTRUCTION_RECTANGLE_INVERSE_INERTIA,
                 )
             }
             (
@@ -811,9 +819,10 @@ impl ComparisonShadow {
         &mut self,
         shape: ShapeV1,
         position: Vec2,
+        inverse_mass: f32,
         inverse_inertia: f32,
     ) -> Result<(), String> {
-        self.place_body_resolved(shape, position, inverse_inertia)
+        self.place_body_resolved(shape, position, inverse_mass, inverse_inertia)
             .map(|_| ())
     }
 
@@ -821,6 +830,7 @@ impl ComparisonShadow {
         &mut self,
         shape: ShapeV1,
         position: Vec2,
+        inverse_mass: f32,
         inverse_inertia: f32,
     ) -> Result<ConstructionFeedback, String> {
         if self
@@ -850,7 +860,7 @@ impl ComparisonShadow {
             angle: finite(0.0),
             linear_velocity: Vec2::ZERO,
             angular_velocity: finite(0.0),
-            inverse_mass: finite(1.0),
+            inverse_mass: finite(inverse_mass),
             inverse_inertia: finite(inverse_inertia),
             material: MaterialV1 {
                 friction: finite(CONSTRUCTION_FRICTION),
@@ -873,6 +883,7 @@ impl ComparisonShadow {
         expected: BodyId,
         shape: ShapeV1,
         position: Vec2,
+        inverse_mass: f32,
         inverse_inertia: f32,
     ) -> Result<(), String> {
         let allocated = self.slots.allocate_lowest()?;
@@ -890,7 +901,7 @@ impl ComparisonShadow {
             angle: finite(0.0),
             linear_velocity: Vec2::ZERO,
             angular_velocity: finite(0.0),
-            inverse_mass: finite(1.0),
+            inverse_mass: finite(inverse_mass),
             inverse_inertia: finite(inverse_inertia),
             material: MaterialV1 {
                 friction: finite(CONSTRUCTION_FRICTION),
@@ -1385,5 +1396,96 @@ mod tests {
         assert_eq!(shadow.live_bodies(), 1);
         assert!(!shadow.slots.matches(killed));
         assert_eq!(shadow.failure(), None);
+    }
+
+    #[test]
+    fn box2d_shadow_construction_uses_shared_water_scale_mass_properties() {
+        let instance = crate::create_instance();
+        let adapter = pollster::block_on(crate::gpu_context::request_adapter(&instance, None))
+            .expect("test GPU adapter");
+        let (device, _) = pollster::block_on(crate::gpu_context::request_device(&adapter)).unwrap();
+        let mut scenario = crate::p5_2_generated_floor_scenario(1).unwrap();
+        scenario.settings.gravity = Vec2::ZERO;
+        let mut shadow = ComparisonShadow::new(
+            &device,
+            wgpu::TextureFormat::Rgba8Unorm,
+            &scenario,
+            64,
+            false,
+            0.02,
+        )
+        .unwrap();
+        let circle_position = Vec2::new(-2.0, 2.0);
+        let rectangle_position = Vec2::new(2.0, 2.0);
+        shadow
+            .apply_construction_intent(ConstructionIntentV1::PlaceCircle {
+                sequence: 1,
+                world_target: circle_position,
+            })
+            .unwrap();
+        shadow
+            .apply_construction_intent(ConstructionIntentV1::PlaceRectangle {
+                sequence: 2,
+                world_target: rectangle_position,
+            })
+            .unwrap();
+        let snapshots = shadow.world.snapshots().unwrap();
+        let circle = snapshots
+            .iter()
+            .find(|body| body.position == circle_position)
+            .copied()
+            .unwrap();
+        let rectangle = snapshots
+            .iter()
+            .find(|body| body.position == rectangle_position)
+            .copied()
+            .unwrap();
+        shadow
+            .world
+            .apply_impulse(
+                circle.id,
+                Vec2::new(0.0, 1.0),
+                Vec2::new(
+                    circle_position.x + CONSTRUCTION_CIRCLE_RADIUS,
+                    circle_position.y,
+                ),
+            )
+            .unwrap();
+        shadow
+            .world
+            .apply_impulse(
+                rectangle.id,
+                Vec2::new(0.0, 1.0),
+                Vec2::new(
+                    rectangle_position.x + CONSTRUCTION_RECTANGLE_HALF_EXTENTS[0],
+                    rectangle_position.y,
+                ),
+            )
+            .unwrap();
+        let snapshots = shadow.world.snapshots().unwrap();
+        let circle = snapshots.iter().find(|body| body.id == circle.id).unwrap();
+        let rectangle = snapshots
+            .iter()
+            .find(|body| body.id == rectangle.id)
+            .unwrap();
+        let close = |actual: f32, expected: f32| {
+            assert!(
+                (actual - expected).abs() <= 1.0e-5,
+                "actual={actual} expected={expected}"
+            );
+        };
+        close(circle.linear_velocity.y, CONSTRUCTION_CIRCLE_INVERSE_MASS);
+        close(
+            circle.angular_velocity,
+            CONSTRUCTION_CIRCLE_RADIUS * CONSTRUCTION_CIRCLE_INVERSE_INERTIA,
+        );
+        close(
+            rectangle.linear_velocity.y,
+            CONSTRUCTION_RECTANGLE_INVERSE_MASS,
+        );
+        close(
+            rectangle.angular_velocity,
+            CONSTRUCTION_RECTANGLE_HALF_EXTENTS[0] * CONSTRUCTION_RECTANGLE_INVERSE_INERTIA,
+        );
     }
 }

@@ -19,10 +19,13 @@ use crate::body_state::{
     BODY_COMMAND_CAPACITY, GpuBodyResetData,
 };
 use crate::construction::{
+    CONSTRUCTION_CIRCLE_INVERSE_INERTIA, CONSTRUCTION_CIRCLE_INVERSE_MASS,
     CONSTRUCTION_CIRCLE_RADIUS, CONSTRUCTION_FRICTION, CONSTRUCTION_INTENT_BYTES,
-    CONSTRUCTION_INTENT_CAPACITY, CONSTRUCTION_RECTANGLE_HALF_EXTENTS, CONSTRUCTION_RESTITUTION,
-    CONSTRUCTION_STATE_BYTES, CONSTRUCTION_SURFACE_HALF_THICKNESS, ConstructionIntentRaw,
-    construction_intent_raw, empty_construction_intent_batch, initial_construction_state,
+    CONSTRUCTION_INTENT_CAPACITY, CONSTRUCTION_RECTANGLE_HALF_EXTENTS,
+    CONSTRUCTION_RECTANGLE_INVERSE_INERTIA, CONSTRUCTION_RECTANGLE_INVERSE_MASS,
+    CONSTRUCTION_RESTITUTION, CONSTRUCTION_STATE_BYTES, CONSTRUCTION_SURFACE_HALF_THICKNESS,
+    ConstructionIntentRaw, construction_intent_raw, empty_construction_intent_batch,
+    initial_construction_state,
 };
 use crate::gpu_timing::{GpuFrameTimestampPlan, write_timestamp_marker};
 use crate::grab::{
@@ -1166,22 +1169,19 @@ impl GpuBodyWorld {
                 .copy_from_slice(bytemuck::bytes_of(parameter));
         }
         queue.write_buffer(&self.command_params, 0, &bytes);
-        let rectangle_inverse_inertia = 3.0
-            / (CONSTRUCTION_RECTANGLE_HALF_EXTENTS[0] * CONSTRUCTION_RECTANGLE_HALF_EXTENTS[0]
-                + CONSTRUCTION_RECTANGLE_HALF_EXTENTS[1] * CONSTRUCTION_RECTANGLE_HALF_EXTENTS[1]);
         let mut construction_parameters = vec![ConstructionParamsRaw {
             counts: [0, 0, self.body_count, 0],
             circle_material: [
                 CONSTRUCTION_CIRCLE_RADIUS,
-                1.0,
-                2.0 / (CONSTRUCTION_CIRCLE_RADIUS * CONSTRUCTION_CIRCLE_RADIUS),
+                CONSTRUCTION_CIRCLE_INVERSE_MASS,
+                CONSTRUCTION_CIRCLE_INVERSE_INERTIA,
                 CONSTRUCTION_FRICTION,
             ],
             rectangle_mass: [
                 CONSTRUCTION_RECTANGLE_HALF_EXTENTS[0],
                 CONSTRUCTION_RECTANGLE_HALF_EXTENTS[1],
-                1.0,
-                rectangle_inverse_inertia,
+                CONSTRUCTION_RECTANGLE_INVERSE_MASS,
+                CONSTRUCTION_RECTANGLE_INVERSE_INERTIA,
             ],
             material_padding: [CONSTRUCTION_RESTITUTION, 0.0, 0.0, 0.0],
         }];
@@ -3268,6 +3268,86 @@ mod tests {
                 slot: 2,
                 generation: 1,
             }
+        );
+    }
+
+    #[test]
+    fn gpu_construction_uses_shared_water_scale_mass_properties() {
+        let instance = crate::create_instance();
+        let adapter = pollster::block_on(crate::gpu_context::request_adapter(&instance, None))
+            .expect("test GPU adapter");
+        let (device, queue) =
+            pollster::block_on(crate::gpu_context::request_device(&adapter)).unwrap();
+        let scenario = crate::p5_2_generated_floor_scenario(1).unwrap();
+        let initial_live = scenario.bodies.len() as u32;
+        let world = GpuBodyWorld::new_generated(
+            &device,
+            wgpu::TextureFormat::Rgba8Unorm,
+            &scenario,
+            WorldCapacityPreset::default(),
+        )
+        .unwrap();
+        let mut intents = BoundedConstructionIntents::new(CONSTRUCTION_INTENT_CAPACITY).unwrap();
+        intents
+            .push(ConstructionIntentV1::PlaceCircle {
+                sequence: 1,
+                world_target: Vec2::new(-1.0, 2.0),
+            })
+            .unwrap();
+        intents
+            .push(ConstructionIntentV1::PlaceRectangle {
+                sequence: 2,
+                world_target: Vec2::new(1.0, 2.0),
+            })
+            .unwrap();
+        encode(
+            &device,
+            &queue,
+            &world,
+            &grab_batch(Vec::new()),
+            &intents.artifact(),
+        );
+
+        let state = read_construction(&device, &queue, &world);
+        assert_eq!(state.succeeded_intents, 2);
+        assert_eq!(state.placed_circles, 1);
+        assert_eq!(state.placed_rectangles, 1);
+
+        let lane_bytes = u64::from(world.body_count) * size_of::<[u32; 4]>() as u64;
+        let evidence = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("dynamic_construction_evidence"),
+            size: lane_bytes * 4,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("dynamic_construction_copy"),
+        });
+        world.copy_construction_body_evidence(&mut encoder, &evidence);
+        queue.submit([encoder.finish()]);
+        let bytes = read_buffer(&device, &evidence);
+        let property_lane = (lane_bytes * 2) as usize;
+        let property = |slot: u32| {
+            let start = property_lane + slot as usize * size_of::<[f32; 4]>();
+            bytemuck::pod_read_unaligned::<[f32; 4]>(&bytes[start..start + size_of::<[f32; 4]>()])
+        };
+        assert_eq!(
+            property(initial_live),
+            [
+                CONSTRUCTION_CIRCLE_RADIUS,
+                CONSTRUCTION_CIRCLE_RADIUS,
+                CONSTRUCTION_CIRCLE_INVERSE_MASS,
+                CONSTRUCTION_CIRCLE_INVERSE_INERTIA,
+            ]
+        );
+        assert_eq!(
+            property(initial_live + 1),
+            [
+                CONSTRUCTION_RECTANGLE_HALF_EXTENTS[0],
+                CONSTRUCTION_RECTANGLE_HALF_EXTENTS[1],
+                CONSTRUCTION_RECTANGLE_INVERSE_MASS,
+                CONSTRUCTION_RECTANGLE_INVERSE_INERTIA,
+            ]
         );
     }
 
