@@ -7,6 +7,7 @@ publish.workspace = true
 
 [dependencies]
 physbox-contracts = { path = "../../../crates/physbox-contracts" }
+physbox-particle-oracle-common = { path = "../particle-common" }
 serde_json.workspace = true
 
 [build-dependencies]

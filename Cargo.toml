@@ -11,7 +11,9 @@ members = [
   "crates/physbox-launch",
   "crates/physbox-shell",
   "tools/oracles/box2d",
+  "tools/oracles/particle-common",
   "tools/oracles/physbox3-particles",
+  "tools/oracles/liquidfun",
   "tools/benchmarks/box2d",
   "tools/benchmarks/android-gpu",
 ]

@@ -1516,12 +1516,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "physbox-liquidfun-oracle"
+version = "0.1.0"
+dependencies = [
+ "cc",
+ "physbox-contracts",
+ "physbox-engine",
+ "physbox-particle-oracle-common",
+ "serde_json",
+]
+
+[[package]]
+name = "physbox-particle-oracle-common"
+version = "0.1.0"
+dependencies = [
+ "physbox-contracts",
+]
+
+[[package]]
 name = "physbox-physbox3-particle-oracle"
 version = "0.1.0"
 dependencies = [
  "cc",
  "physbox-contracts",
  "physbox-engine",
+ "physbox-particle-oracle-common",
  "serde_json",
 ]
 

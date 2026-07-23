@@ -1,0 +1,17 @@
+[package]
+name = "physbox-liquidfun-oracle"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+physbox-contracts = { path = "../../../crates/physbox-contracts" }
+physbox-particle-oracle-common = { path = "../particle-common" }
+serde_json.workspace = true
+
+[build-dependencies]
+cc.workspace = true
+
+[dev-dependencies]
+physbox-engine = { path = "../../../crates/physbox-engine", default-features = false }

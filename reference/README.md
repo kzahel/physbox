@@ -157,6 +157,10 @@ show that browser automation is not a prerequisite for the routine lanes.
   `../physbox3/reference/liquidfun/liquidfun/Box2D/Box2D/Particle/`; its unit
   fixtures and visual scenes live under `Box2D/Unittests/` and
   `Box2D/Testbed/Tests/` in the same checkout.
+- `tools/oracles/liquidfun` builds that exact clean checkout into a
+  process-isolated secondary oracle. It shares the PhysBox-owned neutral
+  projection/result runner with `tools/oracles/physbox3-particles`, but never
+  links LiquidFun 2.3 and the PhysBox 3 Box2D v3 sidecar into one executable.
 - The actual reduced coupled sidecar is under
   `reference/physbox3-particle-sidecar/box2d3-wasm/csrc/particle_sidecar/`;
   the Emscripten bindings are a separate concern in `csrc/glue.cpp`.

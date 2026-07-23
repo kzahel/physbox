@@ -116,7 +116,7 @@ the approved plan has no unresolved ownership decision.
   equal-and-opposite particle/body contact including rotational effective mass.
 - [x] Build a thin process-isolated native PhysBox 3 sidecar adapter against
   its resolved Box2D v3/box2cpp sources.
-- [ ] Build original LiquidFun/Box2D 2.3 as a separate native secondary
+- [x] Build original LiquidFun/Box2D 2.3 as a separate native secondary
   adapter; do not combine foreign source generations in one process.
 - [ ] Calibrate the sidecar with a small fresh PhysBox 3 web corpus for
   contained water, displacement, and one dynamic-body interaction.
@@ -139,6 +139,16 @@ those clean sources with Box2D
 `45f07785abe6bfeba518fb0256a37dcd050dce32`, preserves fresh request/projection
 identity, executes contained-water and displacement sources, rejects unsupported
 grab projection deterministically, and emits `PHYSBOX5_ORACLE_SUCCESS`.
+
+Original LiquidFun checkpoint: a second executable compiles the clean
+`7f20402173fd143a3988c921bc384459c6a858f2` checkout as static LiquidFun/Box2D
+2.3, constructs its own coupled `b2World` and particle system, consumes the
+same canonical request/result records, records exact build/runtime settings,
+and emits `PHYSBOX5_ORACLE_SUCCESS`. The two native engines share only the
+PhysBox-owned projection runner; no foreign source generations or native state
+are linked into one process. Focused library and process tests pass for both
+executables, including deterministic rejection of the unsupported grab
+projection.
 
 Gate: both native processes consume the shared projection or reject unsupported
 features deterministically, emit fresh canonical results with exact source and
