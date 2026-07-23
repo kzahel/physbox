@@ -9,6 +9,7 @@ mod awake_points;
 mod awake_work;
 mod body_benchmark;
 mod body_floor_solver;
+mod body_lifecycle;
 mod body_state;
 mod body_world;
 mod branch_robust_gpu_promotion;

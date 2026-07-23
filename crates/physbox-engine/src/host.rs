@@ -1819,6 +1819,15 @@ impl EngineHost {
                 .body_world
                 .as_ref()
                 .map_or(0, GpuBodyWorld::solver_capacity_bytes),
+            kill_zone_y: crate::body_lifecycle::KILL_ZONE_Y,
+            body_lifecycle_dispatches_per_step: self
+                .body_world
+                .as_ref()
+                .map_or(0, GpuBodyWorld::body_lifecycle_dispatches_per_step),
+            body_lifecycle_capacity_bytes: self
+                .body_world
+                .as_ref()
+                .map_or(0, GpuBodyWorld::body_lifecycle_capacity_bytes),
             particle_count: self
                 .body_world
                 .as_ref()

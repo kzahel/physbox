@@ -13,6 +13,7 @@ use wgpu::util::DeviceExt;
 use crate::awake_work::SleepExecutionConfig;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::body_floor_solver::FixedFloorEvidenceLayout;
+use crate::body_lifecycle::{GpuBodyLifecycle, KILL_ZONE_Y};
 use crate::body_state::{
     ACTIVE_BODY_DISPATCH_64_OFFSET, ACTIVE_BODY_DRAW_OFFSET, BODY_COMMAND_BYTES,
     BODY_COMMAND_CAPACITY, GpuBodyResetData,
@@ -53,6 +54,7 @@ struct RenderParamsRaw {
     viewport: [f32; 4],
     camera: [f32; 4],
     sleep_visualization: [u32; 4],
+    world_bounds: [f32; 4],
 }
 
 #[repr(C)]
@@ -134,6 +136,7 @@ pub(crate) struct GpuBodyWorld {
     construction_state: wgpu::Buffer,
     construction_bind_group: wgpu::BindGroup,
     construction_pipeline: wgpu::ComputePipeline,
+    body_lifecycle: GpuBodyLifecycle,
     grab_render_vertices: wgpu::Buffer,
     grab_render_bind_group: wgpu::BindGroup,
     grab_render_prepare_pipeline: wgpu::ComputePipeline,
@@ -769,6 +772,8 @@ impl GpuBodyWorld {
                 compilation_options: Default::default(),
                 cache: None,
             });
+        let body_lifecycle =
+            GpuBodyLifecycle::new(device, &storage, &construction_state, &grab_state)?;
 
         let render_params = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("physbox5_body_render_params"),
@@ -970,6 +975,7 @@ impl GpuBodyWorld {
             construction_state,
             construction_bind_group,
             construction_pipeline,
+            body_lifecycle,
             grab_render_vertices,
             grab_render_bind_group,
             grab_render_prepare_pipeline,
@@ -1300,6 +1306,9 @@ impl GpuBodyWorld {
                 drop(pass);
                 self.storage.encode_sleep_admission(encoder);
             }
+            if self.particles.is_none() {
+                self.body_lifecycle.encode_step(encoder);
+            }
             write_timestamp_marker(
                 encoder,
                 frame_timestamps.map(GpuFrameTimestampPlan::rigid_end),
@@ -1315,6 +1324,7 @@ impl GpuBodyWorld {
                     )?;
                 }
                 particles.encode_step(encoder);
+                self.body_lifecycle.encode_step(encoder);
             } else if particle_range.count != 0 {
                 return Err("particle commands require a coupled particle world".to_owned());
             }
@@ -1353,6 +1363,7 @@ impl GpuBodyWorld {
                 plan.quiet_outer_steps,
                 plan.wake_flash_outer_steps,
             ],
+            world_bounds: [KILL_ZONE_Y, 0.0, 0.0, 0.0],
         };
         queue.write_buffer(&self.render_params, 0, bytemuck::bytes_of(&params));
         let surface_preview_active = plan.surface_preview.is_some_and(|preview| {
@@ -1698,6 +1709,7 @@ impl GpuBodyWorld {
         if let Some(particles) = &self.particles {
             records.extend(particles.capacities());
         }
+        records.extend(self.body_lifecycle.capacity_records());
         records.sort_by(|left, right| left.class.cmp(&right.class));
         records
     }
@@ -1831,6 +1843,14 @@ impl GpuBodyWorld {
             },
             GpuGeneratedContactGraph::dispatches_per_step,
         )
+    }
+
+    pub(crate) fn body_lifecycle_dispatches_per_step(&self) -> u32 {
+        self.body_lifecycle.dispatches_per_step()
+    }
+
+    pub(crate) fn body_lifecycle_capacity_bytes(&self) -> u64 {
+        self.body_lifecycle.allocated_bytes()
     }
 
     pub(crate) const fn generated_solver_configuration(
@@ -3129,6 +3149,126 @@ mod tests {
         assert_eq!(sleep_states[0].body.generation, 1);
         assert!(sleep_states[0].awake);
         assert!(!sleep_states[1].awake);
+    }
+
+    #[test]
+    fn gpu_killbox_retires_dynamic_bodies_keeps_fixed_bodies_and_reuses_slots() {
+        let instance = crate::create_instance();
+        let adapter = pollster::block_on(crate::gpu_context::request_adapter(&instance, None))
+            .expect("test GPU adapter");
+        let (device, queue) =
+            pollster::block_on(crate::gpu_context::request_device(&adapter)).unwrap();
+        let scenario = crate::p5_2_generated_floor_scenario(1).unwrap();
+        let world = GpuBodyWorld::new_generated(
+            &device,
+            wgpu::TextureFormat::Rgba8Unorm,
+            &scenario,
+            WorldCapacityPreset::default(),
+        )
+        .unwrap();
+        world.overwrite_body_pose_for_test(&queue, 0, [0.0, KILL_ZONE_Y - 2.0, 0.0, 0.0]);
+        world.overwrite_body_pose_for_test(&queue, 1, [0.0, KILL_ZONE_Y - 2.0, 0.0, 0.0]);
+        encode(
+            &device,
+            &queue,
+            &world,
+            &grab_batch(vec![GrabIntentV1::Begin {
+                sequence: 1,
+                world_target: Vec2::new(0.0, KILL_ZONE_Y - 2.0),
+            }]),
+            &empty_construction_intent_batch(),
+        );
+
+        let state = read_construction(&device, &queue, &world);
+        assert_eq!(state.live_bodies, 1);
+        assert_eq!(state.grab_invalidations, 1);
+        let active = read_active_bodies(&device, &queue, &world);
+        assert_eq!(&active[..3], &[1, 0, 1]);
+        assert_eq!(active[20], 1);
+        let validation = read_validation_state_bytes(&device, &queue, &world);
+        let lane_bytes = world.body_count as usize * size_of::<[u32; 4]>();
+        let metadata =
+            bytemuck::cast_slice::<u8, [u32; 4]>(&validation[lane_bytes * 2..lane_bytes * 3]);
+        assert_eq!(metadata[0], [2, 0, 0, 0]);
+        assert_ne!(metadata[1][1] & 1, 0);
+
+        let grab_readback = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("killbox_test_grab_readback"),
+            size: u64::from(GRAB_STATE_BYTES),
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("killbox_test_grab_copy"),
+        });
+        world.copy_grab_state(&mut encoder, &grab_readback);
+        queue.submit([encoder.finish()]);
+        assert!(
+            !decode_grab_state(&read_buffer(&device, &grab_readback))
+                .unwrap()
+                .active
+        );
+
+        let mut placement = BoundedConstructionIntents::new(CONSTRUCTION_INTENT_CAPACITY).unwrap();
+        placement
+            .push(ConstructionIntentV1::PlaceCircle {
+                sequence: 2,
+                world_target: Vec2::new(-2.0, 2.0),
+            })
+            .unwrap();
+        encode(
+            &device,
+            &queue,
+            &world,
+            &grab_batch(Vec::new()),
+            &placement.artifact(),
+        );
+        let state = read_construction(&device, &queue, &world);
+        assert_eq!(state.live_bodies, 2);
+        assert_eq!(state.last_body.unwrap().slot, 0);
+        assert_eq!(state.last_body.unwrap().generation, 2);
+        let active = read_active_bodies(&device, &queue, &world);
+        assert_eq!(&active[20..22], &[0, 1]);
+
+        let exhausted = GpuBodyWorld::new_generated(
+            &device,
+            wgpu::TextureFormat::Rgba8Unorm,
+            &scenario,
+            WorldCapacityPreset::default(),
+        )
+        .unwrap();
+        exhausted.overwrite_body_generation_for_test(&queue, 0, u32::MAX);
+        exhausted.overwrite_body_pose_for_test(&queue, 0, [0.0, KILL_ZONE_Y - 2.0, 0.0, 0.0]);
+        encode(
+            &device,
+            &queue,
+            &exhausted,
+            &grab_batch(Vec::new()),
+            &empty_construction_intent_batch(),
+        );
+        let mut placement = BoundedConstructionIntents::new(CONSTRUCTION_INTENT_CAPACITY).unwrap();
+        placement
+            .push(ConstructionIntentV1::PlaceCircle {
+                sequence: 1,
+                world_target: Vec2::new(-2.0, 2.0),
+            })
+            .unwrap();
+        encode(
+            &device,
+            &queue,
+            &exhausted,
+            &grab_batch(Vec::new()),
+            &placement.artifact(),
+        );
+        assert_eq!(
+            read_construction(&device, &queue, &exhausted)
+                .last_body
+                .unwrap(),
+            physbox_contracts::BodyId {
+                slot: 2,
+                generation: 1,
+            }
+        );
     }
 
     #[test]

@@ -2,6 +2,7 @@ struct RenderParams {
     viewport: vec4f,
     camera: vec4f,
     sleep_visualization: vec4u,
+    world_bounds: vec4f,
 };
 
 struct SleepStateV1 {
@@ -69,7 +70,14 @@ fn background_fragment(@builtin(position) pixel: vec4f) -> @location(0) vec4f {
                      1.0 - pixel.y / size.y * 2.0);
     let world = params.camera.xy + clip * params.camera.zw;
     let horizon = clamp(0.52 + world.y * 0.08, 0.0, 1.0);
-    let color = mix(vec3f(0.018, 0.024, 0.040), vec3f(0.038, 0.052, 0.078), horizon);
+    var color = mix(vec3f(0.018, 0.024, 0.040), vec3f(0.038, 0.052, 0.078), horizon);
+    let world_per_pixel = 2.0 * params.camera.w / size.y;
+    let kill_line = 1.0 - smoothstep(
+        world_per_pixel,
+        2.0 * world_per_pixel,
+        abs(world.y - params.world_bounds.x),
+    );
+    color = mix(color, vec3f(0.78, 0.08, 0.09), 0.85 * kill_line);
     return vec4f(color, 1.0);
 }
 

@@ -10,7 +10,7 @@ use crate::{
     SleepCycleMetricsV1,
 };
 
-pub const SCENE_CONTRACT_VERSION: u32 = 13;
+pub const SCENE_CONTRACT_VERSION: u32 = 14;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -24,6 +24,9 @@ pub struct SceneContract {
     pub contact_point_count: u32,
     pub solver_dispatches_per_step: u32,
     pub solver_capacity_bytes: u64,
+    pub kill_zone_y: f32,
+    pub body_lifecycle_dispatches_per_step: u32,
+    pub body_lifecycle_capacity_bytes: u64,
     pub particle_count: u32,
     pub particle_capacity: u32,
     pub particle_dispatches_per_step: u32,
@@ -311,6 +314,8 @@ impl FrameReport {
             solver_dispatches_per_step: u32,
             #[serde(rename = "m")]
             solver_capacity_bytes: u64,
+            #[serde(rename = "l")]
+            kill_zone_y: f32,
             #[serde(rename = "o")]
             capacity_overflowed: bool,
             #[serde(rename = "x", skip_serializing_if = "Option::is_none")]
@@ -435,6 +440,7 @@ impl FrameReport {
                 contact_point_count: self.scene_contract.contact_point_count,
                 solver_dispatches_per_step: self.scene_contract.solver_dispatches_per_step,
                 solver_capacity_bytes: self.scene_contract.solver_capacity_bytes,
+                kill_zone_y: self.scene_contract.kill_zone_y,
                 capacity_overflowed: self.scene_contract.capacity_overflowed,
                 generated_solver_execution: self
                     .scene_contract
@@ -676,6 +682,9 @@ mod tests {
                 contact_point_count: 2,
                 solver_dispatches_per_step: 68,
                 solver_capacity_bytes: 512,
+                kill_zone_y: crate::body_lifecycle::KILL_ZONE_Y,
+                body_lifecycle_dispatches_per_step: 5,
+                body_lifecycle_capacity_bytes: 40_196,
                 particle_count: 4_096,
                 particle_capacity: 32_768,
                 particle_dispatches_per_step: 92,

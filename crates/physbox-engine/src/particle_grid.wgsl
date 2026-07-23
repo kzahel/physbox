@@ -40,6 +40,10 @@ fn cell_index(cell: vec2i) -> u32 {
     return u32(cell.y) * params.counts.z + u32(cell.x);
 }
 
+fn increment(value: u32) -> u32 {
+    return select(value + 1u, value, value == 0xffffffffu);
+}
+
 @compute @workgroup_size(64)
 fn clear_grid(@builtin(global_invocation_id) invocation: vec3u) {
     let index = invocation.x;
@@ -57,6 +61,20 @@ fn count_grid(@builtin(global_invocation_id) invocation: vec3u) {
         return;
     }
     let index = active_indices[active_index];
+    if (positions[index].y < params.grid.w) {
+        let removed = atomicCompareExchangeWeak(&active_flags[index], 1u, 0u);
+        if (removed.exchanged) {
+            let previous_metadata = metadata[index];
+            metadata[index] = vec4u(
+                increment(previous_metadata.x),
+                previous_metadata.y,
+                previous_metadata.z,
+                0u,
+            );
+            atomicAdd(&counters[COUNTER_KILLED], 1u);
+        }
+        return;
+    }
     let cell = cell_for(positions[index].xy);
     if !cell_is_valid(cell) {
         let removed = atomicCompareExchangeWeak(&active_flags[index], 1u, 0u);

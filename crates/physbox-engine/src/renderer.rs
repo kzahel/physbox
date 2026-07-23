@@ -11,6 +11,7 @@ use std::sync::{Arc, Mutex};
 use web_time::Instant;
 
 const ASYNC_INTERACTION_DIAGNOSTIC_CAPACITY: usize = 8;
+const LIFECYCLE_DIAGNOSTIC_SAMPLE_INTERVAL_STEPS: u64 = 30;
 
 /// Raw host display metrics used by the shared renderer to resolve logical UI
 /// density without giving a platform adapter ownership of layout policy.
@@ -220,10 +221,13 @@ impl SurfaceRenderer {
             #[cfg(feature = "box2d-comparator")]
             self.pending_grab_diagnostics.clear();
         }
+        let lifecycle_sample_due = report.fixed_steps_this_frame != 0
+            && report.fixed_steps_total % LIFECYCLE_DIAGNOSTIC_SAMPLE_INTERVAL_STEPS == 0;
         let scheduled_construction = if report
             .body_commands
             .construction_intent_dispatches_this_frame
             != 0
+            || lifecycle_sample_due
         {
             if self.pending_construction_diagnostics.len() == ASYNC_INTERACTION_DIAGNOSTIC_CAPACITY
             {

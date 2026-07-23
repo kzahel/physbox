@@ -192,7 +192,7 @@ fn place_body(current: ConstructionState, kind: u32,
     var deep_overlap = false;
     for (var slot = 0u; slot < params.counts.z; slot += 1u) {
         let identity = metadata[slot];
-        if ((identity.y & FLAG_LIVE) == 0u) {
+        if ((identity.y & FLAG_LIVE) == 0u && identity.x != 0xffffffffu) {
             if (free_slot == NO_SLOT) {
                 free_slot = slot;
             }
@@ -294,7 +294,9 @@ fn place_surface(current: ConstructionState, kind: u32,
     var output = current;
     var free_slot = NO_SLOT;
     for (var slot = 0u; slot < params.counts.z; slot += 1u) {
-        if ((metadata[slot].y & FLAG_LIVE) == 0u && free_slot == NO_SLOT) {
+        if ((metadata[slot].y & FLAG_LIVE) == 0u &&
+            metadata[slot].x != 0xffffffffu &&
+            free_slot == NO_SLOT) {
             free_slot = slot;
         }
     }

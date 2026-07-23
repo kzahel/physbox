@@ -11,6 +11,7 @@ use wgpu::util::DeviceExt;
 
 use crate::{
     BodySlotRegistry, CameraFrame2d, GrabValidationState,
+    body_lifecycle::KILL_ZONE_Y,
     construction::{
         CONSTRUCTION_CIRCLE_RADIUS, CONSTRUCTION_FRICTION, CONSTRUCTION_RECTANGLE_HALF_EXTENTS,
         CONSTRUCTION_RESTITUTION,
@@ -398,6 +399,23 @@ impl ComparisonShadow {
         if let Err(error) = self.world.step(self.fixed_dt, self.substeps) {
             self.failed = Some(error);
             return;
+        }
+        let killed = match self.world.snapshots() {
+            Ok(snapshots) => snapshots
+                .into_iter()
+                .filter(|body| !body.fixed && body.position.y < KILL_ZONE_Y)
+                .map(|body| body.id)
+                .collect::<Vec<_>>(),
+            Err(error) => {
+                self.failed = Some(error);
+                return;
+            }
+        };
+        for body in killed {
+            if let Err(error) = self.erase_body(body) {
+                self.failed = Some(error);
+                return;
+            }
         }
         self.completed_steps = self.completed_steps.saturating_add(1);
     }
@@ -997,6 +1015,7 @@ struct RenderParamsRaw {
     viewport: [f32; 4],
     camera: [f32; 4],
     sleep_visualization: [u32; 4],
+    world_bounds: [f32; 4],
 }
 
 pub(crate) struct ComparisonRenderPlan {
@@ -1223,6 +1242,7 @@ impl ComparisonRenderer {
                 plan.quiet_outer_steps,
                 plan.wake_flash_outer_steps,
             ],
+            world_bounds: [KILL_ZONE_Y, 0.0, 0.0, 0.0],
         };
         queue.write_buffer(&self.params, 0, bytemuck::bytes_of(&params));
 
@@ -1334,4 +1354,36 @@ fn render_pipeline(
 
 fn finite(value: f32) -> FiniteF32 {
     FiniteF32::new(value).expect("comparison construction constants are finite")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn box2d_shadow_applies_the_shared_dynamic_killbox_rule() {
+        let instance = crate::create_instance();
+        let adapter = pollster::block_on(crate::gpu_context::request_adapter(&instance, None))
+            .expect("test GPU adapter");
+        let (device, _) = pollster::block_on(crate::gpu_context::request_device(&adapter)).unwrap();
+        let mut scenario = crate::p5_2_generated_floor_scenario(1).unwrap();
+        let killed = scenario.bodies[0].id;
+        scenario.bodies[0].position.y = KILL_ZONE_Y - 2.0;
+        let mut shadow = ComparisonShadow::new(
+            &device,
+            wgpu::TextureFormat::Rgba8Unorm,
+            &scenario,
+            64,
+            false,
+            0.02,
+        )
+        .unwrap();
+
+        shadow.advance(1);
+
+        assert_eq!(shadow.completed_steps(), 1);
+        assert_eq!(shadow.live_bodies(), 1);
+        assert!(!shadow.slots.matches(killed));
+        assert_eq!(shadow.failure(), None);
+    }
 }

@@ -8,14 +8,16 @@ use physbox_contracts::{
 };
 use wgpu::util::DeviceExt;
 
-use crate::{CameraFrame2d, GpuBodyStorage, renderer::RenderFrameTarget};
+use crate::{
+    CameraFrame2d, GpuBodyStorage, body_lifecycle::KILL_ZONE_Y, renderer::RenderFrameTarget,
+};
 
 pub(crate) const MAX_PRODUCT_PARTICLE_CAPACITY: u32 = 32_768;
 pub(crate) const LIQUID_SANDBOX_PARTICLE_CAPACITY: u32 = 8_192;
 pub(crate) const PARTICLE_COMMAND_CAPACITY: u32 = 64;
 const PARTICLE_COUNTER_WORDS: u32 = 21;
 const GRID_WIDTH: u32 = 64;
-const GRID_HEIGHT: u32 = 64;
+const GRID_HEIGHT: u32 = 68;
 const GRID_CELL_COUNT: u32 = GRID_WIDTH * GRID_HEIGHT;
 const PARTICLE_WORKGROUP_SIZE: u32 = 64;
 const PARTICLE_SUBSTEPS: u32 = 2;
@@ -419,7 +421,7 @@ impl GpuParticleWorld {
                 material.radius.get() * material.max_pressure_displacement_multiplier.get(),
                 material.particle_mass().recip(),
             ],
-            grid: [-16.0, -8.0, 0.5, -8.0],
+            grid: [-16.0, KILL_ZONE_Y, 0.5, KILL_ZONE_Y],
             counts: [
                 capacity,
                 body_storage.layout().capacity_elements,
@@ -2202,6 +2204,50 @@ mod tests {
             validation_error.is_none(),
             "GPU particle pipeline validation failed: {validation_error:?}"
         );
+    }
+
+    #[test]
+    fn gpu_particle_killbox_despawns_without_capacity_escape() {
+        let instance = crate::create_instance();
+        let adapter = pollster::block_on(crate::gpu_context::request_adapter(&instance, None))
+            .expect("test GPU adapter");
+        let (device, queue) =
+            pollster::block_on(crate::gpu_context::request_device(&adapter)).unwrap();
+        let scenario = liquid_sandbox_scenario().unwrap();
+        let body_storage = GpuBodyStorage::new(
+            &device,
+            scenario.rigid.bodies.len() as u32,
+            BODY_COMMAND_CAPACITY,
+            &scenario.rigid.bodies,
+        )
+        .unwrap();
+        let particles = GpuParticleWorld::new(
+            &device,
+            wgpu::TextureFormat::Rgba8UnormSrgb,
+            &scenario,
+            &body_storage,
+        )
+        .unwrap();
+        queue.write_buffer(
+            &particles.positions,
+            0,
+            bytemuck::bytes_of(&[0.0, KILL_ZONE_Y - 1.0, 0.0, KILL_ZONE_Y - 1.0]),
+        );
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("physbox5_particle_killbox_step"),
+        });
+        particles.encode_step(&mut encoder);
+        queue.submit([encoder.finish()]);
+        device.poll(wgpu::PollType::Wait).unwrap();
+
+        let bytes = capture_particle_bytes(&device, &queue, &particles);
+        let diagnostics = particles.decode_validation_state(&bytes).unwrap();
+        assert_eq!(diagnostics.active_count, particles.initial_count - 1);
+        assert_eq!(diagnostics.active_flags_count, particles.initial_count - 1);
+        assert_eq!(diagnostics.killed_particles, 1);
+        assert_eq!(diagnostics.escaped_particles, 0);
+        assert_eq!(diagnostics.overflow_flags, 0);
+        assert!(diagnostics.capacity_clean);
     }
 
     #[test]
