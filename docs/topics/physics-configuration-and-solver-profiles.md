@@ -95,6 +95,7 @@ The product configuration separates values whose effects and ownership differ:
 | Contact recovery | speculative distance, maximum depenetration velocity | Collision anticipation and bounded recovery from overlap; initially reported, not placed in the primary editor |
 | Solver family | soft-coupled, hard/direct comparison, later explicit candidates | Discrete recurrence, ordering, preparation, and relaxation policy |
 | Sleeping request | off/on request, with separate effective state | Effective on request after S23.3-S23.6; off by default pending the S23.7 promotion decision |
+| Sleep threshold/grouping | shared bounded speed threshold; PhysBox local-4/local-8/exact | Threshold is projected into PhysBox and public Box2D state; grouping is PhysBox-only and local-4 remains the compatibility default |
 
 One canonical versioned configuration must project into `EngineConfig` and the
 neutral scenario exactly once. `physbox-launch` owns names, parsing, defaults,
@@ -102,10 +103,11 @@ help, web mappings, and Android JSON argv. Platform adapters transport the
 selection unchanged. They may not own rates, profile defaults, parameter
 limits, or rebuild behavior.
 
-`PhysicsConfigurationV2` now owns `fixed_step_hz`, `substeps`, `iterations`,
-the contact values projected into `SolverSettingsV1`, and the experimental
-sleeping request; there is no second platform-local settings model. Version 2
-was required because the serialized configuration gained that field. The scene
+`PhysicsConfigurationV3` now owns `fixed_step_hz`, `substeps`, `iterations`,
+the contact values projected into `SolverSettingsV1`, the experimental
+sleeping request, the shared bounded sleep-speed threshold, and PhysBox
+sleep-grouping selection; there is no second platform-local settings model.
+Version 3 was required when S30 added the threshold and grouping. The scene
 contract and validation artifacts record:
 
 - selected profile id and human label;
@@ -115,7 +117,8 @@ contract and validation artifacts record:
 - biased-iteration and relaxation structure;
 - complete contact coefficients and recovery policy;
 - passes, dispatches, work, and allocation implied by the configuration; and
-- requested/effective sleeping state plus sleep policy/layout versions; and
+- requested/effective sleeping state, shared threshold, PhysBox grouping, and
+  sleep policy/layout versions;
 - configuration version/hash so a screenshot or metric is reproducible.
 
 At the inert S23.2 checkpoint, `--sleeping on|off` and the web query transport
@@ -129,6 +132,15 @@ transport control without enabling the feature or making a default decision.
 S23.3-S23.6 subsequently made the request effective through the same
 configuration and control. Sleeping remains off by default, and final
 promotion remains owned by S23.7.
+
+S30 extends the same WORLD page with `SLEEP THRESHOLD` and PhysBox-only
+`SLEEP GROUPING`. Threshold remains visible in Box2D view and is applied
+through Box2D's public sleep-threshold state; PhysBox-only solver/grouping
+controls remain hidden there. Applying either value rebuilds both independently
+evolving worlds from the same authored scene while preserving camera, tool,
+sleep visualization, and selected engine. The choices are `0.01`, `0.02`,
+`0.05`, and `0.1 m/s`, plus local-4/local-8/exact. The defaults remain
+`0.02 m/s`, local-4, and sleeping off.
 
 World capacity is a separate engine setting because it changes fixed GPU
 storage and broadphase work rather than the solver equation. The shared launch
@@ -146,9 +158,11 @@ reproducibility. The complete cost and physical-device rationale for the safe
 64-slot default live in the
 [performance topic](performance-and-scale.md#interactive-world-capacity-policy).
 
-The complete physics preference is `physbox5.physics.v3`. It adds the sleeping
-request and migrates version 2 with sleeping off, preserving the ordinary
-default while keeping the launch URL reproducible.
+The complete physics preference is `physbox5.physics.v4`. It adds the S30
+threshold and grouping, migrates version 3 with `0.02 m/s` and local-4, and
+retains the earlier version-2 migration with sleeping off. The shared launch
+URL projects `sleep-threshold` and `sleep-grouping` so the complete choice
+remains reproducible.
 
 ## Initial bounds and presets
 

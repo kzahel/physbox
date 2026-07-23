@@ -1,11 +1,12 @@
 # GPU sleep-island connectivity research
 
-Status: S27's decision-observation stopping point is complete, and human
-review on 2026-07-23 authorizes [S30](../tactical/030-configurable-sleep-grouping.md)
-to connect those exact labels/reductions to an explicit behavior option beside
-local-4 and local-8. Sleeping remains opt-in and off by default. Exact is not
-the selected grouping until S30 records behavior, cost, and cross-host
-qualification.
+Status: S30's configurable behavior switch is complete, 2026-07-23. Exact
+labels/reductions now drive an explicit behavior option beside local-4 and
+local-8, with matched cost, cycle diagnostics, browser, headless, ARM64/APK,
+and authorized AVD evidence. Sleeping remains opt-in and off by default.
+Exact fixes the governed 100-body bounded-grouping failure and is the
+recommended explicit comparison for that behavior, but local-4 remains the
+compatibility default pending broader natural-fixture and adapter evidence.
 
 Governing behavior and current implementation:
 [GPU sleeping and waking](gpu-sleeping-and-waking.md). Performance claims and
@@ -18,20 +19,21 @@ rigid behavior authority is [Box2D](box2d-rigid-authority.md), pinned at
 
 ## Current decision
 
-Implement local-4, local-8, and exact as explicit PhysBox sleep-grouping
-choices under S30. Interactive same-application Box2D comparison now makes the
-mixed-transition behavior directly inspectable and human review has chosen to
-run the causal experiment despite S27's evolved fixtures showing no changed
-transition. The experiment must preserve the earlier evidence: exact
-connectivity enforces a whole-component invariant but cannot make residual
-solver motion qualify as rest.
+Retain implemented local-4, local-8, and exact as explicit PhysBox
+sleep-grouping choices. Interactive same-application Box2D comparison makes
+the mixed-transition behavior directly inspectable. Exact connectivity
+enforces a whole-current-component invariant but cannot make residual solver
+motion qualify as rest.
 
 Local-8 is a diagnostic radius extension, not an island approximation eligible
-for promotion. Exact reuses the already-qualified static component labels and
-root reductions. If exact eliminates mixed cuts but retains a pile awake, the
-result belongs to solver/readiness work. If exact sleeps a fully ready
-component together and removes the wake wave at acceptable cost, it may become
-the selected experimental grouping through S30's recorded disposition.
+for promotion. Exact reuses the qualified static component labels and root
+reductions. In the clean 1,200-step 100-body poured pile, local-4 and local-8
+retain all bodies awake, while exact reaches stable all-body sleep at step 189
+and matched-threshold Box2D at step 192. This confirms the causal behavior
+interactive review predicted. Exact remains explicit rather than replacing
+local-4 from one adapter and natural fixture; complete behavior/cost
+provenance and that disposition are in
+[S30](../tactical/030-configurable-sleep-grouping.md).
 
 The S27 observer adds four root reduction/comparison dispatches to S26's exact
 rebuild: 33 dispatches at a 64-body reserve and 41 at 256, versus the current
@@ -453,9 +455,10 @@ persistent/deferred-split prototype, not for increasing K.
    no effect on sleep behavior. S26 passes and is stopped at human review.
 2. **Component reductions — complete:** S27 exact wake/readiness reductions
    match CPU checks beside K=4 and do not affect applied state.
-3. **Configurable behavior switch — active under S30:** human review admits
-   local-4, local-8, and exact for interactive causal comparison, with the S27
-   observer result retained as the pre-switch baseline.
+3. **Configurable behavior switch — complete under S30:** local-4, local-8,
+   and exact are cross-host product options; exact removes the governed
+   100-body wake-cycle failure at measured bounded cost and remains explicit
+   pending broader default evidence.
 4. **Persistent optimization:** pursue additions plus deferred dirty splits
    only when static measurements demonstrate that maintenance, rather than
    broader whole-island solve work, is the limiting cost.

@@ -1,8 +1,10 @@
 # GPU sleeping and waking
 
-Status: manual checkpoint, 2026-07-22. Tactical S23.1 through S23.6 are
-complete, and the post-review contact sleep-cycle defect is corrected and
-qualified; work is stopped before the manual promotion/default decision
+Status: manual checkpoint, updated 2026-07-23. Tactical S23.1 through S23.6
+are complete, the post-review contact sleep-cycle defect is corrected and
+qualified, and S30's configurable shared threshold, local-4/local-8/exact
+grouping, and cycle diagnostics are complete. Work remains stopped before the
+manual promotion/default decision
 reserved for S23.7. S24's native awake 12-stack quiet failure now holds that
 decision behind a separate human solver/configuration checkpoint. Sleeping is
 effective when explicitly requested but remains off by default. An opt-in GPU
@@ -58,7 +60,7 @@ change only with implementation and evidence, not because this design exists.
 | Wake roots and bounded propagation | complete | Generation-safe event roots and four deterministic contact-neighbor rounds execute before solve; persisted resting contacts are not roots. |
 | Automatic sleep admission | complete | Saturating per-body timers and four-round contact blockers coordinate admission within the selected bound, zero transition velocities, and prevent dormant drift. |
 | Awake-driven solve and integration | complete | Dense awake points and bounded solver bodies size solve/integration while live collision, persistence, and rendering retain sleepers (S23.5). |
-| Toggle and configuration surface | active S30 follow-up | Launch-owned state and the engine-rendered `MENU → WORLD` toggle make sleeping effective on request and persist the choice. S30 adds a shared public threshold plus PhysBox local-4/local-8/exact grouping; the sleeping request remains off by default. |
+| Toggle and configuration surface | complete S30 follow-up | Launch-owned state and the engine-rendered `MENU → WORLD` controls make sleeping effective on request, configure one shared PhysBox/Box2D threshold, switch PhysBox among local-4/local-8/exact, and persist the choices. The sleeping request remains off and local-4 remains the compatibility grouping default. |
 | Interactive state visualization | complete | The engine-rendered `SLEEP VISUALS` toggle consumes GPU sleep/grab state directly and distinguishes active, quiet, sleeping, and forced/recently woken dynamics without readback. |
 | Sleeping-city performance curves | complete | Valid matched 1%/10%/100% awake curves show bounded work reduction; S23.6 retains live pair processing and makes no public product-rate claim. |
 | Cross-host qualification and promotion | held | S24 passes native 2/4/8 but misses the awake 12-stack quiet band; browser/physical awake expansion and the S23.7 human default review wait for an authorized solver/configuration follow-up. |
@@ -314,6 +316,44 @@ physical product app is stopped after capture. These checks validate the
 implementation boundary but do not replace S23.7's mask-rule disclosure and
 explicit human decision.
 
+### S30 configurable grouping and cycle-diagnostic checkpoint
+
+S30 completes the interactive causal experiment requested after S27. The
+versioned launch configuration and engine-rendered WORLD page expose one
+bounded sleep-speed threshold to both PhysBox and Box2D and three PhysBox-only
+groupings: local-4, local-8, and exact. Browser preference version 4 and shared
+query projection preserve the values across reload. Box2D receives only its
+public threshold; no private timer, island, or wake-cause state is patched or
+shown.
+
+Exact rebuilds current touching dynamic-dynamic components on the GPU,
+reduces/broadcasts wake roots before awake compaction, and reduces/broadcasts
+readiness blockers before admission. A deterministic 16-body chain wakes
+5/9/16 bodies in local-4/local-8/exact and reports 1/1/0 mixed cuts. Public
+cycle diagnostics report per-step sleep/wake cohorts, current mixed cuts,
+accumulated awake-body-time, and stable sleep only after the full quiet
+confirmation horizon. Interactive delivery remains asynchronous; bounded
+headless validation may read the final diagnostic after advancement.
+
+The motivating 100-body poured pile at a shared `0.05 m/s` threshold gives the
+important behavioral result: local-4 and local-8 retain all 100 bodies awake
+through step 1,200, while exact reaches stable all-body sleep at step 189;
+matched-threshold Box2D reaches stable all-body sleep at step 192. Awake-body
+time is 118,881/118,154/18,800/12,800 respectively. The result confirms that
+bounded grouping can interact with settling exactly as interactive review
+suggested, while Box2D's lower awake-body-time confirms that exact PhysBox
+components are not an implementation claim of Box2D island equivalence.
+
+On the clean matched 1%-awake 1K-body native GPU cost row,
+local-4/local-8/exact record 1,527/1,543/1,560 dispatches and GPU P50
+6.294/6.374/5.408 ms; exact allocates 8,288 bytes more than the bounded modes.
+All rows replay exactly and remain capacity-clean. Because that evidence spans
+one adapter and the natural behavioral win spans one dense fixture, exact is
+retained as the recommended explicit comparison for this failure mode rather
+than silently replacing local-4 as the default. Sleeping itself remains off
+pending the separate S23.7 review. Complete provenance and cross-host gates
+are in [tactical S30](../tactical/030-configurable-sleep-grouping.md).
+
 ### Post-review Box2D alignment correction
 
 Interactive visualization revealed that even two stationary touching bodies
@@ -338,19 +378,23 @@ before promotion, not a default change or a claim of whole-island equivalence.
 
 ## Selected implementation direction
 
-Per-body sleep timers with bounded contact-neighbor admission and wake
-propagation, executed entirely on the GPU, one shared algorithm at every
-capacity tier.
+Per-body sleep timers with a configurable GPU contact-grouping decision:
+local-4 is the compatibility default, local-8 is the bounded-radius control,
+and exact GPU connected components are the recommended explicit comparison
+for pile wake-wave behavior. One semantic implementation serves every
+capacity tier; no grouping requires CPU readback.
 
-Full Box2D-style island sleeping is a connected-components problem that is
-awkward without readback, as already recorded in the authoritative topic.
-Each quiet timer therefore remains per-body, but a ready counter saturates
-instead of immediately sleeping while a not-ready contact neighbor reaches it
-within `K` rounds. The bounded neighborhood admits together once no blocker
-reaches it. Paths longer than `K` can still partially sleep or wake and remain
-the accepted, declared behavioral difference from the island authority. The
-≤64-tier workgroup-island representation is explicitly not reused, so sleep
-semantics cannot depend on the capacity preset.
+Each quiet timer remains per-body. Under a local grouping, a ready counter
+saturates instead of immediately sleeping while a not-ready contact neighbor
+reaches it within `K` rounds, and the bounded neighborhood admits together
+once no blocker reaches it. Paths longer than `K` can still partially sleep or
+wake. Under exact grouping, current touching dynamic-dynamic components
+reduce/broadcast roots and blockers so no component edge crosses the
+awake/asleep cut. This is not Box2D's persistent island/cold-storage
+implementation, but it supplies the whole-current-component transition
+invariant on the GPU. The ≤64-tier workgroup-island representation is
+explicitly not reused, so sleep semantics cannot depend on the capacity
+preset.
 
 ### Live bodies and awake bodies are different sets
 
@@ -470,13 +514,14 @@ Sleeping must be reversible and comparable from day one:
   validation artifacts so any screenshot or metric is reproducible.
   Experimental policies register through the same registry pattern as solver
   profiles and may be hidden behind laboratory access, but a hidden preset
-  may not change the ordinary default. Thresholds and propagation policy are
-  initially reported policy constants, not general user tuning knobs.
+  may not change the ordinary default. S30 promotes the bounded speed
+  threshold and grouping choice into public configuration while the remaining
+  policy constants stay fixed.
 
 ### Interactive sleep-state visualization
 
 `MENU → WORLD → SLEEP VISUALS` is a presentation-only, engine-rendered review
-mode. It is off by default, is not part of `PhysicsConfigurationV2`, and
+mode. It is off by default, is not part of `PhysicsConfigurationV3`, and
 survives an in-session scenario or physics-configuration rebuild so a reviewer
 can compare states without re-enabling it. Turning it on does not request
 sleeping; useful review normally enables `SLEEP REQUEST` as well.
@@ -495,7 +540,7 @@ transition or an interaction-held mark:
 Fixed bodies retain their gray styling. Classification reads generation- and
 layout-checked `SleepStateV1` plus the existing GPU grab state in the body
 vertex shader; it introduces no simulation-dependent CPU readback, no new
-physics state, and no alternate host path. UI report version 8 exposes
+physics state, and no alternate host path. UI report version 9 exposes
 `sleepVisualsEnabled`; the compact Android marker reserves bit 30 for the same
 presentation state. The normal renderer remains pixel-compatible when the
 mode is off.

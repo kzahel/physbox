@@ -57,6 +57,14 @@ return with their values intact. The existing sleep visualization renders
 Box2D's public authoritative awake/asleep state; PhysBox-only quiet and
 wake-cause marks are not attributed to Box2D.
 
+S30 adds one shared `SLEEP THRESHOLD` control and public sleep-cycle
+comparison metrics. The threshold is applied identically to PhysBox and
+Box2D's public body threshold state and survives recreation/reload. PhysBox's
+local-4/local-8/exact grouping control is hidden while Box2D is visible.
+Box2D reports authoritative public awake/asleep cohorts, awake-body-time, and
+stable-sleep progress; mixed-contact cuts, private countdowns, island
+membership, and wake causes remain absent rather than observer-invented.
+
 Native and Android builds compile the enumerated pinned C source directly.
 The browser loads the equivalent pinned Emscripten module through an opaque
 leaf bridge. Missing exports, revision mismatch, action overflow, or identity
@@ -131,8 +139,8 @@ controls, split screen, DOM panel, or separate camera are added.
 ## Parameter equivalence
 
 Geometry, stable identities, transforms, velocities, mass/inertia, material,
-gravity, fixed `dt`, substeps, sleeping request, and neutral actions are shared
-where Box2D supports them exactly.
+gravity, fixed `dt`, substeps, sleeping request, public sleep-speed threshold,
+and neutral actions are shared where Box2D supports them exactly.
 
 PhysBox contact hertz, damping, static multiplier, speculative distance,
 depenetration limit, iteration policy, scheduler, and other implementation

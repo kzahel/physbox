@@ -58,13 +58,14 @@ a running log.
 - [GPU sleeping and waking](gpu-sleeping-and-waking.md) — master record for
   the sleeping/waking feature: per-body timers with bounded neighbor wake
   propagation, versioned sleep state, wake-trigger semantics, the
-  `sleeping_enabled` toggle, GPU state visualization and policy experimentation
-  surface, the mask rule against concealing awake losses, and the S23 execution
-  overview.
+  `sleeping_enabled` toggle, shared PhysBox/Box2D threshold,
+  local-4/local-8/exact PhysBox grouping, GPU state/cycle visualization and
+  diagnostics, the mask rule against concealing awake losses, and the S23/S30
+  execution overview.
 - [GPU sleep-island connectivity research](gpu-sleep-island-connectivity.md) —
   Box2D persistent-island source study, the measured K=4 and exact-observer
-  baselines, and S30's authorized local-4/local-8/exact behavior comparison
-  with performance and promotion gates.
+  baselines, and S30's implemented local-4/local-8/exact behavior comparison,
+  poured-pile result, cost evidence, and default reconsideration gates.
 - [Awake settling and rest stability](awake-settling-and-rest-stability.md) —
   resting-contact identity, warm-start continuity, soft-contact damping,
   realistic drop fixtures, awake quality gates, and the required visible
