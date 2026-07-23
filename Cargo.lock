@@ -1438,6 +1438,7 @@ name = "physbox-box2d-oracle"
 version = "0.1.0"
 dependencies = [
  "bindgen",
+ "physbox-box2d-comparator",
  "physbox-contracts",
  "physbox-engine",
  "physbox-lab",
