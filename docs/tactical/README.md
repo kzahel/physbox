@@ -228,6 +228,7 @@ This README remains the unnumbered index.
 | S27 | Exact sleep-decision observation | [027-exact-sleep-decision-observation.md](027-exact-sleep-decision-observation.md) | complete; reductions match CPU, evolved rows change no transitions, K=4 retained before behavior switch, 2026-07-22 |
 | S28 | Browser platform-boundary hardening | [028-browser-platform-boundary-hardening.md](028-browser-platform-boundary-hardening.md) | complete; shared Rust owns preferences/query policy, semantic smoke observation is gated, and JS/TS source locks pass, 2026-07-23 |
 | S29 | Interactive Box2D comparison | [029-interactive-box2d-comparison.md](029-interactive-box2d-comparison.md) | complete; default-on shadow, stable actions, authority/feature-off gates, and authorized hardware-backed AVD substitute pass, 2026-07-23 |
+| S30 | Configurable sleep threshold and grouping | [030-configurable-sleep-grouping.md](030-configurable-sleep-grouping.md) | active; shared threshold, local-4/local-8/exact behavior, and cycle diagnostics authorized, 2026-07-23 |
 
 ## Conventions
 

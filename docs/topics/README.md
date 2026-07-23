@@ -62,9 +62,9 @@ a running log.
   surface, the mask rule against concealing awake losses, and the S23 execution
   overview.
 - [GPU sleep-island connectivity research](gpu-sleep-island-connectivity.md) —
-  exploratory source study of Box2D's persistent islands, the measured K=4
-  baseline, static and persistent GPU connected-component alternatives, and
-  the performance/behavior gates for any exact-island prototype.
+  Box2D persistent-island source study, the measured K=4 and exact-observer
+  baselines, and S30's authorized local-4/local-8/exact behavior comparison
+  with performance and promotion gates.
 - [Awake settling and rest stability](awake-settling-and-rest-stability.md) —
   resting-contact identity, warm-start continuity, soft-contact damping,
   realistic drop fixtures, awake quality gates, and the required visible

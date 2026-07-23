@@ -41,6 +41,8 @@ study, and performance plan are recorded in
 [GPU sleep-island connectivity research](gpu-sleep-island-connectivity.md).
 The execution tracker is
 [tactical S23](../tactical/023-gpu-sleeping-and-waking.md).
+The authorized configurable threshold/grouping follow-up is
+[tactical S30](../tactical/030-configurable-sleep-grouping.md).
 
 ## Feature overview and tracking
 
@@ -56,7 +58,7 @@ change only with implementation and evidence, not because this design exists.
 | Wake roots and bounded propagation | complete | Generation-safe event roots and four deterministic contact-neighbor rounds execute before solve; persisted resting contacts are not roots. |
 | Automatic sleep admission | complete | Saturating per-body timers and four-round contact blockers coordinate admission within the selected bound, zero transition velocities, and prevent dormant drift. |
 | Awake-driven solve and integration | complete | Dense awake points and bounded solver bodies size solve/integration while live collision, persistence, and rendering retain sleepers (S23.5). |
-| Toggle and configuration surface | limited | Launch-owned state and the engine-rendered `MENU → WORLD` toggle make sleeping effective on request and persist the choice; the default remains off pending the now-held S23.7 review. |
+| Toggle and configuration surface | active S30 follow-up | Launch-owned state and the engine-rendered `MENU → WORLD` toggle make sleeping effective on request and persist the choice. S30 adds a shared public threshold plus PhysBox local-4/local-8/exact grouping; the sleeping request remains off by default. |
 | Interactive state visualization | complete | The engine-rendered `SLEEP VISUALS` toggle consumes GPU sleep/grab state directly and distinguishes active, quiet, sleeping, and forced/recently woken dynamics without readback. |
 | Sleeping-city performance curves | complete | Valid matched 1%/10%/100% awake curves show bounded work reduction; S23.6 retains live pair processing and makes no public product-rate claim. |
 | Cross-host qualification and promotion | held | S24 passes native 2/4/8 but misses the awake 12-stack quiet band; browser/physical awake expansion and the S23.7 human default review wait for an authorized solver/configuration follow-up. |

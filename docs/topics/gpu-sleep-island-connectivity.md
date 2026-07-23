@@ -1,12 +1,11 @@
 # GPU sleep-island connectivity research
 
-Status: decision-observation stopping point complete under
-[S27](../tactical/027-exact-sleep-decision-observation.md), 2026-07-22.
-Exact GPU labels and root reductions match independent CPU checks, and the
-observer leaves applied K=4 state byte-identical. The current K=4
-bounded-neighbor sleep policy remains implemented, opt-in, and off by default.
-No component label affects product behavior. A behavior switch, persistent
-optimization, and promotion remain unauthorized.
+Status: S27's decision-observation stopping point is complete, and human
+review on 2026-07-23 authorizes [S30](../tactical/030-configurable-sleep-grouping.md)
+to connect those exact labels/reductions to an explicit behavior option beside
+local-4 and local-8. Sleeping remains opt-in and off by default. Exact is not
+the selected grouping until S30 records behavior, cost, and cross-host
+qualification.
 
 Governing behavior and current implementation:
 [GPU sleeping and waking](gpu-sleeping-and-waking.md). Performance claims and
@@ -17,24 +16,22 @@ exact islands may expose solver motion but may not redefine it as rest. The
 rigid behavior authority is [Box2D](box2d-rigid-authority.md), pinned at
 `3a4f0da8374af61293a03021c9a0b3ebcfe67948`.
 
-## Recommendation
+## Current decision
 
-Retain K=4 and do not begin an exact-island behavior switch. S27 proves that
-the exact reduction can change a decision: its synthetic eight-body path wakes
-three sleeping bodies beyond K=4. It does not show a material transition
-benefit in the evolved fixtures. The two-body control sleeps completely at
-step 30 with no disagreement. The eight- and fourteen-body towers and the
-100-body poured pile never admit any body during their measured horizons
-because local solver-motion blockers remain. Exact wake signals reach farther
-on those larger graphs, but every extra-signaled body is already awake.
+Implement local-4, local-8, and exact as explicit PhysBox sleep-grouping
+choices under S30. Interactive same-application Box2D comparison now makes the
+mixed-transition behavior directly inspectable and human review has chosen to
+run the causal experiment despite S27's evolved fixtures showing no changed
+transition. The experiment must preserve the earlier evidence: exact
+connectivity enforces a whole-component invariant but cannot make residual
+solver motion qualify as rest.
 
-This distinction changes the recommendation. Exact connectivity would enforce
-the desired invariant, but it does not address the measured reason these
-fixtures stay awake. The next useful evidence is a deterministic reproduction
-of the interactive mixed sleep/wake transition, or awake solver/readiness work
-that lets a larger structure become locally ready. Do not pay for a static
-exact rebuild or design persistent dirty splits until such a row shows an
-actual exact-only new wake or K-only partial admission.
+Local-8 is a diagnostic radius extension, not an island approximation eligible
+for promotion. Exact reuses the already-qualified static component labels and
+root reductions. If exact eliminates mixed cuts but retains a pile awake, the
+result belongs to solver/readiness work. If exact sleeps a fully ready
+component together and removes the wake wave at acceptable cost, it may become
+the selected experimental grouping through S30's recorded disposition.
 
 The S27 observer adds four root reduction/comparison dispatches to S26's exact
 rebuild: 33 dispatches at a 64-body reserve and 41 at 256, versus the current
@@ -456,9 +453,9 @@ persistent/deferred-split prototype, not for increasing K.
    no effect on sleep behavior. S26 passes and is stopped at human review.
 2. **Component reductions — complete:** S27 exact wake/readiness reductions
    match CPU checks beside K=4 and do not affect applied state.
-3. **Laboratory behavior switch — not admitted:** evolved rows show no changed
-   transition to justify the cost. A deterministic mixed-transition fixture or
-   new readiness evidence requires a separate human decision before this step.
+3. **Configurable behavior switch — active under S30:** human review admits
+   local-4, local-8, and exact for interactive causal comparison, with the S27
+   observer result retained as the pre-switch baseline.
 4. **Persistent optimization:** pursue additions plus deferred dirty splits
    only when static measurements demonstrate that maintenance, rather than
    broader whole-island solve work, is the limiting cost.
