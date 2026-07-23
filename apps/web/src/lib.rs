@@ -10,13 +10,13 @@ use physbox_engine::{
 #[cfg(all(target_arch = "wasm32", feature = "solver-lab"))]
 use physbox_engine::{GpuBroadphaseBrowserSession, P5_3BroadphasePattern};
 #[cfg(target_arch = "wasm32")]
-use physbox_launch::parse_web_query;
+use physbox_launch::{WebPreferenceController, WebPreferenceStore};
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen_futures::JsFuture;
 #[cfg(target_arch = "wasm32")]
-use web_sys::HtmlCanvasElement;
+use web_sys::{HtmlCanvasElement, Storage};
 
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -48,6 +48,7 @@ fn decode_pointer_button(code: u8) -> Result<PointerButton, String> {
 #[wasm_bindgen]
 pub struct WebApp {
     renderer: SurfaceRenderer,
+    preferences: WebPreferenceController,
     last_timestamp_ms: Option<f64>,
     pending_input_events: Vec<InputEvent>,
 }
@@ -76,6 +77,12 @@ impl WebApp {
                 input_events: std::mem::take(&mut self.pending_input_events),
             })
             .map_err(js_error)?;
+        if let Some(search) = self.preferences.synchronize(
+            self.renderer.launch_preference_selection(),
+            &BrowserPreferenceStore,
+        ) {
+            replace_browser_search(&search)?;
+        }
         Ok(report.marker_json())
     }
 
@@ -123,7 +130,8 @@ impl WebApp {
 #[wasm_bindgen]
 pub async fn start(canvas: HtmlCanvasElement, search: String) -> Result<WebApp, JsValue> {
     console_error_panic_hook::set_once();
-    let request = parse_web_query(&search).map_err(|error| js_error(error.to_string()))?;
+    let (preferences, request) = WebPreferenceController::restore(&search, &BrowserPreferenceStore)
+        .map_err(|error| js_error(error.to_string()))?;
     let options = request.options;
     canvas.set_width(options.width);
     canvas.set_height(options.height);
@@ -142,9 +150,58 @@ pub async fn start(canvas: HtmlCanvasElement, search: String) -> Result<WebApp, 
     .map_err(js_error)?;
     Ok(WebApp {
         renderer,
+        preferences,
         last_timestamp_ms: None,
         pending_input_events: Vec::new(),
     })
+}
+
+#[cfg(target_arch = "wasm32")]
+struct BrowserPreferenceStore;
+
+#[cfg(target_arch = "wasm32")]
+impl WebPreferenceStore for BrowserPreferenceStore {
+    fn read(&self, key: &str) -> Result<Option<String>, String> {
+        browser_storage()?
+            .map(|storage| storage.get_item(key).map_err(js_value_error))
+            .transpose()
+            .map(Option::flatten)
+    }
+
+    fn write(&self, key: &str, value: &str) -> Result<(), String> {
+        if let Some(storage) = browser_storage()? {
+            storage.set_item(key, value).map_err(js_value_error)?;
+        }
+        Ok(())
+    }
+
+    fn remove(&self, key: &str) -> Result<(), String> {
+        if let Some(storage) = browser_storage()? {
+            storage.remove_item(key).map_err(js_value_error)?;
+        }
+        Ok(())
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn browser_storage() -> Result<Option<Storage>, String> {
+    web_sys::window()
+        .ok_or_else(|| "browser window is unavailable".to_owned())?
+        .local_storage()
+        .map_err(js_value_error)
+}
+
+#[cfg(target_arch = "wasm32")]
+fn replace_browser_search(search: &str) -> Result<(), JsValue> {
+    web_sys::window()
+        .ok_or_else(|| js_error("browser window is unavailable"))?
+        .history()?
+        .replace_state_with_url(&JsValue::NULL, "", Some(search))
+}
+
+#[cfg(target_arch = "wasm32")]
+fn js_value_error(value: JsValue) -> String {
+    format!("{value:?}")
 }
 
 #[cfg(target_arch = "wasm32")]

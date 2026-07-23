@@ -616,6 +616,10 @@ pub struct EngineHost {
 }
 
 impl EngineHost {
+    pub(crate) fn launch_preference_selection(&self) -> physbox_launch::LaunchPreferenceSelection {
+        self.config.launch_preference_selection()
+    }
+
     pub(crate) fn new(
         device: &wgpu::Device,
         queue: &wgpu::Queue,

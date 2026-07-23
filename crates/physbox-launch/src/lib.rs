@@ -5,7 +5,11 @@ use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
 use std::{collections::BTreeSet, str::FromStr};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+
+mod web_preferences;
+
+pub use web_preferences::{LaunchPreferenceSelection, WebPreferenceController, WebPreferenceStore};
 
 pub const ANDROID_STARTUP_ARGV_INTENT_EXTRA: &str = "physbox5.startup.argv";
 
@@ -31,7 +35,7 @@ pub const MAX_SPECULATIVE_DISTANCE: f32 = 1.0;
 pub const MIN_MAX_DEPENETRATION_VELOCITY: f32 = 0.1;
 pub const MAX_MAX_DEPENETRATION_VELOCITY: f32 = 100.0;
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum WorldCapacityPreset {
     #[default]
@@ -106,7 +110,7 @@ pub enum FrameMarkerMode {
     All,
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum SolverProfileName {
     HardDirect,

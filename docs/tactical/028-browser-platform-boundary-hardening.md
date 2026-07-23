@@ -51,12 +51,12 @@ Gate: architecture and tactical indexes agree on the active ownership rule.
 
 ### S28.2 Shared preference and query policy
 
-- [ ] Add typed, tested Rust ownership of current and legacy browser records.
-- [ ] Restore preferences before shared launch parsing without changing
+- [x] Add typed, tested Rust ownership of current and legacy browser records.
+- [x] Restore preferences before shared launch parsing without changing
       explicit URL precedence.
-- [ ] Persist effective configuration and emit canonical default-elided query
+- [x] Persist effective configuration and emit canonical default-elided query
       updates from Rust.
-- [ ] Remove storage keys, solver/configuration fields, migrations, bounds, and
+- [x] Remove storage keys, solver/configuration fields, migrations, bounds, and
       query mappings from browser-authored JavaScript.
 
 Gates:
@@ -105,3 +105,8 @@ declared duplication fixtures, and all S28.5 gates pass.
 
 - 2026-07-23 pre-change baseline: `npm run check:boundaries` passed, including
   the existing negative fixtures.
+- 2026-07-23 S28.2: `cargo test -p physbox-launch --lib` passed 20 tests;
+  `cargo check -p physbox-web --target wasm32-unknown-unknown` passed; and
+  `npm run test:web` emitted `PHYSBOX5_VALIDATION_SUCCESS` while exercising
+  current preference writes, capacity reload, physics reload, and legacy
+  migration.

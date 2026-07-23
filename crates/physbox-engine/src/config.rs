@@ -1,4 +1,6 @@
-use physbox_launch::{LaunchOptions, ValidationScenario, WorldCapacityPreset};
+use physbox_launch::{
+    LaunchOptions, LaunchPreferenceSelection, ValidationScenario, WorldCapacityPreset,
+};
 use sha2::{Digest, Sha256};
 
 use crate::SolverProfileConfig;
@@ -31,6 +33,13 @@ impl TryFrom<&LaunchOptions> for EngineConfig {
 }
 
 impl EngineConfig {
+    pub fn launch_preference_selection(&self) -> LaunchPreferenceSelection {
+        LaunchPreferenceSelection {
+            world_capacity: self.world_capacity,
+            physics: self.solver_profile.physics(),
+        }
+    }
+
     pub fn physics_configuration_hash(&self) -> String {
         let encoded = serde_json::to_vec(&self.solver_profile.physics())
             .expect("validated physics configurations are serializable");

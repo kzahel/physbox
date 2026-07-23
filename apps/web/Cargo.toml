@@ -23,4 +23,4 @@ wgpu.workspace = true
 
 [dependencies.web-sys]
 workspace = true
-features = ["HtmlCanvasElement", "Performance", "Window", "console"]
+features = ["History", "HtmlCanvasElement", "Performance", "Storage", "Window", "console"]

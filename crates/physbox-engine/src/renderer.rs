@@ -95,6 +95,10 @@ impl SurfaceRenderer {
         &self.diagnostics
     }
 
+    pub fn launch_preference_selection(&self) -> physbox_launch::LaunchPreferenceSelection {
+        self.host.launch_preference_selection()
+    }
+
     pub fn resize(&mut self, width: u32, height: u32) {
         if width == 0 || height == 0 {
             return;
