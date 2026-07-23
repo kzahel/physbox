@@ -53,11 +53,11 @@ Gate: documentation links and whitespace pass; no product code changes.
 
 ### S29.2 — Pinned runtime and compile boundary
 
-- [ ] Add the `box2d-comparator` default feature through maintained apps and
+- [x] Add the `box2d-comparator` default feature through maintained apps and
   the shared engine.
-- [ ] Add an enumerated pinned source/runtime distribution with license,
+- [x] Add an enumerated pinned source/runtime distribution with license,
   provenance manifest, reproducible build entry point, and artifact hashes.
-- [ ] Implement one shared Box2D world API for native/Android and browser.
+- [x] Implement one shared Box2D world API for native/Android and browser.
 - [ ] Add a feature-off boundary test proving removal of dependencies, assets,
   menu vocabulary, and runtime work.
 
@@ -66,12 +66,12 @@ replay the same neutral source on native and browser; ARM64 compiles.
 
 ### S29.3 — Dual-world lifecycle and rendering
 
-- [ ] Create/recreate the Box2D shadow from the same scenario, stable IDs,
+- [x] Create/recreate the Box2D shadow from the same scenario, stable IDs,
   settings projection, and capacity.
-- [ ] Advance it from the shared admitted step stream without gating PhysBox.
-- [ ] Upload its public body state into the shared renderer's alternate input.
-- [ ] Switch one rendered view without copying either world's mechanical state.
-- [ ] Report selected engine, shadow step, alignment, and exact revision.
+- [x] Advance it from the shared admitted step stream without gating PhysBox.
+- [x] Upload its public body state into the shared renderer's alternate input.
+- [x] Switch one rendered view without copying either world's mechanical state.
+- [x] Report selected engine, shadow step, alignment, and exact revision.
 
 Gate: PhysBox output is unchanged when selected; repeated switches expose two
 independently evolved states at one step identity.

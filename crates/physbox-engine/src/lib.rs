@@ -22,11 +22,14 @@ mod clock;
 mod collision_candidates;
 mod collision_narrowphase;
 mod collision_persistence;
+#[cfg(feature = "box2d-comparator")]
+mod comparison;
 mod config;
 mod construction;
 mod construction_validation;
 #[cfg(any(test, feature = "solver-lab"))]
 mod contact_components;
+mod engine_selection;
 mod frame;
 mod generated_contacts;
 mod gpu_context;

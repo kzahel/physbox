@@ -8,6 +8,7 @@ use wgpu::util::DeviceExt;
 use crate::{
     InputEvent, PointerButton, PointerPhase, SolverProfileConfig,
     clock::PacingReport,
+    engine_selection::ComparisonEngine,
     renderer::RenderFrameTarget,
     report::UiReport,
     ui_font::{
@@ -16,9 +17,9 @@ use crate::{
     },
 };
 
-pub(crate) const UI_CONTRACT_VERSION: u32 = 8;
+pub(crate) const UI_CONTRACT_VERSION: u32 = 9;
 const STATIC_INSTANCE_CAPACITY: usize = 384;
-const DYNAMIC_INSTANCE_CAPACITY: usize = 192;
+const DYNAMIC_INSTANCE_CAPACITY: usize = 224;
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum UiAction {
@@ -29,6 +30,8 @@ pub(crate) enum UiAction {
         scenario: ValidationScenario,
     },
     ActivateWorldCapacity(WorldCapacityPreset),
+    #[cfg(feature = "box2d-comparator")]
+    SelectEngine(ComparisonEngine),
     RestartScenario,
     Recenter,
 }
@@ -39,6 +42,17 @@ enum MenuPage {
     Scenes,
     Solvers,
     World,
+}
+
+fn menu_pages(selected_engine: ComparisonEngine) -> &'static [MenuPage] {
+    const PHYSBOX: &[MenuPage] = &[MenuPage::Scenes, MenuPage::Solvers, MenuPage::World];
+    #[cfg(feature = "box2d-comparator")]
+    const BOX2D: &[MenuPage] = &[MenuPage::Scenes, MenuPage::World];
+    match selected_engine {
+        ComparisonEngine::PhysBox => PHYSBOX,
+        #[cfg(feature = "box2d-comparator")]
+        ComparisonEngine::Box2d => BOX2D,
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -96,6 +110,12 @@ pub(crate) struct UiFrameModel<'a> {
     pub construction_state: Option<&'a ConstructionStateV1>,
     pub construction_age_frames: Option<u64>,
     pub construction_diagnostic_source: &'static str,
+    pub selected_engine: ComparisonEngine,
+    pub comparator_available: bool,
+    pub box2d_revision: Option<&'static str>,
+    pub box2d_completed_steps: Option<u64>,
+    pub box2d_aligned: Option<bool>,
+    pub box2d_failure: Option<&'a str>,
 }
 
 struct UiViewState<'a> {
@@ -105,6 +125,7 @@ struct UiViewState<'a> {
     sleep_visuals_enabled: bool,
     solver_profiles: &'a [SolverProfileConfig],
     draft_solver_profile: &'a SolverProfileConfig,
+    selected_engine: ComparisonEngine,
 }
 
 /// Shared canvas UI and input capture.
@@ -149,6 +170,7 @@ impl WorkbenchUi {
         &mut self,
         events: &[InputEvent],
         target_size: [u32; 2],
+        selected_engine: ComparisonEngine,
     ) -> UiRouting {
         let routing = route_events(
             UiRouteState {
@@ -158,6 +180,7 @@ impl WorkbenchUi {
                 solver_profiles: &mut self.solver_profiles,
                 draft_solver_profile: &mut self.draft_solver_profile,
                 captured_pointers: &mut self.captured_pointers,
+                selected_engine,
             },
             events,
             target_size,
@@ -196,6 +219,7 @@ impl WorkbenchUi {
         target: RenderFrameTarget<'_>,
         model: UiFrameModel<'_>,
     ) -> UiReport {
+        let selected_engine = model.selected_engine;
         self.renderer.encode(
             queue,
             encoder,
@@ -208,6 +232,7 @@ impl WorkbenchUi {
                 sleep_visuals_enabled: self.sleep_visuals_enabled,
                 solver_profiles: &self.solver_profiles,
                 draft_solver_profile: &self.draft_solver_profile,
+                selected_engine,
             },
         )
     }
@@ -220,6 +245,7 @@ struct UiRouteState<'a> {
     solver_profiles: &'a mut Vec<SolverProfileConfig>,
     draft_solver_profile: &'a mut SolverProfileConfig,
     captured_pointers: &'a mut BTreeSet<u64>,
+    selected_engine: ComparisonEngine,
 }
 
 fn route_events(
@@ -234,6 +260,7 @@ fn route_events(
         solver_profiles,
         draft_solver_profile,
         captured_pointers,
+        selected_engine,
     } = state;
     let mut forwarded = Vec::with_capacity(events.len());
     let mut action = None;
@@ -260,6 +287,7 @@ fn route_events(
                 *menu_open,
                 *menu_page,
                 solver_profiles,
+                selected_engine,
             ) {
                 captured_pointers.insert(pointer.id);
                 match hit {
@@ -323,6 +351,11 @@ fn route_events(
                         sleep_visuals_toggled = true;
                         *menu_open = false;
                     }
+                    #[cfg(feature = "box2d-comparator")]
+                    UiHit::Engine(engine) => {
+                        *menu_open = false;
+                        action = Some(UiAction::SelectEngine(engine));
+                    }
                     UiHit::Panel => {}
                 }
                 continue;
@@ -367,6 +400,8 @@ enum UiHit {
     WorldCapacity(WorldCapacityPreset),
     ToggleSleeping,
     ToggleSleepVisuals,
+    #[cfg(feature = "box2d-comparator")]
+    Engine(ComparisonEngine),
     RestoreSolverPreset,
     ApplySolver,
     Panel,
@@ -393,6 +428,7 @@ impl UiLayout {
         menu_open: bool,
         menu_page: MenuPage,
         solver_profiles: &[SolverProfileConfig],
+        selected_engine: ComparisonEngine,
     ) -> Option<UiHit> {
         let pixel = [
             normalized[0] * self.target_size[0] as f32,
@@ -409,9 +445,9 @@ impl UiLayout {
         if !menu_open {
             return None;
         }
-        for page in [MenuPage::Scenes, MenuPage::Solvers, MenuPage::World] {
-            if contains(self.menu_tab(page), pixel) {
-                return Some(UiHit::MenuPage(page));
+        for page in menu_pages(selected_engine) {
+            if contains(self.menu_tab(*page), pixel) {
+                return Some(UiHit::MenuPage(*page));
             }
         }
         match menu_page {
@@ -429,6 +465,10 @@ impl UiLayout {
                 }
             }
             MenuPage::Solvers => {
+                if selected_engine != ComparisonEngine::PhysBox {
+                    return contains(self.menu_panel(menu_page, solver_profiles.len()), pixel)
+                        .then_some(UiHit::Panel);
+                }
                 let profile_count = solver_profiles.len();
                 for (index, profile) in solver_profiles.iter().enumerate() {
                     if contains(self.solver_profile_button(index, profile_count), pixel) {
@@ -464,6 +504,15 @@ impl UiLayout {
                 }
             }
             MenuPage::World => {
+                #[cfg(feature = "box2d-comparator")]
+                for (index, engine) in [ComparisonEngine::PhysBox, ComparisonEngine::Box2d]
+                    .into_iter()
+                    .enumerate()
+                {
+                    if contains(self.world_engine_button(index), pixel) {
+                        return Some(UiHit::Engine(engine));
+                    }
+                }
                 for (index, capacity) in WorldCapacityPreset::ALL.into_iter().enumerate() {
                     if contains(self.world_capacity_button(index), pixel) {
                         return Some(UiHit::WorldCapacity(capacity));
@@ -566,6 +615,16 @@ impl UiLayout {
             (154.0 + index as f32 * 38.0) * self.scale,
             336.0 * self.scale,
             34.0 * self.scale,
+        ]
+    }
+
+    #[cfg(feature = "box2d-comparator")]
+    fn world_engine_button(self, index: usize) -> [f32; 4] {
+        [
+            (112.0 + index as f32 * 122.0) * self.scale,
+            122.0 * self.scale,
+            114.0 * self.scale,
+            26.0 * self.scale,
         ]
     }
 
@@ -821,6 +880,8 @@ impl UiLayout {
             "world-capacity" => self.world_capacity_button(index),
             "world-sleeping" => self.world_sleeping_button(),
             "world-sleep-visuals" => self.world_sleep_visuals_button(),
+            #[cfg(feature = "box2d-comparator")]
+            "world-engine" => self.world_engine_button(index),
             _ => panic!("unknown UI test target"),
         };
         [
@@ -895,6 +956,7 @@ struct StaticKey {
     world_capacity: WorldCapacityPreset,
     sleeping_effective: bool,
     sleep_visuals_enabled: bool,
+    selected_engine: ComparisonEngine,
 }
 
 struct UiRenderer {
@@ -1099,6 +1161,7 @@ impl UiRenderer {
             sleep_visuals_enabled,
             solver_profiles,
             draft_solver_profile,
+            selected_engine,
         } = view;
         if self.last_target_size != Some(target.size) {
             let params = UiParams {
@@ -1124,6 +1187,7 @@ impl UiRenderer {
             world_capacity: model.world_capacity,
             sleeping_effective: model.sleeping_effective,
             sleep_visuals_enabled,
+            selected_engine,
         };
         if self.static_key.as_ref() != Some(&key) {
             let batch = static_batch(
@@ -1139,6 +1203,7 @@ impl UiRenderer {
                     world_capacity: model.world_capacity,
                     sleeping_effective: model.sleeping_effective,
                     sleep_visuals_enabled,
+                    selected_engine,
                 },
             );
             if !batch.instances.is_empty() {
@@ -1201,6 +1266,12 @@ impl UiRenderer {
             menu_open,
             current_tool: selected_tool.name(),
             current_scene: model.scenario.name(),
+            selected_engine: model.selected_engine.name(),
+            comparator_available: model.comparator_available,
+            box2d_revision: model.box2d_revision,
+            box2d_completed_steps: model.box2d_completed_steps,
+            box2d_aligned: model.box2d_aligned,
+            box2d_failure: model.box2d_failure.map(str::to_owned),
             sleep_visuals_enabled,
             static_instance_capacity: STATIC_INSTANCE_CAPACITY as u32,
             dynamic_instance_capacity: DYNAMIC_INSTANCE_CAPACITY as u32,
@@ -1301,6 +1372,7 @@ struct StaticBatchModel<'a> {
     world_capacity: WorldCapacityPreset,
     sleeping_effective: bool,
     sleep_visuals_enabled: bool,
+    selected_engine: ComparisonEngine,
 }
 
 fn static_batch(target_size: [u32; 2], model: StaticBatchModel<'_>) -> Batch {
@@ -1315,6 +1387,7 @@ fn static_batch(target_size: [u32; 2], model: StaticBatchModel<'_>) -> Batch {
         world_capacity,
         sleeping_effective,
         sleep_visuals_enabled,
+        selected_engine,
     } = model;
     let layout = UiLayout::for_target(target_size);
     let scale = layout.scale;
@@ -1348,9 +1421,9 @@ fn static_batch(target_size: [u32; 2], model: StaticBatchModel<'_>) -> Batch {
     }
     if menu_open {
         batch.push_quad(layout.menu_panel(menu_page, solver_profiles.len()), panel);
-        for page in [MenuPage::Scenes, MenuPage::Solvers, MenuPage::World] {
-            let bounds = layout.menu_tab(page);
-            batch.push_quad(bounds, if page == menu_page { selected } else { button });
+        for page in menu_pages(selected_engine) {
+            let bounds = layout.menu_tab(*page);
+            batch.push_quad(bounds, if *page == menu_page { selected } else { button });
             batch.push_text(
                 match page {
                     MenuPage::Scenes => "SCENES",
@@ -1359,7 +1432,7 @@ fn static_batch(target_size: [u32; 2], model: StaticBatchModel<'_>) -> Batch {
                 },
                 [bounds[0] + 9.0 * scale, bounds[1] + 6.0 * scale],
                 1.8 * scale,
-                if page == menu_page { accent } else { text },
+                if *page == menu_page { accent } else { text },
             );
         }
         match menu_page {
@@ -1500,11 +1573,39 @@ fn static_batch(target_size: [u32; 2], model: StaticBatchModel<'_>) -> Batch {
             }
             MenuPage::World => {
                 batch.push_text(
+                    #[cfg(feature = "box2d-comparator")]
+                    "ENGINE",
+                    #[cfg(not(feature = "box2d-comparator"))]
                     &format!("ACTIVE {}", world_capacity.label()),
                     [28.0 * scale, 128.0 * scale],
                     1.5 * scale,
                     accent,
                 );
+                #[cfg(feature = "box2d-comparator")]
+                for (index, engine) in [ComparisonEngine::PhysBox, ComparisonEngine::Box2d]
+                    .into_iter()
+                    .enumerate()
+                {
+                    let bounds = layout.world_engine_button(index);
+                    batch.push_quad(
+                        bounds,
+                        if engine == selected_engine {
+                            selected
+                        } else {
+                            button
+                        },
+                    );
+                    batch.push_text(
+                        engine.label(),
+                        [bounds[0] + 8.0 * scale, bounds[1] + 6.0 * scale],
+                        1.45 * scale,
+                        if engine == selected_engine {
+                            accent
+                        } else {
+                            text
+                        },
+                    );
+                }
                 for (index, capacity) in WorldCapacityPreset::ALL.into_iter().enumerate() {
                     let bounds = layout.world_capacity_button(index);
                     batch.push_quad(
@@ -1584,7 +1685,7 @@ fn dynamic_batch(
         return batch;
     }
     let width = 310.0 * scale;
-    let height = 236.0 * scale;
+    let height = 256.0 * scale;
     let logical_width = target_size[0] as f32 / scale;
     let origin = [
         target_size[0] as f32 - width - 12.0 * scale,
@@ -1617,9 +1718,13 @@ fn dynamic_batch(
                 ConstructionResultV1::EraseMiss => "MISS",
                 ConstructionResultV1::GenerationExhausted => "GENFAIL",
             });
-    let live_bodies = model
-        .construction_state
-        .map_or(model.body_count, |state| state.live_bodies);
+    let live_bodies = if model.selected_engine == ComparisonEngine::PhysBox {
+        model
+            .construction_state
+            .map_or(model.body_count, |state| state.live_bodies)
+    } else {
+        model.body_count
+    };
     let physics = model.solver_profile.physics();
     let contact = if model.solver_profile.is_soft_coupled() {
         let effective = model.solver_profile.effective_dynamic_contact_hz();
@@ -1643,50 +1748,99 @@ fn dynamic_batch(
     } else {
         "SLOW"
     };
-    let lines = [
+    let mut lines = vec![
+        format!("ENGINE {}", model.selected_engine.label()),
         format!("SCENE {}", model.scenario.name()),
-        format!("SOLVER {}", model.solver_profile.label()),
-        format!(
-            "CFG {}HZ DT{:.2}MS",
-            physics.fixed_step_hz,
-            physics.fixed_dt_seconds() * 1_000.0
-        ),
-        contact,
-        format!(
-            "FPS {:.0}",
-            model.pacing.presented_frame_hz.clamp(0.0, 999.0)
-        ),
-        format!(
-            "SIM {:.0}% {} SLIP {:.0}MS",
-            (model.pacing.effective_simulation_scale * 100.0).clamp(0.0, 999.0),
-            simulation_status,
-            (model.pacing.overload_slipped_wall_seconds_total * 1000.0).clamp(0.0, 999_999.0)
-        ),
-        format!(
-            "INNER {}HZ X{} I{}",
-            physics.fixed_step_hz * physics.substeps,
-            physics.substeps,
-            physics.biased_iterations
-        ),
-        format!(
-            "BODY {}/{} POINTCAP {}",
-            live_bodies, model.body_capacity, model.contact_count
-        ),
-        format!(
-            "CAP {}KB OVERFLOW {}",
-            model.capacity_bytes.div_ceil(1024),
-            if model.overflowed { "YES" } else { "NO" }
-        ),
-        format!("GPU {}", model.adapter_backend),
-        format!(
-            "BUILD {} FAIL {} AGE {}",
-            construction_result,
-            construction_failures,
-            model
-                .construction_age_frames
-                .map_or_else(|| "N/A".to_owned(), |age| age.to_string())
-        ),
     ];
+    match model.selected_engine {
+        #[cfg(feature = "box2d-comparator")]
+        ComparisonEngine::Box2d => {
+            let revision = model.box2d_revision.unwrap_or("UNAVAILABLE");
+            let split = revision.len().min(20);
+            lines.extend([
+                format!("REV {}", &revision[..split]),
+                format!("    {}", &revision[split..]),
+                format!(
+                    "CFG {}HZ DT{:.2}MS X{}",
+                    physics.fixed_step_hz,
+                    physics.fixed_dt_seconds() * 1_000.0,
+                    physics.substeps
+                ),
+                format!(
+                    "FPS {:.0}",
+                    model.pacing.presented_frame_hz.clamp(0.0, 999.0)
+                ),
+                format!(
+                    "SIM {:.0}% {} SLIP {:.0}MS",
+                    (model.pacing.effective_simulation_scale * 100.0).clamp(0.0, 999.0),
+                    simulation_status,
+                    (model.pacing.overload_slipped_wall_seconds_total * 1000.0)
+                        .clamp(0.0, 999_999.0)
+                ),
+                format!("BODY {}/{}", live_bodies, model.body_capacity),
+                format!(
+                    "STEP {} ALIGN {}",
+                    model
+                        .box2d_completed_steps
+                        .map_or_else(|| "N/A".to_owned(), |steps| steps.to_string()),
+                    match model.box2d_aligned {
+                        Some(true) => "YES",
+                        Some(false) => "NO",
+                        None => "N/A",
+                    }
+                ),
+                "SLEEP BOX2D PUBLIC".to_owned(),
+                format!("RENDER {}", model.adapter_backend),
+                model.box2d_failure.map_or_else(
+                    || "SHADOW OK".to_owned(),
+                    |failure| format!("SHADOW FAIL {failure}"),
+                ),
+            ]);
+        }
+        ComparisonEngine::PhysBox => lines.extend([
+            format!("SOLVER {}", model.solver_profile.label()),
+            format!(
+                "CFG {}HZ DT{:.2}MS",
+                physics.fixed_step_hz,
+                physics.fixed_dt_seconds() * 1_000.0
+            ),
+            contact,
+            format!(
+                "FPS {:.0}",
+                model.pacing.presented_frame_hz.clamp(0.0, 999.0)
+            ),
+            format!(
+                "SIM {:.0}% {} SLIP {:.0}MS",
+                (model.pacing.effective_simulation_scale * 100.0).clamp(0.0, 999.0),
+                simulation_status,
+                (model.pacing.overload_slipped_wall_seconds_total * 1000.0).clamp(0.0, 999_999.0)
+            ),
+            format!(
+                "INNER {}HZ X{} I{}",
+                physics.fixed_step_hz * physics.substeps,
+                physics.substeps,
+                physics.biased_iterations
+            ),
+            format!(
+                "BODY {}/{} POINTCAP {}",
+                live_bodies, model.body_capacity, model.contact_count
+            ),
+            format!(
+                "CAP {}KB OVERFLOW {}",
+                model.capacity_bytes.div_ceil(1024),
+                if model.overflowed { "YES" } else { "NO" }
+            ),
+            format!("GPU {}", model.adapter_backend),
+            format!(
+                "BUILD {} FAIL {} AGE {}",
+                construction_result,
+                construction_failures,
+                model
+                    .construction_age_frames
+                    .map_or_else(|| "N/A".to_owned(), |age| age.to_string())
+            ),
+        ]),
+    }
     let color = [0.72, 0.84, 0.96, 1.0];
     for (index, line) in lines.iter().enumerate() {
         batch.push_text(
@@ -1779,6 +1933,7 @@ mod tests {
                 solver_profiles: &mut profiles,
                 draft_solver_profile: &mut draft,
                 captured_pointers: &mut captured,
+                selected_engine: ComparisonEngine::PhysBox,
             },
             &[pointer(
                 1,
@@ -1816,6 +1971,7 @@ mod tests {
                 solver_profiles: &mut profiles,
                 draft_solver_profile: &mut draft,
                 captured_pointers: &mut captured,
+                selected_engine: ComparisonEngine::PhysBox,
             },
             &[pointer(
                 1,
@@ -1852,6 +2008,7 @@ mod tests {
                 solver_profiles: &mut profiles,
                 draft_solver_profile: &mut draft,
                 captured_pointers: &mut captured,
+                selected_engine: ComparisonEngine::PhysBox,
             },
             &[pointer(
                 1,
@@ -1865,6 +2022,74 @@ mod tests {
         assert!(routed.action.is_none());
         assert!(!draft.physics().sleeping_enabled);
         assert!(!menu_open);
+    }
+
+    #[cfg(feature = "box2d-comparator")]
+    #[test]
+    fn world_menu_switches_engine_and_hides_physbox_solver_page() {
+        let target = [960, 600];
+        let layout = UiLayout::for_target(target);
+        let mut captured = BTreeSet::new();
+        let mut menu_open = true;
+        let mut menu_page = MenuPage::World;
+        let mut selected_tool = WorkbenchTool::Grab;
+        let mut profiles = SolverProfileConfig::available();
+        let mut draft = SolverProfileConfig::default();
+        let routed = route_events(
+            UiRouteState {
+                menu_open: &mut menu_open,
+                menu_page: &mut menu_page,
+                selected_tool: &mut selected_tool,
+                solver_profiles: &mut profiles,
+                draft_solver_profile: &mut draft,
+                captured_pointers: &mut captured,
+                selected_engine: ComparisonEngine::PhysBox,
+            },
+            &[pointer(
+                1,
+                PointerPhase::Down,
+                PointerButton::Primary,
+                layout.center_normalized("world-engine", 1),
+            )],
+            target,
+        );
+        assert_eq!(
+            routed.action,
+            Some(UiAction::SelectEngine(ComparisonEngine::Box2d))
+        );
+        assert!(!menu_open);
+        assert_eq!(
+            menu_pages(ComparisonEngine::Box2d),
+            &[MenuPage::Scenes, MenuPage::World]
+        );
+        assert!(
+            layout
+                .hit_test(
+                    layout.center_normalized("world-tab", 0),
+                    true,
+                    MenuPage::World,
+                    &profiles,
+                    ComparisonEngine::Box2d,
+                )
+                .is_some()
+        );
+        let solver_center = {
+            let bounds = layout.menu_tab(MenuPage::Solvers);
+            [
+                (bounds[0] + bounds[2] * 0.5) / target[0] as f32,
+                (bounds[1] + bounds[3] * 0.5) / target[1] as f32,
+            ]
+        };
+        assert_eq!(
+            layout.hit_test(
+                solver_center,
+                true,
+                MenuPage::World,
+                &profiles,
+                ComparisonEngine::Box2d,
+            ),
+            Some(UiHit::Panel)
+        );
     }
 
     #[test]
@@ -1884,6 +2109,7 @@ mod tests {
                 world_capacity: WorldCapacityPreset::Slots64,
                 sleeping_effective: false,
                 sleep_visuals_enabled: false,
+                selected_engine: ComparisonEngine::PhysBox,
             },
         );
         let static_open = static_batch(
@@ -1899,6 +2125,7 @@ mod tests {
                 world_capacity: WorldCapacityPreset::Slots64,
                 sleeping_effective: false,
                 sleep_visuals_enabled: false,
+                selected_engine: ComparisonEngine::PhysBox,
             },
         );
         let static_world = static_batch(
@@ -1914,6 +2141,7 @@ mod tests {
                 world_capacity: WorldCapacityPreset::Slots10000,
                 sleeping_effective: false,
                 sleep_visuals_enabled: true,
+                selected_engine: ComparisonEngine::PhysBox,
             },
         );
         assert!(!static_closed.overflowed && !static_open.overflowed && !static_world.overflowed);
@@ -2116,6 +2344,7 @@ mod tests {
                 solver_profiles: &mut profiles,
                 draft_solver_profile: &mut solver_profile,
                 captured_pointers: &mut captured,
+                selected_engine: ComparisonEngine::PhysBox,
             },
             &events,
             target,
@@ -2145,6 +2374,7 @@ mod tests {
                 solver_profiles: &mut profiles,
                 draft_solver_profile: &mut solver_profile,
                 captured_pointers: &mut captured,
+                selected_engine: ComparisonEngine::PhysBox,
             },
             &[
                 pointer(7, PointerPhase::Down, PointerButton::Contact, rectangle),

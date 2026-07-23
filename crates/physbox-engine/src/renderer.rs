@@ -1523,7 +1523,7 @@ mod tests {
             unchanged.ui.parameter_writes_total,
             initial.ui.parameter_writes_total
         );
-        assert_eq!(initial.ui.allocated_bytes, 39_952);
+        assert_eq!(initial.ui.allocated_bytes, 42_000);
 
         renderer.render(FrameInput::exact(0).with_input_events(vec![
             crate::InputEvent::Pointer(crate::PointerEvent {
@@ -1603,6 +1603,79 @@ mod tests {
         assert_eq!(restarted.ui.scenario_activations_total, 1);
         assert_eq!(restarted.ui.scenario_restarts_total, 1);
         assert!(!restarted.ui.overflowed);
+    }
+
+    #[cfg(feature = "box2d-comparator")]
+    #[test]
+    fn shared_ui_switches_continuously_aligned_box2d_shadow_without_state_copy() {
+        let target = [960, 600];
+        let mut renderer = pollster::block_on(OffscreenRenderer::new(
+            target[0],
+            target[1],
+            EngineConfig {
+                scenario: ValidationScenario::RectangleStack,
+                ..Default::default()
+            },
+        ))
+        .unwrap();
+        let click = |id, at| {
+            [crate::PointerPhase::Down, crate::PointerPhase::Up]
+                .into_iter()
+                .map(|phase| {
+                    crate::InputEvent::Pointer(crate::PointerEvent {
+                        id,
+                        phase,
+                        button: crate::PointerButton::Primary,
+                        normalized_position: at,
+                    })
+                })
+                .collect::<Vec<_>>()
+        };
+        let layout = crate::ui::UiLayout::for_target(target);
+        let physbox = renderer.render(FrameInput::exact(3));
+        assert_eq!(physbox.ui.selected_engine, "physbox");
+        assert!(physbox.ui.comparator_available);
+        assert_eq!(physbox.ui.box2d_completed_steps, Some(3));
+        assert_eq!(physbox.ui.box2d_aligned, Some(true));
+
+        renderer.render(
+            FrameInput::exact(0).with_input_events(click(1, layout.center_normalized("menu", 0))),
+        );
+        renderer.render(
+            FrameInput::exact(0)
+                .with_input_events(click(2, layout.center_normalized("world-tab", 0))),
+        );
+        let box2d = renderer.render(
+            FrameInput::exact(0)
+                .with_input_events(click(3, layout.center_normalized("world-engine", 1))),
+        );
+        assert_eq!(box2d.ui.selected_engine, "box2d");
+        assert_eq!(
+            box2d.ui.box2d_revision,
+            Some(physbox_box2d_comparator::BOX2D_REVISION)
+        );
+        assert_eq!(box2d.ui.box2d_aligned, Some(true));
+        assert!(box2d.ui.box2d_failure.is_none());
+
+        let evolved = renderer.render(FrameInput::exact(2));
+        assert_eq!(evolved.fixed_steps_total, 5);
+        assert_eq!(evolved.ui.box2d_completed_steps, Some(5));
+        assert_eq!(evolved.ui.box2d_aligned, Some(true));
+
+        renderer.render(
+            FrameInput::exact(0).with_input_events(click(4, layout.center_normalized("menu", 0))),
+        );
+        renderer.render(
+            FrameInput::exact(0)
+                .with_input_events(click(5, layout.center_normalized("world-tab", 0))),
+        );
+        let returned = renderer.render(
+            FrameInput::exact(0)
+                .with_input_events(click(6, layout.center_normalized("world-engine", 0))),
+        );
+        assert_eq!(returned.ui.selected_engine, "physbox");
+        assert_eq!(returned.fixed_steps_total, 5);
+        assert_eq!(returned.ui.box2d_completed_steps, Some(5));
     }
 
     #[test]

@@ -6,6 +6,8 @@ use physbox_contracts::{
 };
 use physbox_launch::{ValidationScenario, WorldCapacityPreset};
 
+#[cfg(feature = "box2d-comparator")]
+use crate::comparison::{ComparisonRenderPlan, ComparisonShadow};
 use crate::{
     AdapterDiagnostics, BODY_COMMAND_CAPACITY, BoundedBodyCommands, Camera2d, EngineConfig,
     FrameInput, GpuSolverSchedulingPolicyV1, InputEvent, PointerButton, PointerPhase, StepRequest,
@@ -14,6 +16,7 @@ use crate::{
     construction::{
         BoundedConstructionIntents, CONSTRUCTION_INTENT_CAPACITY, empty_construction_intent_batch,
     },
+    engine_selection::ComparisonEngine,
     gpu_solver::{GpuSolverCandidate, GpuSolverLab, GpuSolverMode},
     grab::{BoundedGrabIntents, GRAB_INTENT_CAPACITY, empty_grab_intent_batch},
     input::{SharedInputState, WorldPointerEvent},
@@ -689,6 +692,9 @@ pub struct EngineHost {
     solver_bind_group: Option<wgpu::BindGroup>,
     solver_executed: bool,
     body_world: Option<GpuBodyWorld>,
+    #[cfg(feature = "box2d-comparator")]
+    comparison_shadow: ComparisonShadow,
+    selected_engine: ComparisonEngine,
     clock: SimulationClock,
     camera: Camera2d,
     input: SharedInputState,
@@ -913,6 +919,21 @@ impl EngineHost {
             _ => None,
         };
         let scenario_hash = canonical_hash(&scenario).expect("engine-owned scenario hash is valid");
+        #[cfg(feature = "box2d-comparator")]
+        let comparison_shadow = {
+            let capacity = body_world
+                .as_ref()
+                .map_or(config.world_capacity.slots(), GpuBodyWorld::body_capacity)
+                .max(scenario.bodies.len() as u32);
+            ComparisonShadow::new(
+                device,
+                color_format,
+                &scenario,
+                capacity,
+                config.solver_profile.physics().sleeping_enabled,
+            )
+            .expect("pinned Box2D comparator accepts the configured shared scenario")
+        };
         let body_interaction = match config.scenario {
             ValidationScenario::BodyFreeFlight
             | ValidationScenario::Bootstrap
@@ -969,6 +990,9 @@ impl EngineHost {
             solver_bind_group,
             solver_executed: false,
             body_world,
+            #[cfg(feature = "box2d-comparator")]
+            comparison_shadow,
+            selected_engine: ComparisonEngine::default(),
             clock,
             camera: Camera2d::fixed(),
             input: SharedInputState::default(),
@@ -1002,6 +1026,7 @@ impl EngineHost {
         } = replacement;
         let camera = self.camera;
         let sleep_visuals_enabled = self.ui.sleep_visuals_enabled();
+        let selected_engine = self.selected_engine;
         let mut replacement = Self::new(
             device,
             queue,
@@ -1023,6 +1048,7 @@ impl EngineHost {
         replacement
             .ui
             .set_sleep_visuals_enabled(sleep_visuals_enabled);
+        replacement.selected_engine = selected_engine;
         if preserve_camera {
             replacement.camera = camera;
         }
@@ -1039,13 +1065,19 @@ impl EngineHost {
             .iter()
             .filter(|event| matches!(event, InputEvent::Pointer(_)))
             .count() as u64;
-        let mut routing = self
-            .ui
-            .route_events(&input.input_events, context.target.size);
+        let mut routing = self.ui.route_events(
+            &input.input_events,
+            context.target.size,
+            self.selected_engine,
+        );
         if let Some(action) = routing.action {
             match action {
                 UiAction::Recenter => {
                     routing.events.push(InputEvent::Recenter);
+                }
+                #[cfg(feature = "box2d-comparator")]
+                UiAction::SelectEngine(engine) => {
+                    self.selected_engine = engine;
                 }
                 UiAction::ActivateScenario(scenario) => {
                     if self.config.solver_profile.supports_scenario(scenario) {
@@ -1233,8 +1265,40 @@ impl EngineHost {
         } else {
             unreachable!("every shared scenario owns a GPU mechanics path");
         }
+        #[cfg(feature = "box2d-comparator")]
+        self.comparison_shadow.advance(steps);
 
-        if let Some(world) = &self.body_world {
+        #[cfg(feature = "box2d-comparator")]
+        let render_box2d = self.selected_engine == ComparisonEngine::Box2d;
+        #[cfg(not(feature = "box2d-comparator"))]
+        let render_box2d = false;
+        if render_box2d {
+            #[cfg(feature = "box2d-comparator")]
+            {
+                let physics = self.config.solver_profile.physics();
+                let quiet_outer_steps = physbox_contracts::SleepPolicyV1::experimental_s23()
+                    .quiet_outer_steps(physics.fixed_step_hz)
+                    .expect("validated physics hertz resolves the sleep quiet duration");
+                let wake_flash_outer_steps = physics
+                    .fixed_step_hz
+                    .saturating_mul(SLEEP_WAKE_FLASH_MILLISECONDS)
+                    .div_ceil(1_000)
+                    .max(1);
+                self.comparison_shadow.encode_render(
+                    context.queue,
+                    context.encoder,
+                    context.target,
+                    ComparisonRenderPlan {
+                        frame_index: self.frame_index,
+                        camera: camera_frame,
+                        sleep_visuals_enabled: self.ui.sleep_visuals_enabled(),
+                        current_outer_step: self.comparison_shadow.completed_steps() as u32,
+                        quiet_outer_steps,
+                        wake_flash_outer_steps,
+                    },
+                );
+            }
+        } else if let Some(world) = &self.body_world {
             let grab_pointer_active = self
                 .body_interaction
                 .as_ref()
@@ -1605,6 +1669,35 @@ impl EngineHost {
             }
         };
         let construction_diagnostic = self.construction_diagnostic_report();
+        #[cfg(feature = "box2d-comparator")]
+        let (
+            comparator_available,
+            box2d_revision,
+            box2d_completed_steps,
+            box2d_aligned,
+            box2d_failure,
+            visible_body_count,
+        ) = (
+            true,
+            Some(ComparisonShadow::revision()),
+            Some(self.comparison_shadow.completed_steps()),
+            Some(self.comparison_shadow.completed_steps() == self.fixed_steps_total),
+            self.comparison_shadow.failure(),
+            if self.selected_engine == ComparisonEngine::Box2d {
+                self.comparison_shadow.live_bodies()
+            } else {
+                contract.body_count
+            },
+        );
+        #[cfg(not(feature = "box2d-comparator"))]
+        let (
+            comparator_available,
+            box2d_revision,
+            box2d_completed_steps,
+            box2d_aligned,
+            box2d_failure,
+            visible_body_count,
+        ) = (false, None, None, None, None, contract.body_count);
         let ui = self.ui.encode(
             context.queue,
             context.encoder,
@@ -1613,7 +1706,7 @@ impl EngineHost {
                 scenario: self.config.scenario,
                 solver_profile: &self.config.solver_profile,
                 pacing: &pacing,
-                body_count: contract.body_count,
+                body_count: visible_body_count,
                 world_capacity: self.config.world_capacity,
                 body_capacity: contract.body_capacity,
                 contact_count: contract.contact_point_count,
@@ -1626,6 +1719,12 @@ impl EngineHost {
                 construction_state: construction_diagnostic.state.as_ref(),
                 construction_age_frames: construction_diagnostic.age_frames,
                 construction_diagnostic_source: construction_diagnostic.source,
+                selected_engine: self.selected_engine,
+                comparator_available,
+                box2d_revision,
+                box2d_completed_steps,
+                box2d_aligned,
+                box2d_failure,
             },
         );
         FrameReport {
