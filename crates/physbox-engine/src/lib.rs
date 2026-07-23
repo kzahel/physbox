@@ -168,7 +168,7 @@ pub use generated_contacts::{
     benchmark_gpu_generated_contact_identity_experiment,
     benchmark_gpu_generated_contact_scheduling_experiment, benchmark_gpu_generated_contacts,
     benchmark_gpu_generated_contacts_with_gather_topology, benchmark_gpu_sleeping_city,
-    benchmark_gpu_sparse_capacity,
+    benchmark_gpu_sleeping_city_with_grouping, benchmark_gpu_sparse_capacity,
 };
 pub use generated_contacts::{GpuConstructionGraphEvidence, GpuContactPersistenceTopology};
 pub use gpu_context::{AdapterDiagnostics, create_instance};

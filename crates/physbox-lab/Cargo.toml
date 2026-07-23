@@ -61,6 +61,11 @@ path = "src/bin/physbox-sleeping-city-evidence.rs"
 test = false
 
 [[bin]]
+name = "physbox-sleep-grouping-evidence"
+path = "src/bin/physbox-sleep-grouping-evidence.rs"
+test = false
+
+[[bin]]
 name = "physbox-contact-components"
 path = "src/bin/physbox-contact-components.rs"
 test = false

@@ -5966,6 +5966,26 @@ pub async fn benchmark_gpu_sleeping_city(
     warmup_steps: u32,
     samples: u32,
 ) -> Result<GpuGeneratedContactBenchmarkOutput, String> {
+    benchmark_gpu_sleeping_city_with_grouping(
+        scenario,
+        body_capacity,
+        warmup_steps,
+        samples,
+        physbox_launch::SleepGrouping::Local4,
+    )
+    .await
+}
+
+/// Measures one selected sleeping-city graph under an explicit applied sleep
+/// grouping. This is the matched S30 cost lane; it is not product operation.
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn benchmark_gpu_sleeping_city_with_grouping(
+    scenario: &ScenarioV1,
+    body_capacity: u32,
+    warmup_steps: u32,
+    samples: u32,
+    grouping: physbox_launch::SleepGrouping,
+) -> Result<GpuGeneratedContactBenchmarkOutput, String> {
     validate_selected_settings(scenario)?;
     if warmup_steps
         .checked_add(samples)
@@ -5984,7 +6004,7 @@ pub async fn benchmark_gpu_sleeping_city(
         GpuSolverSchedulingPolicyV1::SELECTED,
         ContactIdentityPolicyV1::SELECTED,
         body_capacity,
-        crate::awake_work::SleepExecutionConfig::enabled(60),
+        crate::awake_work::SleepExecutionConfig::configured(true, 60, 0.02, grouping),
     )
     .await
 }
