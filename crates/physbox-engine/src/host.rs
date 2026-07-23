@@ -21,6 +21,7 @@ use crate::{
     grab::{BoundedGrabIntents, GRAB_INTENT_CAPACITY, empty_grab_intent_batch},
     input::{SharedInputState, WorldPointerEvent},
     liquid_sandbox_scenario,
+    particle_world::{PARTICLE_COMMAND_CAPACITY, ParticleCommand},
     renderer::RenderFrameContext,
     report::{
         BodyCommandReport, CameraReport, ConstructionDiagnosticReport, FrameReport,
@@ -270,6 +271,8 @@ struct PreparedBodyCommands {
     grab_ranges: Vec<BodyCommandStepRange>,
     construction_batch: ConstructionIntentBatchV1,
     construction_ranges: Vec<BodyCommandStepRange>,
+    particle_commands: Vec<ParticleCommand>,
+    particle_ranges: Vec<BodyCommandStepRange>,
 }
 
 struct ConfigurationReplacement {
@@ -289,6 +292,9 @@ struct BodyInteractionState {
     pending_body: BoundedBodyCommands,
     pending_grab: BoundedGrabIntents,
     pending_construction: BoundedConstructionIntents,
+    pending_particles: Vec<ParticleCommand>,
+    fluid_tools_enabled: bool,
+    fluid_commands_enabled: bool,
     next_sequence: u32,
     report: BodyCommandReport,
 }
@@ -309,7 +315,11 @@ const SLEEP_WAKE_FLASH_MILLISECONDS: u32 = 160;
 const CONSTRUCTION_REPEAT_INTERVAL_SECONDS: f64 = 0.10;
 
 impl BodyInteractionState {
-    fn new(scheduled: Vec<ScheduledBodyCommandV1>, accept_live_input: bool) -> Self {
+    fn new(
+        scheduled: Vec<ScheduledBodyCommandV1>,
+        accept_live_input: bool,
+        fluid_tools_enabled: bool,
+    ) -> Self {
         let next_sequence = scheduled
             .iter()
             .map(|scheduled| scheduled.command.sequence())
@@ -327,6 +337,9 @@ impl BodyInteractionState {
                 .expect("grab intent capacity is valid"),
             pending_construction: BoundedConstructionIntents::new(CONSTRUCTION_INTENT_CAPACITY)
                 .expect("construction intent capacity is valid"),
+            pending_particles: Vec::with_capacity(PARTICLE_COMMAND_CAPACITY as usize),
+            fluid_tools_enabled,
+            fluid_commands_enabled: fluid_tools_enabled,
             next_sequence,
             report: BodyCommandReport {
                 grab_intent_contract_version: physbox_contracts::GRAB_INTENT_CONTRACT_VERSION,
@@ -335,6 +348,7 @@ impl BodyInteractionState {
                 capacity_commands: BODY_COMMAND_CAPACITY,
                 capacity_grab_intents: GRAB_INTENT_CAPACITY,
                 capacity_construction_intents: CONSTRUCTION_INTENT_CAPACITY,
+                capacity_particle_commands: PARTICLE_COMMAND_CAPACITY,
                 grab_state_bytes: crate::grab::GRAB_STATE_BYTES,
                 ..Default::default()
             },
@@ -358,6 +372,10 @@ impl BodyInteractionState {
         self.report.grab_pointer_active = false;
         self.report.construction_pointer_active = false;
         self.tool = tool;
+    }
+
+    fn set_fluid_commands_enabled(&mut self, enabled: bool) {
+        self.fluid_commands_enabled = self.fluid_tools_enabled && enabled;
     }
 
     fn capture_pointer_events(&mut self, events: &[WorldPointerEvent]) {
@@ -421,9 +439,12 @@ impl BodyInteractionState {
                         self.push_grab(intent);
                     } else if event.phase == PointerPhase::Up && !active.repeated {
                         let sequence = self.take_sequence();
-                        let intent = construction_intent(active.tool, sequence, active.down_target)
-                            .expect("non-grab tools produce construction intents");
-                        self.push_construction(intent);
+                        let target = if active.tool == WorkbenchTool::Water {
+                            active.current_target
+                        } else {
+                            active.down_target
+                        };
+                        self.push_tool_action(active.tool, sequence, target);
                     }
                     self.active_pointer = None;
                     self.report.construction_pointer_active = false;
@@ -441,6 +462,7 @@ impl BodyInteractionState {
     ) -> PreparedBodyCommands {
         self.report.grab_intent_dispatches_this_frame = 0;
         self.report.construction_intent_dispatches_this_frame = 0;
+        self.report.particle_command_dispatches_this_frame = 0;
         self.report.grab_constraint_dispatches_this_frame = steps;
         let mut ranges = vec![BodyCommandStepRange { start: 0, count: 0 }; steps as usize];
         self.advance_construction_hold(active_hold_seconds, steps != 0);
@@ -456,16 +478,20 @@ impl BodyInteractionState {
                     BodyCommandStepRange { start: 0, count: 0 };
                     steps as usize
                 ],
+                particle_commands: Vec::new(),
+                particle_ranges: vec![BodyCommandStepRange { start: 0, count: 0 }; steps as usize],
             };
         }
         if self.pending_body.overflowed()
             || self.pending_grab.overflowed()
             || self.pending_construction.overflowed()
+            || self.pending_particles.len() > PARTICLE_COMMAND_CAPACITY as usize
         {
             self.report.overflowed = true;
             self.pending_body.clear();
             self.pending_grab.clear();
             self.pending_construction.clear();
+            self.pending_particles.clear();
             self.update_presentation_counts();
             return PreparedBodyCommands {
                 batch: empty_command_batch(),
@@ -477,11 +503,14 @@ impl BodyInteractionState {
                     BodyCommandStepRange { start: 0, count: 0 };
                     steps as usize
                 ],
+                particle_commands: Vec::new(),
+                particle_ranges: vec![BodyCommandStepRange { start: 0, count: 0 }; steps as usize],
             };
         }
         let pending_body = self.pending_body.artifact().commands;
         let pending_grab = self.pending_grab.artifact().intents;
         let pending_construction = self.pending_construction.artifact().intents;
+        let pending_particles = self.pending_particles.clone();
         let mut body_builder = BoundedBodyCommands::new(BODY_COMMAND_CAPACITY)
             .expect("body command capacity is valid");
         let mut grab_builder =
@@ -492,6 +521,8 @@ impl BodyInteractionState {
         let mut grab_ranges = vec![BodyCommandStepRange { start: 0, count: 0 }; steps as usize];
         let mut construction_ranges =
             vec![BodyCommandStepRange { start: 0, count: 0 }; steps as usize];
+        let mut particle_commands = Vec::with_capacity(pending_particles.len());
+        let mut particle_ranges = vec![BodyCommandStepRange { start: 0, count: 0 }; steps as usize];
         for step_offset in 0..steps {
             let start = body_builder.len() as u32;
             if step_offset == 0 {
@@ -518,6 +549,11 @@ impl BodyInteractionState {
                     start: 0,
                     count: construction_builder.len() as u32,
                 };
+                particle_commands.extend_from_slice(&pending_particles);
+                particle_ranges[0] = BodyCommandStepRange {
+                    start: 0,
+                    count: particle_commands.len() as u32,
+                };
             }
             let absolute_step = completed_steps + u64::from(step_offset);
             for scheduled in self
@@ -538,6 +574,7 @@ impl BodyInteractionState {
         self.pending_body.clear();
         self.pending_grab.clear();
         self.pending_construction.clear();
+        self.pending_particles.clear();
         if self.report.overflowed
             || body_builder.overflowed()
             || grab_builder.overflowed()
@@ -554,6 +591,8 @@ impl BodyInteractionState {
                     BodyCommandStepRange { start: 0, count: 0 };
                     steps as usize
                 ],
+                particle_commands: Vec::new(),
+                particle_ranges: vec![BodyCommandStepRange { start: 0, count: 0 }; steps as usize],
             };
         }
         let batch = body_builder.artifact();
@@ -592,6 +631,14 @@ impl BodyInteractionState {
             .iter()
             .filter(|range| range.count != 0)
             .count() as u32;
+        self.report.executed_particle_commands_total = self
+            .report
+            .executed_particle_commands_total
+            .saturating_add(particle_commands.len() as u64);
+        self.report.particle_command_dispatches_this_frame = particle_ranges
+            .iter()
+            .filter(|range| range.count != 0)
+            .count() as u32;
         self.update_presentation_counts();
         PreparedBodyCommands {
             batch,
@@ -600,6 +647,8 @@ impl BodyInteractionState {
             grab_ranges,
             construction_batch,
             construction_ranges,
+            particle_commands,
+            particle_ranges,
         }
     }
 
@@ -637,13 +686,49 @@ impl BodyInteractionState {
         }
     }
 
+    fn push_particle(&mut self, command: ParticleCommand) {
+        self.report.queued_commands_total = self.report.queued_commands_total.saturating_add(1);
+        self.report.queued_particle_commands_total =
+            self.report.queued_particle_commands_total.saturating_add(1);
+        if self.pending_particles.len() == PARTICLE_COMMAND_CAPACITY as usize {
+            self.report.overflowed = true;
+            return;
+        }
+        self.pending_particles.push(command);
+    }
+
+    fn push_tool_action(&mut self, tool: WorkbenchTool, sequence: u32, target: Vec2) {
+        if let Some(intent) = construction_intent(tool, sequence, target) {
+            self.push_construction(intent);
+        }
+        if !self.fluid_commands_enabled {
+            return;
+        }
+        match tool {
+            WorkbenchTool::Water => self.push_particle(ParticleCommand::EmitCircle {
+                center: target,
+                radius: 0.28,
+                spacing: 0.10,
+                initial_velocity: Vec2::new(0.0, 0.0),
+                material_id: 0,
+                sequence,
+            }),
+            WorkbenchTool::Erase => self.push_particle(ParticleCommand::EraseCircle {
+                center: target,
+                radius: 0.24,
+                sequence,
+            }),
+            _ => {}
+        }
+    }
+
     fn advance_construction_hold(&mut self, elapsed_seconds: f64, can_emit: bool) {
         let Some(active) = &mut self.active_pointer else {
             return;
         };
         if !matches!(
             active.tool,
-            WorkbenchTool::Circle | WorkbenchTool::Rectangle
+            WorkbenchTool::Circle | WorkbenchTool::Rectangle | WorkbenchTool::Water
         ) {
             return;
         }
@@ -667,9 +752,7 @@ impl BodyInteractionState {
         active.active_hold_seconds = 0.0;
         active.repeated = true;
         let sequence = self.take_sequence();
-        let intent = construction_intent(tool, sequence, target)
-            .expect("repeat-enabled tools produce construction intents");
-        self.push_construction(intent);
+        self.push_tool_action(tool, sequence, target);
     }
 }
 
@@ -691,7 +774,7 @@ fn construction_intent(
             sequence,
             world_target,
         }),
-        WorkbenchTool::Grab => None,
+        WorkbenchTool::Grab | WorkbenchTool::Water | WorkbenchTool::Surface => None,
     }
 }
 
@@ -1089,6 +1172,7 @@ impl EngineHost {
             )
             .expect("pinned Box2D comparator accepts the configured shared scenario")
         };
+        let fluid_tools_enabled = config.scenario == ValidationScenario::LiquidSandbox;
         let body_interaction = match config.scenario {
             ValidationScenario::BodyFreeFlight
             | ValidationScenario::Bootstrap
@@ -1105,22 +1189,30 @@ impl EngineHost {
             | ValidationScenario::SettlingHard16
             | ValidationScenario::SettlingIdentity16
             | ValidationScenario::SettlingSoftness16
-            | ValidationScenario::SettlingCandidate16 => {
-                Some(BodyInteractionState::new(Vec::new(), true))
-            }
+            | ValidationScenario::SettlingCandidate16 => Some(BodyInteractionState::new(
+                Vec::new(),
+                true,
+                fluid_tools_enabled,
+            )),
             #[cfg(feature = "solver-lab")]
             ValidationScenario::SolverLabStack2
             | ValidationScenario::SolverLabStack4
             | ValidationScenario::SolverLabStack8
             | ValidationScenario::SolverLabStack12
             | ValidationScenario::SolverLabStack14
-            | ValidationScenario::SolverLabStack16 => {
-                Some(BodyInteractionState::new(Vec::new(), true))
-            }
+            | ValidationScenario::SolverLabStack16 => Some(BodyInteractionState::new(
+                Vec::new(),
+                true,
+                fluid_tools_enabled,
+            )),
             ValidationScenario::ResetGrab => {
                 let script = p5_2_generated_reset_grab_scenario()
                     .expect("engine-owned generated reset/grab scenario is valid");
-                Some(BodyInteractionState::new(script.scheduled_commands, false))
+                Some(BodyInteractionState::new(
+                    script.scheduled_commands,
+                    false,
+                    fluid_tools_enabled,
+                ))
             }
             ValidationScenario::SolverJacobi | ValidationScenario::SolverColored => None,
         };
@@ -1226,6 +1318,7 @@ impl EngineHost {
         let mut routing = self.ui.route_events(
             &input.input_events,
             context.target.size,
+            self.config.scenario,
             self.selected_engine,
         );
         if let Some(action) = routing.action {
@@ -1346,11 +1439,16 @@ impl EngineHost {
                 }
             }
         }
+        routing.selected_tool = self
+            .ui
+            .restrict_selected_tool(self.config.scenario, self.selected_engine);
         self.pointer_events_total = self.pointer_events_total.saturating_add(raw_pointer_count);
         let (world_events, _) =
             self.input
                 .apply_events(&mut self.camera, &routing.events, context.target.size);
         if let Some(interaction) = &mut self.body_interaction {
+            interaction
+                .set_fluid_commands_enabled(self.selected_engine == ComparisonEngine::PhysBox);
             interaction.select_tool(routing.selected_tool);
             interaction.capture_pointer_events(&world_events);
         }
@@ -1436,6 +1534,8 @@ impl EngineHost {
                         grab_ranges: &commands.grab_ranges,
                         construction_batch: &commands.construction_batch,
                         construction_ranges: &commands.construction_ranges,
+                        particle_commands: &commands.particle_commands,
+                        particle_ranges: &commands.particle_ranges,
                     },
                 )
                 .expect("engine-owned body command plan is valid");
@@ -2348,7 +2448,7 @@ mod body_interaction_tests {
 
     #[test]
     fn held_placement_repeats_at_the_moving_pointer_and_stops_on_release() {
-        let mut interaction = BodyInteractionState::new(Vec::new(), true);
+        let mut interaction = BodyInteractionState::new(Vec::new(), true, false);
         interaction.select_tool(WorkbenchTool::Circle);
         let down_target = Vec2::new(-0.4, 0.6);
         let moved_target = Vec2::new(0.3, 0.8);
@@ -2384,7 +2484,7 @@ mod body_interaction_tests {
 
     #[test]
     fn quick_tap_places_once_and_cancel_places_nothing() {
-        let mut interaction = BodyInteractionState::new(Vec::new(), true);
+        let mut interaction = BodyInteractionState::new(Vec::new(), true, false);
         interaction.select_tool(WorkbenchTool::Rectangle);
         let tap_target = Vec2::new(0.2, 0.7);
         interaction.capture_pointer_events(&[
@@ -2407,7 +2507,7 @@ mod body_interaction_tests {
 
     #[test]
     fn hold_time_survives_zero_step_frames_without_queuing_a_backlog() {
-        let mut interaction = BodyInteractionState::new(Vec::new(), true);
+        let mut interaction = BodyInteractionState::new(Vec::new(), true, false);
         interaction.select_tool(WorkbenchTool::Circle);
         let target = Vec2::new(0.1, 0.6);
         interaction.capture_pointer_events(&[pointer(1, PointerPhase::Down, target)]);
@@ -2436,7 +2536,7 @@ mod body_interaction_tests {
 
     #[test]
     fn erase_remains_release_committed_without_hold_repeat() {
-        let mut interaction = BodyInteractionState::new(Vec::new(), true);
+        let mut interaction = BodyInteractionState::new(Vec::new(), true, true);
         interaction.select_tool(WorkbenchTool::Erase);
         let target = Vec2::new(0.0, 0.5);
         interaction.capture_pointer_events(&[pointer(1, PointerPhase::Down, target)]);
@@ -2450,5 +2550,53 @@ mod body_interaction_tests {
             released.construction_batch.intents[0],
             ConstructionIntentV1::EraseAt { .. }
         ));
+        assert!(matches!(
+            released.particle_commands[0],
+            ParticleCommand::EraseCircle { .. }
+        ));
+        assert_eq!(released.particle_ranges[0].count, 1);
+    }
+
+    #[test]
+    fn water_tap_and_hold_emit_only_on_admitted_steps() {
+        let mut interaction = BodyInteractionState::new(Vec::new(), true, true);
+        interaction.select_tool(WorkbenchTool::Water);
+        let down = Vec2::new(-0.2, 1.2);
+        let moved = Vec2::new(0.4, 1.0);
+        interaction.capture_pointer_events(&[pointer(1, PointerPhase::Down, down)]);
+        interaction.prepare(0, 0, 0.0);
+        interaction.capture_pointer_events(&[pointer(1, PointerPhase::Move, moved)]);
+
+        let stalled = interaction.prepare(0, 0, 0.30);
+        assert!(stalled.particle_commands.is_empty());
+        assert_eq!(interaction.report.queued_particle_commands_total, 0);
+
+        let admitted = interaction.prepare(1, 0, 0.0);
+        assert!(matches!(
+            admitted.particle_commands[0],
+            ParticleCommand::EmitCircle { center, .. } if center == moved
+        ));
+        assert_eq!(admitted.particle_ranges[0].count, 1);
+
+        interaction.capture_pointer_events(&[pointer(1, PointerPhase::Up, moved)]);
+        let after_release = interaction.prepare(60, 1, 1.0);
+        assert!(after_release.particle_commands.is_empty());
+        assert_eq!(interaction.report.queued_particle_commands_total, 1);
+        assert_eq!(interaction.report.executed_particle_commands_total, 1);
+    }
+
+    #[test]
+    fn box2d_visible_erase_does_not_mutate_hidden_particle_storage() {
+        let mut interaction = BodyInteractionState::new(Vec::new(), true, true);
+        interaction.set_fluid_commands_enabled(false);
+        interaction.select_tool(WorkbenchTool::Erase);
+        let target = Vec2::new(0.0, 0.5);
+        interaction.capture_pointer_events(&[
+            pointer(1, PointerPhase::Down, target),
+            pointer(1, PointerPhase::Up, target),
+        ]);
+        let released = interaction.prepare(1, 0, 1.0 / 60.0);
+        assert_eq!(released.construction_batch.intents.len(), 1);
+        assert!(released.particle_commands.is_empty());
     }
 }

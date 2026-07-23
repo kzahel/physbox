@@ -82,6 +82,8 @@ pub(crate) struct BodyStepPlan<'a> {
     pub(crate) grab_ranges: &'a [BodyCommandStepRange],
     pub(crate) construction_batch: &'a ConstructionIntentBatchV1,
     pub(crate) construction_ranges: &'a [BodyCommandStepRange],
+    pub(crate) particle_commands: &'a [crate::particle_world::ParticleCommand],
+    pub(crate) particle_ranges: &'a [BodyCommandStepRange],
 }
 
 pub(crate) struct BodyRenderPlan<'a> {
@@ -998,6 +1000,8 @@ impl GpuBodyWorld {
             plan.grab_ranges,
             plan.construction_batch,
             plan.construction_ranges,
+            plan.particle_commands,
+            plan.particle_ranges,
             None,
         )
     }
@@ -1015,6 +1019,7 @@ impl GpuBodyWorld {
         let grab_ranges = vec![BodyCommandStepRange { start: 0, count: 0 }; steps as usize];
         let construction_batch = empty_construction_intent_batch();
         let construction_ranges = vec![BodyCommandStepRange { start: 0, count: 0 }; steps as usize];
+        let particle_ranges = vec![BodyCommandStepRange { start: 0, count: 0 }; steps as usize];
         self.encode_steps_internal(
             queue,
             encoder,
@@ -1025,6 +1030,8 @@ impl GpuBodyWorld {
             &grab_ranges,
             &construction_batch,
             &construction_ranges,
+            &[],
+            &particle_ranges,
             beginning_timestamp,
         )
     }
@@ -1041,6 +1048,8 @@ impl GpuBodyWorld {
         grab_ranges: &[BodyCommandStepRange],
         construction_batch: &ConstructionIntentBatchV1,
         construction_ranges: &[BodyCommandStepRange],
+        particle_commands: &[crate::particle_world::ParticleCommand],
+        particle_ranges: &[BodyCommandStepRange],
         beginning_timestamp: Option<(&wgpu::QuerySet, u32)>,
     ) -> Result<CapacityRecordV1, String> {
         if beginning_timestamp.is_some() && steps != 1 {
@@ -1049,9 +1058,11 @@ impl GpuBodyWorld {
         if ranges.len() != steps as usize
             || grab_ranges.len() != steps as usize
             || construction_ranges.len() != steps as usize
+            || particle_ranges.len() != steps as usize
         {
             return Err(
-                "body, grab, and construction ranges must match the encoded step count".to_owned(),
+                "body, grab, construction, and particle ranges must match the encoded step count"
+                    .to_owned(),
             );
         }
         let capacity = self.storage.upload_commands(queue, batch)?;
@@ -1183,6 +1194,14 @@ impl GpuBodyWorld {
         queue.write_buffer(&self.construction_params, 0, &construction_bytes);
         let mut beginning_timestamp = beginning_timestamp;
         for step_index in 0..steps as usize {
+            let particle_range = particle_ranges[step_index];
+            if particle_range
+                .start
+                .checked_add(particle_range.count)
+                .is_none_or(|end| end > u32::try_from(particle_commands.len()).unwrap_or(u32::MAX))
+            {
+                return Err("particle command range exceeds the uploaded batch".to_owned());
+            }
             if let Some(parameter_index) = construction_parameter_indices[step_index] {
                 let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                     label: Some("physbox5_construction_pass"),
@@ -1262,7 +1281,17 @@ impl GpuBodyWorld {
                 self.storage.encode_sleep_admission(encoder);
             }
             if let Some(particles) = &self.particles {
+                if particle_range.count != 0 {
+                    particles.encode_commands(
+                        queue,
+                        encoder,
+                        &particle_commands[particle_range.start as usize
+                            ..(particle_range.start + particle_range.count) as usize],
+                    )?;
+                }
                 particles.encode_step(encoder);
+            } else if particle_range.count != 0 {
+                return Err("particle commands require a coupled particle world".to_owned());
             }
         }
         Ok(capacity)
@@ -2022,6 +2051,8 @@ mod tests {
                     grab_ranges: &grab_ranges,
                     construction_batch: construction,
                     construction_ranges: &construction_ranges,
+                    particle_commands: &[],
+                    particle_ranges: &[BodyCommandStepRange { start: 0, count: 0 }],
                 },
             )
             .unwrap();

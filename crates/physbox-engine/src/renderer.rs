@@ -1743,6 +1743,7 @@ mod tests {
                 capacity_commands: crate::BODY_COMMAND_CAPACITY,
                 capacity_grab_intents: crate::grab::GRAB_INTENT_CAPACITY,
                 capacity_construction_intents: crate::CONSTRUCTION_INTENT_CAPACITY,
+                capacity_particle_commands: crate::particle_world::PARTICLE_COMMAND_CAPACITY,
                 grab_state_bytes: crate::grab::GRAB_STATE_BYTES,
                 ..Default::default()
             }

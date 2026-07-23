@@ -17,7 +17,7 @@ use crate::{
     },
 };
 
-pub(crate) const UI_CONTRACT_VERSION: u32 = 9;
+pub(crate) const UI_CONTRACT_VERSION: u32 = 10;
 const STATIC_INSTANCE_CAPACITY: usize = 384;
 const DYNAMIC_INSTANCE_CAPACITY: usize = 320;
 
@@ -62,10 +62,20 @@ pub(crate) enum WorkbenchTool {
     Circle,
     Rectangle,
     Erase,
+    Water,
+    Surface,
 }
 
 impl WorkbenchTool {
-    const ALL: [Self; 4] = [Self::Grab, Self::Circle, Self::Rectangle, Self::Erase];
+    const BASE: [Self; 4] = [Self::Grab, Self::Circle, Self::Rectangle, Self::Erase];
+    const ALL: [Self; 6] = [
+        Self::Grab,
+        Self::Circle,
+        Self::Rectangle,
+        Self::Erase,
+        Self::Water,
+        Self::Surface,
+    ];
 
     pub(crate) const fn name(self) -> &'static str {
         match self {
@@ -73,6 +83,8 @@ impl WorkbenchTool {
             Self::Circle => "circle",
             Self::Rectangle => "rectangle",
             Self::Erase => "erase",
+            Self::Water => "water",
+            Self::Surface => "surface",
         }
     }
 
@@ -82,7 +94,21 @@ impl WorkbenchTool {
             Self::Circle => "CIRC",
             Self::Rectangle => "RECT",
             Self::Erase => "ERASE",
+            Self::Water => "WATER",
+            Self::Surface => "SURF",
         }
+    }
+}
+
+fn available_tools(
+    scenario: ValidationScenario,
+    selected_engine: ComparisonEngine,
+) -> &'static [WorkbenchTool] {
+    if scenario == ValidationScenario::LiquidSandbox && selected_engine == ComparisonEngine::PhysBox
+    {
+        &WorkbenchTool::ALL
+    } else {
+        &WorkbenchTool::BASE
     }
 }
 
@@ -179,6 +205,7 @@ impl WorkbenchUi {
         &mut self,
         events: &[InputEvent],
         target_size: [u32; 2],
+        scenario: ValidationScenario,
         selected_engine: ComparisonEngine,
     ) -> UiRouting {
         let routing = route_events(
@@ -189,6 +216,7 @@ impl WorkbenchUi {
                 solver_profiles: &mut self.solver_profiles,
                 draft_solver_profile: &mut self.draft_solver_profile,
                 captured_pointers: &mut self.captured_pointers,
+                scenario,
                 selected_engine,
             },
             events,
@@ -202,6 +230,17 @@ impl WorkbenchUi {
 
     pub(crate) fn select_tool(&mut self, tool: WorkbenchTool) {
         self.selected_tool = tool;
+    }
+
+    pub(crate) fn restrict_selected_tool(
+        &mut self,
+        scenario: ValidationScenario,
+        selected_engine: ComparisonEngine,
+    ) -> WorkbenchTool {
+        if !available_tools(scenario, selected_engine).contains(&self.selected_tool) {
+            self.selected_tool = WorkbenchTool::Grab;
+        }
+        self.selected_tool
     }
 
     pub(crate) const fn sleep_visuals_enabled(&self) -> bool {
@@ -254,6 +293,7 @@ struct UiRouteState<'a> {
     solver_profiles: &'a mut Vec<SolverProfileConfig>,
     draft_solver_profile: &'a mut SolverProfileConfig,
     captured_pointers: &'a mut BTreeSet<u64>,
+    scenario: ValidationScenario,
     selected_engine: ComparisonEngine,
 }
 
@@ -269,6 +309,7 @@ fn route_events(
         solver_profiles,
         draft_solver_profile,
         captured_pointers,
+        scenario,
         selected_engine,
     } = state;
     let mut forwarded = Vec::with_capacity(events.len());
@@ -296,6 +337,7 @@ fn route_events(
                 *menu_open,
                 *menu_page,
                 solver_profiles,
+                scenario,
                 selected_engine,
             ) {
                 captured_pointers.insert(pointer.id);
@@ -455,6 +497,7 @@ impl UiLayout {
         menu_open: bool,
         menu_page: MenuPage,
         solver_profiles: &[SolverProfileConfig],
+        scenario: ValidationScenario,
         selected_engine: ComparisonEngine,
     ) -> Option<UiHit> {
         let pixel = [
@@ -464,9 +507,9 @@ impl UiLayout {
         if contains(self.menu_button(), pixel) {
             return Some(UiHit::Menu);
         }
-        for tool in WorkbenchTool::ALL {
-            if contains(self.tool_button(tool), pixel) {
-                return Some(UiHit::Tool(tool));
+        for tool in available_tools(scenario, selected_engine) {
+            if contains(self.tool_button(*tool), pixel) {
+                return Some(UiHit::Tool(*tool));
             }
         }
         if !menu_open {
@@ -579,11 +622,20 @@ impl UiLayout {
             WorkbenchTool::Circle => 1,
             WorkbenchTool::Rectangle => 2,
             WorkbenchTool::Erase => 3,
+            WorkbenchTool::Water => 4,
+            WorkbenchTool::Surface => 5,
+        };
+        let logical_width = self.target_size[0] as f32 / self.scale;
+        let (stride, width) = if logical_width < 580.0 {
+            let stride = ((logical_width - 130.0) / WorkbenchTool::ALL.len() as f32).max(1.0);
+            (stride, (stride - 6.0).max(1.0))
+        } else {
+            (76.0, 70.0)
         };
         [
-            (118.0 + index as f32 * 76.0) * self.scale,
+            (118.0 + index as f32 * stride) * self.scale,
             24.0 * self.scale,
-            70.0 * self.scale,
+            width * self.scale,
             52.0 * self.scale,
         ]
     }
@@ -1479,20 +1531,22 @@ fn static_batch(target_size: [u32; 2], model: StaticBatchModel<'_>) -> Batch {
         if menu_open { selected } else { button },
     );
     batch.push_text("MENU", [27.0 * scale, 41.0 * scale], 2.4 * scale, text);
-    for tool in WorkbenchTool::ALL {
-        let bounds = layout.tool_button(tool);
+    for tool in available_tools(scenario, selected_engine) {
+        let bounds = layout.tool_button(*tool);
         batch.push_quad(
             bounds,
-            if tool == selected_tool {
+            if *tool == selected_tool {
                 selected
             } else {
                 button
             },
         );
+        let label_scale = (1.8 * scale)
+            .min((bounds[2] - 8.0 * scale) / (tool.label().len() as f32 * GLYPH_CELL_WIDTH as f32));
         batch.push_text(
             tool.label(),
-            [bounds[0] + 7.0 * scale, bounds[1] + 17.0 * scale],
-            1.8 * scale,
+            [bounds[0] + 4.0 * scale, bounds[1] + 17.0 * scale],
+            label_scale,
             text,
         );
     }
@@ -2118,6 +2172,7 @@ mod tests {
                 solver_profiles: &mut profiles,
                 draft_solver_profile: &mut draft,
                 captured_pointers: &mut captured,
+                scenario: ValidationScenario::Bootstrap,
                 selected_engine: ComparisonEngine::PhysBox,
             },
             &[pointer(
@@ -2156,6 +2211,7 @@ mod tests {
                 solver_profiles: &mut profiles,
                 draft_solver_profile: &mut draft,
                 captured_pointers: &mut captured,
+                scenario: ValidationScenario::Bootstrap,
                 selected_engine: ComparisonEngine::PhysBox,
             },
             &[pointer(
@@ -2195,6 +2251,7 @@ mod tests {
                 solver_profiles: &mut profiles,
                 draft_solver_profile: &mut draft,
                 captured_pointers: &mut captured,
+                scenario: ValidationScenario::Bootstrap,
                 selected_engine: ComparisonEngine::Box2d,
             },
             &[pointer(
@@ -2223,6 +2280,7 @@ mod tests {
                 solver_profiles: &mut profiles,
                 draft_solver_profile: &mut draft,
                 captured_pointers: &mut captured,
+                scenario: ValidationScenario::Bootstrap,
                 selected_engine: ComparisonEngine::PhysBox,
             },
             &[pointer(
@@ -2251,6 +2309,7 @@ mod tests {
                 solver_profiles: &mut profiles,
                 draft_solver_profile: &mut draft,
                 captured_pointers: &mut captured,
+                scenario: ValidationScenario::Bootstrap,
                 selected_engine: ComparisonEngine::Box2d,
             },
             &[pointer(
@@ -2286,6 +2345,7 @@ mod tests {
                 solver_profiles: &mut profiles,
                 draft_solver_profile: &mut draft,
                 captured_pointers: &mut captured,
+                scenario: ValidationScenario::Bootstrap,
                 selected_engine: ComparisonEngine::PhysBox,
             },
             &[pointer(
@@ -2321,6 +2381,7 @@ mod tests {
                 solver_profiles: &mut profiles,
                 draft_solver_profile: &mut draft,
                 captured_pointers: &mut captured,
+                scenario: ValidationScenario::Bootstrap,
                 selected_engine: ComparisonEngine::PhysBox,
             },
             &[pointer(
@@ -2347,6 +2408,7 @@ mod tests {
                     true,
                     MenuPage::World,
                     &profiles,
+                    ValidationScenario::Bootstrap,
                     ComparisonEngine::Box2d,
                 )
                 .is_some()
@@ -2364,6 +2426,7 @@ mod tests {
                 true,
                 MenuPage::World,
                 &profiles,
+                ValidationScenario::Bootstrap,
                 ComparisonEngine::Box2d,
             ),
             Some(UiHit::Panel)
@@ -2527,6 +2590,8 @@ mod tests {
                     solver_profiles: &mut profiles,
                     draft_solver_profile: &mut draft,
                     captured_pointers: &mut captured,
+                    scenario: ValidationScenario::Bootstrap,
+                    selected_engine: ComparisonEngine::PhysBox,
                 },
                 &[pointer(
                     id,
@@ -2546,6 +2611,8 @@ mod tests {
                 solver_profiles: &mut profiles,
                 draft_solver_profile: &mut draft,
                 captured_pointers: &mut captured,
+                scenario: ValidationScenario::Bootstrap,
+                selected_engine: ComparisonEngine::PhysBox,
             },
             &[pointer(
                 8,
@@ -2578,6 +2645,8 @@ mod tests {
                 solver_profiles: &mut profiles,
                 draft_solver_profile: &mut draft,
                 captured_pointers: &mut captured,
+                scenario: ValidationScenario::Bootstrap,
+                selected_engine: ComparisonEngine::PhysBox,
             },
             &[pointer(
                 9,
@@ -2622,6 +2691,7 @@ mod tests {
                 solver_profiles: &mut profiles,
                 draft_solver_profile: &mut solver_profile,
                 captured_pointers: &mut captured,
+                scenario: ValidationScenario::Bootstrap,
                 selected_engine: ComparisonEngine::PhysBox,
             },
             &events,
@@ -2652,6 +2722,7 @@ mod tests {
                 solver_profiles: &mut profiles,
                 draft_solver_profile: &mut solver_profile,
                 captured_pointers: &mut captured,
+                scenario: ValidationScenario::Bootstrap,
                 selected_engine: ComparisonEngine::PhysBox,
             },
             &[
@@ -2664,5 +2735,22 @@ mod tests {
         assert_eq!(routed.selected_tool, WorkbenchTool::Rectangle);
         assert!(routed.events.is_empty());
         assert!(captured.is_empty());
+    }
+
+    #[test]
+    fn liquid_tools_are_visible_only_in_the_physbox_liquid_sandbox() {
+        assert_eq!(
+            available_tools(ValidationScenario::LiquidSandbox, ComparisonEngine::PhysBox),
+            &WorkbenchTool::ALL
+        );
+        assert_eq!(
+            available_tools(ValidationScenario::Bootstrap, ComparisonEngine::PhysBox),
+            &WorkbenchTool::BASE
+        );
+        #[cfg(feature = "box2d-comparator")]
+        assert_eq!(
+            available_tools(ValidationScenario::LiquidSandbox, ComparisonEngine::Box2d),
+            &WorkbenchTool::BASE
+        );
     }
 }
