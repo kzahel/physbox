@@ -459,6 +459,11 @@ policy.
 
 ## P5.4 — rigid parity and performance gates
 
+- Deliver the default-on, compile-removable
+  [interactive Box2D comparison](topics/interactive-box2d-comparison.md)
+  through the existing shared UI on desktop, browser, and Android. It is a
+  non-authoritative shadow for visible review, never fallback or performance
+  evidence.
 - Resolve the completed-negative
   [S24 current rigid quality qualification](tactical/024-current-rigid-quality-qualification.md):
   the native 2/4/8 foundation passes, but the upright 12-stack exceeds the

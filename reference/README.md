@@ -2,8 +2,11 @@
 
 This directory holds reproducible source checkouts used to understand,
 compare, and diagnose physics behavior. Checkout contents are gitignored; this
-README and `pins.toml` are the only tracked files. None of these repositories
-is a PhysBox 5 product dependency.
+README and `pins.toml` are the only tracked files in this directory. None of
+these checkouts is a PhysBox 5 product dependency. The separately governed
+interactive Box2D comparator may package only a reviewed, enumerated
+redistributable subset outside this directory, with the source revision,
+manifest, build recipe or artifact digest, and license preserved.
 
 Run:
 
@@ -93,11 +96,13 @@ payloads use stable field and identifier ordering, finite numbers only, and no
 unordered object maps. Preserve the source scenario hash and record a separate
 projection hash over the exact request bytes.
 
-Keep Box2D v3, original LiquidFun's Box2D 2.3, and any optional engine
-comparator in separate processes. Foreign engine code never links into the
-PhysBox product engine. A checked calibration trace may be a reviewed baseline,
-but it is not proof of the current PhysBox 3 web build; claims about current
-web behavior require a fresh capture.
+Keep Box2D v3, original LiquidFun's Box2D 2.3, and optional authority
+comparators in separate processes. The default-enabled, compile-removable
+[interactive Box2D comparison](../docs/topics/interactive-box2d-comparison.md)
+is the sole in-process exception and remains a non-authoritative review
+shadow. A checked calibration trace may be a reviewed baseline, but it is not
+proof of the current PhysBox 3 web build; claims about current web behavior
+require a fresh capture.
 
 The optimized rigid performance process under `tools/benchmarks/box2d` is
 deliberately separate from the authority executable. It rebuilds this same

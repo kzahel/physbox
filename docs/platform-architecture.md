@@ -1,7 +1,8 @@
 # Platform architecture
 
-PhysBox 5 has one shared engine. Desktop, web, Android, and headless are host
-adapters, not alternate implementations.
+PhysBox 5 has one shared engine and one authoritative GPU product world.
+Desktop, web, Android, and headless are host adapters, not alternate product
+implementations.
 
 `physbox-engine` owns fixed stepping, the
 [slow-time overload policy](topics/simulation-time-and-overload.md), GPU state,
@@ -109,3 +110,24 @@ time; that is an engine-owned execution mode rather than a platform scheduler.
 
 No app crate may contain WGSL, pipeline/pass encoding, engine settings,
 physics structures, scenario expectations, or numeric scene behavior.
+
+## Box2D comparison exception
+
+The default-enabled `box2d-comparator` feature may add one non-authoritative
+shadow world for direct validation review. It is owned inside the same shared
+host: one engine-rendered menu chooses which state the existing renderer and
+input selection display, while both receive the same shared scenario,
+settings projection, clock admissions, and stable-identity action stream.
+Box2D state never enters PhysBox mechanics or product results.
+
+Platform adapters may package and initialize the pinned foreign runtime but
+may not own its semantics. Native and Android expose opaque C FFI; browser
+loads an opaque WebAssembly runtime bridge. Shared Rust owns creation,
+stepping, actions, state decoding, revision checks, UI visibility, and
+reporting. The browser bridge is a narrowly documented exception to the
+ordinary leaf vocabulary rule only for foreign ABI names; it still cannot
+know tools, menus, camera, scenarios, solver settings, or validation outcomes.
+
+Compiling without the feature removes the foreign runtime and engine selector
+completely. Comparator-enabled frames are validation operation and cannot
+produce PhysBox performance evidence.

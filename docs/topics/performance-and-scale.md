@@ -25,6 +25,13 @@ badge. Every claim names the scene, active work, solver quality, adapter, host,
 revision, and capacity state. A result is eligible for a performance claim only
 after its correctness gates pass.
 
+The default-enabled interactive Box2D shadow is validation presentation, not a
+benchmark lane. Any frame or step that constructs, advances, uploads, or
+renders the shadow is ineligible for a PhysBox performance claim. Performance
+tools compile `box2d-comparator` out or prove the runtime is absent; the
+existing deterministic-authority and optimized-process CPU lanes remain the
+only Box2D timing sources.
+
 The initial planning shorthand is:
 
 - **10K proves the engine works at useful scale.** It is not by itself a

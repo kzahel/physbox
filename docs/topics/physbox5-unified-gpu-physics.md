@@ -46,7 +46,11 @@ complete.
 Historical S6-S18 dispositions remain accurate for their frozen
 questions; they do not override the later human product decision. Invariants,
 capacity safety, exact replay within a configuration, portable WebGPU, one
-GPU-resident state, and honest cost/response reporting remain mandatory.
+authoritative GPU-resident product state, and honest cost/response reporting
+remain mandatory. The default-enabled, compile-removable
+[interactive Box2D comparison](interactive-box2d-comparison.md) may maintain
+one non-authoritative shadow for human review. It cannot feed mechanics,
+become fallback, satisfy gates, or enter PhysBox performance evidence.
 
 The [rigid quality target contract](rigid-quality-targets.md) now makes the
 awake stack hierarchy explicit for new work: 2/4/8 are the regression
@@ -1054,11 +1058,14 @@ triggers are in [S21](../tactical/021-scalable-broadphase.md) and the
 
 ### Box2D rigid oracle
 
-The first milestone should run the GPU solver beside an unmodified, test-only
-native Box2D world. One engine-owned scenario definition supplies the same
-authored bodies, initial states, gravity, fixed step, and neutral action
-sequence to both. Box2D is an oracle and comparison harness, not a product
-backend, browser fallback, or second scene format.
+The first milestone should run the GPU solver beside an unmodified Box2D
+world. One engine-owned scenario definition supplies the same authored bodies,
+initial states, gravity, fixed step, and neutral action sequence to both.
+Box2D is an oracle and comparison harness, not a product backend, browser
+fallback, or second scene format. Authoritative automation remains a
+process-isolated native test tool; the separately authorized interactive
+shadow may run inside the shared host only as visibly labeled validation
+presentation.
 
 The initial source reference is commit
 `3a4f0da8374af61293a03021c9a0b3ebcfe67948` (currently
@@ -1152,9 +1159,10 @@ failing tolerance is not widened or regenerated automatically.
 
 ### Oracle execution topology and precedence
 
-Routine oracle automation uses process-isolated native executables rather than
-driving a browser or linking a CPU engine into the PhysBox product. The shared
-Rust runner owns the only authored scenario and result contract:
+Routine authoritative oracle automation uses process-isolated native
+executables rather than driving a browser or linking a CPU engine into the
+PhysBox acceptance result. The shared Rust runner owns the only authored
+scenario and result contract:
 
 ```text
 shared versioned scenario
@@ -1185,11 +1193,18 @@ from the shared runner and record a separate projection hash over the exact
 request bytes. Version the protocol before replacing JSON with a denser trace
 encoding.
 
-Keep foreign engines in separate processes. In particular, Box2D v3 and
+The [interactive comparator](interactive-box2d-comparison.md) is the sole
+exception to the product-dependency wording above: its compile feature may
+package an enumerated redistributable subset of the same Box2D pin behind one
+shared-host shadow API. It never produces authority artifacts, feeds PhysBox,
+or participates in product performance. Compiling the feature out removes the
+foreign code, assets, UI, and runtime work.
+
+Keep authority engines in separate processes. In particular, Box2D v3 and
 original LiquidFun's Box2D 2.3 are distinct source generations and must not
-force their APIs, symbols, build systems, or lifetime rules into one binary.
-Process isolation keeps this boundary mechanically visible and prevents a
-direct interactive fallback path.
+force their APIs, symbols, build systems, or lifetime rules into one authority
+binary. Process isolation keeps this boundary mechanically visible and
+prevents a direct interactive fallback path.
 
 Authority is declared by layer; engines do not vote:
 
@@ -1806,7 +1821,8 @@ The first rigid work proceeds with these decisions:
   exact build and world settings are frozen by P5.0a.
 - Rapier or another CPU rigid backend is never a product fallback. Rapier2D is
   excluded from P5.0a and may become only a non-gating native comparator after
-  a measured ambiguity and explicit decision. Box2D remains test-only.
+  a measured ambiguity and explicit decision. Box2D remains validation-only;
+  its explicitly authorized interactive shadow is not product authority.
 - The later routine coupled oracle is the PhysBox 3 particle sidecar compiled
   natively with its Box2D v3 source. Original LiquidFun is secondary evidence,
   and the web-only PhysBox 3 product is a calibration lane.

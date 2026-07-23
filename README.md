@@ -55,8 +55,10 @@ final default run, and 16 loses structure at step 463. Sleeping may not replace
 that awake result. See [S24](docs/tactical/024-current-rigid-quality-qualification.md)
 and [S25](docs/tactical/025-bounded-awake-configuration-qualification.md).
 
-The repository still contains no Rapier or CPU product physics backend, fluid
-solver, legacy settings UI, or PhysBox 4 scene compatibility.
+The repository still contains no Rapier or CPU product physics fallback, fluid
+solver, legacy settings UI, or PhysBox 4 scene compatibility. An authorized
+default-on, compile-removable Box2D shadow comparator is validation
+presentation only: it never supplies PhysBox mechanics or performance results.
 
 Read:
 
@@ -73,6 +75,7 @@ Read:
 - [Tactical workstreams and conventions](docs/tactical/README.md)
 - [Source provenance](docs/source-provenance.md)
 - [Local source references and oracle map](reference/README.md)
+- [Interactive Box2D comparison](docs/topics/interactive-box2d-comparison.md)
 - [Deployment](docs/deployment.md)
 
 ## PhysBox 4 lineage

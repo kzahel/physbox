@@ -15,7 +15,13 @@ The rigid behavior authority is the clean, unmodified Box2D v3 checkout at
 revision `3a4f0da8374af61293a03021c9a0b3ebcfe67948`. A native test-tool
 executable calls Box2D's public C API directly and runs only through the shared
 process-isolated oracle protocol. The product engine, platform applications,
-and WebGPU path do not link the executable or Box2D.
+and WebGPU path do not link that executable.
+
+The separately governed
+[interactive Box2D comparison](interactive-box2d-comparison.md) may package
+the same pin behind a default-enabled, compile-removable shadow runtime. That
+runtime is validation presentation only: it is not this authority build,
+cannot emit accepted oracle artifacts, and cannot satisfy a PhysBox gate.
 
 The build script rejects a missing, dirty, or differently pinned checkout
 before compiling. It configures an out-of-source static Release library with
@@ -93,7 +99,10 @@ body and manifold bytes.
 
 The validation build favors reproducibility and diagnostics. It is not the
 optimized CPU performance comparator; S1.5 builds and labels that lane
-separately. No patched microscope checkout is currently needed because scalar
+separately. The interactive shadow is a third, visibly labeled qualitative
+review lane. It must periodically reproduce governed authority projections,
+but its in-process output is never promoted as authoritative evidence. No
+patched microscope checkout is currently needed because scalar
 pass traces and public Box2D body/manifold output localize the supported
 fixtures. If a future failure cannot be localized, the microscope must use a
 separate worktree, record this base revision plus its patch digest, and remain

@@ -29,8 +29,9 @@ checkboxes in the same change that makes them true.
 
 ## One shared host
 
-PhysBox 5 has one engine, one simulation state, one frame path, one renderer,
-one input policy, one scene contract, and one validation-scenario source.
+PhysBox 5 has one engine, one authoritative product simulation state, one frame
+path, one renderer, one input policy, one scene contract, and one
+validation-scenario source.
 Desktop, browser, headless, and Android are adapters around that shared host.
 They may own lifecycle, surface/target creation, raw event collection, native
 argument transport, packaging, logging, and presentation. They may not own
@@ -41,6 +42,15 @@ product defaults.
 boundary. No GPU result may be required on the CPU to advance the next
 interactive frame. Compact diagnostics may arrive asynchronously; bounded
 headless validation may flush after its final frame.
+
+The default-enabled `box2d-comparator` compile feature is the sole exception
+to the single-state wording: it may maintain one non-authoritative Box2D shadow
+world for explicit human A/B review. The shared host owns its scene/action
+projection, stepping, selection, rendering choice, and engine-rendered menu.
+The shadow may never feed PhysBox mechanics, become a fallback, satisfy a
+PhysBox gate, enter performance measurements, or alter behavior when compiled
+out. Desktop, browser, and Android must expose the same comparison semantics;
+platform code may own only the foreign runtime packaging and opaque FFI.
 
 Interactive scheduling preserves the selected fixed `dt` but never repays wall
 time with multi-step catch-up. An interactive engine frame executes zero or one
@@ -62,14 +72,16 @@ operation.
 
 ## Physics direction
 
-The product physics path is GPU-resident and portable WebGPU. Do not add a CPU
-physics backend, Rapier product dependency, platform fallback, or
-backend-substitution facade. Native CPU engines may exist only in isolated
-test tooling under the oracle execution contract. Box2D and the later PhysBox
-3 sidecar are validation oracles only. PhysX, wgmath, and PhysBox 4 are source
-references, not dependencies. Rapier2D is not part of P5.0a; adding an optional
-non-gating comparator requires an explicit measured decision in the
-authoritative topic.
+The authoritative product physics path is GPU-resident and portable WebGPU.
+Do not add a CPU product backend, Rapier product dependency, platform
+fallback, or automatic backend substitution. Native CPU engines otherwise
+exist only in isolated test tooling under the oracle execution contract.
+Box2D may additionally run through the explicitly authorized
+`box2d-comparator` shadow-review feature; that exception is validation
+presentation, not a second product authority. The later PhysBox 3 sidecar is a
+validation oracle only. PhysX, wgmath, and PhysBox 4 are source references, not
+dependencies. Rapier2D is not part of P5.0a; adding an optional non-gating
+comparator requires an explicit measured decision in the authoritative topic.
 
 The first physics milestone is the engine-owned rigid solver laboratory from
 `docs/bringup-plan.md`. Do not add liquid, joints, tools, settings UI, scene
@@ -84,8 +96,11 @@ the full rigid engine exists.
 Read `reference/README.md` and `reference/pins.toml` before implementing or
 instrumenting physics from an external engine. Run `npm run references:status`
 before relying on a checkout and `npm run references:sync` to obtain or restore
-the clean pinned checkouts. The ignored checkout contents must never be added
-to this repository.
+the clean pinned checkouts. Ignored checkouts must never be added wholesale.
+The Box2D comparison feature may carry only an explicitly enumerated
+redistributable source/runtime subset generated from the clean pin, with a
+manifest, exact revision, build recipe or artifact digest, and preserved
+license. That packaged subset is not the authority checkout.
 
 The clean `reference/box2d` checkout is the rigid acceptance authority.
 `../physbox3` is the product-behavior oracle; its nested LiquidFun, Box2D, and
@@ -102,6 +117,10 @@ PhysBox 3 particle sidecar compiled natively with its pinned Box2D v3 source as
 the primary coupled-behavior oracle and original native LiquidFun as a
 secondary algorithm/scenario reference. The PhysBox 3 web product is a small
 calibration and subjective-review lane, not a routine correctness dependency.
+The interactive Box2D shadow is a separate review lane: it may link or load
+the same pinned source behind the compile feature, but its state and output are
+never accepted as authority artifacts. Any authoritative comparison still
+runs through the process-isolated oracle.
 
 Oracle precedence is declared, not voted: invariants and the scalar
 specification own mathematical/pass correctness; Box2D owns the selected rigid
@@ -207,6 +226,10 @@ Add gates in proportion to the changed boundary:
   requires it.
 - Solver-menu/configuration interaction changes: add `npm run test:web:lab`;
   it is not an ordinary smoke.
+- Box2D comparator changes: prove the default feature on and explicit feature
+  off, run the direct comparator crate tests, `npm run test:web:lab`, the ARM64
+  Android check, a release APK, and one physical Android validation. The
+  feature-off build must contain no comparator menu or packaged Box2D runtime.
 - If Chrome/WebGPU is unavailable, record that limitation and run the
   standalone WASM check rather than silently substituting a CPU path.
 
