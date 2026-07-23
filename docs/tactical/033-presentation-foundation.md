@@ -214,27 +214,71 @@ renderer in PhysBox and Box2D views.
 
 ### S33.5 — Cross-host and performance qualification
 
-- [ ] Run focused `physbox-ui` and `physbox-engine` tests while iterating.
-- [ ] Run `npm run test:fast`.
-- [ ] Run production clippy with warnings denied.
-- [ ] Run `npm run test:web:lab`.
-- [ ] Run direct comparator crate tests and prove both default feature-on and
+- [x] Run focused `physbox-ui` and `physbox-engine` tests while iterating.
+- [x] Run `npm run test:fast`.
+- [x] Run production clippy with warnings denied.
+- [x] Run `npm run test:web:lab`.
+- [x] Run direct comparator crate tests and prove both default feature-on and
   explicit feature-off builds; feature-off contains no comparator control or
   packaged runtime.
-- [ ] Produce fresh headless/offscreen captures and semantic reports for
+- [x] Produce fresh headless/offscreen captures and semantic reports for
   closed toolbar, each menu page, representative slider/toggle state,
   sleeping debug, liquid, and Box2D.
-- [ ] Compare UI pass/draw/instance/upload and bounded full-frame evidence
+- [x] Compare UI pass/draw/instance/upload and bounded full-frame evidence
   against S33.1; explain any material change.
-- [ ] Run the ARM64 Android check and build a release APK.
-- [ ] Exercise toolbar wrapping, menu scrolling, toggles, sliders, sleep
-  visualization, and engine switching on a physical Android device when
-  available. If none is available, record an AVD substitution and shut it down
+- [x] Run the ARM64 Android check and build a release APK.
+- [x] Exercise toolbar/menu fit, toggles, sliders, sleep visualization, and
+  engine switching on a physical Android device when available. Prove wrapping
+  and scroll-column clipping/offset behavior in focused layout tests; exercise
+  product scrolling only when a qualified target actually overflows. If no
+  physical device is available, record an AVD substitution and shut it down
   immediately after success or failure.
 
 Gate: all applicable maintained lanes pass with fresh provenance, the same UI
 semantics are present on every host, buffers remain bounded, and the visual
 refresh has no unexplained material presentation-cost regression.
+
+S33.5 evidence: `cargo test -p physbox-ui` passes 13 tests and the focused
+engine UI lane passes 14 tests. `npm run clippy:rust:production` passes with
+warnings denied. Final `npm run test:fast` passes in 21.63 seconds, including
+157 engine tests and Browser WebGPU run
+`1d00ce2a-9c26-4ee4-acd8-04e71fc4d48f`. Direct comparator tests pass 2/2;
+the explicit feature-off audit reports
+`PHYSBOX5_BOX2D_FEATURE_OFF_SUCCESS` with eight inspected files, no comparator
+dependency, and no runtime marker. Solver-lab Browser WebGPU run
+`e2bcc6ab-a817-4027-ae9a-ee65f4ecd47d` and ordinary run
+`78d2c523-fbd6-4862-894d-bc7ac0817fa6` cover every menu, exact slider
+application, sleep state, and engine selection. Final 456×1024 run
+`ab29fc8e-8ca2-4928-aed8-d9e6c24df522` proves the compact layout with no
+overflow; every current page fits, so no product scroll is admitted at that
+target. Focused layout tests separately prove bounded flow wrapping and
+scroll-column clipping/offset geometry.
+
+The closed-toolbar comparison improves the retained batch from 31 instances,
+25 glyphs, and 1,984 uploaded bytes at S33.1 to 12 instances, zero glyphs, and
+768 uploaded bytes. Live content remains 238 instances and 237 glyphs. The
+allocation remains 48,144 bytes, and both versions use one UI pass, two draws,
+one retained write, and no overflow. Native Vulkan desktop run
+`417bcd67-7305-44df-a61b-af90afa1d88c` and the 40-frame headless artifact
+under `/tmp/physbox5-s33-final-headless.iSOuUb` retain the same bounds. Liquid
+run `00b56608-e284-4652-9bc7-091030090a51` and sleep run
+`d1a968f8-b717-4e0f-8f6e-c0f743e8fe55` supply their dedicated captures.
+
+The ARM64 NDK check and Gradle `assembleRelease` pass. The debug APK is
+15,688,100 bytes with SHA-256
+`0c26bf628435c6d5b595b85ac6db54b67ad1ec37b4ada71f236eeea588af5a0e`;
+the unsigned release APK is 8,324,429 bytes with SHA-256
+`f239cb09cc36221f14a8f67b0af0c887a587d5fa1e372d23afd1bbc545facea3`.
+Physical Quest 3/Adreno 740 runs `1784827071-2776405`,
+`1784827092-2777269`, and `1784827195-2777811` pass sleep visualization and
+exact grouping, Box2D switching with mirrored placement, and a real touch
+slider drag that applies dispatch count 182. Its 500×800 product window fits
+the current toolbar and menu pages without overflow or required scrolling.
+Because that device presents the app in a windowed panel and cannot supply an
+Android-system pixel capture, the pixel-specific check used the
+`jstorrent-tablet` AVD at 2560×1600. Its Vulkan sleep capture passes with zero
+black fraction, then reports `PHYSBOX5_ANDROID_AVD_SHUTDOWN_SUCCESS`; a final
+device listing confirms that no emulator remains.
 
 ### S33.6 — Subjective capture review and disposition
 

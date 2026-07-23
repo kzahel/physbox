@@ -208,8 +208,9 @@ dispatch optimization, and product/default choices.
 Human presentation review on 2026-07-23 selected a PhysBox 3/4-inspired visual
 refresh and a reusable GPU-canvas UI boundary as S33. It is active and may run
 unattended through extraction, widget/menu migration, visual changes, and
-cross-host qualification, then stops for one final subjective capture review.
-S33 does not change physics or publish/split the solver.
+cross-host qualification. Those technical slices and their physical
+Quest/AVD evidence now pass; S33 is stopped at its final subjective capture
+review. S33 does not change physics or publish/split the solver.
 
 Current target supersession, 2026-07-22: the
 [rigid quality target contract](../topics/rigid-quality-targets.md) governs new
