@@ -213,10 +213,12 @@ impl SurfaceRenderer {
         };
         self.queue.submit([encoder.finish()]);
         if let Some(pending) = scheduled_construction {
+            pending.start_mapping();
             self.pending_construction_diagnostics.push_back(pending);
         }
         #[cfg(feature = "box2d-comparator")]
         if let Some(pending) = scheduled_grab {
+            pending.start_mapping();
             self.pending_grab_diagnostics.push_back(pending);
         }
         frame.present();
@@ -277,8 +279,17 @@ struct PendingInteractionDiagnostic {
 impl PendingInteractionDiagnostic {
     fn new(buffer: wgpu::Buffer, epoch: (String, u64, u64), observed_frame_index: u64) -> Self {
         let result = Arc::new(Mutex::new(None));
-        let callback = Arc::clone(&result);
-        buffer
+        Self {
+            buffer,
+            result,
+            epoch,
+            observed_frame_index,
+        }
+    }
+
+    fn start_mapping(&self) {
+        let callback = Arc::clone(&self.result);
+        self.buffer
             .slice(..)
             .map_async(wgpu::MapMode::Read, move |mapped| {
                 *callback
@@ -286,12 +297,6 @@ impl PendingInteractionDiagnostic {
                     .expect("interaction diagnostic callback lock") =
                     Some(mapped.map_err(|error| error.to_string()));
             });
-        Self {
-            buffer,
-            result,
-            epoch,
-            observed_frame_index,
-        }
     }
 
     fn is_ready(&self) -> bool {
@@ -1664,6 +1669,25 @@ mod tests {
         assert_eq!(restarted.ui.scenario_activations_total, 1);
         assert_eq!(restarted.ui.scenario_restarts_total, 1);
         assert!(!restarted.ui.overflowed);
+    }
+
+    #[cfg(not(feature = "box2d-comparator"))]
+    #[test]
+    fn feature_off_frame_has_no_comparator_selection_or_runtime_state() {
+        let mut renderer =
+            pollster::block_on(OffscreenRenderer::new(320, 200, EngineConfig::default())).unwrap();
+        let report = renderer.render(FrameInput::exact(1));
+        assert_eq!(report.ui.selected_engine, "physbox");
+        assert!(!report.ui.comparator_available);
+        assert_eq!(report.ui.box2d_revision, None);
+        assert_eq!(report.ui.box2d_completed_steps, None);
+        assert_eq!(report.ui.box2d_live_bodies, None);
+        assert_eq!(report.ui.box2d_pending_actions, None);
+        assert_eq!(report.ui.box2d_resolved_actions, None);
+        assert_eq!(report.ui.box2d_identity_disagreements, None);
+        assert_eq!(report.ui.box2d_action_queue_overflowed, None);
+        assert_eq!(report.ui.box2d_aligned, None);
+        assert_eq!(report.ui.box2d_failure, None);
     }
 
     #[cfg(feature = "box2d-comparator")]

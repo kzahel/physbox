@@ -14,7 +14,7 @@ use crate::{
         CONSTRUCTION_CIRCLE_RADIUS, CONSTRUCTION_FRICTION, CONSTRUCTION_RECTANGLE_HALF_EXTENTS,
         CONSTRUCTION_RESTITUTION,
     },
-    grab::{GRAB_DAMPING_RATE, GRAB_MAX_ACCELERATION, GRAB_SPRING_ACCELERATION},
+    grab::{GRAB_DAMPING_RATE, GRAB_MAX_ACCELERATION, GRAB_SPRING_ACCELERATION, GRAB_STATE_BYTES},
     renderer::RenderFrameTarget,
 };
 
@@ -928,7 +928,11 @@ impl ComparisonRenderer {
         let metadata = storage_buffer(device, "physbox5_box2d_metadata", &metadata_data);
         let active_bodies = storage_buffer(device, "physbox5_box2d_active_bodies", &active_data);
         let sleep_states = storage_buffer(device, "physbox5_box2d_sleep_states", &sleep_data);
-        let grab_state = storage_buffer(device, "physbox5_box2d_grab_state", &[[0_u32; 16]]);
+        let grab_state = storage_buffer(
+            device,
+            "physbox5_box2d_grab_state",
+            &[[0_u32; (GRAB_STATE_BYTES / 4) as usize]],
+        );
         let params = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("physbox5_box2d_render_params"),
             size: std::mem::size_of::<RenderParamsRaw>() as u64,

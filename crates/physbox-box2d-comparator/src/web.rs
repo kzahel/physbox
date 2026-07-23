@@ -26,9 +26,16 @@ pub(crate) fn install(runtime: JsValue) -> Result<(), String> {
         "_pb5_box2d_world_create",
         "_pb5_box2d_world_destroy",
         "_pb5_box2d_world_add_body",
+        "_pb5_box2d_world_remove_body",
+        "_pb5_box2d_world_apply_impulse",
         "_pb5_box2d_world_reset_body",
+        "_pb5_box2d_world_begin_grab",
+        "_pb5_box2d_world_update_grab",
+        "_pb5_box2d_world_end_grab",
+        "_pb5_box2d_world_set_gravity",
         "_pb5_box2d_world_step",
         "_pb5_box2d_world_snapshot",
+        "_pb5_box2d_world_last_error",
     ] {
         function(&runtime, name)?;
     }
@@ -61,7 +68,7 @@ impl World {
             "_pb5_box2d_world_create",
             &[JsValue::from(pointer)],
         )?;
-        call(&runtime, "_free", &[JsValue::from(pointer)])?;
+        call_void(&runtime, "_free", &[JsValue::from(pointer)])?;
         if raw == 0.0 {
             return Err("failed to allocate the Box2D comparator WebAssembly world".to_owned());
         }
@@ -107,7 +114,7 @@ impl World {
             "_pb5_box2d_world_add_body",
             &[JsValue::from(self.raw), JsValue::from(pointer)],
         );
-        call(&self.runtime, "_free", &[JsValue::from(pointer)])?;
+        call_void(&self.runtime, "_free", &[JsValue::from(pointer)])?;
         if result? != 0.0 {
             Ok(())
         } else {
@@ -206,7 +213,7 @@ impl World {
     }
 
     pub(crate) fn end_grab(&mut self) {
-        let _ = call(
+        let _ = call_void(
             &self.runtime,
             "_pb5_box2d_world_end_grab",
             &[JsValue::from(self.raw)],
@@ -214,7 +221,7 @@ impl World {
     }
 
     pub(crate) fn set_gravity(&mut self, gravity: Vec2) {
-        let _ = call(
+        let _ = call_void(
             &self.runtime,
             "_pb5_box2d_world_set_gravity",
             &[
@@ -226,7 +233,7 @@ impl World {
     }
 
     pub(crate) fn step(&mut self, dt: f32, substeps: u32) -> Result<(), String> {
-        call(
+        call_void(
             &self.runtime,
             "_pb5_box2d_world_step",
             &[
@@ -252,11 +259,11 @@ impl World {
         );
         let count = result? as u32;
         if count > capacity {
-            call(&self.runtime, "_free", &[JsValue::from(pointer)])?;
+            call_void(&self.runtime, "_free", &[JsValue::from(pointer)])?;
             return Err("Box2D comparator returned an invalid snapshot count".to_owned());
         }
         let bytes = read(&self.runtime, pointer, count as usize * SNAPSHOT_BYTES)?;
-        call(&self.runtime, "_free", &[JsValue::from(pointer)])?;
+        call_void(&self.runtime, "_free", &[JsValue::from(pointer)])?;
         (0..count as usize)
             .map(|index| snapshot_from_bytes(&bytes[index * SNAPSHOT_BYTES..][..SNAPSHOT_BYTES]))
             .collect()
@@ -291,7 +298,7 @@ impl World {
 
 impl Drop for World {
     fn drop(&mut self) {
-        let _ = call(
+        let _ = call_void(
             &self.runtime,
             "_pb5_box2d_world_destroy",
             &[JsValue::from(self.raw)],
@@ -336,14 +343,21 @@ fn function(runtime: &JsValue, name: &str) -> Result<Function, String> {
 }
 
 fn call(runtime: &JsValue, name: &str, arguments: &[JsValue]) -> Result<f64, String> {
+    invoke(runtime, name, arguments)?
+        .as_f64()
+        .ok_or_else(|| format!("Box2D comparator function {name} returned a non-number"))
+}
+
+fn call_void(runtime: &JsValue, name: &str, arguments: &[JsValue]) -> Result<(), String> {
+    invoke(runtime, name, arguments).map(|_| ())
+}
+
+fn invoke(runtime: &JsValue, name: &str, arguments: &[JsValue]) -> Result<JsValue, String> {
     let values = Array::new();
     for argument in arguments {
         values.push(argument);
     }
-    Reflect::apply(&function(runtime, name)?, runtime, &values)
-        .map_err(js_error)?
-        .as_f64()
-        .ok_or_else(|| format!("Box2D comparator function {name} returned a non-number"))
+    Reflect::apply(&function(runtime, name)?, runtime, &values).map_err(js_error)
 }
 
 fn heap(runtime: &JsValue) -> Result<Uint8Array, String> {

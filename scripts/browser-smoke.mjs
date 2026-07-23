@@ -14,6 +14,7 @@ const captureDirectory = resolve(process.env.PHYSBOX5_CAPTURE_DIRECTORY ?? "/tmp
 const screenshot = join(captureDirectory, `physbox5-web${captureSuffix}.png`);
 const initialScreenshot = join(captureDirectory, `physbox5-web-initial${captureSuffix}.png`);
 const menuScreenshot = join(captureDirectory, `physbox5-web-menu${captureSuffix}.png`);
+const box2dScreenshot = join(captureDirectory, `physbox5-web-box2d${captureSuffix}.png`);
 const solverScreenshot = join(captureDirectory, `physbox5-web-solver${captureSuffix}.png`);
 const grabScreenshot = join(captureDirectory, `physbox5-web-grab${captureSuffix}.png`);
 const constructionScreenshot = join(captureDirectory, `physbox5-web-construction${captureSuffix}.png`);
@@ -32,6 +33,7 @@ await mkdir(captureDirectory, { recursive: true });
 await rm(screenshot, { force: true });
 await rm(initialScreenshot, { force: true });
 await rm(menuScreenshot, { force: true });
+await rm(box2dScreenshot, { force: true });
 await rm(solverScreenshot, { force: true });
 await rm(grabScreenshot, { force: true });
 await rm(constructionScreenshot, { force: true });
@@ -70,7 +72,14 @@ try {
     startupParams.set("body-capacity", String(requestedBodyCapacity));
   }
   await page.goto(`http://127.0.0.1:${port}/?${startupParams}`, { waitUntil: "networkidle" });
-  await page.waitForFunction(() => globalThis.__physbox5?.ready, null, { timeout: 30_000 });
+  try {
+    await page.waitForFunction(() => globalThis.__physbox5?.ready, null, { timeout: 30_000 });
+  } catch (error) {
+    const fatal = await page.locator("#fatal-error").textContent();
+    throw new Error(
+      `browser startup did not become ready: ${error.message}; fatal=${fatal}; page=${errors.join("; ")}; console=${consoleErrors.join("; ")}`,
+    );
+  }
   const before = await page.evaluate(() => globalThis.__physbox5);
   if (!before.ok || !before.frame?.scenario?.passed) throw new Error(`shared scenario failed: ${JSON.stringify(before)}`);
   if (before.frame.scenario.name !== scenario) throw new Error(`wrong shared scenario: ${JSON.stringify(before.frame.scenario)}`);
@@ -78,8 +87,16 @@ try {
   if (before.frame.sceneContract?.solverProfile !== "soft-coupled") {
     throw new Error(`fresh browser did not use soft-coupled: ${JSON.stringify(before.frame.sceneContract)}`);
   }
-  if (before.frame.ui?.version !== 8 || before.frame.ui?.sleepVisualsEnabled !== false) {
-    throw new Error(`browser did not expose UI contract 8 defaults: ${JSON.stringify(before.frame.ui)}`);
+  if (before.frame.ui?.version !== 9 || before.frame.ui?.sleepVisualsEnabled !== false) {
+    throw new Error(`browser did not expose UI contract 9 defaults: ${JSON.stringify(before.frame.ui)}`);
+  }
+  if (
+    before.frame.ui?.selectedEngine !== "physbox"
+    || before.frame.ui?.comparatorAvailable !== true
+    || before.frame.ui?.box2dRevision !== "3a4f0da8374af61293a03021c9a0b3ebcfe67948"
+    || before.frame.ui?.box2dFailure !== null
+  ) {
+    throw new Error(`browser comparator did not start in the default PhysBox view: ${JSON.stringify(before.frame.ui)}`);
   }
   if (
     before.frame.sceneContract?.physicsConfigurationVersion !== 2
@@ -112,6 +129,83 @@ try {
   }
   const uiScale = Math.max(1, Math.min(2, Math.min(viewportWidth, viewportHeight) / 600));
   const compactLandscape = viewportHeight < 520 && viewportWidth > viewportHeight;
+  const comparatorLiveBodiesBefore = before.frame.ui.box2dLiveBodies;
+  await page.mouse.click(62 * uiScale, 50 * uiScale);
+  await page.mouse.click(300 * uiScale, 104 * uiScale);
+  await page.mouse.click(291 * uiScale, 135 * uiScale);
+  await page.waitForFunction(
+    () => {
+      const ui = globalThis.__physbox5?.frame?.ui;
+      return ui?.selectedEngine === "box2d"
+        && ui?.box2dAligned === true
+        && ui?.box2dFailure === null;
+    },
+    null,
+    { timeout: 10_000 },
+  );
+  await captureCompleteScreenshot(page, box2dScreenshot, "browser Box2D view", consoleErrors);
+  if (scenario === "bootstrap") {
+    const constructionBeforeComparator = await page.evaluate(
+      () => globalThis.__physbox5.frame.bodyCommands.executedConstructionIntentsTotal,
+    );
+    await page.mouse.click(229 * uiScale, 50 * uiScale);
+    await page.mouse.click(viewportWidth * 0.80, viewportHeight * 0.20);
+    try {
+      await page.waitForFunction(
+        ({ constructionBefore, liveBodiesBefore }) => {
+          const frame = globalThis.__physbox5?.frame;
+          return frame?.bodyCommands?.executedConstructionIntentsTotal > constructionBefore
+            && frame?.ui?.box2dPendingActions === 0
+            && frame?.ui?.box2dLiveBodies > liveBodiesBefore
+            && frame?.ui?.box2dIdentityDisagreements === 0
+            && frame?.ui?.box2dFailure === null;
+        },
+        {
+          constructionBefore: constructionBeforeComparator,
+          liveBodiesBefore: comparatorLiveBodiesBefore,
+        },
+        { timeout: 10_000 },
+      );
+    } catch (error) {
+      const frame = await page.evaluate(() => globalThis.__physbox5?.frame);
+      const fatal = await page.locator("#fatal-error").textContent();
+      throw new Error(
+        `browser comparator action did not reconcile: ${error.message}; frame=${JSON.stringify(frame)}; fatal=${fatal}; page=${errors.join("; ")}; console=${consoleErrors.join("; ")}`,
+      );
+    }
+  }
+  const box2dFrame = await page.evaluate(() => globalThis.__physbox5.frame);
+  await page.mouse.click(153 * uiScale, 50 * uiScale);
+  await page.mouse.click(62 * uiScale, 50 * uiScale);
+  await page.mouse.click(300 * uiScale, 104 * uiScale);
+  await page.mouse.click(169 * uiScale, 135 * uiScale);
+  await page.waitForFunction(
+    () => globalThis.__physbox5?.frame?.ui?.selectedEngine === "physbox"
+      && globalThis.__physbox5?.frame?.ui?.box2dFailure === null,
+    null,
+    { timeout: 10_000 },
+  );
+  if (scenario === "bootstrap") {
+    const activations = await page.evaluate(
+      () => globalThis.__physbox5.frame.ui.scenarioActivationsTotal,
+    );
+    await page.mouse.click(62 * uiScale, 50 * uiScale);
+    await page.mouse.click(76 * uiScale, 104 * uiScale);
+    await page.mouse.click(192 * uiScale, 143 * uiScale);
+    await page.waitForFunction(
+      (previousActivations) => {
+        const frame = globalThis.__physbox5?.frame;
+        return frame?.sceneContract?.scenario === "bootstrap"
+          && frame?.ui?.scenarioActivationsTotal > previousActivations
+          && frame?.ui?.selectedEngine === "physbox"
+          && frame?.ui?.box2dAligned === true
+          && frame?.ui?.box2dFailure === null
+          && !frame?.ui?.menuOpen;
+      },
+      activations,
+      { timeout: 10_000 },
+    );
+  }
   const solverProfileCenter = (index) => {
     const columns = compactLandscape ? 2 : 1;
     const column = index % columns;
@@ -648,6 +742,7 @@ try {
   const final = await page.evaluate(() => globalThis.__physbox5);
   await page.evaluate(() => globalThis.__physbox5FrameControl.pause());
   await requireOpaqueProductionPage(browser, `http://127.0.0.1:${port}/?scenario=bootstrap`);
+  await requireComparatorStartupFailure(browser, `http://127.0.0.1:${port}/?scenario=bootstrap`);
   const provenance = {
     runId: randomUUID(),
     sourceRevision: git(["rev-parse", "HEAD"]) ?? "unknown",
@@ -658,6 +753,8 @@ try {
     viewport: final.viewport,
     initialScreenshot,
     menuScreenshot,
+    box2dScreenshot,
+    box2dFrame,
     solverScreenshot: solverLab ? solverScreenshot : null,
     grabScreenshot: capturedGrab ? grabScreenshot : null,
     grabFrame: capturedGrab,
@@ -691,6 +788,7 @@ try {
       initialScreenshot,
       screenshot,
       menuScreenshot,
+      box2dScreenshot,
       grabScreenshot: capturedGrab ? grabScreenshot : null,
       constructionScreenshot: capturedConstruction ? constructionScreenshot : null,
       provenancePath,
@@ -772,6 +870,30 @@ async function requireOpaqueProductionPage(browser, url) {
     }
     if (foregroundPixels < pixels.width * pixels.height * 0.05) {
       throw new Error("ordinary browser page did not render the shared frame");
+    }
+  } finally {
+    await page.close();
+  }
+}
+
+async function requireComparatorStartupFailure(browser, url) {
+  const page = await browser.newPage({ viewport: { width: 960, height: 600 } });
+  try {
+    await page.route("**/box2d-comparator/box2d-comparator.mjs", async (route) => {
+      await route.fulfill({
+        contentType: "text/javascript",
+        body: "export default async function createMismatchedComparator() { return {}; }\n",
+      });
+    });
+    await page.goto(url, { waitUntil: "networkidle" });
+    await page.waitForFunction(
+      () => document.querySelector("#fatal-error")?.hidden === false,
+      null,
+      { timeout: 10_000 },
+    );
+    const message = await page.locator("#fatal-error").textContent();
+    if (!message?.includes("Box2D comparator runtime is missing _malloc")) {
+      throw new Error(`mismatched comparator did not fail explicitly: ${message}`);
     }
   } finally {
     await page.close();
