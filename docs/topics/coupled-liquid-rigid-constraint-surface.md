@@ -244,11 +244,14 @@ The first product material is water only. Goop, sand, foam, spray, surface
 tension variants, multiphase behavior, and temperature are deferred until the
 water corpus passes.
 
-The initial useful scene targets approximately 4,096 active particles inside
-an explicit 32K particle-slot capacity. These are provisional workstream
-bounds, not final defaults or a 32K-at-60 claim. Particle capacity is distinct
-from body capacity and reports allocation, active count, neighborhood/contact
-high-water, overflow, work, and timing separately.
+The initial useful scene targeted approximately 4,096 active particles inside
+an explicit 32K particle-slot capacity. First hands-on performance review
+right-sizes the ordinary 3,952-particle scene to 8,192 slots while retaining
+32K as a separate capacity frontier. This leaves 4,240 painting slots and
+avoids making every ordinary frame pay the full frontier reserve. These are
+still provisional workstream bounds, not a 32K-at-60 claim. Particle capacity
+is distinct from body capacity and reports allocation, active count,
+neighborhood/contact high-water, overflow, work, and timing separately.
 
 PhysBox 4's fixed 128×80 grid with 128 particle indices per cell was an
 inspectable bounded source reference. The first PhysBox 5 baseline instead
@@ -260,10 +263,11 @@ The selected grid counts each cell, scans 4,096 compact ranges, and scatters
 one record per live particle. Count/scatter consume the GPU-resident active
 index list and indirect work count; scanned end offsets act as scatter cursors
 and settle to the range starts needed by neighbor passes. This removes the
-per-cell occupancy cap while retaining the 32,768-slot product capacity and
+per-cell occupancy cap while retaining the 32,768-slot capacity frontier and
 explicit total-record overflow. It also removes the separate cursor buffer.
-The product particle allocation is `3,443,844` bytes, 880 KiB below the
-fixed-bin form.
+The initial 32,768-slot product allocation was `3,443,844` bytes, 880 KiB
+below the fixed-bin form. The current 8,192-slot preview allocation is
+`887,940` bytes.
 
 Particle slot allocation, erasure, grid records, density scratch, correction
 scratch, particle/body contacts, body-contribution edges, and render work all
@@ -452,19 +456,27 @@ and never converted into a sustained-rate claim.
 The clean comparator-free RADV GFX1150 throughput lane includes physics plus
 direct rendering and reports mean host completion of `5.371 ms` at 1,024,
 `4.825 ms` at 4,096, `8.009 ms` at 16,384, and `15.308 ms` at
-32,640 active particles in 32,768 slots. The ordinary
-3,952-active/32,768-capacity product scene reports `7.051 ms`. All rows are
-finite and capacity-clean with zero overflow. The 32K row is a capacity
-frontier on this named adapter, not a portable sustained-60-Hz product claim.
+32,640 active particles in 32,768 slots. The original ordinary
+3,952-active/32,768-capacity product scene reported `7.051 ms`. After the
+first subjective review, a current-default baseline measured `7.311 ms`; the
+right-sized 3,952-active/8,192-capacity product row measures `5.484 ms` and
+cuts declared particle allocation from `3,443,844` to `887,940` bytes. All
+rows are finite and capacity-clean with zero overflow. The 32K row is a
+capacity frontier on this named adapter, not a portable sustained-60-Hz
+product claim.
 
 Browser WebGPU completed 623 product-scene steps at effective scale
-`1.000041` with zero slip. The clean repeated hardware-backed AVD interaction
-completed 694 steps at effective scale `0.811745`, executed Water, particle
-Erase, and Surface, and rendered a complete 2560×1600 frame on
-`AMD Radeon 890M Graphics (RADV GFX1150)`. A first cold AVD run passed the
-same mechanics/pixel/shutdown gates but measured `0.198241`; both runs are
-retained. AVD evidence establishes the shared Android path and hardware-GPU
-portability, not physical-device performance.
+`1.000041` with zero slip. The original clean repeated hardware-backed AVD
+interaction completed 694 steps at effective scale `0.811745`, executed Water,
+particle Erase, and Surface, and rendered a complete 2560×1600 frame on
+`AMD Radeon 890M Graphics (RADV GFX1150)`; its first cold run measured
+`0.198241`. Current sleeping-on/exact repeats with the 8K reserve instead
+measure `0.441060` and `0.439869`, while a same-APK explicit-sleep-off
+diagnostic reaches `0.686275`. All mechanics/pixel runs pass and shut the AVD
+down. This identifies current exact-sleep scheduling as a material isolated
+cost, a smaller high-resolution render contribution, and the 92-dispatch liquid
+graph as the primary remaining unisolated workstream. AVD evidence establishes
+portability rather than physical-device performance.
 
 Every physics/layout/pass change runs the ordinary production gates, clippy,
 fresh headless coupled evidence, and focused performance probes. Cross-host

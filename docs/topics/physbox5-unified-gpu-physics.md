@@ -80,10 +80,11 @@ owns the entry architecture, reuse limits, rigid-only Box2D boundary, and
 acceptance contract. The approved
 [S31 coupled-liquid sandbox](../tactical/031-coupled-liquid-sandbox.md) has
 implemented the bounded GPU water substrate, same-step coupled response,
-fluid wake roots, Water/Surface/Erase interactions, compact 32K-capacity
-neighborhoods, direct rendering, native oracle corpus, and Browser/authorized
-hardware-backed AVD qualification. It is now at the human behavior-band,
-subjective-feel, and product/default checkpoint. This implementation state does
+fluid wake roots, Water/Surface/Erase interactions, compact neighborhoods, an
+8K preview reserve with a separately retained 32K capacity frontier, direct
+rendering, native oracle corpus, and Browser/authorized hardware-backed AVD
+qualification. It is now at the human behavior-band, subjective-feel, mobile
+dispatch-cost, and product/default checkpoint. This implementation state does
 not change the retained rigid limitations above.
 
 The first simulation slice is a rigid-only foundation:

@@ -3,7 +3,8 @@
 Status: manual checkpoint, end-to-end product preview and cross-host
 qualification reached 2026-07-23. Human review accepted this plan and
 authorized continuous implementation plus proportional validation. Final
-coupled behavior bands and product/default choices now return to human review.
+coupled behavior bands, mobile dispatch optimization, and product/default
+choices now return to human review.
 When no physical Android device is available, the same shared Android path may
 be qualified on a hardware-backed AVD; every AVD run must record that
 substitution and shut the emulator down afterward.
@@ -497,7 +498,7 @@ portability and pixels, not physical-device speed.
   Erase, Surface in every PhysBox scene, a wider liquid-scene zoom range, and
   an immediately legible water start/capacity HUD label without adding
   particle readback.
-- [ ] Attribute the reported physical-phone 4K smoothness gap between fixed
+- [x] Attribute the reported physical-phone 4K smoothness gap between fixed
   pacing, particle solve capacity, and direct rendering; retain a measured
   product-capacity correction if it improves cost without changing mechanics.
 - [ ] Record whether the 4K water scene, Water/Surface tools, and direct visual
@@ -537,6 +538,36 @@ half-height-`1` home provided much more relative zoom than the liquid
 sandbox's half-height-`3.5` home. The liquid HUD now says
 `WATER START 3952 CAP ...`; it deliberately does not claim a live active count
 because interactive particle readback remains excluded.
+
+Performance attribution checkpoint: the current-default clean baseline at
+`e67fcd8` measured the 3,952-particle scene in 32,768 slots at `7.311 ms`
+mean host completion on RADV GFX1150. Clean implementation `bc2fd0f` reduces
+the ordinary reserve to 8,192 slots, leaves 4,240 painting slots, cuts declared
+particle allocation from `3,443,844` to `887,940` bytes, and measures
+`5.484 ms` with the same 3,952 active particles, 92 particle dispatches, and
+zero overflow. The independent capacity-clean 32K frontier is unchanged.
+
+This does not close mobile pacing. With no physical device connected, clean
+hardware-backed AVD runs `1784821327-2700108` and
+`1784821401-2702613` execute Water, continuous Erase, and Surface at
+2560×1600, pass mechanics and pixels, and shut down, but sleeping-on/exact
+reaches only `0.441060` and `0.439869` effective scale. The same APK and scene
+with an explicit sleep-off diagnostic reaches `0.686275`; that dirty run is
+attribution only and does not change the S32 default. A native viewport
+diagnostic places the 8K product row around `4.4–5.5 ms` at 960×600 and
+`5.7–6.7 ms` at 2560×1600. Rendering contributes, but the unchanged
+175-dispatch exact-sleep rigid graph is the larger isolated Android cost. The
+unchanged 92-dispatch liquid graph remains the primary unisolated workstream
+behind the sleep-off result.
+
+There is no presentation interpolation and no hidden lower physics rate. The
+outer step remains fixed at 60 Hz, particle physics runs two 120 Hz substeps,
+and the interactive no-catch-up clock admits zero or one outer step. Missed
+time therefore appears honestly as whole-world slow time in `SIM`, matching
+the observed phone complaint. Clean PhysBox 4 revision
+`92f745eb85908243c69080a4fa4dba24f05c22cf` also defaults to 60 Hz but its
+historical clock may execute up to eight catch-up steps per frame; that policy
+remains intentionally excluded from PhysBox 5.
 
 ## Required validation by changed boundary
 

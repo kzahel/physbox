@@ -55,12 +55,14 @@ Human review on 2026-07-23 accepted this foundation for a bounded water/UI
 phase while retaining its measured awake-stack, parity, and crossover
 limitations. S31 now implements one water material, same-step PhysBox
 translation/torque/pressure response, GPU wake roots, Water/Surface/Erase
-interactions, compact 32K-capacity neighborhoods, and direct rendering. The
-clean 3,952-particle Browser scene advances at full simulated time; the shared
-Android path and pixels pass through the authorized hardware-backed AVD
-substitute. Process-isolated PhysBox 3 and LiquidFun lanes expose measured
-behavior disagreements rather than hiding them. Final behavior bands,
-subjective feel, and product/default promotion remain a human decision.
+interactions, compact neighborhoods, an 8K preview reserve, an independent 32K
+capacity frontier, and direct rendering. The clean 3,952-particle Browser scene
+advances at full simulated time; the shared Android path and pixels pass
+through the authorized hardware-backed AVD substitute, although current
+sleeping-on/exact AVD pacing is only about `0.44` effective scale. Process-
+isolated PhysBox 3 and LiquidFun lanes expose measured behavior disagreements
+rather than hiding them. Final behavior bands, subjective feel, mobile
+dispatch optimization, and product/default promotion remain human decisions.
 Joints, capsules, general polygons, chains, ragdolls, machines, soft bodies,
 terrain, CCD, multi-material fluid, smooth water, and the complete PhysBox 4
 tool catalog remain later breadth.

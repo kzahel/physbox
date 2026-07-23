@@ -90,7 +90,7 @@ quality. Known limitations remain part of the row.
 
 | ID | Capability | Status | Current boundary / next gate |
 | --- | --- | --- | --- |
-| FLUID-1 | GPU liquid particles | **Implemented** | The shared product path owns one water material in bounded 32K-slot GPU storage, a 3,952-particle sandbox, compact cell ranges, density/correction/velocity passes, deterministic reset/spawn/erase/reuse, fixed boundaries, direct rendering, and final-only diagnostics. Clean Browser WebGPU and authorized hardware-backed AVD mechanics/pixel lanes pass. This is not a 32K-at-60 or multi-material claim. |
+| FLUID-1 | GPU liquid particles | **Implemented** | The shared product path owns one water material, a 3,952-particle sandbox in an 8,192-slot preview reserve, a separate capacity-clean 32K frontier, compact cell ranges, density/correction/velocity passes, deterministic reset/spawn/erase/reuse, fixed boundaries, direct rendering, and final-only diagnostics. Clean Browser WebGPU and authorized hardware-backed AVD mechanics/pixel lanes pass, but sleeping-on/exact AVD pacing is currently about 0.44 effective scale. This is not a 32K-at-60, physical-phone-speed, or multi-material claim. |
 | FLUID-2 | Two-way rigid/liquid coupling | **Limited** | The PhysBox GPU path exchanges bounded equal-and-opposite boundary-density/pressure, non-penetration, and surface-relative velocity response with dynamic circles/rectangles in the same outer step, including torque, stable tiled body gathering, generation checks, GPU fluid-wake requests, sleeping-off/local-4/local-8/exact qualification, and explicit multi-body overflow. Invariants pass, but measured PhysBox 3 final-body disagreements still require human behavior-band and subjective-feel disposition. Box2D stays rigid-only. |
 | FLUID-3 | PhysBox 3/LiquidFun coupled oracle | **Implemented** | Separate process-isolated native PhysBox 3/Box2D v3 and original LiquidFun/Box2D 2.3 executables consume the shared seven-source projection. Each supports six rows and explicitly rejects grabbed-boundary. Joined evidence records population, centroid, body, exchange, overflow, and replay deltas without majority voting. |
 | BREADTH-1 | Ragdolls, machines, soft bodies | **Deferred** | Depend on general joints, broader shapes, accepted scale, and stable rigid behavior. |
@@ -99,9 +99,11 @@ quality. Known limitations remain part of the row.
 
 1. Review the measured PhysBox 3 behavior deltas and subjective pouring,
    floating, wave-impact, grab-through-water, and construction feel.
-2. Decide whether the 4K sandbox, Water/Surface tools, and direct particle
+2. Reduce the demonstrated Android liquid/exact-sleep dispatch cost without
+   changing fixed-step pacing, coupling, or the S32 default by assumption.
+3. Decide whether the 4K sandbox, Water/Surface tools, and direct particle
    style become ordinary defaults or remain explicit preview choices.
-3. Open smooth-water rendering, multiple materials, scene save/load, or
+4. Open smooth-water rendering, multiple materials, scene save/load, or
    property editing only from an explicit measured/product decision.
 
 The retained 12/14 quietness failures, 16-stack loss, comprehensive rigid

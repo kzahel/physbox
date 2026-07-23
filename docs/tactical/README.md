@@ -198,11 +198,13 @@ sandbox. The current eight-box awake quality and 14-box structural survival
 remain its honest rigid foundation; the 12/14 quietness gap, 16 loss,
 comprehensive rigid parity, and CPU/GPU crossover remain open debt. S31 has now
 implemented and cross-host-qualified GPU water, same-step PhysBox coupling,
-wake roots, Water/Surface/Erase tools, direct rendering, compact 32K-capacity
-neighborhoods, and process-isolated PhysBox 3/LiquidFun evidence. The approved
-hardware-backed AVD substitution passed and shut down when no physical Android
-device was available. S31 is at a manual checkpoint for coupled behavior
-bands, subjective feel, and product/default choices.
+wake roots, Water/Surface/Erase tools, direct rendering, compact neighborhoods,
+an 8K preview reserve with a separate 32K frontier, and process-isolated
+PhysBox 3/LiquidFun evidence. The approved hardware-backed AVD substitution
+passed and shut down when no physical Android device was available. Current
+sleeping-on/exact AVD repeats expose a retained mobile pacing limitation. S31
+is at a manual checkpoint for coupled behavior bands, subjective feel, mobile
+dispatch optimization, and product/default choices.
 
 Current target supersession, 2026-07-22: the
 [rigid quality target contract](../topics/rigid-quality-targets.md) governs new

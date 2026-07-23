@@ -64,11 +64,16 @@ local-8 remain available for comparison.
 [S31](docs/tactical/031-coupled-liquid-sandbox.md) now implements one
 GPU-resident water material, same-step translation/torque/pressure response
 with the PhysBox GPU rigid solver, fluid wake roots, Water/Surface/Erase tools,
-compact 32K-capacity neighborhoods, direct rendering, process-isolated PhysBox
-3/LiquidFun evidence, and native/Browser/authorized-hardware-AVD qualification.
+compact neighborhoods, an 8K preview reserve plus an independent 32K capacity
+frontier, direct rendering, process-isolated PhysBox 3/LiquidFun evidence, and
+native/Browser/authorized-hardware-AVD qualification.
 The 3,952-particle scene runs at full simulated time in the clean Browser
-sample; the clean repeated AVD sample executes the same interaction at `0.812`
-effective scale and is portability evidence rather than physical-device speed.
+sample. After the first hands-on review, its particle allocation fell from
+`3,443,844` to `887,940` bytes and clean named-native mean frame work fell from
+`7.311` to `5.484 ms`; the 32K lane remains capacity evidence. Current
+sleeping-on/exact AVD repeats execute at only `0.440–0.441` effective scale,
+while an explicit sleep-off diagnostic reaches `0.686`. Those AVD results are
+portability and attribution evidence, not physical-device speed.
 S31 is at a human checkpoint for behavior bands, subjective feel, and whether
 the sandbox/tools/style become ordinary defaults.
 

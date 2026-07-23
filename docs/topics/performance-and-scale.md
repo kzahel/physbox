@@ -683,7 +683,7 @@ release host-completion means—including physics and direct rendering—are:
 | --- | ---: | ---: | --- |
 | Water-only 1K | 1,024 / 1,024 | 5.371 | finite, capacity-clean |
 | Water-only 4K | 4,096 / 4,096 | 4.825 | finite, capacity-clean |
-| Product sandbox | 3,952 / 32,768 | 7.051 | finite, capacity-clean |
+| Initial product sandbox | 3,952 / 32,768 | 7.051 | finite, capacity-clean; later reserve superseded |
 | Water-only 16K | 16,384 / 16,384 | 8.009 | finite, capacity-clean |
 | Water-only 32K-capacity | 32,640 / 32,768 | 15.308 | finite, capacity-clean; capacity frontier only |
 
@@ -699,6 +699,40 @@ Android path and pixels. The clean repeat completed 694 steps at effective
 scale `0.811745` on host RADV Vulkan and shut down successfully. Its first cold
 run also passed mechanics and pixels but recorded a `0.198241` pacing outlier.
 Both remain evidence; neither is a physical-device speed result.
+
+First subjective-review performance correction, 2026-07-23: the ordinary
+3,952-particle scene no longer reserves the full capacity frontier. Clean
+current-default baseline `e67fcd8` measured `7.311 ms` mean host completion
+with 32,768 slots. Clean implementation `bc2fd0f` uses 8,192 slots, retains
+4,240 authored-painting slots, reduces declared particle allocation from
+`3,443,844` to `887,940` bytes, and measures `5.484 ms` on the same named RADV
+adapter. The row remains finite and capacity-clean with 3,952 active particles,
+92 particle dispatches, and zero overflow. The independent 32K water-only row
+and maximum product bound remain unchanged.
+
+That right-sizing is a native cost and memory win, not a mobile pacing closure.
+Clean current Android AVD runs `1784821327-2700108` and
+`1784821401-2702613` at 2560×1600 execute Water, continuous particle Erase,
+and Surface, but sleeping-on/exact reaches only `0.441060` and `0.439869`
+effective scale. Both use the hardware-backed RADV Vulkan adapter, pass
+mechanics/pixels, and shut the emulator down. A same-APK, same-scene,
+explicit-sleep-off diagnostic reaches `0.686275`; it is dirty attribution
+evidence, not a new default or acceptance result. A native viewport diagnostic
+raises the 8K product row from roughly `4.4–5.5 ms` at 960×600 to
+`5.7–6.7 ms` at 2560×1600. Direct rendering therefore contributes, but the
+exact-sleep graph is the larger isolated Android cost. The unchanged
+92-dispatch liquid graph remains the primary unisolated workstream behind the
+sleep-off result; the evidence does not assign all remaining cost to it.
+
+Presentation is not interpolated. The renderer consumes current GPU particle
+positions, and the shared interactive clock retains a fixed 60 Hz outer step
+with two 120 Hz particle substeps. Overload admits zero or one outer step and
+permanently slips excess wall time, so the HUD's reduced `SIM` percentage is
+real whole-world slow time rather than a hidden lower `dt` or catch-up mode.
+For comparison, clean PhysBox 4 revision
+`92f745eb85908243c69080a4fa4dba24f05c22cf` also defaults to 60 Hz but its
+historical clock can execute up to eight catch-up steps per presented frame;
+that scheduling policy is intentionally not imported into PhysBox 5.
 
 S3.1 contract checkpoint, 2026-07-15: the collision byte surface is fixed for
 measurement but remains provisional for S3.6 review: 32-byte AABB, 16-byte
