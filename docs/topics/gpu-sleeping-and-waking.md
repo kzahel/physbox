@@ -1,8 +1,8 @@
 # GPU sleeping and waking
 
 Status: implemented default-on product capability, updated 2026-07-23.
-Tactical S23 is complete, the post-review contact sleep-cycle defect is
-corrected and qualified, and S30's configurable shared threshold,
+Tactical S23 is complete, the post-review contact-graph defects are corrected
+and qualified, and S30's configurable shared threshold,
 local-4/local-8/exact grouping, cycle diagnostics, and cross-host comparison
 surface are complete. The later explicit S32 human promotion selects sleeping
 on and exact current-contact-component grouping as the ordinary defaults;
@@ -56,7 +56,7 @@ change only with implementation and evidence, not because this design exists.
 | --- | --- | --- |
 | Policy vocabulary and oracle traces | complete | S23.1 freezes experimental policy V1 and a replay-exact 40-row Box2D/PhysBox baseline matrix. |
 | Versioned GPU sleep state | complete | Generation-checked `SleepStateV1`, sorted awake-dynamic list, indirect arguments, and exact inert replay (S23.2). |
-| Wake roots and bounded propagation | complete | Generation-safe event roots and four deterministic contact-neighbor rounds execute before solve; persisted resting contacts are not roots. |
+| Wake roots and bounded propagation | complete | Generation-safe event roots and deterministic contact-neighbor rounds traverse every reserved point slot for each committed stable-pair manifold before solve; persisted resting contacts are not roots. |
 | Automatic sleep admission | complete | Saturating per-body timers and four-round contact blockers coordinate admission within the selected bound, zero transition velocities, and prevent dormant drift. |
 | Awake-driven solve and integration | complete | Dense awake points and bounded solver bodies size solve/integration while live collision, persistence, and rendering retain sleepers (S23.5). |
 | Toggle and configuration surface | complete; S32 promotion | Launch-owned state and the engine-rendered `MENU → WORLD` controls make sleeping effective on request, configure one shared PhysBox/Box2D threshold, switch PhysBox among exact/local-4/local-8, and persist the choices. Sleeping-on/exact are the defaults; every choice remains reversible. |
@@ -378,6 +378,45 @@ among exact, local-4, and local-8. Sleep-off still owns awake solver-quality
 acceptance, and comparator mode remains excluded from performance evidence.
 S32 owns implementation, migration, and proportional cross-host promotion
 gates.
+
+### Post-S32 pair-slot span correction
+
+Commit `32dd77d` corrects the contact scan consumed by exact grouping, bounded
+wake/blocker propagation, and cycle diagnostics. Stable-pair persistence
+reserves two solver-point slots per committed manifold. Circle manifolds
+normally fill only the first slot, producing valid indices `0, 2, 4, ...`;
+the prior sleep passes instead dispatched the committed scalar-point count and
+treated that count as a dense prefix. They therefore omitted roughly half of
+a circle pile's contact graph. Rectangle manifolds commonly fill both slots,
+which is why the rectangle bucket did not expose the defect.
+
+The selected scan now visits both reserved slots for every committed
+stable-pair manifold. The pair bridge writes the invalid-point sentinel to
+every solver-point slot before conditionally writing current live points on
+every step. An unused second slot, including one left by a manifold changing
+from two points to one, is therefore inert. Full-key oracle storage retains
+its genuinely packed scan, and the superseded packed stable-pair scan remains
+reachable only as a solver-laboratory regression control.
+
+Clean artifact
+`/tmp/physbox5-circle-sleep-promoted-32dd77d.json` at revision `32dd77d`
+records the 1,200-step A/B. Exact pair-slot scanning sleeps all 100 circles
+together at step 145 with 100 sleep events, zero wakes, and zero mixed-state
+dynamic pairs. The packed control ends 95 awake / 5 asleep after 470 sleep
+and 465 wake events with 9,924 mixed-pair samples. Both rectangle exact lanes
+sleep all 100 bodies at step 195. Corrected local-8 also ends with all circles
+asleep and zero mixed pairs; corrected local-4 retains its intentionally
+bounded behavior, ends asleep after recurring local transitions, and reduces
+mixed-pair samples from 8,436 to 414.
+
+Matched clean 1,000-body sleeping-city artifacts compare 20 retained native
+GPU timestamp samples before (`dcfb555`,
+`/tmp/physbox5-sleep-scan-packed-timing-dcfb555.json`) and after (`32dd77d`,
+`/tmp/physbox5-sleep-scan-promoted-timing-32dd77d.json`). Solver-plus-sleep
+P50 changes by +0.07% / +0.08% / +0.21% for local-4/local-8/exact; P95 changes
+are at most +0.16%. Dispatch counts and allocations are unchanged. These
+named-adapter measurements reject a material regression for this promotion;
+they are not a universal performance-rate claim.
 
 ### Post-review Box2D alignment correction
 
