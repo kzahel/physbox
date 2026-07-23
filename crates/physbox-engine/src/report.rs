@@ -264,7 +264,7 @@ impl FrameReport {
             requested_sleeping_enabled: bool,
             #[serde(rename = "y")]
             effective_sleeping_enabled: bool,
-            #[serde(rename = "z")]
+            #[serde(rename = "t")]
             sleep_speed_threshold: f32,
             #[serde(rename = "j")]
             sleep_grouping: u32,
@@ -648,6 +648,9 @@ mod tests {
                 | 2
         );
         assert_eq!(compact["b"], u32::MAX);
+        assert_eq!(compact["sceneContract"]["z"], 10_000);
+        assert_eq!(compact["sceneContract"]["t"], 0.02);
+        assert_eq!(compact["sceneContract"]["j"], 4);
         assert!(
             marker.len() < 900,
             "compact marker is {} bytes",

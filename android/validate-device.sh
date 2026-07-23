@@ -150,6 +150,9 @@ fi
 if [[ "${PHYSBOX5_ANDROID_SLEEP_VISUALS:-0}" = "1" && "${PHYSBOX5_ANDROID_SLEEP_TOGGLE:-0}" != "1" ]]; then
     echo "error: Android sleep visuals require PHYSBOX5_ANDROID_SLEEP_TOGGLE=1" >&2; exit 2
 fi
+if [[ "${PHYSBOX5_ANDROID_SLEEP_CONFIG:-0}" = "1" && "${PHYSBOX5_ANDROID_SLEEP_TOGGLE:-0}" != "1" ]]; then
+    echo "error: Android sleep configuration requires PHYSBOX5_ANDROID_SLEEP_TOGGLE=1" >&2; exit 2
+fi
 if [[ "${PHYSBOX5_ANDROID_SLEEP_TOGGLE:-0}" = "1" ]]; then
     [[ "${PHYSBOX5_ANDROID_CONSTRUCTION_CAPTURE:-0}" != "1" && "${PHYSBOX5_ANDROID_GRAB_CAPTURE:-0}" != "1" ]] || {
         echo "error: choose only one Android interaction capture" >&2; exit 2;
@@ -165,10 +168,16 @@ if [[ "${PHYSBOX5_ANDROID_SLEEP_TOGGLE:-0}" = "1" ]]; then
       const w = +process.argv[1], h = +process.argv[2];
       const s = Math.max(1, Math.min(2, Math.min(w, h) / 600));
       const compact = h < 520 && w > h;
-      const points = [62, 50, 300, 104, 192, 331, compact ? 496 : 192, compact ? 331 : 377];
+      const points = [
+        62, 50, 300, 104, 192, 331,
+        compact ? 496 : 192, compact ? 217 : 377,
+        compact ? 496 : 192, compact ? 263 : 423,
+        compact ? 496 : 192, compact ? 309 : 469,
+      ];
       console.log(points.map((value) => Math.round(value * s)).join(" "));
     ' "$WIDTH" "$HEIGHT")"
-    read -r MENU_X MENU_Y WORLD_X WORLD_Y SLEEP_X SLEEP_Y VISUALS_X VISUALS_Y <<< "$UI_POINTS"
+    read -r MENU_X MENU_Y WORLD_X WORLD_Y SLEEP_X SLEEP_Y THRESHOLD_X THRESHOLD_Y \
+        GROUPING_X GROUPING_Y VISUALS_X VISUALS_Y <<< "$UI_POINTS"
     "$ADB" -s "$SERIAL" shell input tap "$MENU_X" "$MENU_Y"
     sleep 0.25
     "$ADB" -s "$SERIAL" shell input tap "$WORLD_X" "$WORLD_Y"
@@ -190,6 +199,36 @@ if [[ "${PHYSBOX5_ANDROID_SLEEP_TOGGLE:-0}" = "1" ]]; then
     sleep 0.25
     "$ADB" -s "$SERIAL" shell input tap "$WORLD_X" "$WORLD_Y"
     sleep 0.25
+    if [[ "${PHYSBOX5_ANDROID_SLEEP_CONFIG:-0}" = "1" ]]; then
+        "$ADB" -s "$SERIAL" shell input tap "$THRESHOLD_X" "$THRESHOLD_Y"
+        for EXPECTED_GROUPING in 8 0; do
+            "$ADB" -s "$SERIAL" shell input tap "$MENU_X" "$MENU_Y"
+            sleep 0.25
+            "$ADB" -s "$SERIAL" shell input tap "$WORLD_X" "$WORLD_Y"
+            sleep 0.25
+            "$ADB" -s "$SERIAL" shell input tap "$GROUPING_X" "$GROUPING_Y"
+            CONFIG_APPLIED=0
+            for _ in $(seq 1 40); do
+                "$ADB" -s "$SERIAL" logcat -d -t 10000 > "$LOG"
+                REPORT="$(rg 'PHYSBOX5_MARK_FRAME_RENDERED ' "$LOG" | tail -1 | sed 's/^.*PHYSBOX5_MARK_FRAME_RENDERED //')"
+                if node -e '
+                  const frame = JSON.parse(process.argv[1]);
+                  const expectedGrouping = Number(process.argv[2]);
+                  process.exit(frame.sceneContract.t === 0.05
+                    && frame.sceneContract.j === expectedGrouping
+                    && frame.sceneContract.w === true && frame.sceneContract.y === true ? 0 : 1);
+                ' "$REPORT" "$EXPECTED_GROUPING"; then CONFIG_APPLIED=1; break; fi
+                sleep 0.25
+            done
+            [[ "$CONFIG_APPLIED" -eq 1 ]] || {
+                echo "error: Android menu did not apply sleep threshold/grouping; see $LOG" >&2; exit 1;
+            }
+        done
+        "$ADB" -s "$SERIAL" shell input tap "$MENU_X" "$MENU_Y"
+        sleep 0.25
+        "$ADB" -s "$SERIAL" shell input tap "$WORLD_X" "$WORLD_Y"
+        sleep 0.25
+    fi
     if [[ "${PHYSBOX5_ANDROID_SLEEP_VISUALS:-0}" = "1" ]]; then
         "$ADB" -s "$SERIAL" shell input tap "$VISUALS_X" "$VISUALS_Y"
         VISUALS_ENABLED=0
@@ -205,6 +244,8 @@ if [[ "${PHYSBOX5_ANDROID_SLEEP_TOGGLE:-0}" = "1" ]]; then
         done
         [[ "$VISUALS_ENABLED" -eq 1 ]] || { echo "error: Android menu did not enable sleep visuals; see $LOG" >&2; exit 1; }
         CAPTURE_PHASE="${SCENARIO}-sleep-visuals"
+    elif [[ "${PHYSBOX5_ANDROID_SLEEP_CONFIG:-0}" = "1" ]]; then
+        CAPTURE_PHASE="${SCENARIO}-sleep-threshold-0.05-exact-menu"
     else
         CAPTURE_PHASE="${SCENARIO}-sleep-request-on-menu"
     fi
