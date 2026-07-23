@@ -20,21 +20,25 @@ const GRID_CELL_COUNT: u32 = GRID_WIDTH * GRID_HEIGHT;
 const PARTICLE_WORKGROUP_SIZE: u32 = 64;
 const PARTICLE_SUBSTEPS: u32 = 2;
 const PARTICLE_BYTES_PER_SLOT: u64 = 64;
-pub const GPU_PARTICLE_DIAGNOSTICS_VERSION: u32 = 3;
+pub const GPU_PARTICLE_DIAGNOSTICS_VERSION: u32 = 4;
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct GpuParticleDiagnosticsV3 {
+pub struct GpuParticleDiagnosticsV4 {
     pub version: u32,
+    pub work_scope: &'static str,
     pub capacity: u32,
     pub active_count: u32,
     pub active_flags_count: u32,
     pub allocation_cursor: u32,
     pub overflow_flags: u32,
     pub grid_insertions: u32,
+    pub occupied_grid_cells: u32,
     pub grid_overflow: u32,
     pub neighbor_checks: u32,
     pub accepted_neighbors: u32,
+    pub density_evaluations: u64,
+    pub correction_evaluations: u64,
     pub body_contacts: u32,
     pub escaped_particles: u32,
     pub spawned_particles: u32,
@@ -49,6 +53,9 @@ pub struct GpuParticleDiagnosticsV3 {
     pub boundary_density_contacts: u32,
     pub boundary_pressure_edges: u32,
     pub dispatches_per_step: u32,
+    pub render_instances: u32,
+    pub allocated_bytes: u64,
+    pub high_water_bytes: u64,
     pub density_error_rms: f32,
     pub fluid_motion_rms: f32,
     pub state_finite: bool,
@@ -167,6 +174,7 @@ pub(crate) struct ParticleValidationLayout {
     pub(crate) active_flags_offset: u64,
     pub(crate) density_offset: u64,
     pub(crate) counters_offset: u64,
+    pub(crate) cell_counts_offset: u64,
     pub(crate) total_bytes: u64,
 }
 
@@ -1405,7 +1413,7 @@ impl GpuParticleWorld {
             capacity(
                 "particle-grid-bins",
                 u64::from(GRID_CELL_COUNT) * u64::from(GRID_CELL_CAPACITY),
-                u64::from(self.initial_count) * 9,
+                u64::from(self.initial_count),
                 4,
             ),
             capacity(
@@ -1429,6 +1437,8 @@ impl GpuParticleWorld {
         let lane_16 = self.capacity as u64 * 16;
         let flags = self.capacity as u64 * 4;
         let density = self.capacity as u64 * 16;
+        let counters = PARTICLE_COUNTER_WORDS as u64 * 4;
+        let cell_counts = GRID_CELL_COUNT as u64 * 4;
         ParticleValidationLayout {
             capacity: self.capacity,
             positions_offset: 0,
@@ -1437,7 +1447,8 @@ impl GpuParticleWorld {
             active_flags_offset: lane_16 * 3,
             density_offset: lane_16 * 3 + flags,
             counters_offset: lane_16 * 3 + flags + density,
-            total_bytes: lane_16 * 3 + flags + density + PARTICLE_COUNTER_WORDS as u64 * 4,
+            cell_counts_offset: lane_16 * 3 + flags + density + counters,
+            total_bytes: lane_16 * 3 + flags + density + counters + cell_counts,
         }
     }
 
@@ -1490,12 +1501,19 @@ impl GpuParticleWorld {
             layout.counters_offset,
             u64::from(PARTICLE_COUNTER_WORDS) * 4,
         );
+        encoder.copy_buffer_to_buffer(
+            &self._cell_counts,
+            0,
+            destination,
+            layout.cell_counts_offset,
+            u64::from(GRID_CELL_COUNT) * 4,
+        );
     }
 
     pub(crate) fn decode_validation_state(
         &self,
         bytes: &[u8],
-    ) -> Result<GpuParticleDiagnosticsV3, String> {
+    ) -> Result<GpuParticleDiagnosticsV4, String> {
         let layout = self.validation_layout();
         if bytes.len() != layout.total_bytes as usize {
             return Err(format!(
@@ -1524,11 +1542,18 @@ impl GpuParticleWorld {
         )
         .map_err(|error| format!("decode particle density states: {error}"))?;
         let counters = bytemuck::try_cast_slice::<u8, u32>(
-            &bytes[layout.counters_offset as usize..layout.total_bytes as usize],
+            &bytes[layout.counters_offset as usize..layout.cell_counts_offset as usize],
         )
         .map_err(|error| format!("decode particle counters: {error}"))?;
         if counters.len() != PARTICLE_COUNTER_WORDS as usize {
             return Err("particle validation readback has the wrong counter count".to_owned());
+        }
+        let cell_counts = bytemuck::try_cast_slice::<u8, u32>(
+            &bytes[layout.cell_counts_offset as usize..layout.total_bytes as usize],
+        )
+        .map_err(|error| format!("decode particle grid-cell counts: {error}"))?;
+        if cell_counts.len() != GRID_CELL_COUNT as usize {
+            return Err("particle validation readback has the wrong grid-cell count".to_owned());
         }
 
         let mut active_flags_count = 0u32;
@@ -1562,17 +1587,27 @@ impl GpuParticleWorld {
             && counters[0] <= layout.capacity
             && counters[0] == active_flags_count;
 
-        Ok(GpuParticleDiagnosticsV3 {
+        let active = u64::from(counters[0]);
+        let capacities = self.capacities();
+        Ok(GpuParticleDiagnosticsV4 {
             version: GPU_PARTICLE_DIAGNOSTICS_VERSION,
+            work_scope: "final-outer-step",
             capacity: layout.capacity,
             active_count: counters[0],
             active_flags_count,
             allocation_cursor: counters[8],
             overflow_flags: counters[1],
             grid_insertions: counters[2],
+            occupied_grid_cells: cell_counts.iter().filter(|count| **count != 0).count() as u32,
             grid_overflow: counters[3],
             neighbor_checks: counters[4],
             accepted_neighbors: counters[5],
+            density_evaluations: active
+                * u64::from(PARTICLE_SUBSTEPS)
+                * u64::from(self.pressure_iterations + 1),
+            correction_evaluations: active
+                * u64::from(PARTICLE_SUBSTEPS)
+                * u64::from(self.pressure_iterations),
             body_contacts: counters[6],
             escaped_particles: counters[7],
             spawned_particles: counters[9],
@@ -1587,6 +1622,12 @@ impl GpuParticleWorld {
             boundary_density_contacts: counters[19],
             boundary_pressure_edges: counters[20],
             dispatches_per_step: self.dispatches_per_step(),
+            render_instances: counters[0],
+            allocated_bytes: self.allocated_bytes(),
+            high_water_bytes: capacities
+                .iter()
+                .map(|capacity| capacity.high_water_bytes)
+                .sum(),
             density_error_rms,
             fluid_motion_rms,
             state_finite,
@@ -2162,7 +2203,7 @@ mod tests {
         assert_eq!(first_bytes, second_bytes);
         let layout = first.validation_layout();
         let counter_bytes =
-            &first_bytes[layout.counters_offset as usize..layout.total_bytes as usize];
+            &first_bytes[layout.counters_offset as usize..layout.cell_counts_offset as usize];
         let counters = bytemuck::cast_slice::<u8, u32>(counter_bytes);
         assert!(counters[9] > 0, "spawn counter");
         assert!(counters[10] > 0, "erase counter");

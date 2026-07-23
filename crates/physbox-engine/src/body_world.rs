@@ -1451,7 +1451,7 @@ impl GpuBodyWorld {
     pub(crate) fn decode_particle_validation_state(
         &self,
         bytes: &[u8],
-    ) -> Result<crate::GpuParticleDiagnosticsV3, String> {
+    ) -> Result<crate::GpuParticleDiagnosticsV4, String> {
         self.particles
             .as_ref()
             .ok_or_else(|| "active GPU body world has no particle state".to_owned())?
