@@ -208,7 +208,7 @@ pub fn liquid_sandbox_scenario() -> Result<CoupledScenarioV1, ScenarioBuildError
     scenario
         .rigid
         .bodies
-        .push(dynamic_circle(3, Vec2::new(0.0, 5.45), 0.45, 1.0, false));
+        .push(dynamic_circle(3, Vec2::new(0.0, 5.45), 0.45, 2.0, false));
     scenario.rigid.bodies.sort_by_key(|body| body.id);
     let mut water = ParticleMaterialV1::water_v1(0);
     water.radius = finite(0.05);

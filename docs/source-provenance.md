@@ -92,3 +92,14 @@ adapter compiles those files in place with exact submodules Box2D
 `3a4f0da8374af61293a03021c9a0b3ebcfe67948` and box2cpp
 `45f07785abe6bfeba518fb0256a37dcd050dce32`. No sidecar source is copied into
 PhysBox 5 and the product engine does not depend on the oracle crate.
+
+S31.3's boundary-density and pressure response is an independent
+implementation of the PhysBox 5 scalar/effective-mass contract. The
+implementation consulted original LiquidFun
+`Box2D/Particle/b2ParticleSystem.cpp` at pinned revision
+`7f20402173fd143a3988c921bc384459c6a858f2` for the concepts of adding body
+contact weight to particle density and applying equal-and-opposite pressure.
+It also rechecked PhysBox 4 `colliders_compute.wgsl` at clean revision
+`92f745eb85908243c69080a4fa4dba24f05c22cf` to preserve the explicit rejection
+of its delayed CPU/readback reaction. No source code, CPU contact buffer,
+foreign runtime, or delayed host impulse path was copied.

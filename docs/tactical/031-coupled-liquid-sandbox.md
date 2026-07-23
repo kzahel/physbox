@@ -234,7 +234,7 @@ interactive frames map no particle state.
   schedule without a measured blocking failure.
 - [ ] Make every fluid iteration consume current PhysBox body pose, motion,
   inverse mass, inverse inertia, shape, and surface velocity.
-- [ ] Include fixed and dynamic boundaries in density/pressure and
+- [x] Include fixed and dynamic boundaries in density/pressure and
   non-penetration work rather than adding reaction only after the final fluid
   projection.
 - [x] Emit bounded equal-and-opposite particle/body contribution records,
@@ -269,10 +269,25 @@ completed the same 600-step exact run as
 `1784809833565460211-2455396`: 3,952/3,952 particles remained active, all
 state was finite, overflow/escape/kill/drop stayed zero, 274 final-window
 body-contribution edges produced six fluid wake roots, and no interactive
-readback was introduced. This is a foundation checkpoint, not S31.3
-acceptance: boundary density/pressure reaction, schedule review, sleeping-mode
-qualification, the complete coupled corpus, and host dependency proof remain
-open.
+readback was introduced.
+
+Boundary-pressure checkpoint: each pressure iteration now adds current fixed
+and dynamic body surfaces as mirrored boundary density samples, recomputes
+particle pressure, and emits an effective-mass positional reaction before
+ordinary non-penetration. The reaction shares displacement across particle
+translation, body translation, and body rotation; two dynamic targets for one
+particle fail closed through the existing overflow bit. Scalar and GPU tests
+cover ghost-distance weight, equal-and-opposite response, non-penetrating
+pressure transfer, centered momentum residual at `2e-4`, and the overflow
+fixture. Fresh 600-step run `1784810660622129649-2472207` completed with
+3,952/3,952 finite particles, zero capacity failures, 1,722 final-window
+boundary-density contacts, 108 boundary-pressure edges, and the mass-0.5
+review ball resting at the waterline instead of pinning to the floor or
+trampolining out.
+
+These remain foundation checkpoints, not S31.3 acceptance: pass-schedule
+review, sleeping-mode qualification, the complete coupled corpus, preserved
+interaction/reset behavior, and host dependency proof remain open.
 
 ### S31.4 — water, surface, erase, and comparison UI
 

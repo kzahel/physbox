@@ -2112,7 +2112,7 @@ impl EngineHost {
     pub(crate) fn decode_particle_validation_state(
         &self,
         bytes: &[u8],
-    ) -> Result<crate::GpuParticleDiagnosticsV2, String> {
+    ) -> Result<crate::GpuParticleDiagnosticsV3, String> {
         self.body_world
             .as_ref()
             .ok_or_else(|| "particle diagnostics require the GPU body world".to_owned())?

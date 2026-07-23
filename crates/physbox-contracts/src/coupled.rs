@@ -741,6 +741,102 @@ pub fn particle_boundary_contact_v1(
     }))
 }
 
+pub fn particle_boundary_kernel_weight_v1(
+    signed_distance: f32,
+    material: ParticleMaterialV1,
+) -> Result<f32, ContractError> {
+    finite_f32("particle boundary signed distance", signed_distance)?;
+    material.validate()?;
+    particle_kernel_weight_v1(2.0 * signed_distance.max(0.0), material.support_radius())
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ParticleBoundaryPressureInputV1 {
+    pub density: f32,
+    pub near_density: f32,
+    pub boundary_weight: f32,
+    pub material: ParticleMaterialV1,
+    pub dt: f32,
+    pub particle_inverse_mass: f32,
+    pub body_inverse_mass: f32,
+    pub body_inverse_inertia: f32,
+    pub lever: Vec2,
+    pub normal: Vec2,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ParticleBoundaryPressureOutputV1 {
+    pub displacement_magnitude: f32,
+    pub positional_impulse: f32,
+    pub particle_delta_position: Vec2,
+    pub body_delta_position: Vec2,
+    pub body_delta_angle: f32,
+    pub linear_impulse_residual: Vec2,
+}
+
+pub fn project_particle_boundary_pressure_v1(
+    input: ParticleBoundaryPressureInputV1,
+) -> Result<ParticleBoundaryPressureOutputV1, ContractError> {
+    input.material.validate()?;
+    input.lever.validate()?;
+    input.normal.validate()?;
+    for (name, value) in [
+        ("boundary density", input.density),
+        ("boundary near density", input.near_density),
+        ("boundary weight", input.boundary_weight),
+        ("boundary pressure dt", input.dt),
+        ("particle inverse mass", input.particle_inverse_mass),
+        ("body inverse mass", input.body_inverse_mass),
+        ("body inverse inertia", input.body_inverse_inertia),
+    ] {
+        finite_f32(name, value)?;
+    }
+    if input.density < 0.0
+        || input.near_density < 0.0
+        || !(0.0..=1.0).contains(&input.boundary_weight)
+        || input.dt <= 0.0
+        || input.particle_inverse_mass <= 0.0
+        || input.body_inverse_mass < 0.0
+        || input.body_inverse_inertia < 0.0
+        || (length(input.normal) - 1.0).abs() > 1.0e-4
+    {
+        return Err(ContractError(
+            "particle boundary pressure requires nonnegative density/body properties, unit normal, bounded weight, and positive particle mass/dt"
+                .to_owned(),
+        ));
+    }
+    let pressure = input.material.pressure_strength.get()
+        * (input.density - input.material.rest_density.get()).max(0.0);
+    let near_pressure = input.material.near_pressure_strength.get() * input.near_density;
+    let displacement_magnitude = (input.dt
+        * input.dt
+        * (pressure * input.boundary_weight
+            + near_pressure * input.boundary_weight * input.boundary_weight))
+        .clamp(
+            0.0,
+            input.material.radius.get() * input.material.max_pressure_displacement_multiplier.get(),
+        );
+    let rotational = cross(input.lever, input.normal);
+    let inverse_effective_mass = input.particle_inverse_mass
+        + input.body_inverse_mass
+        + input.body_inverse_inertia * rotational * rotational;
+    let positional_impulse = if inverse_effective_mass > 0.0 {
+        displacement_magnitude / inverse_effective_mass
+    } else {
+        0.0
+    };
+    let particle_impulse = scale(input.normal, positional_impulse);
+    let body_impulse = scale(particle_impulse, -1.0);
+    Ok(ParticleBoundaryPressureOutputV1 {
+        displacement_magnitude,
+        positional_impulse,
+        particle_delta_position: scale(particle_impulse, input.particle_inverse_mass),
+        body_delta_position: scale(body_impulse, input.body_inverse_mass),
+        body_delta_angle: input.body_inverse_inertia * cross(input.lever, body_impulse),
+        linear_impulse_residual: add(particle_impulse, body_impulse),
+    })
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ParticleBodyContactInputV1 {
     pub particle_velocity: Vec2,
@@ -990,6 +1086,31 @@ mod tests {
         assert!(response.normal_impulse > 0.0);
         assert_eq!(response.linear_impulse_residual, Vec2::ZERO);
         assert!(response.body_delta_angular_velocity > 0.0);
+    }
+
+    #[test]
+    fn boundary_pressure_uses_ghost_distance_and_equal_opposite_response() {
+        let material = ParticleMaterialV1::water_v1(0);
+        let weight = particle_boundary_kernel_weight_v1(material.radius.get(), material).unwrap();
+        assert!((weight - 1.0 / 3.0).abs() < 1.0e-6);
+        let response = project_particle_boundary_pressure_v1(ParticleBoundaryPressureInputV1 {
+            density: 0.8,
+            near_density: 0.2,
+            boundary_weight: weight,
+            material,
+            dt: 1.0 / 120.0,
+            particle_inverse_mass: material.particle_mass().recip(),
+            body_inverse_mass: 0.5,
+            body_inverse_inertia: 1.0,
+            lever: Vec2::new(0.0, 1.0),
+            normal: Vec2::new(1.0, 0.0),
+        })
+        .unwrap();
+        assert!(response.displacement_magnitude > 0.0);
+        assert!(response.particle_delta_position.x > 0.0);
+        assert!(response.body_delta_position.x < 0.0);
+        assert!(response.body_delta_angle > 0.0);
+        assert_eq!(response.linear_impulse_residual, Vec2::ZERO);
     }
 
     #[test]

@@ -35,6 +35,8 @@ const COUNTER_DISPATCHES: u32 = 15u;
 const COUNTER_BODY_CONTRIBUTIONS: u32 = 16u;
 const COUNTER_FLUID_WAKE_ROOTS: u32 = 17u;
 const COUNTER_BODY_CONTRIBUTION_OVERFLOW: u32 = 18u;
+const COUNTER_BOUNDARY_DENSITY_CONTACTS: u32 = 19u;
+const COUNTER_BOUNDARY_PRESSURE_EDGES: u32 = 20u;
 
 @compute @workgroup_size(64)
 fn begin_step(@builtin(global_invocation_id) invocation: vec3u) {
@@ -54,6 +56,8 @@ fn begin_step(@builtin(global_invocation_id) invocation: vec3u) {
     atomicStore(&counters[COUNTER_BODY_CONTRIBUTIONS], 0u);
     atomicStore(&counters[COUNTER_FLUID_WAKE_ROOTS], 0u);
     atomicStore(&counters[COUNTER_BODY_CONTRIBUTION_OVERFLOW], 0u);
+    atomicStore(&counters[COUNTER_BOUNDARY_DENSITY_CONTACTS], 0u);
+    atomicStore(&counters[COUNTER_BOUNDARY_PRESSURE_EDGES], 0u);
 }
 
 @compute @workgroup_size(64)

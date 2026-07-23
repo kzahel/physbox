@@ -23,7 +23,7 @@ struct Provenance<'a> {
     adapter: &'a physbox_engine::AdapterDiagnostics,
     report: &'a FrameReport,
     gpu_state: [f32; 8],
-    particle_diagnostics: Option<&'a physbox_engine::GpuParticleDiagnosticsV2>,
+    particle_diagnostics: Option<&'a physbox_engine::GpuParticleDiagnosticsV3>,
     fixed_floor_pass: Option<&'a physbox_engine::GpuFixedFloorPassEvidence>,
 }
 

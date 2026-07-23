@@ -461,7 +461,7 @@ impl OffscreenRenderer {
 
     pub fn read_particle_diagnostics(
         &self,
-    ) -> Result<Option<crate::GpuParticleDiagnosticsV2>, String> {
+    ) -> Result<Option<crate::GpuParticleDiagnosticsV3>, String> {
         let Some(layout) = self.host.particle_validation_layout() else {
             return Ok(None);
         };

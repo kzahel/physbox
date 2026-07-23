@@ -149,6 +149,31 @@ linear and angular response without requiring `atomic<f32>` or CPU reduction.
 A bounded fixed-point atomic path may be a diagnostic comparator with written
 range/error bounds, but it is not automatically the product path.
 
+### Selected boundary-density representation
+
+The first coupled implementation represents a body surface near a particle as
+one mirrored boundary sample. Its kernel distance is twice the nonnegative
+analytic signed distance to the circle or rectangle, so a particle one radius
+from a surface sees the same weight as a same-material particle mirrored
+across that surface. Fixed and dynamic samples contribute to density and near
+density before each pressure correction.
+
+Boundary pressure then uses the scalar material pressure at that weight and
+the same effective-mass terms as direct particle/body contact: particle
+translation, body translation, and the contact lever arm against body inverse
+inertia. The resulting bounded positional impulse moves the particle and body
+in opposite directions before later iterations consume the new pose. One
+particle may target one dynamic body per pass; a second dynamic target records
+an invalidating overflow rather than dropping an unreported reaction.
+
+This is independently implemented from the scalar contract. Original
+LiquidFun's boundary contact weight and pressure transfer were consulted as
+algorithm references at pinned revision
+`7f20402173fd143a3988c921bc384459c6a858f2`; its CPU contact buffers,
+iteration order, and body application path were not copied. PhysBox 4's clean
+revision `92f745eb85908243c69080a4fa4dba24f05c22cf` was rechecked only to
+confirm that its delayed CPU reaction remains excluded.
+
 ## Sleeping and fluid wake behavior
 
 Sleeping bodies remain live fluid boundaries. A qualifying particle/body

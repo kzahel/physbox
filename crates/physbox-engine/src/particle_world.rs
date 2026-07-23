@@ -12,7 +12,7 @@ use crate::{CameraFrame2d, GpuBodyStorage, renderer::RenderFrameTarget};
 
 pub(crate) const PRODUCT_PARTICLE_CAPACITY: u32 = 32_768;
 pub(crate) const PARTICLE_COMMAND_CAPACITY: u32 = 64;
-const PARTICLE_COUNTER_WORDS: u32 = 20;
+const PARTICLE_COUNTER_WORDS: u32 = 21;
 const GRID_WIDTH: u32 = 64;
 const GRID_HEIGHT: u32 = 64;
 const GRID_CELL_CAPACITY: u32 = 64;
@@ -20,11 +20,11 @@ const GRID_CELL_COUNT: u32 = GRID_WIDTH * GRID_HEIGHT;
 const PARTICLE_WORKGROUP_SIZE: u32 = 64;
 const PARTICLE_SUBSTEPS: u32 = 2;
 const PARTICLE_BYTES_PER_SLOT: u64 = 64;
-pub const GPU_PARTICLE_DIAGNOSTICS_VERSION: u32 = 2;
+pub const GPU_PARTICLE_DIAGNOSTICS_VERSION: u32 = 3;
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct GpuParticleDiagnosticsV2 {
+pub struct GpuParticleDiagnosticsV3 {
     pub version: u32,
     pub capacity: u32,
     pub active_count: u32,
@@ -46,6 +46,8 @@ pub struct GpuParticleDiagnosticsV2 {
     pub body_contribution_edges: u32,
     pub fluid_wake_roots: u32,
     pub body_contribution_overflow: u32,
+    pub boundary_density_contacts: u32,
+    pub boundary_pressure_edges: u32,
     pub dispatches_per_step: u32,
     pub density_error_rms: f32,
     pub fluid_motion_rms: f32,
@@ -209,6 +211,10 @@ pub(crate) struct GpuParticleWorld {
     correction_apply: wgpu::ComputePipeline,
     boundary_group: wgpu::BindGroup,
     boundary_project: wgpu::ComputePipeline,
+    boundary_density_group: wgpu::BindGroup,
+    boundary_density_pipeline: wgpu::ComputePipeline,
+    boundary_pressure_group: wgpu::BindGroup,
+    boundary_pressure_pipeline: wgpu::ComputePipeline,
     body_reduce_group: wgpu::BindGroup,
     body_reduce_pipeline: wgpu::ComputePipeline,
     body_gather_group: wgpu::BindGroup,
@@ -675,6 +681,92 @@ impl GpuParticleWorld {
             &boundary_shader,
             "project_boundaries",
         );
+        let boundary_density_layout = layout(
+            device,
+            "physbox5_particle_boundary_density_layout",
+            &[
+                (0, true),
+                (1, false),
+                (2, false),
+                (3, true),
+                (4, true),
+                (5, true),
+                (6, false),
+            ],
+            7,
+            wgpu::ShaderStages::COMPUTE,
+        );
+        let boundary_density_group = bind_group(
+            device,
+            "physbox5_particle_boundary_density_group",
+            &boundary_density_layout,
+            &[
+                &positions,
+                &active_flags,
+                &density_states,
+                body_storage.pose_buffer(),
+                body_storage.properties_buffer(),
+                body_storage.metadata_buffer(),
+                &counters,
+                &params,
+            ],
+        );
+        let boundary_density_shader = shader(
+            device,
+            "physbox5_particle_boundary_density",
+            include_str!("particle_boundary_density.wgsl"),
+        );
+        let boundary_density_pipeline = compute(
+            device,
+            "particle_boundary_density",
+            &boundary_density_layout,
+            &boundary_density_shader,
+            "add_boundary_density",
+        );
+        let boundary_pressure_layout = layout(
+            device,
+            "physbox5_particle_boundary_pressure_layout",
+            &[
+                (0, false),
+                (1, false),
+                (2, true),
+                (3, true),
+                (4, true),
+                (5, true),
+                (6, false),
+                (7, false),
+            ],
+            8,
+            wgpu::ShaderStages::COMPUTE,
+        );
+        let boundary_pressure_group = bind_group(
+            device,
+            "physbox5_particle_boundary_pressure_group",
+            &boundary_pressure_layout,
+            &[
+                &positions,
+                &active_flags,
+                &density_states,
+                body_storage.pose_buffer(),
+                body_storage.properties_buffer(),
+                body_storage.metadata_buffer(),
+                &body_contributions,
+                &body_contact_generations,
+                &params,
+            ],
+        );
+        let boundary_pressure_shader = shader(
+            device,
+            "physbox5_particle_boundary_pressure",
+            include_str!("particle_boundary_pressure.wgsl"),
+        );
+        let boundary_pressure_pipeline = compute(
+            device,
+            "particle_boundary_pressure",
+            &boundary_pressure_layout,
+            &boundary_pressure_shader,
+            "project_boundary_pressure",
+        );
         let body_gather_layout = layout(
             device,
             "physbox5_particle_body_gather_layout",
@@ -706,8 +798,8 @@ impl GpuParticleWorld {
         let body_reduce_layout = layout(
             device,
             "physbox5_particle_body_reduce_layout",
-            &[(0, true), (1, true), (2, false)],
-            3,
+            &[(0, true), (1, true), (2, false), (3, false)],
+            4,
             wgpu::ShaderStages::COMPUTE,
         );
         let body_reduce_group = bind_group(
@@ -718,6 +810,7 @@ impl GpuParticleWorld {
                 &body_contributions,
                 body_storage.metadata_buffer(),
                 &body_partials,
+                &counters,
                 &params,
             ],
         );
@@ -1042,6 +1135,10 @@ impl GpuParticleWorld {
             correction_apply,
             boundary_group,
             boundary_project,
+            boundary_density_group,
+            boundary_density_pipeline,
+            boundary_pressure_group,
+            boundary_pressure_pipeline,
             body_reduce_group,
             body_reduce_pipeline,
             body_gather_group,
@@ -1089,6 +1186,8 @@ impl GpuParticleWorld {
                     &self.density_estimate,
                     &self.density_group,
                 );
+                self.encode_boundary_density(encoder, "particle_boundary_density");
+                self.encode_boundary_pressure_coupling(encoder);
                 self.dispatch_capacity(
                     encoder,
                     "particle_correction_gather",
@@ -1110,6 +1209,7 @@ impl GpuParticleWorld {
                 &self.density_estimate,
                 &self.density_group,
             );
+            self.encode_boundary_density(encoder, "particle_boundary_density_final");
             self.dispatch_capacity(
                 encoder,
                 "particle_velocity_reconstruct",
@@ -1273,7 +1373,7 @@ impl GpuParticleWorld {
     }
 
     pub(crate) fn dispatches_per_step(&self) -> u32 {
-        1 + PARTICLE_SUBSTEPS * (4 + self.pressure_iterations * 8 + 9) + 3
+        1 + PARTICLE_SUBSTEPS * (4 + self.pressure_iterations * 12 + 10) + 3
     }
 
     pub(crate) fn capacities(&self) -> Vec<CapacityRecordV1> {
@@ -1395,7 +1495,7 @@ impl GpuParticleWorld {
     pub(crate) fn decode_validation_state(
         &self,
         bytes: &[u8],
-    ) -> Result<GpuParticleDiagnosticsV2, String> {
+    ) -> Result<GpuParticleDiagnosticsV3, String> {
         let layout = self.validation_layout();
         if bytes.len() != layout.total_bytes as usize {
             return Err(format!(
@@ -1462,7 +1562,7 @@ impl GpuParticleWorld {
             && counters[0] <= layout.capacity
             && counters[0] == active_flags_count;
 
-        Ok(GpuParticleDiagnosticsV2 {
+        Ok(GpuParticleDiagnosticsV3 {
             version: GPU_PARTICLE_DIAGNOSTICS_VERSION,
             capacity: layout.capacity,
             active_count: counters[0],
@@ -1484,6 +1584,8 @@ impl GpuParticleWorld {
             body_contribution_edges: counters[16],
             fluid_wake_roots: counters[17],
             body_contribution_overflow: counters[18],
+            boundary_density_contacts: counters[19],
+            boundary_pressure_edges: counters[20],
             dispatches_per_step: self.dispatches_per_step(),
             density_error_rms,
             fluid_motion_rms,
@@ -1506,6 +1608,29 @@ impl GpuParticleWorld {
             "particle_grid_fill",
             &self.grid_fill,
             &self.grid_group,
+        );
+    }
+
+    fn encode_boundary_density(&self, encoder: &mut wgpu::CommandEncoder, label: &'static str) {
+        self.dispatch_capacity(
+            encoder,
+            label,
+            &self.boundary_density_pipeline,
+            &self.boundary_density_group,
+        );
+    }
+
+    fn encode_boundary_pressure_coupling(&self, encoder: &mut wgpu::CommandEncoder) {
+        self.dispatch_capacity(
+            encoder,
+            "particle_boundary_pressure",
+            &self.boundary_pressure_pipeline,
+            &self.boundary_pressure_group,
+        );
+        self.encode_body_gather(
+            encoder,
+            "particle_body_pressure_gather",
+            &self.body_position_gather_pipeline,
         );
     }
 
@@ -2226,6 +2351,158 @@ mod tests {
             "linear momentum residual {}",
             final_momentum - initial_momentum
         );
+    }
+
+    #[test]
+    fn gpu_boundary_pressure_reacts_before_particle_penetration() {
+        let instance = crate::create_instance();
+        let adapter = pollster::block_on(crate::gpu_context::request_adapter(&instance, None))
+            .expect("test GPU adapter");
+        let (device, queue) =
+            pollster::block_on(crate::gpu_context::request_device(&adapter)).unwrap();
+        let mut scenario = canonical_coupled_scenario(CoupledScenarioKind::ContainedWater).unwrap();
+        let material = scenario.materials[0];
+        scenario.particle_capacity = 1;
+        scenario.settings.schedule = physbox_contracts::CoupledScheduleV1::RigidThenCoupledBatch;
+        scenario.settings.pressure_iterations = 1;
+        scenario.rigid.settings.gravity = Vec2::ZERO;
+        scenario.rigid.bodies = vec![physbox_contracts::BodyStateV1 {
+            id: physbox_contracts::BodyId {
+                slot: 0,
+                generation: 1,
+            },
+            shape: physbox_contracts::ShapeV1::Circle {
+                radius: physbox_contracts::FiniteF32::new(0.5).unwrap(),
+            },
+            position: Vec2::ZERO,
+            angle: physbox_contracts::FiniteF32::new(0.0).unwrap(),
+            linear_velocity: Vec2::ZERO,
+            angular_velocity: physbox_contracts::FiniteF32::new(0.0).unwrap(),
+            inverse_mass: physbox_contracts::FiniteF32::new(0.5).unwrap(),
+            inverse_inertia: physbox_contracts::FiniteF32::new(1.0).unwrap(),
+            material: physbox_contracts::MaterialV1 {
+                friction: physbox_contracts::FiniteF32::new(0.0).unwrap(),
+                restitution: physbox_contracts::FiniteF32::new(0.0).unwrap(),
+            },
+            sleeping: false,
+        }];
+        scenario.regions = vec![ParticleRegionV1 {
+            id: 0,
+            material_id: 0,
+            lower: Vec2::new(0.5, -0.1),
+            upper: Vec2::new(0.7, 0.1),
+            spacing: physbox_contracts::FiniteF32::new(0.2).unwrap(),
+            initial_velocity: Vec2::ZERO,
+        }];
+        scenario.validate().unwrap();
+        let body_storage =
+            GpuBodyStorage::new(&device, 1, BODY_COMMAND_CAPACITY, &scenario.rigid.bodies).unwrap();
+        let particles = GpuParticleWorld::new(
+            &device,
+            wgpu::TextureFormat::Rgba8UnormSrgb,
+            &scenario,
+            &body_storage,
+        )
+        .unwrap();
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("physbox5_particle_boundary_pressure"),
+        });
+        particles.encode_step(&mut encoder);
+        queue.submit([encoder.finish()]);
+        device.poll(wgpu::PollType::Wait).unwrap();
+
+        let particle_bytes = capture_particle_bytes(&device, &queue, &particles);
+        let particle_position = bytemuck::cast_slice::<u8, [f32; 4]>(&particle_bytes[0..16])[0];
+        let velocity_offset = particles.validation_layout().velocities_offset as usize;
+        let particle_velocity = bytemuck::cast_slice::<u8, [f32; 4]>(
+            &particle_bytes[velocity_offset..velocity_offset + 16],
+        )[0];
+        let diagnostics = particles.decode_validation_state(&particle_bytes).unwrap();
+        let (body_pose, body_motion) = capture_body_kinematics(&device, &queue, &body_storage);
+
+        assert!(
+            particle_position[0] > 0.6,
+            "pressure moved particle outward"
+        );
+        assert!(body_pose[0] < 0.0, "pressure moved body oppositely");
+        assert!(diagnostics.boundary_density_contacts > 0);
+        assert!(diagnostics.boundary_pressure_edges > 0);
+        assert_eq!(diagnostics.body_contribution_overflow, 0);
+        let final_momentum = material.particle_mass() * particle_velocity[0]
+            + scenario.rigid.bodies[0].inverse_mass.get().recip() * body_motion[0];
+        assert!(
+            final_momentum.abs() <= 2.0e-4,
+            "boundary pressure momentum residual {final_momentum}"
+        );
+    }
+
+    #[test]
+    fn gpu_boundary_pressure_fails_closed_on_two_dynamic_targets() {
+        let instance = crate::create_instance();
+        let adapter = pollster::block_on(crate::gpu_context::request_adapter(&instance, None))
+            .expect("test GPU adapter");
+        let (device, queue) =
+            pollster::block_on(crate::gpu_context::request_device(&adapter)).unwrap();
+        let mut scenario = canonical_coupled_scenario(CoupledScenarioKind::ContainedWater).unwrap();
+        scenario.particle_capacity = 1;
+        scenario.settings.schedule = physbox_contracts::CoupledScheduleV1::RigidThenCoupledBatch;
+        scenario.settings.pressure_iterations = 1;
+        scenario.rigid.settings.gravity = Vec2::ZERO;
+        let left = physbox_contracts::BodyStateV1 {
+            id: physbox_contracts::BodyId {
+                slot: 0,
+                generation: 1,
+            },
+            shape: physbox_contracts::ShapeV1::Circle {
+                radius: physbox_contracts::FiniteF32::new(0.5).unwrap(),
+            },
+            position: Vec2::ZERO,
+            angle: physbox_contracts::FiniteF32::new(0.0).unwrap(),
+            linear_velocity: Vec2::ZERO,
+            angular_velocity: physbox_contracts::FiniteF32::new(0.0).unwrap(),
+            inverse_mass: physbox_contracts::FiniteF32::new(0.5).unwrap(),
+            inverse_inertia: physbox_contracts::FiniteF32::new(1.0).unwrap(),
+            material: physbox_contracts::MaterialV1 {
+                friction: physbox_contracts::FiniteF32::new(0.0).unwrap(),
+                restitution: physbox_contracts::FiniteF32::new(0.0).unwrap(),
+            },
+            sleeping: false,
+        };
+        let mut right = left.clone();
+        right.id.slot = 1;
+        right.position.x = 1.24;
+        scenario.rigid.bodies = vec![left, right];
+        scenario.regions = vec![ParticleRegionV1 {
+            id: 0,
+            material_id: 0,
+            lower: Vec2::new(0.52, -0.1),
+            upper: Vec2::new(0.72, 0.1),
+            spacing: physbox_contracts::FiniteF32::new(0.2).unwrap(),
+            initial_velocity: Vec2::ZERO,
+        }];
+        scenario.validate().unwrap();
+        let body_storage =
+            GpuBodyStorage::new(&device, 2, BODY_COMMAND_CAPACITY, &scenario.rigid.bodies).unwrap();
+        let particles = GpuParticleWorld::new(
+            &device,
+            wgpu::TextureFormat::Rgba8UnormSrgb,
+            &scenario,
+            &body_storage,
+        )
+        .unwrap();
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("physbox5_particle_boundary_pressure_overflow"),
+        });
+        particles.encode_step(&mut encoder);
+        queue.submit([encoder.finish()]);
+        device.poll(wgpu::PollType::Wait).unwrap();
+        let particle_bytes = capture_particle_bytes(&device, &queue, &particles);
+        let diagnostics = particles.decode_validation_state(&particle_bytes).unwrap();
+
+        assert!(diagnostics.boundary_density_contacts > 0);
+        assert!(diagnostics.body_contribution_overflow > 0);
+        assert_ne!(diagnostics.overflow_flags & (1 << 4), 0);
+        assert!(!diagnostics.capacity_clean);
     }
 
     fn capture_particle_bytes(
