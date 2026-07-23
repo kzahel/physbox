@@ -80,9 +80,15 @@ fn run() -> Result<(), String> {
             report = Some(renderer.render(FrameInput::new(elapsed)));
         }
     }
-    let report = report.ok_or_else(|| "capture rendered no frames".to_owned())?;
+    let mut report = report.ok_or_else(|| "capture rendered no frames".to_owned())?;
     if !report.scenario.complete || !report.scenario.passed {
         return Err(format!("scenario did not pass: {}", report.scenario.reason));
+    }
+    if report.scene_contract.effective_sleeping_enabled {
+        report.sleep_cycle_diagnostic.state = Some(renderer.read_sleep_cycle_metrics()?);
+        report.sleep_cycle_diagnostic.source = "bounded-final-gpu";
+        report.sleep_cycle_diagnostic.observed_frame_index = Some(report.frame_index);
+        report.sleep_cycle_diagnostic.age_frames = Some(0);
     }
     let pixels = renderer.read_pixels()?;
     let gpu_state = renderer.read_capture_state()?;
