@@ -14,6 +14,8 @@ pub const MAX_ORTHOGRAPHIC_HALF_HEIGHT: f32 = 8.0;
 pub struct Camera2d {
     center: [f32; 2],
     orthographic_half_height: f32,
+    home_center: [f32; 2],
+    home_orthographic_half_height: f32,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -42,6 +44,8 @@ impl Camera2d {
         Self {
             center: [0.0, 0.0],
             orthographic_half_height: 1.0,
+            home_center: [0.0, 0.0],
+            home_orthographic_half_height: 1.0,
         }
     }
 
@@ -49,6 +53,22 @@ impl Camera2d {
         let camera = Self {
             center,
             orthographic_half_height,
+            home_center: [0.0, 0.0],
+            home_orthographic_half_height: 1.0,
+        };
+        camera.validate()?;
+        Ok(camera)
+    }
+
+    pub fn try_new_at_home(
+        center: [f32; 2],
+        orthographic_half_height: f32,
+    ) -> Result<Self, CameraError> {
+        let camera = Self {
+            center,
+            orthographic_half_height,
+            home_center: center,
+            home_orthographic_half_height: orthographic_half_height,
         };
         camera.validate()?;
         Ok(camera)
@@ -63,10 +83,13 @@ impl Camera2d {
     }
 
     pub fn recenter(&mut self) -> bool {
-        if *self == Self::fixed() {
+        if self.center == self.home_center
+            && self.orthographic_half_height == self.home_orthographic_half_height
+        {
             return false;
         }
-        *self = Self::fixed();
+        self.center = self.home_center;
+        self.orthographic_half_height = self.home_orthographic_half_height;
         true
     }
 
@@ -128,7 +151,15 @@ impl Camera2d {
         if !self.center.into_iter().all(f32::is_finite) {
             return Err(CameraError::NonFiniteCenter);
         }
+        if !self.home_center.into_iter().all(f32::is_finite) {
+            return Err(CameraError::NonFiniteCenter);
+        }
         if !self.orthographic_half_height.is_finite() || self.orthographic_half_height <= 0.0 {
+            return Err(CameraError::InvalidOrthographicHalfHeight);
+        }
+        if !self.home_orthographic_half_height.is_finite()
+            || self.home_orthographic_half_height <= 0.0
+        {
             return Err(CameraError::InvalidOrthographicHalfHeight);
         }
         Ok(())
@@ -237,5 +268,16 @@ mod tests {
         assert!(camera.recenter());
         assert!(!camera.recenter());
         assert_eq!(camera, Camera2d::fixed());
+    }
+
+    #[test]
+    fn scene_home_is_the_recenter_target() {
+        let mut camera = Camera2d::try_new_at_home([0.0, 2.5], 3.5).unwrap();
+        camera.pan_world([1.0, -0.5]);
+        camera.zoom_at([0.5, 0.5], 2.0, [960, 600]).unwrap();
+        assert!(camera.recenter());
+        assert_eq!(camera.center(), [0.0, 2.5]);
+        assert_eq!(camera.orthographic_half_height(), 3.5);
+        assert!(!camera.recenter());
     }
 }

@@ -688,6 +688,7 @@ try {
     "bootstrap",
     "rigid-floor",
     "rigid-stack",
+    "liquid-sandbox",
     "rectangle-stack",
     "circle-bucket-100",
     "rectangle-bucket-100",
@@ -711,20 +712,35 @@ try {
     // The solver flow above already exercised scene activation, closed the menu, and reloaded.
   } else if (scenarioIndex >= 0) {
     const compactLandscape = viewportHeight < 520 && viewportWidth > viewportHeight;
-    const scenarioColumn = compactLandscape ? scenarioIndex % 3 : 0;
-    const scenarioRow = compactLandscape ? Math.floor(scenarioIndex / 3) : scenarioIndex;
+    const logicalWidth = viewportWidth / uiScale;
+    const scenarioColumns = compactLandscape ? 3 : logicalWidth >= 632 ? 2 : 1;
+    const scenarioColumn = scenarioIndex % scenarioColumns;
+    const scenarioRow = Math.floor(scenarioIndex / scenarioColumns);
+    const scenarioCenterX = scenarioColumns === 3
+      ? 118 + scenarioColumn * 198
+      : scenarioColumns === 2
+        ? 167 + scenarioColumn * 298
+        : 192;
+    await page.mouse.click(76 * uiScale, 104 * uiScale);
     await page.mouse.click(
-      (118 + scenarioColumn * 198) * uiScale,
+      scenarioCenterX * uiScale,
       (143 + scenarioRow * 38) * uiScale,
     );
     await page.waitForFunction(
-      ({ name, activations }) => {
+      ({ name, activations, restarts }) => {
         const frame = globalThis.__physbox5?.frame;
         return frame?.sceneContract?.scenario === name
-          && frame?.ui?.scenarioActivationsTotal > activations
+          && (
+            frame?.ui?.scenarioActivationsTotal > activations
+            || frame?.ui?.scenarioRestartsTotal > restarts
+          )
           && !frame?.ui?.menuOpen;
       },
-      { name: scenario, activations: before.frame.ui.scenarioActivationsTotal },
+      {
+        name: scenario,
+        activations: before.frame.ui.scenarioActivationsTotal,
+        restarts: before.frame.ui.scenarioRestartsTotal,
+      },
       { timeout: 10_000 },
     );
   } else if (launchOnlyScenarios.has(scenario)) {
@@ -862,10 +878,13 @@ try {
   if (after.frame.fixedStepsThisFrame > 1) {
     throw new Error(`interactive input admitted catch-up steps: ${JSON.stringify(after.frame.pacing)}`);
   }
-  if (after.frame.camera.center[0] === 0 && after.frame.camera.center[1] === 0) {
+  if (
+    after.frame.camera.center[0] === before.frame.camera.center[0]
+    && after.frame.camera.center[1] === before.frame.camera.center[1]
+  ) {
     throw new Error(`right-button drag did not pan shared camera: ${JSON.stringify(after.frame.camera)}`);
   }
-  if (!(after.frame.camera.orthographicHalfHeight < 1)) {
+  if (!(after.frame.camera.orthographicHalfHeight < before.frame.camera.orthographicHalfHeight)) {
     throw new Error(`wheel did not zoom shared camera: ${JSON.stringify(after.frame.camera)}`);
   }
   if (errors.length) throw new Error(`browser errors: ${errors.join("; ")}`);
@@ -874,7 +893,7 @@ try {
     (name) => globalThis.__physbox5?.frame?.scenario?.name === name
       && globalThis.__physbox5?.frame?.scenario?.passed,
     activeScenario,
-    { timeout: solverLab ? 30_000 : 10_000 },
+    { timeout: solverLab || scenario === "liquid-sandbox" ? 30_000 : 10_000 },
   );
   await page.waitForTimeout(200);
   await captureCompleteScreenshot(page, screenshot, "browser final", consoleErrors);

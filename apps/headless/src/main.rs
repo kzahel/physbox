@@ -23,6 +23,7 @@ struct Provenance<'a> {
     adapter: &'a physbox_engine::AdapterDiagnostics,
     report: &'a FrameReport,
     gpu_state: [f32; 8],
+    particle_diagnostics: Option<&'a physbox_engine::GpuParticleDiagnosticsV1>,
     fixed_floor_pass: Option<&'a physbox_engine::GpuFixedFloorPassEvidence>,
 }
 
@@ -95,6 +96,23 @@ fn run() -> Result<(), String> {
     if !gpu_state.iter().all(|value| value.is_finite()) {
         return Err("GPU capture state contains a non-finite value".to_owned());
     }
+    let particle_diagnostics = renderer.read_particle_diagnostics()?;
+    if let Some(diagnostics) = &particle_diagnostics
+        && (!diagnostics.state_finite || !diagnostics.capacity_clean)
+    {
+        return Err(format!(
+            "bounded final particle diagnostics rejected the scene: finite={} capacity_clean={} active={}/{} overflow_flags={} grid_overflow={} escaped={} killed={} command_drops={}",
+            diagnostics.state_finite,
+            diagnostics.capacity_clean,
+            diagnostics.active_count,
+            diagnostics.capacity,
+            diagnostics.overflow_flags,
+            diagnostics.grid_overflow,
+            diagnostics.escaped_particles,
+            diagnostics.killed_particles,
+            diagnostics.command_drops,
+        ));
+    }
     write_png(output, options.width, options.height, &pixels)?;
     let fixed_floor_pass = (report.scene_contract.contact_point_count > 0)
         .then(|| renderer.read_fixed_floor_pass_evidence())
@@ -110,6 +128,7 @@ fn run() -> Result<(), String> {
         adapter: renderer.diagnostics(),
         report: &report,
         gpu_state,
+        particle_diagnostics: particle_diagnostics.as_ref(),
         fixed_floor_pass: fixed_floor_pass.as_ref(),
     };
     let json = serde_json::to_vec_pretty(&provenance)

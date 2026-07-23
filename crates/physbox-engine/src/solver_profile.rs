@@ -196,6 +196,7 @@ impl SolverProfileConfig {
                         | ValidationScenario::BodyFreeFlight
                         | ValidationScenario::RigidFloor
                         | ValidationScenario::RigidStack
+                        | ValidationScenario::LiquidSandbox
                         | ValidationScenario::RectangleStack
                         | ValidationScenario::CircleBucket100
                         | ValidationScenario::RectangleBucket100

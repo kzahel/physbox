@@ -319,6 +319,7 @@ pub enum ValidationScenario {
     BodyFreeFlight,
     RigidFloor,
     RigidStack,
+    LiquidSandbox,
     RectangleStack,
     CircleBucket100,
     RectangleBucket100,
@@ -352,6 +353,7 @@ impl ValidationScenario {
         Self::Bootstrap,
         Self::RigidFloor,
         Self::RigidStack,
+        Self::LiquidSandbox,
         Self::RectangleStack,
         Self::CircleBucket100,
         Self::RectangleBucket100,
@@ -385,6 +387,7 @@ impl ValidationScenario {
         Self::Bootstrap,
         Self::RigidFloor,
         Self::RigidStack,
+        Self::LiquidSandbox,
         Self::RectangleStack,
         Self::CircleBucket100,
         Self::RectangleBucket100,
@@ -401,6 +404,7 @@ impl ValidationScenario {
             Self::BodyFreeFlight => "body-free-flight",
             Self::RigidFloor => "rigid-floor",
             Self::RigidStack => "rigid-stack",
+            Self::LiquidSandbox => "liquid-sandbox",
             Self::RectangleStack => "rectangle-stack",
             Self::CircleBucket100 => "circle-bucket-100",
             Self::RectangleBucket100 => "rectangle-bucket-100",
@@ -580,7 +584,7 @@ pub fn usage(program: &str, host: LaunchHost) -> String {
     };
     let solver = "\n  --body-capacity N  interactive slots: 64 (default), 256, 1000, or 10000\n  --solver NAME    soft-coupled or hard-direct (aliases: branch-robust, selected)\n  --sim-hz N       outer fixed rate, 15..=240 (default 60)\n  --substeps N     solver substeps, 1..=8 (default 4)\n  --iterations N   biased iterations, 1..=4 (soft default 1, hard default 2)\n  --contact-hz N   requested soft contact hertz, 1..=120\n  --contact-damping N  soft damping ratio, 0.5..=20\n  --static-contact-scale N  static contact hertz multiplier, 0.5..=16\n  --speculative-distance N  contact anticipation distance, 0..=1\n  --max-depenetration-velocity N  overlap recovery speed, 0.1..=100\n  --sleeping MODE  experimental sleeping: off (default) or on\n  --sleep-threshold N  shared sleep speed threshold, 0.001..=1 (default 0.02)\n  --sleep-grouping MODE  PhysBox local-4 (default), local-8, or exact";
     format!(
-        "Usage: {program} [options]\n\n  --width PX       viewport width (default 960)\n  --height PX      viewport height (default 600)\n  --scenario NAME  bootstrap, body-free-flight, rigid-floor, rigid-stack, rectangle-stack, circle-bucket-100, rectangle-bucket-100, reset-grab, solver-jacobi, solver-colored, solver-manifold-i2, solver-parallel-coloring, settling-hard-8, settling-candidate-8, settling-hard-16, settling-identity-16, settling-softness-16, settling-candidate-16{}{solver}{frame_markers}{capture}\n  -h, --help       print this help",
+        "Usage: {program} [options]\n\n  --width PX       viewport width (default 960)\n  --height PX      viewport height (default 600)\n  --scenario NAME  bootstrap, body-free-flight, rigid-floor, rigid-stack, liquid-sandbox, rectangle-stack, circle-bucket-100, rectangle-bucket-100, reset-grab, solver-jacobi, solver-colored, solver-manifold-i2, solver-parallel-coloring, settling-hard-8, settling-candidate-8, settling-hard-16, settling-identity-16, settling-softness-16, settling-candidate-16{}{solver}{frame_markers}{capture}\n  -h, --help       print this help",
         if cfg!(feature = "solver-lab") {
             ", solver-lab-stack-2, solver-lab-stack-4, solver-lab-stack-8, solver-lab-stack-12, solver-lab-stack-14, or solver-lab-stack-16"
         } else {
@@ -605,6 +609,7 @@ fn apply_option(
                 "body-free-flight" => ValidationScenario::BodyFreeFlight,
                 "rigid-floor" => ValidationScenario::RigidFloor,
                 "rigid-stack" => ValidationScenario::RigidStack,
+                "liquid-sandbox" => ValidationScenario::LiquidSandbox,
                 "rectangle-stack" => ValidationScenario::RectangleStack,
                 "circle-bucket-100" => ValidationScenario::CircleBucket100,
                 "rectangle-bucket-100" => ValidationScenario::RectangleBucket100,
@@ -1114,6 +1119,8 @@ mod tests {
         assert_eq!(floor.options.scenario, ValidationScenario::RigidFloor);
         let stack = parse_web_query("?scenario=rigid-stack").unwrap();
         assert_eq!(stack.options.scenario, ValidationScenario::RigidStack);
+        let liquid = parse_web_query("?scenario=liquid-sandbox").unwrap();
+        assert_eq!(liquid.options.scenario, ValidationScenario::LiquidSandbox);
         let rectangle_stack = parse_web_query("?scenario=rectangle-stack").unwrap();
         assert_eq!(
             rectangle_stack.options.scenario,

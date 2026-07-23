@@ -195,6 +195,32 @@ pub fn canonical_coupled_scenario(
     Ok(scenario)
 }
 
+pub fn liquid_sandbox_scenario() -> Result<CoupledScenarioV1, ScenarioBuildError> {
+    let mut scenario = canonical_coupled_scenario(CoupledScenarioKind::ContainedWater)?;
+    scenario.id = "liquid-sandbox-v1".to_owned();
+    scenario.seed = 0x5035_31ff;
+    scenario.requested_steps = 600;
+    scenario.particle_capacity = crate::particle_world::PRODUCT_PARTICLE_CAPACITY;
+    scenario.rigid.id = "liquid-sandbox-v1-rigid".to_owned();
+    scenario.rigid.seed = scenario.seed;
+    scenario.rigid.requested_steps = scenario.requested_steps;
+    let mut water = ParticleMaterialV1::water_v1(0);
+    water.radius = finite(0.05);
+    scenario.materials = vec![water];
+    scenario.regions = vec![ParticleRegionV1 {
+        id: 0,
+        material_id: 0,
+        lower: Vec2::new(-3.8, 0.0),
+        upper: Vec2::new(3.8, 5.2),
+        spacing: finite(0.1),
+        initial_velocity: Vec2::ZERO,
+    }];
+    scenario
+        .validate()
+        .map_err(|error| ScenarioBuildError(error.to_string()))?;
+    Ok(scenario)
+}
+
 pub fn canonical_coupled_scenario_hashes() -> Result<Vec<(&'static str, String)>, ScenarioBuildError>
 {
     CoupledScenarioKind::ALL
@@ -364,5 +390,15 @@ mod tests {
             assert_eq!(*actual_id, expected_id);
             assert_eq!(actual_hash, expected_hash);
         }
+    }
+
+    #[test]
+    fn liquid_sandbox_uses_the_bounded_product_capacity() {
+        let scenario = liquid_sandbox_scenario().unwrap();
+        assert_eq!(
+            scenario.particle_capacity,
+            crate::particle_world::PRODUCT_PARTICLE_CAPACITY
+        );
+        assert_eq!(scenario.regions.len(), 1);
     }
 }

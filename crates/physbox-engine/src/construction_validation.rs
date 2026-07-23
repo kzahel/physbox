@@ -269,7 +269,7 @@ pub fn construction_interaction_validation_script() -> ConstructionValidationScr
                 0,
                 click(
                     PointerButton::Primary,
-                    layout.center_normalized("scenario", 3),
+                    layout.center_normalized("scenario", 4),
                 ),
             ),
             frame(

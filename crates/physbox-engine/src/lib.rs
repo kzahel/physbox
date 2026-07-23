@@ -42,6 +42,7 @@ mod grab;
 mod host;
 mod input;
 mod pair_slot_persistence;
+mod particle_world;
 mod renderer;
 mod report;
 mod scenario;
@@ -154,7 +155,7 @@ pub use contact_components::{
 };
 pub use coupled_scenario::{
     COUPLED_CANONICAL_SOURCE_COUNT, COUPLED_CANONICAL_SOURCE_HASHES_V1, CoupledScenarioKind,
-    canonical_coupled_scenario, canonical_coupled_scenario_hashes,
+    canonical_coupled_scenario, canonical_coupled_scenario_hashes, liquid_sandbox_scenario,
 };
 pub use frame::{
     FrameInput, InputEvent, PointerButton, PointerEvent, PointerPhase, StepRequest, WheelEvent,
@@ -193,6 +194,7 @@ pub use pair_slot_persistence::{
     GpuPairSlotPersistenceRunner, GpuPairSlotPersistenceStepOutput,
     benchmark_gpu_pair_slot_persistence,
 };
+pub use particle_world::{GPU_PARTICLE_DIAGNOSTICS_VERSION, GpuParticleDiagnosticsV1};
 #[cfg(not(target_arch = "wasm32"))]
 pub use renderer::OffscreenRenderer;
 pub use renderer::SurfaceRenderer;

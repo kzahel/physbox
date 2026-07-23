@@ -602,6 +602,7 @@ impl UiLayout {
             }
         };
         let wide = self.compact_landscape()
+            || (page == MenuPage::Scenes && self.scenario_columns() > 1)
             || (page == MenuPage::Solvers && self.solver_profile_columns(solver_profile_count) > 1);
         let logical = if wide {
             [12.0, 84.0, 620.0, bottom - 84.0]
@@ -626,13 +627,19 @@ impl UiLayout {
     }
 
     fn scenario_button(self, index: usize) -> [f32; 4] {
-        if self.compact_landscape() {
-            let column = index % 3;
-            let row = index / 3;
+        let columns = self.scenario_columns();
+        if columns > 1 {
+            let column = index % columns;
+            let row = index / columns;
+            let (stride, width) = if columns == 3 {
+                (198.0, 188.0)
+            } else {
+                (298.0, 286.0)
+            };
             return [
-                (24.0 + column as f32 * 198.0) * self.scale,
+                (24.0 + column as f32 * stride) * self.scale,
                 (126.0 + row as f32 * 38.0) * self.scale,
-                188.0 * self.scale,
+                width * self.scale,
                 34.0 * self.scale,
             ];
         }
@@ -903,12 +910,20 @@ impl UiLayout {
         self.target_size[1] < 520 && self.target_size[0] > self.target_size[1]
     }
 
-    fn restart_y_logical(self) -> f32 {
-        let rows = if self.compact_landscape() {
-            ValidationScenario::MENU.len().div_ceil(3)
+    fn scenario_columns(self) -> usize {
+        if self.compact_landscape() {
+            3
+        } else if self.target_size[0] as f32 / self.scale >= 632.0 {
+            2
         } else {
-            ValidationScenario::MENU.len()
-        };
+            1
+        }
+    }
+
+    fn restart_y_logical(self) -> f32 {
+        let rows = ValidationScenario::MENU
+            .len()
+            .div_ceil(self.scenario_columns());
         let gap = if self.compact_landscape() { 20.0 } else { 10.0 };
         126.0 + (rows.saturating_sub(1)) as f32 * 38.0 + 34.0 + gap
     }

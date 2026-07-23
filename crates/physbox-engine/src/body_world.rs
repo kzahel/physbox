@@ -31,6 +31,7 @@ use crate::grab::{
 use crate::{
     GpuBodyStorage, GpuGatherTopology, GpuSolverExecutionV4, GpuSolverSchedulingPolicyV1,
     body_floor_solver::GpuFixedFloorSolver, generated_contacts::GpuGeneratedContactGraph,
+    particle_world::GpuParticleWorld,
 };
 
 const COMMAND_PARAMETER_STRIDE: usize = 256;
@@ -131,6 +132,7 @@ pub(crate) struct GpuBodyWorld {
     grab_pipeline: wgpu::RenderPipeline,
     floor_solver: Option<GpuFixedFloorSolver>,
     generated_contacts: Option<GpuGeneratedContactGraph>,
+    particles: Option<GpuParticleWorld>,
     generated_solver_configuration: Option<(GpuSolverExecutionV4, GpuSolverSchedulingPolicyV1)>,
     generated_contact_coefficient_policy: Option<crate::GpuContactCoefficientPolicyV1>,
     body_count: u32,
@@ -181,6 +183,7 @@ impl GpuBodyWorld {
             scenario,
             WorldCapacityPreset::default(),
             GeneratedContactBuildOptions::disabled(fixed_step_hz),
+            None,
         )
     }
 
@@ -199,6 +202,7 @@ impl GpuBodyWorld {
             scenario,
             world_capacity,
             GeneratedContactBuildOptions::selected(scheduling_policy, fixed_step_hz),
+            None,
         )
     }
 
@@ -216,6 +220,7 @@ impl GpuBodyWorld {
             scenario,
             world_capacity,
             GeneratedContactBuildOptions::selected(scheduling_policy, fixed_step_hz),
+            None,
         )
     }
 
@@ -238,6 +243,7 @@ impl GpuBodyWorld {
                 use_contact_policy_comparator: true,
                 ..GeneratedContactBuildOptions::selected(scheduling_policy, fixed_step_hz)
             },
+            None,
         )
     }
 
@@ -269,6 +275,7 @@ impl GpuBodyWorld {
                         physics.fixed_step_hz,
                     )
                 },
+                None,
             );
         }
         let initial_body_count = u32::try_from(scenario.bodies.len())
@@ -291,6 +298,55 @@ impl GpuBodyWorld {
                 branch_robust_tunable: true,
                 sleep_config,
             },
+            None,
+        )
+    }
+
+    pub(crate) fn new_coupled_with_solver_profile(
+        device: &wgpu::Device,
+        color_format: wgpu::TextureFormat,
+        scenario: &physbox_contracts::CoupledScenarioV1,
+        world_capacity: WorldCapacityPreset,
+        profile: &crate::SolverProfileConfig,
+    ) -> Result<Self, String> {
+        scenario.validate().map_err(|error| error.to_string())?;
+        let physics = profile.physics();
+        let sleep_config = SleepExecutionConfig::configured(
+            physics.sleeping_enabled,
+            physics.fixed_step_hz,
+            physics.sleep_speed_threshold,
+            physics.sleep_grouping,
+        );
+        let (execution, scheduling_policy, branch_robust_tunable) = if profile.is_selected() {
+            (
+                GpuSolverExecutionV4::SELECTED,
+                selected_interactive_scheduling(&scenario.rigid, world_capacity)?,
+                false,
+            )
+        } else {
+            let initial_body_count = u32::try_from(scenario.rigid.bodies.len())
+                .map_err(|_| "GPU body count exceeds u32".to_owned())?;
+            (
+                GpuSolverExecutionV4::AUTHORITY_GPU_PROBE,
+                GpuSolverSchedulingPolicyV1::authority_gpu_probe_for_body_capacity(
+                    interactive_body_capacity(initial_body_count, world_capacity)?,
+                ),
+                true,
+            )
+        };
+        Self::new_with_generated_contacts(
+            device,
+            color_format,
+            &scenario.rigid,
+            world_capacity,
+            GeneratedContactBuildOptions {
+                solver_configuration: Some((execution, scheduling_policy)),
+                identity_policy: ContactIdentityPolicyV1::SELECTED,
+                use_contact_policy_comparator: false,
+                branch_robust_tunable,
+                sleep_config,
+            },
+            Some(scenario),
         )
     }
 
@@ -300,6 +356,7 @@ impl GpuBodyWorld {
         scenario: &ScenarioV1,
         world_capacity: WorldCapacityPreset,
         options: GeneratedContactBuildOptions,
+        coupled: Option<&physbox_contracts::CoupledScenarioV1>,
     ) -> Result<Self, String> {
         let GeneratedContactBuildOptions {
             solver_configuration: generated_solver_configuration,
@@ -360,6 +417,9 @@ impl GpuBodyWorld {
                     )
                 }
             })
+            .transpose()?;
+        let particles = coupled
+            .map(|coupled| GpuParticleWorld::new(device, color_format, coupled, &storage))
             .transpose()?;
         let integration_params = IntegrationParamsRaw {
             dt_gravity: [
@@ -906,6 +966,7 @@ impl GpuBodyWorld {
             grab_pipeline,
             floor_solver,
             generated_contacts,
+            particles,
             generated_solver_configuration,
             generated_contact_coefficient_policy: generated_solver_configuration.map(|_| {
                 if branch_robust_tunable {
@@ -1200,6 +1261,9 @@ impl GpuBodyWorld {
                 drop(pass);
                 self.storage.encode_sleep_admission(encoder);
             }
+            if let Some(particles) = &self.particles {
+                particles.encode_step(encoder);
+            }
         }
         Ok(capacity)
     }
@@ -1277,10 +1341,68 @@ impl GpuBodyWorld {
             pass.draw(0..GRAB_RENDER_VERTEX_COUNT, 0..1);
         }
         drop(pass);
+        if let Some(particles) = &self.particles {
+            particles.encode_render(queue, encoder, target, plan.camera, plan.frame_index, false);
+        }
     }
 
     pub(crate) const fn initial_body_count(&self) -> u32 {
         self.initial_live_count
+    }
+
+    pub(crate) fn particle_capacity(&self) -> u32 {
+        self.particles
+            .as_ref()
+            .map_or(0, GpuParticleWorld::capacity)
+    }
+
+    pub(crate) fn initial_particle_count(&self) -> u32 {
+        self.particles
+            .as_ref()
+            .map_or(0, GpuParticleWorld::initial_count)
+    }
+
+    pub(crate) fn particle_allocated_bytes(&self) -> u64 {
+        self.particles
+            .as_ref()
+            .map_or(0, GpuParticleWorld::allocated_bytes)
+    }
+
+    pub(crate) fn particle_dispatches_per_step(&self) -> u32 {
+        self.particles
+            .as_ref()
+            .map_or(0, GpuParticleWorld::dispatches_per_step)
+    }
+
+    pub(crate) fn particle_validation_layout(
+        &self,
+    ) -> Option<crate::particle_world::ParticleValidationLayout> {
+        self.particles
+            .as_ref()
+            .map(GpuParticleWorld::validation_layout)
+    }
+
+    pub(crate) fn copy_particle_validation_state(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        destination: &wgpu::Buffer,
+    ) -> Result<(), String> {
+        let particles = self
+            .particles
+            .as_ref()
+            .ok_or_else(|| "active GPU body world has no particle state".to_owned())?;
+        particles.copy_validation_state(encoder, destination);
+        Ok(())
+    }
+
+    pub(crate) fn decode_particle_validation_state(
+        &self,
+        bytes: &[u8],
+    ) -> Result<crate::GpuParticleDiagnosticsV1, String> {
+        self.particles
+            .as_ref()
+            .ok_or_else(|| "active GPU body world has no particle state".to_owned())?
+            .decode_validation_state(bytes)
     }
 
     pub(crate) fn copy_grab_state(
@@ -1492,6 +1614,9 @@ impl GpuBodyWorld {
         if let Some(generated) = &self.generated_contacts {
             records.push(generated.awake_point_capacity_record());
             records.push(generated.solver_body_capacity_record());
+        }
+        if let Some(particles) = &self.particles {
+            records.extend(particles.capacities());
         }
         records.sort_by(|left, right| left.class.cmp(&right.class));
         records
@@ -2103,6 +2228,7 @@ mod tests {
                 branch_robust_tunable: fixed_step_hz != 60,
                 ..GeneratedContactBuildOptions::selected(scheduling, fixed_step_hz)
             },
+            None,
         )
         .unwrap()
     }

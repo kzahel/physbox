@@ -176,16 +176,16 @@ equal-and-opposite linear response, and correctly signed torque.
 
 ### S31.2 — GPU particle substrate and direct water
 
-- [ ] Add generation-safe GPU particle slots, active flags/list, bounded
+- [x] Add generation-safe GPU particle slots, active flags/list, bounded
   authored-region initialization, reset, spawn, erase, kill, and reuse.
-- [ ] Begin with one water material and an approximately 4,096-particle authored
+- [x] Begin with one water material and an approximately 4,096-particle authored
   scene under an explicit 32K particle-slot capacity.
-- [ ] Port or independently implement integration, neighborhood construction,
+- [x] Port or independently implement integration, neighborhood construction,
   density/lambda estimation, bounded PBF/XPBD correction, final density
   observation, velocity reconstruction, and XSPH-style smoothing.
-- [ ] Add fixed circle/rectangle boundary projection using the PhysBox body
+- [x] Add fixed circle/rectangle boundary projection using the PhysBox body
   representation; capsules remain unsupported.
-- [ ] Add explicit grid/neighborhood, density, correction, command, and escaped
+- [x] Add explicit grid/neighborhood, density, correction, command, and escaped
   particle diagnostics with fail-closed overflow.
 - [ ] Render active particles directly from GPU state in the existing shared
   render frame; add density/contact/debug views without HTML or platform UI.
@@ -195,6 +195,32 @@ equal-and-opposite linear response, and correctly signed torque.
 Temporary boundary: dynamic bodies may be treated as fixed only inside this
 slice. That one-way state is an implementation checkpoint, never an accepted
 coupled product or a default scene.
+
+GPU-substrate checkpoint: the shared body world now optionally owns bounded
+particle SoA storage, active compaction, a fixed-capacity spatial grid,
+density/correction/velocity passes, analytic circle/rectangle projection,
+generation-safe deterministic commands and reset, and direct indirect
+rendering. The product sandbox authors 3,952 water particles in 32,768 slots.
+A bounded final headless observer reports finite state, exact active-count
+agreement, neighborhood/correction/contact work, escapes, kills, command
+drops, and overflow without participating in frame advancement. Fresh
+development run `1784807683252532500-2398212` completed 600 steps on RADV
+GFX1150 with all 3,952 particles retained, zero overflow/escape/kill/drop,
+6,432,680 neighbor checks, 230,722 accepted neighbors, and 1,574 fixed-body
+contacts in its final observation window. Browser WebGPU run
+`4f3871b3-1e7e-439a-b5a3-4d878ace0ca6` completed the same launch scenario,
+direct-rendered the liquid, and exercised a Box2D frame in which the fluid was
+absent while the PhysBox world kept advancing.
+
+This implementation is independent PhysBox 5 code. PhysBox 4 files
+`crates/physbox-engine/src/particles.rs`,
+`crates/physbox-engine/src/pbf_correction.wgsl`,
+`crates/physbox-engine/src/particles_render.wgsl`,
+`crates/physbox-engine/src/particle_tools.wgsl`, and
+`docs/topics/pbf-density.md` were consulted as source references at clean
+revision `92f745eb85908243c69080a4fa4dba24f05c22cf`; no PhysBox 4 runtime,
+readback coupling, CPU rigid backend, or source file was copied into the
+product.
 
 Gate: reset/spawn/erase/reuse replay exactly; fixed-boundary and water-only
 metrics remain inside frozen bands; 4K and 32K-capacity rows are finite,

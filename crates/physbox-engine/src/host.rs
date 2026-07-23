@@ -2,7 +2,7 @@ use bytemuck::{Pod, Zeroable};
 use physbox_contracts::{
     BodyCommandBatchV1, BodyCommandV1, ConstructionIntentBatchV1, ConstructionIntentV1,
     ConstructionStateV1, GrabIntentBatchV1, GrabIntentV1, SCHEMA_VERSION, ScenarioV1,
-    ScheduledBodyCommandV1, Vec2, canonical_hash,
+    ScheduledBodyCommandV1, Validate, Vec2, canonical_hash,
 };
 use physbox_launch::{ValidationScenario, WorldCapacityPreset};
 
@@ -20,6 +20,7 @@ use crate::{
     gpu_solver::{GpuSolverCandidate, GpuSolverLab, GpuSolverMode},
     grab::{BoundedGrabIntents, GRAB_INTENT_CAPACITY, empty_grab_intent_batch},
     input::{SharedInputState, WorldPointerEvent},
+    liquid_sandbox_scenario,
     renderer::RenderFrameContext,
     report::{
         BodyCommandReport, CameraReport, ConstructionDiagnosticReport, FrameReport,
@@ -107,6 +108,7 @@ fn configured_host_scenario(config: &EngineConfig) -> ScenarioV1 {
                 .expect("engine-owned generated reset/grab scenario is valid")
                 .scenario,
         ),
+        ValidationScenario::LiquidSandbox => configured_liquid_sandbox(config).rigid,
         ValidationScenario::RigidStack => configured_solver_scenario(
             config,
             p5_2_generated_scenario(P5_2GeneratedScenarioKind::SmallStack, 180)
@@ -171,6 +173,25 @@ fn configured_host_scenario(config: &EngineConfig) -> ScenarioV1 {
                     .expect("engine-owned solver-lab stack scenario is valid"),
             )
         }
+    }
+}
+
+fn configured_liquid_sandbox(config: &EngineConfig) -> physbox_contracts::CoupledScenarioV1 {
+    let mut coupled =
+        liquid_sandbox_scenario().expect("engine-owned liquid sandbox scenario is valid");
+    coupled.rigid = configured_solver_scenario(config, coupled.rigid);
+    coupled
+        .validate()
+        .expect("configured liquid sandbox scenario remains valid");
+    coupled
+}
+
+fn configured_camera(scenario: ValidationScenario) -> Camera2d {
+    match scenario {
+        ValidationScenario::LiquidSandbox => {
+            Camera2d::try_new_at_home([0.0, 2.5], 3.5).expect("liquid sandbox camera home is valid")
+        }
+        _ => Camera2d::fixed(),
     }
 }
 
@@ -906,12 +927,18 @@ impl EngineHost {
             multiview: None,
             cache: None,
         });
-        let scenario = configured_host_scenario(&config);
+        let coupled_scenario = (config.scenario == ValidationScenario::LiquidSandbox)
+            .then(|| configured_liquid_sandbox(&config));
+        let scenario = coupled_scenario.as_ref().map_or_else(
+            || configured_host_scenario(&config),
+            |coupled| coupled.rigid.clone(),
+        );
         let solver_candidate = match config.scenario {
             ValidationScenario::Bootstrap
             | ValidationScenario::BodyFreeFlight
             | ValidationScenario::RigidFloor
             | ValidationScenario::RigidStack
+            | ValidationScenario::LiquidSandbox
             | ValidationScenario::RectangleStack
             | ValidationScenario::CircleBucket100
             | ValidationScenario::RectangleBucket100
@@ -955,6 +982,18 @@ impl EngineHost {
             })
         });
         let body_world = match config.scenario {
+            ValidationScenario::LiquidSandbox => Some(
+                GpuBodyWorld::new_coupled_with_solver_profile(
+                    device,
+                    color_format,
+                    coupled_scenario
+                        .as_ref()
+                        .expect("liquid launch owns a coupled scenario"),
+                    config.world_capacity,
+                    &config.solver_profile,
+                )
+                .expect("engine-owned coupled GPU world is valid"),
+            ),
             ValidationScenario::BodyFreeFlight => Some(
                 GpuBodyWorld::new(device, color_format, &scenario)
                     .expect("engine-owned body free-flight GPU world is valid"),
@@ -1030,7 +1069,10 @@ impl EngineHost {
             ),
             _ => None,
         };
-        let scenario_hash = canonical_hash(&scenario).expect("engine-owned scenario hash is valid");
+        let scenario_hash = coupled_scenario.as_ref().map_or_else(
+            || canonical_hash(&scenario).expect("engine-owned scenario hash is valid"),
+            |coupled| canonical_hash(coupled).expect("engine-owned coupled scenario hash is valid"),
+        );
         #[cfg(feature = "box2d-comparator")]
         let comparison_shadow = {
             let capacity = body_world
@@ -1052,6 +1094,7 @@ impl EngineHost {
             | ValidationScenario::Bootstrap
             | ValidationScenario::RigidFloor
             | ValidationScenario::RigidStack
+            | ValidationScenario::LiquidSandbox
             | ValidationScenario::RectangleStack
             | ValidationScenario::CircleBucket100
             | ValidationScenario::RectangleBucket100
@@ -1093,6 +1136,7 @@ impl EngineHost {
             solver_profiles.clone(),
         );
         let clock = SimulationClock::new(config.solver_profile.physics().fixed_step_hz);
+        let camera = configured_camera(config.scenario);
         Self {
             config,
             color_format,
@@ -1107,7 +1151,7 @@ impl EngineHost {
             comparison_shadow,
             selected_engine: ComparisonEngine::default(),
             clock,
-            camera: Camera2d::fixed(),
+            camera,
             input: SharedInputState::default(),
             frame_index: 0,
             fixed_steps_total: 0,
@@ -1566,6 +1610,25 @@ impl EngineHost {
                 .body_world
                 .as_ref()
                 .map_or(0, GpuBodyWorld::solver_capacity_bytes),
+            particle_count: self
+                .body_world
+                .as_ref()
+                .map_or(0, GpuBodyWorld::initial_particle_count),
+            particle_capacity: self
+                .body_world
+                .as_ref()
+                .map_or(0, GpuBodyWorld::particle_capacity),
+            particle_dispatches_per_step: self
+                .body_world
+                .as_ref()
+                .map_or(0, GpuBodyWorld::particle_dispatches_per_step),
+            particle_capacity_bytes: self
+                .body_world
+                .as_ref()
+                .map_or(0, GpuBodyWorld::particle_allocated_bytes),
+            particle_readback_for_frame_advancement: false,
+            particle_visible_in_box2d: false,
+            particle_box2d_interaction: false,
             capacity_overflowed: self
                 .body_world
                 .as_ref()
@@ -1680,6 +1743,26 @@ impl EngineHost {
                         "generated mixed-shape GPU stack completed"
                     } else {
                         "waiting for 180 generated stack steps"
+                    },
+                }
+            }
+            ValidationScenario::LiquidSandbox => {
+                let complete = self.fixed_steps_total >= 600;
+                let has_bounded_particles = contract.particle_count > 0
+                    && contract.particle_count <= contract.particle_capacity
+                    && contract.particle_dispatches_per_step > 0
+                    && contract.particle_capacity_bytes > 0;
+                let passed = complete && has_bounded_particles && !contract.capacity_overflowed;
+                ScenarioResult {
+                    name: self.config.scenario.name(),
+                    complete,
+                    passed,
+                    reason: if passed {
+                        "GPU-resident particles advanced and rendered from bounded product storage"
+                    } else if complete {
+                        "liquid sandbox did not satisfy its bounded GPU particle contract"
+                    } else {
+                        "waiting for 600 shared GPU liquid steps"
                     },
                 }
             }
@@ -1997,6 +2080,38 @@ impl EngineHost {
         })?;
         world.copy_capture_identity(encoder, destination);
         Ok(())
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn particle_validation_layout(
+        &self,
+    ) -> Option<crate::particle_world::ParticleValidationLayout> {
+        self.body_world
+            .as_ref()
+            .and_then(GpuBodyWorld::particle_validation_layout)
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn copy_particle_validation_state(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        destination: &wgpu::Buffer,
+    ) -> Result<(), String> {
+        self.body_world
+            .as_ref()
+            .ok_or_else(|| "particle diagnostics require the GPU body world".to_owned())?
+            .copy_particle_validation_state(encoder, destination)
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn decode_particle_validation_state(
+        &self,
+        bytes: &[u8],
+    ) -> Result<crate::GpuParticleDiagnosticsV1, String> {
+        self.body_world
+            .as_ref()
+            .ok_or_else(|| "particle diagnostics require the GPU body world".to_owned())?
+            .decode_particle_validation_state(bytes)
     }
 
     #[cfg(any(not(target_arch = "wasm32"), feature = "box2d-comparator"))]

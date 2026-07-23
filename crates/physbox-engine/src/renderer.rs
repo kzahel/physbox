@@ -459,6 +459,33 @@ impl OffscreenRenderer {
         read_identity(&self.device, &self.queue, &self.host)
     }
 
+    pub fn read_particle_diagnostics(
+        &self,
+    ) -> Result<Option<crate::GpuParticleDiagnosticsV1>, String> {
+        let Some(layout) = self.host.particle_validation_layout() else {
+            return Ok(None);
+        };
+        let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("physbox5_particle_validation_readback"),
+            size: layout.total_bytes,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("physbox5_particle_validation_copy"),
+            });
+        self.host
+            .copy_particle_validation_state(&mut encoder, &buffer)?;
+        self.queue.submit([encoder.finish()]);
+        let mapped = map_buffer(&self.device, &buffer)?;
+        let diagnostics = self.host.decode_particle_validation_state(&mapped)?;
+        drop(mapped);
+        buffer.unmap();
+        Ok(Some(diagnostics))
+    }
+
     pub fn read_grab_state(&self) -> Result<crate::GrabValidationState, String> {
         let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("physbox5_grab_state_readback"),
@@ -2420,7 +2447,7 @@ mod tests {
         );
         let switched = renderer.render(
             FrameInput::exact(0)
-                .with_input_events(click(41, layout.center_normalized("scenario", 8))),
+                .with_input_events(click(41, layout.center_normalized("scenario", 9))),
         );
         assert_eq!(switched.scene_contract.scenario, "bootstrap");
         assert_eq!(switched.scene_contract.solver_profile, "soft-coupled");
