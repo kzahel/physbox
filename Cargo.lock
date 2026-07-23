@@ -1472,6 +1472,7 @@ dependencies = [
  "physbox-box2d-comparator",
  "physbox-contracts",
  "physbox-launch",
+ "physbox-ui",
  "pollster",
  "serde",
  "serde_json",
@@ -1557,6 +1558,10 @@ dependencies = [
 [[package]]
 name = "physbox-ui"
 version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "wgpu",
+]
 
 [[package]]
 name = "physbox-web"

@@ -1,20 +1,15 @@
 use std::collections::BTreeSet;
 
-use bytemuck::{Pod, Zeroable};
 use physbox_contracts::{ConstructionResultV1, ConstructionStateV1};
 use physbox_launch::{SolverProfileName, ValidationScenario, WorldCapacityPreset};
-use wgpu::util::DeviceExt;
+use physbox_ui::{
+    CanvasRenderer, InstanceCapacities, Point, Primitive, Rect, RenderReport as CanvasRenderReport,
+    RenderTarget as CanvasRenderTarget, text_width,
+};
 
 use crate::{
-    InputEvent, PointerButton, PointerPhase, SolverProfileConfig,
-    clock::PacingReport,
-    engine_selection::ComparisonEngine,
-    renderer::RenderFrameTarget,
-    report::UiReport,
-    ui_font::{
-        GLYPH_CELL_WIDTH, GLYPH_HEIGHT, GLYPH_WIDTH, glyph_atlas_bytes, glyph_atlas_height,
-        glyph_atlas_r8, glyph_atlas_width, glyph_uv,
-    },
+    InputEvent, PointerButton, PointerPhase, SolverProfileConfig, clock::PacingReport,
+    engine_selection::ComparisonEngine, renderer::RenderFrameTarget, report::UiReport,
 };
 
 pub(crate) const UI_CONTRACT_VERSION: u32 = 11;
@@ -166,16 +161,6 @@ pub(crate) struct UiFrameModel<'a> {
     pub sleep_cycle_age_frames: Option<u64>,
 }
 
-struct UiViewState<'a> {
-    menu_open: bool,
-    menu_page: MenuPage,
-    selected_tool: WorkbenchTool,
-    sleep_visuals_enabled: bool,
-    solver_profiles: &'a [SolverProfileConfig],
-    draft_solver_profile: &'a SolverProfileConfig,
-    selected_engine: ComparisonEngine,
-}
-
 /// Shared canvas UI and input capture.
 ///
 /// The compact atlas, instanced glyph batch, static-write caching, and toolbar
@@ -184,7 +169,10 @@ struct UiViewState<'a> {
 /// `options/font.rs`, `options/text.rs`, and `options/renderer.rs`. PhysBox 5
 /// owns a smaller workbench-only model and one combined quad/glyph pipeline.
 pub(crate) struct WorkbenchUi {
-    renderer: UiRenderer,
+    renderer: CanvasRenderer,
+    retained_key: Option<StaticKey>,
+    retained_revision: u64,
+    retained_batch: Batch,
     menu_open: bool,
     menu_page: MenuPage,
     selected_tool: WorkbenchTool,
@@ -203,7 +191,15 @@ impl WorkbenchUi {
         solver_profiles: Vec<SolverProfileConfig>,
     ) -> Self {
         Self {
-            renderer: UiRenderer::new(device, queue, color_format),
+            renderer: CanvasRenderer::new(
+                device,
+                queue,
+                color_format,
+                InstanceCapacities::new(STATIC_INSTANCE_CAPACITY, DYNAMIC_INSTANCE_CAPACITY),
+            ),
+            retained_key: None,
+            retained_revision: 0,
+            retained_batch: Batch::new(STATIC_INSTANCE_CAPACITY),
             menu_open: false,
             menu_page: MenuPage::default(),
             selected_tool: WorkbenchTool::default(),
@@ -281,20 +277,59 @@ impl WorkbenchUi {
         model: UiFrameModel<'_>,
     ) -> UiReport {
         let selected_engine = model.selected_engine;
-        self.renderer.encode(
+        let key = StaticKey {
+            target_size: target.size,
+            scenario: model.scenario,
+            menu_open: self.menu_open,
+            menu_page: self.menu_page,
+            selected_tool: self.selected_tool,
+            solver_profile_key: self.draft_solver_profile.configuration_key(),
+            active_solver_profile: model.solver_profile.profile_name(),
+            solver_profile_count: self.solver_profiles.len(),
+            world_capacity: model.world_capacity,
+            sleeping_effective: model.sleeping_effective,
+            sleep_visuals_enabled: self.sleep_visuals_enabled,
+            selected_engine,
+        };
+        if self.retained_key.as_ref() != Some(&key) {
+            self.retained_batch = static_batch(
+                target.size,
+                StaticBatchModel {
+                    scenario: model.scenario,
+                    menu_open: self.menu_open,
+                    menu_page: self.menu_page,
+                    selected_tool: self.selected_tool,
+                    active_solver_profile: model.solver_profile,
+                    solver_profiles: &self.solver_profiles,
+                    draft_solver_profile: &self.draft_solver_profile,
+                    world_capacity: model.world_capacity,
+                    sleeping_effective: model.sleeping_effective,
+                    sleep_visuals_enabled: self.sleep_visuals_enabled,
+                    selected_engine,
+                },
+            );
+            self.retained_revision = self.retained_revision.wrapping_add(1);
+            self.retained_key = Some(key);
+        }
+        let live_batch = dynamic_batch(target.size, &model, !self.menu_open, self.selected_tool);
+        let canvas = self.renderer.encode(
             queue,
             encoder,
-            target,
-            model,
-            UiViewState {
-                menu_open: self.menu_open,
-                menu_page: self.menu_page,
-                selected_tool: self.selected_tool,
-                sleep_visuals_enabled: self.sleep_visuals_enabled,
-                solver_profiles: &self.solver_profiles,
-                draft_solver_profile: &self.draft_solver_profile,
-                selected_engine,
+            CanvasRenderTarget {
+                color_view: target.color_view,
+                size: target.size,
             },
+            self.retained_revision,
+            &self.retained_batch.primitives,
+            &live_batch.primitives,
+            self.retained_batch.overflowed | live_batch.overflowed,
+        );
+        ui_report(
+            model,
+            self.menu_open,
+            self.selected_tool,
+            self.sleep_visuals_enabled,
+            canvas,
         )
     }
 }
@@ -1035,51 +1070,6 @@ fn contains(bounds: [f32; 4], pixel: [f32; 2]) -> bool {
         && pixel[1] <= bounds[1] + bounds[3]
 }
 
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Pod, Zeroable)]
-struct UiParams {
-    viewport_padding: [f32; 4],
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Pod, Zeroable)]
-struct UiInstance {
-    rect: [f32; 4],
-    uv: [f32; 4],
-    color: [f32; 4],
-    mode: [f32; 4],
-}
-
-fn instance_layout() -> wgpu::VertexBufferLayout<'static> {
-    const ATTRIBUTES: [wgpu::VertexAttribute; 4] = [
-        wgpu::VertexAttribute {
-            format: wgpu::VertexFormat::Float32x4,
-            offset: 0,
-            shader_location: 0,
-        },
-        wgpu::VertexAttribute {
-            format: wgpu::VertexFormat::Float32x4,
-            offset: 16,
-            shader_location: 1,
-        },
-        wgpu::VertexAttribute {
-            format: wgpu::VertexFormat::Float32x4,
-            offset: 32,
-            shader_location: 2,
-        },
-        wgpu::VertexAttribute {
-            format: wgpu::VertexFormat::Float32x4,
-            offset: 48,
-            shader_location: 3,
-        },
-    ];
-    wgpu::VertexBufferLayout {
-        array_stride: std::mem::size_of::<UiInstance>() as u64,
-        step_mode: wgpu::VertexStepMode::Instance,
-        attributes: &ATTRIBUTES,
-    }
-}
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct StaticKey {
     target_size: [u32; 2],
@@ -1096,410 +1086,85 @@ struct StaticKey {
     selected_engine: ComparisonEngine,
 }
 
-struct UiRenderer {
-    pipeline: wgpu::RenderPipeline,
-    bind_group: wgpu::BindGroup,
-    params: wgpu::Buffer,
-    static_instances: wgpu::Buffer,
-    dynamic_instances: wgpu::Buffer,
-    last_target_size: Option<[u32; 2]>,
-    static_key: Option<StaticKey>,
-    static_count: u32,
-    static_glyph_count: u32,
-    dynamic_count: u32,
-    dynamic_glyph_count: u32,
-    static_writes_total: u64,
-    dynamic_writes_total: u64,
-    parameter_writes_total: u64,
-    static_upload_bytes_total: u64,
-    dynamic_upload_bytes_total: u64,
-    parameter_upload_bytes_total: u64,
-    overflowed: bool,
-}
-
-impl UiRenderer {
-    fn new(device: &wgpu::Device, queue: &wgpu::Queue, color_format: wgpu::TextureFormat) -> Self {
-        let params = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("physbox5_ui_params"),
-            contents: bytemuck::bytes_of(&UiParams::zeroed()),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-        let atlas = glyph_atlas_r8();
-        let texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("physbox5_ui_glyph_atlas"),
-            size: wgpu::Extent3d {
-                width: glyph_atlas_width(),
-                height: glyph_atlas_height(),
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::R8Unorm,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
-        });
-        queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &texture,
-                mip_level: 0,
-                origin: Default::default(),
-                aspect: wgpu::TextureAspect::All,
-            },
-            &atlas,
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(glyph_atlas_width()),
-                rows_per_image: Some(glyph_atlas_height()),
-            },
-            wgpu::Extent3d {
-                width: glyph_atlas_width(),
-                height: glyph_atlas_height(),
-                depth_or_array_layers: 1,
-            },
-        );
-        let texture_view = texture.create_view(&Default::default());
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("physbox5_ui_glyph_sampler"),
-            mag_filter: wgpu::FilterMode::Nearest,
-            min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::FilterMode::Nearest,
-            ..Default::default()
-        });
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("physbox5_ui_bind_group_layout"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
-        });
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("physbox5_ui_bind_group"),
-            layout: &bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: params.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&texture_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::Sampler(&sampler),
-                },
-            ],
-        });
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("physbox5_ui_shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("ui.wgsl").into()),
-        });
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("physbox5_ui_pipeline_layout"),
-            bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[],
-        });
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("physbox5_ui_pipeline"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vertex_main"),
-                buffers: &[instance_layout()],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fragment_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: color_format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview: None,
-            cache: None,
-        });
-        let static_instances = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("physbox5_ui_static_instances"),
-            size: (STATIC_INSTANCE_CAPACITY * std::mem::size_of::<UiInstance>()) as u64,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        let dynamic_instances = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("physbox5_ui_dynamic_instances"),
-            size: (DYNAMIC_INSTANCE_CAPACITY * std::mem::size_of::<UiInstance>()) as u64,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        Self {
-            pipeline,
-            bind_group,
-            params,
-            static_instances,
-            dynamic_instances,
-            last_target_size: None,
-            static_key: None,
-            static_count: 0,
-            static_glyph_count: 0,
-            dynamic_count: 0,
-            dynamic_glyph_count: 0,
-            static_writes_total: 0,
-            dynamic_writes_total: 0,
-            parameter_writes_total: 0,
-            static_upload_bytes_total: 0,
-            dynamic_upload_bytes_total: 0,
-            parameter_upload_bytes_total: 0,
-            overflowed: false,
-        }
-    }
-
-    fn encode(
-        &mut self,
-        queue: &wgpu::Queue,
-        encoder: &mut wgpu::CommandEncoder,
-        target: RenderFrameTarget<'_>,
-        model: UiFrameModel<'_>,
-        view: UiViewState<'_>,
-    ) -> UiReport {
-        let UiViewState {
-            menu_open,
-            menu_page,
-            selected_tool,
-            sleep_visuals_enabled,
-            solver_profiles,
-            draft_solver_profile,
-            selected_engine,
-        } = view;
-        if self.last_target_size != Some(target.size) {
-            let params = UiParams {
-                viewport_padding: [target.size[0] as f32, target.size[1] as f32, 0.0, 0.0],
-            };
-            let bytes = bytemuck::bytes_of(&params);
-            queue.write_buffer(&self.params, 0, bytes);
-            self.parameter_writes_total = self.parameter_writes_total.saturating_add(1);
-            self.parameter_upload_bytes_total = self
-                .parameter_upload_bytes_total
-                .saturating_add(bytes.len() as u64);
-            self.last_target_size = Some(target.size);
-        }
-        let key = StaticKey {
-            target_size: target.size,
-            scenario: model.scenario,
-            menu_open,
-            menu_page,
-            selected_tool,
-            solver_profile_key: draft_solver_profile.configuration_key(),
-            active_solver_profile: model.solver_profile.profile_name(),
-            solver_profile_count: solver_profiles.len(),
-            world_capacity: model.world_capacity,
-            sleeping_effective: model.sleeping_effective,
-            sleep_visuals_enabled,
-            selected_engine,
-        };
-        if self.static_key.as_ref() != Some(&key) {
-            let batch = static_batch(
-                target.size,
-                StaticBatchModel {
-                    scenario: model.scenario,
-                    menu_open,
-                    menu_page,
-                    selected_tool,
-                    active_solver_profile: model.solver_profile,
-                    solver_profiles,
-                    draft_solver_profile,
-                    world_capacity: model.world_capacity,
-                    sleeping_effective: model.sleeping_effective,
-                    sleep_visuals_enabled,
-                    selected_engine,
-                },
-            );
-            if !batch.instances.is_empty() {
-                let bytes = bytemuck::cast_slice(&batch.instances);
-                queue.write_buffer(&self.static_instances, 0, bytes);
-                self.static_upload_bytes_total = self
-                    .static_upload_bytes_total
-                    .saturating_add(bytes.len() as u64);
-            }
-            self.static_count = batch.instances.len() as u32;
-            self.static_glyph_count = batch.glyph_count;
-            self.static_writes_total = self.static_writes_total.saturating_add(1);
-            self.overflowed |= batch.overflowed;
-            self.static_key = Some(key);
-        }
-        let dynamic = dynamic_batch(target.size, &model, !menu_open, selected_tool);
-        if !dynamic.instances.is_empty() {
-            let bytes = bytemuck::cast_slice(&dynamic.instances);
-            queue.write_buffer(&self.dynamic_instances, 0, bytes);
-            self.dynamic_upload_bytes_total = self
-                .dynamic_upload_bytes_total
-                .saturating_add(bytes.len() as u64);
-        }
-        self.dynamic_count = dynamic.instances.len() as u32;
-        self.dynamic_glyph_count = dynamic.glyph_count;
-        self.dynamic_writes_total = self.dynamic_writes_total.saturating_add(1);
-        self.overflowed |= dynamic.overflowed;
-
-        let mut draw_calls = 0;
-        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("physbox5_ui_render_pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: target.color_view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Load,
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-        });
-        pass.set_pipeline(&self.pipeline);
-        pass.set_bind_group(0, &self.bind_group, &[]);
-        if self.static_count > 0 {
-            pass.set_vertex_buffer(0, self.static_instances.slice(..));
-            pass.draw(0..6, 0..self.static_count);
-            draw_calls += 1;
-        }
-        if self.dynamic_count > 0 {
-            pass.set_vertex_buffer(0, self.dynamic_instances.slice(..));
-            pass.draw(0..6, 0..self.dynamic_count);
-            draw_calls += 1;
-        }
-        drop(pass);
-
-        UiReport {
-            version: UI_CONTRACT_VERSION,
-            menu_open,
-            current_tool: selected_tool.name(),
-            current_scene: model.scenario.name(),
-            selected_engine: model.selected_engine.name(),
-            comparator_available: model.comparator_available,
-            box2d_revision: model.box2d_revision,
-            box2d_completed_steps: model.box2d_completed_steps,
-            box2d_live_bodies: model.box2d_live_bodies,
-            box2d_pending_actions: model.box2d_pending_actions,
-            box2d_resolved_actions: model.box2d_resolved_actions,
-            box2d_identity_disagreements: model.box2d_identity_disagreements,
-            box2d_action_queue_overflowed: model.box2d_action_queue_overflowed,
-            box2d_aligned: model.box2d_aligned,
-            box2d_failure: model.box2d_failure.map(str::to_owned),
-            sleep_visuals_enabled,
-            static_instance_capacity: STATIC_INSTANCE_CAPACITY as u32,
-            dynamic_instance_capacity: DYNAMIC_INSTANCE_CAPACITY as u32,
-            instance_stride_bytes: std::mem::size_of::<UiInstance>() as u32,
-            glyph_atlas_bytes: glyph_atlas_bytes(),
-            allocated_bytes: glyph_atlas_bytes()
-                + std::mem::size_of::<UiParams>() as u64
-                + ((STATIC_INSTANCE_CAPACITY + DYNAMIC_INSTANCE_CAPACITY)
-                    * std::mem::size_of::<UiInstance>()) as u64,
-            static_instances: self.static_count,
-            dynamic_instances: self.dynamic_count,
-            static_glyphs: self.static_glyph_count,
-            dynamic_glyphs: self.dynamic_glyph_count,
-            static_writes_total: self.static_writes_total,
-            dynamic_writes_total: self.dynamic_writes_total,
-            parameter_writes_total: self.parameter_writes_total,
-            static_upload_bytes_total: self.static_upload_bytes_total,
-            dynamic_upload_bytes_total: self.dynamic_upload_bytes_total,
-            parameter_upload_bytes_total: self.parameter_upload_bytes_total,
-            render_passes_this_frame: 1,
-            draw_calls_this_frame: draw_calls,
-            diagnostic_source: model.construction_diagnostic_source,
-            diagnostic_age_frames: model.construction_age_frames,
-            scenario_activations_total: model.scenario_activations_total,
-            scenario_restarts_total: model.scenario_restarts_total,
-            overflowed: self.overflowed,
-        }
-    }
-}
-
 struct Batch {
-    instances: Vec<UiInstance>,
-    capacity: usize,
-    glyph_count: u32,
+    primitives: Vec<Primitive>,
     overflowed: bool,
 }
 
 impl Batch {
     fn new(capacity: usize) -> Self {
         Self {
-            instances: Vec::with_capacity(capacity),
-            capacity,
-            glyph_count: 0,
+            primitives: Vec::with_capacity(capacity.min(96)),
             overflowed: false,
         }
     }
 
     fn push_quad(&mut self, rect: [f32; 4], color: [f32; 4]) {
-        self.push(UiInstance {
-            rect,
-            uv: [0.0; 4],
-            color,
-            mode: [0.0; 4],
+        self.primitives.push(Primitive::RoundedRect {
+            bounds: Rect::from_array(rect),
+            fill: color,
+            radius: 0.0,
+            border_width: 0.0,
+            border: color,
         });
     }
 
     fn push_text(&mut self, text: &str, origin: [f32; 2], pixel: f32, color: [f32; 4]) {
-        let mut x = origin[0];
-        for byte in text.bytes() {
-            if byte != b' ' {
-                let before = self.instances.len();
-                self.push(UiInstance {
-                    rect: [
-                        x,
-                        origin[1],
-                        GLYPH_WIDTH as f32 * pixel,
-                        GLYPH_HEIGHT as f32 * pixel,
-                    ],
-                    uv: glyph_uv(byte),
-                    color,
-                    mode: [1.0, 0.0, 0.0, 0.0],
-                });
-                if self.instances.len() != before {
-                    self.glyph_count = self.glyph_count.saturating_add(1);
-                }
-            }
-            x += GLYPH_CELL_WIDTH as f32 * pixel;
-        }
+        self.primitives.push(Primitive::Text {
+            text: text.to_owned(),
+            origin: Point::new(origin[0], origin[1]),
+            pixel_size: pixel,
+            color,
+        });
     }
+}
 
-    fn push(&mut self, instance: UiInstance) {
-        if self.instances.len() == self.capacity {
-            self.overflowed = true;
-            return;
-        }
-        self.instances.push(instance);
+fn ui_report(
+    model: UiFrameModel<'_>,
+    menu_open: bool,
+    selected_tool: WorkbenchTool,
+    sleep_visuals_enabled: bool,
+    canvas: CanvasRenderReport,
+) -> UiReport {
+    UiReport {
+        version: UI_CONTRACT_VERSION,
+        menu_open,
+        current_tool: selected_tool.name(),
+        current_scene: model.scenario.name(),
+        selected_engine: model.selected_engine.name(),
+        comparator_available: model.comparator_available,
+        box2d_revision: model.box2d_revision,
+        box2d_completed_steps: model.box2d_completed_steps,
+        box2d_live_bodies: model.box2d_live_bodies,
+        box2d_pending_actions: model.box2d_pending_actions,
+        box2d_resolved_actions: model.box2d_resolved_actions,
+        box2d_identity_disagreements: model.box2d_identity_disagreements,
+        box2d_action_queue_overflowed: model.box2d_action_queue_overflowed,
+        box2d_aligned: model.box2d_aligned,
+        box2d_failure: model.box2d_failure.map(str::to_owned),
+        sleep_visuals_enabled,
+        static_instance_capacity: canvas.retained_instance_capacity,
+        dynamic_instance_capacity: canvas.live_instance_capacity,
+        instance_stride_bytes: canvas.instance_stride_bytes,
+        glyph_atlas_bytes: canvas.atlas_bytes,
+        allocated_bytes: canvas.allocated_bytes,
+        static_instances: canvas.retained_instances,
+        dynamic_instances: canvas.live_instances,
+        static_glyphs: canvas.retained_glyphs,
+        dynamic_glyphs: canvas.live_glyphs,
+        static_writes_total: canvas.retained_writes_total,
+        dynamic_writes_total: canvas.live_writes_total,
+        parameter_writes_total: canvas.parameter_writes_total,
+        static_upload_bytes_total: canvas.retained_upload_bytes_total,
+        dynamic_upload_bytes_total: canvas.live_upload_bytes_total,
+        parameter_upload_bytes_total: canvas.parameter_upload_bytes_total,
+        render_passes_this_frame: canvas.render_passes_this_frame,
+        draw_calls_this_frame: canvas.draw_calls_this_frame,
+        diagnostic_source: model.construction_diagnostic_source,
+        diagnostic_age_frames: model.construction_age_frames,
+        scenario_activations_total: model.scenario_activations_total,
+        scenario_restarts_total: model.scenario_restarts_total,
+        overflowed: canvas.overflowed,
     }
 }
 
@@ -1554,8 +1219,8 @@ fn static_batch(target_size: [u32; 2], model: StaticBatchModel<'_>) -> Batch {
                 button
             },
         );
-        let label_scale = (1.8 * scale)
-            .min((bounds[2] - 8.0 * scale) / (tool.label().len() as f32 * GLYPH_CELL_WIDTH as f32));
+        let label_scale =
+            (1.8 * scale).min((bounds[2] - 8.0 * scale) / text_width(tool.label(), 1.0));
         batch.push_text(
             tool.label(),
             [bounds[0] + 4.0 * scale, bounds[1] + 17.0 * scale],
@@ -2475,7 +2140,7 @@ mod tests {
     }
 
     #[test]
-    fn batches_are_bounded_and_use_one_instance_per_visible_glyph() {
+    fn retained_canvas_descriptions_are_bounded_and_include_text() {
         let active = SolverProfileConfig::default();
         let profiles = SolverProfileConfig::available();
         let static_closed = static_batch(
@@ -2527,10 +2192,15 @@ mod tests {
             },
         );
         assert!(!static_closed.overflowed && !static_open.overflowed && !static_world.overflowed);
-        assert!(static_open.instances.len() > static_closed.instances.len());
-        assert!(static_open.glyph_count > 0);
-        assert!(static_open.instances.len() <= STATIC_INSTANCE_CAPACITY);
-        assert!(static_world.instances.len() <= STATIC_INSTANCE_CAPACITY);
+        assert!(static_open.primitives.len() > static_closed.primitives.len());
+        assert!(
+            static_open
+                .primitives
+                .iter()
+                .any(|primitive| matches!(primitive, Primitive::Text { .. }))
+        );
+        assert!(static_open.primitives.len() <= STATIC_INSTANCE_CAPACITY);
+        assert!(static_world.primitives.len() <= STATIC_INSTANCE_CAPACITY);
     }
 
     #[cfg(feature = "solver-lab")]
@@ -2555,7 +2225,7 @@ mod tests {
             },
         );
         assert!(!batch.overflowed);
-        assert!(batch.instances.len() <= STATIC_INSTANCE_CAPACITY);
+        assert!(batch.primitives.len() <= STATIC_INSTANCE_CAPACITY);
     }
 
     #[cfg(feature = "solver-lab")]

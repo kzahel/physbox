@@ -52,7 +52,6 @@ mod sleep_contacts;
 mod sleep_diagnostics;
 mod solver_profile;
 mod ui;
-mod ui_font;
 
 #[cfg(not(feature = "solver-lab"))]
 pub(crate) use authority_gpu_probe::*;

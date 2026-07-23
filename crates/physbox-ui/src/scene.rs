@@ -4,6 +4,19 @@ use crate::{Color, HitTarget, Point, Rect};
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct IconId(pub u16);
 
+/// Renderer-provided neutral icon geometry.
+pub mod icons {
+    use super::IconId;
+
+    pub const MORE_HORIZONTAL: IconId = IconId(1);
+    pub const HAND: IconId = IconId(2);
+    pub const CIRCLE_OUTLINE: IconId = IconId(3);
+    pub const SQUARE_OUTLINE: IconId = IconId(4);
+    pub const CROSS: IconId = IconId(5);
+    pub const DROPLETS: IconId = IconId(6);
+    pub const DIAGONAL_LINE: IconId = IconId(7);
+}
+
 /// Neutral UI drawing commands. Widgets are composed from these primitives.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Primitive {

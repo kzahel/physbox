@@ -1,7 +1,7 @@
 // Focused 5x7 bitmap atlas pattern selectively ported from PhysBox 4 revision
 // 4295957e15480ef701e6006c7cafb5f0728ef101,
-// crates/physbox-engine/src/options/font.rs. PhysBox 5 stores one R8 coverage
-// byte per texel instead of the source RGBA atlas.
+// crates/physbox-engine/src/options/font.rs. This implementation stores one R8
+// coverage byte per texel instead of the source RGBA atlas.
 
 pub(crate) const GLYPH_WIDTH: u32 = 5;
 pub(crate) const GLYPH_HEIGHT: u32 = 7;
@@ -10,6 +10,10 @@ pub(crate) const GLYPH_CELL_HEIGHT: u32 = 8;
 const GLYPH_ATLAS_FIRST: u8 = b' ';
 const GLYPH_ATLAS_LAST: u8 = b']';
 const GLYPH_ATLAS_COLUMNS: u32 = 16;
+
+pub fn text_width(text: &str, pixel_size: f32) -> f32 {
+    text.chars().count() as f32 * GLYPH_CELL_WIDTH as f32 * pixel_size
+}
 
 pub(crate) const fn glyph_atlas_width() -> u32 {
     GLYPH_ATLAS_COLUMNS * GLYPH_CELL_WIDTH
