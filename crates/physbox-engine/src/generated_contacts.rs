@@ -186,6 +186,15 @@ enum SleepPointScanPolicy {
     PairSlotManifoldSpan,
 }
 
+impl SleepPointScanPolicy {
+    const fn selected_for(persistence_topology: GpuContactPersistenceTopology) -> Self {
+        match persistence_topology {
+            GpuContactPersistenceTopology::FullKeyOracle => Self::PackedPointCount,
+            GpuContactPersistenceTopology::StablePairSlot => Self::PairSlotManifoldSpan,
+        }
+    }
+}
+
 pub(crate) struct GpuGeneratedContactGraph {
     broadphase_pipelines: SapPipelines,
     broadphase: SapCase,
@@ -463,7 +472,7 @@ impl GpuGeneratedContactGraph {
             substep_contact_policy,
             restitution_timing_policy,
             false,
-            SleepPointScanPolicy::PackedPointCount,
+            SleepPointScanPolicy::selected_for(persistence_topology),
         )
     }
 
@@ -494,7 +503,7 @@ impl GpuGeneratedContactGraph {
             crate::GpuSubstepContactPolicyV1::AuthorityFixedAnchorAnalyticalSeparation,
             crate::GpuRestitutionTimingPolicyV1::AfterEachSubstep,
             true,
-            SleepPointScanPolicy::PackedPointCount,
+            SleepPointScanPolicy::PairSlotManifoldSpan,
         )
     }
 
@@ -527,7 +536,7 @@ impl GpuGeneratedContactGraph {
             crate::GpuSubstepContactPolicyV1::AuthorityBranchRobustFixedAnchorAnalyticalSeparation,
             crate::GpuRestitutionTimingPolicyV1::AfterEachSubstep,
             true,
-            SleepPointScanPolicy::PackedPointCount,
+            SleepPointScanPolicy::PairSlotManifoldSpan,
         )
     }
 
@@ -560,11 +569,11 @@ impl GpuGeneratedContactGraph {
             crate::GpuSubstepContactPolicyV1::AuthorityBranchRobustFixedAnchorAnalyticalSeparation,
             crate::GpuRestitutionTimingPolicyV1::AfterEachSubstep,
             true,
-            SleepPointScanPolicy::PackedPointCount,
+            SleepPointScanPolicy::PairSlotManifoldSpan,
         )
     }
 
-    pub(crate) fn new_branch_robust_tunable_with_pair_slot_sleep_span(
+    pub(crate) fn new_branch_robust_tunable_with_packed_sleep_scan(
         device: &wgpu::Device,
         storage: &GpuBodyStorage,
         scenario: &ScenarioV1,
@@ -592,7 +601,7 @@ impl GpuGeneratedContactGraph {
             crate::GpuSubstepContactPolicyV1::AuthorityBranchRobustFixedAnchorAnalyticalSeparation,
             crate::GpuRestitutionTimingPolicyV1::AfterEachSubstep,
             true,
-            SleepPointScanPolicy::PairSlotManifoldSpan,
+            SleepPointScanPolicy::PackedPointCount,
         )
     }
 
@@ -4379,13 +4388,11 @@ impl GpuGeneratedContactRunner {
         )
     }
 
-    /// Laboratory A/B lane for the stable pair-slot graph. Sleep contact
-    /// consumers scan both reserved point slots for every committed manifold;
-    /// solver execution, coefficients, thresholds, and product selection are
-    /// unchanged.
+    /// Laboratory regression control for the superseded dense-prefix scan.
+    /// Product and ordinary validation paths use the complete pair-slot span.
     #[cfg(feature = "solver-lab")]
     #[allow(clippy::too_many_arguments)]
-    pub fn run_branch_robust_tunable_pair_slot_sleep_span_observation_series_with_submission_batch(
+    pub fn run_branch_robust_tunable_packed_sleep_scan_observation_series_with_submission_batch(
         &self,
         scenario: &ScenarioV1,
         observation_interval_steps: u32,
@@ -4439,7 +4446,7 @@ impl GpuGeneratedContactRunner {
         restitution_timing_policy: crate::GpuRestitutionTimingPolicyV1,
         authority_gpu_probe: bool,
         sleep_config: Option<crate::awake_work::SleepExecutionConfig>,
-        pair_slot_sleep_span: bool,
+        packed_sleep_scan_control: bool,
     ) -> Result<GpuGeneratedContactSeriesV1, String> {
         if observation_interval_steps == 0
             || completed_steps == 0
@@ -4481,8 +4488,8 @@ impl GpuGeneratedContactRunner {
                 if contact_coefficient_policy
                     == crate::GpuContactCoefficientPolicyV1::AuthorityTunableSoft
                 {
-                    if pair_slot_sleep_span {
-                        GpuGeneratedContactGraph::new_branch_robust_tunable_with_pair_slot_sleep_span(
+                    if packed_sleep_scan_control {
+                        GpuGeneratedContactGraph::new_branch_robust_tunable_with_packed_sleep_scan(
                             &self.device,
                             &storage,
                             scenario,
@@ -6735,9 +6742,13 @@ mod tests {
     use super::VALIDATION_SNAPSHOTS_PER_READBACK_FLUSH;
     #[cfg(not(feature = "production-validation"))]
     use super::benchmark_gpu_sleeping_city;
-    use super::{GpuGeneratedContactRunner, product_candidate_capacity};
+    use super::{
+        GpuContactPersistenceTopology, GpuGeneratedContactRunner, SleepPointScanPolicy,
+        product_candidate_capacity,
+    };
     use crate::{
-        GpuRestitutionTimingPolicyV1, GpuSubstepContactPolicyV1, P5_2SettlingFixtureKind,
+        GpuRestitutionTimingPolicyV1, GpuSubstepContactPolicyV1, P5_2BucketShape,
+        P5_2SettlingFixtureKind, SolverProfileConfig, p5_2_bucket_scenario,
         p5_2_centered_rectangle_stack_scenario, p5_2_settling_fixture_scenario,
     };
     #[cfg(not(feature = "production-validation"))]
@@ -6745,6 +6756,7 @@ mod tests {
         GpuSolverExecutionV4, GpuSolverSchedulingPolicyV1, P5_2SettlingReviewPolicy,
         p5_2_settling_review_scenario, p5_2_sleeping_city_scenario,
     };
+    use physbox_launch::{PhysicsConfigurationV3, SleepGrouping};
 
     #[test]
     fn product_candidate_capacity_is_linear_and_bounded() {
@@ -6752,6 +6764,54 @@ mod tests {
         assert_eq!(product_candidate_capacity(100).unwrap(), 800);
         assert_eq!(product_candidate_capacity(10_000).unwrap(), 80_000);
         assert!(product_candidate_capacity(u32::MAX).is_err());
+    }
+
+    #[test]
+    fn selected_sleep_scan_matches_contact_storage_layout() {
+        assert_eq!(
+            SleepPointScanPolicy::selected_for(GpuContactPersistenceTopology::StablePairSlot),
+            SleepPointScanPolicy::PairSlotManifoldSpan
+        );
+        assert_eq!(
+            SleepPointScanPolicy::selected_for(GpuContactPersistenceTopology::FullKeyOracle),
+            SleepPointScanPolicy::PackedPointCount
+        );
+    }
+
+    #[test]
+    fn exact_sleep_scans_every_circle_pair_slot() {
+        let physics = PhysicsConfigurationV3::SOFT_COUPLED;
+        let mut scenario = p5_2_bucket_scenario(P5_2BucketShape::Circle, 100, 180).unwrap();
+        SolverProfileConfig::from_physics(physics)
+            .unwrap()
+            .apply_to_scenario(&mut scenario)
+            .unwrap();
+        let runner = pollster::block_on(GpuGeneratedContactRunner::new()).unwrap();
+        let series = runner
+            .run_branch_robust_tunable_sleeping_observation_series_with_submission_batch(
+                &scenario,
+                180,
+                180,
+                32,
+                physics.fixed_step_hz,
+                physics.sleep_speed_threshold,
+                SleepGrouping::Exact,
+            )
+            .unwrap();
+        let final_bodies = &series.snapshots[0].bodies;
+        assert_eq!(
+            final_bodies
+                .iter()
+                .filter(|body| body.inverse_mass.get() > 0.0)
+                .count(),
+            100
+        );
+        assert!(
+            final_bodies
+                .iter()
+                .filter(|body| body.inverse_mass.get() > 0.0)
+                .all(|body| body.sleeping)
+        );
     }
 
     #[test]

@@ -71,6 +71,8 @@ fn invalid_point() -> PointInput {
 fn build_pair_solver_points(@builtin(global_invocation_id) invocation: vec3u) {
     let point_index = invocation.x;
     if (point_index >= params.counts.x) { return; }
+    // The complete pair-slot sleep scan relies on every unused second slot
+    // being invalidated each step before any live manifold point is written.
     solver_points[point_index] = invalid_point();
     let manifold_index = point_index / 2u;
     let local_index = point_index % 2u;

@@ -228,13 +228,13 @@ fn run() -> Result<(), String> {
     let mut scenes = Vec::new();
     for shape in P5_2BucketShape::ALL {
         eprintln!(
-            "diagnostic {} bucket: PhysBox soft-coupled exact sleep",
+            "diagnostic {} bucket: PhysBox soft-coupled exact sleep, packed control",
             shape.name()
         );
         let soft_exact =
             configured_bucket(shape, arguments.steps, PhysicsConfigurationV3::SOFT_COUPLED)?;
         let soft_exact_series = runner
-            .run_branch_robust_tunable_sleeping_observation_series_with_submission_batch(
+            .run_branch_robust_tunable_packed_sleep_scan_observation_series_with_submission_batch(
                 &soft_exact,
                 1,
                 arguments.steps,
@@ -248,7 +248,7 @@ fn run() -> Result<(), String> {
             shape.name()
         );
         let soft_exact_pair_slot_series = runner
-            .run_branch_robust_tunable_pair_slot_sleep_span_observation_series_with_submission_batch(
+            .run_branch_robust_tunable_sleeping_observation_series_with_submission_batch(
                 &soft_exact,
                 1,
                 arguments.steps,
@@ -259,7 +259,7 @@ fn run() -> Result<(), String> {
             )?;
         validate_isolated_sleep_scan_ab(&soft_exact_series, &soft_exact_pair_slot_series)?;
         eprintln!(
-            "diagnostic {} bucket: PhysBox soft-coupled local-4 sleep",
+            "diagnostic {} bucket: PhysBox soft-coupled local-4 sleep, packed control",
             shape.name()
         );
         let soft_local4 = configured_bucket(
@@ -268,7 +268,7 @@ fn run() -> Result<(), String> {
             soft_physics(true, SleepGrouping::Local4, 1),
         )?;
         let soft_local4_series = runner
-            .run_branch_robust_tunable_sleeping_observation_series_with_submission_batch(
+            .run_branch_robust_tunable_packed_sleep_scan_observation_series_with_submission_batch(
                 &soft_local4,
                 1,
                 arguments.steps,
@@ -282,7 +282,7 @@ fn run() -> Result<(), String> {
             shape.name()
         );
         let soft_local4_pair_slot_series = runner
-            .run_branch_robust_tunable_pair_slot_sleep_span_observation_series_with_submission_batch(
+            .run_branch_robust_tunable_sleeping_observation_series_with_submission_batch(
                 &soft_local4,
                 1,
                 arguments.steps,
@@ -293,7 +293,7 @@ fn run() -> Result<(), String> {
             )?;
         validate_isolated_sleep_scan_ab(&soft_local4_series, &soft_local4_pair_slot_series)?;
         eprintln!(
-            "diagnostic {} bucket: PhysBox soft-coupled local-8 sleep",
+            "diagnostic {} bucket: PhysBox soft-coupled local-8 sleep, packed control",
             shape.name()
         );
         let soft_local8 = configured_bucket(
@@ -302,7 +302,7 @@ fn run() -> Result<(), String> {
             soft_physics(true, SleepGrouping::Local8, 1),
         )?;
         let soft_local8_series = runner
-            .run_branch_robust_tunable_sleeping_observation_series_with_submission_batch(
+            .run_branch_robust_tunable_packed_sleep_scan_observation_series_with_submission_batch(
                 &soft_local8,
                 1,
                 arguments.steps,
@@ -316,7 +316,7 @@ fn run() -> Result<(), String> {
             shape.name()
         );
         let soft_local8_pair_slot_series = runner
-            .run_branch_robust_tunable_pair_slot_sleep_span_observation_series_with_submission_batch(
+            .run_branch_robust_tunable_sleeping_observation_series_with_submission_batch(
                 &soft_local8,
                 1,
                 arguments.steps,
