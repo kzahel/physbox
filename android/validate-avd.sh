@@ -114,16 +114,23 @@ if [[ "${PHYSBOX5_ANDROID_SLEEP_TOGGLE:-0}" = "1" ]]; then
     [[ "$WIDTH" =~ ^[0-9]+$ && "$HEIGHT" =~ ^[0-9]+$ ]] || { echo "error: could not determine Android display size" >&2; exit 1; }
     UI_POINTS="$(node -e '
       const w = +process.argv[1], h = +process.argv[2];
-      const s = Math.max(1, Math.min(2, Math.min(w, h) / 600));
-      const compact = h < 520 && w > h;
-      const points = [
-        38, 50, 300, 104, 192, 331,
+      const [version, pixelsPerPoint, toolbarScale, menuScale] =
+        JSON.parse(process.argv[3]).v;
+      if (version !== 12 || !(pixelsPerPoint > 0 && toolbarScale > 0 && menuScale > 0)) {
+        throw new Error("invalid UI density marker");
+      }
+      const compact = h / pixelsPerPoint < 520 && w > h;
+      const menuPoints = [
+        300, 104, 192, 331,
         compact ? 496 : 192, compact ? 217 : 377,
         compact ? 496 : 192, compact ? 263 : 423,
         compact ? 496 : 192, compact ? 309 : 469,
       ];
-      console.log(points.map((value) => Math.round(value * s)).join(" "));
-    ' "$WIDTH" "$HEIGHT")"
+      console.log([
+        Math.round(38 * toolbarScale), Math.round(50 * toolbarScale),
+        ...menuPoints.map((value) => Math.round(value * menuScale)),
+      ].join(" "));
+    ' "$WIDTH" "$HEIGHT" "$REPORT")"
     read -r MENU_X MENU_Y WORLD_X WORLD_Y SLEEP_X SLEEP_Y THRESHOLD_X THRESHOLD_Y \
         GROUPING_X GROUPING_Y VISUALS_X VISUALS_Y <<< "$UI_POINTS"
     "$ADB" -s "$SERIAL" shell input tap "$MENU_X" "$MENU_Y"
@@ -224,7 +231,11 @@ if [[ "${PHYSBOX5_ANDROID_CONSTRUCTION_CAPTURE:-0}" = "1" ]]; then
     WIDTH="${SIZE%x*}"; HEIGHT="${SIZE#*x}"
     [[ "$WIDTH" =~ ^[0-9]+$ && "$HEIGHT" =~ ^[0-9]+$ ]] || { echo "error: could not determine Android display size" >&2; exit 1; }
     BEFORE_CONSTRUCTION="$(node -e 'console.log(JSON.parse(process.argv[1]).bodyCommands.c)' "$REPORT")"
-    TOOL_POINT="$(node -e 'const w=+process.argv[1],h=+process.argv[2],s=Math.max(1,Math.min(2,Math.min(w,h)/600)); console.log(`${Math.round(229*s)} ${Math.round(50*s)}`)' "$WIDTH" "$HEIGHT")"
+    TOOL_POINT="$(node -e '
+      const [version, , toolbarScale] = JSON.parse(process.argv[1]).v;
+      if (version !== 12 || !(toolbarScale > 0)) throw new Error("invalid UI density marker");
+      console.log(`${Math.round(229 * toolbarScale)} ${Math.round(50 * toolbarScale)}`);
+    ' "$REPORT")"
     read -r TOOL_X TOOL_Y <<< "$TOOL_POINT"
     "$ADB" -s "$SERIAL" shell input tap "$TOOL_X" "$TOOL_Y"
     "$ADB" -s "$SERIAL" shell input tap $((WIDTH * 75 / 100)) $((HEIGHT * 30 / 100))
@@ -247,13 +258,14 @@ if [[ "${PHYSBOX5_ANDROID_LIQUID_CAPTURE:-0}" = "1" ]]; then
     [[ "$WIDTH" =~ ^[0-9]+$ && "$HEIGHT" =~ ^[0-9]+$ ]] || { echo "error: could not determine Android display size" >&2; exit 1; }
     TOOL_POINTS="$(node -e '
       const w = +process.argv[1], h = +process.argv[2];
-      const scale = Math.max(1, Math.min(2, Math.min(w, h) / 600));
-      const logicalWidth = w / scale;
+      const [version, , toolbarScale] = JSON.parse(process.argv[3]).v;
+      if (version !== 12 || !(toolbarScale > 0)) throw new Error("invalid UI density marker");
+      const logicalWidth = w / toolbarScale;
       const stride = logicalWidth < 460 ? Math.max(1, (logicalWidth - 78) / 6) : 58;
       const width = logicalWidth < 460 ? Math.max(1, stride - 6) : 52;
-      const center = (index) => Math.round((70 + index * stride + width * 0.5) * scale);
-      console.log(`${center(4)} ${center(3)} ${center(5)} ${Math.round(50 * scale)}`);
-    ' "$WIDTH" "$HEIGHT")"
+      const center = (index) => Math.round((70 + index * stride + width * 0.5) * toolbarScale);
+      console.log(`${center(4)} ${center(3)} ${center(5)} ${Math.round(50 * toolbarScale)}`);
+    ' "$WIDTH" "$HEIGHT" "$REPORT")"
     read -r WATER_X ERASE_X SURFACE_X TOOL_Y <<< "$TOOL_POINTS"
     TARGET_X=$((WIDTH * 68 / 100)); TARGET_Y=$((HEIGHT * 34 / 100))
     BEFORE_PARTICLES="$(node -e 'console.log(JSON.parse(process.argv[1]).bodyCommands.e)' "$REPORT")"

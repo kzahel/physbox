@@ -12,6 +12,31 @@ use web_time::Instant;
 
 const ASYNC_INTERACTION_DIAGNOSTIC_CAPACITY: usize = 8;
 
+/// Raw host display metrics used by the shared renderer to resolve logical UI
+/// density without giving a platform adapter ownership of layout policy.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DisplayMetrics {
+    pixels_per_point: f32,
+}
+
+impl DisplayMetrics {
+    pub const ONE: Self = Self {
+        pixels_per_point: 1.0,
+    };
+
+    pub fn new(pixels_per_point: f64) -> Result<Self, String> {
+        let pixels_per_point = pixels_per_point as f32;
+        if !pixels_per_point.is_finite() || pixels_per_point <= 0.0 {
+            return Err("display pixels per point must be finite and positive".to_owned());
+        }
+        Ok(Self { pixels_per_point })
+    }
+
+    pub const fn pixels_per_point(self) -> f32 {
+        self.pixels_per_point
+    }
+}
+
 #[derive(Clone, Copy)]
 pub(crate) struct RenderFrameTarget<'a> {
     pub color_view: &'a wgpu::TextureView,
@@ -23,6 +48,7 @@ pub(crate) struct RenderFrameContext<'a> {
     pub queue: &'a wgpu::Queue,
     pub encoder: &'a mut wgpu::CommandEncoder,
     pub target: RenderFrameTarget<'a>,
+    pub display_metrics: DisplayMetrics,
     pub frame_timestamps: Option<GpuFrameTimestampPlan<'a>>,
 }
 
@@ -32,6 +58,7 @@ pub struct SurfaceRenderer {
     queue: wgpu::Queue,
     surface_config: wgpu::SurfaceConfiguration,
     view_format: wgpu::TextureFormat,
+    display_metrics: DisplayMetrics,
     host: EngineHost,
     diagnostics: AdapterDiagnostics,
     frame_timing: SurfaceFrameTiming,
@@ -48,6 +75,7 @@ impl SurfaceRenderer {
         surface: wgpu::Surface<'static>,
         width: u32,
         height: u32,
+        display_metrics: DisplayMetrics,
         engine_config: EngineConfig,
     ) -> Result<Self, String> {
         let adapter = request_adapter(instance, Some(&surface)).await?;
@@ -101,6 +129,7 @@ impl SurfaceRenderer {
             queue,
             surface_config,
             view_format,
+            display_metrics,
             host,
             diagnostics,
             frame_timing,
@@ -120,10 +149,11 @@ impl SurfaceRenderer {
         self.host.launch_preference_selection()
     }
 
-    pub fn resize(&mut self, width: u32, height: u32) {
+    pub fn resize(&mut self, width: u32, height: u32, display_metrics: DisplayMetrics) {
         if width == 0 || height == 0 {
             return;
         }
+        self.display_metrics = display_metrics;
         self.surface_config.width = width;
         self.surface_config.height = height;
         self.surface.configure(&self.device, &self.surface_config);
@@ -167,6 +197,7 @@ impl SurfaceRenderer {
                         color_view: &view,
                         size: [self.surface_config.width, self.surface_config.height],
                     },
+                    display_metrics: self.display_metrics,
                     frame_timestamps: candidate.map(|(_, plan)| plan),
                 },
             );
@@ -479,6 +510,7 @@ impl OffscreenRenderer {
                     color_view: &self.view,
                     size: [self.width, self.height],
                 },
+                display_metrics: DisplayMetrics::ONE,
                 frame_timestamps: None,
             },
         );
@@ -826,6 +858,15 @@ mod tests {
     use physbox_launch::ValidationScenario;
 
     use super::*;
+
+    #[test]
+    fn display_metrics_require_a_finite_positive_pixel_ratio() {
+        assert_eq!(DisplayMetrics::new(1.0).unwrap(), DisplayMetrics::ONE);
+        assert_eq!(DisplayMetrics::new(2.5).unwrap().pixels_per_point(), 2.5);
+        for invalid in [0.0, -1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert!(DisplayMetrics::new(invalid).is_err());
+        }
+    }
 
     #[test]
     fn exact_free_flight_matches_f32_semi_implicit_integration() {

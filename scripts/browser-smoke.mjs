@@ -33,7 +33,10 @@ const solverLab = process.env.PHYSBOX5_SOLVER_LAB === "1";
 const conciseOutput = process.env.PHYSBOX5_CONCISE === "1";
 const viewportWidth = Number.parseInt(process.env.PHYSBOX5_VIEWPORT_WIDTH ?? "960", 10);
 const viewportHeight = Number.parseInt(process.env.PHYSBOX5_VIEWPORT_HEIGHT ?? "600", 10);
-if (!(viewportWidth > 0 && viewportHeight > 0)) throw new Error("browser viewport must be positive");
+const deviceScaleFactor = Number.parseFloat(process.env.PHYSBOX5_DEVICE_SCALE_FACTOR ?? "1");
+if (!(viewportWidth > 0 && viewportHeight > 0 && deviceScaleFactor > 0)) {
+  throw new Error("browser viewport and device scale factor must be positive");
+}
 await mkdir(captureDirectory, { recursive: true });
 await rm(screenshot, { force: true });
 await rm(initialScreenshot, { force: true });
@@ -67,7 +70,10 @@ try {
   });
   const { browser } = browserSession;
   const port = server.address().port;
-  const page = await browser.newPage({ viewport: { width: viewportWidth, height: viewportHeight } });
+  const page = await browser.newPage({
+    viewport: { width: viewportWidth, height: viewportHeight },
+    deviceScaleFactor,
+  });
   const errors = [];
   const consoleErrors = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -97,8 +103,8 @@ try {
   if (before.frame.sceneContract?.solverProfile !== "soft-coupled") {
     throw new Error(`fresh browser did not use soft-coupled: ${JSON.stringify(before.frame.sceneContract)}`);
   }
-  if (before.frame.ui?.version !== 11 || before.frame.ui?.sleepVisualsEnabled !== false) {
-    throw new Error(`browser did not expose UI contract 11 defaults: ${JSON.stringify(before.frame.ui)}`);
+  if (before.frame.ui?.version !== 12 || before.frame.ui?.sleepVisualsEnabled !== false) {
+    throw new Error(`browser did not expose UI contract 12 defaults: ${JSON.stringify(before.frame.ui)}`);
   }
   if (
     before.frame.ui?.selectedEngine !== "physbox"
@@ -140,19 +146,32 @@ try {
   if (!bounds || bounds.x !== 0 || bounds.y !== 0 || bounds.width !== viewportWidth || bounds.height !== viewportHeight) {
     throw new Error(`canvas does not fill viewport: ${JSON.stringify(bounds)}`);
   }
-  const uiScale = Math.max(1, Math.min(2, Math.min(viewportWidth, viewportHeight) / 600));
+  const pixelsPerPoint = before.frame.ui.pixelsPerPoint;
+  const toolbarScale = before.frame.ui.toolbarScale / pixelsPerPoint;
+  const uiScale = before.frame.ui.menuScale / pixelsPerPoint;
+  if (
+    !Number.isFinite(pixelsPerPoint)
+    || pixelsPerPoint <= 0
+    || !Number.isFinite(toolbarScale)
+    || toolbarScale <= 0
+    || !Number.isFinite(uiScale)
+    || uiScale <= 0
+  ) {
+    throw new Error(`browser UI density contract is invalid: ${JSON.stringify(before.frame.ui)}`);
+  }
   const compactLandscape = viewportHeight < 520 && viewportWidth > viewportHeight;
-  const logicalWidth = viewportWidth / uiScale;
+  const logicalWidth = viewportWidth / toolbarScale;
   const toolStride = logicalWidth < 460
     ? Math.max(1, (logicalWidth - 78) / 6)
     : 58;
   const toolWidth = logicalWidth < 460 ? Math.max(1, toolStride - 6) : 52;
   const toolCenter = (index) => [
-    (70 + index * toolStride + toolWidth * 0.5) * uiScale,
-    50 * uiScale,
+    (70 + index * toolStride + toolWidth * 0.5) * toolbarScale,
+    50 * toolbarScale,
   ];
+  const menuButtonCenter = [38 * toolbarScale, 50 * toolbarScale];
   const comparatorLiveBodiesBefore = before.frame.ui.box2dLiveBodies;
-    await page.mouse.click(38 * uiScale, 50 * uiScale);
+  await page.mouse.click(...menuButtonCenter);
   await page.mouse.click(300 * uiScale, 104 * uiScale);
   await page.mouse.click(291 * uiScale, 135 * uiScale);
   await page.waitForFunction(
@@ -198,7 +217,7 @@ try {
   }
   const box2dFrame = await page.evaluate(() => globalThis.__physbox5.frame);
   await page.mouse.click(...toolCenter(0));
-    await page.mouse.click(38 * uiScale, 50 * uiScale);
+  await page.mouse.click(...menuButtonCenter);
   await page.mouse.click(300 * uiScale, 104 * uiScale);
   await page.mouse.click(169 * uiScale, 135 * uiScale);
   await page.waitForFunction(
@@ -211,7 +230,7 @@ try {
     const activations = await page.evaluate(
       () => globalThis.__physbox5.frame.ui.scenarioActivationsTotal,
     );
-    await page.mouse.click(38 * uiScale, 50 * uiScale);
+    await page.mouse.click(...menuButtonCenter);
     await page.mouse.click(76 * uiScale, 104 * uiScale);
     await page.mouse.click(192 * uiScale, 143 * uiScale);
     await page.waitForFunction(
@@ -277,12 +296,12 @@ try {
     (compactLandscape ? 309 : 469) * uiScale,
   ];
   const clickWorldControl = async (center) => {
-    await page.mouse.click(38 * uiScale, 50 * uiScale);
+    await page.mouse.click(...menuButtonCenter);
     await page.waitForFunction(() => globalThis.__physbox5?.frame?.ui?.menuOpen, null, { timeout: 10_000 });
     await page.mouse.click(300 * uiScale, 104 * uiScale);
     await page.mouse.click(...center);
   };
-    await page.mouse.click(38 * uiScale, 50 * uiScale);
+  await page.mouse.click(...menuButtonCenter);
   await page.waitForFunction(() => globalThis.__physbox5?.frame?.ui?.menuOpen, null, { timeout: 10_000 });
   await page.evaluate(() => new Promise((resolveFrame) => {
     requestAnimationFrame(() => requestAnimationFrame(resolveFrame));
@@ -320,7 +339,7 @@ try {
       { timeout: 30_000 },
     );
     await requireWorldPreference(page, 256);
-    await page.mouse.click(38 * uiScale, 50 * uiScale);
+    await page.mouse.click(...menuButtonCenter);
     await page.waitForFunction(() => globalThis.__physbox5?.frame?.ui?.menuOpen, null, { timeout: 10_000 });
     await page.mouse.click(300 * uiScale, 104 * uiScale);
     await page.mouse.click(...worldSleepingCenter);
@@ -450,7 +469,7 @@ try {
       null,
       { timeout: 30_000 },
     );
-    await page.mouse.click(38 * uiScale, 50 * uiScale);
+    await page.mouse.click(...menuButtonCenter);
     await page.mouse.click(300 * uiScale, 104 * uiScale);
     await page.evaluate(() => new Promise((resolveFrame) => {
       requestAnimationFrame(() => requestAnimationFrame(resolveFrame));
@@ -493,7 +512,7 @@ try {
       null,
       { timeout: 30_000 },
     );
-    await page.mouse.click(38 * uiScale, 50 * uiScale);
+    await page.mouse.click(...menuButtonCenter);
     await page.mouse.click(300 * uiScale, 104 * uiScale);
     await page.mouse.click(...worldSleepingCenter);
     await page.waitForFunction(
@@ -520,7 +539,7 @@ try {
       sleeping: false,
       sleepGrouping: "local-4",
     });
-    await page.mouse.click(38 * uiScale, 50 * uiScale);
+    await page.mouse.click(...menuButtonCenter);
     await page.waitForFunction(() => globalThis.__physbox5?.frame?.ui?.menuOpen, null, { timeout: 10_000 });
     await page.mouse.click(300 * uiScale, 104 * uiScale);
     await page.mouse.click(...worldSleepVisualsCenter);
@@ -530,7 +549,7 @@ try {
       null,
       { timeout: 10_000 },
     );
-    await page.mouse.click(38 * uiScale, 50 * uiScale);
+    await page.mouse.click(...menuButtonCenter);
     await page.waitForFunction(() => globalThis.__physbox5?.frame?.ui?.menuOpen, null, { timeout: 10_000 });
     await page.mouse.click(76 * uiScale, 104 * uiScale);
   }
@@ -585,7 +604,7 @@ try {
       maxDepenetrationVelocity: 3,
     });
 
-    await page.mouse.click(38 * uiScale, 50 * uiScale);
+    await page.mouse.click(...menuButtonCenter);
     await page.mouse.click(188 * uiScale, 104 * uiScale);
     await page.mouse.click(...solverProfileCenter(1));
     await page.mouse.click(...solverApplyCenter);
@@ -611,7 +630,7 @@ try {
       maxDepenetrationVelocity: 3,
     });
 
-    await page.mouse.click(38 * uiScale, 50 * uiScale);
+    await page.mouse.click(...menuButtonCenter);
     await page.mouse.click(188 * uiScale, 104 * uiScale);
     await page.mouse.click(...solverProfileCenter(0));
     await page.mouse.click(...solverApplyCenter);
@@ -790,7 +809,7 @@ try {
       { timeout: 10_000 },
     );
   } else if (launchOnlyScenarios.has(scenario)) {
-    await page.mouse.click(38 * uiScale, 50 * uiScale);
+    await page.mouse.click(...menuButtonCenter);
     await page.waitForFunction(
       (name) => globalThis.__physbox5?.frame?.sceneContract?.scenario === name
         && !globalThis.__physbox5?.frame?.ui?.menuOpen,

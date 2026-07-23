@@ -4,8 +4,8 @@
 use physbox_engine::PointerButton;
 #[cfg(target_arch = "wasm32")]
 use physbox_engine::{
-    EngineConfig, FrameInput, GpuBodyBenchmarkSession, InputEvent, PointerEvent, PointerPhase,
-    StepRequest, SurfaceRenderer, WheelEvent, create_instance,
+    DisplayMetrics, EngineConfig, FrameInput, GpuBodyBenchmarkSession, InputEvent, PointerEvent,
+    PointerPhase, StepRequest, SurfaceRenderer, WheelEvent, create_instance,
 };
 #[cfg(all(target_arch = "wasm32", feature = "solver-lab"))]
 use physbox_engine::{GpuBroadphaseBrowserSession, P5_3BroadphasePattern};
@@ -114,8 +114,18 @@ impl WebApp {
         Ok(())
     }
 
-    pub fn resize(&mut self, width: u32, height: u32) {
-        self.renderer.resize(width, height);
+    pub fn resize(
+        &mut self,
+        width: u32,
+        height: u32,
+        pixels_per_point: f64,
+    ) -> Result<(), JsValue> {
+        self.renderer.resize(
+            width,
+            height,
+            DisplayMetrics::new(pixels_per_point).map_err(js_error)?,
+        );
+        Ok(())
     }
 
     #[wasm_bindgen(js_name = pointerEvent)]
@@ -176,6 +186,12 @@ pub async fn start(
     let (preferences, request) = WebPreferenceController::restore(&search, &BrowserPreferenceStore)
         .map_err(|error| js_error(error.to_string()))?;
     let options = request.options;
+    let display_metrics = DisplayMetrics::new(
+        web_sys::window()
+            .ok_or_else(|| js_error("browser window is unavailable"))?
+            .device_pixel_ratio(),
+    )
+    .map_err(js_error)?;
     canvas.set_width(options.width);
     canvas.set_height(options.height);
     let instance = create_instance();
@@ -187,6 +203,7 @@ pub async fn start(
         surface,
         options.width,
         options.height,
+        display_metrics,
         EngineConfig::try_from(&options).map_err(js_error)?,
     )
     .await

@@ -12,13 +12,18 @@ use crate::{
     InputEvent, PointerButton, PointerPhase, SolverProfileConfig,
     clock::PacingReport,
     engine_selection::ComparisonEngine,
-    renderer::RenderFrameTarget,
+    renderer::{DisplayMetrics, RenderFrameTarget},
     report::{FrameTimingReport, UiReport},
 };
 
-pub(crate) const UI_CONTRACT_VERSION: u32 = 11;
+pub(crate) const UI_CONTRACT_VERSION: u32 = 12;
 const STATIC_INSTANCE_CAPACITY: usize = 384;
 const DYNAMIC_INSTANCE_CAPACITY: usize = 512;
+const COMPACT_DENSITY_START_POINTS: f32 = 520.0;
+const COMPACT_DENSITY_END_POINTS: f32 = 600.0;
+const COMPACT_TOOLBAR_SCALE: f32 = 36.0 / 52.0;
+const COMPACT_MENU_SCALE: f32 = 0.78;
+const COMPACT_DIAGNOSTICS_SCALE: f32 = 0.75;
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum UiAction {
@@ -208,6 +213,7 @@ impl WorkbenchUi {
         &mut self,
         events: &[InputEvent],
         target_size: [u32; 2],
+        display_metrics: DisplayMetrics,
         scenario: ValidationScenario,
         selected_engine: ComparisonEngine,
     ) -> UiRouting {
@@ -224,6 +230,7 @@ impl WorkbenchUi {
             },
             events,
             target_size,
+            display_metrics,
         );
         if routing.sleep_visuals_toggled {
             self.sleep_visuals_enabled = !self.sleep_visuals_enabled;
@@ -268,11 +275,15 @@ impl WorkbenchUi {
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
         target: RenderFrameTarget<'_>,
+        display_metrics: DisplayMetrics,
         model: UiFrameModel<'_>,
     ) -> UiReport {
         let selected_engine = model.selected_engine;
+        let layout = UiLayout::for_display(target.size, display_metrics);
         let key = StaticKey {
             target_size: target.size,
+            toolbar_scale_bits: layout.toolbar_scale.to_bits(),
+            menu_scale_bits: layout.menu_scale.to_bits(),
             scenario: model.scenario,
             menu_open: self.menu_open,
             menu_page: self.menu_page,
@@ -288,6 +299,7 @@ impl WorkbenchUi {
         if self.retained_key.as_ref() != Some(&key) {
             self.retained_batch = static_batch(
                 target.size,
+                display_metrics,
                 StaticBatchModel {
                     scenario: model.scenario,
                     menu_open: self.menu_open,
@@ -305,7 +317,13 @@ impl WorkbenchUi {
             self.retained_revision = self.retained_revision.wrapping_add(1);
             self.retained_key = Some(key);
         }
-        let live_batch = dynamic_batch(target.size, &model, !self.menu_open, self.selected_tool);
+        let live_batch = dynamic_batch(
+            target.size,
+            display_metrics,
+            &model,
+            !self.menu_open,
+            self.selected_tool,
+        );
         let canvas = self.renderer.encode(
             queue,
             encoder,
@@ -325,6 +343,7 @@ impl WorkbenchUi {
             self.menu_open,
             self.selected_tool,
             self.sleep_visuals_enabled,
+            layout,
             canvas,
         )
     }
@@ -345,6 +364,7 @@ fn route_events(
     state: UiRouteState<'_>,
     events: &[InputEvent],
     target_size: [u32; 2],
+    display_metrics: DisplayMetrics,
 ) -> UiRouting {
     let UiRouteState {
         menu_open,
@@ -359,6 +379,7 @@ fn route_events(
     let mut forwarded = Vec::with_capacity(events.len());
     let mut action = None;
     let mut sleep_visuals_toggled = false;
+    let layout = UiLayout::for_display(target_size, display_metrics);
     for event in events.iter().copied() {
         let InputEvent::Pointer(pointer) = event else {
             forwarded.push(event);
@@ -369,7 +390,6 @@ fn route_events(
             pointer.button,
             PointerButton::Primary | PointerButton::Contact
         );
-        let layout = UiLayout::for_target(target_size);
         let hits = layout.hit_targets(
             *menu_open,
             *menu_page,
@@ -556,16 +576,44 @@ enum UiHit {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct UiLayout {
     target_size: [u32; 2],
-    scale: f32,
+    display_metrics: DisplayMetrics,
+    toolbar_scale: f32,
+    menu_scale: f32,
+    diagnostics_scale: f32,
 }
 
 impl UiLayout {
     pub(crate) fn for_target(target_size: [u32; 2]) -> Self {
+        Self::for_display(target_size, DisplayMetrics::ONE)
+    }
+
+    pub(crate) fn for_display(target_size: [u32; 2], display_metrics: DisplayMetrics) -> Self {
         let minimum_dimension = target_size[0].min(target_size[1]).max(1) as f32;
+        let base_scale = (minimum_dimension / 600.0).clamp(1.0, 2.0);
+        let pixels_per_point = display_metrics.pixels_per_point();
+        let logical_short_edge = minimum_dimension / pixels_per_point;
+        let compact_progress = ((logical_short_edge - COMPACT_DENSITY_START_POINTS)
+            / (COMPACT_DENSITY_END_POINTS - COMPACT_DENSITY_START_POINTS))
+            .clamp(0.0, 1.0);
+        let resolve_scale = |compact_scale: f32| {
+            let point_scale = 1.0 + (compact_scale - 1.0) * compact_progress;
+            base_scale.min(pixels_per_point * point_scale)
+        };
         Self {
             target_size,
-            scale: (minimum_dimension / 600.0).clamp(1.0, 2.0),
+            display_metrics,
+            toolbar_scale: resolve_scale(COMPACT_TOOLBAR_SCALE),
+            menu_scale: resolve_scale(COMPACT_MENU_SCALE),
+            diagnostics_scale: resolve_scale(COMPACT_DIAGNOSTICS_SCALE),
         }
+    }
+
+    fn logical_target_size(self) -> [f32; 2] {
+        let pixels_per_point = self.display_metrics.pixels_per_point();
+        [
+            self.target_size[0] as f32 / pixels_per_point,
+            self.target_size[1] as f32 / pixels_per_point,
+        ]
     }
 
     fn hit_targets(
@@ -690,7 +738,7 @@ impl UiLayout {
         hits
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "box2d-comparator"))]
     fn hit_test(
         self,
         normalized: [f32; 2],
@@ -718,10 +766,10 @@ impl UiLayout {
 
     fn menu_button(self) -> [f32; 4] {
         [
-            12.0 * self.scale,
-            24.0 * self.scale,
-            52.0 * self.scale,
-            52.0 * self.scale,
+            12.0 * self.toolbar_scale,
+            24.0 * self.toolbar_scale,
+            52.0 * self.toolbar_scale,
+            52.0 * self.toolbar_scale,
         ]
     }
 
@@ -738,7 +786,7 @@ impl UiLayout {
     }
 
     fn tool_button_at(self, index: usize) -> [f32; 4] {
-        let logical_width = self.target_size[0] as f32 / self.scale;
+        let logical_width = self.target_size[0] as f32 / self.toolbar_scale;
         let (stride, width) = if logical_width < 460.0 {
             let stride = ((logical_width - 78.0) / WorkbenchTool::ALL.len() as f32).max(1.0);
             (stride, (stride - 6.0).max(1.0))
@@ -746,10 +794,10 @@ impl UiLayout {
             (58.0, 52.0)
         };
         [
-            (70.0 + index as f32 * stride) * self.scale,
-            24.0 * self.scale,
-            width * self.scale,
-            52.0 * self.scale,
+            (70.0 + index as f32 * stride) * self.toolbar_scale,
+            24.0 * self.toolbar_scale,
+            width * self.toolbar_scale,
+            52.0 * self.toolbar_scale,
         ]
     }
 
@@ -758,12 +806,12 @@ impl UiLayout {
             MenuPage::Scenes => self.restart_y_logical() + 50.0,
             MenuPage::Solvers => {
                 let apply = self.apply_solver_button(solver_profile_count);
-                (apply[1] + apply[3]) / self.scale
+                (apply[1] + apply[3]) / self.menu_scale
                     + if self.compact_landscape() { 4.0 } else { 8.0 }
             }
             MenuPage::World => {
                 let visuals = self.world_sleep_visuals_button();
-                (visuals[1] + visuals[3]) / self.scale + 62.0
+                (visuals[1] + visuals[3]) / self.menu_scale + 62.0
             }
         };
         let wide = self.compact_landscape()
@@ -774,7 +822,7 @@ impl UiLayout {
         } else {
             [12.0, 84.0, 360.0, bottom - 84.0]
         };
-        logical.map(|value| value * self.scale)
+        logical.map(|value| value * self.menu_scale)
     }
 
     fn menu_tab(self, page: MenuPage) -> [f32; 4] {
@@ -784,10 +832,10 @@ impl UiLayout {
             MenuPage::World => (248.0, 104.0),
         };
         [
-            x * self.scale,
-            90.0 * self.scale,
-            width * self.scale,
-            28.0 * self.scale,
+            x * self.menu_scale,
+            90.0 * self.menu_scale,
+            width * self.menu_scale,
+            28.0 * self.menu_scale,
         ]
     }
 
@@ -802,54 +850,54 @@ impl UiLayout {
                 (298.0, 286.0)
             };
             return [
-                (24.0 + column as f32 * stride) * self.scale,
-                (126.0 + row as f32 * 38.0) * self.scale,
-                width * self.scale,
-                34.0 * self.scale,
+                (24.0 + column as f32 * stride) * self.menu_scale,
+                (126.0 + row as f32 * 38.0) * self.menu_scale,
+                width * self.menu_scale,
+                34.0 * self.menu_scale,
             ];
         }
         [
-            24.0 * self.scale,
-            (126.0 + index as f32 * 38.0) * self.scale,
-            336.0 * self.scale,
-            34.0 * self.scale,
+            24.0 * self.menu_scale,
+            (126.0 + index as f32 * 38.0) * self.menu_scale,
+            336.0 * self.menu_scale,
+            34.0 * self.menu_scale,
         ]
     }
 
     fn world_capacity_button(self, index: usize) -> [f32; 4] {
         [
-            24.0 * self.scale,
-            (154.0 + index as f32 * 38.0) * self.scale,
-            336.0 * self.scale,
-            34.0 * self.scale,
+            24.0 * self.menu_scale,
+            (154.0 + index as f32 * 38.0) * self.menu_scale,
+            336.0 * self.menu_scale,
+            34.0 * self.menu_scale,
         ]
     }
 
     #[cfg(feature = "box2d-comparator")]
     fn world_engine_button(self, index: usize) -> [f32; 4] {
         [
-            (112.0 + index as f32 * 122.0) * self.scale,
-            122.0 * self.scale,
-            114.0 * self.scale,
-            26.0 * self.scale,
+            (112.0 + index as f32 * 122.0) * self.menu_scale,
+            122.0 * self.menu_scale,
+            114.0 * self.menu_scale,
+            26.0 * self.menu_scale,
         ]
     }
 
     fn world_sleeping_button(self) -> [f32; 4] {
         if self.compact_landscape() {
             return [
-                372.0 * self.scale,
-                154.0 * self.scale,
-                248.0 * self.scale,
-                34.0 * self.scale,
+                372.0 * self.menu_scale,
+                154.0 * self.menu_scale,
+                248.0 * self.menu_scale,
+                34.0 * self.menu_scale,
             ];
         }
         let last = self.world_capacity_button(WorldCapacityPreset::ALL.len() - 1);
         [
-            24.0 * self.scale,
-            last[1] + last[3] + 12.0 * self.scale,
-            336.0 * self.scale,
-            34.0 * self.scale,
+            24.0 * self.menu_scale,
+            last[1] + last[3] + 12.0 * self.menu_scale,
+            336.0 * self.menu_scale,
+            34.0 * self.menu_scale,
         ]
     }
 
@@ -857,7 +905,7 @@ impl UiLayout {
         let sleeping = self.world_sleeping_button();
         [
             sleeping[0],
-            sleeping[1] + sleeping[3] + 12.0 * self.scale,
+            sleeping[1] + sleeping[3] + 12.0 * self.menu_scale,
             sleeping[2],
             sleeping[3],
         ]
@@ -867,7 +915,7 @@ impl UiLayout {
         let threshold = self.world_sleep_threshold_button();
         [
             threshold[0],
-            threshold[1] + threshold[3] + 12.0 * self.scale,
+            threshold[1] + threshold[3] + 12.0 * self.menu_scale,
             threshold[2],
             threshold[3],
         ]
@@ -877,7 +925,7 @@ impl UiLayout {
         let grouping = self.world_sleep_grouping_button();
         [
             grouping[0],
-            grouping[1] + grouping[3] + 12.0 * self.scale,
+            grouping[1] + grouping[3] + 12.0 * self.menu_scale,
             grouping[2],
             grouping[3],
         ]
@@ -886,34 +934,34 @@ impl UiLayout {
     fn restart_button(self) -> [f32; 4] {
         if self.compact_landscape() {
             return [
-                24.0 * self.scale,
-                self.restart_y_logical() * self.scale,
-                226.0 * self.scale,
-                38.0 * self.scale,
+                24.0 * self.menu_scale,
+                self.restart_y_logical() * self.menu_scale,
+                226.0 * self.menu_scale,
+                38.0 * self.menu_scale,
             ];
         }
         [
-            24.0 * self.scale,
-            self.restart_y_logical() * self.scale,
-            162.0 * self.scale,
-            38.0 * self.scale,
+            24.0 * self.menu_scale,
+            self.restart_y_logical() * self.menu_scale,
+            162.0 * self.menu_scale,
+            38.0 * self.menu_scale,
         ]
     }
 
     fn recenter_button(self) -> [f32; 4] {
         if self.compact_landscape() {
             return [
-                262.0 * self.scale,
-                self.restart_y_logical() * self.scale,
-                226.0 * self.scale,
-                38.0 * self.scale,
+                262.0 * self.menu_scale,
+                self.restart_y_logical() * self.menu_scale,
+                226.0 * self.menu_scale,
+                38.0 * self.menu_scale,
             ];
         }
         [
-            198.0 * self.scale,
-            self.restart_y_logical() * self.scale,
-            162.0 * self.scale,
-            38.0 * self.scale,
+            198.0 * self.menu_scale,
+            self.restart_y_logical() * self.menu_scale,
+            162.0 * self.menu_scale,
+            38.0 * self.menu_scale,
         ]
     }
 
@@ -923,10 +971,10 @@ impl UiLayout {
         let row = index / columns;
         let (start_y, stride, height) = self.solver_profile_metrics();
         [
-            (24.0 + column as f32 * 298.0) * self.scale,
-            (start_y + row as f32 * stride) * self.scale,
-            if columns == 1 { 336.0 } else { 286.0 } * self.scale,
-            height * self.scale,
+            (24.0 + column as f32 * 298.0) * self.menu_scale,
+            (start_y + row as f32 * stride) * self.menu_scale,
+            if columns == 1 { 336.0 } else { 286.0 } * self.menu_scale,
+            height * self.menu_scale,
         ]
     }
 
@@ -938,14 +986,14 @@ impl UiLayout {
                 160.0 + column as f32 * 298.0
             } else {
                 166.0
-            }) * self.scale,
-            (base + row as f32 * stride) * self.scale,
+            }) * self.menu_scale,
+            (base + row as f32 * stride) * self.menu_scale,
             (if self.compact_landscape() {
                 128.0
             } else {
                 194.0
-            }) * self.scale,
-            height * self.scale,
+            }) * self.menu_scale,
+            height * self.menu_scale,
         ]
     }
 
@@ -961,15 +1009,15 @@ impl UiLayout {
         } else {
             0.0
         };
-        let y = (base + 8.0 + row as f32 * stride) * self.scale;
+        let y = (base + 8.0 + row as f32 * stride) * self.menu_scale;
         (
-            [(28.0 + column_offset) * self.scale, y],
+            [(28.0 + column_offset) * self.menu_scale, y],
             [
                 (if self.compact_landscape() {
                     135.0 + column_offset
                 } else {
                     170.0
-                }) * self.scale,
+                }) * self.menu_scale,
                 y,
             ],
         )
@@ -991,10 +1039,10 @@ impl UiLayout {
             + parameter_rows as f32 * stride
             + if self.compact_landscape() { 2.0 } else { 10.0 };
         [
-            (24.0 + index as f32 * 174.0) * self.scale,
-            y * self.scale,
-            162.0 * self.scale,
-            height * self.scale,
+            (24.0 + index as f32 * 174.0) * self.menu_scale,
+            y * self.menu_scale,
+            162.0 * self.menu_scale,
+            height * self.menu_scale,
         ]
     }
 
@@ -1002,16 +1050,21 @@ impl UiLayout {
         let scene = self.solver_scene_button(0, profile_count);
         let compact = self.compact_landscape();
         [
-            198.0 * self.scale,
-            scene[1] + scene[3] + if compact { 4.0 } else { 14.0 } * self.scale,
-            162.0 * self.scale,
-            if compact { 32.0 } else { 38.0 } * self.scale,
+            198.0 * self.menu_scale,
+            scene[1] + scene[3] + if compact { 4.0 } else { 14.0 } * self.menu_scale,
+            162.0 * self.menu_scale,
+            if compact { 32.0 } else { 38.0 } * self.menu_scale,
         ]
     }
 
     fn restore_solver_button(self, profile_count: usize) -> [f32; 4] {
         let apply = self.apply_solver_button(profile_count);
-        [24.0 * self.scale, apply[1], 162.0 * self.scale, apply[3]]
+        [
+            24.0 * self.menu_scale,
+            apply[1],
+            162.0 * self.menu_scale,
+            apply[3],
+        ]
     }
 
     fn solver_profile_columns(self, profile_count: usize) -> usize {
@@ -1019,7 +1072,8 @@ impl UiLayout {
             3
         } else {
             usize::from(
-                self.compact_landscape() || (profile_count > 4 && self.target_size[0] >= 720),
+                self.compact_landscape()
+                    || (profile_count > 4 && self.target_size[0] as f32 / self.menu_scale >= 720.0),
             ) + 1
         }
     }
@@ -1061,13 +1115,14 @@ impl UiLayout {
     }
 
     fn compact_landscape(self) -> bool {
-        self.target_size[1] < 520 && self.target_size[0] > self.target_size[1]
+        let logical = self.logical_target_size();
+        logical[1] < 520.0 && logical[0] > logical[1]
     }
 
     fn scenario_columns(self) -> usize {
         if self.compact_landscape() {
             3
-        } else if self.target_size[0] as f32 / self.scale >= 632.0 {
+        } else if self.target_size[0] as f32 / self.menu_scale >= 632.0 {
             2
         } else {
             1
@@ -1117,6 +1172,8 @@ impl UiLayout {
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct StaticKey {
     target_size: [u32; 2],
+    toolbar_scale_bits: u32,
+    menu_scale_bits: u32,
     scenario: ValidationScenario,
     menu_open: bool,
     menu_page: MenuPage,
@@ -1168,10 +1225,15 @@ fn ui_report(
     menu_open: bool,
     selected_tool: WorkbenchTool,
     sleep_visuals_enabled: bool,
+    layout: UiLayout,
     canvas: CanvasRenderReport,
 ) -> UiReport {
     UiReport {
         version: UI_CONTRACT_VERSION,
+        pixels_per_point: layout.display_metrics.pixels_per_point(),
+        toolbar_scale: layout.toolbar_scale,
+        menu_scale: layout.menu_scale,
+        diagnostics_scale: layout.diagnostics_scale,
         menu_open,
         current_tool: selected_tool.name(),
         current_scene: model.scenario.name(),
@@ -1226,7 +1288,11 @@ struct StaticBatchModel<'a> {
     selected_engine: ComparisonEngine,
 }
 
-fn static_batch(target_size: [u32; 2], model: StaticBatchModel<'_>) -> Batch {
+fn static_batch(
+    target_size: [u32; 2],
+    display_metrics: DisplayMetrics,
+    model: StaticBatchModel<'_>,
+) -> Batch {
     let StaticBatchModel {
         scenario,
         menu_open,
@@ -1240,8 +1306,8 @@ fn static_batch(target_size: [u32; 2], model: StaticBatchModel<'_>) -> Batch {
         sleep_visuals_enabled,
         selected_engine,
     } = model;
-    let layout = UiLayout::for_target(target_size);
-    let scale = layout.scale;
+    let layout = UiLayout::for_display(target_size, display_metrics);
+    let scale = layout.menu_scale;
     let theme = Theme::DARK;
     let mut canvas = WidgetCanvas::new(theme, STATIC_INSTANCE_CAPACITY, 64);
     let mut next_widget_id = 1_u64;
@@ -1521,17 +1587,18 @@ const fn tool_icon(tool: WorkbenchTool) -> physbox_ui::IconId {
 
 fn dynamic_batch(
     target_size: [u32; 2],
+    display_metrics: DisplayMetrics,
     model: &UiFrameModel<'_>,
     diagnostics_visible: bool,
     selected_tool: WorkbenchTool,
 ) -> Batch {
-    let layout = UiLayout::for_target(target_size);
-    let scale = layout.scale;
+    let layout = UiLayout::for_display(target_size, display_metrics);
+    let scale = layout.diagnostics_scale;
     let mut batch = Batch::new(DYNAMIC_INSTANCE_CAPACITY);
     if !diagnostics_visible {
         return batch;
     }
-    let compact_diagnostics = target_size[1] as f32 / scale < 520.0;
+    let compact_diagnostics = layout.logical_target_size()[1] < 520.0;
     let width = 310.0 * scale;
     let height = if model.scenario == ValidationScenario::LiquidSandbox
         && model.selected_engine == ComparisonEngine::PhysBox
@@ -1939,6 +2006,40 @@ mod tests {
     }
 
     #[test]
+    fn display_density_preserves_phone_size_and_compacts_equivalent_desktops() {
+        let phone = UiLayout::for_display(
+            [860, 1_864],
+            DisplayMetrics::new(2.0).expect("phone display metric is valid"),
+        );
+        let legacy_phone_scale = (860.0_f32 / 600.0).clamp(1.0, 2.0);
+        assert_eq!(phone.toolbar_scale, legacy_phone_scale);
+        assert_eq!(phone.menu_scale, legacy_phone_scale);
+        assert_eq!(phone.diagnostics_scale, legacy_phone_scale);
+
+        let desktop_1x = UiLayout::for_display([960, 600], DisplayMetrics::ONE);
+        let desktop_2x = UiLayout::for_display(
+            [1_920, 1_200],
+            DisplayMetrics::new(2.0).expect("desktop display metric is valid"),
+        );
+        assert!((desktop_1x.menu_button()[2] - 36.0).abs() < 0.001);
+        assert!((desktop_1x.menu_scale - COMPACT_MENU_SCALE).abs() < f32::EPSILON);
+        assert!((desktop_1x.diagnostics_scale - COMPACT_DIAGNOSTICS_SCALE).abs() < f32::EPSILON);
+        assert!((desktop_2x.toolbar_scale / 2.0 - desktop_1x.toolbar_scale).abs() < f32::EPSILON);
+        assert!((desktop_2x.menu_scale / 2.0 - desktop_1x.menu_scale).abs() < f32::EPSILON);
+        assert!(
+            (desktop_2x.diagnostics_scale / 2.0 - desktop_1x.diagnostics_scale).abs()
+                < f32::EPSILON
+        );
+        for (physical_1x, physical_2x) in desktop_1x
+            .menu_panel(MenuPage::World, 0)
+            .into_iter()
+            .zip(desktop_2x.menu_panel(MenuPage::World, 0))
+        {
+            assert!((physical_2x / 2.0 - physical_1x).abs() < 0.001);
+        }
+    }
+
+    #[test]
     fn world_menu_emits_one_explicit_capacity_restart_action() {
         let target = [960, 600];
         let layout = UiLayout::for_target(target);
@@ -1966,6 +2067,7 @@ mod tests {
                 layout.center_normalized("world-capacity", 3),
             )],
             target,
+            DisplayMetrics::ONE,
         );
         assert_eq!(
             routed.action,
@@ -2005,6 +2107,7 @@ mod tests {
                 layout.center_normalized("world-sleeping", 0),
             )],
             target,
+            DisplayMetrics::ONE,
         );
         let Some(UiAction::ActivateSolverProfile(profile)) = routed.action else {
             panic!("sleeping toggle must apply one complete physics configuration");
@@ -2045,6 +2148,7 @@ mod tests {
                 layout.center_normalized("world-sleep-threshold", 0),
             )],
             target,
+            DisplayMetrics::ONE,
         );
         let Some(UiAction::ActivateSolverProfile(profile)) = threshold.action else {
             panic!("shared threshold must apply one complete configuration");
@@ -2074,6 +2178,7 @@ mod tests {
                 layout.center_normalized("world-sleep-grouping", 0),
             )],
             target,
+            DisplayMetrics::ONE,
         );
         let Some(UiAction::ActivateSolverProfile(profile)) = grouping.action else {
             panic!("PhysBox grouping must apply one complete configuration");
@@ -2103,6 +2208,7 @@ mod tests {
                 layout.center_normalized("world-sleep-grouping", 0),
             )],
             target,
+            DisplayMetrics::ONE,
         );
         assert!(hidden.action.is_none());
         assert_eq!(
@@ -2139,6 +2245,7 @@ mod tests {
                 layout.center_normalized("world-sleep-visuals", 0),
             )],
             target,
+            DisplayMetrics::ONE,
         );
         assert!(routed.sleep_visuals_toggled);
         assert!(routed.action.is_none());
@@ -2175,6 +2282,7 @@ mod tests {
                 layout.center_normalized("world-engine", 1),
             )],
             target,
+            DisplayMetrics::ONE,
         );
         assert_eq!(
             routed.action,
@@ -2223,6 +2331,7 @@ mod tests {
         let profiles = SolverProfileConfig::available();
         let static_closed = static_batch(
             [960, 600],
+            DisplayMetrics::ONE,
             StaticBatchModel {
                 scenario: ValidationScenario::Bootstrap,
                 menu_open: false,
@@ -2239,6 +2348,7 @@ mod tests {
         );
         let static_open = static_batch(
             [960, 600],
+            DisplayMetrics::ONE,
             StaticBatchModel {
                 scenario: ValidationScenario::Bootstrap,
                 menu_open: true,
@@ -2255,6 +2365,7 @@ mod tests {
         );
         let static_world = static_batch(
             [960, 600],
+            DisplayMetrics::ONE,
             StaticBatchModel {
                 scenario: ValidationScenario::Bootstrap,
                 menu_open: true,
@@ -2288,6 +2399,7 @@ mod tests {
         let profiles = SolverProfileConfig::available();
         let batch = static_batch(
             [960, 600],
+            DisplayMetrics::ONE,
             StaticBatchModel {
                 scenario: ValidationScenario::SolverLabStack16,
                 menu_open: true,
@@ -2390,6 +2502,7 @@ mod tests {
                 ),
             ],
             target,
+            DisplayMetrics::ONE,
         );
         assert!(routed.action.is_none());
 
@@ -2428,6 +2541,7 @@ mod tests {
                     pointer(id, PointerPhase::Up, PointerButton::Primary, position),
                 ],
                 target,
+                DisplayMetrics::ONE,
             );
             assert!(routed.action.is_none());
         }
@@ -2449,6 +2563,7 @@ mod tests {
                 layout.center_normalized("apply-solver", 0),
             )],
             target,
+            DisplayMetrics::ONE,
         );
         let UiAction::ActivateSolverProfile(profile) = routed.action.unwrap() else {
             panic!("solver menu must emit one profile activation");
@@ -2483,6 +2598,7 @@ mod tests {
                 layout.center_normalized("restore-solver", 0),
             )],
             target,
+            DisplayMetrics::ONE,
         );
         assert!(restored.action.is_none());
         assert!(draft.is_preset());
@@ -2523,6 +2639,7 @@ mod tests {
             },
             &events,
             target,
+            DisplayMetrics::ONE,
         );
         assert!(menu_open);
         assert_eq!(routed.events.len(), 2);
@@ -2557,6 +2674,7 @@ mod tests {
                 pointer(7, PointerPhase::Up, PointerButton::Contact, rectangle),
             ],
             target,
+            DisplayMetrics::ONE,
         );
         assert_eq!(selected_tool, WorkbenchTool::Rectangle);
         assert_eq!(routed.selected_tool, WorkbenchTool::Rectangle);

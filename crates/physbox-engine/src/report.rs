@@ -113,10 +113,14 @@ pub struct CameraReport {
     pub secondary_pan_active: bool,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UiReport {
     pub version: u32,
+    pub pixels_per_point: f32,
+    pub toolbar_scale: f32,
+    pub menu_scale: f32,
+    pub diagnostics_scale: f32,
     pub menu_open: bool,
     pub current_tool: &'static str,
     pub current_scene: &'static str,
@@ -357,6 +361,8 @@ impl FrameReport {
             camera: [f32; 3],
             #[serde(rename = "u")]
             ui: u32,
+            #[serde(rename = "v")]
+            ui_density: [f32; 5],
             body_commands: CompactBodyCommands,
             #[serde(rename = "d", skip_serializing_if = "Option::is_none")]
             construction_diagnostic: Option<CompactConstructionDiagnostic<'a>>,
@@ -392,6 +398,13 @@ impl FrameReport {
                 | ((self.ui.selected_engine == "box2d") as u32) << 29
                 | ((self.ui.sleep_visuals_enabled as u32) << 30)
                 | ((self.ui.overflowed as u32) << 31),
+            ui_density: [
+                self.ui.version as f32,
+                self.ui.pixels_per_point,
+                self.ui.toolbar_scale,
+                self.ui.menu_scale,
+                self.ui.diagnostics_scale,
+            ],
             body_commands: CompactBodyCommands {
                 executed_commands_total: self.body_commands.executed_commands_total,
                 executed_construction_intents_total: self
@@ -568,6 +581,10 @@ mod tests {
             },
             ui: UiReport {
                 version: crate::ui::UI_CONTRACT_VERSION,
+                pixels_per_point: 4.0,
+                toolbar_scale: 2.0,
+                menu_scale: 2.0,
+                diagnostics_scale: 2.0,
                 menu_open: true,
                 current_tool: "rectangle",
                 current_scene: "bootstrap",
@@ -724,12 +741,16 @@ mod tests {
                 | 2
         );
         assert_eq!(compact["b"], u32::MAX);
+        assert_eq!(
+            compact["v"],
+            serde_json::json!([crate::ui::UI_CONTRACT_VERSION as f32, 4.0, 2.0, 2.0, 2.0])
+        );
         assert_eq!(compact["sceneContract"]["z"], 10_000);
         assert_eq!(compact["sceneContract"]["t"], 0.02);
         assert_eq!(compact["sceneContract"]["j"], 4);
         assert!(
-            marker.len() < 900,
-            "compact marker is {} bytes",
+            marker.len() < 940,
+            "compact marker with UI density is {} bytes",
             marker.len()
         );
         assert!(marker.contains("\"c\":"));

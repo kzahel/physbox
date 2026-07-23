@@ -207,7 +207,7 @@ pub use pair_slot_persistence::{
 pub use particle_world::{GPU_PARTICLE_DIAGNOSTICS_VERSION, GpuParticleDiagnosticsV4};
 #[cfg(not(target_arch = "wasm32"))]
 pub use renderer::OffscreenRenderer;
-pub use renderer::SurfaceRenderer;
+pub use renderer::{DisplayMetrics, SurfaceRenderer};
 pub use report::{
     BodyCommandReport, CameraReport, ConstructionDiagnosticReport, FrameReport, FrameTimingReport,
     ScenarioResult, SceneContract, UiReport,

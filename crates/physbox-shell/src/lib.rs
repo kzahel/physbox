@@ -4,8 +4,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use physbox_engine::{
-    AdapterDiagnostics, EngineConfig, FrameInput, FrameReport, InputEvent, PointerButton,
-    PointerEvent, PointerPhase, StepRequest, SurfaceRenderer, WheelEvent, create_instance,
+    AdapterDiagnostics, DisplayMetrics, EngineConfig, FrameInput, FrameReport, InputEvent,
+    PointerButton, PointerEvent, PointerPhase, StepRequest, SurfaceRenderer, WheelEvent,
+    create_instance,
 };
 use physbox_launch::FrameMarkerMode;
 use winit::event::{ElementState, MouseButton, MouseScrollDelta, TouchPhase, WindowEvent};
@@ -123,6 +124,7 @@ impl WinitFrameDriver {
                 .map_err(|error| format!("failed to create window: {error}"))?,
         );
         let size = window.inner_size();
+        let display_metrics = DisplayMetrics::new(window.scale_factor())?;
         let instance = create_instance();
         let surface = instance
             .create_surface(window.clone())
@@ -132,6 +134,7 @@ impl WinitFrameDriver {
             surface,
             size.width,
             size.height,
+            display_metrics,
             self.engine_config.clone(),
         ))?;
         let diagnostics = renderer.diagnostics().clone();
@@ -191,7 +194,18 @@ impl WinitFrameDriver {
             }),
             WindowEvent::Resized(size) => {
                 if let Some(renderer) = self.renderer.as_mut() {
-                    renderer.resize(size.width, size.height);
+                    renderer.resize(
+                        size.width,
+                        size.height,
+                        DisplayMetrics::new(window.scale_factor())?,
+                    );
+                }
+                Ok(WinitFrameOutcome::default())
+            }
+            WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
+                if let Some(renderer) = self.renderer.as_mut() {
+                    let size = window.inner_size();
+                    renderer.resize(size.width, size.height, DisplayMetrics::new(scale_factor)?);
                 }
                 Ok(WinitFrameOutcome::default())
             }

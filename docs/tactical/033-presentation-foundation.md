@@ -288,11 +288,50 @@ device listing confirms that no emulator remains.
 - [ ] Record human disposition of palette, body contrast, icon clarity,
   toolbar placement/wrapping, menu density, slider feel, and mobile
   readability.
-- [ ] Apply one bounded polish pass if requested, rerunning the affected
+- [x] Apply one bounded polish pass if requested, rerunning the affected
   technical and host gates.
 - [ ] Update the governing topic, capability ledger, platform architecture,
   README, tactical index/status, and provenance record with the accepted
   outcome.
+
+Human review checkpoint, 2026-07-23: the narrow/mobile presentation was
+reported as well sized, while the desktop capture was reported as feeling like
+the responsive UI remained enlarged. The requested bounded polish is an
+engine-owned density policy, not a desktop UI fork: adapters forward raw
+physical pixels per logical point; the shared layout preserves the previous
+phone scale through a 520-point short edge and interpolates to a 36-point
+toolbar, 78-percent menu, and 75-percent diagnostics density at 600 points.
+The user approved proceeding with that recommendation. Palette, contrast,
+icons, slider feel, and final mobile readability still await disposition with
+the updated synchronized captures.
+
+Bounded-polish evidence: desktop Vulkan run
+`df2268c8-17ae-4579-8b40-ca4c57170e9d`, Browser WebGPU run
+`48bd1d68-4962-487d-bd42-ac7c8dc7127e`, and the 1024×674 native headless
+artifact under `/tmp/physbox5-desktop-density-headless.TVd0CD` report UI
+contract 12 with a 1x ratio, 0.6923 toolbar, 0.78 menu, and 0.75 diagnostics
+scale. The wide closed toolbar is 36 pixels high; UI cost remains one pass,
+two draws, bounded instances, and no overflow. Narrow 456×1024 Browser WebGPU
+run `bc5241d6-1934-40d3-996e-dd870b4f9ab6` retains all three former 1.0
+scales and completes the full interaction flow. Browser WebGPU 2x run
+`c187c27b-1760-4329-ad62-873f81d5f7fc` resolves 1.3846/1.56/1.5 physical
+scales at 1920×1200, reproducing the same 36-point/0.78/0.75 logical desktop
+geometry while completing the full interaction flow. Solver-lab run
+`657efd00-98a3-40d9-8c66-49705b9b8362` applies the exact slider
+configuration through the compact desktop menu.
+
+The ARM64 NDK build and Gradle release assembly pass. The debug APK is
+15,688,100 bytes with SHA-256
+`64361c771dc88059fa825f8edfc8060a220c9a738a50fc8042b63ed533b44cc4`;
+the unsigned release APK is 8,419,773 bytes with SHA-256
+`c06989e73eaf83c6c47dd0bb37d2233cda841c6c3578b269bb75dbea2838debc`.
+Physical Pixel 7a/Mali-G710 run `1784838541-2935701` exercises the engine
+menu and sleep visualization at 1080×2400. Its reported 2.625 pixel ratio and
+1.8 scales prove the narrow high-density path retains the former physical
+size; the screenshot has zero black fraction and the app is stopped after the
+run. Final `npm run test:fast` passes in 23.34 seconds, production clippy
+passes with warnings denied, direct comparator tests pass 2/2, and the explicit
+feature-off audit reports `PHYSBOX5_BOX2D_FEATURE_OFF_SUCCESS`.
 
 Gate: human review either accepts the presentation foundation or records a
 specific bounded polish list. New application features, a solver split, or

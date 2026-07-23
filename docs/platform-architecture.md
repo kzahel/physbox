@@ -54,10 +54,11 @@ shared result.
 
 Authored browser JavaScript and TypeScript are a leaf input/display provider.
 They may acquire a canvas, normalize browser pointer-button enums, forward raw
-pointer/wheel/resize/timestamp facts, drive `requestAnimationFrame`, apply an
-opaque URL replacement supplied by shared Rust, and show a startup-fatal
-message. They may not interpret or reproduce engine concepts. In particular,
-browser glue may not own or branch on:
+pointer/wheel/resize/timestamp facts and the browser's physical-pixels-per-
+logical-point ratio, drive `requestAnimationFrame`, apply an opaque URL
+replacement supplied by shared Rust, and show a startup-fatal message. They may
+not interpret or reproduce engine concepts. In particular, browser glue may not
+own or branch on:
 
 - tool, menu, camera, grab, hit-selection, placement, or construction state;
 - solver names, physics fields, capacity presets, configuration bounds,
@@ -93,9 +94,11 @@ and pinch, right mouse drag pans, wheel zooms around its cursor, and primary
 input targets UI or the active world tool. The engine owns gesture arbitration,
 screen/world projection, GPU body-hit requests, and bounded construction
 commands. Adapters may forward raw pointer, touch, wheel, resize, and lifecycle
-facts, but may not own menu contents, scene-selection meaning, camera state,
-tool behavior, debug content, or per-host control defaults. Camera, tool, and
-ordinary menu state are presentation/input-projection state only. A physics-
+facts, including the display's raw physical-pixels-per-logical-point ratio, but
+may not own responsive breakpoints, density roles, menu contents,
+scene-selection meaning, camera state, tool behavior, debug content, or
+per-host control defaults. Camera, tool, and ordinary menu state are
+presentation/input-projection state only. A physics-
 configuration action is distinct and explicit: the shared engine validates it
 and atomically rebuilds/restarts the one world. No adapter or DOM state may
 alter physics, fixed-step admission, or scenario outcomes implicitly.

@@ -1,11 +1,11 @@
 # Presentation and modular workbench architecture
 
-Status: decided direction, 2026-07-23; implementation is proposed in
-[S33](../tactical/033-presentation-foundation.md). This topic owns the durable
-visual direction, reusable canvas-UI boundary, and the intended separation
-between the PhysBox application and a future publishable GPU simulation
-library. It does not itself authorize publishing a crate or change physics
-behavior.
+Status: decided direction, 2026-07-23; implementation and bounded subjective
+polish are tracked in [S33](../tactical/033-presentation-foundation.md). This
+topic owns the durable visual direction, reusable canvas-UI boundary, and the
+intended separation between the PhysBox application and a future publishable
+GPU simulation library. It does not itself authorize publishing a crate or
+change physics behavior.
 
 Authoritative engine direction:
 [one GPU-resident 2D physics world](physbox5-unified-gpu-physics.md).
@@ -264,6 +264,26 @@ or draw call.
 Toolbar targets must remain comfortable for touch at the smallest supported
 viewport. Wrapping or another deterministic responsive arrangement must
 prevent controls from becoming unreachable.
+
+### Responsive density
+
+The shared host owns UI density. Platform adapters may forward only the raw
+number of physical pixels per logical display point together with the render
+target extent. They must not select a phone, desktop, or host-specific layout.
+
+The initial workbench density policy preserves the established sizing through a
+logical short edge of 520 points, then interpolates to a compact desktop density
+at 600 points. The compact targets are independent by role: a 36-point toolbar,
+78 percent menu scale, and 75 percent diagnostics scale. Each resolved physical
+scale is capped by the former short-edge scale, so the policy never enlarges an
+existing target. Equivalent 1x and 2x desktop displays produce equivalent
+logical geometry, while narrow high-density phones retain the previous physical
+geometry and touch behavior.
+
+Drawing and hit testing consume the same resolved scales. The semantic UI report
+publishes the raw pixel ratio and resolved toolbar, menu, and diagnostics scales
+for validation; browser automation consumes those reported values rather than
+reimplementing responsive policy.
 
 ### Compact menu
 

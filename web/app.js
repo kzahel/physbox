@@ -33,6 +33,7 @@ async function boot() {
 
 function installResize(app) {
   let queued = false;
+  let lastScale;
   const resize = () => {
     if (queued) return;
     queued = true;
@@ -42,10 +43,14 @@ function installResize(app) {
       const scale = Math.max(devicePixelRatio || 1, 1);
       const width = Math.max(1, Math.round(bounds.width * scale));
       const height = Math.max(1, Math.round(bounds.height * scale));
-      if (canvas.width !== width || canvas.height !== height) {
+      const dimensionsChanged = canvas.width !== width || canvas.height !== height;
+      if (dimensionsChanged) {
         canvas.width = width;
         canvas.height = height;
-        app.resize(width, height);
+      }
+      if (dimensionsChanged || scale !== lastScale) {
+        app.resize(width, height, scale);
+        lastScale = scale;
       }
       observer?.resize(width, height);
     });

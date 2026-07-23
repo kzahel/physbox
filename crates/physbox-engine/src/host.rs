@@ -1378,6 +1378,7 @@ impl EngineHost {
         let mut routing = self.ui.route_events(
             &input.input_events,
             context.target.size,
+            context.display_metrics,
             self.config.scenario,
             self.selected_engine,
         );
@@ -2195,6 +2196,7 @@ impl EngineHost {
             context.queue,
             context.encoder,
             context.target,
+            context.display_metrics,
             UiFrameModel {
                 scenario: self.config.scenario,
                 solver_profile: &self.config.solver_profile,
