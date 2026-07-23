@@ -86,7 +86,7 @@ if [[ "${PHYSBOX5_ANDROID_COMPARATOR_TOGGLE:-0}" = "1" ]]; then
         && (ui & (1 << 25)) === 0 && (ui & (1 << 24)) === 0
         && (ui & (1 << 23)) === 0 ? 0 : 1);
     ' "$REPORT" || { echo "error: Android comparator must start aligned in PhysBox view; see $LOG" >&2; exit 1; }
-    SIZE="$($ADB -s "$SERIAL" shell wm size | sed -n 's/.*Physical size: //p' | tail -1 | tr -d '\r')"
+    SIZE="$(physbox5_android_product_window_size "$ADB" "$SERIAL")"
     WIDTH="${SIZE%x*}"; HEIGHT="${SIZE#*x}"
     [[ "$WIDTH" =~ ^[0-9]+$ && "$HEIGHT" =~ ^[0-9]+$ ]] || {
         echo "error: could not determine Android display size" >&2; exit 1;
@@ -159,9 +159,10 @@ if [[ "${PHYSBOX5_ANDROID_SLEEP_TOGGLE:-0}" = "1" ]]; then
     }
     node -e '
       const frame = JSON.parse(process.argv[1]);
-      process.exit(frame.sceneContract.w === false && frame.sceneContract.y === false ? 0 : 1);
-    ' "$REPORT" || { echo "error: Android sleep toggle must start from the off default; see $LOG" >&2; exit 1; }
-    SIZE="$($ADB -s "$SERIAL" shell wm size | sed -n 's/.*Physical size: //p' | tail -1 | tr -d '\r')"
+      process.exit(frame.sceneContract.w === true && frame.sceneContract.y === true
+        && frame.sceneContract.j === 0 ? 0 : 1);
+    ' "$REPORT" || { echo "error: Android sleep toggle must start from the on/exact default; see $LOG" >&2; exit 1; }
+    SIZE="$(physbox5_android_product_window_size "$ADB" "$SERIAL")"
     WIDTH="${SIZE%x*}"; HEIGHT="${SIZE#*x}"
     [[ "$WIDTH" =~ ^[0-9]+$ && "$HEIGHT" =~ ^[0-9]+$ ]] || { echo "error: could not determine Android display size" >&2; exit 1; }
     UI_POINTS="$(node -e '
@@ -183,6 +184,23 @@ if [[ "${PHYSBOX5_ANDROID_SLEEP_TOGGLE:-0}" = "1" ]]; then
     "$ADB" -s "$SERIAL" shell input tap "$WORLD_X" "$WORLD_Y"
     sleep 0.25
     "$ADB" -s "$SERIAL" shell input tap "$SLEEP_X" "$SLEEP_Y"
+    SLEEPING_DISABLED=0
+    for _ in $(seq 1 40); do
+        "$ADB" -s "$SERIAL" logcat -d -t 10000 > "$LOG"
+        REPORT="$(rg 'PHYSBOX5_MARK_FRAME_RENDERED ' "$LOG" | tail -1 | sed 's/^.*PHYSBOX5_MARK_FRAME_RENDERED //')"
+        if node -e '
+          const frame = JSON.parse(process.argv[1]);
+          process.exit(frame.sceneContract.w === false && frame.sceneContract.y === false
+            && frame.scenario.complete === true && frame.scenario.passed === true ? 0 : 1);
+        ' "$REPORT"; then SLEEPING_DISABLED=1; break; fi
+        sleep 0.25
+    done
+    [[ "$SLEEPING_DISABLED" -eq 1 ]] || { echo "error: Android menu did not disable sleeping; see $LOG" >&2; exit 1; }
+    "$ADB" -s "$SERIAL" shell input tap "$MENU_X" "$MENU_Y"
+    sleep 0.25
+    "$ADB" -s "$SERIAL" shell input tap "$WORLD_X" "$WORLD_Y"
+    sleep 0.25
+    "$ADB" -s "$SERIAL" shell input tap "$SLEEP_X" "$SLEEP_Y"
     SLEEPING_EFFECTIVE=0
     for _ in $(seq 1 40); do
         "$ADB" -s "$SERIAL" logcat -d -t 10000 > "$LOG"
@@ -194,14 +212,14 @@ if [[ "${PHYSBOX5_ANDROID_SLEEP_TOGGLE:-0}" = "1" ]]; then
         ' "$REPORT"; then SLEEPING_EFFECTIVE=1; break; fi
         sleep 0.25
     done
-    [[ "$SLEEPING_EFFECTIVE" -eq 1 ]] || { echo "error: Android menu did not make sleeping requested and effective; see $LOG" >&2; exit 1; }
+    [[ "$SLEEPING_EFFECTIVE" -eq 1 ]] || { echo "error: Android menu did not re-enable sleeping; see $LOG" >&2; exit 1; }
     "$ADB" -s "$SERIAL" shell input tap "$MENU_X" "$MENU_Y"
     sleep 0.25
     "$ADB" -s "$SERIAL" shell input tap "$WORLD_X" "$WORLD_Y"
     sleep 0.25
     if [[ "${PHYSBOX5_ANDROID_SLEEP_CONFIG:-0}" = "1" ]]; then
         "$ADB" -s "$SERIAL" shell input tap "$THRESHOLD_X" "$THRESHOLD_Y"
-        for EXPECTED_GROUPING in 8 0; do
+        for EXPECTED_GROUPING in 4 8 0; do
             "$ADB" -s "$SERIAL" shell input tap "$MENU_X" "$MENU_Y"
             sleep 0.25
             "$ADB" -s "$SERIAL" shell input tap "$WORLD_X" "$WORLD_Y"
@@ -255,7 +273,7 @@ fi
 if [[ "${PHYSBOX5_ANDROID_CONSTRUCTION_CAPTURE:-0}" = "1" ]]; then
     [[ "$SCENARIO" = "bootstrap" ]] || { echo "error: Android construction capture requires bootstrap" >&2; exit 2; }
     [[ "${PHYSBOX5_ANDROID_GRAB_CAPTURE:-0}" != "1" ]] || { echo "error: choose either grab or construction capture" >&2; exit 2; }
-    SIZE="$($ADB -s "$SERIAL" shell wm size | sed -n 's/.*Physical size: //p' | tail -1 | tr -d '\r')"
+    SIZE="$(physbox5_android_product_window_size "$ADB" "$SERIAL")"
     WIDTH="${SIZE%x*}"; HEIGHT="${SIZE#*x}"
     [[ "$WIDTH" =~ ^[0-9]+$ && "$HEIGHT" =~ ^[0-9]+$ ]] || { echo "error: could not determine Android display size" >&2; exit 1; }
     BEFORE_CONSTRUCTION="$(node -e 'console.log(JSON.parse(process.argv[1]).bodyCommands.c)' "$REPORT")"
@@ -279,7 +297,7 @@ if [[ "${PHYSBOX5_ANDROID_CONSTRUCTION_CAPTURE:-0}" = "1" ]]; then
 fi
 if [[ "${PHYSBOX5_ANDROID_GRAB_CAPTURE:-0}" = "1" ]]; then
     [[ "$SCENARIO" = "rigid-floor" ]] || { echo "error: Android grab capture requires rigid-floor" >&2; exit 2; }
-    SIZE="$($ADB -s "$SERIAL" shell wm size | sed -n 's/.*Physical size: //p' | tail -1 | tr -d '\r')"
+    SIZE="$(physbox5_android_product_window_size "$ADB" "$SERIAL")"
     WIDTH="${SIZE%x*}"; HEIGHT="${SIZE#*x}"
     [[ "$WIDTH" =~ ^[0-9]+$ && "$HEIGHT" =~ ^[0-9]+$ ]] || { echo "error: could not determine Android display size" >&2; exit 1; }
     X1=$((WIDTH * 50 / 100)); Y1=$((HEIGHT * 40 / 100))
@@ -296,14 +314,37 @@ if [[ "${PHYSBOX5_ANDROID_GRAB_CAPTURE:-0}" = "1" ]]; then
     REPORT="$(rg 'PHYSBOX5_MARK_FRAME_RENDERED ' "$LOG" | tail -1 | sed 's/^.*PHYSBOX5_MARK_FRAME_RENDERED //')"
     CAPTURE_PHASE="${SCENARIO}-grab-active"
 fi
-CAPTURED=0
-for _ in $(seq 1 5); do
-    "$ADB" -s "$SERIAL" exec-out screencap -p > "$SCREENSHOT"
-    if node "$ANDROID_DIR/require-complete-screenshot.mjs" "$SCREENSHOT"; then CAPTURED=1; break; fi
-    sleep 0.2
+FINAL_SCENARIO_PASSED=0
+for _ in $(seq 1 90); do
+    "$ADB" -s "$SERIAL" logcat -d -t 10000 > "$LOG"
+    REPORT="$(rg 'PHYSBOX5_MARK_FRAME_RENDERED ' "$LOG" | tail -1 | sed 's/^.*PHYSBOX5_MARK_FRAME_RENDERED //')"
+    if node -e '
+      const frame = JSON.parse(process.argv[1]);
+      process.exit(frame.scenario.complete === true && frame.scenario.passed === true ? 0 : 1);
+    ' "$REPORT"; then FINAL_SCENARIO_PASSED=1; break; fi
+    sleep 1
 done
-[[ "$CAPTURED" -eq 1 ]] || { echo "error: Android screenshot remained incomplete" >&2; exit 1; }
-if [[ "${PHYSBOX5_ANDROID_GRAB_CAPTURE:-0}" = "1" ]]; then
+[[ "$FINAL_SCENARIO_PASSED" -eq 1 ]] || { echo "error: Android scenario did not repass after interaction; see $LOG" >&2; exit 1; }
+WINDOW_SIZE="$(physbox5_android_product_window_size "$ADB" "$SERIAL")"
+DISPLAY_SIZE="$("$ADB" -s "$SERIAL" shell wm size | sed -n 's/.*Physical size: //p' | tail -1 | tr -d '\r')"
+CAPTURE_KIND="app-screenshot"
+if [[ "$WINDOW_SIZE" = "$DISPLAY_SIZE" ]]; then
+    CAPTURED=0
+    for _ in $(seq 1 5); do
+        "$ADB" -s "$SERIAL" exec-out screencap -p > "$SCREENSHOT"
+        if node "$ANDROID_DIR/require-complete-screenshot.mjs" "$SCREENSHOT"; then CAPTURED=1; break; fi
+        sleep 0.2
+    done
+    [[ "$CAPTURED" -eq 1 ]] || { echo "error: Android screenshot remained incomplete" >&2; exit 1; }
+else
+    [[ "${PHYSBOX5_ANDROID_GRAB_CAPTURE:-0}" != "1" ]] || {
+        echo "error: Android grab pixels require a directly capturable app window" >&2; exit 1;
+    }
+    CAPTURE_KIND="behavior-only-windowed-device"
+    CAPTURE_PHASE="${CAPTURE_PHASE}-behavior-only"
+    rm -f "$SCREENSHOT"
+fi
+if [[ "${PHYSBOX5_ANDROID_GRAB_CAPTURE:-0}" = "1" && "$CAPTURE_KIND" = "app-screenshot" ]]; then
     node "$ANDROID_DIR/require-grab-tether.mjs" "$SCREENSHOT" "$X2" "$Y2"
     "$ADB" -s "$SERIAL" shell input motionevent UP "$X2" "$Y2"
 fi
@@ -313,12 +354,13 @@ MODEL="$($ADB -s "$SERIAL" shell getprop ro.product.model | tr -d '\r')"
 PRODUCT="$($ADB -s "$SERIAL" shell getprop ro.product.device | tr -d '\r')"
 node -e '
   const fs = require("fs");
-  const [path, runId, revision, dirty, report, adapter, scenario, capturePhase, serial, model, product] = process.argv.slice(1);
+  const [path, runId, revision, dirty, report, adapter, scenario, capturePhase, captureKind,
+    windowSize, displaySize, serial, model, product] = process.argv.slice(1);
   fs.writeFileSync(path, JSON.stringify({
     runId, sourceRevision: revision, sourceDirty: dirty === "true", host: "android",
-    capturePhase, device: { serial, model, product },
+    capturePhase, captureKind, windowSize, displaySize, device: { serial, model, product },
     report: JSON.parse(report), adapter: adapter ? JSON.parse(adapter) : null,
   }, null, 2) + "\n");
 ' "$PROVENANCE" "$(date +%s)-$$" "$REVISION" "$DIRTY" "$REPORT" "$ADAPTER" \
-  "$SCENARIO" "$CAPTURE_PHASE" "$SERIAL" "$MODEL" "$PRODUCT"
-echo "PHYSBOX5_VALIDATION_SUCCESS host=android device=$MODEL scenario=$SCENARIO screenshot=$SCREENSHOT provenance=$PROVENANCE"
+  "$SCENARIO" "$CAPTURE_PHASE" "$CAPTURE_KIND" "$WINDOW_SIZE" "$DISPLAY_SIZE" "$SERIAL" "$MODEL" "$PRODUCT"
+echo "PHYSBOX5_VALIDATION_SUCCESS host=android device=$MODEL scenario=$SCENARIO capture=$CAPTURE_KIND provenance=$PROVENANCE"

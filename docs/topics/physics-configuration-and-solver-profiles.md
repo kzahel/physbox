@@ -3,13 +3,17 @@
 Status: implemented product direction with one qualified custom alternative,
 updated 2026-07-23. Human review selected the soft-coupled solver family, and
 the shared code still uses its reviewed 60/4/i1 seed as the fresh ordinary
-default. Product-owned fixed-step, substep, iteration, contact-response, and
-recovery settings form one versioned bounded configuration. S25 now qualifies
+solver default. S32 additionally promotes sleeping on with exact
+current-contact-component grouping; the `0.02 m/s` threshold is unchanged.
+Product-owned fixed-step, substep, iteration, contact-response, recovery, and
+sleep settings form one versioned bounded configuration. S25 qualifies
 60/8/i1 as an explicit sleep-off quality alternative without promoting it.
 [S19](../tactical/019-soft-default-and-physics-configuration.md) records the
 ordinary default deployment;
 [S25](../tactical/025-bounded-awake-configuration-qualification.md) records the
-new alternative and its cost.
+new alternative and its cost; and
+[S32](../tactical/032-sleep-default-promotion.md) records the sleep/grouping
+promotion.
 
 Governing direction:
 [one GPU-resident 2D physics world](physbox5-unified-gpu-physics.md).
@@ -96,8 +100,8 @@ The product configuration separates values whose effects and ownership differ:
 | Contact response | contact Hz, damping ratio, static-contact multiplier | Requested soft-contact behavior; effective values depend on substep `dt` and caps |
 | Contact recovery | speculative distance, maximum depenetration velocity | Collision anticipation and bounded recovery from overlap; initially reported, not placed in the primary editor |
 | Solver family | soft-coupled, hard/direct comparison, later explicit candidates | Discrete recurrence, ordering, preparation, and relaxation policy |
-| Sleeping request | off/on request, with separate effective state | Effective on request; the completed S23.7 review retains it off by default |
-| Sleep threshold/grouping | shared bounded speed threshold; PhysBox local-4/local-8/exact | Threshold is projected into PhysBox and public Box2D state; grouping is PhysBox-only and local-4 remains the compatibility default |
+| Sleeping request | on/off request, with separate effective state | Effective on request and on by default after S32; independently switchable off |
+| Sleep threshold/grouping | shared bounded speed threshold; PhysBox exact/local-4/local-8 | Threshold is projected into PhysBox and public Box2D state; grouping is PhysBox-only and exact is the default |
 
 One canonical versioned configuration must project into `EngineConfig` and the
 neutral scenario exactly once. `physbox-launch` owns names, parsing, defaults,
@@ -132,8 +136,9 @@ Effective sleeping was hard-false. This established the representation and
 transport control without enabling the feature or making a default decision.
 
 S23.3-S23.6 subsequently made the request effective through the same
-configuration and control. The completed S23.7 review retains sleeping off by
-default and requires a new explicit review for any later promotion.
+configuration and control. The completed S23.7 review initially retained
+sleeping off pending a later explicit promotion. S32 is that promotion:
+sleeping now starts on, while the same control can switch it off.
 
 S30 extends the same WORLD page with `SLEEP THRESHOLD` and PhysBox-only
 `SLEEP GROUPING`. Threshold remains visible in Box2D view and is applied
@@ -141,8 +146,8 @@ through Box2D's public sleep-threshold state; PhysBox-only solver/grouping
 controls remain hidden there. Applying either value rebuilds both independently
 evolving worlds from the same authored scene while preserving camera, tool,
 sleep visualization, and selected engine. The choices are `0.01`, `0.02`,
-`0.05`, and `0.1 m/s`, plus local-4/local-8/exact. The defaults remain
-`0.02 m/s`, local-4, and sleeping off.
+`0.05`, and `0.1 m/s`, plus exact/local-4/local-8. S32 selects `0.02 m/s`,
+exact grouping, and sleeping on as the defaults.
 
 World capacity is a separate engine setting because it changes fixed GPU
 storage and broadphase work rather than the solver equation. The shared launch
@@ -160,11 +165,17 @@ reproducibility. The complete cost and physical-device rationale for the safe
 64-slot default live in the
 [performance topic](performance-and-scale.md#interactive-world-capacity-policy).
 
-The complete physics preference is `physbox5.physics.v4`. It adds the S30
-threshold and grouping, migrates version 3 with `0.02 m/s` and local-4, and
-retains the earlier version-2 migration with sleeping off. The shared launch
-URL projects `sleep-threshold` and `sleep-grouping` so the complete choice
-remains reproducible.
+The complete physics preference is `physbox5.physics.v5`. Version 5 records
+the promoted default while preserving an explicit opt-out. An untouched
+version-4 soft/default record migrates to sleeping-on/exact so an automatically
+persisted old seed does not pin a returning browser to superseded defaults;
+customized version-4 settings remain unchanged. Version 3 preserves its
+explicit sleeping choice and receives local-4, while version 2 and older
+records that never contained a sleep choice inherit the current default. The
+shared launch URL projects `sleeping`, `sleep-threshold`, and `sleep-grouping`
+so the complete choice remains reproducible. Because version 4 could not
+distinguish an untouched auto-persisted seed from a user who deliberately
+selected that exact full tuple, that one tuple is intentionally promoted.
 
 ## Initial bounds and presets
 

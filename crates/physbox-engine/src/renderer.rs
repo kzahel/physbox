@@ -837,8 +837,7 @@ mod tests {
 
     #[test]
     fn soft_floor_pipeline_performance_smoke_is_finite_and_deterministic() {
-        let mut physics = physbox_launch::PhysicsConfigurationV3::SOFT_COUPLED;
-        physics.sleeping_enabled = true;
+        let physics = physbox_launch::PhysicsConfigurationV3::SOFT_COUPLED;
         let config = EngineConfig {
             scenario: ValidationScenario::RigidFloor,
             solver_profile: crate::SolverProfileConfig::from_physics(physics).unwrap(),
@@ -849,8 +848,8 @@ mod tests {
                 .expect("generated-contact renderer initializes");
             let report = renderer.render(FrameInput::exact(4));
             assert_eq!(report.scene_contract.contact_point_count, 1_024);
-            assert_eq!(report.scene_contract.solver_dispatches_per_step, 158);
-            assert_eq!(report.scene_contract.solver_capacity_bytes, 819_332);
+            assert_eq!(report.scene_contract.solver_dispatches_per_step, 175);
+            assert_eq!(report.scene_contract.solver_capacity_bytes, 819_940);
             assert!(!report.scene_contract.capacity_overflowed);
             assert!(report.scene_contract.requested_sleeping_enabled);
             assert!(report.scene_contract.effective_sleeping_enabled);
@@ -2409,20 +2408,20 @@ mod tests {
             FrameInput::exact(0)
                 .with_input_events(click(6, layout.center_normalized("world-tab", 0))),
         );
-        let sleeping_requested = renderer.render(
+        let sleeping_disabled = renderer.render(
             FrameInput::exact(0)
                 .with_input_events(click(7, layout.center_normalized("world-sleeping", 0))),
         );
-        assert!(sleeping_requested.scene_contract.requested_sleeping_enabled);
-        assert!(sleeping_requested.scene_contract.effective_sleeping_enabled);
-        assert!(sleeping_requested.scene_contract.awake_compaction_enabled);
+        assert!(!sleeping_disabled.scene_contract.requested_sleeping_enabled);
+        assert!(!sleeping_disabled.scene_contract.effective_sleeping_enabled);
+        assert!(sleeping_disabled.scene_contract.awake_compaction_enabled);
         assert_eq!(
-            sleeping_requested.scene_contract.requested_body_capacity,
+            sleeping_disabled.scene_contract.requested_body_capacity,
             256
         );
-        assert_eq!(sleeping_requested.ui.current_tool, "circle");
-        assert!(!sleeping_requested.ui.sleep_visuals_enabled);
-        assert!(!sleeping_requested.ui.menu_open);
+        assert_eq!(sleeping_disabled.ui.current_tool, "circle");
+        assert!(!sleeping_disabled.ui.sleep_visuals_enabled);
+        assert!(!sleeping_disabled.ui.menu_open);
 
         renderer.render(
             FrameInput::exact(0).with_input_events(click(8, layout.center_normalized("menu", 0))),
@@ -2436,8 +2435,8 @@ mod tests {
             layout.center_normalized("world-sleep-visuals", 0),
         )));
         assert!(visuals_enabled.ui.sleep_visuals_enabled);
-        assert!(visuals_enabled.scene_contract.requested_sleeping_enabled);
-        assert!(visuals_enabled.scene_contract.effective_sleeping_enabled);
+        assert!(!visuals_enabled.scene_contract.requested_sleeping_enabled);
+        assert!(!visuals_enabled.scene_contract.effective_sleeping_enabled);
         assert_eq!(visuals_enabled.ui.scenario_restarts_total, 1);
         assert!(!visuals_enabled.ui.menu_open);
     }

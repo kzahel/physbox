@@ -394,6 +394,8 @@ mod tests {
             profile.options_string().as_deref(),
             Some("hz=30,damping=10,static-scale=2")
         );
+        assert!(profile.physics().sleeping_enabled);
+        assert_eq!(profile.physics().sleep_grouping, SleepGrouping::Exact);
     }
 
     #[test]

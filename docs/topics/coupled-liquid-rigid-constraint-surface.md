@@ -31,13 +31,13 @@ The accepted entry baseline is:
 
 - one authoritative GPU-resident PhysBox body world on every maintained host;
 - implemented circle/rectangle collision, persistence, response, construction,
-  grab, scalable SAP, active-work compaction, and optional GPU sleeping;
+  grab, scalable SAP, active-work compaction, and reversible GPU sleeping;
 - the selected soft-coupled 60/4/i1 default with an honest eight-box awake
   quality claim and demonstrated 14-box structural survival;
 - the retained 12/14 quietness failures, 16-stack loss, missing comprehensive
   rigid parity, and missing correctness-qualified CPU/GPU crossover; and
-- sleeping off plus local-4 grouping as compatibility defaults, with local-8
-  and exact grouping available for explicit review.
+- at S31 entry, sleeping off plus local-4 grouping as compatibility defaults,
+  with local-8 and exact grouping available for explicit review.
 
 Those limitations remain open rigid debt. Liquid must not hide, rename, or
 weaken them. They no longer block starting the next material and interaction
@@ -203,9 +203,11 @@ The first coupled contract requires:
 - the awake mask rule to remain intact: fluid or sleep cannot turn an existing
   sleep-off rigid failure into a rigid pass.
 
-Sleeping remains off by default for the first water milestone. S31 qualifies
-fluid wake behavior with sleeping explicitly enabled but does not promote the
-sleeping default.
+S31 qualified fluid wake behavior with sleeping explicitly enabled and did not
+itself promote a sleeping default. The later S32 decision now selects
+sleeping-on/exact for the whole shared product, including the coupled scene;
+the S31 evidence remains an explicit-mode historical qualification and the
+awake mask rule is unchanged.
 
 ## Rigid-only Box2D comparison boundary
 

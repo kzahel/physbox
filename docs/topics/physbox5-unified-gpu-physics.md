@@ -69,10 +69,11 @@ gate. The selected 60/4/i1 default retains its eight-box awake quality claim,
 16-stack loss. Comprehensive rigid parity and correctness-qualified CPU/GPU
 crossover remain open debt.
 
-S23 and S30 make sleeping an implemented opt-in capability. Sleeping remains
-off and local-4 remains the compatibility default; local-8 and exact grouping
-remain explicit review choices. Sleeping or liquid may not relabel an awake
-rigid failure.
+S23 and S30 make sleeping an implemented, reversible capability. The later
+S32 human decision promotes sleeping on with exact
+current-contact-component grouping as the ordinary default; local-4, local-8,
+and sleeping-off remain explicit review choices. Sleeping or liquid may not
+relabel an awake rigid failure.
 
 The [coupled liquid/rigid constraint surface](coupled-liquid-rigid-constraint-surface.md)
 owns the entry architecture, reuse limits, rigid-only Box2D boundary, and
@@ -1618,8 +1619,8 @@ behavior is present until S3.2.
 ### P5.4: Rigid behavior parity
 
 - Retain the implemented S23/S30 sleeping, waking, grouping, and compact
-  asynchronous diagnostics with sleeping off and local-4 as compatibility
-  defaults.
+  asynchronous diagnostics with S32's sleeping-on/exact ordinary defaults and
+  the retained sleeping-off/local-4/local-8 comparison controls.
 - Validate flat and edge landings, stacks, pyramids, impacts, sliding, rolling,
   bounce, off-center rotation, wake propagation, and grab/release against the
   Box2D oracle.
@@ -1891,10 +1892,10 @@ The solver laboratory and early pipeline must still answer:
   global-barrier dispatches for portable WebGPU?
 - At what measured body/contact distributions does SAP, grid, or later LBVH win
   on browser, desktop, and Android adapters?
-- Which future evidence would justify changing the implemented S23/S30 sleep
-  policy? Local-4 is the compatibility default, local-8 and exact are explicit
-  choices, and sleeping remains off; coupled work must add GPU fluid wake roots
-  without changing those defaults implicitly.
+- Which future evidence would justify changing the implemented S23/S30/S32
+  sleep policy? Exact and sleeping-on are the selected defaults; local-4,
+  local-8, and sleeping-off remain explicit choices. Coupled work must retain
+  GPU fluid wake roots without changing those defaults implicitly.
 - Which scenario-specific trajectory, manifold, energy, penetration, and sleep
   bands distinguish healthy parallel ordering variation from a materially
   different or unstable result?

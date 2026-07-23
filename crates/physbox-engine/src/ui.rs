@@ -2223,7 +2223,7 @@ mod tests {
     }
 
     #[test]
-    fn world_menu_applies_the_experimental_sleeping_request_immediately() {
+    fn world_menu_can_disable_the_default_sleeping_request_immediately() {
         let target = [960, 600];
         let layout = UiLayout::for_target(target);
         let mut captured = BTreeSet::new();
@@ -2254,7 +2254,7 @@ mod tests {
         let Some(UiAction::ActivateSolverProfile(profile)) = routed.action else {
             panic!("sleeping toggle must apply one complete physics configuration");
         };
-        assert!(profile.physics().sleeping_enabled);
+        assert!(!profile.physics().sleeping_enabled);
         assert_eq!(profile.profile_name(), SolverProfileName::SoftCoupled);
         assert_eq!(routed.selected_tool, WorkbenchTool::Rectangle);
         assert!(!menu_open);
@@ -2297,7 +2297,7 @@ mod tests {
         assert_eq!(profile.physics().sleep_speed_threshold, 0.05);
         assert_eq!(
             profile.physics().sleep_grouping,
-            physbox_launch::SleepGrouping::Local4
+            physbox_launch::SleepGrouping::Exact
         );
 
         menu_open = true;
@@ -2325,7 +2325,7 @@ mod tests {
         };
         assert_eq!(
             profile.physics().sleep_grouping,
-            physbox_launch::SleepGrouping::Local8
+            physbox_launch::SleepGrouping::Local4
         );
         assert_eq!(profile.physics().sleep_speed_threshold, 0.05);
 
@@ -2352,7 +2352,7 @@ mod tests {
         assert!(hidden.action.is_none());
         assert_eq!(
             draft.physics().sleep_grouping,
-            physbox_launch::SleepGrouping::Local8
+            physbox_launch::SleepGrouping::Local4
         );
     }
 
@@ -2387,7 +2387,7 @@ mod tests {
         );
         assert!(routed.sleep_visuals_toggled);
         assert!(routed.action.is_none());
-        assert!(!draft.physics().sleeping_enabled);
+        assert!(draft.physics().sleeping_enabled);
         assert!(!menu_open);
     }
 

@@ -83,11 +83,11 @@ mod tests {
         assert_ne!(original_hash, changed.physics_configuration_hash());
 
         options.physics = physbox_launch::PhysicsConfigurationV3::SOFT_COUPLED;
-        options.physics.sleeping_enabled = true;
-        let sleeping_requested = EngineConfig::try_from(&options).unwrap();
+        options.physics.sleeping_enabled = false;
+        let sleeping_disabled = EngineConfig::try_from(&options).unwrap();
         assert_ne!(
             original_hash,
-            sleeping_requested.physics_configuration_hash()
+            sleeping_disabled.physics_configuration_hash()
         );
 
         options.physics = physbox_launch::PhysicsConfigurationV3::SOFT_COUPLED;
@@ -100,7 +100,7 @@ mod tests {
         );
 
         options.physics = physbox_launch::PhysicsConfigurationV3::SOFT_COUPLED;
-        options.physics.sleep_grouping = physbox_launch::SleepGrouping::Exact;
+        options.physics.sleep_grouping = physbox_launch::SleepGrouping::Local4;
         assert_ne!(
             original_hash,
             EngineConfig::try_from(&options)

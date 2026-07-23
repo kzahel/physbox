@@ -104,10 +104,10 @@ try {
     before.frame.sceneContract?.physicsConfigurationVersion !== 3
     || before.frame.sceneContract?.sleepPolicy !== "experimental-s23-v1"
     || before.frame.sceneContract?.sleepSpeedThreshold !== 0.02
-    || before.frame.sceneContract?.sleepGrouping !== "local-4"
+    || before.frame.sceneContract?.sleepGrouping !== "exact"
     || before.frame.sceneContract?.box2dSleepSpeedThreshold !== 0.02
-    || before.frame.sceneContract?.requestedSleepingEnabled !== false
-    || before.frame.sceneContract?.effectiveSleepingEnabled !== false
+    || before.frame.sceneContract?.requestedSleepingEnabled !== true
+    || before.frame.sceneContract?.effectiveSleepingEnabled !== true
     || before.frame.sceneContract?.awakeCompactionEnabled !== true
   ) {
     throw new Error(`browser sleep checkpoint contract is incomplete: ${JSON.stringify(before.frame.sceneContract)}`);
@@ -307,8 +307,8 @@ try {
       await page.waitForFunction(
         () => {
           const frame = globalThis.__physbox5?.frame;
-          return frame?.sceneContract?.requestedSleepingEnabled === true
-            && frame?.sceneContract?.effectiveSleepingEnabled === true
+          return frame?.sceneContract?.requestedSleepingEnabled === false
+            && frame?.sceneContract?.effectiveSleepingEnabled === false
             && !frame?.ui?.menuOpen;
         },
         null,
@@ -316,7 +316,7 @@ try {
       );
     } catch (error) {
       const state = await page.evaluate(() => globalThis.__physbox5);
-      throw new Error(`sleep enable did not apply: ${error.message}; state=${JSON.stringify(state)}`);
+      throw new Error(`sleep opt-out did not apply: ${error.message}; state=${JSON.stringify(state)}`);
     }
     await requirePhysicsPreference(page, {
       solver: "soft-coupled",
@@ -328,8 +328,20 @@ try {
       staticContactScale: 2,
       speculativeDistance: 0.02,
       maxDepenetrationVelocity: 3,
-      sleeping: true,
+      sleeping: false,
+      sleepGrouping: "exact",
     });
+    await clickWorldControl(worldSleepingCenter);
+    await page.waitForFunction(
+      () => {
+        const frame = globalThis.__physbox5?.frame;
+        return frame?.sceneContract?.requestedSleepingEnabled === true
+          && frame?.sceneContract?.effectiveSleepingEnabled === true
+          && !frame?.ui?.menuOpen;
+      },
+      null,
+      { timeout: 30_000 },
+    );
     await clickWorldControl(worldSleepThresholdCenter);
     try {
       await page.waitForFunction(
@@ -345,7 +357,7 @@ try {
     }
     await clickWorldControl(worldSleepGroupingCenter);
     await page.waitForFunction(
-      () => globalThis.__physbox5?.frame?.sceneContract?.sleepGrouping === "local-8"
+      () => globalThis.__physbox5?.frame?.sceneContract?.sleepGrouping === "local-4"
         && !globalThis.__physbox5?.frame?.ui?.menuOpen,
       null,
       { timeout: 30_000 },
@@ -354,6 +366,13 @@ try {
     await page.waitForFunction(
       () => globalThis.__physbox5?.frame?.sceneContract?.requestedBodyCapacity === 64
         && globalThis.__physbox5?.frame?.sceneContract?.bodyCapacity === 64
+        && !globalThis.__physbox5?.frame?.ui?.menuOpen,
+      null,
+      { timeout: 30_000 },
+    );
+    await clickWorldControl(worldSleepGroupingCenter);
+    await page.waitForFunction(
+      () => globalThis.__physbox5?.frame?.sceneContract?.sleepGrouping === "local-8"
         && !globalThis.__physbox5?.frame?.ui?.menuOpen,
       null,
       { timeout: 30_000 },
@@ -477,7 +496,8 @@ try {
       speculativeDistance: 0.02,
       maxDepenetrationVelocity: 3,
       sleeping: false,
-    }, true);
+      sleepGrouping: "local-4",
+    });
     await page.mouse.click(62 * uiScale, 50 * uiScale);
     await page.waitForFunction(() => globalThis.__physbox5?.frame?.ui?.menuOpen, null, { timeout: 10_000 });
     await page.mouse.click(300 * uiScale, 104 * uiScale);
@@ -647,6 +667,7 @@ try {
       maxDepenetrationVelocity: 3,
     });
     await page.evaluate(() => {
+      localStorage.removeItem("physbox5.physics.v5");
       localStorage.removeItem("physbox5.physics.v4");
       localStorage.removeItem("physbox5.physics.v3");
       localStorage.removeItem("physbox5.physics.v2");
@@ -1148,12 +1169,12 @@ async function requireComparatorStartupFailure(browser, url) {
 async function requirePhysicsPreference(page, expected, expectClean = false) {
   await page.waitForFunction(
     ({ expectedPhysics, clean }) => {
-      const saved = JSON.parse(localStorage.getItem("physbox5.physics.v4") ?? "null");
+      const saved = JSON.parse(localStorage.getItem("physbox5.physics.v5") ?? "null");
       const url = new URL(location.href);
-      const expectedSleeping = expectedPhysics.sleeping ?? false;
+      const expectedSleeping = expectedPhysics.sleeping ?? true;
       const expectedSleepThreshold = expectedPhysics.sleepThreshold ?? 0.02;
-      const expectedSleepGrouping = expectedPhysics.sleepGrouping ?? "local-4";
-      const stored = saved?.version === 4
+      const expectedSleepGrouping = expectedPhysics.sleepGrouping ?? "exact";
+      const stored = saved?.version === 5
         && saved.sleeping === expectedSleeping
         && saved.sleepThreshold === expectedSleepThreshold
         && saved.sleepGrouping === expectedSleepGrouping

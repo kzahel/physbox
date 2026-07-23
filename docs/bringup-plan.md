@@ -14,10 +14,11 @@ The compact [product capability ledger](topics/product-capability-status.md)
 records what is implemented, limited, missing, and deferred without requiring
 the historical tacticals to be reconstructed. S20 owns the validation diet;
 S21 owns the now-complete P5.3 broadphase bakeoff, winner integration, and
-physical-Android qualification. S23 and S30 are complete: opt-in effective
+physical-Android qualification. S23 and S30 are complete: reversible effective
 sleeping, local-4/local-8/exact GPU grouping, awake-driven work, shared
-thresholds, and matched sleep-cycle evidence are qualified. Human review
-retains sleeping off and local-4 as compatibility defaults. S24's current-
+thresholds, and matched sleep-cycle evidence are qualified. S32's later human
+decision promotes sleeping on and exact grouping as the ordinary defaults
+while retaining every comparison control. S24's current-
 default native discriminator passes 2/4/8 but the upright 12-stack misses the
 awake quiet band. The authorized S25 follow-up is complete: 60/8/i1 passes the
 native 2/4/8/12 gate, preserves 14, reports 16 loss at step 840, and has
@@ -451,9 +452,10 @@ four-round admission/wake propagation, awake-driven solve work, the persisted
 toggle, state visualization, and matched sleeping-city evidence pass.
 [S30 configurable sleep grouping](tactical/030-configurable-sleep-grouping.md)
 also qualifies local-4/local-8/exact grouping and public Box2D cycle
-observation. Human review retains sleeping off and local-4 as compatibility
-defaults. S25's qualified eight-substep setting was not promoted, and sleeping
-may not conceal the retained four-substep awake limitation.
+observation. [S32 sleep default promotion](tactical/032-sleep-default-promotion.md)
+records the later sleeping-on/exact default selection and proportional
+qualification. S25's qualified eight-substep setting was not promoted, and
+sleeping may not conceal the retained four-substep awake limitation.
 [S26 exact contact-component observation](tactical/026-exact-contact-component-observation.md)
 is complete as a no-behavior GPU measurement. Exact labels and structural
 counts match CPU through the admitted split/churn, 1K connected-pile, and 10K
@@ -490,9 +492,9 @@ policy.
 - Record the human decision to retain the unqualified 60/4/i1 default and
   accept its 8-quality/14-structural limitation without moving the 12-stack
   target.
-- Retain the completed S23.7/S30 human disposition: sleeping is an implemented
-  opt-in capability but remains off by default, local-4 remains the
-  compatibility grouping, and exact remains an explicit review choice.
+- Retain the completed S23/S30 implementation and S32 human promotion:
+  sleeping-on/exact are the ordinary defaults, with sleeping-off/local-4/local-8
+  preserved as explicit review controls.
 - Retain S26's completed observation-only exact contact-component correctness
   and cost report; its labels affect no sleep or solver decision.
 - Qualify the selected default against the current centered-stack hierarchy:

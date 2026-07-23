@@ -1,12 +1,11 @@
 # GPU sleep-island connectivity research
 
-Status: S30's configurable behavior switch is complete, 2026-07-23. Exact
-labels/reductions now drive an explicit behavior option beside local-4 and
-local-8, with matched cost, cycle diagnostics, browser, headless, ARM64/APK,
-and authorized AVD evidence. Sleeping remains opt-in and off by default.
-Exact fixes the governed 100-body bounded-grouping failure and is the
-recommended explicit comparison for that behavior, but local-4 remains the
-compatibility default pending broader natural-fixture and adapter evidence.
+Status: S30's configurable behavior switch and S32's default promotion are
+complete, 2026-07-23. Exact labels/reductions drive one
+behavior option beside local-4 and local-8, with matched cost, cycle
+diagnostics, browser, headless, ARM64/APK, and authorized AVD evidence. The
+later explicit human decision selects sleeping on and exact grouping as the
+ordinary defaults while preserving both bounded modes and a sleeping opt-out.
 
 Governing behavior and current implementation:
 [GPU sleeping and waking](gpu-sleeping-and-waking.md). Performance claims and
@@ -19,21 +18,26 @@ rigid behavior authority is [Box2D](box2d-rigid-authority.md), pinned at
 
 ## Current decision
 
-Retain implemented local-4, local-8, and exact as explicit PhysBox
-sleep-grouping choices. Interactive same-application Box2D comparison makes
-the mixed-transition behavior directly inspectable. Exact connectivity
-enforces a whole-current-component invariant but cannot make residual solver
-motion qualify as rest.
+Use exact current-contact-component grouping as the ordinary PhysBox sleep
+choice. Retain local-4 and local-8 as explicit bounded comparison controls.
+Interactive same-application Box2D comparison makes the mixed-transition
+behavior directly inspectable. Exact connectivity enforces a
+whole-current-component invariant but cannot make residual solver motion
+qualify as rest.
 
 Local-8 is a diagnostic radius extension, not an island approximation eligible
 for promotion. Exact reuses the qualified static component labels and root
 reductions. In the clean 1,200-step 100-body poured pile, local-4 and local-8
 retain all bodies awake, while exact reaches stable all-body sleep at step 189
 and matched-threshold Box2D at step 192. This confirms the causal behavior
-interactive review predicted. Exact remains explicit rather than replacing
-local-4 from one adapter and natural fixture; complete behavior/cost
-provenance and that disposition are in
-[S30](../tactical/030-configurable-sleep-grouping.md).
+interactive review predicted. Exact remained explicit rather than replacing
+local-4 in the historical unattended S30 disposition; complete behavior/cost
+provenance for that checkpoint is in
+[S30](../tactical/030-configurable-sleep-grouping.md). Subsequent direct human
+comparison found the whole-component behavior clearly preferable and
+explicitly promoted exact under
+[S32](../tactical/032-sleep-default-promotion.md). That later decision changes
+the default, not S30's evidence or the awake-quality mask rule.
 
 The S27 observer adds four root reduction/comparison dispatches to S26's exact
 rebuild: 33 dispatches at a 64-body reserve and 41 at 256, versus the current
@@ -457,16 +461,16 @@ persistent/deferred-split prototype, not for increasing K.
    match CPU checks beside K=4 and do not affect applied state.
 3. **Configurable behavior switch — complete under S30:** local-4, local-8,
    and exact are cross-host product options; exact removes the governed
-   100-body wake-cycle failure at measured bounded cost and remains explicit
-   pending broader default evidence.
+   100-body wake-cycle failure at measured bounded cost. S30 initially kept it
+   explicit.
 4. **Persistent optimization:** pursue additions plus deferred dirty splits
    only when static measurements demonstrate that maintenance, rather than
    broader whole-island solve work, is the limiting cost.
-5. **Promotion:** requires the ordinary browser representative, ARM64 and
-   release APK, physical Android behavior/performance, mask-rule disclosure,
-   and a new explicit human decision. This research did not itself satisfy
-   S23.7; the subsequent 2026-07-23 review closed S23.7 while retaining
-   sleeping off and local-4 as defaults.
+5. **Promotion — complete under S32:** the explicit human decision selects
+   exact with sleeping on. The ordinary browser representative, ARM64 and
+   release APK, physical Android behavior, preference migration, and mask-rule
+   disclosure pass. S32 records those gates; this research alone did not
+   satisfy them.
 
 ## Reconsideration triggers
 

@@ -3,9 +3,12 @@
 Status: complete, 2026-07-23. The shared threshold, three PhysBox grouping
 choices, applied exact GPU path, cross-engine cycle diagnostics, matched cost
 evidence, browser qualification, and authorized hardware-backed AVD
-interaction all pass. Sleeping remains off and `local-4` remains the
-compatibility default; `exact` is retained as an explicit option with a strong
-100-body-pile result, not silently promoted from one adapter and fixture.
+interaction all pass. At S30 closure, sleeping remained off and `local-4`
+remained the compatibility default; `exact` was retained as an explicit option with a strong
+100-body-pile result, not silently promoted from one adapter and fixture. This
+is the historical unattended S30 disposition; later direct human review
+explicitly promotes sleeping-on/exact under
+[S32](032-sleep-default-promotion.md).
 
 Governing topics:
 [GPU sleeping and waking](../topics/gpu-sleeping-and-waking.md) and
@@ -211,3 +214,7 @@ default. Reconsider default selection after the same behavioral win and a
 non-regressing cost are repeated on broader natural fixtures and another
 physical or native mobile adapter. The subsequent 2026-07-23 S23.7 human
 review retained sleeping off and local-4 as the compatibility defaults.
+
+S32 supersedes only that default disposition after direct interactive review.
+It does not rewrite this tactical's evidence, diagnostic `0.05 m/s` threshold,
+or unattended stopping rule.

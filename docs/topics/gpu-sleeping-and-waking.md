@@ -1,18 +1,19 @@
 # GPU sleeping and waking
 
-Status: implemented opt-in product capability, updated 2026-07-23. Tactical
-S23 is complete, the post-review contact sleep-cycle defect is corrected and
-qualified, and S30's configurable shared threshold, local-4/local-8/exact
-grouping, cycle diagnostics, and cross-host comparison surface are complete.
-Human review retains sleeping off and local-4 as compatibility defaults while
-keeping exact as an explicit comparison. S24/S25's awake limitations remain
-the solver verdict and are not masked. An opt-in GPU sleep-state visualization
-is available for interactive review; it does not change those defaults. This
-topic is the master record for the sleeping/waking feature: its motivation, the selected
-direction, the frozen experimental policy vocabulary, wake-trigger semantics,
-the toggle and experimentation surface, the validation contract, the execution
-plan, and the accepted disposition. A future change that enables sleeping or
-exact grouping by default still requires a new recorded human promotion review.
+Status: implemented default-on product capability, updated 2026-07-23.
+Tactical S23 is complete, the post-review contact sleep-cycle defect is
+corrected and qualified, and S30's configurable shared threshold,
+local-4/local-8/exact grouping, cycle diagnostics, and cross-host comparison
+surface are complete. The later explicit S32 human promotion selects sleeping
+on and exact current-contact-component grouping as the ordinary defaults;
+sleeping-off, local-4, and local-8 remain available through the same controls.
+S24/S25's awake limitations remain the solver verdict and are not masked. An
+opt-in GPU sleep-state visualization is available for interactive review; it
+does not change physics. This topic is the master record for the
+sleeping/waking feature: its motivation, selected direction, frozen
+experimental policy vocabulary, wake-trigger semantics, toggle and
+experimentation surface, validation contract, execution plan, and accepted
+disposition.
 
 Governing direction:
 [one GPU-resident 2D physics world](physbox5-unified-gpu-physics.md), which
@@ -41,6 +42,8 @@ The execution tracker is
 [tactical S23](../tactical/023-gpu-sleeping-and-waking.md).
 The authorized configurable threshold/grouping follow-up is
 [tactical S30](../tactical/030-configurable-sleep-grouping.md).
+The later default promotion is
+[tactical S32](../tactical/032-sleep-default-promotion.md).
 
 ## Feature overview and tracking
 
@@ -56,10 +59,10 @@ change only with implementation and evidence, not because this design exists.
 | Wake roots and bounded propagation | complete | Generation-safe event roots and four deterministic contact-neighbor rounds execute before solve; persisted resting contacts are not roots. |
 | Automatic sleep admission | complete | Saturating per-body timers and four-round contact blockers coordinate admission within the selected bound, zero transition velocities, and prevent dormant drift. |
 | Awake-driven solve and integration | complete | Dense awake points and bounded solver bodies size solve/integration while live collision, persistence, and rendering retain sleepers (S23.5). |
-| Toggle and configuration surface | complete S30 follow-up | Launch-owned state and the engine-rendered `MENU → WORLD` controls make sleeping effective on request, configure one shared PhysBox/Box2D threshold, switch PhysBox among local-4/local-8/exact, and persist the choices. The sleeping request remains off and local-4 remains the compatibility grouping default. |
+| Toggle and configuration surface | complete; S32 promotion | Launch-owned state and the engine-rendered `MENU → WORLD` controls make sleeping effective on request, configure one shared PhysBox/Box2D threshold, switch PhysBox among exact/local-4/local-8, and persist the choices. Sleeping-on/exact are the defaults; every choice remains reversible. |
 | Interactive state visualization | complete | The engine-rendered `SLEEP VISUALS` toggle consumes GPU sleep/grab state directly and distinguishes active, quiet, sleeping, and forced/recently woken dynamics without readback. |
 | Sleeping-city performance curves | complete | Valid matched 1%/10%/100% awake curves show bounded work reduction; S23.6 retains live pair processing and makes no public product-rate claim. |
-| Cross-host qualification and promotion | complete | S23/S30 qualify the maintained implementation and comparison surface. Human review retains sleeping off/local-4 defaults, keeps exact explicit, and preserves the S24/S25 awake verdict. |
+| Cross-host qualification and promotion | complete | S23/S30 qualify the maintained implementation and comparison surface. S32 records the later human sleeping-on/exact promotion and passes native, browser, headless, ARM64/APK, and physical Android behavior gates while preserving the S24/S25 awake verdict. |
 
 ## The concern
 
@@ -344,12 +347,37 @@ On the clean matched 1%-awake 1K-body native GPU cost row,
 local-4/local-8/exact record 1,527/1,543/1,560 dispatches and GPU P50
 6.294/6.374/5.408 ms; exact allocates 8,288 bytes more than the bounded modes.
 All rows replay exactly and remain capacity-clean. Because that evidence spans
-one adapter and the natural behavioral win spans one dense fixture, exact is
-retained as the recommended explicit comparison for this failure mode rather
-than silently replacing local-4 as the default. The later S23.7 human
-disposition retains sleeping off and local-4 as defaults. Complete provenance
-and cross-host gates are in
+one adapter and the natural behavioral win spans one dense fixture, the
+unattended S30 implementation retained exact as the recommended explicit
+comparison rather than silently replacing local-4. The later S23.7 disposition
+also retained sleeping off/local-4 at that checkpoint. Complete provenance and
+cross-host gates for that historical disposition are in
 [tactical S30](../tactical/030-configurable-sleep-grouping.md).
+
+### S32 default-promotion decision
+
+Subsequent direct interactive comparison changed the product decision without
+changing S30's measurements. Exact visibly removes the small-island
+sleep/support/wake cycle and tracks Box2D's whole-pile transition closely
+enough to be the more useful ordinary behavior. On 2026-07-23 human review
+therefore explicitly promotes sleeping on with exact
+current-contact-component grouping. The shared threshold remains
+`0.02 m/s`; this decision does not adopt the `0.05 m/s` diagnostic threshold
+used by S30's poured-pile comparison.
+
+The default selection pays bounded, capacity-derived GPU work rather than CPU
+readback. At the 64-slot rigid-floor smoke, sleep-on exact uses 175 dispatches
+and 819,940 bytes versus sleep-on local-4's 158 dispatches and 819,332 bytes.
+S30's 1K 1%-awake evidence records exact at 1,560 dispatches and 13,035,892
+bytes versus local-4 at 1,527 and 13,027,604; exact was not slower in that
+sample. These are accounting and one named-adapter measurements, not a
+universal performance-rate claim.
+
+Sleeping remains independently switchable off and grouping remains selectable
+among exact, local-4, and local-8. Sleep-off still owns awake solver-quality
+acceptance, and comparator mode remains excluded from performance evidence.
+S32 owns implementation, migration, and proportional cross-host promotion
+gates.
 
 ### Post-review Box2D alignment correction
 
@@ -376,10 +404,9 @@ before promotion, not a default change or a claim of whole-island equivalence.
 ## Selected implementation direction
 
 Per-body sleep timers with a configurable GPU contact-grouping decision:
-local-4 is the compatibility default, local-8 is the bounded-radius control,
-and exact GPU connected components are the recommended explicit comparison
-for pile wake-wave behavior. One semantic implementation serves every
-capacity tier; no grouping requires CPU readback.
+exact GPU current-contact components are the default, while local-4 and
+local-8 remain bounded-radius comparison controls. One semantic implementation
+serves every capacity tier; no grouping requires CPU readback.
 
 Each quiet timer remains per-body. Under a local grouping, a ready counter
 saturates instead of immediately sleeping while a not-ready contact neighbor
@@ -496,8 +523,8 @@ Sleeping must be reversible and comparable from day one:
   the S19 ownership pattern: one projection into `EngineConfig`, adapters
   transport it unchanged, and requested and effective values are both
   reported. The control changes only requested state and explicitly labels
-  effective state separately. The recorded S23.7 review retains the off
-  default; a future promotion requires a new explicit review.
+  effective state separately. S32's explicit review selects the on default;
+  the same control preserves a direct opt-out.
 - Sleep-off and sleep-enabled share one operation graph. Sleep-off forces
   every live dynamic body into the awake list and resets/ignores timers; it
   must not select another solver, pipeline layout, or compilation path.
@@ -590,8 +617,9 @@ table stays the feature-level overview:
 6. Produce matched 1%/10%/100% awake performance curves; take the
    dormant-pair optimization decision only from that measurement.
 7. Cross-host qualification, mask-rule disclosure, and the manual
-   default-promotion review. S30 plus the 2026-07-23 S23.7 disposition complete
-   this step while retaining sleeping off.
+   default-promotion review. S30 plus the initial 2026-07-23 S23.7 disposition
+   completed the opt-in implementation. S32 records and qualifies the later
+   sleeping-on/exact default selection.
 
 A hard authoritative rejection in an early slice stops later expensive lanes.
 Slice completion requires the tactical's stated gates and fresh artifacts, not
@@ -622,10 +650,10 @@ merely code existence.
   preserve the S23.1 baseline rather than changing it in place.
 - Whether a later policy should alter retained warm-start impulses on wake;
   V1 retains them and the current wake-restoration/exact-replay gates pass.
-- Whether later coupled-fluid or broader natural-pile evidence justifies a new
-  promotion review for sleeping or exact grouping. The current disposition
-  keeps sleeping off and local-4 as defaults and must not be changed
-  automatically.
+- Whether later coupled-fluid or broader natural-pile evidence justifies
+  changing the selected exact/on defaults or the `0.02 m/s` threshold. Any
+  such change requires a new explicit review; it must not be inferred from one
+  screenshot or performance row.
 
 ## Reconsideration triggers
 

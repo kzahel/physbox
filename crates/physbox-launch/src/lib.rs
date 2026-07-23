@@ -140,11 +140,11 @@ impl SolverProfileName {
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum SleepGrouping {
-    #[default]
     #[serde(rename = "local-4")]
     Local4,
     #[serde(rename = "local-8")]
     Local8,
+    #[default]
     #[serde(rename = "exact")]
     Exact,
 }
@@ -218,9 +218,9 @@ impl PhysicsConfigurationV3 {
         static_contact_hertz_multiplier: 2.0,
         speculative_distance: 0.02,
         max_depenetration_velocity: 3.0,
-        sleeping_enabled: false,
+        sleeping_enabled: true,
         sleep_speed_threshold: 0.02,
-        sleep_grouping: SleepGrouping::Local4,
+        sleep_grouping: SleepGrouping::Exact,
     };
 
     pub const SOFT_COUPLED: Self = Self {
@@ -582,7 +582,7 @@ pub fn usage(program: &str, host: LaunchHost) -> String {
     } else {
         ""
     };
-    let solver = "\n  --body-capacity N  interactive slots: 64 (default), 256, 1000, or 10000\n  --solver NAME    soft-coupled or hard-direct (aliases: branch-robust, selected)\n  --sim-hz N       outer fixed rate, 15..=240 (default 60)\n  --substeps N     solver substeps, 1..=8 (default 4)\n  --iterations N   biased iterations, 1..=4 (soft default 1, hard default 2)\n  --contact-hz N   requested soft contact hertz, 1..=120\n  --contact-damping N  soft damping ratio, 0.5..=20\n  --static-contact-scale N  static contact hertz multiplier, 0.5..=16\n  --speculative-distance N  contact anticipation distance, 0..=1\n  --max-depenetration-velocity N  overlap recovery speed, 0.1..=100\n  --sleeping MODE  experimental sleeping: off (default) or on\n  --sleep-threshold N  shared sleep speed threshold, 0.001..=1 (default 0.02)\n  --sleep-grouping MODE  PhysBox local-4 (default), local-8, or exact";
+    let solver = "\n  --body-capacity N  interactive slots: 64 (default), 256, 1000, or 10000\n  --solver NAME    soft-coupled or hard-direct (aliases: branch-robust, selected)\n  --sim-hz N       outer fixed rate, 15..=240 (default 60)\n  --substeps N     solver substeps, 1..=8 (default 4)\n  --iterations N   biased iterations, 1..=4 (soft default 1, hard default 2)\n  --contact-hz N   requested soft contact hertz, 1..=120\n  --contact-damping N  soft damping ratio, 0.5..=20\n  --static-contact-scale N  static contact hertz multiplier, 0.5..=16\n  --speculative-distance N  contact anticipation distance, 0..=1\n  --max-depenetration-velocity N  overlap recovery speed, 0.1..=100\n  --sleeping MODE  sleeping: on (default) or off\n  --sleep-threshold N  shared sleep speed threshold, 0.001..=1 (default 0.02)\n  --sleep-grouping MODE  PhysBox exact (default), local-4, or local-8";
     format!(
         "Usage: {program} [options]\n\n  --width PX       viewport width (default 960)\n  --height PX      viewport height (default 600)\n  --scenario NAME  bootstrap, body-free-flight, rigid-floor, rigid-stack, liquid-sandbox, rectangle-stack, circle-bucket-100, rectangle-bucket-100, reset-grab, solver-jacobi, solver-colored, solver-manifold-i2, solver-parallel-coloring, settling-hard-8, settling-candidate-8, settling-hard-16, settling-identity-16, settling-softness-16, settling-candidate-16{}{solver}{frame_markers}{capture}\n  -h, --help       print this help",
         if cfg!(feature = "solver-lab") {
@@ -945,6 +945,8 @@ mod tests {
             request.options.physics.solver_profile.name(),
             "soft-coupled"
         );
+        assert!(request.options.physics.sleeping_enabled);
+        assert_eq!(request.options.physics.sleep_grouping, SleepGrouping::Exact);
         assert_eq!(request.options.world_capacity, WorldCapacityPreset::Slots64);
     }
 
@@ -1042,6 +1044,22 @@ mod tests {
         assert!(native.options.physics.sleeping_enabled);
         assert_eq!(native.options.physics.sleep_speed_threshold, 0.05);
         assert_eq!(native.options.physics.sleep_grouping, SleepGrouping::Exact);
+    }
+
+    #[test]
+    fn every_transport_can_disable_sleeping_and_select_local_grouping() {
+        let native = parse_tokens(
+            LaunchHost::Desktop,
+            ["--sleeping", "off", "--sleep-grouping", "local-4"],
+        )
+        .unwrap();
+        let web = parse_web_query("?sleeping=off&sleep-grouping=local-4").unwrap();
+        let android =
+            parse_android_json(r#"["--sleeping","off","--sleep-grouping","local-4"]"#).unwrap();
+        assert_eq!(native.options.physics, web.options.physics);
+        assert_eq!(native.options.physics, android.options.physics);
+        assert!(!native.options.physics.sleeping_enabled);
+        assert_eq!(native.options.physics.sleep_grouping, SleepGrouping::Local4);
     }
 
     #[test]

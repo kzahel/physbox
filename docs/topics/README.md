@@ -65,12 +65,13 @@ a running log.
   propagation, versioned sleep state, wake-trigger semantics, the
   `sleeping_enabled` toggle, shared PhysBox/Box2D threshold,
   local-4/local-8/exact PhysBox grouping, GPU state/cycle visualization and
-  diagnostics, the mask rule against concealing awake losses, and the S23/S30
-  execution overview.
+  diagnostics, the sleeping-on/exact ordinary defaults, retained comparison
+  controls, the mask rule against concealing awake losses, and the
+  S23/S30/S32 execution overview.
 - [GPU sleep-island connectivity research](gpu-sleep-island-connectivity.md) —
   Box2D persistent-island source study, the measured K=4 and exact-observer
   baselines, and S30's implemented local-4/local-8/exact behavior comparison,
-  poured-pile result, cost evidence, and default reconsideration gates.
+  poured-pile result, cost evidence, and S32's exact-default promotion.
 - [Awake settling and rest stability](awake-settling-and-rest-stability.md) —
   resting-contact identity, warm-start continuity, soft-contact damping,
   realistic drop fixtures, awake quality gates, and the required visible

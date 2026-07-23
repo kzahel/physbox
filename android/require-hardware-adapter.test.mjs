@@ -110,11 +110,15 @@ test("ordinary AVD launchers bound shutdown and reap their emulator child", () =
 });
 
 test("Android sleep captures use the engine menu and verify effective state", () => {
+  const toolchain = readFileSync(join(androidDir, "toolchain.sh"), "utf8");
+  assert.match(toolchain, /physbox5_android_product_window_size/);
+  assert.match(toolchain, /com\\.kzahel\\.physbox5\\\/android\\.app\\.NativeActivity/);
   for (const file of ["validate-device.sh", "validate-avd.sh"]) {
     const source = readFileSync(join(androidDir, file), "utf8");
     assert.match(source, /PHYSBOX5_ANDROID_SLEEP_TOGGLE/, `${file} must expose the sleep capture`);
     assert.match(source, /PHYSBOX5_ANDROID_SLEEP_CONFIG/, `${file} must expose sleep configuration`);
     assert.match(source, /PHYSBOX5_ANDROID_SLEEP_VISUALS/, `${file} must expose sleep visuals`);
+    assert.match(source, /physbox5_android_product_window_size/, `${file} must target the app window`);
     assert.match(source, /frame\.sceneContract\.w === false && frame\.sceneContract\.y === false/);
     assert.match(source, /compact \? 496 : 192, compact \? 217 : 377/);
     assert.match(source, /compact \? 496 : 192, compact \? 263 : 423/);
@@ -128,6 +132,9 @@ test("Android sleep captures use the engine menu and verify effective state", ()
     assert.match(source, /sleep-visuals/);
     assert.match(source, /require-hardware-adapter\.mjs/, `${file} must reject software adapters`);
   }
+  const physical = readFileSync(join(androidDir, "validate-device.sh"), "utf8");
+  assert.match(physical, /behavior-only-windowed-device/);
+  assert.match(physical, /WINDOW_SIZE.*DISPLAY_SIZE/);
 });
 
 test("physical Android comparator capture selects Box2D and reconciles placement", () => {

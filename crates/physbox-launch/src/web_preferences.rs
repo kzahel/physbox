@@ -6,8 +6,9 @@ use super::{
     apply_legacy_solver_options, parse_web_query,
 };
 
-const PHYSICS_PREFERENCE_KEY: &str = "physbox5.physics.v4";
-const PRIOR_PHYSICS_PREFERENCE_KEY: &str = "physbox5.physics.v3";
+const PHYSICS_PREFERENCE_KEY: &str = "physbox5.physics.v5";
+const PRIOR_V4_PHYSICS_PREFERENCE_KEY: &str = "physbox5.physics.v4";
+const PRIOR_V3_PHYSICS_PREFERENCE_KEY: &str = "physbox5.physics.v3";
 const PRIOR_V2_PHYSICS_PREFERENCE_KEY: &str = "physbox5.physics.v2";
 const WORLD_PREFERENCE_KEY: &str = "physbox5.world.v1";
 const LEGACY_SOLVER_PREFERENCE_KEY: &str = "physbox5.solver-lab.v1";
@@ -93,12 +94,13 @@ impl WebPreferenceController {
         selection: LaunchPreferenceSelection,
         store: &S,
     ) -> Option<String> {
-        let physics = PhysicsPreferenceV4::from(selection.physics);
+        let physics = PhysicsPreferenceV5::from(selection.physics);
         let encoded_physics =
             serde_json::to_string(&physics).expect("validated physics preference is serializable");
         if self.last_physics.as_deref() != Some(encoded_physics.as_str()) {
             let _ = store.write(PHYSICS_PREFERENCE_KEY, &encoded_physics);
-            let _ = store.remove(PRIOR_PHYSICS_PREFERENCE_KEY);
+            let _ = store.remove(PRIOR_V4_PHYSICS_PREFERENCE_KEY);
+            let _ = store.remove(PRIOR_V3_PHYSICS_PREFERENCE_KEY);
             let _ = store.remove(PRIOR_V2_PHYSICS_PREFERENCE_KEY);
             let _ = store.remove(LEGACY_SOLVER_PREFERENCE_KEY);
             self.last_physics = Some(encoded_physics);
@@ -132,7 +134,7 @@ impl WebPreferenceController {
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct PhysicsPreferenceV4 {
+struct PhysicsPreferenceV5 {
     version: u32,
     solver: SolverProfileName,
     sim_hz: u32,
@@ -148,10 +150,10 @@ struct PhysicsPreferenceV4 {
     sleep_grouping: SleepGrouping,
 }
 
-impl From<PhysicsConfigurationV3> for PhysicsPreferenceV4 {
+impl From<PhysicsConfigurationV3> for PhysicsPreferenceV5 {
     fn from(physics: PhysicsConfigurationV3) -> Self {
         Self {
-            version: 4,
+            version: 5,
             solver: physics.solver_profile,
             sim_hz: physics.fixed_step_hz,
             substeps: physics.substeps,
@@ -168,9 +170,9 @@ impl From<PhysicsConfigurationV3> for PhysicsPreferenceV4 {
     }
 }
 
-impl PhysicsPreferenceV4 {
+impl PhysicsPreferenceV5 {
     fn into_physics(self) -> Option<PhysicsConfigurationV3> {
-        if self.version != 4 {
+        if self.version != 5 {
             return None;
         }
         let physics = PhysicsConfigurationV3 {
@@ -205,6 +207,57 @@ impl PhysicsPreferenceV4 {
 
 #[derive(Clone, Copy, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct PhysicsPreferenceV4 {
+    version: u32,
+    solver: SolverProfileName,
+    sim_hz: u32,
+    substeps: u32,
+    iterations: u32,
+    contact_hz: f32,
+    contact_damping: f32,
+    static_contact_scale: f32,
+    speculative_distance: f32,
+    max_depenetration_velocity: f32,
+    sleeping: bool,
+    sleep_threshold: f32,
+    sleep_grouping: SleepGrouping,
+}
+
+impl PhysicsPreferenceV4 {
+    fn migrate(self) -> Option<PhysicsConfigurationV3> {
+        if self.version != 4 {
+            return None;
+        }
+        let physics = PhysicsPreferenceV5 {
+            version: 5,
+            solver: self.solver,
+            sim_hz: self.sim_hz,
+            substeps: self.substeps,
+            iterations: self.iterations,
+            contact_hz: self.contact_hz,
+            contact_damping: self.contact_damping,
+            static_contact_scale: self.static_contact_scale,
+            speculative_distance: self.speculative_distance,
+            max_depenetration_velocity: self.max_depenetration_velocity,
+            sleeping: self.sleeping,
+            sleep_threshold: self.sleep_threshold,
+            sleep_grouping: self.sleep_grouping,
+        }
+        .into_physics()?;
+
+        let mut prior_fresh_default = PhysicsConfigurationV3::SOFT_COUPLED;
+        prior_fresh_default.sleeping_enabled = false;
+        prior_fresh_default.sleep_grouping = SleepGrouping::Local4;
+        Some(if physics == prior_fresh_default {
+            PhysicsConfigurationV3::default()
+        } else {
+            physics
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct PhysicsPreferenceV3 {
     version: u32,
     solver: SolverProfileName,
@@ -224,8 +277,8 @@ impl PhysicsPreferenceV3 {
         if self.version != 3 {
             return None;
         }
-        PhysicsPreferenceV4 {
-            version: 4,
+        PhysicsPreferenceV5 {
+            version: 5,
             solver: self.solver,
             sim_hz: self.sim_hz,
             substeps: self.substeps,
@@ -263,8 +316,8 @@ impl PhysicsPreferenceV2 {
         if self.version != 2 {
             return None;
         }
-        PhysicsPreferenceV4 {
-            version: 4,
+        PhysicsPreferenceV5 {
+            version: 5,
             solver: self.solver,
             sim_hz: self.sim_hz,
             substeps: self.substeps,
@@ -274,9 +327,9 @@ impl PhysicsPreferenceV2 {
             static_contact_scale: self.static_contact_scale,
             speculative_distance: self.speculative_distance,
             max_depenetration_velocity: self.max_depenetration_velocity,
-            sleeping: false,
+            sleeping: PhysicsConfigurationV3::default().sleeping_enabled,
             sleep_threshold: PhysicsConfigurationV3::SOFT_COUPLED.sleep_speed_threshold,
-            sleep_grouping: SleepGrouping::Local4,
+            sleep_grouping: PhysicsConfigurationV3::default().sleep_grouping,
         }
         .into_physics()
     }
@@ -303,7 +356,7 @@ impl LegacySolverPreferenceV1 {
         if let Some(options) = self.options {
             apply_legacy_solver_options(&mut physics, &mut Default::default(), &options).ok()?;
         }
-        PhysicsPreferenceV4::from(physics).into_physics()
+        PhysicsPreferenceV5::from(physics).into_physics()
     }
 }
 
@@ -335,10 +388,14 @@ impl WorldPreferenceV1 {
 }
 
 fn load_physics_preference<S: WebPreferenceStore>(store: &S) -> Option<PhysicsConfigurationV3> {
-    read_json::<PhysicsPreferenceV4, _>(store, PHYSICS_PREFERENCE_KEY)
-        .and_then(PhysicsPreferenceV4::into_physics)
+    read_json::<PhysicsPreferenceV5, _>(store, PHYSICS_PREFERENCE_KEY)
+        .and_then(PhysicsPreferenceV5::into_physics)
         .or_else(|| {
-            read_json::<PhysicsPreferenceV3, _>(store, PRIOR_PHYSICS_PREFERENCE_KEY)
+            read_json::<PhysicsPreferenceV4, _>(store, PRIOR_V4_PHYSICS_PREFERENCE_KEY)
+                .and_then(PhysicsPreferenceV4::migrate)
+        })
+        .or_else(|| {
+            read_json::<PhysicsPreferenceV3, _>(store, PRIOR_V3_PHYSICS_PREFERENCE_KEY)
                 .and_then(PhysicsPreferenceV3::migrate)
         })
         .or_else(|| {
@@ -481,7 +538,7 @@ mod tests {
     fn custom_preference(version: u32) -> String {
         format!(
             r#"{{"version":{version},"solver":"soft-coupled","simHz":120,"substeps":8,"iterations":2,"contactHz":45.5,"contactDamping":8.0,"staticContactScale":3.0,"speculativeDistance":0.03,"maxDepenetrationVelocity":4.0{}}}"#,
-            if version == 4 {
+            if matches!(version, 4 | 5) {
                 r#","sleeping":true,"sleepThreshold":0.05,"sleepGrouping":"exact""#
             } else if version == 3 {
                 r#","sleeping":true"#
@@ -494,7 +551,7 @@ mod tests {
     #[test]
     fn current_preferences_restore_before_shared_web_parsing() {
         let store = MemoryStore::default()
-            .with(PHYSICS_PREFERENCE_KEY, &custom_preference(4))
+            .with(PHYSICS_PREFERENCE_KEY, &custom_preference(5))
             .with(WORLD_PREFERENCE_KEY, r#"{"version":1,"bodyCapacity":1000}"#);
         let (_, request) =
             WebPreferenceController::restore("?scenario=rigid-floor", &store).unwrap();
@@ -511,9 +568,23 @@ mod tests {
     }
 
     #[test]
+    fn current_preferences_preserve_an_explicit_sleep_opt_out() {
+        let store = MemoryStore::default().with(
+            PHYSICS_PREFERENCE_KEY,
+            r#"{"version":5,"solver":"soft-coupled","simHz":60,"substeps":4,"iterations":1,"contactHz":30.0,"contactDamping":10.0,"staticContactScale":2.0,"speculativeDistance":0.02,"maxDepenetrationVelocity":3.0,"sleeping":false,"sleepThreshold":0.02,"sleepGrouping":"local-4"}"#,
+        );
+        let (_, request) = WebPreferenceController::restore("", &store).unwrap();
+        assert!(!request.options.physics.sleeping_enabled);
+        assert_eq!(
+            request.options.physics.sleep_grouping,
+            SleepGrouping::Local4
+        );
+    }
+
+    #[test]
     fn explicit_query_has_precedence_over_saved_preferences() {
         let store = MemoryStore::default()
-            .with(PHYSICS_PREFERENCE_KEY, &custom_preference(4))
+            .with(PHYSICS_PREFERENCE_KEY, &custom_preference(5))
             .with(WORLD_PREFERENCE_KEY, r#"{"version":1,"bodyCapacity":1000}"#);
         let (_, request) =
             WebPreferenceController::restore("?solver=hard-direct&body-capacity=256", &store)
@@ -528,7 +599,7 @@ mod tests {
     #[test]
     fn prior_and_legacy_physics_records_migrate() {
         let prior =
-            MemoryStore::default().with(PRIOR_PHYSICS_PREFERENCE_KEY, &custom_preference(3));
+            MemoryStore::default().with(PRIOR_V3_PHYSICS_PREFERENCE_KEY, &custom_preference(3));
         let (_, request) = WebPreferenceController::restore("", &prior).unwrap();
         assert_eq!(request.options.physics.fixed_step_hz, 120);
         assert!(request.options.physics.sleeping_enabled);
@@ -537,6 +608,23 @@ mod tests {
             request.options.physics.sleep_grouping,
             SleepGrouping::Local4
         );
+
+        let prior_default = MemoryStore::default().with(
+            PRIOR_V4_PHYSICS_PREFERENCE_KEY,
+            r#"{"version":4,"solver":"soft-coupled","simHz":60,"substeps":4,"iterations":1,"contactHz":30.0,"contactDamping":10.0,"staticContactScale":2.0,"speculativeDistance":0.02,"maxDepenetrationVelocity":3.0,"sleeping":false,"sleepThreshold":0.02,"sleepGrouping":"local-4"}"#,
+        );
+        let (_, request) = WebPreferenceController::restore("", &prior_default).unwrap();
+        assert_eq!(request.options.physics, PhysicsConfigurationV3::default());
+        assert!(request.options.physics.sleeping_enabled);
+        assert_eq!(request.options.physics.sleep_grouping, SleepGrouping::Exact);
+
+        let prior_custom =
+            MemoryStore::default().with(PRIOR_V4_PHYSICS_PREFERENCE_KEY, &custom_preference(4));
+        let (_, request) = WebPreferenceController::restore("", &prior_custom).unwrap();
+        assert_eq!(request.options.physics.fixed_step_hz, 120);
+        assert_eq!(request.options.physics.sleep_speed_threshold, 0.05);
+        assert!(request.options.physics.sleeping_enabled);
+        assert_eq!(request.options.physics.sleep_grouping, SleepGrouping::Exact);
 
         let legacy = MemoryStore::default().with(
             LEGACY_SOLVER_PREFERENCE_KEY,
@@ -555,7 +643,7 @@ mod tests {
         let store = MemoryStore::default()
             .with(PHYSICS_PREFERENCE_KEY, "{")
             .with(
-                PRIOR_PHYSICS_PREFERENCE_KEY,
+                PRIOR_V3_PHYSICS_PREFERENCE_KEY,
                 r#"{"version":2,"solver":"hard-direct","simHz":120,"substeps":4,"iterations":2,"contactHz":30.0,"contactDamping":10.0,"staticContactScale":2.0,"speculativeDistance":0.02,"maxDepenetrationVelocity":3.0}"#,
             )
             .with(
@@ -588,10 +676,11 @@ mod tests {
         assert!(search.starts_with("?scenario=rigid-stack&body-capacity=256&"));
         assert!(search.contains("solver=soft-coupled"));
         assert!(search.contains("static-contact-scale=2.5"));
-        assert!(store.get(PRIOR_PHYSICS_PREFERENCE_KEY).is_none());
+        assert!(store.get(PRIOR_V4_PHYSICS_PREFERENCE_KEY).is_none());
+        assert!(store.get(PRIOR_V3_PHYSICS_PREFERENCE_KEY).is_none());
         assert!(store.get(LEGACY_SOLVER_PREFERENCE_KEY).is_none());
 
-        let saved: PhysicsPreferenceV4 =
+        let saved: PhysicsPreferenceV5 =
             serde_json::from_str(&store.get(PHYSICS_PREFERENCE_KEY).unwrap()).unwrap();
         assert_eq!(saved.static_contact_scale, 2.5);
         let world: WorldPreferenceV1 =

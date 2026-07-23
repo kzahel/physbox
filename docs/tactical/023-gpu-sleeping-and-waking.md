@@ -4,10 +4,14 @@ Status: complete, 2026-07-23. S23.1 through S23.6 and the post-review contact
 sleep-cycle correction are implemented and qualified. S30 subsequently
 qualified the shared threshold, local-4/local-8/exact grouping, cycle
 diagnostics, matched cost, browser/headless behavior, and the explicitly
-authorized hardware-backed AVD interaction. Human review retains sleeping off
-and local-4 as compatibility defaults, keeps exact explicit, accepts the
+authorized hardware-backed AVD interaction. The S23.7 human review retained
+sleeping off and local-4 as compatibility defaults, kept exact explicit,
+accepted the
 documented awake limitation without allowing sleeping to mask it, and closes
-S23.7 so the product can move to coupled liquid and interaction work.
+S23.7 so the product can move to coupled liquid and interaction work. This is
+the historical S23 disposition; the later explicit
+[S32](032-sleep-default-promotion.md) decision promotes sleeping-on/exact
+without changing S23's evidence or mask rule.
 
 Governing topics:
 [GPU sleeping and waking](../topics/gpu-sleeping-and-waking.md),
@@ -37,7 +41,7 @@ exact-equivalence gates reviewable before transition semantics exist.
 
 - S23.1 and S23.2 do not put a body to sleep, propagate a wake, filter a solver
   body or point, change contact persistence, or claim mostly-sleeping scale.
-- Sleeping remains off by default. A request may be transported and reported
+- During S23, sleeping remains off by default. A request may be transported and reported
   before it becomes effective, but ordinary default promotion is reserved for
   the manual S23.7 review. That review now retains the off default.
 - Sleeping cannot change an awake solver verdict. The topic's mask rule is a
@@ -423,6 +427,10 @@ survival satisfies the 12-stack gate. Live sleeping-pair processing remains
 selected from S23.6. These are accepted limitations for moving on to liquid,
 UI, and more playful interaction work, not a comprehensive parity or scale
 claim.
+
+Subsequent decision: S32 supersedes only this default selection. Sleeping is
+now selected on with exact grouping by default, while this tactical's
+sleep-off/local-4 disposition remains the dated S23.7 checkpoint.
 
 ## Completion condition
 

@@ -57,6 +57,32 @@ physbox5_android_stop_product_app() {
     fi
 }
 
+physbox5_android_product_window_size() {
+    local adb="$1" serial="$2" frame width height left top right bottom
+    frame="$(
+        "$adb" -s "$serial" shell dumpsys window windows 2>/dev/null \
+            | tr -d '\r' \
+            | sed -n \
+                '/Window #[0-9][0-9]* Window.*com\.kzahel\.physbox5\/android\.app\.NativeActivity/,/WindowStateAnimator/ {
+                    s/.*frame=\[\([-0-9][0-9]*\),\([-0-9][0-9]*\)\]\[\([-0-9][0-9]*\),\([-0-9][0-9]*\)\].*/\1 \2 \3 \4/p
+                }' \
+            | head -1
+    )"
+    if [[ "$frame" =~ ^-?[0-9]+\ -?[0-9]+\ -?[0-9]+\ -?[0-9]+$ ]]; then
+        read -r left top right bottom <<< "$frame"
+        width=$((right - left))
+        height=$((bottom - top))
+        if [[ "$width" -gt 0 && "$height" -gt 0 ]]; then
+            printf '%sx%s\n' "$width" "$height"
+            return 0
+        fi
+    fi
+    "$adb" -s "$serial" shell wm size \
+        | sed -n 's/.*Physical size: //p' \
+        | tail -1 \
+        | tr -d '\r'
+}
+
 physbox5_android_configure_emulator_display() {
     local shell_had_x11=1
     PHYSBOX5_ANDROID_EMULATOR_PREFIX=()

@@ -57,8 +57,10 @@ and [S25](docs/tactical/025-bounded-awake-configuration-qualification.md).
 
 Human review accepted that measured rigid foundation as sufficient for bounded
 liquid, UI, and interaction work without claiming that the remaining P5.4
-parity or CPU/GPU crossover gates passed. S23 and S30 are complete; sleeping
-remains off and local-4 remains the compatibility default.
+parity or CPU/GPU crossover gates passed. S23 and S30 are complete; S32
+promotes sleeping on with exact current-contact-component grouping as the
+ordinary default. Sleeping remains independently switchable, and local-4 and
+local-8 remain available for comparison.
 [S31](docs/tactical/031-coupled-liquid-sandbox.md) now implements one
 GPU-resident water material, same-step translation/torque/pressure response
 with the PhysBox GPU rigid solver, fluid wake roots, Water/Surface/Erase tools,
@@ -174,18 +176,19 @@ The list grows and reflows as profiles are registered; there is no pairwise
 A/B slot. A change rebuilds the shared GPU world immediately without reloading
 the page; camera position and tool selection are retained. The browser stores
 the active profile and coefficients
-under `physbox5.physics.v3`, migrates the version-2 and older solver-only keys,
+under `physbox5.physics.v5`, migrates earlier physics and solver-only keys,
 restores the complete configuration on the next launch, and keeps the URL
 synchronized automatically for reproducibility. No query-string editing is
 required.
 
-The experimental sleeping checkpoint accepts `--sleeping on|off` (or the
+Sleeping accepts `--sleeping on|off` (or the
 matching web query). **MENU → WORLD → SLEEP REQUEST** provides the same
 engine-rendered control and applies it immediately while preserving the rest
 of the physics configuration. The browser persists the request and keeps the
-URL synchronized. Sleeping is effective when requested. S23/S30 human review
-retains it off by default, with local-4 grouping as the compatibility default
-and local-8/exact available explicitly. **SLEEP VISUALS** is an independent
+URL synchronized. Sleeping is effective and on by default; PhysBox uses exact
+current-contact-component grouping by default. **SLEEP GROUPING** still cycles
+through exact, local-4, and local-8, and the sleeping request can be switched
+off for awake-quality or comparison work. **SLEEP VISUALS** is an independent
 presentation-only toggle: teal is active, amber is accumulating quiet time,
 blue `Z` is asleep, and pink `!` is recently or forcibly woken.
 
