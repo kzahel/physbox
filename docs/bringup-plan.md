@@ -26,11 +26,14 @@ costlier alternative and accepts an 8-box awake quality claim plus demonstrated
 14-box structural survival as the current limitation.
 
 The 2026-07-23 product-priority decision treats this measured rigid foundation
-as sufficient to begin bounded water, UI, and interaction work. It does not
+as sufficient for bounded water, UI, and interaction work. It does not
 pass the retained 12/14 quietness failures, 16-stack loss, comprehensive rigid
 parity, or correctness-qualified CPU/GPU crossover. The approved
 [S31 coupled-liquid sandbox](tactical/031-coupled-liquid-sandbox.md) is the
-active end-to-end execution plan.
+implemented preview at a human behavior-band and product/default checkpoint.
+Its GPU water, same-step PhysBox coupling, wake roots, tools, direct rendering,
+native oracle evidence, compact capacity path, Browser lane, and authorized
+hardware-backed AVD substitution pass.
 
 The [current rigid quality target](topics/rigid-quality-targets.md) supersedes
 the historical 16-stack promotion gate for new work: 2/4/8 remain the
@@ -523,27 +526,35 @@ existing acceptance meaning.
   coupled sandbox. Persistent property editing, save/load, and joints remain
   in this broader construction milestone.
 
-## P5.6 — LiquidFun-oracled coupled material
+## P5.6 — LiquidFun-oracled coupled material (implemented preview; human checkpoint)
 
-- Begin bounded water under the reviewed
+- [x] Begin bounded water under the reviewed
   [coupled liquid/rigid constraint](topics/coupled-liquid-rigid-constraint-surface.md)
   and S31 plan. This explicit entry decision replaces the former blanket
   “after P5.4 acceptance” blocker without claiming P5.4 completion.
-- Generate fluid fixtures from the same shared scenario projection.
-- Add separate native oracle executables for the pinned PhysBox 3 particle
+- [x] Generate fluid fixtures from the same shared scenario projection.
+- [x] Add separate native oracle executables for the pinned PhysBox 3 particle
   sidecar plus Box2D v3 and for original LiquidFun/Box2D 2.3.
-- Treat the native PhysBox 3 sidecar as the coupled-behavior authority and
+- [x] Treat the native PhysBox 3 sidecar as the coupled-behavior authority and
   original LiquidFun as a secondary algorithm/scenario reference.
-- Calibrate a small canonical corpus against fresh runs of the actual PhysBox
+- [x] Calibrate a small canonical corpus against fresh runs of the actual PhysBox
   3 web product; do not require that browser lane for routine correctness.
-- Couple particle/body response inside the same GPU fixed step, including
+- [x] Couple particle/body response inside the same GPU fixed step, including
   translation, off-center torque, pressure/boundary effects, and wake policy.
-- Compare displacement, float/sink, wave impact, and moving boundaries with
+- [x] Compare displacement, float/sink, wave impact, and moving boundaries with
   PhysBox 3/LiquidFun.
-- Prove there is no simulation-dependent fluid impulse readback.
-- Keep the interactive Box2D shadow rigid-only. It receives no particles,
+- [x] Prove there is no simulation-dependent fluid impulse readback.
+- [x] Keep the interactive Box2D shadow rigid-only. It receives no particles,
   fluid contacts, fluid forces, or fluid-tool actions; Box2D view hides PhysBox
   water and labels that boundary explicitly.
+
+The selected preview implementation/cross-host gate is complete at clean revision
+`cc39aeaa17e21eeb3b8ff470e6cd91cd95e193f1`. The remaining P5.6 decision is
+human: declare or reject behavior bands around the measured PhysBox 3
+disagreements, review grab-through-water and general feel, and decide whether
+the 4K sandbox/tools/direct style become ordinary defaults. This checkpoint
+does not authorize smooth water, multiple materials, save/load, or broader
+construction breadth automatically.
 
 ## Autonomous development loop
 

@@ -55,23 +55,28 @@ final default run, and 16 loses structure at step 463. Sleeping may not replace
 that awake result. See [S24](docs/tactical/024-current-rigid-quality-qualification.md)
 and [S25](docs/tactical/025-bounded-awake-configuration-qualification.md).
 
-Human review now accepts that measured rigid foundation as sufficient to begin
-bounded liquid, UI, and interaction work without claiming that the remaining
-P5.4 parity or CPU/GPU crossover gates passed. S23 and S30 are complete;
-sleeping remains off and local-4 remains the compatibility default. The
-active [S31 coupled-liquid plan](docs/tactical/031-coupled-liquid-sandbox.md)
-starts with one GPU-resident water material, same-step response with the
-PhysBox GPU rigid solver, Water/Surface/Erase tools, direct rendering, and
-cross-host evidence. Human review approved continuous implementation on
-2026-07-23 and authorized a hardware-backed AVD whenever no physical Android
-device is available.
+Human review accepted that measured rigid foundation as sufficient for bounded
+liquid, UI, and interaction work without claiming that the remaining P5.4
+parity or CPU/GPU crossover gates passed. S23 and S30 are complete; sleeping
+remains off and local-4 remains the compatibility default.
+[S31](docs/tactical/031-coupled-liquid-sandbox.md) now implements one
+GPU-resident water material, same-step translation/torque/pressure response
+with the PhysBox GPU rigid solver, fluid wake roots, Water/Surface/Erase tools,
+compact 32K-capacity neighborhoods, direct rendering, process-isolated PhysBox
+3/LiquidFun evidence, and native/Browser/authorized-hardware-AVD qualification.
+The 3,952-particle scene runs at full simulated time in the clean Browser
+sample; the clean repeated AVD sample executes the same interaction at `0.812`
+effective scale and is portability evidence rather than physical-device speed.
+S31 is at a human checkpoint for behavior bands, subjective feel, and whether
+the sandbox/tools/style become ordinary defaults.
 
-The repository still contains no Rapier or CPU product physics fallback, fluid
-solver, legacy settings UI, or PhysBox 4 scene compatibility. The implemented
+The repository still contains no Rapier or CPU product physics fallback,
+legacy settings UI, multi-material fluid, smooth-surface water renderer, or
+PhysBox 4 scene compatibility. The implemented
 default-on, compile-removable Box2D shadow comparator is validation
 presentation only: it never supplies PhysBox mechanics or performance results.
-It remains rigid-only during S31; PhysBox water is hidden in Box2D view and
-never exchanges state or forces with that shadow.
+It remains rigid-only: PhysBox water is hidden in Box2D view and never
+exchanges state or forces with that shadow.
 
 Read:
 
@@ -82,7 +87,7 @@ Read:
 - [Physics configuration and solver profiles](docs/topics/physics-configuration-and-solver-profiles.md)
 - [Current product capability status](docs/topics/product-capability-status.md)
 - [Coupled liquid/rigid constraint surface](docs/topics/coupled-liquid-rigid-constraint-surface.md)
-- [Proposed S31 coupled-liquid sandbox](docs/tactical/031-coupled-liquid-sandbox.md)
+- [S31 coupled-liquid sandbox](docs/tactical/031-coupled-liquid-sandbox.md)
 - [Vision summary](docs/vision.md)
 - [Bring-up plan](docs/bringup-plan.md)
 - [Platform architecture](docs/platform-architecture.md)
@@ -134,6 +139,7 @@ run is software-path diagnostics rather than hardware validation.
 
 ```sh
 cargo run -p physbox-desktop
+cargo run -p physbox-desktop -- --scenario liquid-sandbox
 cargo run -p physbox-headless -- \
   --output /tmp/physbox5.png \
   --report /tmp/physbox5.json \

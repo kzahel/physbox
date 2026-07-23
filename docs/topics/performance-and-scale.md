@@ -661,6 +661,45 @@ claim only under its explicit bounded scope: retained rigid failures remain
 visible, coupled correctness is qualified independently, and no liquid result
 is reported as rigid crossover evidence.
 
+S31 coupled-material checkpoint, 2026-07-23: clean revision
+`cc39aeaa17e21eeb3b8ff470e6cd91cd95e193f1` extends the work vector with
+active/capacity particles, occupied cells, grid insertions, neighbor checks and
+accepted neighbors, density/correction evaluations, boundary density/pressure
+work, body-contact contributions, wake roots, direct render instances,
+dispatches, per-buffer capacities/high-water, and every particle overflow. The
+comparator-free runner performs no readback needed for frame advancement.
+
+The initial 64×64 fixed grid with 64 records per cell retained the product 4K
+scene but correctly rejected 16K on cell overflow. The selected compact grid
+counts cells, scans 4,096 ranges, and scatters one record per GPU-resident live
+particle using indirect dispatch. It removes the fixed occupancy cap, reduces
+product particle allocation from `4,344,964` to `3,443,844` bytes, and reports
+92 particle dispatches per outer step.
+
+On named native adapter `AMD Radeon 890M Graphics (RADV GFX1150)`, the clean
+release host-completion means—including physics and direct rendering—are:
+
+| Coupled row | Active / capacity | Mean ms / outer step | Disposition |
+| --- | ---: | ---: | --- |
+| Water-only 1K | 1,024 / 1,024 | 5.371 | finite, capacity-clean |
+| Water-only 4K | 4,096 / 4,096 | 4.825 | finite, capacity-clean |
+| Product sandbox | 3,952 / 32,768 | 7.051 | finite, capacity-clean |
+| Water-only 16K | 16,384 / 16,384 | 8.009 | finite, capacity-clean |
+| Water-only 32K-capacity | 32,640 / 32,768 | 15.308 | finite, capacity-clean; capacity frontier only |
+
+These are one named-adapter throughput samples, not P50/P95/P99, cross-adapter,
+physical-Android, CPU/GPU crossover, or portable sustained-rate claims. The
+32K row in particular leaves insufficient universal rendering/UI headroom to
+claim “32K at 60 Hz.”
+
+The ordinary Browser WebGPU product scene completed 623 steps at effective
+scale `1.000041` with zero slip. No physical Android device was available, so
+the human-authorized hardware-backed AVD substitution exercised the shared
+Android path and pixels. The clean repeat completed 694 steps at effective
+scale `0.811745` on host RADV Vulkan and shut down successfully. Its first cold
+run also passed mechanics and pixels but recorded a `0.198241` pacing outlier.
+Both remain evidence; neither is a physical-device speed result.
+
 S3.1 contract checkpoint, 2026-07-15: the collision byte surface is fixed for
 measurement but remains provisional for S3.6 review: 32-byte AABB, 16-byte
 candidate, 48-byte manifold, 48-byte point, 32-byte persistent key, 16-byte

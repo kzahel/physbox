@@ -189,13 +189,16 @@ S30 is complete with shared threshold configuration, local-4/local-8/exact
 grouping, applied exact GPU decisions, cycle diagnostics, browser/headless/AVD
 qualification, and a measured pile result. Exact remains an explicit
 comparison rather than the default.
-Human roadmap review on 2026-07-23 opens S31 as an active bounded coupled
-liquid sandbox. The current eight-box awake quality and 14-box structural
-survival are accepted as an honest liquid-entry foundation; the 12/14
-quietness gap, 16 loss, comprehensive rigid parity, and CPU/GPU crossover
-remain open debt. Human review approves continuous implementation and
-authorizes a hardware-backed AVD whenever no physical Android device is
-available.
+Human roadmap review on 2026-07-23 opened S31 as a bounded coupled liquid
+sandbox. The current eight-box awake quality and 14-box structural survival
+remain its honest rigid foundation; the 12/14 quietness gap, 16 loss,
+comprehensive rigid parity, and CPU/GPU crossover remain open debt. S31 has now
+implemented and cross-host-qualified GPU water, same-step PhysBox coupling,
+wake roots, Water/Surface/Erase tools, direct rendering, compact 32K-capacity
+neighborhoods, and process-isolated PhysBox 3/LiquidFun evidence. The approved
+hardware-backed AVD substitution passed and shut down when no physical Android
+device was available. S31 is at a manual checkpoint for coupled behavior
+bands, subjective feel, and product/default choices.
 
 Current target supersession, 2026-07-22: the
 [rigid quality target contract](../topics/rigid-quality-targets.md) governs new
@@ -245,7 +248,7 @@ This README remains the unnumbered index.
 | S28 | Browser platform-boundary hardening | [028-browser-platform-boundary-hardening.md](028-browser-platform-boundary-hardening.md) | complete; shared Rust owns preferences/query policy, semantic smoke observation is gated, and JS/TS source locks pass, 2026-07-23 |
 | S29 | Interactive Box2D comparison | [029-interactive-box2d-comparison.md](029-interactive-box2d-comparison.md) | complete; default-on shadow, stable actions, authority/feature-off gates, and authorized hardware-backed AVD substitute pass, 2026-07-23 |
 | S30 | Configurable sleep threshold and grouping | [030-configurable-sleep-grouping.md](030-configurable-sleep-grouping.md) | complete; shared threshold, local-4/local-8/exact behavior, cycle diagnostics, matched cost, browser/headless/AVD qualification, and explicit exact disposition pass, 2026-07-23 |
-| S31 | Coupled liquid sandbox | [031-coupled-liquid-sandbox.md](031-coupled-liquid-sandbox.md) | active; end-to-end water/coupling/tools/render/oracle plan approved with hardware-backed AVD fallback, 2026-07-23 |
+| S31 | Coupled liquid sandbox | [031-coupled-liquid-sandbox.md](031-coupled-liquid-sandbox.md) | manual checkpoint; selected preview mechanics/cross-host lanes pass, measured behavior bands and product/default choices await human review, 2026-07-23 |
 
 ## Conventions
 

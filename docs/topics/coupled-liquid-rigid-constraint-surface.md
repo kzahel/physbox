@@ -1,7 +1,10 @@
 # Coupled liquid/rigid constraint surface
 
-Status: decided entry direction, 2026-07-23; implementation is active under
-the approved [S31](../tactical/031-coupled-liquid-sandbox.md) plan.
+Status: implemented preview at human behavior/default checkpoint, 2026-07-23.
+The bounded mechanics, tools, direct rendering, evidence, capacity, Browser,
+and authorized hardware-backed AVD lanes are complete under
+[S31](../tactical/031-coupled-liquid-sandbox.md). Coupled behavior bands,
+subjective feel, and product/default promotion remain undecided.
 
 Governing direction:
 [one GPU-resident 2D physics world](physbox5-unified-gpu-physics.md).
@@ -130,17 +133,22 @@ rotation. The response must:
 - preserve finite state and bounded work under high contact concentration; and
 - make every overflow or capacity failure explicit and invalidating.
 
-The exact first pass order and whether a fluid iteration is paired with each
-rigid substep are S31 implementation decisions, but the candidate set is
-bounded. S31 may compare at most:
+The implementation kept the candidate set bounded to:
 
 1. one coupled fluid iteration after each rigid substep; and
 2. one rigid substep batch followed by a bounded coupled fluid batch inside
    the same outer step.
 
-The selected schedule must pass the same scalar invariants and coupled
-behavior fixtures. A third schedule requires a measured failure that neither
-declared candidate can explain.
+The implemented preview selected `rigid-then-coupled-batch`; the
+per-rigid-substep alternative has not yet been built or comparatively
+measured. The selected path predicts and solves rigid state first, then runs
+the bounded coupled particle batch within the same outer step. Each
+pressure/non-penetration reaction immediately updates the GPU body pose and
+motion consumed by later coupled iterations. A serial per-body gather was
+rejected after a long Vulkan command buffer triggered the driver watchdog; the
+retained 64-particle tiled reduction completed the same work with bounded
+portable storage. A third schedule still requires a measured failure that
+neither declared candidate can explain.
 
 Portable accumulation should reuse PhysBox's GPU-owned work construction and
 deterministic body gathering. Particle/body contacts emit bounded
@@ -240,12 +248,20 @@ bounds, not final defaults or a 32K-at-60 claim. Particle capacity is distinct
 from body capacity and reports allocation, active count, neighborhood/contact
 high-water, overflow, work, and timing separately.
 
-PhysBox 4's fixed 128×80 grid with 128 particle indices per cell is an
-inspectable bounded baseline. It may support the first 4K implementation only
-when overflow fails closed and remains visible. It is not inherited as the
-scalable product answer. Before a larger capacity or scale claim, S31 must
-measure whether compact sorted cell records/ranges using the existing
-scan/radix infrastructure are required.
+PhysBox 4's fixed 128×80 grid with 128 particle indices per cell was an
+inspectable bounded source reference. The first PhysBox 5 baseline instead
+used a 64×64 grid with 64 records per cell. It retained the 3,952-particle
+product scene but rejected 16K through explicit cell overflow, firing the
+predeclared compact-representation trigger.
+
+The selected grid counts each cell, scans 4,096 compact ranges, and scatters
+one record per live particle. Count/scatter consume the GPU-resident active
+index list and indirect work count; scanned end offsets act as scatter cursors
+and settle to the range starts needed by neighbor passes. This removes the
+per-cell occupancy cap while retaining the 32,768-slot product capacity and
+explicit total-record overflow. It also removes the separate cursor buffer.
+The product particle allocation is `3,443,844` bytes, 880 KiB below the
+fixed-bin form.
 
 Particle slot allocation, erasure, grid records, density scratch, correction
 scratch, particle/body contacts, body-contribution edges, and render work all
@@ -363,6 +379,40 @@ scalar coupled specification own mathematical correctness; the PhysBox 3
 sidecar owns the selected behavior bands; original LiquidFun can expose
 disagreement but cannot overrule that authority silently.
 
+### Measured coupled review checkpoint
+
+Clean revision `cc39aeaa17e21eeb3b8ff470e6cd91cd95e193f1` joins ten
+finite/capacity-clean GPU corpus rows with fourteen process-isolated oracle
+rows. PhysBox 3 and LiquidFun each support six canonical projections and
+explicitly reject grabbed-boundary. The sidecar now projects the exact authored
+particle lattice rather than replacing regions with tiled circles.
+
+All seven canonical GPU rows preserve active population and bounded aggregate
+differences across repeated runs, but exact state hashes differ. Parallel
+particle/body record order changes floating-point accumulation, so this
+implementation does not claim exact GPU trajectory replay. The retained review
+records the state hashes plus centroid, mean velocity, body pose, density, and
+fluid-motion deltas.
+
+Against the primary PhysBox 3 sidecar, maximum final body position/angle deltas
+are `0/0` for contained water, `0.0584/0.00270` for displacement,
+`0.687/0.0906` for float/sink, `1.651/0.0000804` for off-center torque,
+`0.531/0.439` for dam break, and `1.250/0.000961` for fluid wake. The
+off-center GPU trajectory records transient rotation even though final angle
+returns near the sidecar result. The largest translation differences have a
+specific contract boundary: the pinned PhysBox 3 sidecar applies contact
+velocity impulse to the body but does not apply PhysBox 5's required
+equal-and-opposite positional pressure/non-penetration body response. Removing
+that response would violate the selected same-step invariant. Original
+LiquidFun is closer on some rows and farther on others, but is secondary
+evidence and cannot silently replace the primary authority.
+
+These are measured review inputs, not self-justifying bands. Human review must
+either accept bounded product bands around the coherent PhysBox 5 invariant or
+request a minimized mechanism change. Grab-through-water remains a subjective
+lane because both native adapters reject that authored action rather than
+approximating it.
+
 ## Performance and cross-host contract
 
 Coupled work extends the existing work vector with:
@@ -378,11 +428,29 @@ Coupled work extends the existing work vector with:
 - allocation/high-water by particle buffer class; and
 - effective interactive scale and slipped wall time.
 
-The first performance claim is deliberately modest: a useful default water
-scene must remain interactive on the ordinary Browser WebGPU path and execute
-correctly on physical Android. Larger particle counts are diagnostic until
+The first performance claim is deliberately modest: the useful water scene is
+interactive on the ordinary Browser WebGPU path and executes correctly through
+the authorized hardware-backed Android AVD substitution when physical hardware
+is unavailable. Larger particle counts are diagnostic until
 correctness-qualified curves exist. Slow-time behavior is reported honestly
 and never converted into a sustained-rate claim.
+
+The clean comparator-free RADV GFX1150 throughput lane includes physics plus
+direct rendering and reports mean host completion of `5.371 ms` at 1,024,
+`4.825 ms` at 4,096, `8.009 ms` at 16,384, and `15.308 ms` at
+32,640 active particles in 32,768 slots. The ordinary
+3,952-active/32,768-capacity product scene reports `7.051 ms`. All rows are
+finite and capacity-clean with zero overflow. The 32K row is a capacity
+frontier on this named adapter, not a portable sustained-60-Hz product claim.
+
+Browser WebGPU completed 623 product-scene steps at effective scale
+`1.000041` with zero slip. The clean repeated hardware-backed AVD interaction
+completed 694 steps at effective scale `0.811745`, executed Water, particle
+Erase, and Surface, and rendered a complete 2560×1600 frame on
+`AMD Radeon 890M Graphics (RADV GFX1150)`. A first cold AVD run passed the
+same mechanics/pixel/shutdown gates but measured `0.198241`; both runs are
+retained. AVD evidence establishes the shared Android path and hardware-GPU
+portability, not physical-device performance.
 
 Every physics/layout/pass change runs the ordinary production gates, clippy,
 fresh headless coupled evidence, and focused performance probes. Cross-host
@@ -413,8 +481,8 @@ Revisit this direction if:
 - the 4K direct-render scene cannot remain useful on Browser WebGPU or on the
   physical-or-explicitly-authorized-AVD Android lane without changing behavior
   per host;
-- the fixed-grid baseline overflows or dominates cost in ordinary water
-  scenes, triggering a measured sorted-cell implementation;
+- the selected compact grid dominates cost in an ordinary scene or a larger
+  accepted bound requires a different scan/sort organization;
 - fluid wake roots create repeated sleep cycles or require CPU observation;
 - the native sidecar cannot be calibrated against the PhysBox 3 product with
   a documented projection; or

@@ -69,7 +69,7 @@ quality. Known limitations remain part of the row.
 | TOOL-3 | Solver/configuration inspection | **Implemented** | Engine-rendered responsive menu selects any registered solver profile, bounded physics settings, and 64/256/1K/10K world-capacity presets. Browser choices persist locally. |
 | TOOL-4 | Selection and property editing | **Not implemented** | No persistent user selection, transform/material editor, or deliberate drag-to-size authoring. |
 | TOOL-5 | Scene document and save/load | **Not implemented** | Validation scenarios are reproducible contracts, not an authored product document format. |
-| TOOL-6 | Undo/redo and broader sandbox tools | **Deferred** | S31 proposes only the Water, Surface, particle-aware Erase, and shared-style slice needed to evaluate liquid before a scene document. Undo/redo and the complete tool catalog still follow stable document semantics. |
+| TOOL-6 | Material and broader sandbox tools | **Limited** | Shared Water, particle-aware Erase, and drag-preview-release fixed Surface tools are implemented with engine-rendered state on every host. Undo/redo, property editing, scene documents, and the complete PhysBox 4 tool catalog remain deferred. |
 
 ## Scale, quality, and comparison
 
@@ -90,19 +90,19 @@ quality. Known limitations remain part of the row.
 
 | ID | Capability | Status | Current boundary / next gate |
 | --- | --- | --- | --- |
-| FLUID-1 | GPU liquid particles | **Limited** | The shared product path owns bounded 32K-slot GPU water storage, a 3,952-particle sandbox, neighborhood/density/correction/velocity passes, deterministic reset/spawn/erase/reuse, fixed boundaries, direct rendering, and final-only headless diagnostics. Debug views, retained numerical bands, tools, and cross-host acceptance remain S31 work. |
-| FLUID-2 | Two-way rigid/liquid coupling | **Limited** | The PhysBox GPU path now exchanges bounded equal-and-opposite boundary-density/pressure, non-penetration, and surface-relative velocity response with dynamic circles/rectangles in the same outer step, including torque, stable tiled body gathering, generation checks, GPU fluid-wake requests, and explicit multi-body overflow. Schedule review, sleeping qualification, complete coupled behavior bands, and tool/reset interaction gates remain open. Box2D stays rigid-only. |
-| FLUID-3 | PhysBox 3/LiquidFun coupled oracle | **Limited** | Sources and execution contract are pinned and native build feasibility is recorded; active S31 adds the routine PhysBox 3 sidecar, separate LiquidFun adapter, and coupled acceptance corpus. |
+| FLUID-1 | GPU liquid particles | **Implemented** | The shared product path owns one water material in bounded 32K-slot GPU storage, a 3,952-particle sandbox, compact cell ranges, density/correction/velocity passes, deterministic reset/spawn/erase/reuse, fixed boundaries, direct rendering, and final-only diagnostics. Clean Browser WebGPU and authorized hardware-backed AVD mechanics/pixel lanes pass. This is not a 32K-at-60 or multi-material claim. |
+| FLUID-2 | Two-way rigid/liquid coupling | **Limited** | The PhysBox GPU path exchanges bounded equal-and-opposite boundary-density/pressure, non-penetration, and surface-relative velocity response with dynamic circles/rectangles in the same outer step, including torque, stable tiled body gathering, generation checks, GPU fluid-wake requests, sleeping-off/local-4/local-8/exact qualification, and explicit multi-body overflow. Invariants pass, but measured PhysBox 3 final-body disagreements still require human behavior-band and subjective-feel disposition. Box2D stays rigid-only. |
+| FLUID-3 | PhysBox 3/LiquidFun coupled oracle | **Implemented** | Separate process-isolated native PhysBox 3/Box2D v3 and original LiquidFun/Box2D 2.3 executables consume the shared seven-source projection. Each supports six rows and explicitly rejects grabbed-boundary. Joined evidence records population, centroid, body, exchange, overflow, and replay deltas without majority voting. |
 | BREADTH-1 | Ragdolls, machines, soft bodies | **Deferred** | Depend on general joints, broader shapes, accepted scale, and stable rigid behavior. |
 
 ## Current execution order
 
-1. Establish the shared coupled contracts, native PhysBox 3/LiquidFun oracle
-   lane, bounded GPU water substrate, and direct rendering.
-2. Add same-step PhysBox rigid/liquid response, fluid wake roots, Water,
-   Surface, and particle Erase interactions, and the rigid-only Box2D boundary.
-3. Qualify the useful 4K scene across native, browser, headless, and Android,
-   then return mechanics, visual style, and product defaults to human review.
+1. Review the measured PhysBox 3 behavior deltas and subjective pouring,
+   floating, wave-impact, grab-through-water, and construction feel.
+2. Decide whether the 4K sandbox, Water/Surface tools, and direct particle
+   style become ordinary defaults or remain explicit preview choices.
+3. Open smooth-water rendering, multiple materials, scene save/load, or
+   property editing only from an explicit measured/product decision.
 
 The retained 12/14 quietness failures, 16-stack loss, comprehensive rigid
 parity, and correctness-qualified CPU/GPU crossover remain visible parallel

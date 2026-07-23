@@ -12,9 +12,10 @@ a running log.
   contacts, broadphase, process-isolated native oracle hierarchy, and later
   coupled-fluid acceptance.
 - [Coupled liquid/rigid constraint surface](coupled-liquid-rigid-constraint-surface.md)
-  — accepted liquid-entry decision, one-GPU-world coupling and wake
-  invariants, PhysBox 4 reuse boundary, rigid-only Box2D comparison semantics,
-  first water/tool/render scope, oracle corpus, and cross-host gates.
+  — implemented-preview decision, one-GPU-world coupling and wake invariants,
+  compact particle grid/capacity evidence, measured PhysBox 3/LiquidFun
+  disagreements, PhysBox 4 reuse boundary, rigid-only Box2D comparison
+  semantics, first water/tool/render scope, and final human-review gate.
 - [Performance and scale contract](performance-and-scale.md) — workload and
   scene matrix, CPU/GPU comparison lanes, timing/capacity validity, provisional
   scale expectations, and milestone/regression gates.

@@ -12,7 +12,8 @@ owns fixed-step pacing and the default slow-motion response to missed budgets.
 The [physics configuration and solver-profile topic](topics/physics-configuration-and-solver-profiles.md)
 owns the selected soft-coupled direction and bounded product settings.
 The [coupled liquid/rigid constraint topic](topics/coupled-liquid-rigid-constraint-surface.md)
-owns the accepted liquid-entry boundary and active S31 scope.
+owns the implemented preview boundary, measured coupled evidence, and S31
+human-review checkpoint.
 
 PhysBox 5 is a small, purpose-built 2D physics world whose live mechanical
 state stays on the GPU. It should eventually feel like a deliberately
@@ -50,13 +51,19 @@ The completed rigid foundation contains:
 - direct rendering from GPU-resident body state;
 - side-by-side validation against a test-only Box2D oracle.
 
-Human review on 2026-07-23 accepts this foundation for a bounded water/UI phase
-while retaining its measured awake-stack, parity, and crossover limitations.
-The approved S31 plan adds one water material, same-step PhysBox coupling,
-Water/Surface/Erase interactions, and direct rendering. Joints, capsules,
-general polygons, chains, ragdolls, machines, soft bodies, terrain, CCD,
-multi-material fluid, and the complete PhysBox 4 tool catalog remain later
-breadth.
+Human review on 2026-07-23 accepted this foundation for a bounded water/UI
+phase while retaining its measured awake-stack, parity, and crossover
+limitations. S31 now implements one water material, same-step PhysBox
+translation/torque/pressure response, GPU wake roots, Water/Surface/Erase
+interactions, compact 32K-capacity neighborhoods, and direct rendering. The
+clean 3,952-particle Browser scene advances at full simulated time; the shared
+Android path and pixels pass through the authorized hardware-backed AVD
+substitute. Process-isolated PhysBox 3 and LiquidFun lanes expose measured
+behavior disagreements rather than hiding them. Final behavior bands,
+subjective feel, and product/default promotion remain a human decision.
+Joints, capsules, general polygons, chains, ragdolls, machines, soft bodies,
+terrain, CCD, multi-material fluid, smooth water, and the complete PhysBox 4
+tool catalog remain later breadth.
 
 The interactive Box2D shadow remains rigid-only. Water interacts only with the
 PhysBox GPU rigid solver; Box2D receives no particle state or fluid forces, and

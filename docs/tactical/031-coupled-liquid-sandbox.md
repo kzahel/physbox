@@ -1,10 +1,12 @@
 # S31 — Coupled liquid sandbox
 
-Status: active, approved 2026-07-23. Human review accepts this end-to-end plan
-and authorizes continuous implementation plus proportional validation. When no
-physical Android device is available, the same shared Android path may be
-qualified on a hardware-backed AVD; every AVD run must record that substitution
-and shut the emulator down afterward.
+Status: manual checkpoint, end-to-end product preview and cross-host
+qualification reached 2026-07-23. Human review accepted this plan and
+authorized continuous implementation plus proportional validation. Final
+coupled behavior bands and product/default choices now return to human review.
+When no physical Android device is available, the same shared Android path may
+be qualified on a hardware-backed AVD; every AVD run must record that
+substitution and shut the emulator down afterward.
 
 Governing topic:
 [coupled liquid/rigid constraint surface](../topics/coupled-liquid-rigid-constraint-surface.md).
@@ -232,7 +234,7 @@ interactive frames map no particle state.
 - [ ] Evaluate the two predeclared pass schedules and select from scalar
   invariants, coupled behavior, cost, and portability; do not add a third
   schedule without a measured blocking failure.
-- [ ] Make every fluid iteration consume current PhysBox body pose, motion,
+- [x] Make every fluid iteration consume current PhysBox body pose, motion,
   inverse mass, inverse inertia, shape, and surface velocity.
 - [x] Include fixed and dynamic boundaries in density/pressure and
   non-penetration work rather than adding reaction only after the final fluid
@@ -242,11 +244,11 @@ interactive frames map no particle state.
   inside the same outer fixed step.
 - [x] Feed updated body motion/pose into the remaining declared coupled
   iterations so response is not a one-step-late boundary snapshot.
-- [ ] Create generation-checked fluid wake roots before required body response;
+- [x] Create generation-checked fluid wake roots before required body response;
   qualify sleeping off plus local-4/local-8/exact explicitly enabled modes.
-- [ ] Preserve rigid contact persistence, grab, construction, reset, erase,
+- [x] Preserve rigid contact persistence, grab, construction, reset, erase,
   sleeping, and fail-closed overflow across particle coupling.
-- [ ] Add a dependency-graph test proving no particle/body result copy reaches
+- [x] Add a dependency-graph test proving no particle/body result copy reaches
   CPU code before the next interactive step is encoded.
 
 Gate: the displacement, float/sink, off-center torque, dam-break impact,
@@ -285,9 +287,17 @@ boundary-density contacts, 108 boundary-pressure edges, and the mass-0.5
 review ball resting at the waterline instead of pinning to the floor or
 trampolining out.
 
-These remain foundation checkpoints, not S31.3 acceptance: pass-schedule
-review, sleeping-mode qualification, the complete coupled corpus, preserved
-interaction/reset behavior, and host dependency proof remain open.
+The implemented preview schedule is `rigid-then-coupled-batch`; the
+per-rigid-substep alternative has not been built or comparatively measured. A
+serial per-body gather was rejected after triggering the Vulkan watchdog; the
+selected bounded particle-tile reduction keeps all response GPU-resident and
+portable. Focused GPU tests now cover same-step equal-and-opposite response,
+off-center torque, boundary pressure, multi-target fail-closed behavior, exact
+command/reset reuse, and the no-particle-readback frame contract. The complete
+corpus also qualifies sleeping off and explicitly selected
+local-4/local-8/exact wake paths. The selected preview mechanics are
+implemented; comparative schedule evidence and native behavior-band
+disposition remain open.
 
 ### S31.4 — water, surface, erase, and comparison UI
 
@@ -335,7 +345,7 @@ continuously-aligned shadow test continues to cover hidden PhysBox
 advancement. The release comparator-off package contains no comparator
 dependency, path, bridge marker, revision marker, or runtime marker, while its
 offscreen liquid frame retains nonzero particles, the declared 32,768-slot /
-80-dispatch substrate, same-step rigid coupling, and the no-readback policy.
+92-dispatch substrate, same-step rigid coupling, and the no-readback policy.
 S31.4 is complete. Clean Browser WebGPU run
 `20ef27c4-7e56-44e5-a086-38a02843ca9d` advanced 623 interactive steps,
 executed Water, particle Erase, and Surface, retained an aligned rigid-only
@@ -374,12 +384,12 @@ captures pass.
 
 ### S31.5 — coupled behavior and subjective corpus
 
-- [ ] Run contained-settling, displacement, three-density float/sink,
+- [x] Run contained-settling, displacement, three-density float/sink,
   off-center torque, dam-break, grabbed-boundary, and sleeping-wake sources
   through the native sidecar and PhysBox GPU result contracts.
-- [ ] Run original LiquidFun for every supported projection and retain its
+- [x] Run original LiquidFun for every supported projection and retain its
   disagreements as secondary evidence rather than majority voting.
-- [ ] Record particle population, density error, fluid RMS motion,
+- [x] Record particle population, density error, fluid RMS motion,
   displacement, immersion, particle/body contacts, body pose/motion, torque,
   wake transitions, momentum/energy exchange, overflow, and exact replay.
 - [ ] Minimize the first failure in each metric family and promote its source
@@ -395,17 +405,40 @@ justified bands, exact configuration identity, finite/capacity-clean PhysBox
 state, and visually coherent behavior. A hard sidecar or invariant rejection
 stops later performance/default promotion while retaining the failure artifact.
 
+Clean revision `cc39aeaa17e21eeb3b8ff470e6cd91cd95e193f1` produced ten
+passing finite/capacity-clean GPU corpus rows, fourteen process-isolated
+oracle rows, and seven joined review rows. PhysBox 3 and LiquidFun each support
+six canonical projections and explicitly reject grabbed-boundary rather than
+approximating it. Exact GPU trajectory replay is false for all seven canonical
+rows because parallel record order changes floating-point accumulation;
+population and bounded aggregate deltas remain recorded rather than being
+silently promoted to exactness.
+
+The primary PhysBox 3 final-body maximum position/angle deltas are
+`0/0` contained, `0.0584/0.00270` displacement, `0.687/0.0906`
+float/sink, `1.651/0.0000804` off-center torque, `0.531/0.439` dam break,
+and `1.250/0.000961` fluid wake. The off-center GPU trajectory still records
+the intended transient angular response even though its final angle returns
+near the sidecar value. The largest translation disagreements are localized:
+the pinned PhysBox 3 sidecar transfers contact velocity impulse but does not
+apply the equal-and-opposite positional pressure/non-penetration body response
+required by the PhysBox 5 invariant. LiquidFun is secondary dissent only and
+cannot overrule that declared primary authority. No band is invented from
+these values. S31.5 therefore stops at the required human review for band
+acceptance, grab-through-water feel, pouring, floating, wave impact, and
+container construction.
+
 ### S31.6 — capacity, performance, and cross-host qualification
 
-- [ ] Extend the performance work vector with active particles, cell/neighborhood
+- [x] Extend the performance work vector with active particles, cell/neighborhood
   work, density/correction work, particle/body contacts, body contributions,
   wake roots, render work, allocation/high-water, and every overflow.
-- [ ] Measure 1K/4K/16K/32K water-only and applicable coupled rows on a named
+- [x] Measure 1K/4K/16K/32K water-only and applicable coupled rows on a named
   native adapter, stopping a family at its explicit capacity or time bound.
-- [ ] Compare the fixed-bin baseline with compact sorted cell records/ranges if
+- [x] Compare the fixed-bin baseline with compact sorted cell records/ranges if
   overflow, occupancy amplification, memory, or stage dominance fires the
   topic's trigger.
-- [ ] Preserve direct rendering as the acceptance presentation and measure any
+- [x] Preserve direct rendering as the acceptance presentation and measure any
   optional reduced-resolution smooth-water renderer separately.
 - [x] Run the ordinary Browser WebGPU product scene and report presentation
   cadence, physics time, effective scale, and slip without labeling slow time
@@ -418,7 +451,7 @@ stops later performance/default promotion while retaining the failure artifact.
   already authorized a hardware-backed AVD substitute whenever no device is
   available; record the substitution, prove the shared Android path and
   pixels, and shut the emulator down after every run.
-- [ ] Prove performance artifacts compile the Box2D comparator out or record
+- [x] Prove performance artifacts compile the Box2D comparator out or record
   its runtime absence.
 
 Gate: the 4K useful scene is correct and interactive on Browser WebGPU; a
@@ -427,25 +460,61 @@ no device is available, executes the same mechanics and pixels; accepted
 capacities have complete allocation/high-water records and zero overflow; and
 no performance claim includes comparator work or unqualified behavior.
 
+The original fixed 64×64 grid stored 64 records per cell. It was acceptable at
+3,952 particles but rejected 16K because occupancy overflowed. The selected
+representation counts particles per cell, scans 4,096 compact ranges, and
+scatters one record per live particle. Count/scatter consume the existing
+GPU-resident active list and indirect work count; scanned end offsets double
+as scatter cursors. Product allocation is `3,443,844` bytes, 880 KiB below the
+fixed-bin form, with 92 declared particle dispatches per outer step.
+
+The clean comparator-free RADV GFX1150 release lane reports host completion
+means including physics and direct rendering of `5.371 ms` at 1,024,
+`4.825 ms` at 4,096, `8.009 ms` at 16,384, and `15.308 ms` at
+32,640 active particles under the 32,768-slot capacity. The product
+3,952-active/32,768-capacity scene reports `7.051 ms`. All five rows are
+finite, capacity-clean, and record zero overflow. The 32K row is capacity
+evidence only, not a portable sustained-60-Hz claim.
+
+Clean Browser WebGPU run `c4200a5b-4107-4680-8ce4-20d27a4c5ede`
+completed 623 liquid-sandbox steps at effective scale `1.000041` with zero
+slip. No physical Android device was available, so the approved
+hardware-backed AVD substitution was used. Clean repeat run
+`1784817631-2618873` executed Water, particle Erase, and Surface through the
+shared Android path, rendered a complete 2560×1600 frame on host adapter
+`AMD Radeon 890M Graphics (RADV GFX1150)`, completed 694 steps at effective
+scale `0.811745`, and shut the emulator down. The first cold run also passed
+mechanics/pixels/shutdown but recorded a `0.198241` pacing outlier; it remains
+an explicit artifact rather than being discarded. The AVD proves Android
+portability and pixels, not physical-device speed.
+
 ### S31.7 — final disposition and product handoff
 
-- [ ] Update the capability ledger, authoritative direction, performance
+- [x] Update the capability ledger, authoritative direction, performance
   record, README, vision summary, topic index, and this tactical with measured
   implementation state and retained failures.
 - [ ] Record whether the 4K water scene, Water/Surface tools, and direct visual
   style become ordinary product defaults or remain explicit preview choices.
-- [ ] Record whether a smooth-water renderer, sorted-cell replacement,
+- [x] Record whether a smooth-water renderer, sorted-cell replacement,
   multi-material follow-up, authored save/load, or property editing has a
   measured next-work trigger; do not open all of them automatically.
-- [ ] Preserve the eight-quality/14-structural rigid wording, default-off
+- [x] Preserve the eight-quality/14-structural rigid wording, default-off
   sleeping disposition, rigid-only Box2D boundary, and missing CPU/GPU
   crossover unless separate evidence changes them.
-- [ ] Return synchronized browser and Android captures plus the complete
+- [x] Return synchronized browser and Android captures plus the complete
   coupled evidence package to human review.
 
 Gate: a human review accepts or rejects the bounded coupled sandbox and makes
 every product-default decision explicitly. Deployment or push remains a
 separate requested action and must use the exact-pushed-SHA production path.
+
+The fixed-bin overflow fired and completed the compact-cell replacement.
+Smooth water has no mechanics trigger and must justify its Browser/Android
+frame cost only if direct-particle presentation is rejected or retained as a
+debug mode. Multiple materials remain blocked on accepted single-water
+behavior bands. Save/load and property editing remain P5.5 document/selection
+work; the current Surface tool does not create a measured reason to pull them
+forward automatically.
 
 ## Required validation by changed boundary
 

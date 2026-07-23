@@ -77,9 +77,13 @@ rigid failure.
 The [coupled liquid/rigid constraint surface](coupled-liquid-rigid-constraint-surface.md)
 owns the entry architecture, reuse limits, rigid-only Box2D boundary, and
 acceptance contract. The approved
-[S31 coupled-liquid sandbox](../tactical/031-coupled-liquid-sandbox.md) is the
-active end-to-end execution plan. Fluid remains unimplemented until its slices
-make and qualify the corresponding capability.
+[S31 coupled-liquid sandbox](../tactical/031-coupled-liquid-sandbox.md) has
+implemented the bounded GPU water substrate, same-step coupled response,
+fluid wake roots, Water/Surface/Erase interactions, compact 32K-capacity
+neighborhoods, direct rendering, native oracle corpus, and Browser/authorized
+hardware-backed AVD qualification. It is now at the human behavior-band,
+subjective-feel, and product/default checkpoint. This implementation state does
+not change the retained rigid limitations above.
 
 The first simulation slice is a rigid-only foundation:
 
@@ -92,12 +96,14 @@ The first simulation slice is a rigid-only foundation:
 - side-by-side validation against a test-only Box2D oracle.
 
 That rigid-only entry period is complete under the explicit liquid-entry
-decision above. Particle coupling now proceeds only through the bounded S31
-plan, using the PhysBox 3 sidecar compiled natively as its primary behavioral
-oracle, original LiquidFun as secondary evidence, and the web-only PhysBox 3
-product as a calibration lane. Body joints, capsules, convex polygons, chains,
-ragdolls, machines, soft bodies, terrain, CCD, multi-material fluid, and the
-complete PhysBox 4 tool set remain later breadth.
+decision above. Particle coupling now runs in the one authoritative PhysBox
+GPU world through the bounded S31 contract. The PhysBox 3 sidecar compiled
+natively is its primary behavioral oracle, original LiquidFun is secondary
+evidence, and the web-only PhysBox 3 product is a calibration lane. Measured
+sidecar disagreements remain human review inputs rather than silently accepted
+bands. Body joints, capsules, convex polygons, chains, ragdolls, machines,
+soft bodies, terrain, CCD, multi-material fluid, and the complete PhysBox 4
+tool set remain later breadth.
 
 ## Why this is a new engine direction
 
