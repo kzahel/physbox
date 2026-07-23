@@ -1423,6 +1423,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "physbox-box2d-comparator"
+version = "0.1.0"
+dependencies = [
+ "cc",
+ "js-sys",
+ "physbox-contracts",
+ "sha2",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "physbox-box2d-oracle"
 version = "0.1.0"
 dependencies = [
@@ -1457,6 +1468,7 @@ name = "physbox-engine"
 version = "0.1.0"
 dependencies = [
  "bytemuck",
+ "physbox-box2d-comparator",
  "physbox-contracts",
  "physbox-launch",
  "pollster",

@@ -4,6 +4,7 @@ members = [
   "apps/desktop",
   "apps/headless",
   "apps/web",
+  "crates/physbox-box2d-comparator",
   "crates/physbox-engine",
   "crates/physbox-contracts",
   "crates/physbox-lab",
@@ -18,6 +19,7 @@ default-members = [
   "apps/desktop",
   "apps/headless",
   "apps/web",
+  "crates/physbox-box2d-comparator",
   "crates/physbox-engine",
   "crates/physbox-contracts",
   "crates/physbox-launch",
@@ -34,6 +36,7 @@ publish = false
 [workspace.dependencies]
 bindgen = "0.72.1"
 bytemuck = { version = "1", features = ["derive"] }
+cc = "1"
 console_error_panic_hook = "0.1"
 form_urlencoded = "1"
 flate2 = "1"

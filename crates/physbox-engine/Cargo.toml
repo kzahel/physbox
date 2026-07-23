@@ -6,11 +6,14 @@ rust-version.workspace = true
 publish.workspace = true
 
 [features]
+default = ["box2d-comparator"]
+box2d-comparator = ["dep:physbox-box2d-comparator"]
 production-validation = []
 solver-lab = ["physbox-launch/solver-lab"]
 
 [dependencies]
 bytemuck.workspace = true
+physbox-box2d-comparator = { path = "../physbox-box2d-comparator", optional = true }
 physbox-launch = { path = "../physbox-launch" }
 physbox-contracts = { path = "../physbox-contracts" }
 serde.workspace = true

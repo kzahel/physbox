@@ -1,0 +1,3 @@
+# Preserve the pinned third-party source byte-for-byte. Its source manifest
+# authenticates upstream whitespace, including a few trailing-space lines.
+third_party/box2d-comparator/** whitespace=-trailing-space

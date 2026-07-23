@@ -13,5 +13,5 @@ serde_json.workspace = true
 bindgen.workspace = true
 
 [dev-dependencies]
-physbox-engine = { path = "../../../crates/physbox-engine" }
+physbox-engine = { path = "../../../crates/physbox-engine", default-features = false }
 physbox-lab = { path = "../../../crates/physbox-lab" }

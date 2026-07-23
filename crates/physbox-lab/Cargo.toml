@@ -9,7 +9,7 @@ autobins = false
 [dependencies]
 flate2.workspace = true
 physbox-contracts = { path = "../physbox-contracts" }
-physbox-engine = { path = "../physbox-engine", features = ["solver-lab"] }
+physbox-engine = { path = "../physbox-engine", default-features = false, features = ["solver-lab"] }
 physbox-launch = { path = "../physbox-launch" }
 png.workspace = true
 pollster.workspace = true

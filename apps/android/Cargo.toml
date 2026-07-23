@@ -6,6 +6,11 @@ rust-version.workspace = true
 publish.workspace = true
 
 [features]
+default = ["box2d-comparator"]
+box2d-comparator = [
+  "physbox-engine/box2d-comparator",
+  "physbox-shell/box2d-comparator",
+]
 solver-lab = ["physbox-engine/solver-lab", "physbox-launch/solver-lab"]
 
 [lib]
@@ -16,7 +21,7 @@ path = "src/lib.rs"
 [target.'cfg(target_os = "android")'.dependencies]
 jni.workspace = true
 log.workspace = true
-physbox-engine = { path = "../../crates/physbox-engine" }
+physbox-engine = { path = "../../crates/physbox-engine", default-features = false }
 physbox-launch = { path = "../../crates/physbox-launch" }
-physbox-shell = { path = "../../crates/physbox-shell" }
+physbox-shell = { path = "../../crates/physbox-shell", default-features = false }
 winit.workspace = true
