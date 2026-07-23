@@ -280,6 +280,8 @@ impl FrameReport {
             body_commands: CompactBodyCommands,
             #[serde(rename = "d", skip_serializing_if = "Option::is_none")]
             construction_diagnostic: Option<CompactConstructionDiagnostic<'a>>,
+            #[serde(rename = "b", skip_serializing_if = "Option::is_none")]
+            box2d_live_bodies: Option<u32>,
             scene_contract: CompactSceneContract<'a>,
             scenario: CompactScenario,
         }
@@ -301,6 +303,13 @@ impl FrameReport {
                 self.camera.orthographic_half_height,
             ],
             ui: self.ui.draw_calls_this_frame
+                | ((self.ui.box2d_identity_disagreements.unwrap_or_default() != 0) as u32) << 23
+                | ((self.ui.box2d_pending_actions.unwrap_or_default() != 0) as u32) << 24
+                | (self.ui.box2d_action_queue_overflowed.unwrap_or_default() as u32) << 25
+                | ((self.ui.box2d_failure.is_some()) as u32) << 26
+                | (self.ui.box2d_aligned.unwrap_or_default() as u32) << 27
+                | (self.ui.comparator_available as u32) << 28
+                | ((self.ui.selected_engine == "box2d") as u32) << 29
                 | ((self.ui.sleep_visuals_enabled as u32) << 30)
                 | ((self.ui.overflowed as u32) << 31),
             body_commands: CompactBodyCommands {
@@ -324,6 +333,7 @@ impl FrameReport {
                         .blocking_readback_for_advancement,
                 }
             }),
+            box2d_live_bodies: self.ui.box2d_live_bodies,
             scene_contract: CompactSceneContract {
                 version: self.scene_contract.version,
                 body_count: self.scene_contract.body_count,
@@ -591,7 +601,17 @@ mod tests {
         };
         let marker = report.compact_marker_json();
         let compact: serde_json::Value = serde_json::from_str(&marker).unwrap();
-        assert_eq!(compact["u"], (1_u32 << 30) | 2);
+        assert_eq!(
+            compact["u"],
+            (1_u32 << 30)
+                | (1_u32 << 28)
+                | (1_u32 << 27)
+                | (1_u32 << 25)
+                | (1_u32 << 24)
+                | (1_u32 << 23)
+                | 2
+        );
+        assert_eq!(compact["b"], u32::MAX);
         assert!(
             marker.len() < 900,
             "compact marker is {} bytes",

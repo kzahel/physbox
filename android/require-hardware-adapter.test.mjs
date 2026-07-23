@@ -125,6 +125,17 @@ test("Android sleep captures use the engine menu and verify effective state", ()
   }
 });
 
+test("physical Android comparator capture selects Box2D and reconciles placement", () => {
+  const source = readFileSync(join(androidDir, "validate-device.sh"), "utf8");
+  assert.match(source, /PHYSBOX5_ANDROID_COMPARATOR_TOGGLE/);
+  assert.match(source, /ui & \(1 << 28\)/);
+  assert.match(source, /ui & \(1 << 29\)/);
+  assert.match(source, /frame\.bodyCommands\.c > beforeConstruction && frame\.b > beforeBodies/);
+  assert.match(source, /ui & \(1 << 24\)/);
+  assert.match(source, /ui & \(1 << 23\)/);
+  assert.match(source, /CAPTURE_PHASE="\$\{SCENARIO\}-box2d-placement"/);
+});
+
 test("APK validation runners stop the product app on every exit", () => {
   const toolchain = readFileSync(join(androidDir, "toolchain.sh"), "utf8");
   assert.match(toolchain, /PHYSBOX5_ANDROID_APP_ID="com\.kzahel\.physbox5"/);

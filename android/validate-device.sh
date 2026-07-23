@@ -69,6 +69,84 @@ ADAPTER="$(rg 'PHYSBOX5_MARK_ADAPTER ' "$LOG" | tail -1 | sed 's/^.*PHYSBOX5_MAR
 [[ -n "$ADAPTER" ]] || { echo "error: Android device adapter diagnostics missing; see $LOG" >&2; exit 1; }
 printf '%s\n' "$ADAPTER" | node "$ANDROID_DIR/require-hardware-adapter.mjs"
 CAPTURE_PHASE="${SCENARIO}-final"
+if [[ "${PHYSBOX5_ANDROID_COMPARATOR_TOGGLE:-0}" = "1" ]]; then
+    [[ "$SCENARIO" = "bootstrap" ]] || {
+        echo "error: Android comparator toggle requires bootstrap" >&2; exit 2;
+    }
+    [[ "${PHYSBOX5_ANDROID_SLEEP_TOGGLE:-0}" != "1" \
+        && "${PHYSBOX5_ANDROID_CONSTRUCTION_CAPTURE:-0}" != "1" \
+        && "${PHYSBOX5_ANDROID_GRAB_CAPTURE:-0}" != "1" ]] || {
+        echo "error: choose only the Android comparator interaction capture" >&2; exit 2;
+    }
+    node -e '
+      const frame = JSON.parse(process.argv[1]);
+      const ui = frame.u >>> 0;
+      process.exit((ui & (1 << 28)) !== 0 && (ui & (1 << 27)) !== 0
+        && (ui & (1 << 29)) === 0 && (ui & (1 << 26)) === 0
+        && (ui & (1 << 25)) === 0 && (ui & (1 << 24)) === 0
+        && (ui & (1 << 23)) === 0 ? 0 : 1);
+    ' "$REPORT" || { echo "error: Android comparator must start aligned in PhysBox view; see $LOG" >&2; exit 1; }
+    SIZE="$($ADB -s "$SERIAL" shell wm size | sed -n 's/.*Physical size: //p' | tail -1 | tr -d '\r')"
+    WIDTH="${SIZE%x*}"; HEIGHT="${SIZE#*x}"
+    [[ "$WIDTH" =~ ^[0-9]+$ && "$HEIGHT" =~ ^[0-9]+$ ]] || {
+        echo "error: could not determine Android display size" >&2; exit 1;
+    }
+    UI_POINTS="$(node -e '
+      const w = +process.argv[1], h = +process.argv[2];
+      const s = Math.max(1, Math.min(2, Math.min(w, h) / 600));
+      console.log([62, 50, 300, 104, 291, 135, 229, 50]
+        .map((value) => Math.round(value * s)).join(" "));
+    ' "$WIDTH" "$HEIGHT")"
+    read -r MENU_X MENU_Y WORLD_X WORLD_Y BOX2D_X BOX2D_Y CIRCLE_X CIRCLE_Y <<< "$UI_POINTS"
+    BEFORE_CONSTRUCTION="$(node -e 'console.log(JSON.parse(process.argv[1]).bodyCommands.c)' "$REPORT")"
+    BEFORE_BOX2D_BODIES="$(node -e 'console.log(JSON.parse(process.argv[1]).b)' "$REPORT")"
+    "$ADB" -s "$SERIAL" shell input tap "$MENU_X" "$MENU_Y"
+    sleep 0.25
+    "$ADB" -s "$SERIAL" shell input tap "$WORLD_X" "$WORLD_Y"
+    sleep 0.25
+    "$ADB" -s "$SERIAL" shell input tap "$BOX2D_X" "$BOX2D_Y"
+    BOX2D_SELECTED=0
+    for _ in $(seq 1 30); do
+        "$ADB" -s "$SERIAL" logcat -d -t 10000 > "$LOG"
+        REPORT="$(rg 'PHYSBOX5_MARK_FRAME_RENDERED ' "$LOG" | tail -1 | sed 's/^.*PHYSBOX5_MARK_FRAME_RENDERED //')"
+        if node -e '
+          const frame = JSON.parse(process.argv[1]);
+          const ui = frame.u >>> 0;
+          process.exit((ui & (1 << 29)) !== 0 && (ui & (1 << 28)) !== 0
+            && (ui & (1 << 27)) !== 0 && (ui & (1 << 26)) === 0
+            && (ui & (1 << 25)) === 0 ? 0 : 1);
+        ' "$REPORT"; then BOX2D_SELECTED=1; break; fi
+        sleep 0.25
+    done
+    [[ "$BOX2D_SELECTED" -eq 1 ]] || {
+        echo "error: Android menu did not select the aligned Box2D view; see $LOG" >&2; exit 1;
+    }
+    "$ADB" -s "$SERIAL" shell input tap "$CIRCLE_X" "$CIRCLE_Y"
+    PLACE_X=$((WIDTH * 80 / 100)); PLACE_Y=$((HEIGHT * 20 / 100))
+    "$ADB" -s "$SERIAL" shell input tap "$PLACE_X" "$PLACE_Y"
+    COMPARATOR_ACTION_VISIBLE=0
+    for _ in $(seq 1 30); do
+        "$ADB" -s "$SERIAL" logcat -d -t 10000 > "$LOG"
+        REPORT="$(rg 'PHYSBOX5_MARK_FRAME_RENDERED ' "$LOG" | tail -1 | sed 's/^.*PHYSBOX5_MARK_FRAME_RENDERED //')"
+        if node -e '
+          const frame = JSON.parse(process.argv[1]);
+          const beforeConstruction = Number(process.argv[2]);
+          const beforeBodies = Number(process.argv[3]);
+          const ui = frame.u >>> 0;
+          process.exit(frame.bodyCommands.c > beforeConstruction && frame.b > beforeBodies
+            && (ui & (1 << 29)) !== 0 && (ui & (1 << 27)) !== 0
+            && (ui & (1 << 26)) === 0 && (ui & (1 << 25)) === 0
+            && (ui & (1 << 24)) === 0 && (ui & (1 << 23)) === 0 ? 0 : 1);
+        ' "$REPORT" "$BEFORE_CONSTRUCTION" "$BEFORE_BOX2D_BODIES"; then
+            COMPARATOR_ACTION_VISIBLE=1; break
+        fi
+        sleep 0.25
+    done
+    [[ "$COMPARATOR_ACTION_VISIBLE" -eq 1 ]] || {
+        echo "error: Android Box2D placement did not reconcile with PhysBox; see $LOG" >&2; exit 1;
+    }
+    CAPTURE_PHASE="${SCENARIO}-box2d-placement"
+fi
 if [[ "${PHYSBOX5_ANDROID_SLEEP_VISUALS:-0}" = "1" && "${PHYSBOX5_ANDROID_SLEEP_TOGGLE:-0}" != "1" ]]; then
     echo "error: Android sleep visuals require PHYSBOX5_ANDROID_SLEEP_TOGGLE=1" >&2; exit 2
 fi
