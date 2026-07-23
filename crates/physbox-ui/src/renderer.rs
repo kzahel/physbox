@@ -27,6 +27,14 @@ pub struct RenderTarget<'a> {
     pub size: [u32; 2],
 }
 
+pub struct CanvasFrame<'a> {
+    pub target: RenderTarget<'a>,
+    pub retained_revision: u64,
+    pub retained: &'a [Primitive],
+    pub live: &'a [Primitive],
+    pub source_overflowed: bool,
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Pod, Zeroable)]
 struct Params {
@@ -262,12 +270,15 @@ impl CanvasRenderer {
         &mut self,
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
-        target: RenderTarget<'_>,
-        retained_revision: u64,
-        retained: &[Primitive],
-        live: &[Primitive],
-        source_overflowed: bool,
+        frame: CanvasFrame<'_>,
     ) -> RenderReport {
+        let CanvasFrame {
+            target,
+            retained_revision,
+            retained,
+            live,
+            source_overflowed,
+        } = frame;
         if self.last_target_size != Some(target.size) {
             let params = Params {
                 viewport_padding: [target.size[0] as f32, target.size[1] as f32, 0.0, 0.0],

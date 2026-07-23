@@ -137,7 +137,7 @@ impl FlowLayout {
         }
     }
 
-    pub fn next(&mut self) -> Option<Rect> {
+    pub fn next_item(&mut self) -> Option<Rect> {
         if self.cursor_x + self.item.width > self.bounds.right() {
             self.cursor_x = self.bounds.x;
             self.cursor_y += self.item.height + self.gap.height;
@@ -187,11 +187,11 @@ mod tests {
             Size::new(5.0, 5.0),
             Insets::default(),
         );
-        assert_eq!(layout.next(), Some(Rect::new(0.0, 0.0, 30.0, 20.0)));
-        assert_eq!(layout.next(), Some(Rect::new(35.0, 0.0, 30.0, 20.0)));
-        assert_eq!(layout.next(), Some(Rect::new(0.0, 25.0, 30.0, 20.0)));
-        assert_eq!(layout.next(), Some(Rect::new(35.0, 25.0, 30.0, 20.0)));
-        assert_eq!(layout.next(), None);
+        assert_eq!(layout.next_item(), Some(Rect::new(0.0, 0.0, 30.0, 20.0)));
+        assert_eq!(layout.next_item(), Some(Rect::new(35.0, 0.0, 30.0, 20.0)));
+        assert_eq!(layout.next_item(), Some(Rect::new(0.0, 25.0, 30.0, 20.0)));
+        assert_eq!(layout.next_item(), Some(Rect::new(35.0, 25.0, 30.0, 20.0)));
+        assert_eq!(layout.next_item(), None);
     }
 
     #[test]

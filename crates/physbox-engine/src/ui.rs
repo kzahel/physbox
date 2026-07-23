@@ -1,7 +1,7 @@
 use physbox_contracts::{ConstructionResultV1, ConstructionStateV1};
 use physbox_launch::{SolverProfileName, ValidationScenario, WorldCapacityPreset};
 use physbox_ui::{
-    CanvasRenderer, HitTarget, InstanceCapacities, InteractionState, Point,
+    CanvasFrame, CanvasRenderer, HitTarget, InstanceCapacities, InteractionState, Point,
     PointerButton as CanvasPointerButton, PointerEvent as CanvasPointerEvent,
     PointerId as CanvasPointerId, PointerPhase as CanvasPointerPhase, Primitive, Rect,
     RenderReport as CanvasRenderReport, RenderTarget as CanvasRenderTarget, Theme, WidgetCanvas,
@@ -305,14 +305,16 @@ impl WorkbenchUi {
         let canvas = self.renderer.encode(
             queue,
             encoder,
-            CanvasRenderTarget {
-                color_view: target.color_view,
-                size: target.size,
+            CanvasFrame {
+                target: CanvasRenderTarget {
+                    color_view: target.color_view,
+                    size: target.size,
+                },
+                retained_revision: self.retained_revision,
+                retained: &self.retained_batch.primitives,
+                live: &live_batch.primitives,
+                source_overflowed: self.retained_batch.overflowed | live_batch.overflowed,
             },
-            self.retained_revision,
-            &self.retained_batch.primitives,
-            &live_batch.primitives,
-            self.retained_batch.overflowed | live_batch.overflowed,
         );
         ui_report(
             model,
@@ -404,10 +406,9 @@ fn route_events(
                         WidgetEventKind::Pressed
                             | WidgetEventKind::Dragged
                             | WidgetEventKind::Activated
-                    ) {
-                        if let Some(value) = widget_event.normalized_value {
-                            draft_solver_profile.set_parameter_normalized(parameter, value);
-                        }
+                    ) && let Some(value) = widget_event.normalized_value
+                    {
+                        draft_solver_profile.set_parameter_normalized(parameter, value);
                     }
                     continue;
                 }
@@ -572,108 +573,109 @@ impl UiLayout {
         selected_engine: ComparisonEngine,
     ) -> Vec<(HitTarget, UiHit)> {
         let mut hits = Vec::with_capacity(48);
-        let mut push = |bounds: [f32; 4], hit| {
-            hits.push((
-                HitTarget {
-                    id: WidgetId::new(hits.len() as u64 + 1),
-                    bounds: Rect::from_array(bounds),
-                    role: WidgetRole::Button,
-                },
-                hit,
-            ));
-        };
-        push(self.menu_button(), UiHit::Menu);
-        for (index, tool) in available_tools(scenario, selected_engine)
-            .iter()
-            .enumerate()
         {
-            push(self.tool_button_at(index), UiHit::Tool(*tool));
-        }
-        if !menu_open {
-            return hits;
-        }
-        push(
-            self.menu_panel(menu_page, solver_profiles.len()),
-            UiHit::Panel,
-        );
-        for page in menu_pages(selected_engine) {
-            push(self.menu_tab(*page), UiHit::MenuPage(*page));
-        }
-        match menu_page {
-            MenuPage::Scenes => {
-                for (index, scenario) in ValidationScenario::MENU.iter().copied().enumerate() {
-                    push(self.scenario_button(index), UiHit::Scenario(scenario));
-                }
-                push(self.restart_button(), UiHit::Restart);
-                push(self.recenter_button(), UiHit::Recenter);
+            let mut push = |bounds: [f32; 4], hit| {
+                hits.push((
+                    HitTarget {
+                        id: WidgetId::new(hits.len() as u64 + 1),
+                        bounds: Rect::from_array(bounds),
+                        role: WidgetRole::Button,
+                    },
+                    hit,
+                ));
+            };
+            push(self.menu_button(), UiHit::Menu);
+            for (index, tool) in available_tools(scenario, selected_engine)
+                .iter()
+                .enumerate()
+            {
+                push(self.tool_button_at(index), UiHit::Tool(*tool));
             }
-            MenuPage::Solvers => {
-                if selected_engine != ComparisonEngine::PhysBox {
-                    return hits;
-                }
-                let profile_count = solver_profiles.len();
-                for (index, profile) in solver_profiles.iter().enumerate() {
-                    push(
-                        self.solver_profile_button(index, profile_count),
-                        UiHit::SolverProfile(profile.profile_name()),
-                    );
-                }
-                for (index, parameter) in crate::solver_profile::SolverParameter::ALL
-                    .iter()
-                    .copied()
-                    .enumerate()
-                {
-                    push(
-                        self.solver_parameter_slider(index, profile_count),
-                        UiHit::SolverSlider(parameter),
-                    );
-                }
-                #[cfg(feature = "solver-lab")]
-                {
-                    push(
-                        self.solver_scene_button(0, profile_count),
-                        UiHit::SolverScene(ValidationScenario::SolverLabStack8),
-                    );
-                    push(
-                        self.solver_scene_button(1, profile_count),
-                        UiHit::SolverScene(ValidationScenario::SolverLabStack16),
-                    );
-                }
-                push(
-                    self.restore_solver_button(profile_count),
-                    UiHit::RestoreSolverPreset,
-                );
-                push(self.apply_solver_button(profile_count), UiHit::ApplySolver);
+            if !menu_open {
+                return hits;
             }
-            MenuPage::World => {
-                #[cfg(feature = "box2d-comparator")]
-                for (index, engine) in [ComparisonEngine::PhysBox, ComparisonEngine::Box2d]
-                    .into_iter()
-                    .enumerate()
-                {
-                    push(self.world_engine_button(index), UiHit::Engine(engine));
+            push(
+                self.menu_panel(menu_page, solver_profiles.len()),
+                UiHit::Panel,
+            );
+            for page in menu_pages(selected_engine) {
+                push(self.menu_tab(*page), UiHit::MenuPage(*page));
+            }
+            match menu_page {
+                MenuPage::Scenes => {
+                    for (index, scenario) in ValidationScenario::MENU.iter().copied().enumerate() {
+                        push(self.scenario_button(index), UiHit::Scenario(scenario));
+                    }
+                    push(self.restart_button(), UiHit::Restart);
+                    push(self.recenter_button(), UiHit::Recenter);
                 }
-                for (index, capacity) in WorldCapacityPreset::ALL.into_iter().enumerate() {
+                MenuPage::Solvers => {
+                    if selected_engine != ComparisonEngine::PhysBox {
+                        return hits;
+                    }
+                    let profile_count = solver_profiles.len();
+                    for (index, profile) in solver_profiles.iter().enumerate() {
+                        push(
+                            self.solver_profile_button(index, profile_count),
+                            UiHit::SolverProfile(profile.profile_name()),
+                        );
+                    }
+                    for (index, parameter) in crate::solver_profile::SolverParameter::ALL
+                        .iter()
+                        .copied()
+                        .enumerate()
+                    {
+                        push(
+                            self.solver_parameter_slider(index, profile_count),
+                            UiHit::SolverSlider(parameter),
+                        );
+                    }
+                    #[cfg(feature = "solver-lab")]
+                    {
+                        push(
+                            self.solver_scene_button(0, profile_count),
+                            UiHit::SolverScene(ValidationScenario::SolverLabStack8),
+                        );
+                        push(
+                            self.solver_scene_button(1, profile_count),
+                            UiHit::SolverScene(ValidationScenario::SolverLabStack16),
+                        );
+                    }
                     push(
-                        self.world_capacity_button(index),
-                        UiHit::WorldCapacity(capacity),
+                        self.restore_solver_button(profile_count),
+                        UiHit::RestoreSolverPreset,
                     );
+                    push(self.apply_solver_button(profile_count), UiHit::ApplySolver);
                 }
-                push(self.world_sleeping_button(), UiHit::ToggleSleeping);
-                push(
-                    self.world_sleep_threshold_button(),
-                    UiHit::CycleSleepThreshold,
-                );
-                if selected_engine == ComparisonEngine::PhysBox {
+                MenuPage::World => {
+                    #[cfg(feature = "box2d-comparator")]
+                    for (index, engine) in [ComparisonEngine::PhysBox, ComparisonEngine::Box2d]
+                        .into_iter()
+                        .enumerate()
+                    {
+                        push(self.world_engine_button(index), UiHit::Engine(engine));
+                    }
+                    for (index, capacity) in WorldCapacityPreset::ALL.into_iter().enumerate() {
+                        push(
+                            self.world_capacity_button(index),
+                            UiHit::WorldCapacity(capacity),
+                        );
+                    }
+                    push(self.world_sleeping_button(), UiHit::ToggleSleeping);
                     push(
-                        self.world_sleep_grouping_button(),
-                        UiHit::CycleSleepGrouping,
+                        self.world_sleep_threshold_button(),
+                        UiHit::CycleSleepThreshold,
                     );
+                    if selected_engine == ComparisonEngine::PhysBox {
+                        push(
+                            self.world_sleep_grouping_button(),
+                            UiHit::CycleSleepGrouping,
+                        );
+                    }
+                    push(self.world_sleep_visuals_button(), UiHit::ToggleSleepVisuals);
                 }
-                push(self.world_sleep_visuals_button(), UiHit::ToggleSleepVisuals);
             }
         }
-        drop(push);
         for (target, hit) in &mut hits {
             if let UiHit::SolverSlider(parameter) = hit {
                 target.role = WidgetRole::HorizontalSlider {

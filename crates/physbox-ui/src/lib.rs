@@ -21,7 +21,7 @@ pub use input::{
     WidgetEvent, WidgetEventKind, WidgetId, WidgetRole,
 };
 pub use layout::{Axis, FlowLayout, LinearLayout, OverlayLayout, ResponsiveScale, ScrollColumn};
-pub use renderer::{CanvasRenderer, InstanceCapacities, RenderTarget};
+pub use renderer::{CanvasFrame, CanvasRenderer, InstanceCapacities, RenderTarget};
 pub use scene::icons;
 pub use scene::{
     BatchCapacities, CanvasScene, CanvasSceneBuilder, IconId, Primitive, RenderReport,
