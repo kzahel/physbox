@@ -1794,7 +1794,10 @@ mod tests {
         assert_eq!(liquid.ui.selected_engine, "physbox");
         assert!(!liquid.ui.comparator_available);
         assert!(liquid.scene_contract.particle_count > 0);
-        assert_eq!(liquid.scene_contract.particle_capacity, 32_768);
+        assert_eq!(
+            liquid.scene_contract.particle_capacity,
+            crate::particle_world::LIQUID_SANDBOX_PARTICLE_CAPACITY
+        );
         assert_eq!(liquid.scene_contract.particle_dispatches_per_step, 92);
         assert!(
             !liquid
