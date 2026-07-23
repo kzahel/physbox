@@ -214,7 +214,7 @@ Native maintained crates expose the corresponding default
 `box2d-comparator` Cargo feature and support `--no-default-features` for an
 explicit comparator-free build. See
 [interactive Box2D comparison](docs/topics/interactive-box2d-comparison.md)
-for authority, equivalence, platform, and remaining physical-device evidence.
+for authority, equivalence, platform, and completed qualification evidence.
 
 The same opt-in profile is available to the shared desktop host when direct
 launch control is useful:

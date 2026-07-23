@@ -1,9 +1,10 @@
 # Interactive Box2D comparison
 
-Status: implemented on the shared desktop, browser, headless, and Android
-paths under [S29](../tactical/029-interactive-box2d-comparison.md);
-qualification is complete except for execution on a currently unavailable
-physical Android device, 2026-07-23.
+Status: implemented and qualified on the shared desktop, browser, headless,
+and Android paths under
+[S29](../tactical/029-interactive-box2d-comparison.md), 2026-07-23. Human
+review explicitly accepted a hardware-backed AVD run as the physical-Android
+substitute because no device was available.
 
 Governing product direction:
 [one GPU-resident 2D physics world](physbox5-unified-gpu-physics.md).
@@ -180,13 +181,16 @@ Fresh 2026-07-23 qualification passes:
 - the fresh process-authority equivalence test and feature-off inspection.
 
 The browser capture shows the same renderer with `ENGINE BOX2D`, the exact
-revision, `ALIGN YES`, the shared floor, and a newly placed body. The Android
-device lane is implemented and covered by host-tool tests: it selects Box2D
-through the same raw menu events, places a circle, verifies both construction
-and Box2D live counts, checks alignment/failure bits, and captures the shared
-renderer. No Android USB device was visible on 2026-07-23, so that final
-physical execution remains the only open S29 gate; an AVD is deliberately not
-substituted for the requested physical review.
+revision, `ALIGN YES`, the shared floor, and a newly placed body. No Android
+USB device was visible on 2026-07-23, so human review explicitly authorized
+the hardware-backed AVD as a substitute. The clean-revision AVD run used
+`jstorrent-tablet`, x86_64 Android, and the host AMD Radeon 890M RADV Vulkan
+adapter. It selected Box2D through the same raw menu events, placed a circle,
+advanced the Box2D live count from 2 to 3, preserved `ALIGN YES` with no
+pending/overflow/disagreement/failure bits, captured the shared renderer at
+`/tmp/physbox5-android-avd-box2d.png`, and then shut the emulator down. This
+qualifies the shared Android path but is not represented as physical-device
+evidence.
 
 ## Gates
 

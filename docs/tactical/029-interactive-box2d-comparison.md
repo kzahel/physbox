@@ -1,7 +1,8 @@
 # S29 — Interactive Box2D comparison
 
-Status: active with implementation and all available qualification complete;
-physical Android execution is pending device availability, 2026-07-23.
+Status: complete, 2026-07-23. Human review explicitly accepted a
+hardware-backed AVD run as the physical-Android substitute because no device
+was available.
 
 Governing topic:
 [interactive Box2D comparison](../topics/interactive-box2d-comparison.md).
@@ -111,21 +112,23 @@ settings, state persistence, and feature-off absence.
   comparator runtime without falling back silently.
 
 Gate: native, real Browser WebGPU, ARM64, release APK, and one physical Android
-run select both engines and exercise one shared raw-event validation.
+run select both engines and exercise one shared raw-event validation. When no
+physical device was available, human review explicitly authorized one
+hardware-backed AVD run as the substitute.
 
 ### S29.7 — Qualification and closure
 
 - [x] Compare governed interactive-runtime results with fresh process-isolated
   authority output.
 - [x] Run the feature-off package inspection and default PhysBox regression.
-- [ ] Publish fresh provenance and representative cross-host captures.
+- [x] Publish fresh provenance and representative cross-host captures.
 - [x] Update the topic, capability ledger, README, and this tactical with the
   exact completed state and limitations.
 
 Gate: `npm run test:fast`, production clippy with warnings denied,
 `npm run test:web:lab`, affected comparator tests, fresh headless smoke, ARM64
-check, release APK, physical Android validation, and feature-off inspection all
-pass.
+check, release APK, authorized hardware-backed AVD substitution, and
+feature-off inspection all pass.
 
 ## Completion condition
 
@@ -166,9 +169,15 @@ Representative Browser WebGPU capture
 `/tmp/physbox5-web-box2d.png` shows the selected Box2D renderer, exact
 revision, aligned step identity, shared floor, and a placed body. Browser
 startup also rejects a deliberately mismatched runtime. No physical Android
-device was present in USB or ADB discovery on 2026-07-23. The implemented
-device validation will select Box2D, place a body, verify live/alignment and
-failure diagnostics, and capture `/tmp/physbox5-android-box2d.png`; until that
-run passes, the cross-host capture checkbox and completion condition remain
-open. The hardware-backed AVD is not used as a substitute for this
-user-requested physical lane.
+device was present in USB or ADB discovery on 2026-07-23, and human review
+explicitly authorized the hardware-backed AVD as its substitute. Clean
+revision `5b194d6aa0a3faaf526aeff11d215e76b4f1b761` ran on
+`jstorrent-tablet` / `sdk_gphone64_x86_64` with the AMD Radeon 890M RADV
+Vulkan adapter. The raw-event lane selected Box2D, placed one circle, advanced
+the Box2D live count from 2 to 3, retained aligned step identity with no
+pending/overflow/disagreement/failure bits, and produced capture phase
+`bootstrap-box2d-placement`. Screenshot
+`/tmp/physbox5-android-avd-box2d.png` and its JSON provenance are complete;
+the runner emitted `PHYSBOX5_ANDROID_AVD_SHUTDOWN_SUCCESS` afterward. This is
+recorded as authorized Android-path qualification, not as physical-device
+evidence.

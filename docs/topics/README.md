@@ -44,8 +44,9 @@ a running log.
 - [Interactive Box2D comparison](interactive-box2d-comparison.md) —
   implemented default-enabled compile-removable shadow-world review in the
   existing shared UI, stable-identity action mirroring, cross-host packaging,
-  authority equivalence, and strict non-fallback/performance boundaries;
-  physical Android execution is the remaining qualification gate.
+  authority equivalence, completed Android-path qualification through an
+  explicitly authorized hardware-backed AVD substitute, and strict
+  non-fallback/performance boundaries.
 - [Collision and contact persistence](collision-and-contact-persistence.md) —
   analytic shape encoding, canonical pairs/features, persistent keys, GPU
   record bytes, atomic capacity semantics, and P5.2 reconsideration triggers.
