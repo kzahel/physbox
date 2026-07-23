@@ -1926,6 +1926,7 @@ impl EngineHost {
                 box2d_aligned,
                 box2d_failure,
                 sleep_cycle: sleep_cycle_diagnostic.state.as_ref(),
+                #[cfg(feature = "box2d-comparator")]
                 box2d_sleep_cycle: sleep_cycle_diagnostic.comparison_state.as_ref(),
                 sleep_cycle_age_frames: sleep_cycle_diagnostic.age_frames,
             },

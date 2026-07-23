@@ -122,6 +122,7 @@ pub(crate) struct UiFrameModel<'a> {
     pub box2d_aligned: Option<bool>,
     pub box2d_failure: Option<&'a str>,
     pub sleep_cycle: Option<&'a crate::SleepCycleMetricsV1>,
+    #[cfg(feature = "box2d-comparator")]
     pub box2d_sleep_cycle: Option<&'a crate::SleepCycleMetricsV1>,
     pub sleep_cycle_age_frames: Option<u64>,
 }

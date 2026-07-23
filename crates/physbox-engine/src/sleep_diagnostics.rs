@@ -32,6 +32,7 @@ pub struct SleepCycleMetricsV1 {
 }
 
 impl SleepCycleMetricsV1 {
+    #[cfg(any(test, feature = "box2d-comparator"))]
     pub(crate) fn initial(
         awake_bodies: u32,
         dynamic_bodies: u32,
