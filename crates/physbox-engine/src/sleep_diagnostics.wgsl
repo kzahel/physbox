@@ -81,10 +81,7 @@ fn count_body_metrics(@builtin(global_invocation_id) invocation: vec3u) {
     }
 }
 
-@compute @workgroup_size(64)
-fn count_mixed_contact_cuts(@builtin(global_invocation_id) invocation: vec3u) {
-    let point_index = invocation.x;
-    if (point_index >= point_state[2]) { return; }
+fn count_mixed_contact_cut(point_index: u32) {
     let point = points[point_index];
     if (point.ids.w != 0u || point.ids.x == INVALID || point.ids.y == INVALID ||
         point.ids.x == point.ids.y || !matching_state(point.ids.x) ||
@@ -99,6 +96,21 @@ fn count_mixed_contact_cuts(@builtin(global_invocation_id) invocation: vec3u) {
     if (is_awake(point.ids.x) != is_awake(point.ids.y)) {
         atomicAdd(&metrics[6], 1u);
     }
+}
+
+@compute @workgroup_size(64)
+fn count_mixed_contact_cuts(@builtin(global_invocation_id) invocation: vec3u) {
+    let point_index = invocation.x;
+    if (point_index >= point_state[2]) { return; }
+    count_mixed_contact_cut(point_index);
+}
+
+@compute @workgroup_size(64)
+fn count_pair_slot_span_mixed_contact_cuts(@builtin(global_invocation_id) invocation: vec3u) {
+    let pair_index = invocation.x;
+    if (pair_index >= point_state[2]) { return; }
+    count_mixed_contact_cut(pair_index * 2u);
+    count_mixed_contact_cut(pair_index * 2u + 1u);
 }
 
 @compute @workgroup_size(1)

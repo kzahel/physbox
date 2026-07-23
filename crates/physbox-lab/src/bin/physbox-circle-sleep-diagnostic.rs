@@ -20,7 +20,7 @@ use physbox_lab::oracle_transport::{
 use physbox_launch::{PhysicsConfigurationV3, SleepGrouping};
 use serde::Serialize;
 
-const ARTIFACT_VERSION: u32 = 2;
+const ARTIFACT_VERSION: u32 = 3;
 const BOX2D_REVISION: &str = "3a4f0da8374af61293a03021c9a0b3ebcfe67948";
 const SLEEP_THRESHOLD: f32 = 0.02;
 const DEFAULT_STEPS: u32 = 1_200;
@@ -68,12 +68,15 @@ struct PhysBoxLaneV1 {
     lane: &'static str,
     sleeping_enabled: bool,
     sleep_grouping: SleepGrouping,
+    sleep_contact_scan: &'static str,
     source_scenario_hash: String,
     solver_settings: physbox_contracts::SolverSettingsV1,
     solver_execution: physbox_engine::GpuSolverExecutionV4,
     solver_scheduling: physbox_engine::GpuSolverSchedulingPolicyV1,
     substep_contact_policy: physbox_engine::GpuSubstepContactPolicyV1,
     contact_coefficient_policy: physbox_engine::GpuContactCoefficientPolicyV1,
+    dispatches_per_step: u32,
+    allocated_bytes: u64,
     motion: MotionWindowV1,
     contacts: ContactWindowV1,
     capacity_clean: bool,
@@ -241,6 +244,21 @@ fn run() -> Result<(), String> {
                 SleepGrouping::Exact,
             )?;
         eprintln!(
+            "diagnostic {} bucket: PhysBox soft-coupled exact sleep, pair-slot span",
+            shape.name()
+        );
+        let soft_exact_pair_slot_series = runner
+            .run_branch_robust_tunable_pair_slot_sleep_span_observation_series_with_submission_batch(
+                &soft_exact,
+                1,
+                arguments.steps,
+                32,
+                PhysicsConfigurationV3::SOFT_COUPLED.fixed_step_hz,
+                PhysicsConfigurationV3::SOFT_COUPLED.sleep_speed_threshold,
+                SleepGrouping::Exact,
+            )?;
+        validate_isolated_sleep_scan_ab(&soft_exact_series, &soft_exact_pair_slot_series)?;
+        eprintln!(
             "diagnostic {} bucket: PhysBox soft-coupled local-4 sleep",
             shape.name()
         );
@@ -316,30 +334,42 @@ fn run() -> Result<(), String> {
                 &soft_exact_series,
                 true,
                 SleepGrouping::Exact,
+                "packed-point-count",
+            )?,
+            summarize_physbox_lane(
+                "soft-coupled-exact-sleep-pair-slot-span",
+                &soft_exact_pair_slot_series,
+                true,
+                SleepGrouping::Exact,
+                "pair-slot-manifold-span",
             )?,
             summarize_physbox_lane(
                 "soft-coupled-local-4-sleep",
                 &soft_local4_series,
                 true,
                 SleepGrouping::Local4,
+                "packed-point-count",
             )?,
             summarize_physbox_lane(
                 "soft-coupled-local-8-sleep",
                 &soft_local8_series,
                 true,
                 SleepGrouping::Local8,
+                "packed-point-count",
             )?,
             summarize_physbox_lane(
                 "soft-coupled-world-awake",
                 &soft_awake_series,
                 false,
                 SleepGrouping::Exact,
+                "disabled",
             )?,
             summarize_physbox_lane(
                 "soft-coupled-i4-world-awake",
                 &soft_awake_i4_series,
                 false,
                 SleepGrouping::Exact,
+                "disabled",
             )?,
         ];
 
@@ -466,6 +496,7 @@ fn summarize_physbox_lane(
     series: &GpuGeneratedContactSeriesV1,
     sleeping_enabled: bool,
     sleep_grouping: SleepGrouping,
+    sleep_contact_scan: &'static str,
 ) -> Result<PhysBoxLaneV1, String> {
     series.validate()?;
     let capacity_clean = series.snapshots.iter().all(|snapshot| {
@@ -475,16 +506,44 @@ fn summarize_physbox_lane(
         lane,
         sleeping_enabled,
         sleep_grouping,
+        sleep_contact_scan,
         source_scenario_hash: series.source_scenario_hash.clone(),
         solver_settings: series.solver_settings,
         solver_execution: series.solver_execution,
         solver_scheduling: series.solver_scheduling_policy,
         substep_contact_policy: series.substep_contact_policy,
         contact_coefficient_policy: series.contact_coefficient_policy,
+        dispatches_per_step: series.dispatches_per_step,
+        allocated_bytes: series.allocated_bytes,
         motion: summarize_motion(series)?,
         contacts: summarize_contacts(series),
         capacity_clean,
     })
+}
+
+fn validate_isolated_sleep_scan_ab(
+    packed: &GpuGeneratedContactSeriesV1,
+    pair_slot_span: &GpuGeneratedContactSeriesV1,
+) -> Result<(), String> {
+    if packed.source_scenario_hash != pair_slot_span.source_scenario_hash
+        || packed.solver_settings != pair_slot_span.solver_settings
+        || packed.solver_execution != pair_slot_span.solver_execution
+        || packed.solver_scheduling_policy != pair_slot_span.solver_scheduling_policy
+        || packed.contact_coefficient_policy != pair_slot_span.contact_coefficient_policy
+        || packed.substep_contact_policy != pair_slot_span.substep_contact_policy
+        || packed.restitution_timing_policy != pair_slot_span.restitution_timing_policy
+        || packed.contact_identity_policy != pair_slot_span.contact_identity_policy
+        || packed.soft_feedback_policy != pair_slot_span.soft_feedback_policy
+        || packed.normal_relaxation_policy != pair_slot_span.normal_relaxation_policy
+    {
+        return Err("sleep contact-scan A/B changed a solver or scenario policy".to_owned());
+    }
+    if packed.dispatches_per_step != pair_slot_span.dispatches_per_step
+        || packed.allocated_bytes != pair_slot_span.allocated_bytes
+    {
+        return Err("sleep contact-scan A/B changed dispatch or allocation cost".to_owned());
+    }
+    Ok(())
 }
 
 fn summarize_motion(series: &GpuGeneratedContactSeriesV1) -> Result<MotionWindowV1, String> {

@@ -33,7 +33,7 @@ use crate::{
         PAIR_RECORD_BYTES, PAIR_SLOT_DISPATCHES, PairRecordRaw, PairSlotAllocator, PairSlotCase,
         PairSlotPipelines, invalid_pair, pair_output,
     },
-    sleep_contacts::GpuSleepContacts,
+    sleep_contacts::{GpuSleepContacts, GpuSleepPointScan},
     sleep_diagnostics::GpuSleepCycleDiagnostics,
 };
 
@@ -178,6 +178,12 @@ struct PairSlotPersistenceGraph {
 enum GeneratedPersistenceGraph {
     FullKey(Box<FullKeyPersistenceGraph>),
     PairSlot(Box<PairSlotPersistenceGraph>),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SleepPointScanPolicy {
+    PackedPointCount,
+    PairSlotManifoldSpan,
 }
 
 pub(crate) struct GpuGeneratedContactGraph {
@@ -457,6 +463,7 @@ impl GpuGeneratedContactGraph {
             substep_contact_policy,
             restitution_timing_policy,
             false,
+            SleepPointScanPolicy::PackedPointCount,
         )
     }
 
@@ -487,6 +494,7 @@ impl GpuGeneratedContactGraph {
             crate::GpuSubstepContactPolicyV1::AuthorityFixedAnchorAnalyticalSeparation,
             crate::GpuRestitutionTimingPolicyV1::AfterEachSubstep,
             true,
+            SleepPointScanPolicy::PackedPointCount,
         )
     }
 
@@ -519,6 +527,7 @@ impl GpuGeneratedContactGraph {
             crate::GpuSubstepContactPolicyV1::AuthorityBranchRobustFixedAnchorAnalyticalSeparation,
             crate::GpuRestitutionTimingPolicyV1::AfterEachSubstep,
             true,
+            SleepPointScanPolicy::PackedPointCount,
         )
     }
 
@@ -551,6 +560,39 @@ impl GpuGeneratedContactGraph {
             crate::GpuSubstepContactPolicyV1::AuthorityBranchRobustFixedAnchorAnalyticalSeparation,
             crate::GpuRestitutionTimingPolicyV1::AfterEachSubstep,
             true,
+            SleepPointScanPolicy::PackedPointCount,
+        )
+    }
+
+    pub(crate) fn new_branch_robust_tunable_with_pair_slot_sleep_span(
+        device: &wgpu::Device,
+        storage: &GpuBodyStorage,
+        scenario: &ScenarioV1,
+    ) -> Result<Self, String> {
+        crate::branch_robust_gpu_promotion::validate_branch_robust_tunable_settings(
+            &scenario.settings,
+        )?;
+        Self::new_with_topologies_execution_scheduling_identity_extended_and_authority_mode(
+            device,
+            storage,
+            scenario,
+            GpuContactPersistenceTopology::StablePairSlot,
+            GpuGatherTopology::StableBodyEdge,
+            false,
+            false,
+            u32::MAX,
+            GpuSolverExecutionV4::AUTHORITY_GPU_PROBE,
+            GpuSolverSchedulingPolicyV1::authority_gpu_probe_for_body_capacity(
+                storage.layout().capacity_elements,
+            ),
+            ContactIdentityPolicyV1::SELECTED,
+            crate::GpuSoftFeedbackPolicyV1::EveryBiasedIteration,
+            crate::GpuNormalRelaxationPolicyV1::PointSequential,
+            crate::GpuContactCoefficientPolicyV1::AuthorityTunableSoft,
+            crate::GpuSubstepContactPolicyV1::AuthorityBranchRobustFixedAnchorAnalyticalSeparation,
+            crate::GpuRestitutionTimingPolicyV1::AfterEachSubstep,
+            true,
+            SleepPointScanPolicy::PairSlotManifoldSpan,
         )
     }
 
@@ -573,6 +615,7 @@ impl GpuGeneratedContactGraph {
         substep_contact_policy: crate::GpuSubstepContactPolicyV1,
         restitution_timing_policy: crate::GpuRestitutionTimingPolicyV1,
         authority_identity: bool,
+        sleep_point_scan_policy: SleepPointScanPolicy,
     ) -> Result<Self, String> {
         if authority_identity {
             if substep_contact_policy
@@ -644,6 +687,11 @@ impl GpuGeneratedContactGraph {
                 "retained-impulse refresh requires the selected contact graph and identity policy"
                     .to_owned(),
             );
+        }
+        if sleep_point_scan_policy == SleepPointScanPolicy::PairSlotManifoldSpan
+            && persistence_topology != GpuContactPersistenceTopology::StablePairSlot
+        {
+            return Err("pair-slot sleep span requires stable pair-slot persistence".to_owned());
         }
         let candidate_capacity = product_candidate_capacity(body_count)?;
         let broadphase_pipelines = SapPipelines::new(device);
@@ -719,12 +767,21 @@ impl GpuGeneratedContactGraph {
             permute_pair_build,
             fingerprint_mask,
         )?;
-        let sleep_contacts = GpuSleepContacts::new(
-            device,
-            storage,
-            &solver_points,
-            narrowphase.point_capacity_handle(),
-        );
+        let pair_slot_sleep_span =
+            sleep_point_scan_policy == SleepPointScanPolicy::PairSlotManifoldSpan;
+        let sleep_scan_state = if pair_slot_sleep_span {
+            narrowphase.manifold_capacity_buffer()
+        } else {
+            narrowphase.point_capacity_buffer()
+        };
+        let point_dispatch_state = narrowphase.point_capacity_handle();
+        let sleep_point_scan = GpuSleepPointScan {
+            point_dispatch_state: &point_dispatch_state,
+            scan_state: sleep_scan_state,
+            pair_slot_span: pair_slot_sleep_span,
+        };
+        let sleep_contacts =
+            GpuSleepContacts::new(device, storage, &solver_points, sleep_point_scan);
         let awake_work = storage.awake_work_handle();
         let exact_sleep_grouping = (awake_work.sleeping_enabled()
             && awake_work.grouping() == physbox_launch::SleepGrouping::Exact)
@@ -733,6 +790,7 @@ impl GpuGeneratedContactGraph {
                     device,
                     storage,
                     &solver_points,
+                    sleep_point_scan,
                     body_count,
                     point_capacity,
                 )
@@ -743,7 +801,7 @@ impl GpuGeneratedContactGraph {
                 device,
                 storage,
                 &solver_points,
-                narrowphase.point_capacity_handle(),
+                sleep_point_scan,
                 body_count,
                 point_capacity,
                 awake_work.stable_confirmation_steps(),
@@ -804,7 +862,7 @@ impl GpuGeneratedContactGraph {
             timestamps,
         );
         if let Some(exact) = &self.exact_sleep_grouping {
-            exact.encode_components(encoder, self.narrowphase.point_capacity_buffer());
+            exact.encode_components(encoder);
         }
         self.sleep_contacts.encode_contact_wake_roots(encoder);
         let wake_frontier = if let Some(exact) = &self.exact_sleep_grouping {
@@ -4167,6 +4225,7 @@ impl GpuGeneratedContactRunner {
             restitution_timing_policy,
             false,
             None,
+            false,
         )
     }
 
@@ -4196,6 +4255,7 @@ impl GpuGeneratedContactRunner {
             crate::GpuRestitutionTimingPolicyV1::AfterEachSubstep,
             true,
             None,
+            false,
         )
     }
 
@@ -4242,6 +4302,7 @@ impl GpuGeneratedContactRunner {
             crate::GpuRestitutionTimingPolicyV1::AfterEachSubstep,
             true,
             None,
+            false,
         )
     }
 
@@ -4273,6 +4334,7 @@ impl GpuGeneratedContactRunner {
             crate::GpuRestitutionTimingPolicyV1::AfterEachSubstep,
             true,
             None,
+            false,
         )
     }
 
@@ -4313,6 +4375,50 @@ impl GpuGeneratedContactRunner {
                 sleep_speed_threshold,
                 sleep_grouping,
             )),
+            false,
+        )
+    }
+
+    /// Laboratory A/B lane for the stable pair-slot graph. Sleep contact
+    /// consumers scan both reserved point slots for every committed manifold;
+    /// solver execution, coefficients, thresholds, and product selection are
+    /// unchanged.
+    #[cfg(feature = "solver-lab")]
+    #[allow(clippy::too_many_arguments)]
+    pub fn run_branch_robust_tunable_pair_slot_sleep_span_observation_series_with_submission_batch(
+        &self,
+        scenario: &ScenarioV1,
+        observation_interval_steps: u32,
+        completed_steps: u32,
+        submission_batch_steps: u32,
+        fixed_step_hz: u32,
+        sleep_speed_threshold: f32,
+        sleep_grouping: physbox_launch::SleepGrouping,
+    ) -> Result<GpuGeneratedContactSeriesV1, String> {
+        crate::BranchRobustGpuPromotionPolicyV1::AUTHORIZED.validate_product_selection(false)?;
+        self.run_contact_policy_observation_series_with_authority_mode(
+            scenario,
+            observation_interval_steps,
+            completed_steps,
+            ContactIdentityPolicyV1::SELECTED,
+            submission_batch_steps,
+            GpuSolverExecutionV4::AUTHORITY_GPU_PROBE,
+            GpuSolverSchedulingPolicyV1::authority_gpu_probe_for_body_capacity(
+                scenario.bodies.len() as u32,
+            ),
+            crate::GpuSoftFeedbackPolicyV1::EveryBiasedIteration,
+            crate::GpuNormalRelaxationPolicyV1::PointSequential,
+            crate::GpuContactCoefficientPolicyV1::AuthorityTunableSoft,
+            crate::GpuSubstepContactPolicyV1::AuthorityBranchRobustFixedAnchorAnalyticalSeparation,
+            crate::GpuRestitutionTimingPolicyV1::AfterEachSubstep,
+            true,
+            Some(crate::awake_work::SleepExecutionConfig::configured(
+                true,
+                fixed_step_hz,
+                sleep_speed_threshold,
+                sleep_grouping,
+            )),
+            true,
         )
     }
 
@@ -4333,6 +4439,7 @@ impl GpuGeneratedContactRunner {
         restitution_timing_policy: crate::GpuRestitutionTimingPolicyV1,
         authority_gpu_probe: bool,
         sleep_config: Option<crate::awake_work::SleepExecutionConfig>,
+        pair_slot_sleep_span: bool,
     ) -> Result<GpuGeneratedContactSeriesV1, String> {
         if observation_interval_steps == 0
             || completed_steps == 0
@@ -4374,11 +4481,19 @@ impl GpuGeneratedContactRunner {
                 if contact_coefficient_policy
                     == crate::GpuContactCoefficientPolicyV1::AuthorityTunableSoft
                 {
-                    GpuGeneratedContactGraph::new_branch_robust_tunable(
-                        &self.device,
-                        &storage,
-                        scenario,
-                    )?
+                    if pair_slot_sleep_span {
+                        GpuGeneratedContactGraph::new_branch_robust_tunable_with_pair_slot_sleep_span(
+                            &self.device,
+                            &storage,
+                            scenario,
+                        )?
+                    } else {
+                        GpuGeneratedContactGraph::new_branch_robust_tunable(
+                            &self.device,
+                            &storage,
+                            scenario,
+                        )?
+                    }
                 } else {
                     GpuGeneratedContactGraph::new_branch_robust_gpu_promotion(
                         &self.device,

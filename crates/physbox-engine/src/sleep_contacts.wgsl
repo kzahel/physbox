@@ -67,10 +67,7 @@ fn point_velocity(slot: u32, local_anchor: vec2f) -> vec2f {
     return motion.xy + vec2f(-motion.z * anchor.y, motion.z * anchor.x);
 }
 
-@compute @workgroup_size(64)
-fn seed_erased_neighbors(@builtin(global_invocation_id) invocation: vec3u) {
-    let point_index = invocation.x;
-    if (point_index >= point_state[2]) { return; }
+fn seed_erased_neighbor_point(point_index: u32) {
     let point = points[point_index];
     if (!valid_point(point)) { return; }
     let generations = bitcast<vec2u>(point.padding1);
@@ -87,9 +84,21 @@ fn seed_erased_neighbors(@builtin(global_invocation_id) invocation: vec3u) {
 }
 
 @compute @workgroup_size(64)
-fn seed_contact_impacts(@builtin(global_invocation_id) invocation: vec3u) {
+fn seed_erased_neighbors(@builtin(global_invocation_id) invocation: vec3u) {
     let point_index = invocation.x;
     if (point_index >= point_state[2]) { return; }
+    seed_erased_neighbor_point(point_index);
+}
+
+@compute @workgroup_size(64)
+fn seed_pair_slot_span_erased_neighbors(@builtin(global_invocation_id) invocation: vec3u) {
+    let pair_index = invocation.x;
+    if (pair_index >= point_state[2]) { return; }
+    seed_erased_neighbor_point(pair_index * 2u);
+    seed_erased_neighbor_point(pair_index * 2u + 1u);
+}
+
+fn seed_contact_impact_point(point_index: u32) {
     let point = points[point_index];
     if (!valid_point(point) || !state_matches(point.ids.x) || !state_matches(point.ids.y)) {
         return;
@@ -110,6 +119,21 @@ fn seed_contact_impacts(@builtin(global_invocation_id) invocation: vec3u) {
 }
 
 @compute @workgroup_size(64)
+fn seed_contact_impacts(@builtin(global_invocation_id) invocation: vec3u) {
+    let point_index = invocation.x;
+    if (point_index >= point_state[2]) { return; }
+    seed_contact_impact_point(point_index);
+}
+
+@compute @workgroup_size(64)
+fn seed_pair_slot_span_contact_impacts(@builtin(global_invocation_id) invocation: vec3u) {
+    let pair_index = invocation.x;
+    if (pair_index >= point_state[2]) { return; }
+    seed_contact_impact_point(pair_index * 2u);
+    seed_contact_impact_point(pair_index * 2u + 1u);
+}
+
+@compute @workgroup_size(64)
 fn copy_frontier(@builtin(global_invocation_id) invocation: vec3u) {
     let live_index = invocation.x;
     if (live_index >= live_bodies[0]) { return; }
@@ -117,10 +141,7 @@ fn copy_frontier(@builtin(global_invocation_id) invocation: vec3u) {
     atomicStore(&destination_frontier[slot], atomicLoad(&source_frontier[slot]));
 }
 
-@compute @workgroup_size(64)
-fn propagate_frontier(@builtin(global_invocation_id) invocation: vec3u) {
-    let point_index = invocation.x;
-    if (point_index >= point_state[2]) { return; }
+fn propagate_point(point_index: u32) {
     let point = points[point_index];
     if (!valid_point(point) || !state_matches(point.ids.x) || !state_matches(point.ids.y)) {
         return;
@@ -133,4 +154,19 @@ fn propagate_frontier(@builtin(global_invocation_id) invocation: vec3u) {
     if (causes_b != 0u) {
         atomicOr(&destination_frontier[point.ids.x], causes_b | CAUSE_PROPAGATION);
     }
+}
+
+@compute @workgroup_size(64)
+fn propagate_frontier(@builtin(global_invocation_id) invocation: vec3u) {
+    let point_index = invocation.x;
+    if (point_index >= point_state[2]) { return; }
+    propagate_point(point_index);
+}
+
+@compute @workgroup_size(64)
+fn propagate_pair_slot_span_frontier(@builtin(global_invocation_id) invocation: vec3u) {
+    let pair_index = invocation.x;
+    if (pair_index >= point_state[2]) { return; }
+    propagate_point(pair_index * 2u);
+    propagate_point(pair_index * 2u + 1u);
 }

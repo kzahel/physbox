@@ -20,6 +20,7 @@ struct Params {
 @group(0) @binding(3) var<storage, read_write> sizes: array<atomic<u32>>;
 @group(0) @binding(4) var<storage, read_write> stats: array<atomic<u32>>;
 @group(0) @binding(5) var<uniform> params: Params;
+@group(0) @binding(6) var<storage, read> point_state: array<u32>;
 
 const INVALID: u32 = 0xffffffffu;
 const FLAG_LIVE: u32 = 1u;
@@ -62,9 +63,7 @@ fn initialize(@builtin(global_invocation_id) invocation: vec3u) {
     }
 }
 
-@compute @workgroup_size(64)
-fn hook(@builtin(global_invocation_id) invocation: vec3u) {
-    let point_index = invocation.x;
+fn hook_point(point_index: u32) {
     if (point_index >= params.counts.y) { return; }
     let point = points[point_index];
     if (!valid_point_edge(point)) { return; }
@@ -85,6 +84,19 @@ fn hook(@builtin(global_invocation_id) invocation: vec3u) {
         atomicAdd(&stats[3], 1u);
         atomicMax(&stats[5], params.counts.z);
     }
+}
+
+@compute @workgroup_size(64)
+fn hook(@builtin(global_invocation_id) invocation: vec3u) {
+    hook_point(invocation.x);
+}
+
+@compute @workgroup_size(64)
+fn hook_pair_slot_span(@builtin(global_invocation_id) invocation: vec3u) {
+    let pair_index = invocation.x;
+    if (pair_index >= point_state[2]) { return; }
+    hook_point(pair_index * 2u);
+    hook_point(pair_index * 2u + 1u);
 }
 
 @compute @workgroup_size(64)
@@ -125,9 +137,7 @@ fn finalize(@builtin(global_invocation_id) invocation: vec3u) {
     atomicMax(&stats[7], component_size);
 }
 
-@compute @workgroup_size(64)
-fn validate_edges(@builtin(global_invocation_id) invocation: vec3u) {
-    let point_index = invocation.x;
+fn validate_edge(point_index: u32) {
     if (point_index >= params.counts.y) { return; }
     let point = points[point_index];
     if (point.ids.w != 0u || point.ids.x == INVALID) { return; }
@@ -139,4 +149,17 @@ fn validate_edges(@builtin(global_invocation_id) invocation: vec3u) {
     if (atomicLoad(&parents[point.ids.x]) != atomicLoad(&parents[point.ids.y])) {
         atomicAdd(&stats[9], 1u);
     }
+}
+
+@compute @workgroup_size(64)
+fn validate_edges(@builtin(global_invocation_id) invocation: vec3u) {
+    validate_edge(invocation.x);
+}
+
+@compute @workgroup_size(64)
+fn validate_pair_slot_span_edges(@builtin(global_invocation_id) invocation: vec3u) {
+    let pair_index = invocation.x;
+    if (pair_index >= point_state[2]) { return; }
+    validate_edge(pair_index * 2u);
+    validate_edge(pair_index * 2u + 1u);
 }

@@ -1,9 +1,9 @@
-use std::mem::size_of;
+use std::{mem::size_of, sync::Arc};
 
 use bytemuck::{Pod, Zeroable};
 use wgpu::util::DeviceExt;
 
-use crate::GpuBodyStorage;
+use crate::{GpuBodyStorage, sleep_contacts::GpuSleepPointScan};
 
 const WORKGROUP_SIZE: u32 = 64;
 const COMPONENT_STAT_WORDS: u32 = 16;
@@ -49,6 +49,7 @@ pub(crate) struct GpuExactSleepGrouping {
     stats: wgpu::Buffer,
     _component_params: wgpu::Buffer,
     _exact_params: wgpu::Buffer,
+    point_dispatch_state: Arc<wgpu::Buffer>,
     body_capacity: u32,
     phase_bound: u32,
 }
@@ -58,6 +59,7 @@ impl GpuExactSleepGrouping {
         device: &wgpu::Device,
         storage: &GpuBodyStorage,
         solver_points: &wgpu::Buffer,
+        scan: GpuSleepPointScan<'_>,
         body_capacity: u32,
         point_capacity: u32,
     ) -> Result<Self, String> {
@@ -97,6 +99,7 @@ impl GpuExactSleepGrouping {
                 storage_layout_entry(2, false),
                 storage_layout_entry(3, false),
                 storage_layout_entry(4, false),
+                storage_layout_entry(6, true),
                 wgpu::BindGroupLayoutEntry {
                     binding: 5,
                     visibility: wgpu::ShaderStages::COMPUTE,
@@ -133,10 +136,18 @@ impl GpuExactSleepGrouping {
         };
         let component_pipelines = ComponentPipelines {
             initialize: component_pipeline("initialize"),
-            hook: component_pipeline("hook"),
+            hook: component_pipeline(if scan.pair_slot_span {
+                "hook_pair_slot_span"
+            } else {
+                "hook"
+            }),
             shortcut: component_pipeline("shortcut"),
             finalize: component_pipeline("finalize"),
-            validate_edges: component_pipeline("validate_edges"),
+            validate_edges: component_pipeline(if scan.pair_slot_span {
+                "validate_pair_slot_span_edges"
+            } else {
+                "validate_edges"
+            }),
         };
         let component_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("physbox5_exact_sleep_component_group"),
@@ -147,6 +158,7 @@ impl GpuExactSleepGrouping {
                 entry(2, &parents),
                 entry(3, &component_values),
                 entry(4, &stats),
+                entry(6, scan.scan_state),
                 wgpu::BindGroupEntry {
                     binding: 5,
                     resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
@@ -228,16 +240,13 @@ impl GpuExactSleepGrouping {
             stats,
             _component_params: component_params,
             _exact_params: exact_params,
+            point_dispatch_state: Arc::clone(scan.point_dispatch_state),
             body_capacity,
             phase_bound,
         })
     }
 
-    pub(crate) fn encode_components(
-        &self,
-        encoder: &mut wgpu::CommandEncoder,
-        point_capacity_state: &wgpu::Buffer,
-    ) {
+    pub(crate) fn encode_components(&self, encoder: &mut wgpu::CommandEncoder) {
         encoder.clear_buffer(&self.component_values, 0, None);
         encoder.clear_buffer(&self.stats, 0, None);
         let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -249,14 +258,14 @@ impl GpuExactSleepGrouping {
         pass.dispatch_workgroups(self.body_capacity.div_ceil(WORKGROUP_SIZE), 1, 1);
         for _ in 1..=self.phase_bound {
             pass.set_pipeline(&self.component_pipelines.hook);
-            pass.dispatch_workgroups_indirect(point_capacity_state, POINT_DISPATCH_64_OFFSET);
+            pass.dispatch_workgroups_indirect(&self.point_dispatch_state, POINT_DISPATCH_64_OFFSET);
             pass.set_pipeline(&self.component_pipelines.shortcut);
             pass.dispatch_workgroups(self.body_capacity.div_ceil(WORKGROUP_SIZE), 1, 1);
         }
         pass.set_pipeline(&self.component_pipelines.finalize);
         pass.dispatch_workgroups(self.body_capacity.div_ceil(WORKGROUP_SIZE), 1, 1);
         pass.set_pipeline(&self.component_pipelines.validate_edges);
-        pass.dispatch_workgroups_indirect(point_capacity_state, POINT_DISPATCH_64_OFFSET);
+        pass.dispatch_workgroups_indirect(&self.point_dispatch_state, POINT_DISPATCH_64_OFFSET);
     }
 
     /// Reduces frontier A by exact component and broadcasts into frontier B.

@@ -4,7 +4,9 @@ use bytemuck::{Pod, Zeroable};
 use serde::Serialize;
 use wgpu::util::DeviceExt;
 
-use crate::{GpuBodyStorage, body_state::ACTIVE_BODY_DISPATCH_64_OFFSET};
+use crate::{
+    GpuBodyStorage, body_state::ACTIVE_BODY_DISPATCH_64_OFFSET, sleep_contacts::GpuSleepPointScan,
+};
 
 pub const SLEEP_CYCLE_DIAGNOSTIC_VERSION: u32 = 1;
 pub const SLEEP_CYCLE_DIAGNOSTIC_WORDS: u32 = 16;
@@ -104,7 +106,7 @@ pub(crate) struct GpuSleepCycleDiagnostics {
     count_cuts: wgpu::ComputePipeline,
     finalize: wgpu::ComputePipeline,
     live_bodies: std::sync::Arc<wgpu::Buffer>,
-    point_state: std::sync::Arc<wgpu::Buffer>,
+    point_dispatch_state: std::sync::Arc<wgpu::Buffer>,
     stable_confirmation_steps: u32,
 }
 
@@ -113,7 +115,7 @@ impl GpuSleepCycleDiagnostics {
         device: &wgpu::Device,
         storage: &GpuBodyStorage,
         solver_points: &wgpu::Buffer,
-        point_state: std::sync::Arc<wgpu::Buffer>,
+        scan: GpuSleepPointScan<'_>,
         body_capacity: u32,
         point_capacity: u32,
         stable_confirmation_steps: u32,
@@ -194,7 +196,7 @@ impl GpuSleepCycleDiagnostics {
                 entry(3, awake_work.awake_body_buffer()),
                 entry(4, awake_work.control_buffer()),
                 entry(5, solver_points),
-                entry(6, &point_state),
+                entry(6, scan.scan_state),
                 entry(7, &metrics),
                 entry(8, &params),
             ],
@@ -205,10 +207,14 @@ impl GpuSleepCycleDiagnostics {
             bind_group,
             prepare: pipeline("prepare_metrics"),
             count_bodies: pipeline("count_body_metrics"),
-            count_cuts: pipeline("count_mixed_contact_cuts"),
+            count_cuts: pipeline(if scan.pair_slot_span {
+                "count_pair_slot_span_mixed_contact_cuts"
+            } else {
+                "count_mixed_contact_cuts"
+            }),
             finalize: pipeline("finalize_metrics"),
             live_bodies,
-            point_state,
+            point_dispatch_state: std::sync::Arc::clone(scan.point_dispatch_state),
             stable_confirmation_steps,
         }
     }
@@ -230,7 +236,7 @@ impl GpuSleepCycleDiagnostics {
             encoder,
             "physbox5_sleep_metrics_cuts",
             &self.count_cuts,
-            Some((&self.point_state, POINT_DISPATCH_64_OFFSET)),
+            Some((&self.point_dispatch_state, POINT_DISPATCH_64_OFFSET)),
         );
         self.pass(
             encoder,

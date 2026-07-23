@@ -2,9 +2,16 @@ use std::{mem::size_of, sync::Arc};
 
 use crate::{GpuBodyStorage, awake_work::GpuAwakeWork, body_state::ACTIVE_BODY_DISPATCH_64_OFFSET};
 
+#[derive(Clone, Copy)]
+pub(crate) struct GpuSleepPointScan<'a> {
+    pub(crate) point_dispatch_state: &'a Arc<wgpu::Buffer>,
+    pub(crate) scan_state: &'a wgpu::Buffer,
+    pub(crate) pair_slot_span: bool,
+}
+
 pub(crate) struct GpuSleepContacts {
     awake_work: Arc<GpuAwakeWork>,
-    point_state: Arc<wgpu::Buffer>,
+    point_dispatch_state: Arc<wgpu::Buffer>,
     live_bodies: Arc<wgpu::Buffer>,
     root_bind_group: wgpu::BindGroup,
     propagation_bind_groups: [wgpu::BindGroup; 2],
@@ -20,7 +27,7 @@ impl GpuSleepContacts {
         device: &wgpu::Device,
         storage: &GpuBodyStorage,
         points: &wgpu::Buffer,
-        point_state: Arc<wgpu::Buffer>,
+        scan: GpuSleepPointScan<'_>,
     ) -> Self {
         let awake_work = storage.awake_work_handle();
         let live_bodies = storage.active_body_handle();
@@ -44,7 +51,7 @@ impl GpuSleepContacts {
                 layout: &contact_layout,
                 entries: &[
                     entry(0, points),
-                    entry(1, &point_state),
+                    entry(1, scan.scan_state),
                     entry(2, storage.metadata_buffer()),
                     entry(3, storage.motion_buffer()),
                     entry(4, storage.pose_buffer()),
@@ -104,19 +111,27 @@ impl GpuSleepContacts {
         };
         Self {
             awake_work,
-            point_state,
+            point_dispatch_state: Arc::clone(scan.point_dispatch_state),
             live_bodies,
             root_bind_group,
             propagation_bind_groups,
             copy_bind_groups,
             erased_pipeline: pipeline(
                 "physbox5_sleep_erased_neighbor_pipeline",
-                "seed_erased_neighbors",
+                if scan.pair_slot_span {
+                    "seed_pair_slot_span_erased_neighbors"
+                } else {
+                    "seed_erased_neighbors"
+                },
                 &contact_layout,
             ),
             impact_pipeline: pipeline(
                 "physbox5_sleep_impact_pipeline",
-                "seed_contact_impacts",
+                if scan.pair_slot_span {
+                    "seed_pair_slot_span_contact_impacts"
+                } else {
+                    "seed_contact_impacts"
+                },
                 &contact_layout,
             ),
             copy_pipeline: pipeline(
@@ -126,7 +141,11 @@ impl GpuSleepContacts {
             ),
             propagation_pipeline: pipeline(
                 "physbox5_sleep_propagation_pipeline",
-                "propagate_frontier",
+                if scan.pair_slot_span {
+                    "propagate_pair_slot_span_frontier"
+                } else {
+                    "propagate_frontier"
+                },
                 &contact_layout,
             ),
         }
@@ -139,7 +158,7 @@ impl GpuSleepContacts {
         });
         pass.set_pipeline(&self.erased_pipeline);
         pass.set_bind_group(0, &self.root_bind_group, &[]);
-        pass.dispatch_workgroups_indirect(&self.point_state, 4 * size_of::<u32>() as u64);
+        pass.dispatch_workgroups_indirect(&self.point_dispatch_state, 4 * size_of::<u32>() as u64);
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -156,7 +175,10 @@ impl GpuSleepContacts {
             });
             pass.set_pipeline(&self.impact_pipeline);
             pass.set_bind_group(0, &self.root_bind_group, &[]);
-            pass.dispatch_workgroups_indirect(&self.point_state, 4 * size_of::<u32>() as u64);
+            pass.dispatch_workgroups_indirect(
+                &self.point_dispatch_state,
+                4 * size_of::<u32>() as u64,
+            );
         }
     }
 
@@ -184,7 +206,10 @@ impl GpuSleepContacts {
                 });
                 pass.set_pipeline(&self.propagation_pipeline);
                 pass.set_bind_group(0, group, &[]);
-                pass.dispatch_workgroups_indirect(&self.point_state, 4 * size_of::<u32>() as u64);
+                pass.dispatch_workgroups_indirect(
+                    &self.point_dispatch_state,
+                    4 * size_of::<u32>() as u64,
+                );
             }
             source = 1 - source;
         }
