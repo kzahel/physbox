@@ -67,10 +67,10 @@ Gates:
 
 ### S28.3 Opaque product frame bridge
 
-- [ ] Make the ordinary render return operational and opaque to JavaScript.
-- [ ] Move semantic report/global publication into an explicit smoke observer.
-- [ ] Update maintained browser automation to request that observer.
-- [ ] Prove observer removal does not change input, simulation, or rendering.
+- [x] Make the ordinary render return operational and opaque to JavaScript.
+- [x] Move semantic report/global publication into an explicit smoke observer.
+- [x] Update maintained browser automation to request that observer.
+- [x] Prove observer removal does not change input, simulation, or rendering.
 
 Gate: the maintained real-browser smoke passes through the gated observer.
 
@@ -110,3 +110,8 @@ declared duplication fixtures, and all S28.5 gates pass.
   `npm run test:web` emitted `PHYSBOX5_VALIDATION_SUCCESS` while exercising
   current preference writes, capacity reload, physics reload, and legacy
   migration.
+- 2026-07-23 S28.3: `cargo test -p physbox-web --lib` passed three tests,
+  the WASM check passed, and `npm run test:web` emitted
+  `PHYSBOX5_VALIDATION_SUCCESS`. The smoke also loaded a second ordinary page,
+  confirmed both semantic globals were absent, and passed the rendered-pixel
+  gate without the observer.

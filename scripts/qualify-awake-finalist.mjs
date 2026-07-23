@@ -72,6 +72,7 @@ try {
       "speculative-distance": "0.02",
       "max-depenetration-velocity": "3",
       sleeping: "off",
+      "smoke-observer": "1",
     });
     await page.goto(`http://127.0.0.1:${port}/?${query}`, { waitUntil: "networkidle" });
     await page.waitForFunction(

@@ -44,7 +44,9 @@ try {
     const text = message.text();
     if (/validation error|wgpu error|webgpu.*error/i.test(text)) gpuValidationErrors.push(text);
   });
-  await page.goto(`http://127.0.0.1:${server.address().port}/`, { waitUntil: "networkidle" });
+  await page.goto(`http://127.0.0.1:${server.address().port}/?smoke-observer=1`, {
+    waitUntil: "networkidle",
+  });
   await page.waitForFunction(() => globalThis.__physbox5?.ready, null, { timeout: 30_000 });
   await page.evaluate(() => globalThis.__physbox5FrameControl.pause());
   let rows;

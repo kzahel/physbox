@@ -65,6 +65,7 @@ try {
     }
   });
   const startupParams = new URLSearchParams({ scenario });
+  startupParams.set("smoke-observer", "1");
   if (requestedBodyCapacity !== 64) {
     startupParams.set("body-capacity", String(requestedBodyCapacity));
   }
@@ -646,6 +647,7 @@ try {
   await captureCompleteScreenshot(page, screenshot, "browser final", consoleErrors);
   const final = await page.evaluate(() => globalThis.__physbox5);
   await page.evaluate(() => globalThis.__physbox5FrameControl.pause());
+  await requireOpaqueProductionPage(browser, `http://127.0.0.1:${port}/?scenario=bootstrap`);
   const provenance = {
     runId: randomUUID(),
     sourceRevision: git(["rev-parse", "HEAD"]) ?? "unknown",
@@ -742,6 +744,38 @@ function requireNoGpuValidationErrors(messages, label) {
     /invalid (?:shader|compute|render|command)|while (?:calling|encoding).*create(?:shader|compute|render)|must only be called from uniform control flow|queue\].submit/i.test(message)
   );
   if (failures.length) throw new Error(`${label} reported WebGPU validation errors: ${failures.join("; ")}`);
+}
+
+async function requireOpaqueProductionPage(browser, url) {
+  const page = await browser.newPage({ viewport: { width: 960, height: 600 } });
+  try {
+    await page.goto(url, { waitUntil: "networkidle" });
+    await page.waitForTimeout(500);
+    const state = await page.evaluate(() => ({
+      observerState: typeof globalThis.__physbox5,
+      frameControl: typeof globalThis.__physbox5FrameControl,
+      fatalHidden: document.querySelector("#fatal-error")?.hidden,
+    }));
+    if (
+      state.observerState !== "undefined"
+      || state.frameControl !== "undefined"
+      || state.fatalHidden !== true
+    ) {
+      throw new Error(`ordinary browser page exposed smoke state: ${JSON.stringify(state)}`);
+    }
+    const pixels = PNG.sync.read(await page.screenshot());
+    let foregroundPixels = 0;
+    for (let offset = 0; offset < pixels.data.length; offset += 4) {
+      if (Math.max(pixels.data[offset], pixels.data[offset + 1], pixels.data[offset + 2]) >= 48) {
+        foregroundPixels += 1;
+      }
+    }
+    if (foregroundPixels < pixels.width * pixels.height * 0.05) {
+      throw new Error("ordinary browser page did not render the shared frame");
+    }
+  } finally {
+    await page.close();
+  }
 }
 
 async function requirePhysicsPreference(page, expected, expectClean = false) {

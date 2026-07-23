@@ -13,6 +13,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 console_error_panic_hook.workspace = true
+form_urlencoded.workspace = true
 js-sys.workspace = true
 physbox-engine = { path = "../../crates/physbox-engine" }
 physbox-launch = { path = "../../crates/physbox-launch" }

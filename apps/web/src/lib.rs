@@ -18,6 +18,9 @@ use wasm_bindgen_futures::JsFuture;
 #[cfg(target_arch = "wasm32")]
 use web_sys::{HtmlCanvasElement, Storage};
 
+#[cfg(any(target_arch = "wasm32", test))]
+const SMOKE_OBSERVER_QUERY_KEY: &str = "smoke-observer";
+
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u8)]
@@ -49,6 +52,8 @@ fn decode_pointer_button(code: u8) -> Result<PointerButton, String> {
 pub struct WebApp {
     renderer: SurfaceRenderer,
     preferences: WebPreferenceController,
+    smoke_observer_enabled: bool,
+    smoke_observer_frame: Option<String>,
     last_timestamp_ms: Option<f64>,
     pending_input_events: Vec<InputEvent>,
 }
@@ -56,12 +61,26 @@ pub struct WebApp {
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
 impl WebApp {
-    #[wasm_bindgen(js_name = diagnosticsJson)]
-    pub fn diagnostics_json(&self) -> String {
-        self.renderer.diagnostics().marker_json()
+    #[wasm_bindgen(js_name = observerEnabled)]
+    pub fn observer_enabled(&self) -> bool {
+        self.smoke_observer_enabled
     }
 
-    pub fn render(&mut self, timestamp_ms: f64) -> Result<String, JsValue> {
+    #[wasm_bindgen(js_name = diagnosticsJson)]
+    pub fn diagnostics_json(&self) -> Result<String, JsValue> {
+        self.require_smoke_observer()?;
+        Ok(self.renderer.diagnostics().marker_json())
+    }
+
+    #[wasm_bindgen(js_name = observerSnapshot)]
+    pub fn observer_snapshot(&self) -> Result<String, JsValue> {
+        self.require_smoke_observer()?;
+        self.smoke_observer_frame
+            .clone()
+            .ok_or_else(|| js_error("smoke observer has not captured a frame"))
+    }
+
+    pub fn render(&mut self, timestamp_ms: f64) -> Result<(), JsValue> {
         let elapsed_seconds = self
             .last_timestamp_ms
             .map_or(1.0 / 60.0, |last| (timestamp_ms - last) / 1000.0);
@@ -81,9 +100,12 @@ impl WebApp {
             self.renderer.launch_preference_selection(),
             &BrowserPreferenceStore,
         ) {
-            replace_browser_search(&search)?;
+            replace_browser_search(&search, self.smoke_observer_enabled)?;
         }
-        Ok(report.marker_json())
+        if self.smoke_observer_enabled {
+            self.smoke_observer_frame = Some(report.marker_json());
+        }
+        Ok(())
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
@@ -124,12 +146,19 @@ impl WebApp {
                 zoom_steps: zoom_steps.signum(),
             }));
     }
+
+    fn require_smoke_observer(&self) -> Result<(), JsValue> {
+        self.smoke_observer_enabled
+            .then_some(())
+            .ok_or_else(|| js_error("semantic browser observation requires smoke-observer=1"))
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
 pub async fn start(canvas: HtmlCanvasElement, search: String) -> Result<WebApp, JsValue> {
     console_error_panic_hook::set_once();
+    let (search, smoke_observer_enabled) = split_smoke_observer_query(&search);
     let (preferences, request) = WebPreferenceController::restore(&search, &BrowserPreferenceStore)
         .map_err(|error| js_error(error.to_string()))?;
     let options = request.options;
@@ -151,6 +180,8 @@ pub async fn start(canvas: HtmlCanvasElement, search: String) -> Result<WebApp, 
     Ok(WebApp {
         renderer,
         preferences,
+        smoke_observer_enabled,
+        smoke_observer_frame: None,
         last_timestamp_ms: None,
         pending_input_events: Vec::new(),
     })
@@ -192,16 +223,48 @@ fn browser_storage() -> Result<Option<Storage>, String> {
 }
 
 #[cfg(target_arch = "wasm32")]
-fn replace_browser_search(search: &str) -> Result<(), JsValue> {
+fn replace_browser_search(search: &str, retain_smoke_observer: bool) -> Result<(), JsValue> {
+    let search = if !retain_smoke_observer {
+        search.to_owned()
+    } else if search.is_empty() {
+        format!("?{SMOKE_OBSERVER_QUERY_KEY}=1")
+    } else {
+        format!("{search}&{SMOKE_OBSERVER_QUERY_KEY}=1")
+    };
     web_sys::window()
         .ok_or_else(|| js_error("browser window is unavailable"))?
         .history()?
-        .replace_state_with_url(&JsValue::NULL, "", Some(search))
+        .replace_state_with_url(&JsValue::NULL, "", Some(&search))
 }
 
 #[cfg(target_arch = "wasm32")]
 fn js_value_error(value: JsValue) -> String {
     format!("{value:?}")
+}
+
+#[cfg(any(target_arch = "wasm32", test))]
+fn split_smoke_observer_query(search: &str) -> (String, bool) {
+    let mut observer_enabled = false;
+    let retained = form_urlencoded::parse(search.trim_start_matches('?').as_bytes())
+        .filter_map(|(key, value)| {
+            if key == SMOKE_OBSERVER_QUERY_KEY {
+                observer_enabled |= value == "1";
+                None
+            } else {
+                Some((key.into_owned(), value.into_owned()))
+            }
+        })
+        .collect::<Vec<_>>();
+    if retained.is_empty() {
+        return (String::new(), observer_enabled);
+    }
+    let mut encoded = form_urlencoded::Serializer::new(String::new());
+    encoded.extend_pairs(
+        retained
+            .iter()
+            .map(|(key, value)| (key.as_str(), value.as_str())),
+    );
+    (format!("?{}", encoded.finish()), observer_enabled)
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -453,5 +516,17 @@ mod tests {
         assert!(parse_body_counts("10000,1000").is_err());
         assert!(parse_body_counts("1000,1000").is_err());
         assert!(parse_body_counts("100001").is_err());
+    }
+
+    #[test]
+    fn smoke_observer_query_is_removed_before_shared_launch_parsing() {
+        assert_eq!(
+            split_smoke_observer_query("?scenario=rigid-floor&smoke-observer=1"),
+            ("?scenario=rigid-floor".to_owned(), true)
+        );
+        assert_eq!(
+            split_smoke_observer_query("?smoke-observer=0&body-capacity=256"),
+            ("?body-capacity=256".to_owned(), false)
+        );
     }
 }

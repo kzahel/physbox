@@ -2,24 +2,25 @@ import init, { PointerButtonCode, start } from "./pkg/physbox_web.js";
 
 const canvas = document.querySelector("#physbox-canvas");
 const fatalError = document.querySelector("#fatal-error");
-globalThis.__physbox5 = { ready: false, ok: false };
+let app;
+let observer;
 let renderingPaused = false;
-globalThis.__physbox5FrameControl = Object.freeze({
-  pause() { renderingPaused = true; },
-  resume() {
-    if (!renderingPaused) return;
-    renderingPaused = false;
-    requestAnimationFrame(renderFrame);
-  },
-});
 
 async function boot() {
   if (!navigator.gpu) throw new Error("WebGPU is not available in this browser");
   await init();
-  const app = await start(canvas, location.search);
-  const diagnostics = JSON.parse(app.diagnosticsJson());
-  globalThis.__physbox5App = app;
-  globalThis.__physbox5 = { ready: false, ok: true, diagnostics };
+  app = await start(canvas, location.search);
+  if (app.observerEnabled()) {
+    const { installSmokeObserver } = await import("./smoke-observer.js");
+    observer = installSmokeObserver(app, {
+      pause() { renderingPaused = true; },
+      resume() {
+        if (!renderingPaused) return;
+        renderingPaused = false;
+        requestAnimationFrame(renderFrame);
+      },
+    });
+  }
   installResize(app);
   installPointerInput(app);
   requestAnimationFrame(renderFrame);
@@ -41,7 +42,7 @@ function installResize(app) {
         canvas.height = height;
         app.resize(width, height);
       }
-      globalThis.__physbox5.viewport = { width, height };
+      observer?.resize(width, height);
     });
   };
   new ResizeObserver(resize).observe(canvas);
@@ -81,9 +82,8 @@ function installPointerInput(app) {
 function renderFrame(timestamp) {
   if (renderingPaused) return;
   try {
-    const report = JSON.parse(globalThis.__physbox5App.render(timestamp));
-    globalThis.__physbox5.frame = report;
-    globalThis.__physbox5.ready = report.scenario.complete;
+    app.render(timestamp);
+    observer?.capture();
     if (!renderingPaused) requestAnimationFrame(renderFrame);
   } catch (error) {
     fail(error);
@@ -94,7 +94,7 @@ function fail(error) {
   const message = error instanceof Error ? error.message : String(error);
   fatalError.textContent = `PhysBox 5 could not start: ${message}`;
   fatalError.hidden = false;
-  globalThis.__physbox5 = { ready: true, ok: false, error: message };
+  observer?.fail(message);
   console.error(error);
 }
 
