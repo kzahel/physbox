@@ -336,7 +336,22 @@ advancement. The release comparator-off package contains no comparator
 dependency, path, bridge marker, revision marker, or runtime marker, while its
 offscreen liquid frame retains nonzero particles, the declared 32,768-slot /
 80-dispatch substrate, same-step rigid coupling, and the no-readback policy.
-Complete S31.4 browser/comparator/Android capture gates remain open.
+S31.4 is complete. Clean Browser WebGPU run
+`20ef27c4-7e56-44e5-a086-38a02843ca9d` advanced 623 interactive steps,
+executed Water, particle Erase, and Surface, retained an aligned rigid-only
+Box2D shadow, and reported no overflow or frame-advancement readback.
+`npm run test:web:lab` passed as
+`e2c8898c-ca89-4378-97ec-fcb1605be1e1`; direct comparator tests and the
+feature-off release inspection also pass.
+
+No physical Android device was available. Per the approved substitution,
+clean revision `671fff553a4d663e02d78da102ed775c40adc023` passed the ARM64
+Android check and release APK build, then run `1784812837-2508497` executed the
+same liquid interaction on hardware-backed `jstorrent-tablet`. The Android
+report recorded Water and Erase commands plus a placed Surface, finite passing
+scene state, and a complete 2560x1600 capture. The AVD used host Vulkan adapter
+`AMD Radeon 890M Graphics (RADV GFX1150)` and emitted the mandatory successful
+shutdown marker.
 
 The midpoint/angle/fixed-box interaction was independently implemented after
 consulting PhysBox 4 `input.rs`, `scene.rs`, and `surface_preview.wgsl` at clean
@@ -392,13 +407,13 @@ stops later performance/default promotion while retaining the failure artifact.
   topic's trigger.
 - [ ] Preserve direct rendering as the acceptance presentation and measure any
   optional reduced-resolution smooth-water renderer separately.
-- [ ] Run the ordinary Browser WebGPU product scene and report presentation
+- [x] Run the ordinary Browser WebGPU product scene and report presentation
   cadence, physics time, effective scale, and slip without labeling slow time
   as sustained 60 Hz.
-- [ ] Run `npm run test:fast`, warnings-denied production clippy, focused
+- [x] Run `npm run test:fast`, warnings-denied production clippy, focused
   particle/coupling tests, native oracle tests, and fresh headless coupled
   artifacts.
-- [ ] Run the ARM64 Android check, release APK, and the actual shared liquid
+- [x] Run the ARM64 Android check, release APK, and the actual shared liquid
   interaction on a physical device when one is available. Human review has
   already authorized a hardware-backed AVD substitute whenever no device is
   available; record the substitution, prove the shared Android path and
