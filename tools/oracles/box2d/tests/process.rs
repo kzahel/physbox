@@ -5,6 +5,7 @@ use std::{
     time::Duration,
 };
 
+use physbox_box2d_comparator::Box2dWorld;
 use physbox_box2d_oracle::BOX2D_REVISION;
 use physbox_contracts::{OracleRequestV1, SCHEMA_VERSION, canonical_hash};
 use physbox_engine::{AnalyticFixtureKind, analytic_fixture_scenario};
@@ -77,6 +78,88 @@ fn clean_pinned_process_produces_fresh_world_and_narrowphase_results() {
     assert!(!rejected.with_file_name("oracle-result.json").exists());
 
     fs::remove_dir_all(&artifact_root).expect("remove process-test artifacts");
+}
+
+#[test]
+fn packaged_comparator_matches_fresh_process_authority_on_governed_world() {
+    assert_eq!(physbox_box2d_comparator::BOX2D_REVISION, BOX2D_REVISION);
+    let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    let source = verify_clean_git_pin(&repository.join("reference/box2d"), BOX2D_REVISION)
+        .expect("clean pinned Box2D checkout");
+    let artifact_root = temporary_root("box2d-comparator-authority");
+    let request = request(
+        "packaged-comparator-authority",
+        AnalyticFixtureKind::CircleFloor,
+        180,
+    );
+    let authority = run_oracle(&config(&artifact_root, &source, "world"), &request)
+        .expect("fresh process authority result");
+    let capacity = request
+        .scenario
+        .bodies
+        .iter()
+        .map(|body| body.id.slot)
+        .max()
+        .unwrap_or_default()
+        + 1;
+    let mut comparator = Box2dWorld::new(&request.scenario, capacity, true)
+        .expect("packaged comparator accepts governed projection");
+    for _ in 0..request.scenario.requested_steps {
+        comparator
+            .step(
+                request.scenario.settings.fixed_dt.get(),
+                request.scenario.settings.substeps,
+            )
+            .expect("packaged comparator step");
+    }
+    let comparator = comparator
+        .snapshots()
+        .expect("packaged comparator snapshots");
+    assert_eq!(comparator.len(), authority.result.bodies.len());
+    for body in &authority.result.bodies {
+        let observed = comparator
+            .iter()
+            .find(|candidate| candidate.id == body.id)
+            .expect("stable identity exists in packaged comparator");
+        assert_eq!(
+            observed.shape, body.shape,
+            "shape differs for {:?}",
+            body.id
+        );
+        assert_eq!(observed.fixed, body.inverse_mass.get() == 0.0);
+        assert_eq!(
+            observed.awake, !body.sleeping,
+            "sleep differs for {:?}",
+            body.id
+        );
+        for (label, actual, expected) in [
+            ("position.x", observed.position.x, body.position.x),
+            ("position.y", observed.position.y, body.position.y),
+            ("angle", observed.angle, body.angle.get()),
+            (
+                "linear_velocity.x",
+                observed.linear_velocity.x,
+                body.linear_velocity.x,
+            ),
+            (
+                "linear_velocity.y",
+                observed.linear_velocity.y,
+                body.linear_velocity.y,
+            ),
+            (
+                "angular_velocity",
+                observed.angular_velocity,
+                body.angular_velocity.get(),
+            ),
+        ] {
+            assert!(
+                (actual - expected).abs() <= 1.0e-6,
+                "{label} differs for {:?}: comparator={actual} authority={expected}",
+                body.id
+            );
+        }
+    }
+    fs::remove_dir_all(&artifact_root).expect("remove comparator authority artifacts");
 }
 
 #[test]

@@ -13,5 +13,6 @@ serde_json.workspace = true
 bindgen.workspace = true
 
 [dev-dependencies]
+physbox-box2d-comparator = { path = "../../../crates/physbox-box2d-comparator" }
 physbox-engine = { path = "../../../crates/physbox-engine", default-features = false }
 physbox-lab = { path = "../../../crates/physbox-lab" }
