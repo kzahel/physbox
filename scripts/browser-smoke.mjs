@@ -865,13 +865,16 @@ try {
       null,
       { timeout: 10_000 },
     );
-    await page.mouse.click(...target);
+    await page.mouse.move(...target);
+    await page.mouse.down();
+    await page.mouse.move(viewportWidth * 0.74, viewportHeight * 0.32, { steps: 4 });
     await page.waitForFunction(
       (executed) => globalThis.__physbox5?.frame?.bodyCommands
-        ?.executedParticleCommandsTotal > executed,
+        ?.executedParticleCommandsTotal >= executed + 2,
       afterWater.bodyCommands.executedParticleCommandsTotal,
       { timeout: 10_000 },
     );
+    await page.mouse.up();
 
     const beforeSurface = await page.evaluate(() => globalThis.__physbox5.frame);
     await page.mouse.click(...toolCenter(5));
@@ -903,7 +906,9 @@ try {
     capturedLiquidInteraction = await page.evaluate(() => globalThis.__physbox5.frame);
     if (
       capturedLiquidInteraction.bodyCommands.executedParticleCommandsTotal
-        < beforeLiquid.bodyCommands.executedParticleCommandsTotal + 2
+        < beforeLiquid.bodyCommands.executedParticleCommandsTotal + 3
+      || capturedLiquidInteraction.sceneContract.particleCount !== 3952
+      || capturedLiquidInteraction.sceneContract.particleCapacity !== 8192
       || capturedLiquidInteraction.bodyCommands.overflowed
       || capturedLiquidInteraction.sceneContract.particleReadbackForFrameAdvancement
       || capturedLiquidInteraction.ui.box2dIdentityDisagreements !== 0
