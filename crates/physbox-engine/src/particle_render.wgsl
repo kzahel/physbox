@@ -14,7 +14,7 @@ struct VertexOutput {
 @group(0) @binding(0) var<storage, read> positions: array<vec4f>;
 @group(0) @binding(1) var<storage, read> velocities: array<vec4f>;
 @group(0) @binding(2) var<storage, read> density_states: array<vec4f>;
-@group(0) @binding(3) var<storage, read> active_indices: array<u32>;
+@group(0) @binding(3) var<storage, read> metadata: array<vec4u>;
 @group(0) @binding(4) var<uniform> params: RenderParams;
 
 @vertex
@@ -26,8 +26,11 @@ fn particle_vertex(
         vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(-1.0, 1.0),
         vec2f(-1.0, 1.0), vec2f(1.0, -1.0), vec2f(1.0, 1.0),
     );
-    let index = active_indices[instance_index];
+    let index = instance_index;
     let local = corners[vertex_index];
+    if metadata[index].w == 0u {
+        return VertexOutput(vec4f(2.0, 2.0, 0.0, 1.0), local, vec3f(0.0));
+    }
     let world = positions[index].xy + local * params.material.x;
     let clip = (world - params.camera.xy) / max(params.camera.zw, vec2f(0.0001));
     let speed = clamp(length(velocities[index].xy) * 0.16, 0.0, 1.0);

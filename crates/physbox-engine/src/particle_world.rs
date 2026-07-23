@@ -1092,7 +1092,7 @@ impl GpuParticleWorld {
                 &positions,
                 &velocities,
                 &density_states,
-                &active_indices,
+                &metadata,
                 &render_params,
             ],
         );
@@ -1393,7 +1393,7 @@ impl GpuParticleWorld {
         });
         pass.set_pipeline(&self.render_pipeline);
         pass.set_bind_group(0, &self.render_group, &[]);
-        pass.draw_indirect(&self.indirect, 0);
+        pass.draw(0..6, 0..self.capacity);
     }
 
     pub(crate) const fn capacity(&self) -> u32 {
@@ -2149,6 +2149,14 @@ mod tests {
         };
         assert_eq!(erase.raw().unwrap().kind_count_material_sequence[0], 2);
         assert!(circle_spawn_count(100.0, 0.001).is_err());
+    }
+
+    #[test]
+    fn particle_render_order_is_stable_by_slot() {
+        let shader = include_str!("particle_render.wgsl");
+        assert!(shader.contains("let index = instance_index;"));
+        assert!(shader.contains("if metadata[index].w == 0u"));
+        assert!(!shader.contains("active_indices[instance_index]"));
     }
 
     #[test]
