@@ -613,7 +613,7 @@ mod tests {
                 solver_capacity_bytes: 512,
                 particle_count: 4_096,
                 particle_capacity: 32_768,
-                particle_dispatches_per_step: 80,
+                particle_dispatches_per_step: 92,
                 particle_capacity_bytes: 2_097_152,
                 particle_readback_for_frame_advancement: false,
                 particle_visible_in_box2d: false,

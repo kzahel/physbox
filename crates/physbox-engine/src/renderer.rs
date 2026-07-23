@@ -1796,7 +1796,7 @@ mod tests {
         assert!(!liquid.ui.comparator_available);
         assert!(liquid.scene_contract.particle_count > 0);
         assert_eq!(liquid.scene_contract.particle_capacity, 32_768);
-        assert_eq!(liquid.scene_contract.particle_dispatches_per_step, 80);
+        assert_eq!(liquid.scene_contract.particle_dispatches_per_step, 92);
         assert!(
             !liquid
                 .scene_contract

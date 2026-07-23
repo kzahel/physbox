@@ -11,9 +11,10 @@ struct ParticleParams {
 @group(0) @binding(1) var<storage, read_write> velocities: array<vec4f>;
 @group(0) @binding(2) var<storage, read_write> active_flags: array<atomic<u32>>;
 @group(0) @binding(3) var<storage, read_write> cell_counts: array<atomic<u32>>;
-@group(0) @binding(4) var<storage, read> cell_bins: array<u32>;
-@group(0) @binding(5) var<storage, read_write> corrections: array<vec2f>;
-@group(0) @binding(6) var<uniform> params: ParticleParams;
+@group(0) @binding(4) var<storage, read> cell_offsets: array<u32>;
+@group(0) @binding(5) var<storage, read> cell_records: array<u32>;
+@group(0) @binding(6) var<storage, read_write> corrections: array<vec2f>;
+@group(0) @binding(7) var<uniform> params: ParticleParams;
 
 fn cell_for(position: vec2f) -> vec2i {
     return vec2i(floor((position - params.grid.xy) / params.grid.z));
@@ -63,9 +64,10 @@ fn gather_viscosity(@builtin(global_invocation_id) invocation: vec3u) {
                 continue;
             }
             let target_cell = cell_index(cell);
-            let stored = min(atomicLoad(&cell_counts[target_cell]), params.limits.x);
+            let start = cell_offsets[target_cell];
+            let stored = atomicLoad(&cell_counts[target_cell]);
             for (var slot = 0u; slot < stored; slot += 1u) {
-                let other = cell_bins[target_cell * params.limits.x + slot];
+                let other = cell_records[start + slot];
                 if other == index || atomicLoad(&active_flags[other]) == 0u {
                     continue;
                 }

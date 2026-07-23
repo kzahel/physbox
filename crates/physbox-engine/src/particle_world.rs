@@ -15,7 +15,6 @@ pub(crate) const PARTICLE_COMMAND_CAPACITY: u32 = 64;
 const PARTICLE_COUNTER_WORDS: u32 = 21;
 const GRID_WIDTH: u32 = 64;
 const GRID_HEIGHT: u32 = 64;
-const GRID_CELL_CAPACITY: u32 = 64;
 const GRID_CELL_COUNT: u32 = GRID_WIDTH * GRID_HEIGHT;
 const PARTICLE_WORKGROUP_SIZE: u32 = 64;
 const PARTICLE_SUBSTEPS: u32 = 2;
@@ -199,6 +198,8 @@ pub(crate) struct GpuParticleWorld {
     _initial_velocities: wgpu::Buffer,
     _initial_metadata: wgpu::Buffer,
     _cell_counts: wgpu::Buffer,
+    _cell_offsets: wgpu::Buffer,
+    _cell_cursors: wgpu::Buffer,
     _cell_bins: wgpu::Buffer,
     command_batch: wgpu::Buffer,
     _params: wgpu::Buffer,
@@ -211,7 +212,9 @@ pub(crate) struct GpuParticleWorld {
     core_finalize_active: wgpu::ComputePipeline,
     grid_group: wgpu::BindGroup,
     grid_clear: wgpu::ComputePipeline,
-    grid_fill: wgpu::ComputePipeline,
+    grid_count: wgpu::ComputePipeline,
+    grid_scan_ranges: wgpu::ComputePipeline,
+    grid_scatter: wgpu::ComputePipeline,
     density_group: wgpu::BindGroup,
     density_estimate: wgpu::ComputePipeline,
     correction_group: wgpu::BindGroup,
@@ -269,8 +272,8 @@ impl GpuParticleWorld {
         ensure_storage_size(device, particle_bytes, "particle 16-byte lane")?;
         ensure_storage_size(
             device,
-            u64::from(GRID_CELL_COUNT) * u64::from(GRID_CELL_CAPACITY) * 4,
-            "particle grid bins",
+            u64::from(capacity) * 4,
+            "compact particle grid records",
         )?;
 
         let storage_usage = wgpu::BufferUsages::STORAGE
@@ -378,10 +381,22 @@ impl GpuParticleWorld {
             u64::from(GRID_CELL_COUNT) * 4,
             wgpu::BufferUsages::COPY_SRC,
         );
+        let cell_offsets = empty_storage(
+            device,
+            "physbox5_particle_grid_offsets",
+            u64::from(GRID_CELL_COUNT) * 4,
+            wgpu::BufferUsages::COPY_SRC,
+        );
+        let cell_cursors = empty_storage(
+            device,
+            "physbox5_particle_grid_cursors",
+            u64::from(GRID_CELL_COUNT) * 4,
+            wgpu::BufferUsages::empty(),
+        );
         let cell_bins = empty_storage(
             device,
-            "physbox5_particle_grid_bins",
-            u64::from(GRID_CELL_COUNT) * u64::from(GRID_CELL_CAPACITY) * 4,
+            "physbox5_particle_grid_records",
+            u64::from(capacity) * 4,
             wgpu::BufferUsages::empty(),
         );
         let command_batch = device.create_buffer(&wgpu::BufferDescriptor {
@@ -418,7 +433,7 @@ impl GpuParticleWorld {
                 GRID_HEIGHT,
             ],
             limits: [
-                GRID_CELL_CAPACITY,
+                capacity,
                 PARTICLE_COMMAND_CAPACITY,
                 initial_count,
                 scenario.settings.pressure_iterations,
@@ -512,8 +527,10 @@ impl GpuParticleWorld {
                 (3, false),
                 (4, false),
                 (5, false),
+                (6, false),
+                (7, false),
             ],
-            6,
+            8,
             wgpu::ShaderStages::COMPUTE,
         );
         let grid_group = bind_group(
@@ -525,6 +542,8 @@ impl GpuParticleWorld {
                 &metadata,
                 &active_flags,
                 &cell_counts,
+                &cell_offsets,
+                &cell_cursors,
                 &cell_bins,
                 &counters,
                 &params,
@@ -542,12 +561,26 @@ impl GpuParticleWorld {
             &grid_shader,
             "clear_grid",
         );
-        let grid_fill = compute(
+        let grid_count = compute(
             device,
-            "particle_grid_fill",
+            "particle_grid_count",
             &grid_layout,
             &grid_shader,
-            "fill_grid",
+            "count_grid",
+        );
+        let grid_scan_ranges = compute(
+            device,
+            "particle_grid_scan_ranges",
+            &grid_layout,
+            &grid_shader,
+            "scan_grid_ranges",
+        );
+        let grid_scatter = compute(
+            device,
+            "particle_grid_scatter",
+            &grid_layout,
+            &grid_shader,
+            "scatter_grid",
         );
 
         let density_layout = layout(
@@ -555,9 +588,9 @@ impl GpuParticleWorld {
             "physbox5_particle_density_layout",
             &[
                 (0, true),
-                (1, true),
+                (1, false),
                 (2, false),
-                (3, false),
+                (3, true),
                 (4, true),
                 (5, false),
                 (6, false),
@@ -571,9 +604,9 @@ impl GpuParticleWorld {
             &density_layout,
             &[
                 &positions,
-                &metadata,
                 &active_flags,
                 &cell_counts,
+                &cell_offsets,
                 &cell_bins,
                 &density_states,
                 &counters,
@@ -598,9 +631,9 @@ impl GpuParticleWorld {
             "physbox5_particle_correction_layout",
             &[
                 (0, false),
-                (1, true),
+                (1, false),
                 (2, false),
-                (3, false),
+                (3, true),
                 (4, true),
                 (5, true),
                 (6, false),
@@ -615,9 +648,9 @@ impl GpuParticleWorld {
             &correction_layout,
             &[
                 &positions,
-                &metadata,
                 &active_flags,
                 &cell_counts,
+                &cell_offsets,
                 &cell_bins,
                 &density_states,
                 &corrections,
@@ -907,9 +940,10 @@ impl GpuParticleWorld {
                 (2, false),
                 (3, false),
                 (4, true),
-                (5, false),
+                (5, true),
+                (6, false),
             ],
-            6,
+            7,
             wgpu::ShaderStages::COMPUTE,
         );
         let velocity_group = bind_group(
@@ -921,6 +955,7 @@ impl GpuParticleWorld {
                 &velocities,
                 &active_flags,
                 &cell_counts,
+                &cell_offsets,
                 &cell_bins,
                 &corrections,
                 &params,
@@ -1123,6 +1158,8 @@ impl GpuParticleWorld {
             _initial_velocities: initial_velocities,
             _initial_metadata: initial_metadata,
             _cell_counts: cell_counts,
+            _cell_offsets: cell_offsets,
+            _cell_cursors: cell_cursors,
             _cell_bins: cell_bins,
             command_batch,
             _params: params,
@@ -1135,7 +1172,9 @@ impl GpuParticleWorld {
             core_finalize_active,
             grid_group,
             grid_clear,
-            grid_fill,
+            grid_count,
+            grid_scan_ranges,
+            grid_scatter,
             density_group,
             density_estimate,
             correction_group,
@@ -1373,15 +1412,15 @@ impl GpuParticleWorld {
     pub(crate) fn allocated_bytes(&self) -> u64 {
         u64::from(self.capacity) * (PARTICLE_BYTES_PER_SLOT + 20)
             + u64::from(self.body_capacity) * u64::from(self.body_tile_count) * 16
-            + u64::from(GRID_CELL_COUNT) * 4
-            + u64::from(GRID_CELL_COUNT) * u64::from(GRID_CELL_CAPACITY) * 4
+            + u64::from(GRID_CELL_COUNT) * 12
+            + u64::from(self.capacity) * 4
             + size_of::<ParticleCommandBatchRaw>() as u64
             + u64::from(PARTICLE_COUNTER_WORDS) * 4
             + 8 * 4
     }
 
     pub(crate) fn dispatches_per_step(&self) -> u32 {
-        1 + PARTICLE_SUBSTEPS * (4 + self.pressure_iterations * 12 + 10) + 3
+        1 + PARTICLE_SUBSTEPS * (4 + self.pressure_iterations * 14 + 12) + 3
     }
 
     pub(crate) fn capacities(&self) -> Vec<CapacityRecordV1> {
@@ -1411,15 +1450,15 @@ impl GpuParticleWorld {
                 size_of::<ParticleCommandRaw>() as u64,
             ),
             capacity(
-                "particle-grid-bins",
-                u64::from(GRID_CELL_COUNT) * u64::from(GRID_CELL_CAPACITY),
-                u64::from(self.initial_count),
-                4,
+                "particle-grid-cell-ranges",
+                u64::from(GRID_CELL_COUNT),
+                u64::from(GRID_CELL_COUNT),
+                12,
             ),
             capacity(
-                "particle-grid-cells",
-                u64::from(GRID_CELL_COUNT),
-                u64::from(GRID_CELL_COUNT),
+                "particle-grid-records",
+                u64::from(self.capacity),
+                u64::from(self.initial_count),
                 4,
             ),
             capacity(
@@ -1646,8 +1685,21 @@ impl GpuParticleWorld {
         );
         self.dispatch_capacity(
             encoder,
-            "particle_grid_fill",
-            &self.grid_fill,
+            "particle_grid_count",
+            &self.grid_count,
+            &self.grid_group,
+        );
+        self.dispatch(
+            encoder,
+            "particle_grid_scan_ranges",
+            &self.grid_scan_ranges,
+            &self.grid_group,
+            [1, 1, 1],
+        );
+        self.dispatch_capacity(
+            encoder,
+            "particle_grid_scatter",
+            &self.grid_scatter,
             &self.grid_group,
         );
     }
