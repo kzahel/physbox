@@ -306,7 +306,7 @@ interaction/reset behavior, and host dependency proof remain open.
   `FLUID HIDDEN`.
 - [x] Keep the authoritative PhysBox rigid/liquid world advancing while hidden
   and continue mirroring only stable-ID rigid actions to Box2D.
-- [ ] Prove the comparator-off build contains no Box2D runtime while retaining
+- [x] Prove the comparator-off build contains no Box2D runtime while retaining
   the complete PhysBox liquid product.
 - [x] Refresh body/particle/UI palette, outlines, and glyphs through the shared
   renderer without changing mechanics or introducing DOM product chrome.
@@ -332,8 +332,11 @@ interactive readback, water material, and current tool. Box2D renders the
 explicit `BOX2D RIGID ONLY` and `FLUID HIDDEN` labels. Focused contract, input,
 preview, GPU-allocation, and comparator-off checks pass; the existing
 continuously-aligned shadow test continues to cover hidden PhysBox
-advancement. Complete S31.4 browser/comparator/Android capture gates and the
-palette refresh remain open.
+advancement. The release comparator-off package contains no comparator
+dependency, path, bridge marker, revision marker, or runtime marker, while its
+offscreen liquid frame retains nonzero particles, the declared 32,768-slot /
+80-dispatch substrate, same-step rigid coupling, and the no-readback policy.
+Complete S31.4 browser/comparator/Android capture gates remain open.
 
 The midpoint/angle/fixed-box interaction was independently implemented after
 consulting PhysBox 4 `input.rs`, `scene.rs`, and `surface_preview.wgsl` at clean

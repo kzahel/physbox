@@ -1781,6 +1781,33 @@ mod tests {
         assert_eq!(report.ui.box2d_action_queue_overflowed, None);
         assert_eq!(report.ui.box2d_aligned, None);
         assert_eq!(report.ui.box2d_failure, None);
+
+        let mut liquid_renderer = pollster::block_on(OffscreenRenderer::new(
+            320,
+            200,
+            EngineConfig {
+                scenario: ValidationScenario::LiquidSandbox,
+                ..Default::default()
+            },
+        ))
+        .unwrap();
+        let liquid = liquid_renderer.render(FrameInput::exact(1));
+        assert_eq!(liquid.ui.selected_engine, "physbox");
+        assert!(!liquid.ui.comparator_available);
+        assert!(liquid.scene_contract.particle_count > 0);
+        assert_eq!(liquid.scene_contract.particle_capacity, 32_768);
+        assert_eq!(liquid.scene_contract.particle_dispatches_per_step, 80);
+        assert!(
+            !liquid
+                .scene_contract
+                .particle_readback_for_frame_advancement
+        );
+        assert!(!liquid.scene_contract.particle_visible_in_box2d);
+        assert!(!liquid.scene_contract.particle_box2d_interaction);
+        assert!(liquid.scene_contract.particle_rigid_coupling);
+        assert_eq!(liquid.ui.box2d_revision, None);
+        assert_eq!(liquid.ui.box2d_completed_steps, None);
+        assert_eq!(liquid.ui.box2d_failure, None);
     }
 
     #[cfg(feature = "box2d-comparator")]
