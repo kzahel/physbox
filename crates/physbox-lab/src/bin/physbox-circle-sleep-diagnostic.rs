@@ -20,7 +20,7 @@ use physbox_lab::oracle_transport::{
 use physbox_launch::{PhysicsConfigurationV3, SleepGrouping};
 use serde::Serialize;
 
-const ARTIFACT_VERSION: u32 = 3;
+const ARTIFACT_VERSION: u32 = 4;
 const BOX2D_REVISION: &str = "3a4f0da8374af61293a03021c9a0b3ebcfe67948";
 const SLEEP_THRESHOLD: f32 = 0.02;
 const DEFAULT_STEPS: u32 = 1_200;
@@ -278,6 +278,21 @@ fn run() -> Result<(), String> {
                 SleepGrouping::Local4,
             )?;
         eprintln!(
+            "diagnostic {} bucket: PhysBox soft-coupled local-4 sleep, pair-slot span",
+            shape.name()
+        );
+        let soft_local4_pair_slot_series = runner
+            .run_branch_robust_tunable_pair_slot_sleep_span_observation_series_with_submission_batch(
+                &soft_local4,
+                1,
+                arguments.steps,
+                32,
+                PhysicsConfigurationV3::SOFT_COUPLED.fixed_step_hz,
+                PhysicsConfigurationV3::SOFT_COUPLED.sleep_speed_threshold,
+                SleepGrouping::Local4,
+            )?;
+        validate_isolated_sleep_scan_ab(&soft_local4_series, &soft_local4_pair_slot_series)?;
+        eprintln!(
             "diagnostic {} bucket: PhysBox soft-coupled local-8 sleep",
             shape.name()
         );
@@ -296,6 +311,21 @@ fn run() -> Result<(), String> {
                 PhysicsConfigurationV3::SOFT_COUPLED.sleep_speed_threshold,
                 SleepGrouping::Local8,
             )?;
+        eprintln!(
+            "diagnostic {} bucket: PhysBox soft-coupled local-8 sleep, pair-slot span",
+            shape.name()
+        );
+        let soft_local8_pair_slot_series = runner
+            .run_branch_robust_tunable_pair_slot_sleep_span_observation_series_with_submission_batch(
+                &soft_local8,
+                1,
+                arguments.steps,
+                32,
+                PhysicsConfigurationV3::SOFT_COUPLED.fixed_step_hz,
+                PhysicsConfigurationV3::SOFT_COUPLED.sleep_speed_threshold,
+                SleepGrouping::Local8,
+            )?;
+        validate_isolated_sleep_scan_ab(&soft_local8_series, &soft_local8_pair_slot_series)?;
         eprintln!(
             "diagnostic {} bucket: PhysBox soft-coupled world awake",
             shape.name()
@@ -351,11 +381,25 @@ fn run() -> Result<(), String> {
                 "packed-point-count",
             )?,
             summarize_physbox_lane(
+                "soft-coupled-local-4-sleep-pair-slot-span",
+                &soft_local4_pair_slot_series,
+                true,
+                SleepGrouping::Local4,
+                "pair-slot-manifold-span",
+            )?,
+            summarize_physbox_lane(
                 "soft-coupled-local-8-sleep",
                 &soft_local8_series,
                 true,
                 SleepGrouping::Local8,
                 "packed-point-count",
+            )?,
+            summarize_physbox_lane(
+                "soft-coupled-local-8-sleep-pair-slot-span",
+                &soft_local8_pair_slot_series,
+                true,
+                SleepGrouping::Local8,
+                "pair-slot-manifold-span",
             )?,
             summarize_physbox_lane(
                 "soft-coupled-world-awake",
