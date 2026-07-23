@@ -254,6 +254,10 @@ function syncCheckout(record) {
     console.log(`[pin]   ${record.name} ${record.revision}`);
     gitAt(record, ["checkout", "--detach", record.revision], { capture: false });
   }
+  if (record.submodules === true) {
+    console.log(`[sync]  ${record.name} submodules`);
+    gitAt(record, ["submodule", "update", "--init", "--recursive"], { capture: false });
+  }
 }
 
 function syncBranchSibling(record) {

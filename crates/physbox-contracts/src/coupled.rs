@@ -528,7 +528,7 @@ impl Validate for CoupledOracleResultV1 {
             || self.run_id.is_empty()
             || !is_sha256(&self.source_scenario_hash)
             || !is_sha256(&self.projection_hash)
-            || self.completed_steps == 0
+            || (self.completed_steps == 0 && self.failure.is_none())
         {
             return Err(ContractError(
                 "invalid coupled result identity or completed-step count".to_owned(),

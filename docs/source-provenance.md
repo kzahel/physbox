@@ -67,7 +67,7 @@ exact source file and preserve any applicable license. Rapier state, PhysBox 4
 scene compatibility, fluid/settings tools, and its asynchronous coupling are
 excluded. At this planning commit no PhysBox 4 runtime source has been copied.
 
-The proposed
+The active
 [S31 coupled-liquid sandbox](tactical/031-coupled-liquid-sandbox.md) inspected
 the clean PhysBox 4 revision
 `92f745eb85908243c69080a4fa4dba24f05c22cf` as selective source and behavioral
@@ -80,3 +80,15 @@ catch-up scheduler, stabilizing clamps, scene compatibility, and platform
 semantics are explicitly excluded. No PhysBox 4 runtime source has been copied
 for S31 at the planning boundary; any later close port must cite its exact
 source file, this revision, and the applicable license.
+
+S31.1 additionally found that the first-party particle sidecar is not present
+on the tracked `box2d3-wasm` `main` revision. It lives on the repository's
+`particle-system` branch. The managed
+`reference/physbox3-particle-sidecar` checkout therefore pins that branch at
+`ef8d9526ae79377da3d610e5e4d3bd227f072cdb`; its sidecar directory is byte-
+unchanged from introducing commit
+`3884106dd415802d2139d163fca56e65b98645c6`. The process-isolated native
+adapter compiles those files in place with exact submodules Box2D
+`3a4f0da8374af61293a03021c9a0b3ebcfe67948` and box2cpp
+`45f07785abe6bfeba518fb0256a37dcd050dce32`. No sidecar source is copied into
+PhysBox 5 and the product engine does not depend on the oracle crate.

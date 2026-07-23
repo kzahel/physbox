@@ -50,6 +50,10 @@ here. These workspace-local links point to the implementation that produced
 the behavior we want to characterize:
 
 - [PhysBox 3 product tree](../../physbox3), tracking first-party `main`;
+- [PhysBox 3 particle-sidecar source](physbox3-particle-sidecar) at
+  `ef8d9526ae79377da3d610e5e4d3bd227f072cdb`; the particle files were
+  introduced by `3884106dd415802d2139d163fca56e65b98645c6` and are unchanged
+  at the pinned branch tip;
 - [LiquidFun source checkout](../../physbox3/reference/liquidfun) at
   `7f20402173fd143a3988c921bc384459c6a858f2`;
 - [PhysBox 3's Box2D v3 source](../../physbox3/vendor/box2d3-wasm/box2d) at
@@ -60,8 +64,8 @@ the behavior we want to characterize:
 Use these sources for different questions:
 
 - The clean managed Box2D checkout owns rigid acceptance comparisons.
-- PhysBox 3's particle sidecar compiled natively with its Box2D v3 source is
-  the intended routine coupled-behavior oracle.
+- The exact managed PhysBox 3 particle-sidecar checkout compiled natively with
+  PhysBox 3's pinned Box2D v3 source is the routine coupled-behavior oracle.
 - Original LiquidFun supplies later particle/body algorithms, tests, and an
   independent native behavior reference; it is not an exact substitute for
   PhysBox 3's reduced sidecar.
@@ -154,8 +158,8 @@ show that browser automation is not a prerequisite for the routine lanes.
   fixtures and visual scenes live under `Box2D/Unittests/` and
   `Box2D/Testbed/Tests/` in the same checkout.
 - The actual reduced coupled sidecar is under
-  `../physbox3/vendor/box2d3-wasm/box2d3-wasm/csrc/particle_sidecar/`; the
-  Emscripten bindings are a separate concern in `csrc/glue.cpp`.
+  `reference/physbox3-particle-sidecar/box2d3-wasm/csrc/particle_sidecar/`;
+  the Emscripten bindings are a separate concern in `csrc/glue.cpp`.
 
 ## Source-use rules
 

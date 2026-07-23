@@ -1516,6 +1516,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "physbox-physbox3-particle-oracle"
+version = "0.1.0"
+dependencies = [
+ "cc",
+ "physbox-contracts",
+ "physbox-engine",
+ "serde_json",
+]
+
+[[package]]
 name = "physbox-shell"
 version = "0.1.0"
 dependencies = [

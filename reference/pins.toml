@@ -32,6 +32,15 @@ revision = "ac89dceb8a33778e895303cd606da38afb015192"
 purpose = "Portable WebGPU broadphase, coloring, and solver research reference"
 required = true
 
+[[checkout]]
+name = "physbox3-particle-sidecar"
+path = "reference/physbox3-particle-sidecar"
+repository = "git@github.com:kzahel/box2d3-wasm.git"
+revision = "ef8d9526ae79377da3d610e5e4d3bd227f072cdb"
+purpose = "Exact first-party particle-system branch supplying the native PhysBox 3 coupled oracle source"
+required = true
+submodules = true
+
 [[sibling]]
 name = "physbox3"
 path = "../physbox3"

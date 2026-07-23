@@ -114,7 +114,7 @@ the approved plan has no unresolved ownership decision.
 - [x] Add a scalar executable specification for particle integration, density,
   correction, boundary projection, surface-relative velocity, and one
   equal-and-opposite particle/body contact including rotational effective mass.
-- [ ] Build a thin process-isolated native PhysBox 3 sidecar adapter against
+- [x] Build a thin process-isolated native PhysBox 3 sidecar adapter against
   its resolved Box2D v3/box2cpp sources.
 - [ ] Build original LiquidFun/Box2D 2.3 as a separate native secondary
   adapter; do not combine foreign source generations in one process.
@@ -129,6 +129,16 @@ boundary, particle-pair, and equal-and-opposite particle/body contracts.
 `physbox-engine::coupled_scenario` authors and freezes the seven source hashes.
 Focused contract and engine scenario tests pass; no shader or product runtime
 uses these records yet.
+
+PhysBox 3 oracle checkpoint: the exact managed first-party particle branch at
+`ef8d9526ae79377da3d610e5e4d3bd227f072cdb` contains sidecar sources unchanged
+from their introducing commit
+`3884106dd415802d2139d163fca56e65b98645c6`. The new process adapter compiles
+those clean sources with Box2D
+`3a4f0da8374af61293a03021c9a0b3ebcfe67948` and box2cpp
+`45f07785abe6bfeba518fb0256a37dcd050dce32`, preserves fresh request/projection
+identity, executes contained-water and displacement sources, rejects unsupported
+grab projection deterministically, and emits `PHYSBOX5_ORACLE_SUCCESS`.
 
 Gate: both native processes consume the shared projection or reject unsupported
 features deterministically, emit fresh canonical results with exact source and
