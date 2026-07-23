@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 mod collision;
+mod coupled;
 
 use std::fmt::{Display, Formatter};
 
@@ -30,6 +31,7 @@ pub const SLEEP_TRANSITION_CAUSE_AUTOMATIC: u32 = 1 << 9;
 pub const ORACLE_SUCCESS_SENTINEL: &str = "PHYSBOX5_ORACLE_SUCCESS";
 
 pub use collision::*;
+pub use coupled::*;
 
 /// Velocity measure used to decide whether a dynamic body is quiet enough to
 /// accumulate sleep time. The first product policy deliberately has one

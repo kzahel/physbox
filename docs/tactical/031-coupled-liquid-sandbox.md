@@ -107,11 +107,11 @@ the approved plan has no unresolved ownership decision.
 
 ### S31.1 — coupled contracts and native oracle foundation
 
-- [ ] Add versioned particle state, material, authored-region, tool-command,
+- [x] Add versioned particle state, material, authored-region, tool-command,
   particle/body-contact, capacity/work, trace, metric, and result contracts.
-- [ ] Extend the shared scenario projection with water regions and coupled
+- [x] Extend the shared scenario projection with water regions and coupled
   actions while preserving one authored Rust source.
-- [ ] Add a scalar executable specification for particle integration, density,
+- [x] Add a scalar executable specification for particle integration, density,
   correction, boundary projection, surface-relative velocity, and one
   equal-and-opposite particle/body contact including rotational effective mass.
 - [ ] Build a thin process-isolated native PhysBox 3 sidecar adapter against
@@ -120,8 +120,15 @@ the approved plan has no unresolved ownership decision.
   adapter; do not combine foreign source generations in one process.
 - [ ] Calibrate the sidecar with a small fresh PhysBox 3 web corpus for
   contained water, displacement, and one dynamic-body interaction.
-- [ ] Freeze canonical hashes for the first seven coupled sources before GPU
+- [x] Freeze canonical hashes for the first seven coupled sources before GPU
   acceptance uses them.
+
+Contracts/scalar checkpoint: `physbox-contracts::coupled` owns the version-1
+water, region, action, state, work, capacity, trace, request/result, analytic
+boundary, particle-pair, and equal-and-opposite particle/body contracts.
+`physbox-engine::coupled_scenario` authors and freezes the seven source hashes.
+Focused contract and engine scenario tests pass; no shader or product runtime
+uses these records yet.
 
 Gate: both native processes consume the shared projection or reject unsupported
 features deterministically, emit fresh canonical results with exact source and

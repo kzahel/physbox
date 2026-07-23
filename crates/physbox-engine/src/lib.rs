@@ -29,6 +29,7 @@ mod construction;
 mod construction_validation;
 #[cfg(any(test, feature = "solver-lab"))]
 mod contact_components;
+mod coupled_scenario;
 mod engine_selection;
 mod exact_sleep_grouping;
 mod frame;
@@ -150,6 +151,10 @@ pub use contact_components::{
     GpuContactComponentObservationV1, GpuContactComponentStatsV1, GpuSleepDecisionObservationV1,
     GpuSleepDecisionStepV1, GpuSleepDecisionTimingV1, benchmark_gpu_sleep_decision_observer,
     observe_gpu_contact_components, observe_gpu_sleep_decisions,
+};
+pub use coupled_scenario::{
+    COUPLED_CANONICAL_SOURCE_COUNT, COUPLED_CANONICAL_SOURCE_HASHES_V1, CoupledScenarioKind,
+    canonical_coupled_scenario, canonical_coupled_scenario_hashes,
 };
 pub use frame::{
     FrameInput, InputEvent, PointerButton, PointerEvent, PointerPhase, StepRequest, WheelEvent,
