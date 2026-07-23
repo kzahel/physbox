@@ -45,6 +45,30 @@ impl SolverParameter {
             Self::StaticScale => "STATIC SCALE",
         }
     }
+
+    pub(crate) const fn slider_spec(self) -> (f32, f32, f32) {
+        match self {
+            Self::SimHertz => (MIN_FIXED_STEP_HZ as f32, MAX_FIXED_STEP_HZ as f32, 15.0),
+            Self::Substeps => (MIN_SOLVER_SUBSTEPS as f32, MAX_SOLVER_SUBSTEPS as f32, 1.0),
+            Self::Iterations => (
+                MIN_BIASED_ITERATIONS as f32,
+                MAX_BIASED_ITERATIONS as f32,
+                1.0,
+            ),
+            Self::ContactHertz => (MIN_CONTACT_HZ, MAX_CONTACT_HZ, 1.0),
+            Self::Damping => (MIN_CONTACT_DAMPING_RATIO, MAX_CONTACT_DAMPING_RATIO, 0.5),
+            Self::StaticScale => (
+                MIN_STATIC_CONTACT_HZ_MULTIPLIER,
+                MAX_STATIC_CONTACT_HZ_MULTIPLIER,
+                0.5,
+            ),
+        }
+    }
+
+    pub(crate) const fn slider_steps(self) -> u32 {
+        let (minimum, maximum, step) = self.slider_spec();
+        ((maximum - minimum) / step) as u32
+    }
 }
 
 impl Default for SolverProfileConfig {
@@ -240,60 +264,28 @@ impl SolverProfileConfig {
         })
     }
 
-    pub(crate) fn adjust(&mut self, parameter: SolverParameter, direction: i32) {
+    pub(crate) fn parameter_normalized(&self, parameter: SolverParameter) -> Option<f32> {
+        let value = self.parameter_value(parameter)?;
+        let (minimum, maximum, _) = parameter.slider_spec();
+        Some(((value - minimum) / (maximum - minimum)).clamp(0.0, 1.0))
+    }
+
+    pub(crate) fn set_parameter_normalized(&mut self, parameter: SolverParameter, normalized: f32) {
         if !self.is_soft_coupled() {
             return;
         }
-        let direction = direction.signum();
+        let (minimum, maximum, step) = parameter.slider_spec();
+        let value =
+            minimum + (((maximum - minimum) * normalized.clamp(0.0, 1.0) / step).round() * step);
         match parameter {
-            SolverParameter::SimHertz => {
-                self.physics.fixed_step_hz = adjust_u32(
-                    self.physics.fixed_step_hz,
-                    direction,
-                    15,
-                    MIN_FIXED_STEP_HZ,
-                    MAX_FIXED_STEP_HZ,
-                );
+            SolverParameter::SimHertz => self.physics.fixed_step_hz = value as u32,
+            SolverParameter::Substeps => self.physics.substeps = value as u32,
+            SolverParameter::Iterations => self.physics.biased_iterations = value as u32,
+            SolverParameter::ContactHertz => self.physics.contact_hertz = value,
+            SolverParameter::Damping => self.physics.contact_damping_ratio = value,
+            SolverParameter::StaticScale => {
+                self.physics.static_contact_hertz_multiplier = value;
             }
-            SolverParameter::Substeps => {
-                self.physics.substeps = adjust_u32(
-                    self.physics.substeps,
-                    direction,
-                    1,
-                    MIN_SOLVER_SUBSTEPS,
-                    MAX_SOLVER_SUBSTEPS,
-                );
-            }
-            SolverParameter::Iterations => {
-                self.physics.biased_iterations = adjust_u32(
-                    self.physics.biased_iterations,
-                    direction,
-                    1,
-                    MIN_BIASED_ITERATIONS,
-                    MAX_BIASED_ITERATIONS,
-                );
-            }
-            SolverParameter::ContactHertz => adjust_f32(
-                &mut self.physics.contact_hertz,
-                direction,
-                1.0,
-                MIN_CONTACT_HZ,
-                MAX_CONTACT_HZ,
-            ),
-            SolverParameter::Damping => adjust_f32(
-                &mut self.physics.contact_damping_ratio,
-                direction,
-                0.5,
-                MIN_CONTACT_DAMPING_RATIO,
-                MAX_CONTACT_DAMPING_RATIO,
-            ),
-            SolverParameter::StaticScale => adjust_f32(
-                &mut self.physics.static_contact_hertz_multiplier,
-                direction,
-                0.5,
-                MIN_STATIC_CONTACT_HZ_MULTIPLIER,
-                MAX_STATIC_CONTACT_HZ_MULTIPLIER,
-            ),
         }
     }
 
@@ -359,18 +351,6 @@ impl SolverProfileConfig {
 
 fn finite(label: &str, value: f32) -> Result<FiniteF32, String> {
     FiniteF32::new(value).map_err(|error| format!("invalid {label}: {error}"))
-}
-
-fn adjust_u32(value: u32, direction: i32, step: u32, minimum: u32, maximum: u32) -> u32 {
-    if direction < 0 {
-        value.saturating_sub(step).max(minimum)
-    } else {
-        value.saturating_add(step).min(maximum)
-    }
-}
-
-fn adjust_f32(value: &mut f32, direction: i32, step: f32, minimum: f32, maximum: f32) {
-    *value = (*value + direction as f32 * step).clamp(minimum, maximum);
 }
 
 pub(crate) fn display_number_for_ui(value: f32) -> String {

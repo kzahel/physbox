@@ -72,6 +72,59 @@ pub struct FlowLayout {
     cursor_y: f32,
 }
 
+/// Multiple children occupying the same bounded region.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct OverlayLayout {
+    bounds: Rect,
+}
+
+impl OverlayLayout {
+    pub const fn new(bounds: Rect) -> Self {
+        Self { bounds }
+    }
+
+    pub const fn layer(self) -> Rect {
+        self.bounds
+    }
+}
+
+/// A vertically scrolling layout whose geometry is clipped to one viewport.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ScrollColumn {
+    viewport: Rect,
+    content_y: f32,
+    gap: f32,
+    cursor: f32,
+}
+
+impl ScrollColumn {
+    pub fn new(viewport: Rect, content_offset: f32, gap: f32, padding: Insets) -> Self {
+        let viewport = viewport.inset(padding);
+        Self {
+            viewport,
+            content_y: viewport.y - content_offset.max(0.0),
+            gap,
+            cursor: 0.0,
+        }
+    }
+
+    /// Returns the full item bounds and the visible clipped portion.
+    pub fn next(&mut self, height: f32) -> (Rect, Option<Rect>) {
+        let bounds = Rect::new(
+            self.viewport.x,
+            self.content_y + self.cursor,
+            self.viewport.width,
+            height.max(0.0),
+        );
+        self.cursor += height.max(0.0) + self.gap;
+        (bounds, bounds.intersect(self.viewport))
+    }
+
+    pub const fn viewport(self) -> Rect {
+        self.viewport
+    }
+}
+
 impl FlowLayout {
     pub fn new(bounds: Rect, item: Size, gap: Size, padding: Insets) -> Self {
         let bounds = bounds.inset(padding);
@@ -139,5 +192,21 @@ mod tests {
         assert_eq!(layout.next(), Some(Rect::new(0.0, 25.0, 30.0, 20.0)));
         assert_eq!(layout.next(), Some(Rect::new(35.0, 25.0, 30.0, 20.0)));
         assert_eq!(layout.next(), None);
+    }
+
+    #[test]
+    fn scroll_column_reports_full_and_clipped_geometry() {
+        let mut layout = ScrollColumn::new(
+            Rect::new(0.0, 10.0, 100.0, 40.0),
+            15.0,
+            5.0,
+            Insets::default(),
+        );
+        let (first, visible) = layout.next(20.0);
+        assert_eq!(first, Rect::new(0.0, -5.0, 100.0, 20.0));
+        assert_eq!(visible, Some(Rect::new(0.0, 10.0, 100.0, 5.0)));
+        let (second, visible) = layout.next(20.0);
+        assert_eq!(second, Rect::new(0.0, 20.0, 100.0, 20.0));
+        assert_eq!(visible, Some(second));
     }
 }

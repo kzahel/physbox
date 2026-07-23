@@ -152,23 +152,32 @@ Vulkan 40-frame extraction capture is stored under
 
 ### S33.3 — Generic widgets and compact menu migration
 
-- [ ] Add responsive row, column, wrapping, overlay, panel/card, clipping, and
+- [x] Add responsive row, column, wrapping, overlay, panel/card, clipping, and
   scrollable-column layout sufficient for current narrow and wide targets.
-- [ ] Add label, text/icon button, tab, segmented control, toggle, separator,
+- [x] Add label, text/icon button, tab, segmented control, toggle, separator,
   discrete slider, and continuous slider widgets.
-- [ ] Use one computed layout for drawing and hit testing.
-- [ ] Qualify mouse and touch activation, drag capture, drag-outside behavior,
+- [x] Use one computed layout for drawing and hit testing.
+- [x] Qualify mouse and touch activation, drag capture, drag-outside behavior,
   cancellation, multiple pointer isolation, and slider snapping.
-- [ ] Rebuild the Scenes/Solvers/World menu using these widgets while retaining
+- [x] Rebuild the Scenes/Solvers/World menu using these widgets while retaining
   its compact organization and all existing actions.
-- [ ] Replace suitable plus/minus setting controls with drag-capable sliders
+- [x] Replace suitable plus/minus setting controls with drag-capable sliders
   that retain visible exact values and bounded configuration snapping.
-- [ ] Preserve shared controls and hide PhysBox-only solver controls in Box2D
+- [x] Preserve shared controls and hide PhysBox-only solver controls in Box2D
   mode through engine policy rather than widget special cases.
 
 Gate: every currently reachable product action remains reachable at desktop
 and narrow mobile sizes; sliders survive mouse/touch drags; no product term or
 configuration type enters `physbox-ui`.
+
+S33.3 evidence: focused `physbox-ui` tests cover bounded widget output, exact
+draw/hit geometry, snapping, drag outside the track, cancellation, and isolated
+multi-pointer capture. Engine UI tests cover touch capture, retained action
+semantics, Box2D policy, and six slider drags followed by one explicit solver
+apply. Browser WebGPU runs `16311e66-5226-49a2-b921-7ec7dcaaa9f0` at 960×600
+and `cc6a61ed-4c51-436e-a56c-4e015fff5041` at 456×1024 apply the exact intended
+solver values through the new sliders, exercise comparator visibility, retain
+one UI pass and two draws, and report no overflow.
 
 ### S33.4 — Toolbar and world visual refresh
 

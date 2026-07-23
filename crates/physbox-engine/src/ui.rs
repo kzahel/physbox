@@ -4,8 +4,8 @@ use physbox_ui::{
     CanvasRenderer, HitTarget, InstanceCapacities, InteractionState, Point,
     PointerButton as CanvasPointerButton, PointerEvent as CanvasPointerEvent,
     PointerId as CanvasPointerId, PointerPhase as CanvasPointerPhase, Primitive, Rect,
-    RenderReport as CanvasRenderReport, RenderTarget as CanvasRenderTarget, WidgetEventKind,
-    WidgetId, WidgetRole, text_width,
+    RenderReport as CanvasRenderReport, RenderTarget as CanvasRenderTarget, Theme, WidgetCanvas,
+    WidgetEventKind, WidgetId, WidgetRole, icons,
 };
 
 use crate::{
@@ -89,17 +89,6 @@ impl WorkbenchTool {
             Self::Erase => "erase",
             Self::Water => "water",
             Self::Surface => "surface",
-        }
-    }
-
-    const fn label(self) -> &'static str {
-        match self {
-            Self::Grab => "GRAB",
-            Self::Circle => "CIRC",
-            Self::Rectangle => "RECT",
-            Self::Erase => "ERASE",
-            Self::Water => "WATER",
-            Self::Surface => "SURF",
         }
     }
 }
@@ -408,10 +397,23 @@ fn route_events(
         };
         let report = interactions.route(&[canvas_event], route_targets);
         for widget_event in report.widget_events {
-            if widget_event.kind != WidgetEventKind::Pressed {
-                continue;
-            }
             if let Some((_, hit)) = hits.iter().find(|(target, _)| target.id == widget_event.id) {
+                if let UiHit::SolverSlider(parameter) = *hit {
+                    if matches!(
+                        widget_event.kind,
+                        WidgetEventKind::Pressed
+                            | WidgetEventKind::Dragged
+                            | WidgetEventKind::Activated
+                    ) {
+                        if let Some(value) = widget_event.normalized_value {
+                            draft_solver_profile.set_parameter_normalized(parameter, value);
+                        }
+                    }
+                    continue;
+                }
+                if widget_event.kind != WidgetEventKind::Pressed {
+                    continue;
+                }
                 match *hit {
                     UiHit::Menu => *menu_open = !*menu_open,
                     UiHit::MenuPage(page) => *menu_page = page,
@@ -440,9 +442,7 @@ fn route_events(
                         draft_solver_profile.set_sleep_speed_threshold(sleep.sleep_speed_threshold);
                         draft_solver_profile.set_sleep_grouping(sleep.sleep_grouping);
                     }
-                    UiHit::SolverParameter(parameter, direction) => {
-                        draft_solver_profile.adjust(parameter, direction);
-                    }
+                    UiHit::SolverSlider(_) => unreachable!("slider events are handled above"),
                     UiHit::RestoreSolverPreset => {
                         draft_solver_profile.restore_preset();
                     }
@@ -534,7 +534,7 @@ enum UiHit {
     Restart,
     Recenter,
     SolverProfile(SolverProfileName),
-    SolverParameter(crate::solver_profile::SolverParameter, i32),
+    SolverSlider(crate::solver_profile::SolverParameter),
     SolverScene(ValidationScenario),
     WorldCapacity(WorldCapacityPreset),
     ToggleSleeping,
@@ -583,8 +583,11 @@ impl UiLayout {
             ));
         };
         push(self.menu_button(), UiHit::Menu);
-        for tool in available_tools(scenario, selected_engine) {
-            push(self.tool_button(*tool), UiHit::Tool(*tool));
+        for (index, tool) in available_tools(scenario, selected_engine)
+            .iter()
+            .enumerate()
+        {
+            push(self.tool_button_at(index), UiHit::Tool(*tool));
         }
         if !menu_open {
             return hits;
@@ -621,12 +624,8 @@ impl UiLayout {
                     .enumerate()
                 {
                     push(
-                        self.solver_parameter_minus(index, profile_count),
-                        UiHit::SolverParameter(parameter, -1),
-                    );
-                    push(
-                        self.solver_parameter_plus(index, profile_count),
-                        UiHit::SolverParameter(parameter, 1),
+                        self.solver_parameter_slider(index, profile_count),
+                        UiHit::SolverSlider(parameter),
                     );
                 }
                 #[cfg(feature = "solver-lab")]
@@ -674,6 +673,14 @@ impl UiLayout {
                 push(self.world_sleep_visuals_button(), UiHit::ToggleSleepVisuals);
             }
         }
+        drop(push);
+        for (target, hit) in &mut hits {
+            if let UiHit::SolverSlider(parameter) = hit {
+                target.role = WidgetRole::HorizontalSlider {
+                    steps: parameter.slider_steps(),
+                };
+            }
+        }
         hits
     }
 
@@ -707,7 +714,7 @@ impl UiLayout {
         [
             12.0 * self.scale,
             24.0 * self.scale,
-            100.0 * self.scale,
+            52.0 * self.scale,
             52.0 * self.scale,
         ]
     }
@@ -721,15 +728,19 @@ impl UiLayout {
             WorkbenchTool::Water => 4,
             WorkbenchTool::Surface => 5,
         };
+        self.tool_button_at(index)
+    }
+
+    fn tool_button_at(self, index: usize) -> [f32; 4] {
         let logical_width = self.target_size[0] as f32 / self.scale;
-        let (stride, width) = if logical_width < 580.0 {
-            let stride = ((logical_width - 130.0) / WorkbenchTool::ALL.len() as f32).max(1.0);
+        let (stride, width) = if logical_width < 460.0 {
+            let stride = ((logical_width - 78.0) / WorkbenchTool::ALL.len() as f32).max(1.0);
             (stride, (stride - 6.0).max(1.0))
         } else {
-            (76.0, 70.0)
+            (58.0, 52.0)
         };
         [
-            (118.0 + index as f32 * stride) * self.scale,
+            (70.0 + index as f32 * stride) * self.scale,
             24.0 * self.scale,
             width * self.scale,
             52.0 * self.scale,
@@ -913,32 +924,21 @@ impl UiLayout {
         ]
     }
 
-    fn solver_parameter_minus(self, index: usize, profile_count: usize) -> [f32; 4] {
+    fn solver_parameter_slider(self, index: usize, profile_count: usize) -> [f32; 4] {
         let (base, stride, height) = self.solver_parameter_metrics(profile_count);
         let (column, row) = self.solver_parameter_grid_position(index);
         [
             (if self.compact_landscape() {
-                190.0 + column as f32 * 298.0
+                160.0 + column as f32 * 298.0
             } else {
-                238.0
+                166.0
             }) * self.scale,
             (base + row as f32 * stride) * self.scale,
-            52.0 * self.scale,
-            height * self.scale,
-        ]
-    }
-
-    fn solver_parameter_plus(self, index: usize, profile_count: usize) -> [f32; 4] {
-        let (base, stride, height) = self.solver_parameter_metrics(profile_count);
-        let (column, row) = self.solver_parameter_grid_position(index);
-        [
             (if self.compact_landscape() {
-                244.0 + column as f32 * 298.0
+                128.0
             } else {
-                308.0
+                194.0
             }) * self.scale,
-            (base + row as f32 * stride) * self.scale,
-            52.0 * self.scale,
             height * self.scale,
         ]
     }
@@ -1086,11 +1086,8 @@ impl UiLayout {
             "solver-profile" => {
                 self.solver_profile_button(index, SolverProfileConfig::available().len())
             }
-            "solver-minus" => {
-                self.solver_parameter_minus(index, SolverProfileConfig::available().len())
-            }
-            "solver-plus" => {
-                self.solver_parameter_plus(index, SolverProfileConfig::available().len())
+            "solver-slider" => {
+                self.solver_parameter_slider(index, SolverProfileConfig::available().len())
             }
             "apply-solver" => self.apply_solver_button(SolverProfileConfig::available().len()),
             "restore-solver" => self.restore_solver_button(SolverProfileConfig::available().len()),
@@ -1144,9 +1141,9 @@ impl Batch {
         self.primitives.push(Primitive::RoundedRect {
             bounds: Rect::from_array(rect),
             fill: color,
-            radius: 0.0,
-            border_width: 0.0,
-            border: color,
+            radius: 10.0,
+            border_width: 1.0,
+            border: Theme::DARK.border,
         });
     }
 
@@ -1239,91 +1236,82 @@ fn static_batch(target_size: [u32; 2], model: StaticBatchModel<'_>) -> Batch {
     } = model;
     let layout = UiLayout::for_target(target_size);
     let scale = layout.scale;
-    let mut batch = Batch::new(STATIC_INSTANCE_CAPACITY);
-    let panel = [0.025, 0.045, 0.085, 0.92];
-    let button = [0.08, 0.14, 0.22, 0.94];
-    let selected = [0.08, 0.38, 0.52, 0.96];
-    let text = [0.82, 0.92, 1.0, 1.0];
-    let accent = [0.32, 0.86, 1.0, 1.0];
-    batch.push_quad(
-        layout.menu_button(),
-        if menu_open { selected } else { button },
+    let theme = Theme::DARK;
+    let mut canvas = WidgetCanvas::new(theme, STATIC_INSTANCE_CAPACITY, 64);
+    let mut next_widget_id = 1_u64;
+    macro_rules! widget_id {
+        () => {{
+            let id = WidgetId::new(next_widget_id);
+            next_widget_id += 1;
+            id
+        }};
+    }
+
+    canvas.icon_button(
+        widget_id!(),
+        Rect::from_array(layout.menu_button()),
+        icons::MORE_HORIZONTAL,
+        menu_open,
     );
-    batch.push_text("MENU", [27.0 * scale, 41.0 * scale], 2.4 * scale, text);
-    for tool in available_tools(scenario, selected_engine) {
-        let bounds = layout.tool_button(*tool);
-        batch.push_quad(
-            bounds,
-            if *tool == selected_tool {
-                selected
-            } else {
-                button
-            },
-        );
-        let label_scale =
-            (1.8 * scale).min((bounds[2] - 8.0 * scale) / text_width(tool.label(), 1.0));
-        batch.push_text(
-            tool.label(),
-            [bounds[0] + 4.0 * scale, bounds[1] + 17.0 * scale],
-            label_scale,
-            text,
+    for (index, tool) in available_tools(scenario, selected_engine)
+        .iter()
+        .enumerate()
+    {
+        canvas.icon_button(
+            widget_id!(),
+            Rect::from_array(layout.tool_button_at(index)),
+            tool_icon(*tool),
+            *tool == selected_tool,
         );
     }
+
     if menu_open {
-        batch.push_quad(layout.menu_panel(menu_page, solver_profiles.len()), panel);
+        canvas.panel(Rect::from_array(
+            layout.menu_panel(menu_page, solver_profiles.len()),
+        ));
         for page in menu_pages(selected_engine) {
-            let bounds = layout.menu_tab(*page);
-            batch.push_quad(bounds, if *page == menu_page { selected } else { button });
-            batch.push_text(
-                match page {
-                    MenuPage::Scenes => "SCENES",
-                    MenuPage::Solvers => "SOLVERS",
-                    MenuPage::World => "WORLD",
-                },
-                [bounds[0] + 9.0 * scale, bounds[1] + 6.0 * scale],
-                1.8 * scale,
-                if *page == menu_page { accent } else { text },
+            let label = match page {
+                MenuPage::Scenes => "SCENES",
+                MenuPage::Solvers => "SOLVERS",
+                MenuPage::World => "WORLD",
+            };
+            canvas.tab(
+                widget_id!(),
+                Rect::from_array(layout.menu_tab(*page)),
+                label,
+                *page == menu_page,
+                1.65 * scale,
             );
         }
         match menu_page {
             MenuPage::Scenes => {
                 for (index, candidate) in ValidationScenario::MENU.iter().copied().enumerate() {
-                    let bounds = layout.scenario_button(index);
-                    batch.push_quad(
-                        bounds,
-                        if candidate == scenario {
-                            selected
-                        } else {
-                            button
-                        },
-                    );
-                    batch.push_text(
+                    canvas.button(
+                        widget_id!(),
+                        Rect::from_array(layout.scenario_button(index)),
                         candidate.name(),
-                        [bounds[0] + 10.0 * scale, bounds[1] + 9.0 * scale],
-                        1.8 * scale,
-                        text,
+                        candidate == scenario,
+                        1.65 * scale,
                     );
                 }
-                let restart = layout.restart_button();
-                let recenter = layout.recenter_button();
-                batch.push_quad(restart, button);
-                batch.push_quad(recenter, button);
-                batch.push_text(
+                canvas.button(
+                    widget_id!(),
+                    Rect::from_array(layout.restart_button()),
                     "RESTART",
-                    [restart[0] + 11.0 * scale, restart[1] + 10.0 * scale],
-                    1.8 * scale,
-                    text,
+                    false,
+                    1.65 * scale,
                 );
-                batch.push_text(
+                canvas.button(
+                    widget_id!(),
+                    Rect::from_array(layout.recenter_button()),
                     "RECENTER",
-                    [recenter[0] + 10.0 * scale, recenter[1] + 10.0 * scale],
-                    1.8 * scale,
-                    text,
+                    false,
+                    1.65 * scale,
                 );
             }
             MenuPage::Solvers => {
                 let profile_count = solver_profiles.len();
-                batch.push_text(
+                canvas.label(
                     &format!(
                         "ACTIVE {} {}",
                         active_solver_profile.label(),
@@ -1333,25 +1321,17 @@ fn static_batch(target_size: [u32; 2], model: StaticBatchModel<'_>) -> Batch {
                             "CUSTOM"
                         }
                     ),
-                    [28.0 * scale, 128.0 * scale],
-                    1.5 * scale,
-                    accent,
+                    Point::new(28.0 * scale, 128.0 * scale),
+                    1.45 * scale,
+                    theme.accent,
                 );
                 for (index, profile) in solver_profiles.iter().enumerate() {
-                    let bounds = layout.solver_profile_button(index, profile_count);
-                    batch.push_quad(
-                        bounds,
-                        if profile.profile_name() == draft_solver_profile.profile_name() {
-                            selected
-                        } else {
-                            button
-                        },
-                    );
-                    batch.push_text(
+                    canvas.button(
+                        widget_id!(),
+                        Rect::from_array(layout.solver_profile_button(index, profile_count)),
                         profile.label(),
-                        [bounds[0] + 10.0 * scale, bounds[1] + 9.0 * scale],
-                        1.8 * scale,
-                        text,
+                        profile.profile_name() == draft_solver_profile.profile_name(),
+                        1.6 * scale,
                     );
                 }
                 for (index, parameter) in crate::solver_profile::SolverParameter::ALL
@@ -1359,198 +1339,178 @@ fn static_batch(target_size: [u32; 2], model: StaticBatchModel<'_>) -> Batch {
                     .copied()
                     .enumerate()
                 {
+                    let Some(value) = draft_solver_profile.parameter_value(parameter) else {
+                        continue;
+                    };
                     let (label_origin, value_origin) =
                         layout.solver_parameter_text_origins(index, profile_count);
-                    batch.push_text(parameter.label(), label_origin, 1.7 * scale, text);
-                    if let Some(value) = draft_solver_profile.parameter_value(parameter) {
-                        let value =
-                            if parameter == crate::solver_profile::SolverParameter::ContactHertz {
-                                let effective = draft_solver_profile.effective_dynamic_contact_hz();
-                                if (effective - value).abs() > 0.001 {
-                                    format!(
-                                        "{}>{}",
-                                        crate::solver_profile::display_number_for_ui(value),
-                                        crate::solver_profile::display_number_for_ui(effective)
-                                    )
-                                } else {
-                                    crate::solver_profile::display_number_for_ui(value)
-                                }
+                    canvas.label(
+                        parameter.label(),
+                        Point::new(label_origin[0], label_origin[1]),
+                        1.45 * scale,
+                        theme.text,
+                    );
+                    let display =
+                        if parameter == crate::solver_profile::SolverParameter::ContactHertz {
+                            let effective = draft_solver_profile.effective_dynamic_contact_hz();
+                            if (effective - value).abs() > 0.001 {
+                                format!(
+                                    "{}>{}",
+                                    crate::solver_profile::display_number_for_ui(value),
+                                    crate::solver_profile::display_number_for_ui(effective)
+                                )
                             } else {
                                 crate::solver_profile::display_number_for_ui(value)
-                            };
-                        batch.push_text(&value, value_origin, 1.7 * scale, accent);
-                        for (bounds, label) in [
-                            (layout.solver_parameter_minus(index, profile_count), "-"),
-                            (layout.solver_parameter_plus(index, profile_count), "+"),
-                        ] {
-                            batch.push_quad(bounds, button);
-                            batch.push_text(
-                                label,
-                                [bounds[0] + 19.0 * scale, bounds[1] + 8.0 * scale],
-                                2.0 * scale,
-                                text,
-                            );
-                        }
-                    }
+                            }
+                        } else {
+                            crate::solver_profile::display_number_for_ui(value)
+                        };
+                    canvas.label(
+                        &display,
+                        Point::new(value_origin[0], value_origin[1]),
+                        1.45 * scale,
+                        theme.accent,
+                    );
+                    canvas.discrete_slider(
+                        widget_id!(),
+                        Rect::from_array(layout.solver_parameter_slider(index, profile_count)),
+                        draft_solver_profile
+                            .parameter_normalized(parameter)
+                            .unwrap_or_default(),
+                        parameter.slider_steps(),
+                    );
                 }
                 #[cfg(feature = "solver-lab")]
                 for (index, label) in ["STACK 8", "STACK 16"].iter().enumerate() {
-                    let bounds = layout.solver_scene_button(index, profile_count);
-                    batch.push_quad(bounds, button);
-                    batch.push_text(
+                    canvas.button(
+                        widget_id!(),
+                        Rect::from_array(layout.solver_scene_button(index, profile_count)),
                         label,
-                        [bounds[0] + 10.0 * scale, bounds[1] + 9.0 * scale],
-                        1.7 * scale,
-                        text,
+                        false,
+                        1.55 * scale,
                     );
                 }
-                let apply = layout.apply_solver_button(profile_count);
-                let restore = layout.restore_solver_button(profile_count);
-                batch.push_quad(restore, button);
-                batch.push_text(
+                canvas.button(
+                    widget_id!(),
+                    Rect::from_array(layout.restore_solver_button(profile_count)),
                     "RESET PRESET",
-                    [restore[0] + 10.0 * scale, restore[1] + 10.0 * scale],
-                    1.6 * scale,
-                    text,
+                    false,
+                    1.5 * scale,
                 );
-                batch.push_quad(apply, button);
-                batch.push_text(
+                canvas.button(
+                    widget_id!(),
+                    Rect::from_array(layout.apply_solver_button(profile_count)),
                     "APPLY",
-                    [apply[0] + 10.0 * scale, apply[1] + 10.0 * scale],
-                    1.8 * scale,
-                    text,
+                    true,
+                    1.65 * scale,
                 );
             }
             MenuPage::World => {
-                batch.push_text(
+                canvas.label(
                     #[cfg(feature = "box2d-comparator")]
                     "ENGINE",
                     #[cfg(not(feature = "box2d-comparator"))]
                     &format!("ACTIVE {}", world_capacity.label()),
-                    [28.0 * scale, 128.0 * scale],
-                    1.5 * scale,
-                    accent,
+                    Point::new(28.0 * scale, 128.0 * scale),
+                    1.45 * scale,
+                    theme.accent,
                 );
                 #[cfg(feature = "box2d-comparator")]
                 for (index, engine) in [ComparisonEngine::PhysBox, ComparisonEngine::Box2d]
                     .into_iter()
                     .enumerate()
                 {
-                    let bounds = layout.world_engine_button(index);
-                    batch.push_quad(
-                        bounds,
-                        if engine == selected_engine {
-                            selected
-                        } else {
-                            button
-                        },
-                    );
-                    batch.push_text(
+                    canvas.button(
+                        widget_id!(),
+                        Rect::from_array(layout.world_engine_button(index)),
                         engine.label(),
-                        [bounds[0] + 8.0 * scale, bounds[1] + 6.0 * scale],
-                        1.45 * scale,
-                        if engine == selected_engine {
-                            accent
-                        } else {
-                            text
-                        },
+                        engine == selected_engine,
+                        1.4 * scale,
                     );
                 }
                 for (index, capacity) in WorldCapacityPreset::ALL.into_iter().enumerate() {
-                    let bounds = layout.world_capacity_button(index);
-                    batch.push_quad(
-                        bounds,
-                        if capacity == world_capacity {
-                            selected
-                        } else {
-                            button
-                        },
-                    );
-                    batch.push_text(
+                    canvas.button(
+                        widget_id!(),
+                        Rect::from_array(layout.world_capacity_button(index)),
                         capacity.label(),
-                        [bounds[0] + 10.0 * scale, bounds[1] + 9.0 * scale],
-                        1.8 * scale,
-                        text,
+                        capacity == world_capacity,
+                        1.6 * scale,
                     );
                 }
-                let sleeping = layout.world_sleeping_button();
                 let sleeping_requested = draft_solver_profile.physics().sleeping_enabled;
-                batch.push_quad(sleeping, if sleeping_requested { selected } else { button });
-                batch.push_text(
-                    match (sleeping_requested, sleeping_effective) {
-                        (true, true) => "SLEEP REQUEST ON  EFFECTIVE ON",
-                        (true, false) => "SLEEP REQUEST ON  EFFECTIVE OFF",
-                        (false, _) => "SLEEP REQUEST OFF EFFECTIVE OFF",
-                    },
-                    [sleeping[0] + 9.0 * scale, sleeping[1] + 10.0 * scale],
-                    1.35 * scale,
-                    if sleeping_requested { accent } else { text },
+                canvas.toggle(
+                    widget_id!(),
+                    Rect::from_array(layout.world_sleeping_button()),
+                    "SLEEPING",
+                    sleeping_requested,
+                    1.4 * scale,
                 );
-                let sleep_threshold = layout.world_sleep_threshold_button();
-                batch.push_quad(sleep_threshold, button);
-                batch.push_text(
+                canvas.button(
+                    widget_id!(),
+                    Rect::from_array(layout.world_sleep_threshold_button()),
                     &format!(
-                        "SLEEP THRESHOLD {:.3} M/S",
+                        "THRESHOLD {:.3} M/S",
                         draft_solver_profile.physics().sleep_speed_threshold
                     ),
-                    [
-                        sleep_threshold[0] + 9.0 * scale,
-                        sleep_threshold[1] + 10.0 * scale,
-                    ],
+                    false,
                     1.35 * scale,
-                    text,
                 );
                 if selected_engine == ComparisonEngine::PhysBox {
-                    let sleep_grouping = layout.world_sleep_grouping_button();
-                    batch.push_quad(sleep_grouping, button);
-                    batch.push_text(
+                    canvas.button(
+                        widget_id!(),
+                        Rect::from_array(layout.world_sleep_grouping_button()),
                         &format!(
-                            "SLEEP GROUPING {}",
+                            "GROUPING {}",
                             draft_solver_profile.physics().sleep_grouping.label()
                         ),
-                        [
-                            sleep_grouping[0] + 9.0 * scale,
-                            sleep_grouping[1] + 10.0 * scale,
-                        ],
+                        false,
                         1.35 * scale,
-                        text,
                     );
                 }
-                let visuals = layout.world_sleep_visuals_button();
-                batch.push_text(
-                    "HIGH TIERS MAY RUN SLOW",
-                    [28.0 * scale, visuals[1] + visuals[3] + 34.0 * scale],
+                canvas.toggle(
+                    widget_id!(),
+                    Rect::from_array(layout.world_sleep_visuals_button()),
+                    "SLEEP VISUALS",
+                    sleep_visuals_enabled,
                     1.35 * scale,
-                    text,
                 );
-                batch.push_quad(
-                    visuals,
-                    if sleep_visuals_enabled {
-                        selected
-                    } else {
-                        button
+                let visuals = layout.world_sleep_visuals_button();
+                canvas.label(
+                    match (sleeping_requested, sleeping_effective) {
+                        (true, true) => "REQUESTED ON  EFFECTIVE ON",
+                        (true, false) => "REQUESTED ON  EFFECTIVE OFF",
+                        (false, _) => "REQUESTED OFF EFFECTIVE OFF",
                     },
+                    Point::new(28.0 * scale, visuals[1] + visuals[3] + 12.0 * scale),
+                    1.15 * scale,
+                    theme.text_muted,
                 );
-                batch.push_text(
-                    if sleep_visuals_enabled {
-                        "SLEEP VISUALS ON"
-                    } else {
-                        "SLEEP VISUALS OFF"
-                    },
-                    [visuals[0] + 9.0 * scale, visuals[1] + 10.0 * scale],
-                    1.55 * scale,
-                    if sleep_visuals_enabled { accent } else { text },
-                );
-                batch.push_text(
+                canvas.label(
                     "TEAL ACTIVE  AMBER QUIET  BLUE Z  PINK !",
-                    [28.0 * scale, visuals[1] + visuals[3] + 12.0 * scale],
-                    1.05 * scale,
-                    text,
+                    Point::new(28.0 * scale, visuals[1] + visuals[3] + 31.0 * scale),
+                    1.0 * scale,
+                    theme.text_muted,
                 );
             }
         }
     }
-    batch
+    let scene = canvas.finish();
+    let _ = next_widget_id;
+    Batch {
+        primitives: scene.primitives,
+        overflowed: scene.overflowed,
+    }
+}
+
+const fn tool_icon(tool: WorkbenchTool) -> physbox_ui::IconId {
+    match tool {
+        WorkbenchTool::Grab => icons::HAND,
+        WorkbenchTool::Circle => icons::CIRCLE_OUTLINE,
+        WorkbenchTool::Rectangle => icons::SQUARE_OUTLINE,
+        WorkbenchTool::Erase => icons::CROSS,
+        WorkbenchTool::Water => icons::DROPLETS,
+        WorkbenchTool::Surface => icons::DIAGONAL_LINE,
+    }
 }
 
 fn dynamic_batch(
@@ -2281,8 +2241,8 @@ mod tests {
                 layout.menu_tab(MenuPage::Solvers),
                 layout.solver_profile_button(0, profile_count),
                 layout.solver_profile_button(1, profile_count),
-                layout.solver_parameter_minus(0, profile_count),
-                layout.solver_parameter_plus(2, profile_count),
+                layout.solver_parameter_slider(0, profile_count),
+                layout.solver_parameter_slider(2, profile_count),
                 layout.solver_scene_button(0, profile_count),
                 layout.solver_scene_button(1, profile_count),
                 layout.apply_solver_button(profile_count),
@@ -2326,15 +2286,54 @@ mod tests {
         let mut draft = SolverProfileConfig::default();
         draft.set_sleeping_enabled(true);
 
-        for (id, position) in [
-            (1, layout.center_normalized("solver-profile", 0)),
-            (2, layout.center_normalized("solver-plus", 0)),
-            (3, layout.center_normalized("solver-plus", 1)),
-            (4, layout.center_normalized("solver-plus", 2)),
-            (5, layout.center_normalized("solver-plus", 3)),
-            (6, layout.center_normalized("solver-plus", 4)),
-            (7, layout.center_normalized("solver-plus", 5)),
-        ] {
+        let profile_position = layout.center_normalized("solver-profile", 0);
+        let routed = route_events(
+            UiRouteState {
+                menu_open: &mut menu_open,
+                menu_page: &mut menu_page,
+                selected_tool: &mut selected_tool,
+                solver_profiles: &mut profiles,
+                draft_solver_profile: &mut draft,
+                interactions: &mut interactions,
+                scenario: ValidationScenario::Bootstrap,
+                selected_engine: ComparisonEngine::PhysBox,
+            },
+            &[
+                pointer(
+                    1,
+                    PointerPhase::Down,
+                    PointerButton::Primary,
+                    profile_position,
+                ),
+                pointer(
+                    1,
+                    PointerPhase::Up,
+                    PointerButton::Primary,
+                    profile_position,
+                ),
+            ],
+            target,
+        );
+        assert!(routed.action.is_none());
+
+        let desired = [75.0, 5.0, 2.0, 31.0, 10.5, 2.5];
+        for (index, (parameter, desired)) in crate::solver_profile::SolverParameter::ALL
+            .into_iter()
+            .zip(desired)
+            .enumerate()
+        {
+            let bounds = layout.solver_parameter_slider(index, profiles.len());
+            let (minimum, maximum, _) = parameter.slider_spec();
+            let normalized = (desired - minimum) / (maximum - minimum);
+            let position = [
+                (bounds[0] + bounds[2] * normalized) / target[0] as f32,
+                (bounds[1] + bounds[3] * 0.5) / target[1] as f32,
+            ];
+            let start = [
+                bounds[0] / target[0] as f32,
+                (bounds[1] + bounds[3] * 0.5) / target[1] as f32,
+            ];
+            let id = 10 + index as u64;
             let routed = route_events(
                 UiRouteState {
                     menu_open: &mut menu_open,
@@ -2346,12 +2345,11 @@ mod tests {
                     scenario: ValidationScenario::Bootstrap,
                     selected_engine: ComparisonEngine::PhysBox,
                 },
-                &[pointer(
-                    id,
-                    PointerPhase::Down,
-                    PointerButton::Primary,
-                    position,
-                )],
+                &[
+                    pointer(id, PointerPhase::Down, PointerButton::Primary, start),
+                    pointer(id, PointerPhase::Move, PointerButton::Primary, position),
+                    pointer(id, PointerPhase::Up, PointerButton::Primary, position),
+                ],
                 target,
             );
             assert!(routed.action.is_none());

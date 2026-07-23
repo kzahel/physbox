@@ -134,8 +134,17 @@ try {
   }
   const uiScale = Math.max(1, Math.min(2, Math.min(viewportWidth, viewportHeight) / 600));
   const compactLandscape = viewportHeight < 520 && viewportWidth > viewportHeight;
+  const logicalWidth = viewportWidth / uiScale;
+  const toolStride = logicalWidth < 460
+    ? Math.max(1, (logicalWidth - 78) / 6)
+    : 58;
+  const toolWidth = logicalWidth < 460 ? Math.max(1, toolStride - 6) : 52;
+  const toolCenter = (index) => [
+    (70 + index * toolStride + toolWidth * 0.5) * uiScale,
+    50 * uiScale,
+  ];
   const comparatorLiveBodiesBefore = before.frame.ui.box2dLiveBodies;
-  await page.mouse.click(62 * uiScale, 50 * uiScale);
+    await page.mouse.click(38 * uiScale, 50 * uiScale);
   await page.mouse.click(300 * uiScale, 104 * uiScale);
   await page.mouse.click(291 * uiScale, 135 * uiScale);
   await page.waitForFunction(
@@ -153,7 +162,7 @@ try {
     const constructionBeforeComparator = await page.evaluate(
       () => globalThis.__physbox5.frame.bodyCommands.executedConstructionIntentsTotal,
     );
-    await page.mouse.click(229 * uiScale, 50 * uiScale);
+    await page.mouse.click(...toolCenter(1));
     await page.mouse.click(viewportWidth * 0.80, viewportHeight * 0.20);
     try {
       await page.waitForFunction(
@@ -180,8 +189,8 @@ try {
     }
   }
   const box2dFrame = await page.evaluate(() => globalThis.__physbox5.frame);
-  await page.mouse.click(153 * uiScale, 50 * uiScale);
-  await page.mouse.click(62 * uiScale, 50 * uiScale);
+  await page.mouse.click(...toolCenter(0));
+    await page.mouse.click(38 * uiScale, 50 * uiScale);
   await page.mouse.click(300 * uiScale, 104 * uiScale);
   await page.mouse.click(169 * uiScale, 135 * uiScale);
   await page.waitForFunction(
@@ -194,7 +203,7 @@ try {
     const activations = await page.evaluate(
       () => globalThis.__physbox5.frame.ui.scenarioActivationsTotal,
     );
-    await page.mouse.click(62 * uiScale, 50 * uiScale);
+    await page.mouse.click(38 * uiScale, 50 * uiScale);
     await page.mouse.click(76 * uiScale, 104 * uiScale);
     await page.mouse.click(192 * uiScale, 143 * uiScale);
     await page.waitForFunction(
@@ -224,14 +233,16 @@ try {
       (startY + row * stride + height / 2) * uiScale,
     ];
   };
-  const solverParameterPlusCenter = (index) => {
+  const solverParameterPosition = (index, normalized) => {
     const baseY = compactLandscape ? 176 : 236;
     const column = compactLandscape ? index % 2 : 0;
     const row = compactLandscape ? Math.floor(index / 2) : index;
     const stride = compactLandscape ? 30 : 38;
     const height = compactLandscape ? 28 : 34;
+    const x = compactLandscape ? 160 + column * 298 : 166;
+    const width = compactLandscape ? 128 : 194;
     return [
-      (compactLandscape ? 270 + column * 298 : 334) * uiScale,
+      (x + width * normalized) * uiScale,
       (baseY + row * stride + height / 2) * uiScale,
     ];
   };
@@ -258,12 +269,12 @@ try {
     (compactLandscape ? 309 : 469) * uiScale,
   ];
   const clickWorldControl = async (center) => {
-    await page.mouse.click(62 * uiScale, 50 * uiScale);
+    await page.mouse.click(38 * uiScale, 50 * uiScale);
     await page.waitForFunction(() => globalThis.__physbox5?.frame?.ui?.menuOpen, null, { timeout: 10_000 });
     await page.mouse.click(300 * uiScale, 104 * uiScale);
     await page.mouse.click(...center);
   };
-  await page.mouse.click(62 * uiScale, 50 * uiScale);
+    await page.mouse.click(38 * uiScale, 50 * uiScale);
   await page.waitForFunction(() => globalThis.__physbox5?.frame?.ui?.menuOpen, null, { timeout: 10_000 });
   await page.evaluate(() => new Promise((resolveFrame) => {
     requestAnimationFrame(() => requestAnimationFrame(resolveFrame));
@@ -299,7 +310,7 @@ try {
       { timeout: 30_000 },
     );
     await requireWorldPreference(page, 256);
-    await page.mouse.click(62 * uiScale, 50 * uiScale);
+    await page.mouse.click(38 * uiScale, 50 * uiScale);
     await page.waitForFunction(() => globalThis.__physbox5?.frame?.ui?.menuOpen, null, { timeout: 10_000 });
     await page.mouse.click(300 * uiScale, 104 * uiScale);
     await page.mouse.click(...worldSleepingCenter);
@@ -429,7 +440,7 @@ try {
       null,
       { timeout: 30_000 },
     );
-    await page.mouse.click(62 * uiScale, 50 * uiScale);
+    await page.mouse.click(38 * uiScale, 50 * uiScale);
     await page.mouse.click(300 * uiScale, 104 * uiScale);
     await page.evaluate(() => new Promise((resolveFrame) => {
       requestAnimationFrame(() => requestAnimationFrame(resolveFrame));
@@ -471,7 +482,7 @@ try {
       null,
       { timeout: 30_000 },
     );
-    await page.mouse.click(62 * uiScale, 50 * uiScale);
+    await page.mouse.click(38 * uiScale, 50 * uiScale);
     await page.mouse.click(300 * uiScale, 104 * uiScale);
     await page.mouse.click(...worldSleepingCenter);
     await page.waitForFunction(
@@ -498,7 +509,7 @@ try {
       sleeping: false,
       sleepGrouping: "local-4",
     });
-    await page.mouse.click(62 * uiScale, 50 * uiScale);
+    await page.mouse.click(38 * uiScale, 50 * uiScale);
     await page.waitForFunction(() => globalThis.__physbox5?.frame?.ui?.menuOpen, null, { timeout: 10_000 });
     await page.mouse.click(300 * uiScale, 104 * uiScale);
     await page.mouse.click(...worldSleepVisualsCenter);
@@ -508,7 +519,7 @@ try {
       null,
       { timeout: 10_000 },
     );
-    await page.mouse.click(62 * uiScale, 50 * uiScale);
+    await page.mouse.click(38 * uiScale, 50 * uiScale);
     await page.waitForFunction(() => globalThis.__physbox5?.frame?.ui?.menuOpen, null, { timeout: 10_000 });
     await page.mouse.click(76 * uiScale, 104 * uiScale);
   }
@@ -518,10 +529,10 @@ try {
       requestAnimationFrame(() => requestAnimationFrame(resolveFrame));
     }));
     await page.mouse.click(...solverProfileCenter(0));
-    await page.mouse.click(...solverParameterPlusCenter(0));
-    await page.mouse.click(...solverParameterPlusCenter(1));
-    await page.mouse.click(...solverParameterPlusCenter(2));
-    await page.mouse.click(...solverParameterPlusCenter(5));
+    await page.mouse.click(...solverParameterPosition(0, (75 - 15) / (240 - 15)));
+    await page.mouse.click(...solverParameterPosition(1, (5 - 1) / (8 - 1)));
+    await page.mouse.click(...solverParameterPosition(2, (2 - 1) / (4 - 1)));
+    await page.mouse.click(...solverParameterPosition(5, (2.5 - 0.5) / (16 - 0.5)));
     await page.evaluate(() => new Promise((resolveFrame) => {
       requestAnimationFrame(() => requestAnimationFrame(resolveFrame));
     }));
@@ -562,7 +573,7 @@ try {
       maxDepenetrationVelocity: 3,
     });
 
-    await page.mouse.click(62 * uiScale, 50 * uiScale);
+    await page.mouse.click(38 * uiScale, 50 * uiScale);
     await page.mouse.click(188 * uiScale, 104 * uiScale);
     await page.mouse.click(...solverProfileCenter(1));
     await page.mouse.click(...solverApplyCenter);
@@ -588,7 +599,7 @@ try {
       maxDepenetrationVelocity: 3,
     });
 
-    await page.mouse.click(62 * uiScale, 50 * uiScale);
+    await page.mouse.click(38 * uiScale, 50 * uiScale);
     await page.mouse.click(188 * uiScale, 104 * uiScale);
     await page.mouse.click(...solverProfileCenter(0));
     await page.mouse.click(...solverApplyCenter);
@@ -767,7 +778,7 @@ try {
       { timeout: 10_000 },
     );
   } else if (launchOnlyScenarios.has(scenario)) {
-    await page.mouse.click(62 * uiScale, 50 * uiScale);
+    await page.mouse.click(38 * uiScale, 50 * uiScale);
     await page.waitForFunction(
       (name) => globalThis.__physbox5?.frame?.sceneContract?.scenario === name
         && !globalThis.__physbox5?.frame?.ui?.menuOpen,
@@ -785,7 +796,7 @@ try {
       throw new Error("PHYSBOX5_CONSTRUCTION_CAPTURE currently requires bootstrap");
     }
     const beforeConstruction = await page.evaluate(() => globalThis.__physbox5.frame);
-    await page.mouse.click(229 * uiScale, 50 * uiScale);
+    await page.mouse.click(...toolCenter(1));
     await page.waitForFunction(
       () => globalThis.__physbox5?.frame?.ui?.currentTool === "circle",
       null,
@@ -824,7 +835,7 @@ try {
       throw new Error(`browser construction diagnostic is invalid: ${JSON.stringify(capturedConstruction)}`);
     }
     await page.screenshot({ path: constructionScreenshot });
-    await page.mouse.click(153 * uiScale, 50 * uiScale);
+    await page.mouse.click(...toolCenter(0));
     await page.waitForFunction(
       () => globalThis.__physbox5?.frame?.ui?.currentTool === "grab",
       null,
@@ -832,15 +843,6 @@ try {
     );
   }
   if (scenario === "liquid-sandbox") {
-    const logicalWidth = viewportWidth / uiScale;
-    const toolStride = logicalWidth < 580
-      ? Math.max(1, (logicalWidth - 130) / 6)
-      : 76;
-    const toolWidth = logicalWidth < 580 ? Math.max(1, toolStride - 6) : 70;
-    const toolCenter = (index) => [
-      (118 + index * toolStride + toolWidth * 0.5) * uiScale,
-      50 * uiScale,
-    ];
     const beforeLiquid = await page.evaluate(() => globalThis.__physbox5.frame);
     const target = [viewportWidth * 0.68, viewportHeight * 0.34];
 
