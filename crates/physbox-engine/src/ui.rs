@@ -129,6 +129,9 @@ pub(crate) struct UiFrameModel<'a> {
     pub contact_count: u32,
     pub capacity_bytes: u64,
     pub overflowed: bool,
+    pub particle_count: u32,
+    pub particle_capacity: u32,
+    pub particle_dispatches_per_step: u32,
     pub sleeping_effective: bool,
     pub adapter_backend: &'a str,
     pub scenario_activations_total: u64,
@@ -1343,7 +1346,7 @@ impl UiRenderer {
             self.overflowed |= batch.overflowed;
             self.static_key = Some(key);
         }
-        let dynamic = dynamic_batch(target.size, &model, !menu_open);
+        let dynamic = dynamic_batch(target.size, &model, !menu_open, selected_tool);
         if !dynamic.instances.is_empty() {
             let bytes = bytemuck::cast_slice(&dynamic.instances);
             queue.write_buffer(&self.dynamic_instances, 0, bytes);
@@ -1838,6 +1841,7 @@ fn dynamic_batch(
     target_size: [u32; 2],
     model: &UiFrameModel<'_>,
     diagnostics_visible: bool,
+    selected_tool: WorkbenchTool,
 ) -> Batch {
     let layout = UiLayout::for_target(target_size);
     let scale = layout.scale;
@@ -1846,7 +1850,15 @@ fn dynamic_batch(
         return batch;
     }
     let width = 310.0 * scale;
-    let height = 336.0 * scale;
+    let height = if model.scenario == ValidationScenario::LiquidSandbox
+        && model.selected_engine == ComparisonEngine::PhysBox
+    {
+        410.0 * scale
+    } else if model.selected_engine != ComparisonEngine::PhysBox {
+        380.0 * scale
+    } else {
+        336.0 * scale
+    };
     let logical_width = target_size[0] as f32 / scale;
     let origin = [
         target_size[0] as f32 - width - 12.0 * scale,
@@ -1919,6 +1931,8 @@ fn dynamic_batch(
             let revision = model.box2d_revision.unwrap_or("UNAVAILABLE");
             let split = revision.len().min(20);
             lines.extend([
+                "BOX2D RIGID ONLY".to_owned(),
+                "FLUID HIDDEN".to_owned(),
                 format!("REV {}", &revision[..split]),
                 format!("    {}", &revision[split..]),
                 format!(
@@ -2076,6 +2090,21 @@ fn dynamic_batch(
                     },
                 ),
             ]);
+            if model.scenario == ValidationScenario::LiquidSandbox {
+                lines.extend([
+                    format!(
+                        "PART INIT{}/{} WORK{}",
+                        model.particle_count,
+                        model.particle_capacity,
+                        model.particle_dispatches_per_step
+                    ),
+                    format!("MAT WATER0 TOOL {}", selected_tool.name()),
+                    format!(
+                        "FLUID OVF DECL {} RB0",
+                        if model.overflowed { "YES" } else { "NO" }
+                    ),
+                ]);
+            }
         }
     }
     let color = [0.72, 0.84, 0.96, 1.0];

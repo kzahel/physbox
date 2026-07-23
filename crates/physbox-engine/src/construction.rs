@@ -11,6 +11,8 @@ pub const CONSTRUCTION_INTENT_BYTES: u32 = 32;
 pub const CONSTRUCTION_STATE_BYTES: u32 = 144;
 pub const CONSTRUCTION_CIRCLE_RADIUS: f32 = 0.10;
 pub const CONSTRUCTION_RECTANGLE_HALF_EXTENTS: [f32; 2] = [0.12, 0.08];
+pub const CONSTRUCTION_SURFACE_HALF_THICKNESS: f32 = 0.04;
+pub const CONSTRUCTION_SURFACE_MIN_LENGTH: f32 = 0.10;
 pub const CONSTRUCTION_FRICTION: f32 = 0.5;
 pub const CONSTRUCTION_RESTITUTION: f32 = 0.0;
 
@@ -28,6 +30,7 @@ const INTENT_ERASE_AT: u32 = 3;
 const INTENT_ERASE_BODY: u32 = 4;
 const INTENT_PLACE_CIRCLE_BODY: u32 = 5;
 const INTENT_PLACE_RECTANGLE_BODY: u32 = 6;
+const INTENT_PLACE_SURFACE: u32 = 7;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod, Zeroable)]
@@ -140,6 +143,7 @@ pub(crate) fn construction_intent_raw(intent: ConstructionIntentV1) -> Construct
     let kind = match intent {
         ConstructionIntentV1::PlaceCircle { .. } => INTENT_PLACE_CIRCLE,
         ConstructionIntentV1::PlaceRectangle { .. } => INTENT_PLACE_RECTANGLE,
+        ConstructionIntentV1::PlaceSurface { .. } => INTENT_PLACE_SURFACE,
         ConstructionIntentV1::PlaceCircleBody { .. } => INTENT_PLACE_CIRCLE_BODY,
         ConstructionIntentV1::PlaceRectangleBody { .. } => INTENT_PLACE_RECTANGLE_BODY,
         ConstructionIntentV1::EraseAt { .. } => INTENT_ERASE_AT,
@@ -159,6 +163,10 @@ pub(crate) fn construction_intent_raw(intent: ConstructionIntentV1) -> Construct
         }
         _ => 0,
     };
+    let target_padding = match intent {
+        ConstructionIntentV1::PlaceSurface { start, end, .. } => [start.x, start.y, end.x, end.y],
+        _ => [target.x, target.y, f32::from_bits(result), 0.0],
+    };
     ConstructionIntentRaw {
         kind_sequence_padding: [
             kind,
@@ -166,7 +174,7 @@ pub(crate) fn construction_intent_raw(intent: ConstructionIntentV1) -> Construct
             body.map_or(u32::MAX, |body| body.slot),
             body.map_or(0, |body| body.generation),
         ],
-        target_padding: [target.x, target.y, f32::from_bits(result), 0.0],
+        target_padding,
     }
 }
 

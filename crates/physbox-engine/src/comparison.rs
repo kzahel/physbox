@@ -163,6 +163,7 @@ impl ComparisonShadow {
                 construction_intents
                     .iter()
                     .copied()
+                    .filter(|intent| !matches!(intent, ConstructionIntentV1::PlaceSurface { .. }))
                     .map(PendingAction::Construction),
             )
             .collect::<Vec<_>>();
@@ -586,6 +587,9 @@ impl ComparisonShadow {
                     3.0 / (x * x + y * y),
                 )?;
             }
+            ConstructionIntentV1::PlaceSurface { .. } => {
+                return Err("surface construction is PhysBox-only".to_owned());
+            }
             ConstructionIntentV1::PlaceCircleBody {
                 body,
                 result,
@@ -701,6 +705,9 @@ impl ComparisonShadow {
                     body,
                     world_target,
                 })
+            }
+            ConstructionIntentV1::PlaceSurface { .. } => {
+                Err("surface construction is PhysBox-only".to_owned())
             }
             ConstructionIntentV1::PlaceCircleBody { .. }
             | ConstructionIntentV1::PlaceRectangleBody { .. }

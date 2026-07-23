@@ -311,6 +311,7 @@ impl GpuBodyBenchmarkSession {
                     .resolve(self.viewport)
                     .expect("benchmark target resolves the fixed camera"),
                 grab_pointer_active: false,
+                surface_preview: None,
                 sleep_visuals_enabled: false,
                 current_outer_step: 0,
                 quiet_outer_steps: 0,

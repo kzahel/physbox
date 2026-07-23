@@ -49,6 +49,8 @@ const ERASE_AT: u32 = 3u;
 const ERASE_BODY: u32 = 4u;
 const PLACE_CIRCLE_BODY: u32 = 5u;
 const PLACE_RECTANGLE_BODY: u32 = 6u;
+const PLACE_SURFACE: u32 = 7u;
+const SURFACE_HALF_THICKNESS: f32 = 0.04;
 const RESULT_NONE: u32 = 0u;
 const RESULT_PLACED: u32 = 1u;
 const RESULT_ERASED: u32 = 2u;
@@ -287,6 +289,55 @@ fn place_specific(current: ConstructionState, kind: u32, point: vec2f,
     return output;
 }
 
+fn place_surface(current: ConstructionState, kind: u32,
+                 start: vec2f, end: vec2f) -> ConstructionState {
+    var output = current;
+    var free_slot = NO_SLOT;
+    for (var slot = 0u; slot < params.counts.z; slot += 1u) {
+        if ((metadata[slot].y & FLAG_LIVE) == 0u && free_slot == NO_SLOT) {
+            free_slot = slot;
+        }
+    }
+    if (free_slot == NO_SLOT) {
+        return fail_result(output, RESULT_CAPACITY_FULL);
+    }
+    let delta = end - start;
+    let surface_length = length(delta);
+    if (surface_length < 0.01 || surface_length > 64.0) {
+        return fail_result(output, RESULT_DEEP_OVERLAP);
+    }
+    var generation = metadata[free_slot].x;
+    if (generation == 0u) {
+        generation = 1u;
+    }
+    poses[free_slot] = vec4f(
+        0.5 * (start + end),
+        atan2(delta.y, delta.x),
+        0.0,
+    );
+    motions[free_slot] = vec4f(0.0);
+    properties[free_slot] = vec4f(
+        0.5 * surface_length,
+        SURFACE_HALF_THICKNESS,
+        0.0,
+        0.0,
+    );
+    metadata[free_slot] = vec4u(
+        generation,
+        FLAG_LIVE | FLAG_FIXED | FLAG_RECTANGLE,
+        bitcast<u32>(params.circle_material.w),
+        bitcast<u32>(params.material_padding.x),
+    );
+    insert_active_slot(free_slot, output.header.y);
+    output.header.y = increment(output.header.y);
+    active_bodies[2] = increment(active_bodies[2]);
+    output.header.w = RESULT_PLACED;
+    output.last_identity_kind = vec4u(free_slot, generation, kind, 0u);
+    output.success_counts.y = increment(output.success_counts.y);
+    output.success_counts.w = increment(output.success_counts.w);
+    return output;
+}
+
 fn erase_body(current: ConstructionState, kind: u32,
               point: vec2f) -> ConstructionState {
     var output = current;
@@ -377,6 +428,13 @@ fn apply_construction_intents(@builtin(global_invocation_id) id: vec3u) {
         current = begin_result(current, kind, intent.kind_sequence_padding.y);
         if (kind == PLACE_CIRCLE || kind == PLACE_RECTANGLE) {
             current = place_body(current, kind, intent.target_padding.xy);
+        } else if (kind == PLACE_SURFACE) {
+            current = place_surface(
+                current,
+                kind,
+                intent.target_padding.xy,
+                intent.target_padding.zw,
+            );
         } else if (kind == PLACE_CIRCLE_BODY || kind == PLACE_RECTANGLE_BODY) {
             current = place_specific(
                 current,

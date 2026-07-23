@@ -5,7 +5,7 @@ use std::mem::size_of;
 use bytemuck::{Pod, Zeroable};
 use physbox_contracts::{
     BodyCommandBatchV1, BodyLayoutV1, CapacityRecordV1, ConstructionIntentBatchV1,
-    ContactIdentityPolicyV1, GrabIntentBatchV1, ScenarioV1, Validate,
+    ContactIdentityPolicyV1, GrabIntentBatchV1, ScenarioV1, Validate, Vec2,
 };
 use physbox_launch::WorldCapacityPreset;
 use wgpu::util::DeviceExt;
@@ -20,8 +20,8 @@ use crate::body_state::{
 use crate::construction::{
     CONSTRUCTION_CIRCLE_RADIUS, CONSTRUCTION_FRICTION, CONSTRUCTION_INTENT_BYTES,
     CONSTRUCTION_INTENT_CAPACITY, CONSTRUCTION_RECTANGLE_HALF_EXTENTS, CONSTRUCTION_RESTITUTION,
-    CONSTRUCTION_STATE_BYTES, ConstructionIntentRaw, construction_intent_raw,
-    empty_construction_intent_batch, initial_construction_state,
+    CONSTRUCTION_STATE_BYTES, CONSTRUCTION_SURFACE_HALF_THICKNESS, ConstructionIntentRaw,
+    construction_intent_raw, empty_construction_intent_batch, initial_construction_state,
 };
 use crate::grab::{
     GRAB_DAMPING_RATE, GRAB_INTENT_BYTES, GRAB_INTENT_CAPACITY, GRAB_MAX_ACCELERATION,
@@ -90,11 +90,18 @@ pub(crate) struct BodyRenderPlan<'a> {
     pub(crate) frame_index: u64,
     pub(crate) camera: crate::CameraFrame2d,
     pub(crate) grab_pointer_active: bool,
+    pub(crate) surface_preview: Option<SurfacePreview>,
     pub(crate) sleep_visuals_enabled: bool,
     pub(crate) current_outer_step: u32,
     pub(crate) quiet_outer_steps: u32,
     pub(crate) wake_flash_outer_steps: u32,
     pub(crate) ending_timestamp: Option<(&'a wgpu::QuerySet, u32)>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct SurfacePreview {
+    pub(crate) start: Vec2,
+    pub(crate) end: Vec2,
 }
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]
@@ -769,7 +776,9 @@ impl GpuBodyWorld {
         let grab_render_vertices = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("physbox5_grab_render_vertices"),
             size: u64::from(GRAB_RENDER_VERTEX_BYTES),
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::VERTEX,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::VERTEX
+                | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
         let grab_render_prepare_layout =
@@ -1325,6 +1334,17 @@ impl GpuBodyWorld {
             ],
         };
         queue.write_buffer(&self.render_params, 0, bytemuck::bytes_of(&params));
+        let surface_preview_active = plan.surface_preview.is_some_and(|preview| {
+            let Some(vertices) = surface_preview_vertices(preview) else {
+                return false;
+            };
+            queue.write_buffer(
+                &self.grab_render_vertices,
+                0,
+                bytemuck::cast_slice(&vertices),
+            );
+            true
+        });
         if plan.grab_pointer_active {
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("physbox5_grab_render_prepare_pass"),
@@ -1368,6 +1388,10 @@ impl GpuBodyWorld {
             pass.set_pipeline(&self.grab_pipeline);
             pass.set_vertex_buffer(0, self.grab_render_vertices.slice(..));
             pass.draw(0..GRAB_RENDER_VERTEX_COUNT, 0..1);
+        } else if surface_preview_active {
+            pass.set_pipeline(&self.grab_pipeline);
+            pass.set_vertex_buffer(0, self.grab_render_vertices.slice(..));
+            pass.draw(0..6, 0..1);
         }
         drop(pass);
         if let Some(particles) = &self.particles {
@@ -1899,6 +1923,48 @@ impl GpuBodyWorld {
             size_of::<[u32; 4]>() as u64,
         );
     }
+}
+
+fn surface_preview_vertices(preview: SurfacePreview) -> Option<[[f32; 4]; 6]> {
+    let delta = [
+        preview.end.x - preview.start.x,
+        preview.end.y - preview.start.y,
+    ];
+    let length = (delta[0] * delta[0] + delta[1] * delta[1]).sqrt();
+    if !length.is_finite() || length < 0.001 {
+        return None;
+    }
+    let perpendicular = [
+        -delta[1] / length * CONSTRUCTION_SURFACE_HALF_THICKNESS,
+        delta[0] / length * CONSTRUCTION_SURFACE_HALF_THICKNESS,
+    ];
+    let start_low = [
+        preview.start.x - perpendicular[0],
+        preview.start.y - perpendicular[1],
+        1.0,
+        0.0,
+    ];
+    let start_high = [
+        preview.start.x + perpendicular[0],
+        preview.start.y + perpendicular[1],
+        1.0,
+        0.0,
+    ];
+    let end_low = [
+        preview.end.x - perpendicular[0],
+        preview.end.y - perpendicular[1],
+        1.0,
+        0.0,
+    ];
+    let end_high = [
+        preview.end.x + perpendicular[0],
+        preview.end.y + perpendicular[1],
+        1.0,
+        0.0,
+    ];
+    Some([
+        start_low, end_low, start_high, start_high, end_low, end_high,
+    ])
 }
 
 fn interactive_body_capacity(
@@ -3035,6 +3101,99 @@ mod tests {
         assert_eq!(sleep_states[0].body.generation, 1);
         assert!(sleep_states[0].awake);
         assert!(!sleep_states[1].awake);
+    }
+
+    #[test]
+    fn gpu_surface_construction_creates_one_rotated_fixed_rectangle() {
+        let instance = crate::create_instance();
+        let adapter = pollster::block_on(crate::gpu_context::request_adapter(&instance, None))
+            .expect("test GPU adapter");
+        let (device, queue) =
+            pollster::block_on(crate::gpu_context::request_device(&adapter)).unwrap();
+        let scenario = crate::p5_2_generated_floor_scenario(1).unwrap();
+        let initial_live = scenario.bodies.len() as u32;
+        let world = GpuBodyWorld::new_generated(
+            &device,
+            wgpu::TextureFormat::Rgba8Unorm,
+            &scenario,
+            WorldCapacityPreset::default(),
+        )
+        .unwrap();
+        let initial_active = read_active_bodies(&device, &queue, &world);
+        let mut intents = BoundedConstructionIntents::new(CONSTRUCTION_INTENT_CAPACITY).unwrap();
+        intents
+            .push(ConstructionIntentV1::PlaceSurface {
+                sequence: 1,
+                start: Vec2::new(-1.0, 2.0),
+                end: Vec2::new(1.0, 2.0),
+            })
+            .unwrap();
+        encode(
+            &device,
+            &queue,
+            &world,
+            &grab_batch(Vec::new()),
+            &intents.artifact(),
+        );
+
+        let state = read_construction(&device, &queue, &world);
+        assert_eq!(state.live_bodies, initial_live + 1);
+        assert_eq!(state.placed_rectangles, 1);
+        let active = read_active_bodies(&device, &queue, &world);
+        assert_eq!(active[2], initial_active[2] + 1);
+
+        let lane_bytes = u64::from(world.body_count) * size_of::<[u32; 4]>() as u64;
+        let evidence = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("surface_construction_evidence"),
+            size: lane_bytes * 4,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("surface_construction_copy"),
+        });
+        world.copy_construction_body_evidence(&mut encoder, &evidence);
+        queue.submit([encoder.finish()]);
+        let bytes = read_buffer(&device, &evidence);
+        let slot_offset = initial_live as usize * size_of::<[u32; 4]>();
+        let pose = bytemuck::pod_read_unaligned::<[f32; 4]>(
+            &bytes[slot_offset..slot_offset + size_of::<[f32; 4]>()],
+        );
+        let properties_offset = (lane_bytes * 2) as usize + slot_offset;
+        let properties = bytemuck::pod_read_unaligned::<[f32; 4]>(
+            &bytes[properties_offset..properties_offset + size_of::<[f32; 4]>()],
+        );
+        let metadata_offset = (lane_bytes * 3) as usize + slot_offset;
+        let metadata = bytemuck::pod_read_unaligned::<[u32; 4]>(
+            &bytes[metadata_offset..metadata_offset + size_of::<[u32; 4]>()],
+        );
+        assert_eq!(pose, [0.0, 2.0, 0.0, 0.0]);
+        assert_eq!(
+            properties,
+            [1.0, CONSTRUCTION_SURFACE_HALF_THICKNESS, 0.0, 0.0]
+        );
+        assert_eq!(
+            metadata[1] & (1 | (1 << 2) | physbox_contracts::ANALYTIC_SHAPE_FLAG_RECTANGLE),
+            1 | (1 << 2) | physbox_contracts::ANALYTIC_SHAPE_FLAG_RECTANGLE
+        );
+    }
+
+    #[test]
+    fn surface_preview_builds_a_bounded_thickness_quad() {
+        let vertices = surface_preview_vertices(SurfacePreview {
+            start: Vec2::new(-1.0, 0.5),
+            end: Vec2::new(1.0, 0.5),
+        })
+        .unwrap();
+        assert_eq!(vertices[0], [-1.0, 0.46, 1.0, 0.0]);
+        assert_eq!(vertices[5], [1.0, 0.54, 1.0, 0.0]);
+        assert!(
+            surface_preview_vertices(SurfacePreview {
+                start: Vec2::ZERO,
+                end: Vec2::ZERO,
+            })
+            .is_none()
+        );
     }
 
     #[test]

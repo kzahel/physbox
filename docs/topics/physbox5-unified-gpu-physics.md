@@ -1869,6 +1869,13 @@ The first rigid work proceeds with these decisions:
 - The first coupled material is bounded water in the PhysBox GPU world only.
   The interactive Box2D shadow remains rigid-only and receives no fluid state,
   contact, forces, or fluid-tool actions.
+- Water and particle-aware Erase are bounded per-step GPU commands admitted by
+  the shared interactive clock; zero-step frames cannot build a later emission
+  burst. Surface authoring is a PhysBox-only construction-v3 intent whose
+  drag endpoints allocate one thin fixed oriented rectangle on the GPU.
+  Water/Surface are hidden in Box2D view, Box2D-visible Erase cannot mutate
+  hidden particles, and Surface is filtered from both comparison projection
+  directions. The PhysBox liquid world continues stepping while hidden.
 
 The solver laboratory and early pipeline must still answer:
 

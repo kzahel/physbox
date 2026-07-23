@@ -291,25 +291,54 @@ interaction/reset behavior, and host dependency proof remain open.
 
 ### S31.4 — water, surface, erase, and comparison UI
 
-- [ ] Add a shared engine-owned Water tool using the existing touch-first
+- [x] Add a shared engine-owned Water tool using the existing touch-first
   press/hold/cancel policy; emission is bounded by admitted simulated steps and
   cannot accumulate a catch-up burst.
-- [ ] Extend Erase to bounded particle removal while retaining deliberate body
+- [x] Extend Erase to bounded particle removal while retaining deliberate body
   erase and generation-safe cleanup.
-- [ ] Add PhysBox 4-inspired drag-preview-release `Surface` authoring backed by
+- [x] Add PhysBox 4-inspired drag-preview-release `Surface` authoring backed by
   a thin fixed PhysBox rectangle, preserving two-touch cancellation and camera
   ownership.
-- [ ] Add engine-rendered particle capacity/work/overflow diagnostics and
+- [x] Add engine-rendered particle capacity/work/overflow diagnostics and
   legible tool/material state.
-- [ ] Hide water and fluid-specific tools while Box2D is visible, hide PhysBox
+- [x] Hide water and fluid-specific tools while Box2D is visible, hide PhysBox
   water from that renderer, and label the view `BOX2D RIGID ONLY` /
   `FLUID HIDDEN`.
-- [ ] Keep the authoritative PhysBox rigid/liquid world advancing while hidden
+- [x] Keep the authoritative PhysBox rigid/liquid world advancing while hidden
   and continue mirroring only stable-ID rigid actions to Box2D.
 - [ ] Prove the comparator-off build contains no Box2D runtime while retaining
   the complete PhysBox liquid product.
 - [ ] Refresh body/particle/UI palette, outlines, and glyphs through the shared
   renderer without changing mechanics or introducing DOM product chrome.
+
+Interaction checkpoint: the shared workbench now exposes Water and Surface
+only for the PhysBox liquid sandbox. Water tap/hold writes deterministic
+material-0 emission commands into the bounded per-step GPU particle command
+range; zero-step frames retain cadence without accumulating a burst. Erase
+commits the ordinary generation-safe body intent plus a bounded particle erase
+only while PhysBox is visible. The Box2D view therefore cannot mutate hidden
+particle storage.
+
+`Surface` uses construction contract v3: a validated drag start/end becomes
+one fixed, oriented GPU rectangle with `0.04` world-unit half-thickness.
+Preview vertices are written into the existing shared world-space interaction
+render path; release commits once, while tap, cancel, second-touch ownership,
+and the Box2D view are inert. The continuously advancing comparison shadow
+filters this PhysBox-only intent in both visible directions.
+
+The engine-rendered liquid diagnostics now identify initial/capacity particle
+counts, declared work per step, fail-closed declared overflow state, no
+interactive readback, water material, and current tool. Box2D renders the
+explicit `BOX2D RIGID ONLY` and `FLUID HIDDEN` labels. Focused contract, input,
+preview, GPU-allocation, and comparator-off checks pass; the existing
+continuously-aligned shadow test continues to cover hidden PhysBox
+advancement. Complete S31.4 browser/comparator/Android capture gates and the
+palette refresh remain open.
+
+The midpoint/angle/fixed-box interaction was independently implemented after
+consulting PhysBox 4 `input.rs`, `scene.rs`, and `surface_preview.wgsl` at clean
+revision `92f745eb85908243c69080a4fa4dba24f05c22cf`. No PhysBox 4 runtime,
+backend, source file, or readback path was copied into PhysBox 5.
 
 Gate: shared input tests cover mouse/touch cancellation, held emission, erase,
 surface preview/commit, engine switching, hidden fluid tools, and return to the

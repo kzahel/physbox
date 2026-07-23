@@ -11,7 +11,9 @@ use crate::comparison::{ComparisonRenderPlan, ComparisonShadow};
 use crate::{
     AdapterDiagnostics, BODY_COMMAND_CAPACITY, BoundedBodyCommands, Camera2d, EngineConfig,
     FrameInput, GpuSolverSchedulingPolicyV1, InputEvent, PointerButton, PointerPhase, StepRequest,
-    body_world::{BodyCommandStepRange, BodyRenderPlan, BodyStepPlan, GpuBodyWorld},
+    body_world::{
+        BodyCommandStepRange, BodyRenderPlan, BodyStepPlan, GpuBodyWorld, SurfacePreview,
+    },
     clock::{InteractiveClockInput, SimulationClock},
     construction::{
         BoundedConstructionIntents, CONSTRUCTION_INTENT_CAPACITY, empty_construction_intent_batch,
@@ -378,6 +380,15 @@ impl BodyInteractionState {
         self.fluid_commands_enabled = self.fluid_tools_enabled && enabled;
     }
 
+    fn surface_preview(&self) -> Option<SurfacePreview> {
+        self.active_pointer
+            .filter(|active| active.tool == WorkbenchTool::Surface && self.fluid_commands_enabled)
+            .map(|active| SurfacePreview {
+                start: active.down_target,
+                end: active.current_target,
+            })
+    }
+
     fn capture_pointer_events(&mut self, events: &[WorldPointerEvent]) {
         if !self.accept_live_input {
             return;
@@ -439,12 +450,16 @@ impl BodyInteractionState {
                         self.push_grab(intent);
                     } else if event.phase == PointerPhase::Up && !active.repeated {
                         let sequence = self.take_sequence();
-                        let target = if active.tool == WorkbenchTool::Water {
-                            active.current_target
+                        if active.tool == WorkbenchTool::Surface {
+                            self.push_surface(sequence, active.down_target, active.current_target);
                         } else {
-                            active.down_target
-                        };
-                        self.push_tool_action(active.tool, sequence, target);
+                            let target = if active.tool == WorkbenchTool::Water {
+                                active.current_target
+                            } else {
+                                active.down_target
+                            };
+                            self.push_tool_action(active.tool, sequence, target);
+                        }
                     }
                     self.active_pointer = None;
                     self.report.construction_pointer_active = false;
@@ -722,6 +737,23 @@ impl BodyInteractionState {
         }
     }
 
+    fn push_surface(&mut self, sequence: u32, start: Vec2, end: Vec2) {
+        if !self.fluid_commands_enabled {
+            return;
+        }
+        let delta = Vec2::new(end.x - start.x, end.y - start.y);
+        if delta.x * delta.x + delta.y * delta.y
+            < crate::construction::CONSTRUCTION_SURFACE_MIN_LENGTH.powi(2)
+        {
+            return;
+        }
+        self.push_construction(ConstructionIntentV1::PlaceSurface {
+            sequence,
+            start,
+            end,
+        });
+    }
+
     fn advance_construction_hold(&mut self, elapsed_seconds: f64, can_emit: bool) {
         let Some(active) = &mut self.active_pointer else {
             return;
@@ -799,6 +831,9 @@ fn target_visible_box2d_interactions(
     Vec<BodyCommandStepRange>,
 ) {
     for intent in &mut commands.construction_batch.intents {
+        if matches!(intent, ConstructionIntentV1::PlaceSurface { .. }) {
+            continue;
+        }
         match shadow.resolve_box2d_construction(*intent) {
             Ok(targeted) => *intent = targeted,
             Err(error) => shadow.fail(error),
@@ -1606,6 +1641,10 @@ impl EngineHost {
                 .body_interaction
                 .as_ref()
                 .is_some_and(|interaction| interaction.report.grab_pointer_active);
+            let surface_preview = self
+                .body_interaction
+                .as_ref()
+                .and_then(BodyInteractionState::surface_preview);
             let physics = self.config.solver_profile.physics();
             let quiet_outer_steps = physbox_contracts::SleepPolicyV1::experimental_s23()
                 .quiet_outer_steps(physics.fixed_step_hz)
@@ -1623,6 +1662,7 @@ impl EngineHost {
                     frame_index: self.frame_index,
                     camera: camera_frame,
                     grab_pointer_active,
+                    surface_preview,
                     sleep_visuals_enabled: self.ui.sleep_visuals_enabled(),
                     current_outer_step: self.fixed_steps_total.saturating_add(u64::from(steps))
                         as u32,
@@ -2095,6 +2135,9 @@ impl EngineHost {
                 contact_count: contract.contact_point_count,
                 capacity_bytes: contract.solver_capacity_bytes,
                 overflowed: contract.capacity_overflowed,
+                particle_count: contract.particle_count,
+                particle_capacity: contract.particle_capacity,
+                particle_dispatches_per_step: contract.particle_dispatches_per_step,
                 sleeping_effective: contract.effective_sleeping_enabled,
                 adapter_backend: &self.adapter.backend,
                 scenario_activations_total: self.scenario_activations_total,
@@ -2443,6 +2486,7 @@ mod body_interaction_tests {
             | ConstructionIntentV1::PlaceRectangleBody { world_target, .. }
             | ConstructionIntentV1::EraseAt { world_target, .. }
             | ConstructionIntentV1::EraseBody { world_target, .. } => *world_target,
+            ConstructionIntentV1::PlaceSurface { start, .. } => *start,
         }
     }
 
@@ -2598,5 +2642,56 @@ mod body_interaction_tests {
         let released = interaction.prepare(1, 0, 1.0 / 60.0);
         assert_eq!(released.construction_batch.intents.len(), 1);
         assert!(released.particle_commands.is_empty());
+    }
+
+    #[test]
+    fn surface_drag_previews_then_commits_one_fixed_boundary_intent() {
+        let mut interaction = BodyInteractionState::new(Vec::new(), true, true);
+        interaction.select_tool(WorkbenchTool::Surface);
+        let start = Vec2::new(-0.7, 0.8);
+        let end = Vec2::new(0.6, 1.1);
+        interaction.capture_pointer_events(&[pointer(1, PointerPhase::Down, start)]);
+        interaction.capture_pointer_events(&[pointer(1, PointerPhase::Move, end)]);
+        assert_eq!(
+            interaction.surface_preview(),
+            Some(SurfacePreview { start, end })
+        );
+
+        interaction.capture_pointer_events(&[pointer(1, PointerPhase::Up, end)]);
+        assert!(interaction.surface_preview().is_none());
+        let released = interaction.prepare(1, 0, 1.0 / 60.0);
+        assert_eq!(
+            released.construction_batch.intents,
+            vec![ConstructionIntentV1::PlaceSurface {
+                sequence: 1,
+                start,
+                end,
+            }]
+        );
+    }
+
+    #[test]
+    fn surface_tap_cancel_and_box2d_view_are_inert() {
+        let target = Vec2::new(0.0, 0.7);
+        for (phase, fluid_commands_enabled) in [
+            (PointerPhase::Up, true),
+            (PointerPhase::Cancel, true),
+            (PointerPhase::Up, false),
+        ] {
+            let mut interaction = BodyInteractionState::new(Vec::new(), true, true);
+            interaction.set_fluid_commands_enabled(fluid_commands_enabled);
+            interaction.select_tool(WorkbenchTool::Surface);
+            interaction.capture_pointer_events(&[
+                pointer(1, PointerPhase::Down, target),
+                pointer(1, phase, target),
+            ]);
+            assert!(
+                interaction
+                    .prepare(1, 0, 1.0 / 60.0)
+                    .construction_batch
+                    .intents
+                    .is_empty()
+            );
+        }
     }
 }

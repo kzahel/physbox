@@ -11,7 +11,7 @@ use sha2::{Digest, Sha256};
 pub const SCHEMA_VERSION: u32 = 1;
 pub const BODY_LAYOUT_VERSION: u32 = 1;
 pub const GRAB_INTENT_CONTRACT_VERSION: u32 = 1;
-pub const CONSTRUCTION_INTENT_CONTRACT_VERSION: u32 = 2;
+pub const CONSTRUCTION_INTENT_CONTRACT_VERSION: u32 = 3;
 pub const SETTLING_OBSERVATION_VERSION: u32 = 1;
 pub const SETTLING_OBSERVATION_V2_VERSION: u32 = 2;
 pub const CONTACT_IDENTITY_POLICY_VERSION: u32 = 1;
@@ -644,6 +644,11 @@ pub enum ConstructionIntentV1 {
         sequence: u32,
         world_target: Vec2,
     },
+    PlaceSurface {
+        sequence: u32,
+        start: Vec2,
+        end: Vec2,
+    },
     PlaceCircleBody {
         sequence: u32,
         body: Option<BodyId>,
@@ -672,6 +677,7 @@ impl ConstructionIntentV1 {
         match self {
             Self::PlaceCircle { sequence, .. }
             | Self::PlaceRectangle { sequence, .. }
+            | Self::PlaceSurface { sequence, .. }
             | Self::PlaceCircleBody { sequence, .. }
             | Self::PlaceRectangleBody { sequence, .. }
             | Self::EraseAt { sequence, .. }
@@ -687,6 +693,7 @@ impl ConstructionIntentV1 {
             | Self::PlaceRectangleBody { world_target, .. }
             | Self::EraseAt { world_target, .. }
             | Self::EraseBody { world_target, .. } => world_target,
+            Self::PlaceSurface { start, .. } => start,
         }
     }
 }
@@ -694,6 +701,18 @@ impl ConstructionIntentV1 {
 impl Validate for ConstructionIntentV1 {
     fn validate(&self) -> Result<(), ContractError> {
         self.world_target().validate()?;
+        if let Self::PlaceSurface { start, end, .. } = self {
+            end.validate()?;
+            let delta = Vec2::new(end.x - start.x, end.y - start.y);
+            let length_squared = delta.x * delta.x + delta.y * delta.y;
+            if !length_squared.is_finite() || !(0.01 * 0.01..=64.0 * 64.0).contains(&length_squared)
+            {
+                return Err(ContractError(
+                    "surface endpoints require a finite length from 0.01 through 64 world units"
+                        .to_owned(),
+                ));
+            }
+        }
         if let Self::EraseBody {
             body: Some(body), ..
         } = self
@@ -2886,9 +2905,10 @@ mod tests {
                     sequence: 2,
                     world_target: Vec2::new(0.0, 0.75),
                 },
-                ConstructionIntentV1::EraseAt {
+                ConstructionIntentV1::PlaceSurface {
                     sequence: 3,
-                    world_target: Vec2::new(-0.5, 0.75),
+                    start: Vec2::new(-0.5, 0.25),
+                    end: Vec2::new(0.5, 0.35),
                 },
             ],
         };
@@ -2897,6 +2917,14 @@ mod tests {
         let decoded: ConstructionIntentBatchV1 = serde_json::from_slice(&encoded).unwrap();
         assert_eq!(decoded, batch);
         assert!(!encoded.windows(4).any(|window| window == b"body"));
+
+        let mut degenerate = batch.clone();
+        degenerate.intents[2] = ConstructionIntentV1::PlaceSurface {
+            sequence: 3,
+            start: Vec2::ZERO,
+            end: Vec2::ZERO,
+        };
+        assert!(degenerate.validate().is_err());
 
         let mut wrong_version = batch.clone();
         wrong_version.contract_version += 1;
