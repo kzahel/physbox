@@ -89,8 +89,8 @@ try {
   if (before.frame.sceneContract?.solverProfile !== "soft-coupled") {
     throw new Error(`fresh browser did not use soft-coupled: ${JSON.stringify(before.frame.sceneContract)}`);
   }
-  if (before.frame.ui?.version !== 10 || before.frame.ui?.sleepVisualsEnabled !== false) {
-    throw new Error(`browser did not expose UI contract 10 defaults: ${JSON.stringify(before.frame.ui)}`);
+  if (before.frame.ui?.version !== 11 || before.frame.ui?.sleepVisualsEnabled !== false) {
+    throw new Error(`browser did not expose UI contract 11 defaults: ${JSON.stringify(before.frame.ui)}`);
   }
   if (
     before.frame.ui?.selectedEngine !== "physbox"
