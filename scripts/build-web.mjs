@@ -1,4 +1,4 @@
-import { cp, mkdir, rm } from "node:fs/promises";
+import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { delimiter, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -44,6 +44,30 @@ if (box2dComparator) {
     join(output, "box2d-comparator"),
     { recursive: true },
   );
+} else {
+  const appPath = join(output, "app.js");
+  const source = await readFile(appPath, "utf8");
+  const withoutImport = source.replace(
+    'import init, { box2dComparatorEnabled, PointerButtonCode, start } from "./pkg/physbox_web.js";',
+    'import init, { PointerButtonCode, start } from "./pkg/physbox_web.js";',
+  );
+  const withoutRuntime = withoutImport.replace(
+    `  let comparatorRuntime;
+  if (box2dComparatorEnabled()) {
+    const { loadBox2dComparator } = await import("./box2d-comparator/loader.js");
+    comparatorRuntime = await loadBox2dComparator();
+  }
+`,
+    "  const comparatorRuntime = undefined;\n",
+  );
+  if (
+    withoutRuntime === source
+    || withoutRuntime.includes("box2dComparator")
+    || withoutRuntime.includes("box2d-comparator")
+  ) {
+    throw new Error("feature-off web glue transformation did not remove comparator loading");
+  }
+  await writeFile(appPath, withoutRuntime);
 }
 run(bindgen, [
   join(root, "target", "wasm32-unknown-unknown", release ? "release" : "debug", "physbox_web.wasm"),

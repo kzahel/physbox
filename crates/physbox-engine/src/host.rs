@@ -1982,6 +1982,7 @@ impl EngineHost {
         Ok(())
     }
 
+    #[cfg(any(not(target_arch = "wasm32"), feature = "box2d-comparator"))]
     pub(crate) fn copy_grab_state(
         &self,
         encoder: &mut wgpu::CommandEncoder,

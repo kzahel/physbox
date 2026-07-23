@@ -36,9 +36,10 @@ pub fn solver_lab_enabled() -> bool {
     cfg!(feature = "solver-lab")
 }
 
+#[cfg(feature = "box2d-comparator")]
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen(js_name = box2dComparatorEnabled))]
 pub fn box2d_comparator_enabled() -> bool {
-    cfg!(feature = "box2d-comparator")
+    true
 }
 
 #[cfg(any(target_arch = "wasm32", test))]
