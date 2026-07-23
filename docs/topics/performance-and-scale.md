@@ -710,6 +710,12 @@ adapter. The row remains finite and capacity-clean with 3,952 active particles,
 92 particle dispatches, and zero overflow. The independent 32K water-only row
 and maximum product bound remain unchanged.
 
+Clean Browser WebGPU run `b6af663c-69a8-4f6a-ad4e-8f47b7cb0104` at source
+`3680714` completes 624 current product steps at effective scale `1.000046`
+with zero slip. It retains 3,952 authored particles in the 8,192-slot reserve
+and executes one Water command plus four continuous held-Erase particle
+commands before Surface placement.
+
 That right-sizing is a native cost and memory win, not a mobile pacing closure.
 Clean current Android AVD runs `1784821327-2700108` and
 `1784821401-2702613` at 2560×1600 execute Water, continuous particle Erase,

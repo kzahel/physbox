@@ -465,8 +465,10 @@ rows are finite and capacity-clean with zero overflow. The 32K row is a
 capacity frontier on this named adapter, not a portable sustained-60-Hz
 product claim.
 
-Browser WebGPU completed 623 product-scene steps at effective scale
-`1.000041` with zero slip. The original clean repeated hardware-backed AVD
+Current Browser WebGPU run `b6af663c-69a8-4f6a-ad4e-8f47b7cb0104`
+completed 624 product-scene steps at effective scale `1.000046` with zero slip
+and exercised continuous held Erase against the 8K reserve. The original clean
+repeated hardware-backed AVD
 interaction completed 694 steps at effective scale `0.811745`, executed Water,
 particle Erase, and Surface, and rendered a complete 2560×1600 frame on
 `AMD Radeon 890M Graphics (RADV GFX1150)`; its first cold run measured

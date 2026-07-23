@@ -546,6 +546,11 @@ the ordinary reserve to 8,192 slots, leaves 4,240 painting slots, cuts declared
 particle allocation from `3,443,844` to `887,940` bytes, and measures
 `5.484 ms` with the same 3,952 active particles, 92 particle dispatches, and
 zero overflow. The independent capacity-clean 32K frontier is unchanged.
+Clean Browser WebGPU run `b6af663c-69a8-4f6a-ad4e-8f47b7cb0104` at source
+`3680714` completed 624 steps at effective scale `1.000046` with zero slip,
+retained the 3,952-start/8,192-capacity contract, and executed one Water plus
+four held-Erase particle commands before committing Surface. This directly
+exercises continuous mouse erase through the shared product path.
 
 This does not close mobile pacing. With no physical device connected, clean
 hardware-backed AVD runs `1784821327-2700108` and
