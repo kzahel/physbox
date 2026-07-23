@@ -8,6 +8,14 @@ implementations.
 [slow-time overload policy](topics/simulation-time-and-overload.md), GPU state,
 compute/render pipelines, shaders, input semantics, scenarios, reports, and
 scene contracts.
+That statement describes semantic ownership, not a requirement that every
+implementation remain in one crate. The
+[presentation and modular workbench architecture](topics/presentation-and-workbench-architecture.md)
+authorizes a dependency-leaf `physbox-ui` crate for neutral GPU-canvas layout,
+widgets, pointer capture, themes, and batching while `physbox-engine` retains
+all tool, menu, solver, scenario, comparator, camera, and action meaning. It
+also records the intended later separation of simulation and optional world
+rendering before any physics crate is published.
 `physbox-launch` owns every option name/default/parser and host projection.
 The versioned product physics configuration follows
 [physics configuration and solver profiles](topics/physics-configuration-and-solver-profiles.md):
@@ -91,6 +99,10 @@ ordinary menu state are presentation/input-projection state only. A physics-
 configuration action is distinct and explicit: the shared engine validates it
 and atomically rebuilds/restarts the one world. No adapter or DOM state may
 alter physics, fixed-step admission, or scenario outcomes implicitly.
+Generic workbench layout, widget rendering, and pointer capture may be
+implemented by `physbox-ui`, but the shared host remains the caller and owner
+of every semantic choice. The crate boundary may not become a platform-local
+UI or a route for browser/Android code to acquire product vocabulary.
 
 S4.3 live grab input is a body-free begin/target/end stream. The GPU selects
 and retains the generational body-local anchor; the CPU knows only pointer

@@ -30,6 +30,11 @@ a running log.
   revision-pinned research separating predecessor product dependencies from
   dormant APIs and plans, with lineage-backed implications for joints,
   geometry, authoring, collision features, queries, and materials.
+- [Presentation and modular workbench architecture](presentation-and-workbench-architecture.md)
+  — decided PhysBox 3/4-inspired visual direction, reusable GPU-canvas UI
+  boundary, compact icon-toolbar and slider-menu contract, rendering-cost
+  constraints, and the intended separation between the sandbox host and future
+  publishable simulation/render crates.
 - [Rigid quality targets](rigid-quality-targets.md) — current awake stack
   hierarchy: 2/4/8 regression foundation, 12 blocking, 14 stretch, 16 as the
   matched-Box2D frontier diagnostic, and the rule that sleep cannot earn an
