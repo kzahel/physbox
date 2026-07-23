@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use physbox_engine::{
     AdapterDiagnostics, EngineConfig, FrameInput, FrameReport, InputEvent, PointerButton,
@@ -9,11 +9,14 @@ use physbox_engine::{
 };
 use physbox_launch::FrameMarkerMode;
 use winit::event::{ElementState, MouseButton, MouseScrollDelta, TouchPhase, WindowEvent};
-use winit::event_loop::ActiveEventLoop;
+use winit::event_loop::{ActiveEventLoop, ControlFlow};
 use winit::window::{Window, WindowAttributes, WindowId};
 
 const MOUSE_POINTER_ID: u64 = 0;
 const TOUCH_POINTER_NAMESPACE: u64 = 1_u64 << 63;
+const FALLBACK_REFRESH_RATE_MILLIHERTZ: u32 = 60_000;
+const MIN_REFRESH_RATE_MILLIHERTZ: u32 = 1_000;
+const MAX_REFRESH_RATE_MILLIHERTZ: u32 = 1_000_000;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct CompletionMarkerKey {
@@ -84,6 +87,7 @@ pub struct WinitFrameDriver {
     engine_config: EngineConfig,
     window: Option<Arc<Window>>,
     renderer: Option<SurfaceRenderer>,
+    frame_pacer: NativeFramePacer,
     last_frame: Option<Instant>,
     last_cursor: [f32; 2],
     pending_input_events: Vec<InputEvent>,
@@ -95,6 +99,7 @@ impl WinitFrameDriver {
             engine_config,
             window: None,
             renderer: None,
+            frame_pacer: NativeFramePacer::default(),
             last_frame: None,
             last_cursor: [0.5, 0.5],
             pending_input_events: Vec::new(),
@@ -107,6 +112,7 @@ impl WinitFrameDriver {
         attributes: WindowAttributes,
     ) -> Result<Option<AdapterDiagnostics>, String> {
         if let Some(window) = &self.window {
+            self.frame_pacer.reset();
             window.request_redraw();
             self.last_frame = None;
             return Ok(None);
@@ -131,6 +137,7 @@ impl WinitFrameDriver {
         let diagnostics = renderer.diagnostics().clone();
         self.renderer = Some(renderer);
         self.window = Some(window.clone());
+        self.frame_pacer.reset();
         self.last_frame = None;
         window.request_redraw();
         Ok(Some(diagnostics))
@@ -139,8 +146,25 @@ impl WinitFrameDriver {
     pub fn suspend(&mut self) {
         self.renderer = None;
         self.window = None;
+        self.frame_pacer.reset();
         self.last_frame = None;
         self.pending_input_events.clear();
+    }
+
+    pub fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        let Some(window) = self.window.as_ref() else {
+            event_loop.set_control_flow(ControlFlow::Wait);
+            return;
+        };
+        match self.frame_pacer.next_redraw {
+            Some(deadline) if Instant::now() >= deadline => {
+                self.frame_pacer.next_redraw = None;
+                window.request_redraw();
+                event_loop.set_control_flow(ControlFlow::Wait);
+            }
+            Some(deadline) => event_loop.set_control_flow(ControlFlow::WaitUntil(deadline)),
+            None => event_loop.set_control_flow(ControlFlow::Wait),
+        }
     }
 
     pub fn set_window_title(&self, title: &str) {
@@ -169,7 +193,6 @@ impl WinitFrameDriver {
                 if let Some(renderer) = self.renderer.as_mut() {
                     renderer.resize(size.width, size.height);
                 }
-                window.request_redraw();
                 Ok(WinitFrameOutcome::default())
             }
             WindowEvent::CursorMoved { position, .. } => {
@@ -234,6 +257,9 @@ impl WinitFrameDriver {
             }
             WindowEvent::RedrawRequested => {
                 let now = Instant::now();
+                if !self.frame_pacer.admit(now) {
+                    return Ok(WinitFrameOutcome::default());
+                }
                 let elapsed = self
                     .last_frame
                     .map_or(1.0 / 60.0, |last| now.duration_since(last).as_secs_f64());
@@ -251,7 +277,12 @@ impl WinitFrameDriver {
                     .as_mut()
                     .ok_or_else(|| "surface renderer is not initialized".to_owned())?
                     .render(input)?;
-                window.request_redraw();
+                self.frame_pacer.complete_frame(
+                    now,
+                    window
+                        .current_monitor()
+                        .and_then(|monitor| monitor.refresh_rate_millihertz()),
+                );
                 Ok(WinitFrameOutcome {
                     exit_requested: false,
                     report: Some(report),
@@ -276,6 +307,36 @@ impl WinitFrameDriver {
                 normalized_position,
             }));
     }
+}
+
+#[derive(Default)]
+struct NativeFramePacer {
+    next_redraw: Option<Instant>,
+}
+
+impl NativeFramePacer {
+    fn reset(&mut self) {
+        self.next_redraw = None;
+    }
+
+    fn admit(&mut self, now: Instant) -> bool {
+        if self.next_redraw.is_some_and(|deadline| now < deadline) {
+            return false;
+        }
+        self.next_redraw = None;
+        true
+    }
+
+    fn complete_frame(&mut self, started: Instant, refresh_rate_millihertz: Option<u32>) {
+        self.next_redraw = Some(started + refresh_interval(refresh_rate_millihertz));
+    }
+}
+
+fn refresh_interval(refresh_rate_millihertz: Option<u32>) -> Duration {
+    let millihertz = refresh_rate_millihertz
+        .filter(|rate| (MIN_REFRESH_RATE_MILLIHERTZ..=MAX_REFRESH_RATE_MILLIHERTZ).contains(rate))
+        .unwrap_or(FALLBACK_REFRESH_RATE_MILLIHERTZ);
+    Duration::from_secs_f64(1_000.0 / f64::from(millihertz))
 }
 
 fn normalized_position(x: f64, y: f64, width: u32, height: u32) -> [f32; 2] {
@@ -353,5 +414,40 @@ mod tests {
             Some(PointerButton::Secondary)
         );
         assert_eq!(pointer_button(MouseButton::Other(8)), None);
+    }
+
+    #[test]
+    fn native_frame_pacer_admits_at_most_the_monitor_refresh_rate() {
+        let start = Instant::now();
+        let interval = refresh_interval(Some(120_000));
+        let mut pacer = NativeFramePacer::default();
+        assert!(pacer.admit(start));
+        pacer.complete_frame(start, Some(120_000));
+        assert!(!pacer.admit(start + interval / 2));
+        assert!(pacer.admit(start + interval));
+    }
+
+    #[test]
+    fn native_frame_pacer_never_schedules_catch_up_redraws() {
+        let start = Instant::now();
+        let interval = refresh_interval(Some(60_000));
+        let late = start + interval * 3;
+        let mut pacer = NativeFramePacer::default();
+        pacer.complete_frame(start, Some(60_000));
+        assert!(pacer.admit(late));
+        pacer.complete_frame(late, Some(60_000));
+        assert_eq!(pacer.next_redraw, Some(late + interval));
+    }
+
+    #[test]
+    fn native_frame_pacer_uses_a_bounded_fallback_refresh_rate() {
+        assert_eq!(
+            refresh_interval(None),
+            refresh_interval(Some(FALLBACK_REFRESH_RATE_MILLIHERTZ))
+        );
+        assert_eq!(
+            refresh_interval(Some(0)),
+            refresh_interval(Some(FALLBACK_REFRESH_RATE_MILLIHERTZ))
+        );
     }
 }

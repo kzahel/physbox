@@ -138,6 +138,10 @@ mod android {
                 Err(error) => log::error!("PHYSBOX5_ANDROID_RENDER_ERROR {error}"),
             }
         }
+
+        fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+            self.driver.about_to_wait(event_loop);
+        }
     }
 
     fn startup_options(app: &AndroidApp) -> Result<LaunchOptions, String> {

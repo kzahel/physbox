@@ -1,7 +1,7 @@
 # Simulation time and overload
 
 Status: decided pacing contract with configurable-fixed-delta migration active,
-updated 2026-07-21.
+updated 2026-07-23.
 
 Governing direction:
 [one GPU-resident 2D physics world](physbox5-unified-gpu-physics.md).
@@ -174,6 +174,24 @@ by itself prove that the GPU queue cannot grow. Interactive submission and
 surface pacing must also retain a bounded in-flight policy or asynchronous
 backlog signal. The engine must not queue future simulated time merely because
 the API accepts submissions faster than the GPU completes them.
+
+Native desktop and Android presentation therefore use the shared Winit shell
+to admit redraws no faster than the window's current monitor refresh rate.
+The shell schedules from the most recently rendered frame rather than from an
+overdue historical deadline, so a slow frame never creates redraw debt. If the
+host cannot report a refresh rate, the native shell uses a 60 Hz presentation
+cap. Browser presentation remains owned by `requestAnimationFrame`; headless
+execution remains explicitly stepped. FIFO surface presentation and a bounded
+in-flight count remain necessary, but are not treated as the sole application
+frame limiter.
+
+The ordinary GPU frame remains ordered as simulation followed by rendering of
+that completed state. Rendering the preceding state before simulation would
+not reduce total work or provide portable concurrency on the single ordered
+WebGPU queue, while it would add one presentation frame of physics and input
+latency. A future split-submission pipeline may be reconsidered only with
+measured deadline evidence; it must still display completed state, bound
+in-flight work, and preserve the one authoritative world.
 
 ## Validation and benchmark modes
 

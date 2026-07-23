@@ -89,6 +89,10 @@ impl ApplicationHandler for DesktopApp {
             Err(error) => fatal(event_loop, error),
         }
     }
+
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        self.driver.about_to_wait(event_loop);
+    }
 }
 
 fn fatal(event_loop: &ActiveEventLoop, error: String) {

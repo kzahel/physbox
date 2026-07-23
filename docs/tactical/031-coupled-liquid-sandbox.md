@@ -574,6 +574,29 @@ the observed phone complaint. Clean PhysBox 4 revision
 historical clock may execute up to eight catch-up steps per frame; that policy
 remains intentionally excluded from PhysBox 5.
 
+Native presentation follow-up: hands-on macOS review found that immediate
+post-frame `request_redraw` calls could drive application frames faster than
+the display even though the surface requested FIFO presentation. The shared
+Winit shell now schedules desktop and Android redraws at no more than the
+window's reported monitor refresh rate, with a 60 Hz fallback and no overdue
+redraw recovery. Rendering remains after simulation in the same ordered GPU
+frame. A render-previous/simulate-next split is not selected: it does not
+remove the 175 rigid plus 92 particle dispatch workload on one WebGPU queue and
+would add one frame of input and physics latency without measured evidence of
+a deadline benefit.
+
+Working-tree qualification passes `npm run test:fast`, production clippy with
+warnings denied, the NDK-wrapped ARM64 check, dual-ABI release-native/debug APK
+construction, and Gradle `assembleRelease`. With phone-class Android hardware
+unavailable, authorized hardware-backed AVD runs `1784823648-2745222`
+(`bootstrap`) and `1784823715-2746285` (`body-free-flight`) pass the shared
+native shell, hardware-adapter, complete-pixel, and scenario gates at
+2560×1600. Both emulators were removed after their runs; the final device list
+contains no emulator. Their provenance correctly records a dirty source tree
+because separate concurrent S33 presentation-planning documents were present;
+these runs qualify this implementation boundary but are not promoted as clean
+performance evidence.
+
 ## Required validation by changed boundary
 
 Every implementation slice runs its directly affected package/target tests.
