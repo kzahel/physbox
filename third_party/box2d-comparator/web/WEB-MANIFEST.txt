@@ -1,6 +1,6 @@
 revision 3a4f0da8374af61293a03021c9a0b3ebcfe67948
 compiler emcc (Emscripten gcc/clang-like replacement + linker emulating GNU ld) 3.1.74 (1092ec30a3fb1d46b1782ff1b4db5094d3d06ae5)
 configuration release-single-threaded-no-filesystem-memory-growth
-sha256 1e4614a362969b1bb46061387c1b83e98cdb8b08e7cddcc5736fa62d9f936480  box2d-comparator.mjs
-sha256 ba550170d48fac4052d0afca7bb639c8668de9a06f593ff6db5f5a9c881a6325  box2d-comparator.wasm
+sha256 8f65927da46285e4b5a72b6d03e0d5de17cbf83baf2f73633ab8d8f3c620c2ab  box2d-comparator.mjs
+sha256 bce60b0dd91c8b1ec2046f69b7ed23fb02ae6c969aa79afa1c3884c8391ebb4b  box2d-comparator.wasm
 sha256 be57a0715979939b56f52a83d0e000b8154b213ef8a3dc6ab0350d3bc1acbd11  loader.js

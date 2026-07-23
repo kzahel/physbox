@@ -69,6 +69,17 @@ unsafe extern "C" {
         point_x: f32,
         point_y: f32,
     ) -> bool;
+    fn pb5_box2d_world_reset_body(
+        world: *mut c_void,
+        slot: u32,
+        generation: u32,
+        position_x: f32,
+        position_y: f32,
+        angle: f32,
+        velocity_x: f32,
+        velocity_y: f32,
+        angular_velocity: f32,
+    ) -> bool;
     fn pb5_box2d_world_begin_grab(
         world: *mut c_void,
         slot: u32,
@@ -173,6 +184,34 @@ impl World {
                 impulse.y,
                 world_point.x,
                 world_point.y,
+            )
+        } {
+            Ok(())
+        } else {
+            Err(self.last_error())
+        }
+    }
+
+    pub(crate) fn reset_body(
+        &mut self,
+        body: BodyId,
+        position: Vec2,
+        angle: f32,
+        linear_velocity: Vec2,
+        angular_velocity: f32,
+    ) -> Result<(), String> {
+        // SAFETY: the world is exclusively owned and scalar arguments are finite by contract.
+        if unsafe {
+            pb5_box2d_world_reset_body(
+                self.raw.as_ptr(),
+                body.slot,
+                body.generation,
+                position.x,
+                position.y,
+                angle,
+                linear_velocity.x,
+                linear_velocity.y,
+                angular_velocity,
             )
         } {
             Ok(())

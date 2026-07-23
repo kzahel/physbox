@@ -110,11 +110,9 @@ fn begin_specific(slot: u32, generation: u32, point: vec2f, sequence: u32) {
         return;
     }
     let identity = metadata[slot];
-    if (identity.x != generation || (identity.y & (FLAG_LIVE | FLAG_FIXED)) != FLAG_LIVE ||
-        !target_hits_body(point, slot)) {
+    if (identity.x != generation || (identity.y & (FLAG_LIVE | FLAG_FIXED)) != FLAG_LIVE) {
         grab.counters.z += 1u;
-        if ((identity.y & (FLAG_LIVE | FLAG_FIXED)) == (FLAG_LIVE | FLAG_FIXED) &&
-            target_hits_body(point, slot)) {
+        if ((identity.y & (FLAG_LIVE | FLAG_FIXED)) == (FLAG_LIVE | FLAG_FIXED)) {
             grab.counters.w += 1u;
         }
         return;

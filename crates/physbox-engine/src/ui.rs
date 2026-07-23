@@ -114,6 +114,7 @@ pub(crate) struct UiFrameModel<'a> {
     pub comparator_available: bool,
     pub box2d_revision: Option<&'static str>,
     pub box2d_completed_steps: Option<u64>,
+    pub box2d_live_bodies: Option<u32>,
     pub box2d_aligned: Option<bool>,
     pub box2d_failure: Option<&'a str>,
 }
@@ -1270,6 +1271,7 @@ impl UiRenderer {
             comparator_available: model.comparator_available,
             box2d_revision: model.box2d_revision,
             box2d_completed_steps: model.box2d_completed_steps,
+            box2d_live_bodies: model.box2d_live_bodies,
             box2d_aligned: model.box2d_aligned,
             box2d_failure: model.box2d_failure.map(str::to_owned),
             sleep_visuals_enabled,

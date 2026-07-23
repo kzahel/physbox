@@ -1,12 +1,21 @@
 use bytemuck::{Pod, Zeroable};
 use physbox_box2d_comparator::{BOX2D_REVISION, BodySnapshot, Box2dWorld, GrabTuning};
 use physbox_contracts::{
-    ANALYTIC_SHAPE_FLAG_CIRCLE, ANALYTIC_SHAPE_FLAG_RECTANGLE, NeutralActionV1,
-    SLEEP_STATE_LAYOUT_VERSION, ScenarioV1, ShapeV1,
+    ANALYTIC_SHAPE_FLAG_CIRCLE, ANALYTIC_SHAPE_FLAG_RECTANGLE, BodyCommandV1, BodyId, BodyStateV1,
+    ConstructionIntentV1, FiniteF32, GrabIntentV1, MaterialV1, NeutralActionV1,
+    SLEEP_STATE_LAYOUT_VERSION, ScenarioV1, ShapeV1, Vec2,
 };
 use wgpu::util::DeviceExt;
 
-use crate::{CameraFrame2d, renderer::RenderFrameTarget};
+use crate::{
+    BodySlotRegistry, CameraFrame2d,
+    construction::{
+        CONSTRUCTION_CIRCLE_RADIUS, CONSTRUCTION_FRICTION, CONSTRUCTION_RECTANGLE_HALF_EXTENTS,
+        CONSTRUCTION_RESTITUTION,
+    },
+    grab::{GRAB_DAMPING_RATE, GRAB_MAX_ACCELERATION, GRAB_SPRING_ACCELERATION},
+    renderer::RenderFrameTarget,
+};
 
 const BODY_FLAG_LIVE: u32 = 1 << 0;
 const BODY_FLAG_FIXED: u32 = 1 << 2;
@@ -22,6 +31,8 @@ pub(crate) struct ComparisonShadow {
     substeps: u32,
     completed_steps: u64,
     live_bodies: u32,
+    slots: BodySlotRegistry,
+    active_grab: Option<BodyId>,
     failed: Option<String>,
 }
 
@@ -35,6 +46,10 @@ impl ComparisonShadow {
     ) -> Result<Self, String> {
         let world = Box2dWorld::new(scenario, capacity, sleeping_enabled)?;
         let snapshots = world.snapshots()?;
+        let mut slots = BodySlotRegistry::with_capacity(capacity)?;
+        for body in &scenario.bodies {
+            slots.reserve(body.id)?;
+        }
         let mut renderer = ComparisonRenderer::new(device, color_format, capacity);
         renderer.update_snapshots(&snapshots, 0);
         Ok(Self {
@@ -45,6 +60,8 @@ impl ComparisonShadow {
             substeps: scenario.settings.substeps,
             completed_steps: 0,
             live_bodies: snapshots.len() as u32,
+            slots,
+            active_grab: None,
             failed: None,
         })
     }
@@ -54,16 +71,59 @@ impl ComparisonShadow {
             return;
         }
         for _ in 0..steps {
-            let step = self.completed_steps as u32;
-            if let Err(error) = self.apply_neutral_actions(step) {
+            self.advance_one();
+        }
+        self.refresh_snapshots();
+    }
+
+    pub(crate) fn apply_interactions(
+        &mut self,
+        commands: &[BodyCommandV1],
+        grab_intents: &[GrabIntentV1],
+        construction_intents: &[ConstructionIntentV1],
+    ) {
+        if self.failed.is_some() {
+            return;
+        }
+        for command in commands {
+            if let Err(error) = self.apply_body_command(command) {
                 self.failed = Some(error);
                 return;
             }
-            if let Err(error) = self.world.step(self.fixed_dt, self.substeps) {
+        }
+        for intent in construction_intents {
+            if let Err(error) = self.apply_construction_intent(*intent) {
                 self.failed = Some(error);
                 return;
             }
-            self.completed_steps = self.completed_steps.saturating_add(1);
+        }
+        for intent in grab_intents {
+            if let Err(error) = self.apply_grab_intent(*intent) {
+                self.failed = Some(error);
+                return;
+            }
+        }
+    }
+
+    pub(crate) fn advance_one(&mut self) {
+        if self.failed.is_some() {
+            return;
+        }
+        let step = self.completed_steps as u32;
+        if let Err(error) = self.apply_neutral_actions(step) {
+            self.failed = Some(error);
+            return;
+        }
+        if let Err(error) = self.world.step(self.fixed_dt, self.substeps) {
+            self.failed = Some(error);
+            return;
+        }
+        self.completed_steps = self.completed_steps.saturating_add(1);
+    }
+
+    pub(crate) fn refresh_snapshots(&mut self) {
+        if self.failed.is_some() {
+            return;
         }
         match self.world.snapshots() {
             Ok(snapshots) => {
@@ -73,6 +133,168 @@ impl ComparisonShadow {
             }
             Err(error) => self.failed = Some(error),
         }
+    }
+
+    fn apply_body_command(&mut self, command: &BodyCommandV1) -> Result<(), String> {
+        match command {
+            BodyCommandV1::Reset {
+                body,
+                position,
+                angle,
+                linear_velocity,
+                angular_velocity,
+                ..
+            } => {
+                self.active_grab = None;
+                self.world.reset_body(
+                    *body,
+                    *position,
+                    angle.get(),
+                    *linear_velocity,
+                    angular_velocity.get(),
+                )
+            }
+            BodyCommandV1::GrabBegin {
+                body, world_target, ..
+            } => self.begin_grab(*body, *world_target),
+            BodyCommandV1::GrabTarget {
+                body, world_target, ..
+            } => {
+                if self.active_grab == Some(*body) {
+                    self.world.update_grab(*world_target)?;
+                }
+                Ok(())
+            }
+            BodyCommandV1::GrabEnd { body, .. } => {
+                if self.active_grab == Some(*body) {
+                    self.world.end_grab();
+                    self.active_grab = None;
+                }
+                Ok(())
+            }
+        }
+    }
+
+    fn apply_grab_intent(&mut self, intent: GrabIntentV1) -> Result<(), String> {
+        match intent {
+            GrabIntentV1::Begin { world_target, .. } => {
+                self.world.end_grab();
+                self.active_grab = self.world.hit_test(world_target, true)?;
+                if let Some(body) = self.active_grab {
+                    self.begin_grab(body, world_target)?;
+                }
+            }
+            GrabIntentV1::Target { world_target, .. } => {
+                if self.active_grab.is_some() {
+                    self.world.update_grab(world_target)?;
+                }
+            }
+            GrabIntentV1::End { .. } => {
+                self.world.end_grab();
+                self.active_grab = None;
+            }
+        }
+        Ok(())
+    }
+
+    fn begin_grab(&mut self, body: BodyId, world_target: Vec2) -> Result<(), String> {
+        self.world.begin_grab(
+            body,
+            world_target,
+            world_target,
+            GrabTuning {
+                spring_acceleration: GRAB_SPRING_ACCELERATION,
+                damping_rate: GRAB_DAMPING_RATE,
+                max_acceleration: GRAB_MAX_ACCELERATION,
+            },
+        )?;
+        self.active_grab = Some(body);
+        Ok(())
+    }
+
+    fn apply_construction_intent(&mut self, intent: ConstructionIntentV1) -> Result<(), String> {
+        match intent {
+            ConstructionIntentV1::PlaceCircle { world_target, .. } => {
+                self.place_body(
+                    ShapeV1::Circle {
+                        radius: finite(CONSTRUCTION_CIRCLE_RADIUS),
+                    },
+                    world_target,
+                    2.0 / (CONSTRUCTION_CIRCLE_RADIUS * CONSTRUCTION_CIRCLE_RADIUS),
+                )?;
+            }
+            ConstructionIntentV1::PlaceRectangle { world_target, .. } => {
+                let [x, y] = CONSTRUCTION_RECTANGLE_HALF_EXTENTS;
+                self.place_body(
+                    ShapeV1::Rectangle {
+                        half_extents: Vec2::new(x, y),
+                    },
+                    world_target,
+                    3.0 / (x * x + y * y),
+                )?;
+            }
+            ConstructionIntentV1::EraseAt { world_target, .. } => {
+                let Some(body) = self.world.hit_test(world_target, true)? else {
+                    return Ok(());
+                };
+                self.erase_body(body)?;
+            }
+            ConstructionIntentV1::EraseBody { body, .. } => {
+                if let Some(body) = body {
+                    self.erase_body(body)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn erase_body(&mut self, body: BodyId) -> Result<(), String> {
+        if self.active_grab == Some(body) {
+            self.world.end_grab();
+            self.active_grab = None;
+        }
+        self.world.remove_body(body)?;
+        self.slots.release(body)
+    }
+
+    fn place_body(
+        &mut self,
+        shape: ShapeV1,
+        position: Vec2,
+        inverse_inertia: f32,
+    ) -> Result<(), String> {
+        if self
+            .world
+            .snapshots()?
+            .into_iter()
+            .any(|body| body.contains(position))
+        {
+            return Ok(());
+        }
+        let id = match self.slots.allocate_lowest() {
+            Ok(id) => id,
+            Err(_) => return Ok(()),
+        };
+        let body = BodyStateV1 {
+            id,
+            shape,
+            position,
+            angle: finite(0.0),
+            linear_velocity: Vec2::ZERO,
+            angular_velocity: finite(0.0),
+            inverse_mass: finite(1.0),
+            inverse_inertia: finite(inverse_inertia),
+            material: MaterialV1 {
+                friction: finite(CONSTRUCTION_FRICTION),
+                restitution: finite(CONSTRUCTION_RESTITUTION),
+            },
+            sleeping: false,
+        };
+        if let Err(error) = self.world.add_body(&body) {
+            self.slots.release(id)?;
+            return Err(error);
+        }
+        Ok(())
     }
 
     fn apply_neutral_actions(&mut self, step: u32) -> Result<(), String> {
@@ -132,6 +354,14 @@ impl ComparisonShadow {
 
     pub(crate) fn failure(&self) -> Option<&str> {
         self.failed.as_deref()
+    }
+
+    pub(crate) fn hit_test(&self, point: Vec2) -> Result<Option<BodyId>, String> {
+        self.world.hit_test(point, true)
+    }
+
+    pub(crate) const fn active_grab(&self) -> Option<BodyId> {
+        self.active_grab
     }
 
     pub(crate) const fn revision() -> &'static str {
@@ -474,4 +704,8 @@ fn render_pipeline(
         multiview: None,
         cache: None,
     })
+}
+
+fn finite(value: f32) -> FiniteF32 {
+    FiniteF32::new(value).expect("comparison construction constants are finite")
 }

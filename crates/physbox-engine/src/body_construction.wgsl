@@ -44,6 +44,7 @@ const NO_SLOT: u32 = 0xffffffffu;
 const PLACE_CIRCLE: u32 = 1u;
 const PLACE_RECTANGLE: u32 = 2u;
 const ERASE_AT: u32 = 3u;
+const ERASE_BODY: u32 = 4u;
 const RESULT_NONE: u32 = 0u;
 const RESULT_PLACED: u32 = 1u;
 const RESULT_ERASED: u32 = 2u;
@@ -267,6 +268,39 @@ fn erase_body(current: ConstructionState, kind: u32,
     return output;
 }
 
+fn erase_specific(current: ConstructionState, kind: u32,
+                  slot: u32, generation: u32) -> ConstructionState {
+    var output = current;
+    if (slot == NO_SLOT || slot >= params.counts.z) {
+        return fail_result(output, RESULT_ERASE_MISS);
+    }
+    let identity = metadata[slot];
+    if (identity.x != generation ||
+        (identity.y & (FLAG_LIVE | FLAG_FIXED)) != FLAG_LIVE) {
+        return fail_result(output, RESULT_ERASE_MISS);
+    }
+    if (generation == 0xffffffffu) {
+        return fail_result(output, RESULT_GENERATION_EXHAUSTED);
+    }
+    if (grab.identity_status.x == slot &&
+        grab.identity_status.y == generation &&
+        grab.identity_status.z == GRAB_ACTIVE) {
+        grab.identity_status = vec4u(NO_SLOT, 0u, 0u, output.header.z);
+        output.extra_counts.y = increment(output.extra_counts.y);
+    }
+    poses[slot] = vec4f(0.0);
+    motions[slot] = vec4f(0.0);
+    properties[slot] = vec4f(0.0);
+    metadata[slot] = vec4u(generation + 1u, 0u, 0u, 0u);
+    remove_active_slot(slot, output.header.y);
+    output.header.y -= 1u;
+    output.header.w = RESULT_ERASED;
+    output.last_identity_kind = vec4u(slot, generation, kind, 0u);
+    output.success_counts.y = increment(output.success_counts.y);
+    output.outcome_counts.x = increment(output.outcome_counts.x);
+    return output;
+}
+
 @compute @workgroup_size(1)
 fn apply_construction_intents(@builtin(global_invocation_id) id: vec3u) {
     if (id.x != 0u) { return; }
@@ -280,6 +314,13 @@ fn apply_construction_intents(@builtin(global_invocation_id) id: vec3u) {
             current = place_body(current, kind, intent.target_padding.xy);
         } else if (kind == ERASE_AT) {
             current = erase_body(current, kind, intent.target_padding.xy);
+        } else if (kind == ERASE_BODY) {
+            current = erase_specific(
+                current,
+                kind,
+                intent.kind_sequence_padding.z,
+                intent.kind_sequence_padding.w,
+            );
         }
     }
     update_active_arguments(current.header.y);

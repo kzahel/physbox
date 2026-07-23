@@ -194,6 +194,33 @@ bool pb5_box2d_world_apply_impulse(
     return true;
 }
 
+bool pb5_box2d_world_reset_body(
+    pb5_box2d_world* world,
+    uint32_t slot,
+    uint32_t generation,
+    float position_x,
+    float position_y,
+    float angle,
+    float velocity_x,
+    float velocity_y,
+    float angular_velocity
+) {
+    if (!pb5_slot_matches(world, slot, generation)) {
+        pb5_set_error(world, "reset targeted a stale comparator identity");
+        return false;
+    }
+    if (world->grab_active) {
+        pb5_box2d_world_end_grab(world);
+    }
+    b2BodyId body = world->slots[slot].body;
+    b2Body_SetTransform(body, (b2Vec2){position_x, position_y}, b2MakeRot(angle));
+    b2Body_SetLinearVelocity(body, (b2Vec2){velocity_x, velocity_y});
+    b2Body_SetAngularVelocity(body, angular_velocity);
+    b2Body_SetAwake(body, true);
+    world->error[0] = '\0';
+    return true;
+}
+
 bool pb5_box2d_world_begin_grab(
     pb5_box2d_world* world,
     uint32_t slot,

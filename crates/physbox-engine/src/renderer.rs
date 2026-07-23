@@ -991,6 +991,8 @@ mod tests {
         assert_eq!(report.body_commands.executed_commands_total, 6);
         assert_eq!(report.body_commands.reset_commands_total, 2);
         assert!(!report.body_commands.grab_pointer_active);
+        #[cfg(feature = "box2d-comparator")]
+        assert!(report.ui.box2d_failure.is_none());
         let replayed = scripted.read_capture_state().unwrap();
 
         let mut fresh = pollster::block_on(OffscreenRenderer::new(
@@ -1676,6 +1678,188 @@ mod tests {
         assert_eq!(returned.ui.selected_engine, "physbox");
         assert_eq!(returned.fixed_steps_total, 5);
         assert_eq!(returned.ui.box2d_completed_steps, Some(5));
+    }
+
+    #[cfg(feature = "box2d-comparator")]
+    #[test]
+    fn placement_and_erase_are_mirrored_into_the_box2d_shadow() {
+        let target = [960, 600];
+        let mut renderer = pollster::block_on(OffscreenRenderer::new(
+            target[0],
+            target[1],
+            EngineConfig::default(),
+        ))
+        .unwrap();
+        let click = |id, at| {
+            [crate::PointerPhase::Down, crate::PointerPhase::Up]
+                .into_iter()
+                .map(|phase| {
+                    crate::InputEvent::Pointer(crate::PointerEvent {
+                        id,
+                        phase,
+                        button: crate::PointerButton::Primary,
+                        normalized_position: at,
+                    })
+                })
+                .collect::<Vec<_>>()
+        };
+        let layout = crate::ui::UiLayout::for_target(target);
+        let placement = [0.80, 0.20];
+        renderer.render(
+            FrameInput::exact(0).with_input_events(click(1, layout.center_normalized("tool", 1))),
+        );
+        renderer.render(FrameInput::exact(0).with_input_events(click(2, placement)));
+        let placed = renderer.render(FrameInput::exact(1));
+        assert_eq!(placed.body_commands.executed_construction_intents_total, 1);
+        assert_eq!(renderer.read_construction_state().unwrap().live_bodies, 3);
+
+        renderer.render(
+            FrameInput::exact(0).with_input_events(click(3, layout.center_normalized("menu", 0))),
+        );
+        renderer.render(
+            FrameInput::exact(0)
+                .with_input_events(click(4, layout.center_normalized("world-tab", 0))),
+        );
+        let box2d = renderer.render(
+            FrameInput::exact(0)
+                .with_input_events(click(5, layout.center_normalized("world-engine", 1))),
+        );
+        assert_eq!(box2d.ui.selected_engine, "box2d");
+        assert_eq!(box2d.ui.box2d_failure, None);
+        assert_eq!(box2d.ui.box2d_completed_steps, Some(1));
+        assert_eq!(box2d.ui.box2d_live_bodies, Some(3));
+
+        renderer.render(
+            FrameInput::exact(0).with_input_events(click(6, layout.center_normalized("tool", 3))),
+        );
+        renderer.render(FrameInput::exact(0).with_input_events(click(7, placement)));
+        let erased = renderer.render(FrameInput::exact(1));
+        assert_eq!(erased.body_commands.executed_construction_intents_total, 2);
+        assert_eq!(renderer.read_construction_state().unwrap().live_bodies, 2);
+        assert!(erased.ui.box2d_failure.is_none());
+        assert_eq!(erased.ui.box2d_live_bodies, Some(2));
+    }
+
+    #[cfg(feature = "box2d-comparator")]
+    #[test]
+    fn box2d_visible_grab_targets_the_same_stable_id_after_trajectories_diverge() {
+        let target = [960, 600];
+        let mut renderer = pollster::block_on(OffscreenRenderer::new(
+            target[0],
+            target[1],
+            EngineConfig::default(),
+        ))
+        .unwrap();
+        let click = |id, at| {
+            [crate::PointerPhase::Down, crate::PointerPhase::Up]
+                .into_iter()
+                .map(|phase| {
+                    crate::InputEvent::Pointer(crate::PointerEvent {
+                        id,
+                        phase,
+                        button: crate::PointerButton::Primary,
+                        normalized_position: at,
+                    })
+                })
+                .collect::<Vec<_>>()
+        };
+        let layout = crate::ui::UiLayout::for_target(target);
+        renderer
+            .host
+            .overwrite_body_pose_for_test(&renderer.queue, 0, [1.2, 0.65, 0.0, 0.0]);
+        renderer.render(
+            FrameInput::exact(0).with_input_events(click(1, layout.center_normalized("menu", 0))),
+        );
+        renderer.render(
+            FrameInput::exact(0)
+                .with_input_events(click(2, layout.center_normalized("world-tab", 0))),
+        );
+        renderer.render(
+            FrameInput::exact(0)
+                .with_input_events(click(3, layout.center_normalized("world-engine", 1))),
+        );
+
+        let at_box2d_body = crate::Camera2d::fixed()
+            .resolve(target)
+            .unwrap()
+            .world_to_screen([0.0, 0.65]);
+        renderer.render(FrameInput {
+            step_request: crate::StepRequest::Exact { steps: 1 },
+            input_events: vec![crate::InputEvent::Pointer(crate::PointerEvent {
+                id: 4,
+                phase: crate::PointerPhase::Down,
+                button: crate::PointerButton::Primary,
+                normalized_position: at_box2d_body,
+            })],
+        });
+        assert_eq!(
+            renderer.read_grab_state().unwrap().selected_body,
+            Some(physbox_contracts::BodyId {
+                slot: 0,
+                generation: 1,
+            })
+        );
+    }
+
+    #[cfg(feature = "box2d-comparator")]
+    #[test]
+    fn box2d_visible_erase_targets_the_same_stable_id_after_trajectories_diverge() {
+        let target = [960, 600];
+        let mut renderer = pollster::block_on(OffscreenRenderer::new(
+            target[0],
+            target[1],
+            EngineConfig::default(),
+        ))
+        .unwrap();
+        let click = |id, at| {
+            [crate::PointerPhase::Down, crate::PointerPhase::Up]
+                .into_iter()
+                .map(|phase| {
+                    crate::InputEvent::Pointer(crate::PointerEvent {
+                        id,
+                        phase,
+                        button: crate::PointerButton::Primary,
+                        normalized_position: at,
+                    })
+                })
+                .collect::<Vec<_>>()
+        };
+        let layout = crate::ui::UiLayout::for_target(target);
+        renderer
+            .host
+            .overwrite_body_pose_for_test(&renderer.queue, 0, [1.2, 0.65, 0.0, 0.0]);
+        renderer.render(
+            FrameInput::exact(0).with_input_events(click(1, layout.center_normalized("menu", 0))),
+        );
+        renderer.render(
+            FrameInput::exact(0)
+                .with_input_events(click(2, layout.center_normalized("world-tab", 0))),
+        );
+        renderer.render(
+            FrameInput::exact(0)
+                .with_input_events(click(3, layout.center_normalized("world-engine", 1))),
+        );
+        renderer.render(
+            FrameInput::exact(0).with_input_events(click(4, layout.center_normalized("tool", 3))),
+        );
+
+        let at_box2d_body = crate::Camera2d::fixed()
+            .resolve(target)
+            .unwrap()
+            .world_to_screen([0.0, 0.65]);
+        renderer.render(FrameInput::exact(0).with_input_events(click(5, at_box2d_body)));
+        let erased = renderer.render(FrameInput::exact(1));
+        let construction = renderer.read_construction_state().unwrap();
+        assert_eq!(
+            construction.last_body,
+            Some(physbox_contracts::BodyId {
+                slot: 0,
+                generation: 1,
+            })
+        );
+        assert_eq!(construction.live_bodies, 1);
+        assert_eq!(erased.ui.box2d_live_bodies, Some(1));
+        assert!(erased.ui.box2d_failure.is_none());
     }
 
     #[test]

@@ -25,6 +25,7 @@ pub(crate) const CONSTRUCTION_RESULT_GENERATION_EXHAUSTED: u32 = 6;
 const INTENT_PLACE_CIRCLE: u32 = 1;
 const INTENT_PLACE_RECTANGLE: u32 = 2;
 const INTENT_ERASE_AT: u32 = 3;
+const INTENT_ERASE_BODY: u32 = 4;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod, Zeroable)]
@@ -137,10 +138,20 @@ pub(crate) fn construction_intent_raw(intent: ConstructionIntentV1) -> Construct
         ConstructionIntentV1::PlaceCircle { .. } => INTENT_PLACE_CIRCLE,
         ConstructionIntentV1::PlaceRectangle { .. } => INTENT_PLACE_RECTANGLE,
         ConstructionIntentV1::EraseAt { .. } => INTENT_ERASE_AT,
+        ConstructionIntentV1::EraseBody { .. } => INTENT_ERASE_BODY,
     };
     let target = intent.world_target();
+    let body = match intent {
+        ConstructionIntentV1::EraseBody { body, .. } => body,
+        _ => None,
+    };
     ConstructionIntentRaw {
-        kind_sequence_padding: [kind, intent.sequence(), 0, 0],
+        kind_sequence_padding: [
+            kind,
+            intent.sequence(),
+            body.map_or(u32::MAX, |body| body.slot),
+            body.map_or(0, |body| body.generation),
+        ],
         target_padding: [target.x, target.y, 0.0, 0.0],
     }
 }

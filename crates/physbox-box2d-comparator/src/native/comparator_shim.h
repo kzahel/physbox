@@ -73,6 +73,17 @@ bool pb5_box2d_world_apply_impulse(
     float point_x,
     float point_y
 );
+bool pb5_box2d_world_reset_body(
+    pb5_box2d_world* world,
+    uint32_t slot,
+    uint32_t generation,
+    float position_x,
+    float position_y,
+    float angle,
+    float velocity_x,
+    float velocity_y,
+    float angular_velocity
+);
 bool pb5_box2d_world_begin_grab(
     pb5_box2d_world* world,
     uint32_t slot,

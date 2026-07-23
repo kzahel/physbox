@@ -113,6 +113,18 @@ impl Box2dWorld {
         self.platform.apply_impulse(body, impulse, world_point)
     }
 
+    pub fn reset_body(
+        &mut self,
+        body: BodyId,
+        position: Vec2,
+        angle: f32,
+        linear_velocity: Vec2,
+        angular_velocity: f32,
+    ) -> Result<(), String> {
+        self.platform
+            .reset_body(body, position, angle, linear_velocity, angular_velocity)
+    }
+
     pub fn begin_grab(
         &mut self,
         body: BodyId,

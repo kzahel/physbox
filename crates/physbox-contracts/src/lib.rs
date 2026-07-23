@@ -10,7 +10,7 @@ use sha2::{Digest, Sha256};
 pub const SCHEMA_VERSION: u32 = 1;
 pub const BODY_LAYOUT_VERSION: u32 = 1;
 pub const GRAB_INTENT_CONTRACT_VERSION: u32 = 1;
-pub const CONSTRUCTION_INTENT_CONTRACT_VERSION: u32 = 1;
+pub const CONSTRUCTION_INTENT_CONTRACT_VERSION: u32 = 2;
 pub const SETTLING_OBSERVATION_VERSION: u32 = 1;
 pub const SETTLING_OBSERVATION_V2_VERSION: u32 = 2;
 pub const CONTACT_IDENTITY_POLICY_VERSION: u32 = 1;
@@ -622,15 +622,30 @@ pub struct GrabIntentBatchV1 {
     pub intents: Vec<GrabIntentV1>,
 }
 
-/// Body-free construction intent. The GPU resolves placement capacity and
-/// erase selection against current device-owned occupancy; hosts never choose
-/// or observe a body slot to advance construction.
+/// Interactive construction intent. The ordinary variants keep allocation and
+/// hit selection GPU-owned. `EraseBody` carries an explicit stable identity
+/// only when a visible comparison shadow selected it after trajectories
+/// diverged; `None` preserves an authoritative comparison miss.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum ConstructionIntentV1 {
-    PlaceCircle { sequence: u32, world_target: Vec2 },
-    PlaceRectangle { sequence: u32, world_target: Vec2 },
-    EraseAt { sequence: u32, world_target: Vec2 },
+    PlaceCircle {
+        sequence: u32,
+        world_target: Vec2,
+    },
+    PlaceRectangle {
+        sequence: u32,
+        world_target: Vec2,
+    },
+    EraseAt {
+        sequence: u32,
+        world_target: Vec2,
+    },
+    EraseBody {
+        sequence: u32,
+        body: Option<BodyId>,
+        world_target: Vec2,
+    },
 }
 
 impl ConstructionIntentV1 {
@@ -638,7 +653,8 @@ impl ConstructionIntentV1 {
         match self {
             Self::PlaceCircle { sequence, .. }
             | Self::PlaceRectangle { sequence, .. }
-            | Self::EraseAt { sequence, .. } => sequence,
+            | Self::EraseAt { sequence, .. }
+            | Self::EraseBody { sequence, .. } => sequence,
         }
     }
 
@@ -646,14 +662,25 @@ impl ConstructionIntentV1 {
         match self {
             Self::PlaceCircle { world_target, .. }
             | Self::PlaceRectangle { world_target, .. }
-            | Self::EraseAt { world_target, .. } => world_target,
+            | Self::EraseAt { world_target, .. }
+            | Self::EraseBody { world_target, .. } => world_target,
         }
     }
 }
 
 impl Validate for ConstructionIntentV1 {
     fn validate(&self) -> Result<(), ContractError> {
-        self.world_target().validate()
+        self.world_target().validate()?;
+        if let Self::EraseBody {
+            body: Some(body), ..
+        } = self
+            && body.generation == 0
+        {
+            return Err(ContractError(
+                "explicit erase identities require a nonzero generation".to_owned(),
+            ));
+        }
+        Ok(())
     }
 }
 

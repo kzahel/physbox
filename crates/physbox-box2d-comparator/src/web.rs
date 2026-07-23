@@ -26,6 +26,7 @@ pub(crate) fn install(runtime: JsValue) -> Result<(), String> {
         "_pb5_box2d_world_create",
         "_pb5_box2d_world_destroy",
         "_pb5_box2d_world_add_body",
+        "_pb5_box2d_world_reset_body",
         "_pb5_box2d_world_step",
         "_pb5_box2d_world_snapshot",
     ] {
@@ -141,6 +142,30 @@ impl World {
                 JsValue::from(impulse.y),
                 JsValue::from(world_point.x),
                 JsValue::from(world_point.y),
+            ],
+        )
+    }
+
+    pub(crate) fn reset_body(
+        &mut self,
+        body: BodyId,
+        position: Vec2,
+        angle: f32,
+        linear_velocity: Vec2,
+        angular_velocity: f32,
+    ) -> Result<(), String> {
+        self.truthy(
+            "_pb5_box2d_world_reset_body",
+            &[
+                JsValue::from(self.raw),
+                JsValue::from(body.slot),
+                JsValue::from(body.generation),
+                JsValue::from(position.x),
+                JsValue::from(position.y),
+                JsValue::from(angle),
+                JsValue::from(linear_velocity.x),
+                JsValue::from(linear_velocity.y),
+                JsValue::from(angular_velocity),
             ],
         )
     }
