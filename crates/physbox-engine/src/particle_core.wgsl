@@ -32,6 +32,9 @@ const COUNTER_COMMAND_DROPS: u32 = 12u;
 const COUNTER_CORRECTIONS: u32 = 13u;
 const COUNTER_CLAMPED_CORRECTIONS: u32 = 14u;
 const COUNTER_DISPATCHES: u32 = 15u;
+const COUNTER_BODY_CONTRIBUTIONS: u32 = 16u;
+const COUNTER_FLUID_WAKE_ROOTS: u32 = 17u;
+const COUNTER_BODY_CONTRIBUTION_OVERFLOW: u32 = 18u;
 
 @compute @workgroup_size(64)
 fn begin_step(@builtin(global_invocation_id) invocation: vec3u) {
@@ -48,6 +51,9 @@ fn begin_step(@builtin(global_invocation_id) invocation: vec3u) {
     atomicStore(&counters[COUNTER_CORRECTIONS], 0u);
     atomicStore(&counters[COUNTER_CLAMPED_CORRECTIONS], 0u);
     atomicStore(&counters[COUNTER_DISPATCHES], 0u);
+    atomicStore(&counters[COUNTER_BODY_CONTRIBUTIONS], 0u);
+    atomicStore(&counters[COUNTER_FLUID_WAKE_ROOTS], 0u);
+    atomicStore(&counters[COUNTER_BODY_CONTRIBUTION_OVERFLOW], 0u);
 }
 
 @compute @workgroup_size(64)

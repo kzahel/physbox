@@ -1629,6 +1629,11 @@ impl EngineHost {
             particle_readback_for_frame_advancement: false,
             particle_visible_in_box2d: false,
             particle_box2d_interaction: false,
+            particle_rigid_coupling: self.config.scenario == ValidationScenario::LiquidSandbox,
+            particle_coupled_schedule: (self.config.scenario == ValidationScenario::LiquidSandbox)
+                .then_some("rigid-then-coupled-batch"),
+            particle_body_generation_checked: self.config.scenario
+                == ValidationScenario::LiquidSandbox,
             capacity_overflowed: self
                 .body_world
                 .as_ref()
@@ -2107,7 +2112,7 @@ impl EngineHost {
     pub(crate) fn decode_particle_validation_state(
         &self,
         bytes: &[u8],
-    ) -> Result<crate::GpuParticleDiagnosticsV1, String> {
+    ) -> Result<crate::GpuParticleDiagnosticsV2, String> {
         self.body_world
             .as_ref()
             .ok_or_else(|| "particle diagnostics require the GPU body world".to_owned())?

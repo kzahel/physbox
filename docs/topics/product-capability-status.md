@@ -90,8 +90,8 @@ quality. Known limitations remain part of the row.
 
 | ID | Capability | Status | Current boundary / next gate |
 | --- | --- | --- | --- |
-| FLUID-1 | GPU liquid particles | **Not implemented** | The approved S31 plan authorizes bounded water work. No product particle solver exists yet. |
-| FLUID-2 | Two-way rigid/liquid coupling | **Not implemented** | Proposed S31 must exchange translation, torque, boundary pressure, and wake response with the PhysBox GPU rigid solver within the same fixed step. Box2D remains rigid-only. |
+| FLUID-1 | GPU liquid particles | **Limited** | The shared product path owns bounded 32K-slot GPU water storage, a 3,952-particle sandbox, neighborhood/density/correction/velocity passes, deterministic reset/spawn/erase/reuse, fixed boundaries, direct rendering, and final-only headless diagnostics. Debug views, retained numerical bands, tools, and cross-host acceptance remain S31 work. |
+| FLUID-2 | Two-way rigid/liquid coupling | **Limited** | The PhysBox GPU path now exchanges bounded equal-and-opposite positional and surface-relative velocity response with dynamic circles/rectangles in the same outer step, including torque, stable tiled body gathering, generation checks, and GPU fluid-wake requests. Boundary density/pressure response, sleeping qualification, complete coupled behavior bands, and tool/reset interaction gates remain open. Box2D stays rigid-only. |
 | FLUID-3 | PhysBox 3/LiquidFun coupled oracle | **Limited** | Sources and execution contract are pinned and native build feasibility is recorded; active S31 adds the routine PhysBox 3 sidecar, separate LiquidFun adapter, and coupled acceptance corpus. |
 | BREADTH-1 | Ragdolls, machines, soft bodies | **Deferred** | Depend on general joints, broader shapes, accepted scale, and stable rigid behavior. |
 

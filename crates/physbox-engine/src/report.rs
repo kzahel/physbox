@@ -10,7 +10,7 @@ use crate::{
     SleepCycleMetricsV1,
 };
 
-pub const SCENE_CONTRACT_VERSION: u32 = 12;
+pub const SCENE_CONTRACT_VERSION: u32 = 13;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -31,6 +31,9 @@ pub struct SceneContract {
     pub particle_readback_for_frame_advancement: bool,
     pub particle_visible_in_box2d: bool,
     pub particle_box2d_interaction: bool,
+    pub particle_rigid_coupling: bool,
+    pub particle_coupled_schedule: Option<&'static str>,
+    pub particle_body_generation_checked: bool,
     pub capacity_overflowed: bool,
     pub generated_solver_execution: Option<GpuSolverExecutionV4>,
     pub generated_solver_scheduling_policy: Option<GpuSolverSchedulingPolicyV1>,
@@ -607,6 +610,9 @@ mod tests {
                 particle_readback_for_frame_advancement: false,
                 particle_visible_in_box2d: false,
                 particle_box2d_interaction: false,
+                particle_rigid_coupling: true,
+                particle_coupled_schedule: Some("rigid-then-coupled-batch"),
+                particle_body_generation_checked: true,
                 capacity_overflowed: false,
                 generated_solver_execution: Some(GpuSolverExecutionV4::SELECTED),
                 generated_solver_scheduling_policy: Some(GpuSolverSchedulingPolicyV1::SELECTED),

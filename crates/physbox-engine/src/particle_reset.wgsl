@@ -33,7 +33,7 @@ fn reset_particles(@builtin(global_invocation_id) invocation: vec3u) {
         );
         atomicStore(&active_flags[index], authored_metadata.w);
     }
-    if index < 16u {
+    if index < 20u {
         atomicStore(&counters[index], 0u);
     }
     workgroupBarrier();

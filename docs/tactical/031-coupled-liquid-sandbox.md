@@ -237,10 +237,10 @@ interactive frames map no particle state.
 - [ ] Include fixed and dynamic boundaries in density/pressure and
   non-penetration work rather than adding reaction only after the final fluid
   projection.
-- [ ] Emit bounded equal-and-opposite particle/body contribution records,
+- [x] Emit bounded equal-and-opposite particle/body contribution records,
   group them on the GPU, and apply body translation plus off-center torque
   inside the same outer fixed step.
-- [ ] Feed updated body motion/pose into the remaining declared coupled
+- [x] Feed updated body motion/pose into the remaining declared coupled
   iterations so response is not a one-step-late boundary snapshot.
 - [ ] Create generation-checked fluid wake roots before required body response;
   qualify sleeping off plus local-4/local-8/exact explicitly enabled modes.
@@ -253,6 +253,26 @@ Gate: the displacement, float/sink, off-center torque, dam-break impact,
 grabbed-boundary, and fluid-wake sources pass scalar invariants and justified
 native-sidecar bands; a light body neither trampolines nor pins; no host
 feedback, delayed packet, drag clamp, or simulation-dependent readback exists.
+
+Coupling-foundation checkpoint: the `rigid-then-coupled-batch` product sandbox
+now emits one bounded positional/contact record per particle, reduces records
+in stable 64-particle tiles on the GPU, and applies equal-and-opposite body
+translation, torque, and surface-relative normal velocity response during the
+same outer step. Each later particle iteration reads the updated PhysBox pose;
+contact generations are checked against current live body metadata, and a
+nonzero response writes the existing GPU fluid-wake cause. The scalar/GPU
+centered-contact test bounds linear-momentum residual to `2e-4` with no torque.
+
+The first serial body gather was rejected after a 600-step Vulkan validation
+command buffer triggered the driver watchdog. The retained tiled reduction
+completed the same 600-step exact run as
+`1784809833565460211-2455396`: 3,952/3,952 particles remained active, all
+state was finite, overflow/escape/kill/drop stayed zero, 274 final-window
+body-contribution edges produced six fluid wake roots, and no interactive
+readback was introduced. This is a foundation checkpoint, not S31.3
+acceptance: boundary density/pressure reaction, schedule review, sleeping-mode
+qualification, the complete coupled corpus, and host dependency proof remain
+open.
 
 ### S31.4 — water, surface, erase, and comparison UI
 

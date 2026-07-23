@@ -194,7 +194,7 @@ pub use pair_slot_persistence::{
     GpuPairSlotPersistenceRunner, GpuPairSlotPersistenceStepOutput,
     benchmark_gpu_pair_slot_persistence,
 };
-pub use particle_world::{GPU_PARTICLE_DIAGNOSTICS_VERSION, GpuParticleDiagnosticsV1};
+pub use particle_world::{GPU_PARTICLE_DIAGNOSTICS_VERSION, GpuParticleDiagnosticsV2};
 #[cfg(not(target_arch = "wasm32"))]
 pub use renderer::OffscreenRenderer;
 pub use renderer::SurfaceRenderer;

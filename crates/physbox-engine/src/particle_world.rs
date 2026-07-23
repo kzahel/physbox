@@ -12,7 +12,7 @@ use crate::{CameraFrame2d, GpuBodyStorage, renderer::RenderFrameTarget};
 
 pub(crate) const PRODUCT_PARTICLE_CAPACITY: u32 = 32_768;
 pub(crate) const PARTICLE_COMMAND_CAPACITY: u32 = 64;
-const PARTICLE_COUNTER_WORDS: u32 = 16;
+const PARTICLE_COUNTER_WORDS: u32 = 20;
 const GRID_WIDTH: u32 = 64;
 const GRID_HEIGHT: u32 = 64;
 const GRID_CELL_CAPACITY: u32 = 64;
@@ -20,11 +20,11 @@ const GRID_CELL_COUNT: u32 = GRID_WIDTH * GRID_HEIGHT;
 const PARTICLE_WORKGROUP_SIZE: u32 = 64;
 const PARTICLE_SUBSTEPS: u32 = 2;
 const PARTICLE_BYTES_PER_SLOT: u64 = 64;
-pub const GPU_PARTICLE_DIAGNOSTICS_VERSION: u32 = 1;
+pub const GPU_PARTICLE_DIAGNOSTICS_VERSION: u32 = 2;
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct GpuParticleDiagnosticsV1 {
+pub struct GpuParticleDiagnosticsV2 {
     pub version: u32,
     pub capacity: u32,
     pub active_count: u32,
@@ -43,6 +43,9 @@ pub struct GpuParticleDiagnosticsV1 {
     pub command_drops: u32,
     pub corrections: u32,
     pub clamped_corrections: u32,
+    pub body_contribution_edges: u32,
+    pub fluid_wake_roots: u32,
+    pub body_contribution_overflow: u32,
     pub dispatches_per_step: u32,
     pub density_error_rms: f32,
     pub fluid_motion_rms: f32,
@@ -177,6 +180,9 @@ pub(crate) struct GpuParticleWorld {
     _active_indices: wgpu::Buffer,
     density_states: wgpu::Buffer,
     _corrections: wgpu::Buffer,
+    _body_contributions: wgpu::Buffer,
+    _body_contact_generations: wgpu::Buffer,
+    _body_partials: wgpu::Buffer,
     counters: wgpu::Buffer,
     indirect: wgpu::Buffer,
     _initial_positions: wgpu::Buffer,
@@ -203,6 +209,13 @@ pub(crate) struct GpuParticleWorld {
     correction_apply: wgpu::ComputePipeline,
     boundary_group: wgpu::BindGroup,
     boundary_project: wgpu::ComputePipeline,
+    body_reduce_group: wgpu::BindGroup,
+    body_reduce_pipeline: wgpu::ComputePipeline,
+    body_gather_group: wgpu::BindGroup,
+    body_position_gather_pipeline: wgpu::ComputePipeline,
+    body_velocity_gather_pipeline: wgpu::ComputePipeline,
+    body_velocity_group: wgpu::BindGroup,
+    body_velocity_pipeline: wgpu::ComputePipeline,
     velocity_group: wgpu::BindGroup,
     velocity_reconstruct: wgpu::ComputePipeline,
     velocity_gather: wgpu::ComputePipeline,
@@ -214,6 +227,8 @@ pub(crate) struct GpuParticleWorld {
     reset_pipeline: wgpu::ComputePipeline,
     render_group: wgpu::BindGroup,
     render_pipeline: wgpu::RenderPipeline,
+    body_capacity: u32,
+    body_tile_count: u32,
 }
 
 impl GpuParticleWorld {
@@ -288,6 +303,28 @@ impl GpuParticleWorld {
             "physbox5_particle_corrections",
             u64::from(capacity) * 8,
             wgpu::BufferUsages::empty(),
+        );
+        let body_contributions = empty_storage(
+            device,
+            "physbox5_particle_body_contributions",
+            u64::from(capacity) * 16,
+            wgpu::BufferUsages::COPY_SRC,
+        );
+        let body_contact_generations = empty_storage(
+            device,
+            "physbox5_particle_body_contact_generations",
+            u64::from(capacity) * 4,
+            wgpu::BufferUsages::COPY_SRC,
+        );
+        let body_tile_count = capacity.div_ceil(PARTICLE_WORKGROUP_SIZE);
+        let body_partial_bytes =
+            u64::from(body_storage.layout().capacity_elements) * u64::from(body_tile_count) * 16;
+        ensure_storage_size(device, body_partial_bytes, "particle body partials")?;
+        let body_partials = empty_storage(
+            device,
+            "physbox5_particle_body_partials",
+            body_partial_bytes,
+            wgpu::BufferUsages::COPY_SRC,
         );
         let counters = storage_init(
             device,
@@ -604,8 +641,10 @@ impl GpuParticleWorld {
                 (3, true),
                 (4, true),
                 (5, false),
+                (6, false),
+                (7, false),
             ],
-            6,
+            8,
             wgpu::ShaderStages::COMPUTE,
         );
         let boundary_group = bind_group(
@@ -618,6 +657,8 @@ impl GpuParticleWorld {
                 body_storage.pose_buffer(),
                 body_storage.properties_buffer(),
                 body_storage.metadata_buffer(),
+                &body_contributions,
+                &body_contact_generations,
                 &counters,
                 &params,
             ],
@@ -633,6 +674,127 @@ impl GpuParticleWorld {
             &boundary_layout,
             &boundary_shader,
             "project_boundaries",
+        );
+        let body_gather_layout = layout(
+            device,
+            "physbox5_particle_body_gather_layout",
+            &[
+                (0, true),
+                (1, false),
+                (2, false),
+                (3, true),
+                (4, false),
+                (5, false),
+            ],
+            6,
+            wgpu::ShaderStages::COMPUTE,
+        );
+        let body_gather_group = bind_group(
+            device,
+            "physbox5_particle_body_gather_group",
+            &body_gather_layout,
+            &[
+                &body_partials,
+                body_storage.pose_buffer(),
+                body_storage.motion_buffer(),
+                body_storage.metadata_buffer(),
+                body_storage.wake_request_buffer(),
+                &counters,
+                &params,
+            ],
+        );
+        let body_reduce_layout = layout(
+            device,
+            "physbox5_particle_body_reduce_layout",
+            &[(0, true), (1, true), (2, false)],
+            3,
+            wgpu::ShaderStages::COMPUTE,
+        );
+        let body_reduce_group = bind_group(
+            device,
+            "physbox5_particle_body_reduce_group",
+            &body_reduce_layout,
+            &[
+                &body_contributions,
+                body_storage.metadata_buffer(),
+                &body_partials,
+                &params,
+            ],
+        );
+        let body_reduce_shader = shader(
+            device,
+            "physbox5_particle_body_reduce",
+            include_str!("particle_body_reduce.wgsl"),
+        );
+        let body_reduce_pipeline = compute(
+            device,
+            "particle_body_reduce",
+            &body_reduce_layout,
+            &body_reduce_shader,
+            "reduce_body_contributions",
+        );
+        let body_gather_shader = shader(
+            device,
+            "physbox5_particle_body_gather",
+            include_str!("particle_body_gather.wgsl"),
+        );
+        let body_position_gather_pipeline = compute(
+            device,
+            "particle_body_position_gather",
+            &body_gather_layout,
+            &body_gather_shader,
+            "gather_body_position_response",
+        );
+        let body_velocity_gather_pipeline = compute(
+            device,
+            "particle_body_velocity_gather",
+            &body_gather_layout,
+            &body_gather_shader,
+            "gather_body_velocity_response",
+        );
+        let body_velocity_layout = layout(
+            device,
+            "physbox5_particle_body_velocity_layout",
+            &[
+                (0, true),
+                (1, false),
+                (2, true),
+                (3, false),
+                (4, true),
+                (5, true),
+                (6, true),
+                (7, true),
+            ],
+            8,
+            wgpu::ShaderStages::COMPUTE,
+        );
+        let body_velocity_group = bind_group(
+            device,
+            "physbox5_particle_body_velocity_group",
+            &body_velocity_layout,
+            &[
+                &positions,
+                &velocities,
+                &body_contact_generations,
+                &body_contributions,
+                body_storage.pose_buffer(),
+                body_storage.motion_buffer(),
+                body_storage.properties_buffer(),
+                body_storage.metadata_buffer(),
+                &params,
+            ],
+        );
+        let body_velocity_shader = shader(
+            device,
+            "physbox5_particle_body_velocity",
+            include_str!("particle_body_velocity.wgsl"),
+        );
+        let body_velocity_pipeline = compute(
+            device,
+            "particle_body_velocity",
+            &body_velocity_layout,
+            &body_velocity_shader,
+            "solve_body_velocity",
         );
 
         let velocity_layout = layout(
@@ -851,6 +1013,9 @@ impl GpuParticleWorld {
             _active_indices: active_indices,
             density_states,
             _corrections: corrections,
+            _body_contributions: body_contributions,
+            _body_contact_generations: body_contact_generations,
+            _body_partials: body_partials,
             counters,
             indirect,
             _initial_positions: initial_positions,
@@ -877,6 +1042,13 @@ impl GpuParticleWorld {
             correction_apply,
             boundary_group,
             boundary_project,
+            body_reduce_group,
+            body_reduce_pipeline,
+            body_gather_group,
+            body_position_gather_pipeline,
+            body_velocity_gather_pipeline,
+            body_velocity_group,
+            body_velocity_pipeline,
             velocity_group,
             velocity_reconstruct,
             velocity_gather,
@@ -888,6 +1060,8 @@ impl GpuParticleWorld {
             reset_pipeline,
             render_group,
             render_pipeline,
+            body_capacity: body_storage.layout().capacity_elements,
+            body_tile_count,
         })
     }
 
@@ -906,12 +1080,7 @@ impl GpuParticleWorld {
                 &self.core_integrate,
                 &self.core_group,
             );
-            self.dispatch_capacity(
-                encoder,
-                "particle_boundary_after_integrate",
-                &self.boundary_project,
-                &self.boundary_group,
-            );
+            self.encode_boundary_coupling(encoder, "particle_boundary_after_integrate");
             for _ in 0..self.pressure_iterations {
                 self.encode_grid_rebuild(encoder);
                 self.dispatch_capacity(
@@ -932,12 +1101,7 @@ impl GpuParticleWorld {
                     &self.correction_apply,
                     &self.correction_group,
                 );
-                self.dispatch_capacity(
-                    encoder,
-                    "particle_boundary_after_correction",
-                    &self.boundary_project,
-                    &self.boundary_group,
-                );
+                self.encode_boundary_coupling(encoder, "particle_boundary_after_correction");
             }
             self.encode_grid_rebuild(encoder);
             self.dispatch_capacity(
@@ -951,6 +1115,17 @@ impl GpuParticleWorld {
                 "particle_velocity_reconstruct",
                 &self.velocity_reconstruct,
                 &self.velocity_group,
+            );
+            self.dispatch_capacity(
+                encoder,
+                "particle_body_velocity",
+                &self.body_velocity_pipeline,
+                &self.body_velocity_group,
+            );
+            self.encode_body_gather(
+                encoder,
+                "particle_body_velocity_gather",
+                &self.body_velocity_gather_pipeline,
             );
             self.dispatch_capacity(
                 encoder,
@@ -1088,7 +1263,8 @@ impl GpuParticleWorld {
     }
 
     pub(crate) fn allocated_bytes(&self) -> u64 {
-        u64::from(self.capacity) * PARTICLE_BYTES_PER_SLOT
+        u64::from(self.capacity) * (PARTICLE_BYTES_PER_SLOT + 20)
+            + u64::from(self.body_capacity) * u64::from(self.body_tile_count) * 16
             + u64::from(GRID_CELL_COUNT) * 4
             + u64::from(GRID_CELL_COUNT) * u64::from(GRID_CELL_CAPACITY) * 4
             + size_of::<ParticleCommandBatchRaw>() as u64
@@ -1097,11 +1273,29 @@ impl GpuParticleWorld {
     }
 
     pub(crate) fn dispatches_per_step(&self) -> u32 {
-        1 + PARTICLE_SUBSTEPS * (2 + self.pressure_iterations * 6 + 6) + 3
+        1 + PARTICLE_SUBSTEPS * (4 + self.pressure_iterations * 8 + 9) + 3
     }
 
     pub(crate) fn capacities(&self) -> Vec<CapacityRecordV1> {
         let mut records = vec![
+            capacity(
+                "particle-body-contributions",
+                u64::from(self.capacity),
+                u64::from(self.initial_count),
+                16,
+            ),
+            capacity(
+                "particle-body-contact-generations",
+                u64::from(self.capacity),
+                u64::from(self.initial_count),
+                4,
+            ),
+            capacity(
+                "particle-body-partials",
+                u64::from(self.body_capacity) * u64::from(self.body_tile_count),
+                u64::from(self.body_capacity) * u64::from(self.body_tile_count),
+                16,
+            ),
             capacity(
                 "particle-commands",
                 u64::from(PARTICLE_COMMAND_CAPACITY),
@@ -1201,7 +1395,7 @@ impl GpuParticleWorld {
     pub(crate) fn decode_validation_state(
         &self,
         bytes: &[u8],
-    ) -> Result<GpuParticleDiagnosticsV1, String> {
+    ) -> Result<GpuParticleDiagnosticsV2, String> {
         let layout = self.validation_layout();
         if bytes.len() != layout.total_bytes as usize {
             return Err(format!(
@@ -1264,10 +1458,11 @@ impl GpuParticleWorld {
         let capacity_clean = counters[1] == 0
             && counters[3] == 0
             && counters[12] == 0
+            && counters[18] == 0
             && counters[0] <= layout.capacity
             && counters[0] == active_flags_count;
 
-        Ok(GpuParticleDiagnosticsV1 {
+        Ok(GpuParticleDiagnosticsV2 {
             version: GPU_PARTICLE_DIAGNOSTICS_VERSION,
             capacity: layout.capacity,
             active_count: counters[0],
@@ -1286,6 +1481,9 @@ impl GpuParticleWorld {
             command_drops: counters[12],
             corrections: counters[13],
             clamped_corrections: counters[14],
+            body_contribution_edges: counters[16],
+            fluid_wake_roots: counters[17],
+            body_contribution_overflow: counters[18],
             dispatches_per_step: self.dispatches_per_step(),
             density_error_rms,
             fluid_motion_rms,
@@ -1308,6 +1506,50 @@ impl GpuParticleWorld {
             "particle_grid_fill",
             &self.grid_fill,
             &self.grid_group,
+        );
+    }
+
+    fn encode_boundary_coupling(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        boundary_label: &'static str,
+    ) {
+        self.dispatch_capacity(
+            encoder,
+            boundary_label,
+            &self.boundary_project,
+            &self.boundary_group,
+        );
+        self.encode_body_gather(
+            encoder,
+            "particle_body_gather",
+            &self.body_position_gather_pipeline,
+        );
+    }
+
+    fn encode_body_gather(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        gather_label: &'static str,
+        gather_pipeline: &wgpu::ComputePipeline,
+    ) {
+        self.dispatch(
+            encoder,
+            "particle_body_reduce",
+            &self.body_reduce_pipeline,
+            &self.body_reduce_group,
+            [
+                self.body_tile_count,
+                self.body_capacity.div_ceil(PARTICLE_WORKGROUP_SIZE),
+                1,
+            ],
+        );
+        self.dispatch(
+            encoder,
+            gather_label,
+            gather_pipeline,
+            &self.body_gather_group,
+            [self.body_capacity.div_ceil(PARTICLE_WORKGROUP_SIZE), 1, 1],
         );
     }
 
@@ -1898,6 +2140,94 @@ mod tests {
         assert!((velocities[0][1] - expected.velocity.y).abs() <= 1.0e-4);
     }
 
+    #[test]
+    fn gpu_particle_body_response_is_same_step_and_equal_opposite() {
+        let instance = crate::create_instance();
+        let adapter = pollster::block_on(crate::gpu_context::request_adapter(&instance, None))
+            .expect("test GPU adapter");
+        let (device, queue) =
+            pollster::block_on(crate::gpu_context::request_device(&adapter)).unwrap();
+        let mut scenario = canonical_coupled_scenario(CoupledScenarioKind::ContainedWater).unwrap();
+        let material = scenario.materials[0];
+        scenario.particle_capacity = 1;
+        scenario.settings.schedule = physbox_contracts::CoupledScheduleV1::RigidThenCoupledBatch;
+        scenario.settings.pressure_iterations = 1;
+        scenario.rigid.settings.gravity = Vec2::ZERO;
+        scenario.rigid.bodies = vec![physbox_contracts::BodyStateV1 {
+            id: physbox_contracts::BodyId {
+                slot: 0,
+                generation: 1,
+            },
+            shape: physbox_contracts::ShapeV1::Circle {
+                radius: physbox_contracts::FiniteF32::new(0.5).unwrap(),
+            },
+            position: Vec2::ZERO,
+            angle: physbox_contracts::FiniteF32::new(0.0).unwrap(),
+            linear_velocity: Vec2::ZERO,
+            angular_velocity: physbox_contracts::FiniteF32::new(0.0).unwrap(),
+            inverse_mass: physbox_contracts::FiniteF32::new(0.5).unwrap(),
+            inverse_inertia: physbox_contracts::FiniteF32::new(1.0).unwrap(),
+            material: physbox_contracts::MaterialV1 {
+                friction: physbox_contracts::FiniteF32::new(0.0).unwrap(),
+                restitution: physbox_contracts::FiniteF32::new(0.0).unwrap(),
+            },
+            sleeping: false,
+        }];
+        scenario.regions = vec![ParticleRegionV1 {
+            id: 0,
+            material_id: 0,
+            lower: Vec2::new(0.45, -0.1),
+            upper: Vec2::new(0.65, 0.1),
+            spacing: physbox_contracts::FiniteF32::new(0.2).unwrap(),
+            initial_velocity: Vec2::new(-1.0, 0.0),
+        }];
+        scenario.validate().unwrap();
+        let body_storage =
+            GpuBodyStorage::new(&device, 1, BODY_COMMAND_CAPACITY, &scenario.rigid.bodies).unwrap();
+        let particles = GpuParticleWorld::new(
+            &device,
+            wgpu::TextureFormat::Rgba8UnormSrgb,
+            &scenario,
+            &body_storage,
+        )
+        .unwrap();
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("physbox5_particle_body_same_step"),
+        });
+        particles.encode_step(&mut encoder);
+        queue.submit([encoder.finish()]);
+        device.poll(wgpu::PollType::Wait).unwrap();
+
+        let particle_bytes = capture_particle_bytes(&device, &queue, &particles);
+        let particle_position = bytemuck::cast_slice::<u8, [f32; 4]>(&particle_bytes[0..16])[0];
+        let velocity_offset = particles.validation_layout().velocities_offset as usize;
+        let particle_velocity = bytemuck::cast_slice::<u8, [f32; 4]>(
+            &particle_bytes[velocity_offset..velocity_offset + 16],
+        )[0];
+        let diagnostics = particles.decode_validation_state(&particle_bytes).unwrap();
+        let (body_pose, body_motion) = capture_body_kinematics(&device, &queue, &body_storage);
+
+        assert!(particle_position[0] > 0.55, "particle moved out of body");
+        assert!(body_pose[0] < 0.0, "body received opposite translation");
+        assert!(body_motion[0] < 0.0, "body received opposite velocity");
+        assert!(
+            body_motion[2].abs() <= 1.0e-5,
+            "centered load has no torque"
+        );
+        assert!(diagnostics.body_contribution_edges > 0);
+        assert!(diagnostics.fluid_wake_roots > 0);
+        assert_eq!(diagnostics.body_contribution_overflow, 0);
+
+        let initial_momentum = -material.particle_mass();
+        let final_momentum = material.particle_mass() * particle_velocity[0]
+            + scenario.rigid.bodies[0].inverse_mass.get().recip() * body_motion[0];
+        assert!(
+            (final_momentum - initial_momentum).abs() <= 2.0e-4,
+            "linear momentum residual {}",
+            final_momentum - initial_momentum
+        );
+    }
+
     fn capture_particle_bytes(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
@@ -1935,5 +2265,37 @@ mod tests {
     fn particle_u32_scalars(bytes: &[u8], offset: u64, capacity: u32) -> Vec<u32> {
         let end = offset as usize + capacity as usize * size_of::<u32>();
         bytemuck::cast_slice::<u8, u32>(&bytes[offset as usize..end]).to_vec()
+    }
+
+    fn capture_body_kinematics(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        storage: &GpuBodyStorage,
+    ) -> ([f32; 4], [f32; 4]) {
+        let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("physbox5_particle_body_kinematics_readback"),
+            size: 32,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("physbox5_particle_body_kinematics_copy"),
+        });
+        encoder.copy_buffer_to_buffer(storage.pose_buffer(), 0, &buffer, 0, 16);
+        encoder.copy_buffer_to_buffer(storage.motion_buffer(), 0, &buffer, 16, 16);
+        queue.submit([encoder.finish()]);
+        let slice = buffer.slice(..);
+        let (sender, receiver) = mpsc::channel();
+        slice.map_async(wgpu::MapMode::Read, move |result| {
+            sender.send(result).unwrap();
+        });
+        device.poll(wgpu::PollType::Wait).unwrap();
+        receiver.recv().unwrap().unwrap();
+        let mapped = slice.get_mapped_range();
+        let lanes = bytemuck::cast_slice::<u8, [f32; 4]>(&mapped);
+        let result = (lanes[0], lanes[1]);
+        drop(mapped);
+        buffer.unmap();
+        result
     }
 }

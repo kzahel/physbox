@@ -1,7 +1,7 @@
 use physbox_contracts::{
-    BodyId, BodyStateV1, CoupledScenarioV1, CoupledSettingsV1, FiniteF32, GrabTuningV1, MaterialV1,
-    NeutralActionV1, ParticleMaterialV1, ParticleRegionV1, SCHEMA_VERSION, ScenarioV1, ShapeV1,
-    SolverSettingsV1, Validate, Vec2, canonical_hash,
+    BodyId, BodyStateV1, CoupledScenarioV1, CoupledScheduleV1, CoupledSettingsV1, FiniteF32,
+    GrabTuningV1, MaterialV1, NeutralActionV1, ParticleMaterialV1, ParticleRegionV1,
+    SCHEMA_VERSION, ScenarioV1, ShapeV1, SolverSettingsV1, Validate, Vec2, canonical_hash,
 };
 
 use crate::ScenarioBuildError;
@@ -204,6 +204,12 @@ pub fn liquid_sandbox_scenario() -> Result<CoupledScenarioV1, ScenarioBuildError
     scenario.rigid.id = "liquid-sandbox-v1-rigid".to_owned();
     scenario.rigid.seed = scenario.seed;
     scenario.rigid.requested_steps = scenario.requested_steps;
+    scenario.settings.schedule = CoupledScheduleV1::RigidThenCoupledBatch;
+    scenario
+        .rigid
+        .bodies
+        .push(dynamic_circle(3, Vec2::new(0.0, 5.45), 0.45, 1.0, false));
+    scenario.rigid.bodies.sort_by_key(|body| body.id);
     let mut water = ParticleMaterialV1::water_v1(0);
     water.radius = finite(0.05);
     scenario.materials = vec![water];
