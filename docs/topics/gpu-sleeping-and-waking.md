@@ -418,6 +418,14 @@ are at most +0.16%. Dispatch counts and allocations are unchanged. These
 named-adapter measurements reject a material regression for this promotion;
 they are not a universal performance-rate claim.
 
+Promotion qualification passes the maintained production fast lane and
+clippy, including the real browser WebGPU smoke; a fresh 1,200-step headless
+`circle-bucket-100` reports 100 sleeping circles, zero mixed cuts, stable
+sleep at step 145, and clean capacity. The ARM64 check, release-native APK,
+and physical Pixel 7a/Mali-G710 circle-bucket capture also pass. The physical
+capture reports exact grouping, effective sleeping on, 546 solver dispatches,
+and no capacity overflow.
+
 ### Post-review Box2D alignment correction
 
 Interactive visualization revealed that even two stationary touching bodies
