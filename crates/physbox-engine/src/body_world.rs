@@ -2465,7 +2465,7 @@ mod tests {
         .unwrap();
         let candidate_dispatches = stabilized.post_fluid_stabilization_dispatches_per_step();
         let candidate_bytes = stabilized.post_fluid_stabilization_allocated_bytes();
-        assert_eq!(candidate_dispatches, 76);
+        assert_eq!(candidate_dispatches, 17);
         assert_eq!(candidate_bytes, 32);
         assert_eq!(
             stabilized.solver_dispatches_per_step(),

@@ -954,8 +954,12 @@ impl GpuGeneratedContactGraph {
         let Some(stabilizer) = &self.post_fluid_stabilizer else {
             return;
         };
-        self.broadphase
-            .encode(encoder, &self.broadphase_pipelines, None);
+        // Candidate B deliberately retains the complete product candidate set
+        // generated at the beginning of this rigid step. Refreshing
+        // narrowphase against the post-fluid poses costs 15 dispatches without
+        // rebuilding the 59-dispatch SAP. Candidate completeness is audited
+        // separately before this diagnostic path can be considered for
+        // promotion.
         self.narrowphase
             .encode(encoder, &self.narrowphase_pipelines);
         stabilizer.encode(encoder);
@@ -1294,7 +1298,7 @@ impl GpuGeneratedContactGraph {
 
     pub(crate) fn post_fluid_stabilization_dispatches_per_step(&self) -> u32 {
         self.post_fluid_stabilizer.as_ref().map_or(0, |_| {
-            self.broadphase.dispatches() + NARROWPHASE_DISPATCHES + PostFluidStabilizer::DISPATCHES
+            NARROWPHASE_DISPATCHES + PostFluidStabilizer::DISPATCHES
         })
     }
 

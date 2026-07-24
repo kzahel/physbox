@@ -213,6 +213,16 @@ remains opt-in and is not eligible for default promotion. The failed raw ARM
 `cargo check` that preceded the successful wrapper build lacked the declared
 NDK compiler environment and is not a product failure.
 
+Candidate-B implementation checkpoint, 2026-07-24: the opt-in `stabilized`
+path now retains the product SAP candidate set generated at the beginning of
+the rigid step, refreshes narrowphase after fluid motion, and applies the same
+position/velocity correction. This changes the isolated diagnostic delta from
+candidate A's `59 + 15 + 2 = 76` dispatches to `15 + 2 = 17` without changing
+the 32-byte allocation. This is dispatch-graph accounting, not yet measured
+quality or performance evidence. Because fluid motion can create a contact
+whose pair was absent from the retained set, candidate B remains a
+known-contact-only diagnostic pending the declared full-search miss audit.
+
 Gate: scalar sign/effective-mass checks, GPU finite/capacity checks, dry
 controls, wet two-body rows, and wet multi-body rows pass before performance
 ranking.
