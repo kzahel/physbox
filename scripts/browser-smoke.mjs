@@ -32,6 +32,10 @@ if (![64, 256, 1000, 10000].includes(requestedBodyCapacity)) {
 }
 const solverLab = process.env.PHYSBOX5_SOLVER_LAB === "1";
 const conciseOutput = process.env.PHYSBOX5_CONCISE === "1";
+const finalRenderScale = Number.parseInt(process.env.PHYSBOX5_FINAL_RENDER_SCALE ?? "100", 10);
+if (![100, 50].includes(finalRenderScale)) {
+  throw new Error("PHYSBOX5_FINAL_RENDER_SCALE must be 100 or 50");
+}
 const viewportWidth = Number.parseInt(process.env.PHYSBOX5_VIEWPORT_WIDTH ?? "960", 10);
 const viewportHeight = Number.parseInt(process.env.PHYSBOX5_VIEWPORT_HEIGHT ?? "600", 10);
 const deviceScaleFactor = Number.parseFloat(process.env.PHYSBOX5_DEVICE_SCALE_FACTOR ?? "1");
@@ -398,18 +402,20 @@ try {
   ) {
     throw new Error(`render scale changed physics or camera: ${JSON.stringify(scaledFrame)}`);
   }
-  await clickWorldControl(worldRenderScaleCenter);
-  await page.waitForFunction(
-    () => {
-      const report = globalThis.__physbox5?.frame?.renderScale;
-      return report?.requestedPercent === 100
-        && report.path === "direct"
-        && report.intermediateColorBytes === 0;
-    },
-    null,
-    { timeout: 30_000 },
-  );
-  await requirePresentationPreference(page, false, 100);
+  if (finalRenderScale === 100) {
+    await clickWorldControl(worldRenderScaleCenter);
+    await page.waitForFunction(
+      () => {
+        const report = globalThis.__physbox5?.frame?.renderScale;
+        return report?.requestedPercent === 100
+          && report.path === "direct"
+          && report.intermediateColorBytes === 0;
+      },
+      null,
+      { timeout: 30_000 },
+    );
+  }
+  await requirePresentationPreference(page, false, finalRenderScale);
   await page.mouse.click(...menuButtonCenter);
   await page.waitForFunction(() => globalThis.__physbox5?.frame?.ui?.menuOpen, null, { timeout: 10_000 });
   await page.evaluate(() => new Promise((resolveFrame) => {
@@ -602,7 +608,7 @@ try {
       null,
       { timeout: 30_000 },
     );
-    await requirePresentationPreference(page, true);
+    await requirePresentationPreference(page, true, finalRenderScale);
     await page.waitForTimeout(750);
     await captureCompleteScreenshot(page, sleepScreenshot, "browser sleep-state visualization");
     for (const threshold of [0.1, 0.01, 0.02]) {
@@ -659,7 +665,7 @@ try {
       null,
       { timeout: 10_000 },
     );
-    await requirePresentationPreference(page, false);
+    await requirePresentationPreference(page, false, finalRenderScale);
     await page.mouse.click(...menuButtonCenter);
     await page.waitForFunction(() => globalThis.__physbox5?.frame?.ui?.menuOpen, null, { timeout: 10_000 });
     await page.mouse.click(76 * uiScale, 104 * uiScale);
@@ -1149,6 +1155,16 @@ try {
     activeScenario,
     { timeout: solverLab || scenario === "liquid-sandbox" ? 30_000 : 10_000 },
   );
+  await page.waitForFunction(
+    () => {
+      const frame = globalThis.__physbox5?.frame;
+      return frame?.fixedStepsTotal >= 31
+        && frame?.frameTiming?.sampleFrameIndex >= 31
+        && frame?.frameTiming?.ageFrames !== null;
+    },
+    null,
+    { timeout: 30_000 },
+  );
   await page.waitForTimeout(200);
   await captureCompleteScreenshot(page, screenshot, "browser final", consoleErrors);
   const final = await page.evaluate(() => globalThis.__physbox5);
@@ -1202,6 +1218,8 @@ try {
         effectiveScale: final.frame.pacing?.effectiveSimulationScale,
         slippedSeconds: final.frame.pacing?.overloadSlippedWallSecondsTotal,
       },
+      renderScale: final.frame.renderScale,
+      frameTiming: final.frame.frameTiming,
     }
     : {
       initialScreenshot,
