@@ -10,6 +10,8 @@ Governing direction:
 [one GPU-resident 2D physics world](physbox5-unified-gpu-physics.md).
 Performance and capacity:
 [performance and scale](performance-and-scale.md).
+Current physical-mobile dispatch diagnosis:
+[liquid dispatch and capacity performance](liquid-dispatch-and-capacity-performance.md).
 Pacing:
 [simulation time and overload](simulation-time-and-overload.md).
 Current product boundary:

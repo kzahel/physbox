@@ -8,6 +8,8 @@ Equivalent rigid quality:
 [rigid quality targets](rigid-quality-targets.md).
 Coupled work-vector extension:
 [coupled liquid/rigid constraint surface](coupled-liquid-rigid-constraint-surface.md).
+Current physical-mobile liquid attribution:
+[liquid dispatch and capacity performance](liquid-dispatch-and-capacity-performance.md).
 Execution begins in the
 [rigid solver laboratory](../tactical/001-rigid-solver-laboratory.md) and
 continues through every stage of the [bring-up plan](../bringup-plan.md).

@@ -16,6 +16,11 @@ a running log.
   compact particle grid/capacity evidence, measured PhysBox 3/LiquidFun
   disagreements, PhysBox 4 reuse boundary, rigid-only Box2D comparison
   semantics, first water/tool/render scope, and final human-review gate.
+- [Liquid dispatch and capacity performance](liquid-dispatch-and-capacity-performance.md)
+  — physical Pixel 7a diagnosis of the greater-than-64 reserved-body
+  scheduling cliff, the 92-dispatch particle graph, PhysBox 4's delayed
+  CPU-rigid/GPU-fluid contrast, active-work gaps, and ordered optimization
+  candidates.
 - [Performance and scale contract](performance-and-scale.md) — workload and
   scene matrix, CPU/GPU comparison lanes, timing/capacity validity, provisional
   scale expectations, and milestone/regression gates.
