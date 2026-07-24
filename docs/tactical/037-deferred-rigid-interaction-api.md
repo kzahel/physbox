@@ -1,8 +1,9 @@
 # S37 — Deferred rigid interaction API
 
-Status: active 2026-07-24. Human review approved the Box2D-shaped deferred
-query, point-constraint, selected-body destruction, and non-lossy asynchronous
-result boundary for end-to-end implementation.
+Status: complete 2026-07-24. The Box2D-shaped deferred query,
+point-constraint, selected-body destruction, and non-lossy asynchronous result
+boundary is implemented and cross-host qualified. Downstream Quest input
+adoption remains Quest-owned work.
 
 Governing architecture:
 [reusable GPU physics library boundary](../topics/reusable-gpu-library-boundary.md).
@@ -141,15 +142,17 @@ physics observation.
       adapter.
 - [x] Pass focused simulation, engine, dependency-negative, and external
       consumer tests.
-- [ ] Pass `npm run test:fast` and production warnings-denied clippy.
-- [ ] Pass a fresh headless validation and `npm run test:web:lab`.
-- [ ] Pass Box2D comparator feature-on, feature-off, and direct comparator
+- [x] Pass `npm run test:fast` and production warnings-denied clippy.
+- [x] Pass a fresh headless validation and `npm run test:web:lab`.
+- [x] Pass Box2D comparator feature-on, feature-off, and direct comparator
       tests.
-- [ ] Pass focused performance smoke and record any dispatch/cost change.
-- [ ] Pass ARM64 Android check, release APK, and one physical Android
+- [x] Pass focused performance smoke and record any dispatch/cost change.
+- [x] Pass ARM64 Android check, release APK, and one physical Android
       validation.
-- [ ] Compile the sibling Quest adapter against the final public API and run a
-      physical Quest behavior check when its consumer slice is available.
+- [x] Compile and test the sibling Quest adapter against the final public API.
+- [ ] Run the downstream PhysBox interaction adapter on a physical Quest when
+      its Quest-owned consumer slice is available. This conditional downstream
+      proof does not block the completed upstream public/external proof.
 
 Gate: proportional maintained-host evidence passes without a new CPU
 authority, renderer coupling, physics-default change, hidden submission, or
@@ -170,6 +173,43 @@ drag, release, erase, cancellation, full 64-result delivery, observation, and
 slot reuse; the platform-boundary negatives pass; all-feature
 warnings-denied `physbox-sim` clippy passes; and the all-feature first-party
 engine plus external consumer compile. Cross-host qualification remains.
+
+Final qualification, 2026-07-24:
+
+- An initial `npm run test:fast` attempt ended with an unnamed process
+  `SIGILL` late in the engine suite. The exact production lane then passed
+  125/125, and a complete rerun passed in 27.39 seconds, including Browser
+  WebGPU run `ef9376d9-6ce6-43b3-a55a-0de61408dd59`.
+- Production warnings-denied clippy passes. A fresh 120-step `rigid-floor`
+  headless run emitted `PHYSBOX5_VALIDATION_SUCCESS`; its report is
+  `/tmp/physbox5-s37-headless.1JSJgQ/rigid-floor.json` with SHA-256
+  `cbbc583948bc4425243ab281babd01fdd0482acad8405ec2795b84bceb8d272e`.
+- `npm run test:web:lab` passes as run
+  `9fbc12b4-b0fd-43c3-ae7d-78bf5e53c96c`. Direct comparator tests pass 2/2,
+  and the release comparator-off lane emits
+  `PHYSBOX5_BOX2D_FEATURE_OFF_SUCCESS`.
+- Ordinary no-command dispatch remains unchanged. The 32-body product
+  allocation rises by exactly 8,224 bytes, from 317,480 to 325,704 bytes
+  (`+2.59%`), for the fixed command/selection/constraint/result storage.
+  Focused performance smoke remains replay-valid and capacity-clean at
+  1.244/1.271 ms host P50/P95 in the recorded repeat; the soft-floor lane
+  remains 175 dispatches and 819,940 solver bytes.
+- The ARM64 NDK check, ARM64 release native library, debug APK, and release APK
+  pass. The 15,688,100-byte debug APK has SHA-256
+  `6546b0a0873476dc54670a4024097c835fc29513438c7491d80b1cfd0a8f3404`;
+  the 8,577,133-byte unsigned release APK has SHA-256
+  `148a14202cd3e0ac58298ce4a94bac8cb27265d66776feb90805ebd32eadad64`.
+- The first physical Quest attempt initialized Adreno Vulkan while the headset
+  was asleep and produced no frame. The bounded validator failed honestly and
+  stopped the app. After explicitly waking the USB-connected Quest 3, the
+  hardware adapter and bootstrap behavior lane passed. Its provenance is
+  `/tmp/physbox5-s37-quest-awake.png.json` with SHA-256
+  `df5f3c2d2e63b830038a409018dd60b58db2df79353080543a63dd476eb1f1dd`.
+- The clean sibling `physbox-quest` checkout passes `cargo check` and 10/10
+  host tests against this local-path `physbox-sim`. Its existing PhysBox
+  adapter is still spawn-only; wiring the newly available commands into
+  Quest's neutral Begin/Target/End/Erase actions and physically exercising
+  them belongs to the downstream Quest tactical.
 
 ## Completion condition
 

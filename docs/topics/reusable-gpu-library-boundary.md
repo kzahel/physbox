@@ -2,9 +2,11 @@
 
 Status: implemented and corrected to a physics-only consumer contract on
 2026-07-24. [S36](../tactical/036-reusable-gpu-library-extraction.md) records
-the extraction and correction. This topic owns the durable boundary between
-the GPU-resident mechanical world and applications that consume it. It does
-not authorize publishing a crate or changing a physics default.
+the extraction and correction; [S37](../tactical/037-deferred-rigid-interaction-api.md)
+records the implemented deferred rigid-interaction extension. This topic owns
+the durable boundary between the GPU-resident mechanical world and
+applications that consume it. It does not authorize publishing a crate or
+changing a physics default.
 
 Authoritative engine direction:
 [one GPU-resident 2D physics world](physbox5-unified-gpu-physics.md).

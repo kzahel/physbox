@@ -858,10 +858,11 @@ mod tests {
                 .all(|capacity| !capacity.overflowed)
         );
         println!(
-            "PHYSBOX5_PERF_SMOKE scope=body-free-flight bodies=32 host_p50_ms={:.3} host_p95_ms={:.3} cpu_p50_ms={:.3} gpu_status={:?} replay=validated capacity=clean",
+            "PHYSBOX5_PERF_SMOKE scope=body-free-flight bodies=32 host_p50_ms={:.3} host_p95_ms={:.3} cpu_p50_ms={:.3} allocated_bytes={} gpu_status={:?} replay=validated capacity=clean",
             result.host_completion.p50_seconds * 1_000.0,
             result.host_completion.p95_seconds * 1_000.0,
             result.cpu_encode_submit.p50_seconds * 1_000.0,
+            result.product_allocated_bytes,
             result.gpu_timestamp_status,
         );
     }
