@@ -9,6 +9,7 @@ publish.workspace = true
 default = ["box2d-comparator"]
 box2d-comparator = ["dep:physbox-box2d-comparator"]
 production-validation = []
+sim-owner = []
 solver-lab = ["physbox-launch/solver-lab", "physbox-sim/solver-lab"]
 
 [dependencies]

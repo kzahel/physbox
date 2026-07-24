@@ -6,7 +6,8 @@ rust-version.workspace = true
 publish.workspace = true
 
 [features]
-default = []
+default = ["sim-owner"]
+sim-owner = []
 solver-lab = []
 
 [dependencies]

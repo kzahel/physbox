@@ -8,6 +8,8 @@
 //! exposes live state only through GPU views or explicitly requested
 //! asynchronous observations.
 
+extern crate self as physbox_sim;
+
 mod awake_work;
 mod body_lifecycle;
 mod body_state;
@@ -17,6 +19,7 @@ mod construction;
 mod definition;
 mod exact_sleep_grouping;
 mod grab;
+mod particle_world;
 mod render_view;
 mod sleep_contacts;
 mod sleep_diagnostics;
@@ -51,6 +54,10 @@ pub mod __private {
 
     pub mod grab {
         pub use crate::grab::*;
+    }
+
+    pub mod particle_world {
+        pub use crate::particle_world::*;
     }
 
     pub mod sleep_contacts {
