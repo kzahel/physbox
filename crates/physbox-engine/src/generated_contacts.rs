@@ -965,6 +965,71 @@ impl GpuGeneratedContactGraph {
         stabilizer.encode(encoder);
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn post_fluid_candidate_audit_bytes(&self) -> u64 {
+        u64::from(COLLISION_CAPACITY_COUNTER_BYTES)
+            + u64::from(self.narrowphase.manifold_capacity()) * u64::from(COLLISION_MANIFOLD_BYTES)
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn encode_post_fluid_candidate_audit(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        retained_destination: &wgpu::Buffer,
+        complete_destination: &wgpu::Buffer,
+    ) -> Result<(), String> {
+        let bytes = self.post_fluid_candidate_audit_bytes();
+        for (label, destination) in [
+            ("retained", retained_destination),
+            ("complete", complete_destination),
+        ] {
+            if destination.size() < bytes {
+                return Err(format!(
+                    "post-fluid {label} audit destination requires {bytes} bytes, received {}",
+                    destination.size()
+                ));
+            }
+        }
+
+        // The ordinary stabilized pass has already corrected every contact
+        // found through the retained pre-fluid candidates. Refresh that same
+        // set against the corrected poses, preserve its accepted manifolds,
+        // then compare it with a complete post-fluid SAP refresh. This audit
+        // changes only collision scratch that the next rigid step rebuilds.
+        self.narrowphase
+            .encode(encoder, &self.narrowphase_pipelines);
+        self.copy_post_fluid_audit_state(encoder, retained_destination);
+        self.broadphase
+            .encode(encoder, &self.broadphase_pipelines, None);
+        self.narrowphase
+            .encode(encoder, &self.narrowphase_pipelines);
+        self.copy_post_fluid_audit_state(encoder, complete_destination);
+        Ok(())
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn copy_post_fluid_audit_state(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        destination: &wgpu::Buffer,
+    ) {
+        let capacity_bytes = u64::from(COLLISION_CAPACITY_COUNTER_BYTES);
+        encoder.copy_buffer_to_buffer(
+            self.narrowphase.manifold_capacity_buffer(),
+            0,
+            destination,
+            0,
+            capacity_bytes,
+        );
+        encoder.copy_buffer_to_buffer(
+            self.narrowphase.manifolds(),
+            0,
+            destination,
+            capacity_bytes,
+            u64::from(self.narrowphase.manifold_capacity()) * u64::from(COLLISION_MANIFOLD_BYTES),
+        );
+    }
+
     pub(crate) fn encode_step_with_timestamps(
         &self,
         encoder: &mut wgpu::CommandEncoder,

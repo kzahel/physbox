@@ -223,6 +223,23 @@ quality or performance evidence. Because fluid motion can create a contact
 whose pair was absent from the retained set, candidate B remains a
 known-contact-only diagnostic pending the declared full-search miss audit.
 
+The validation-only miss audit now samples Candidate B's corrected wet
+trajectory at admission and every four recovery steps. At each sample it
+refreshes narrowphase over the retained set, preserves those accepted
+manifolds, then runs complete SAP plus narrowphase and compares canonical body
+pairs. It records both complete-only misses and the inverse consistency check;
+the audit graph is excluded from the product dispatch count. The first
+dirty-tree full-corpus run,
+`/tmp/physbox5-s35-candidate-b-audit-development-20260724.json`, passes all
+80 rows and checks 1,240 post-fluid states with zero missed-pair observations,
+zero retained-only observations, and clean audit capacity. Candidate B reports
+192 rigid-side dispatches, a 17-dispatch/32-byte stabilization delta, `2/40`
+wet-only issue rows across `2/20` source/phase identities, and zero sustained
+overlap. Both remaining issues are rectangle re-entry rows that recover. This
+is promising development characterization, not a completeness proof or clean
+acceptance evidence: the audit samples rather than every step and no
+conservative fluid-displacement bound has yet been established.
+
 Gate: scalar sign/effective-mass checks, GPU finite/capacity checks, dry
 controls, wet two-body rows, and wet multi-body rows pass before performance
 ranking.

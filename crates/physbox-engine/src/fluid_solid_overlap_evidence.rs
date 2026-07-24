@@ -1,7 +1,8 @@
-use std::mem::size_of;
+use std::{collections::BTreeSet, mem::size_of};
 
 use physbox_contracts::{
-    BodyCommandBatchV1, BodyId, BodyStateV1, CapacityRecordV1, ConstructionIntentBatchV1,
+    BodyCommandBatchV1, BodyId, BodyStateV1, COLLISION_CAPACITY_COUNTER_BYTES,
+    COLLISION_MANIFOLD_BYTES, CandidatePairV1, CapacityRecordV1, ConstructionIntentBatchV1,
     ConstructionStateV1, SCHEMA_VERSION, ShapeV1, Validate, Vec2, canonical_hash,
 };
 use physbox_launch::{FluidSolidCouplingQuality, WorldCapacityPreset};
@@ -20,7 +21,7 @@ use crate::particle_world::GpuParticleDiagnosticsV4;
 use crate::renderer::map_buffer;
 use crate::{AdapterDiagnostics, SolverProfileConfig, create_instance};
 
-pub const GPU_FLUID_SOLID_OVERLAP_EVIDENCE_VERSION: u32 = 2;
+pub const GPU_FLUID_SOLID_OVERLAP_EVIDENCE_VERSION: u32 = 3;
 pub const FLUID_SOLID_SIGNIFICANT_OVERLAP: f32 = 0.005;
 pub const FLUID_SOLID_OVERLAP_TRIALS_PER_MEDIUM: u32 = 2;
 const FINAL_WINDOW_SAMPLES: usize = 5;
@@ -86,6 +87,32 @@ pub struct GpuRigidContactDiagnosticsV1 {
     pub parallel_uncolored_units: u32,
 }
 
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GpuPostFluidCandidateAuditSampleV1 {
+    pub recovery_step: u32,
+    pub retained_contact_pairs: u32,
+    pub complete_contact_pairs: u32,
+    pub missed_pairs: Vec<CandidatePairV1>,
+    pub retained_only_pairs: Vec<CandidatePairV1>,
+    pub retained_overflowed: bool,
+    pub complete_overflowed: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GpuPostFluidCandidateAuditV1 {
+    pub sample_count: u32,
+    pub samples_with_misses: u32,
+    pub missed_pair_observations: u32,
+    pub missed_unique_pairs: Vec<CandidatePairV1>,
+    pub retained_only_pair_observations: u32,
+    pub retained_only_unique_pairs: Vec<CandidatePairV1>,
+    pub capacity_clean: bool,
+    pub comparison_consistent: bool,
+    pub samples: Vec<GpuPostFluidCandidateAuditSampleV1>,
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GpuFluidSolidOverlapRowV1 {
@@ -108,6 +135,7 @@ pub struct GpuFluidSolidOverlapRowV1 {
     pub body_lifecycle_dispatches_per_step: u32,
     pub construction: ConstructionStateV1,
     pub rigid_contacts: GpuRigidContactDiagnosticsV1,
+    pub post_fluid_candidate_audit: Option<GpuPostFluidCandidateAuditV1>,
     pub pairs: Vec<GpuFluidSolidPairMetricsV1>,
     pub motion: GpuFluidSolidMotionMetricsV1,
     pub particle_diagnostics: Option<GpuParticleDiagnosticsV4>,
@@ -133,6 +161,12 @@ pub struct GpuFluidSolidOverlapEvidenceV1 {
     pub wet_reentry_rows: u32,
     pub wet_only_issue_rows: u32,
     pub wet_only_issue_sources: u32,
+    pub candidate_audit_sample_count: u32,
+    pub candidate_audit_samples_with_misses: u32,
+    pub candidate_audit_missed_pair_observations: u32,
+    pub candidate_audit_missed_unique_pairs: Vec<CandidatePairV1>,
+    pub candidate_audit_capacity_clean: bool,
+    pub candidate_audit_comparison_consistent: bool,
     pub rows: Vec<GpuFluidSolidOverlapRowV1>,
     pub blocking_readback_for_advancement: bool,
     pub trajectory_sampling: &'static str,
@@ -196,6 +230,32 @@ pub async fn run_gpu_fluid_solid_overlap_evidence(
                 .any(|row| row.source_id == source.id && wet_only_issue_row(&rows, row))
         })
         .count() as u32;
+    let candidate_audits = rows
+        .iter()
+        .filter_map(|row| row.post_fluid_candidate_audit.as_ref())
+        .collect::<Vec<_>>();
+    let candidate_audit_sample_count = candidate_audits
+        .iter()
+        .map(|audit| audit.sample_count)
+        .sum();
+    let candidate_audit_samples_with_misses = candidate_audits
+        .iter()
+        .map(|audit| audit.samples_with_misses)
+        .sum();
+    let candidate_audit_missed_pair_observations = candidate_audits
+        .iter()
+        .map(|audit| audit.missed_pair_observations)
+        .sum();
+    let candidate_audit_missed_unique_pairs = candidate_audits
+        .iter()
+        .flat_map(|audit| audit.missed_unique_pairs.iter().copied())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    let candidate_audit_capacity_clean = candidate_audits.iter().all(|audit| audit.capacity_clean);
+    let candidate_audit_comparison_consistent = candidate_audits
+        .iter()
+        .all(|audit| audit.comparison_consistent);
     Ok(GpuFluidSolidOverlapEvidenceV1 {
         version: GPU_FLUID_SOLID_OVERLAP_EVIDENCE_VERSION,
         solver_profile: profile.name(),
@@ -210,6 +270,12 @@ pub async fn run_gpu_fluid_solid_overlap_evidence(
         wet_reentry_rows,
         wet_only_issue_rows,
         wet_only_issue_sources,
+        candidate_audit_sample_count,
+        candidate_audit_samples_with_misses,
+        candidate_audit_missed_pair_observations,
+        candidate_audit_missed_unique_pairs,
+        candidate_audit_capacity_clean,
+        candidate_audit_comparison_consistent,
         rows,
         blocking_readback_for_advancement: false,
         trajectory_sampling: "bounded headless validation readback after admission and every four recovery steps",
@@ -259,6 +325,12 @@ fn run_row(
     let construction = read_construction_state(device, queue, &world)?;
     require_construction_success(source, &construction)?;
 
+    let audit_retained_candidates = medium == FluidSolidOverlapMedium::Wet
+        && coupling_quality == FluidSolidCouplingQuality::Stabilized;
+    let mut candidate_audit_samples = Vec::new();
+    if audit_retained_candidates {
+        candidate_audit_samples.push(read_post_fluid_candidate_audit(device, queue, &world, 0)?);
+    }
     let mut samples = vec![(
         0,
         read_body_states(device, queue, &world, &source.constructed_bodies)?,
@@ -268,6 +340,11 @@ fn run_row(
         let steps = source.sample_stride.min(source.recovery_steps - completed);
         encode_empty_steps(device, queue, &world, steps)?;
         completed += steps;
+        if audit_retained_candidates {
+            candidate_audit_samples.push(read_post_fluid_candidate_audit(
+                device, queue, &world, completed,
+            )?);
+        }
         samples.push((
             completed,
             read_body_states(device, queue, &world, &source.constructed_bodies)?,
@@ -277,6 +354,8 @@ fn run_row(
     let pairs = pair_metrics(source, &samples)?;
     let motion = motion_metrics(&samples)?;
     let rigid_contacts = read_rigid_contact_diagnostics(device, queue, &world)?;
+    let post_fluid_candidate_audit = audit_retained_candidates
+        .then(|| summarize_post_fluid_candidate_audit(candidate_audit_samples));
     let particle_diagnostics = if medium == FluidSolidOverlapMedium::Wet {
         Some(read_particle_diagnostics(device, queue, &world)?)
     } else {
@@ -303,6 +382,9 @@ fn run_row(
         && rigid_contacts.parallel_uncolored_units == 0
         && !solver_capacity_overflowed
         && capacities.iter().all(|capacity| !capacity.overflowed)
+        && post_fluid_candidate_audit
+            .as_ref()
+            .is_none_or(|audit| audit.capacity_clean && audit.comparison_consistent)
         && particle_diagnostics.as_ref().is_none_or(|diagnostics| {
             diagnostics.state_finite
                 && diagnostics.capacity_clean
@@ -332,6 +414,7 @@ fn run_row(
         body_lifecycle_dispatches_per_step: world.body_lifecycle_dispatches_per_step(),
         construction,
         rigid_contacts,
+        post_fluid_candidate_audit,
         pairs,
         motion,
         particle_diagnostics,
@@ -647,6 +730,153 @@ fn read_rigid_contact_diagnostics(
         coloring_overflowed,
         parallel_uncolored_units,
     })
+}
+
+struct DecodedPostFluidContactSet {
+    pairs: BTreeSet<CandidatePairV1>,
+    overflowed: bool,
+}
+
+fn read_post_fluid_candidate_audit(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    world: &GpuBodyWorld,
+    recovery_step: u32,
+) -> Result<GpuPostFluidCandidateAuditSampleV1, String> {
+    let bytes = world.post_fluid_candidate_audit_bytes()?;
+    let readback = |label| {
+        device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some(label),
+            size: bytes,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        })
+    };
+    let retained = readback("physbox5_post_fluid_retained_contact_audit");
+    let complete = readback("physbox5_post_fluid_complete_contact_audit");
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("physbox5_post_fluid_candidate_audit"),
+    });
+    world.encode_post_fluid_candidate_audit(&mut encoder, &retained, &complete)?;
+    queue.submit([encoder.finish()]);
+    device
+        .poll(wgpu::PollType::Wait)
+        .map_err(|error| format!("wait for post-fluid candidate audit: {error}"))?;
+
+    let retained_mapped = map_buffer(device, &retained)?;
+    let retained_set = decode_post_fluid_contact_set(&retained_mapped)?;
+    drop(retained_mapped);
+    retained.unmap();
+    let complete_mapped = map_buffer(device, &complete)?;
+    let complete_set = decode_post_fluid_contact_set(&complete_mapped)?;
+    drop(complete_mapped);
+    complete.unmap();
+
+    let missed_pairs = complete_set
+        .pairs
+        .difference(&retained_set.pairs)
+        .copied()
+        .collect();
+    let retained_only_pairs = retained_set
+        .pairs
+        .difference(&complete_set.pairs)
+        .copied()
+        .collect();
+    Ok(GpuPostFluidCandidateAuditSampleV1 {
+        recovery_step,
+        retained_contact_pairs: retained_set.pairs.len() as u32,
+        complete_contact_pairs: complete_set.pairs.len() as u32,
+        missed_pairs,
+        retained_only_pairs,
+        retained_overflowed: retained_set.overflowed,
+        complete_overflowed: complete_set.overflowed,
+    })
+}
+
+fn decode_post_fluid_contact_set(bytes: &[u8]) -> Result<DecodedPostFluidContactSet, String> {
+    let capacity_bytes = COLLISION_CAPACITY_COUNTER_BYTES as usize;
+    let manifold_bytes = COLLISION_MANIFOLD_BYTES as usize;
+    if bytes.len() < capacity_bytes || (bytes.len() - capacity_bytes) % manifold_bytes != 0 {
+        return Err("post-fluid candidate audit has an invalid byte count".to_owned());
+    }
+    let capacity = bytemuck::pod_read_unaligned::<[u32; 4]>(&bytes[..capacity_bytes]);
+    let manifold_capacity = (bytes.len() - capacity_bytes) / manifold_bytes;
+    let manifold_count = capacity[2] as usize;
+    if manifold_count > manifold_capacity {
+        return Err(format!(
+            "post-fluid candidate audit reports {manifold_count} manifolds above capacity {manifold_capacity}"
+        ));
+    }
+    let mut pairs = BTreeSet::new();
+    for index in 0..manifold_count {
+        let start = capacity_bytes + index * manifold_bytes;
+        let words =
+            bytemuck::pod_read_unaligned::<[u32; 12]>(&bytes[start..start + manifold_bytes]);
+        let pair = CandidatePairV1 {
+            body_a: BodyId {
+                slot: words[0],
+                generation: words[1],
+            },
+            body_b: BodyId {
+                slot: words[2],
+                generation: words[3],
+            },
+        };
+        if pair.body_a >= pair.body_b {
+            return Err("post-fluid candidate audit emitted a noncanonical pair".to_owned());
+        }
+        if !pairs.insert(pair) {
+            return Err("post-fluid candidate audit emitted a duplicate pair".to_owned());
+        }
+    }
+    Ok(DecodedPostFluidContactSet {
+        pairs,
+        overflowed: capacity[3] != 0,
+    })
+}
+
+fn summarize_post_fluid_candidate_audit(
+    samples: Vec<GpuPostFluidCandidateAuditSampleV1>,
+) -> GpuPostFluidCandidateAuditV1 {
+    let samples_with_misses = samples
+        .iter()
+        .filter(|sample| !sample.missed_pairs.is_empty())
+        .count() as u32;
+    let missed_pair_observations = samples
+        .iter()
+        .map(|sample| sample.missed_pairs.len() as u32)
+        .sum();
+    let missed_unique_pairs = samples
+        .iter()
+        .flat_map(|sample| sample.missed_pairs.iter().copied())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    let retained_only_pair_observations = samples
+        .iter()
+        .map(|sample| sample.retained_only_pairs.len() as u32)
+        .sum();
+    let retained_only_unique_pairs = samples
+        .iter()
+        .flat_map(|sample| sample.retained_only_pairs.iter().copied())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let capacity_clean = samples
+        .iter()
+        .all(|sample| !sample.retained_overflowed && !sample.complete_overflowed);
+    let comparison_consistent = retained_only_unique_pairs.is_empty();
+    GpuPostFluidCandidateAuditV1 {
+        sample_count: samples.len() as u32,
+        samples_with_misses,
+        missed_pair_observations,
+        missed_unique_pairs,
+        retained_only_pair_observations,
+        retained_only_unique_pairs,
+        capacity_clean,
+        comparison_consistent,
+        samples,
+    }
 }
 
 fn pair_metrics(
@@ -995,6 +1225,54 @@ mod tests {
         assert_eq!(metrics[0].separation_events, 1);
         assert_eq!(metrics[0].reentry_events, 1);
         assert!(metrics[0].sustained_overlap);
+    }
+
+    #[test]
+    fn post_fluid_candidate_audit_reports_complete_search_misses() {
+        let retained = audit_sample_bytes(&[(3, 1, 4, 1)]);
+        let complete = audit_sample_bytes(&[(3, 1, 4, 1), (4, 1, 5, 2)]);
+        let retained = decode_post_fluid_contact_set(&retained).unwrap();
+        let complete = decode_post_fluid_contact_set(&complete).unwrap();
+        let missed = complete
+            .pairs
+            .difference(&retained.pairs)
+            .copied()
+            .collect::<Vec<_>>();
+        assert_eq!(
+            missed,
+            vec![CandidatePairV1 {
+                body_a: BodyId {
+                    slot: 4,
+                    generation: 1,
+                },
+                body_b: BodyId {
+                    slot: 5,
+                    generation: 2,
+                },
+            }]
+        );
+        assert!(!retained.overflowed);
+        assert!(!complete.overflowed);
+    }
+
+    fn audit_sample_bytes(pairs: &[(u32, u32, u32, u32)]) -> Vec<u8> {
+        let capacity_bytes = COLLISION_CAPACITY_COUNTER_BYTES as usize;
+        let manifold_bytes = COLLISION_MANIFOLD_BYTES as usize;
+        let mut bytes = vec![0; capacity_bytes + pairs.len().max(2) * manifold_bytes];
+        let capacity = [
+            pairs.len() as u32,
+            pairs.len() as u32,
+            pairs.len() as u32,
+            0,
+        ];
+        bytes[..capacity_bytes].copy_from_slice(bytemuck::bytes_of(&capacity));
+        for (index, pair) in pairs.iter().copied().enumerate() {
+            let mut words = [0_u32; 12];
+            words[..4].copy_from_slice(&[pair.0, pair.1, pair.2, pair.3]);
+            let start = capacity_bytes + index * manifold_bytes;
+            bytes[start..start + manifold_bytes].copy_from_slice(bytemuck::bytes_of(&words));
+        }
+        bytes
     }
 
     fn test_body(slot: u32, shape: ShapeV1, position: Vec2, angle: f32) -> BodyStateV1 {

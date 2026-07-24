@@ -1881,6 +1881,31 @@ impl GpuBodyWorld {
         )
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn post_fluid_candidate_audit_bytes(&self) -> Result<u64, String> {
+        self.generated_contacts
+            .as_ref()
+            .map(GpuGeneratedContactGraph::post_fluid_candidate_audit_bytes)
+            .ok_or_else(|| {
+                "post-fluid candidate audit requires generated rigid contacts".to_owned()
+            })
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn encode_post_fluid_candidate_audit(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        retained_destination: &wgpu::Buffer,
+        complete_destination: &wgpu::Buffer,
+    ) -> Result<(), String> {
+        self.generated_contacts
+            .as_ref()
+            .ok_or_else(|| {
+                "post-fluid candidate audit requires generated rigid contacts".to_owned()
+            })?
+            .encode_post_fluid_candidate_audit(encoder, retained_destination, complete_destination)
+    }
+
     pub(crate) fn body_lifecycle_capacity_bytes(&self) -> u64 {
         self.body_lifecycle.allocated_bytes()
     }

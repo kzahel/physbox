@@ -183,7 +183,8 @@ pub use fluid_solid_overlap_evidence::{
     FLUID_SOLID_OVERLAP_TRIALS_PER_MEDIUM, FLUID_SOLID_SIGNIFICANT_OVERLAP,
     FluidSolidOverlapMedium, GPU_FLUID_SOLID_OVERLAP_EVIDENCE_VERSION,
     GpuFluidSolidMotionMetricsV1, GpuFluidSolidOverlapEvidenceV1, GpuFluidSolidOverlapRowV1,
-    GpuFluidSolidPairMetricsV1, GpuRigidContactDiagnosticsV1, run_gpu_fluid_solid_overlap_evidence,
+    GpuFluidSolidPairMetricsV1, GpuPostFluidCandidateAuditSampleV1, GpuPostFluidCandidateAuditV1,
+    GpuRigidContactDiagnosticsV1, run_gpu_fluid_solid_overlap_evidence,
     run_gpu_fluid_solid_overlap_standard_evidence,
 };
 pub use frame::{

@@ -100,11 +100,14 @@ fn run() -> Result<(), String> {
         ));
     }
     println!(
-        "PHYSBOX5_VALIDATION_SUCCESS host=native scenario=s35-fluid-solid-overlap run_id={} coupling_quality={} wet_only_issue_rows={} wet_only_issue_sources={} output={}",
+        "PHYSBOX5_VALIDATION_SUCCESS host=native scenario=s35-fluid-solid-overlap run_id={} coupling_quality={} wet_only_issue_rows={} wet_only_issue_sources={} candidate_audit_samples={} candidate_audit_samples_with_misses={} candidate_audit_missed_pair_observations={} output={}",
         artifact.run_id,
         artifact.evidence.coupling_quality,
         artifact.evidence.wet_only_issue_rows,
         artifact.evidence.wet_only_issue_sources,
+        artifact.evidence.candidate_audit_sample_count,
+        artifact.evidence.candidate_audit_samples_with_misses,
+        artifact.evidence.candidate_audit_missed_pair_observations,
         arguments.output.display()
     );
     Ok(())
