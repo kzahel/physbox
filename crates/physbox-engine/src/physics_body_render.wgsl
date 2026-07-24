@@ -1,3 +1,4 @@
+// First-party PhysBox workbench rendering; not a simulation-library contract.
 struct RenderParams {
     viewport: vec4f,
     camera: vec4f,

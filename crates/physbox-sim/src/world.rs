@@ -12,8 +12,8 @@ use physbox_contracts::{
 use crate::body_world::{BodyCommandStepRange, BodyStepPlan, GpuBodyWorld};
 use crate::construction::CONSTRUCTION_INTENT_CAPACITY;
 use crate::{
-    BodyDef, BodyId, BodyType, RenderView, ShapeDef, ShapeGeometry, ShapeId, SolverProfileName,
-    StepDef, WorldDef,
+    BodyDef, BodyId, BodyType, ShapeDef, ShapeGeometry, ShapeId, SolverProfileName, StepDef,
+    WorldDef,
 };
 
 const BODY_POSE_BYTES: u64 = size_of::<[f32; 4]>() as u64;
@@ -215,13 +215,6 @@ impl World {
         })
     }
 
-    pub fn render_view(&self) -> Result<RenderView<'_>, WorldError> {
-        self.inner
-            .as_ref()
-            .map(GpuBodyWorld::render_view)
-            .ok_or_else(|| WorldError::new("step the world once before requesting a render view"))
-    }
-
     pub fn request_body_snapshot(
         &self,
         device: &wgpu::Device,
@@ -252,6 +245,19 @@ impl World {
             bodies,
             mapping_started: false,
         })
+    }
+
+    /// Creates a reusable same-device observation of public body physics
+    /// state. Step the world once before creating it.
+    pub fn create_gpu_body_observation(
+        &self,
+        device: &wgpu::Device,
+    ) -> Result<crate::GpuBodyObservation, WorldError> {
+        self.inner
+            .as_ref()
+            .ok_or_else(|| WorldError::new("step the world before creating a GPU observation"))?
+            .create_gpu_body_observation(device)
+            .map_err(|error| WorldError::new(error.to_string()))
     }
 
     pub fn counters(&self) -> WorldCounters {

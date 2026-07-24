@@ -13,10 +13,13 @@ use wgpu::util::DeviceExt;
 use crate::awake_work::SleepExecutionConfig;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::body_floor_solver::FixedFloorEvidenceLayout;
-use crate::body_lifecycle::{GpuBodyLifecycle, KILL_ZONE_Y};
+use crate::body_lifecycle::GpuBodyLifecycle;
+#[cfg(feature = "engine-internal")]
+use crate::body_lifecycle::KILL_ZONE_Y;
+#[cfg(feature = "engine-internal")]
+use crate::body_state::ACTIVE_BODY_DRAW_OFFSET;
 use crate::body_state::{
-    ACTIVE_BODY_DISPATCH_64_OFFSET, ACTIVE_BODY_DRAW_OFFSET, BODY_COMMAND_BYTES,
-    BODY_COMMAND_CAPACITY, GpuBodyResetData,
+    ACTIVE_BODY_DISPATCH_64_OFFSET, BODY_COMMAND_BYTES, BODY_COMMAND_CAPACITY, GpuBodyResetData,
 };
 #[cfg(all(test, not(feature = "sim-owner")))]
 use crate::construction::CONSTRUCTION_SURFACE_HALF_THICKNESS;
@@ -1107,8 +1110,9 @@ impl GpuBodyWorld {
         Ok(capacity)
     }
 
-    pub fn render_view(&self) -> physbox_sim::RenderView<'_> {
-        physbox_sim::RenderView::from_raw_parts(
+    #[cfg(feature = "engine-internal")]
+    pub fn render_view(&self) -> physbox_sim::__private::render_view::RenderView<'_> {
+        physbox_sim::__private::render_view::RenderView::from_raw_parts(
             self.storage.pose_buffer(),
             self.storage.properties_buffer(),
             self.storage.metadata_buffer(),
@@ -1133,6 +1137,19 @@ impl GpuBodyWorld {
             0,
             u64::from(self.body_count) * size_of::<[f32; 4]>() as u64,
         );
+    }
+
+    pub fn create_gpu_body_observation(
+        &self,
+        device: &wgpu::Device,
+    ) -> Result<crate::GpuBodyObservation, crate::GpuObservationError> {
+        crate::GpuBodyObservation::new(
+            device,
+            self.storage.pose_buffer(),
+            self.storage.motion_buffer(),
+            self.storage.metadata_buffer(),
+            self.body_count,
+        )
     }
 
     pub const fn initial_body_count(&self) -> u32 {

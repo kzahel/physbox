@@ -13,9 +13,9 @@ const TIMESTAMP_BYTES: u64 = TIMESTAMP_COUNT as u64 * size_of::<u64>() as u64;
 
 pub(crate) const fn body_render_timestamp(
     plan: GpuFrameTimestampPlan<'_>,
-) -> physbox_render::BodyRenderTimestamp<'_> {
+) -> crate::physics_render::BodyRenderTimestamp<'_> {
     let marker = plan.body_render_end();
-    physbox_render::BodyRenderTimestamp {
+    crate::physics_render::BodyRenderTimestamp {
         query_set: marker.query_set,
         query_index: marker.query_index,
     }

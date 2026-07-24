@@ -152,23 +152,14 @@ for (const path of await files(join(root, "crates", "physbox-sim", "src"))) {
     failures.push(`${relative(root, path)}: application vocabulary belongs outside physbox-sim`);
   }
 }
-
-const renderManifestPath = join(root, "crates", "physbox-render", "Cargo.toml");
-const renderManifest = await readFile(renderManifestPath, "utf8");
-const renderForbiddenDependencies = /\bphysbox-(?:engine|launch|ui|box2d-comparator|shell)\s*=/i;
-if (renderForbiddenDependencies.test(renderManifest)) {
-  failures.push("crates/physbox-render/Cargo.toml: renderer library depends on application policy");
-}
-const renderProductVocabulary = /\b(?:ValidationScenario|WorkbenchTool|UiAction|LaunchOptions|Box2dWorld|ComparisonShadow)\b/;
-for (const path of await files(join(root, "crates", "physbox-render", "src"))) {
-  if (extname(path) === ".rs" && renderProductVocabulary.test(await readFile(path, "utf8"))) {
-    failures.push(`${relative(root, path)}: application vocabulary belongs outside physbox-render`);
-  }
+const simRoot = await readFile(join(root, "crates", "physbox-sim", "src", "lib.rs"), "utf8");
+if (/^pub\s+use\s+render_view\b/m.test(simRoot)) {
+  failures.push("crates/physbox-sim/src/lib.rs: physics library exports rendering internals");
 }
 
 const consumerManifestPath = join(root, "examples", "external-consumer", "Cargo.toml");
 const consumerManifest = await readFile(consumerManifestPath, "utf8");
-const consumerForbiddenDependencies = /\bphysbox-(?:engine|launch|ui|box2d-comparator|shell|contracts)\s*=/i;
+const consumerForbiddenDependencies = /\bphysbox-(?:engine|launch|render|ui|box2d-comparator|shell|contracts)\s*=/i;
 if (consumerForbiddenDependencies.test(consumerManifest)) {
   failures.push("examples/external-consumer/Cargo.toml: consumer proof imports application policy");
 }
@@ -176,7 +167,7 @@ const consumerSource = await readFile(
   join(root, "examples", "external-consumer", "src", "main.rs"),
   "utf8",
 );
-if (/\b(?:ValidationScenario|WorkbenchTool|LaunchOptions|ScenarioV1|Box2dWorld|SurfaceRenderer)\b/.test(consumerSource)) {
+if (/\b(?:ValidationScenario|WorkbenchTool|LaunchOptions|ScenarioV1|Box2dWorld|SurfaceRenderer|PhysicsRenderer|RenderView|RenderTarget)\b/.test(consumerSource)) {
   failures.push("examples/external-consumer/src/main.rs: consumer proof uses a non-library application type");
 }
 
@@ -203,12 +194,6 @@ if (!simForbiddenDependencies.test("physbox-engine = { path = \"../physbox-engin
 }
 if (!simProductVocabulary.test("struct LaunchOptions;")) {
   failures.push("boundary self-test failed: simulation application vocabulary");
-}
-if (!renderForbiddenDependencies.test("physbox-engine = { path = \"../physbox-engine\" }")) {
-  failures.push("boundary self-test failed: renderer dependency direction");
-}
-if (!renderProductVocabulary.test("enum WorkbenchTool { Grab }")) {
-  failures.push("boundary self-test failed: renderer application vocabulary");
 }
 if (!consumerForbiddenDependencies.test("physbox-engine = { path = \"../../crates/physbox-engine\" }")) {
   failures.push("boundary self-test failed: external consumer dependency");

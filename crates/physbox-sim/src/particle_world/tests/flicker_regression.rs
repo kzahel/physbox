@@ -1,6 +1,8 @@
 use super::*;
 use crate::Camera2d;
-use physbox_render::{Background, PhysicsRenderer, RenderOptions, RenderTarget, ViewTransform};
+use crate::physics_render::{
+    Background, PhysicsRenderer, RenderOptions, RenderTarget, ViewTransform,
+};
 
 #[cfg(not(target_arch = "wasm32"))]
 #[test]
@@ -29,7 +31,7 @@ fn frozen_settled_water_pixels_ignore_active_list_order() {
         usage: wgpu::BufferUsages::STORAGE,
         mapped_at_creation: false,
     });
-    let render_view = physbox_sim::RenderView::from_raw_parts(
+    let render_view = physbox_sim::__private::render_view::RenderView::from_raw_parts(
         body_storage.pose_buffer(),
         body_storage.properties_buffer(),
         body_storage.metadata_buffer(),

@@ -1,4 +1,10 @@
-use physbox_sim::{BodyDef, ShapeDef, StepDef, World, WorldDef};
+use std::mem::size_of;
+use std::sync::{Arc, Mutex};
+
+use physbox_sim::{
+    BodyDef, GPU_BODY_OBSERVATION_LIVE, GPU_BODY_OBSERVATION_VERSION, GpuBodyObservationRecord,
+    ShapeDef, StepDef, World, WorldDef,
+};
 
 #[test]
 fn public_world_steps_and_observes_without_a_surface() {
@@ -49,7 +55,62 @@ fn public_world_steps_and_observes_without_a_surface() {
     queue.submit([encoder.finish()]);
     assert_eq!(report.outer_step, 1);
     assert_eq!(report.live_bodies, 2);
-    assert_eq!(world.render_view().unwrap().version(), 1);
+
+    let observation = world.create_gpu_body_observation(&device).unwrap();
+    assert_eq!(observation.version(), GPU_BODY_OBSERVATION_VERSION);
+    assert_eq!(
+        observation.record_stride_bytes() as usize,
+        size_of::<GpuBodyObservationRecord>()
+    );
+    let observation_bytes =
+        u64::from(observation.capacity()) * u64::from(observation.record_stride_bytes());
+    let observation_readback = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("physbox_sim_public_observation_readback"),
+        size: observation_bytes,
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("physbox_sim_public_observation"),
+    });
+    observation.encode(&mut encoder);
+    encoder.copy_buffer_to_buffer(
+        observation.buffer(),
+        0,
+        &observation_readback,
+        0,
+        observation_bytes,
+    );
+    queue.submit([encoder.finish()]);
+    let completion = Arc::new(Mutex::new(None));
+    let callback_completion = Arc::clone(&completion);
+    observation_readback
+        .slice(..)
+        .map_async(wgpu::MapMode::Read, move |result| {
+            *callback_completion.lock().unwrap() = Some(result);
+        });
+    device.poll(wgpu::PollType::Wait).unwrap();
+    completion
+        .lock()
+        .unwrap()
+        .take()
+        .expect("observation mapping completed")
+        .expect("observation mapping succeeded");
+    {
+        let mapped = observation_readback.slice(..).get_mapped_range();
+        let stride = size_of::<GpuBodyObservationRecord>();
+        let start = ball.slot() as usize * stride;
+        let record = bytemuck::pod_read_unaligned::<GpuBodyObservationRecord>(
+            &mapped[start..start + stride],
+        );
+        assert_eq!(record.identity[0], ball.generation());
+        assert_eq!(record.identity[2], ball.slot());
+        assert_ne!(record.identity[1] & GPU_BODY_OBSERVATION_LIVE, 0);
+        assert!(record.pose[0].is_finite());
+        assert!(record.pose[1].is_finite());
+        assert!(record.pose[2].is_finite());
+    }
+    observation_readback.unmap();
 
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
         label: Some("physbox_sim_public_world_snapshot"),

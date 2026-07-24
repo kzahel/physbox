@@ -1,3 +1,4 @@
+// First-party PhysBox workbench rendering; not a simulation-library contract.
 struct GrabState {
     identity_status: vec4u,
     local_anchor_target: vec4f,

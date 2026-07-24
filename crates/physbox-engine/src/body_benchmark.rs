@@ -3,11 +3,11 @@ use std::sync::{Arc, Mutex};
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
 
+use crate::physics_render::{
+    BodyRenderTimestamp, PhysicsRenderer, RenderOptions, RenderTarget, ViewTransform,
+};
 use physbox_contracts::{
     BodyCommandBatchV1, BodyLayoutV1, CapacityRecordV1, SCHEMA_VERSION, Validate, canonical_hash,
-};
-use physbox_render::{
-    BodyRenderTimestamp, PhysicsRenderer, RenderOptions, RenderTarget, ViewTransform,
 };
 use serde::Serialize;
 use sha2::{Digest, Sha256};

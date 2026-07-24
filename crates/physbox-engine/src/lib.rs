@@ -49,6 +49,7 @@ mod host;
 mod input;
 mod pair_slot_persistence;
 mod particle_world;
+mod physics_render;
 mod renderer;
 mod report;
 mod scenario;

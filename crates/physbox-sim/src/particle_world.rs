@@ -1264,8 +1264,9 @@ impl GpuParticleWorld {
         self.encode_active_compaction(encoder);
     }
 
-    pub fn render_view(&self) -> physbox_sim::ParticleRenderView<'_> {
-        physbox_sim::ParticleRenderView::from_raw_parts(
+    #[cfg(any(feature = "engine-internal", all(test, not(feature = "sim-owner"))))]
+    pub fn render_view(&self) -> physbox_sim::__private::render_view::ParticleRenderView<'_> {
+        physbox_sim::__private::render_view::ParticleRenderView::from_raw_parts(
             &self.positions,
             &self.velocities,
             &self.density_states,
@@ -2035,7 +2036,7 @@ mod tests {
 
     #[test]
     fn particle_render_order_is_stable_by_slot() {
-        let shader = physbox_render::PARTICLE_SHADER_SOURCE;
+        let shader = crate::physics_render::PARTICLE_SHADER_SOURCE;
         assert!(shader.contains("let index = instance_index;"));
         assert!(shader.contains("if metadata[index].w == 0u"));
         assert!(!shader.contains("active_indices[instance_index]"));

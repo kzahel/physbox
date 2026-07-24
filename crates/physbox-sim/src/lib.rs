@@ -10,8 +10,8 @@
 //!
 //! The caller owns the WGPU device, queue, command encoders, submission, and
 //! render targets. PhysBox records mechanical work into that lifecycle and
-//! exposes live state only through GPU views or explicitly requested
-//! asynchronous observations.
+//! exposes live state only through versioned physics observations or
+//! explicitly requested asynchronous snapshots.
 
 extern crate self as physbox_sim;
 
@@ -36,11 +36,13 @@ mod definition;
 mod exact_sleep_grouping;
 mod generated_contacts;
 mod gpu_context;
+mod gpu_observation;
 mod gpu_solver;
 mod gpu_timing;
 mod grab;
 mod pair_slot_persistence;
 mod particle_world;
+#[cfg(feature = "engine-internal")]
 mod render_view;
 mod sleep_contacts;
 mod sleep_diagnostics;
@@ -153,6 +155,10 @@ pub mod __private {
         pub use crate::particle_world::*;
     }
 
+    pub mod render_view {
+        pub use crate::render_view::*;
+    }
+
     pub mod sleep_contacts {
         pub use crate::sleep_contacts::*;
     }
@@ -186,7 +192,11 @@ pub use definition::{
     BodyDef, BodyId, BodyType, Circle, DefinitionError, MassPropertiesDef, MaterialDef, Rectangle,
     ShapeDef, ShapeGeometry, ShapeId, StepDef, WorldDef,
 };
-pub use render_view::{ParticleRenderView, RENDER_VIEW_VERSION, RenderView};
+pub use gpu_observation::{
+    GPU_BODY_OBSERVATION_FIXED, GPU_BODY_OBSERVATION_LIVE, GPU_BODY_OBSERVATION_SLEEPING,
+    GPU_BODY_OBSERVATION_VERSION, GpuBodyObservation, GpuBodyObservationRecord,
+    GpuObservationError,
+};
 pub use world::{
     BodySnapshot, BodySnapshotEntry, SnapshotRequest, StepReport, World, WorldCounters, WorldError,
 };

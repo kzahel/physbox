@@ -6,8 +6,6 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
-physbox-render = { path = "../../crates/physbox-render" }
 physbox-sim = { path = "../../crates/physbox-sim" }
 pollster.workspace = true
 wgpu.workspace = true
-

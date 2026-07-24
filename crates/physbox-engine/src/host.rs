@@ -5,7 +5,6 @@ use physbox_contracts::{
     ScheduledBodyCommandV1, Validate, Vec2, canonical_hash,
 };
 use physbox_launch::{ValidationScenario, WorldCapacityPreset};
-use physbox_render::{PhysicsRenderer, RenderOptions, RenderTarget, SurfacePreview, ViewTransform};
 use physbox_sim::{BodyDef, MassPropertiesDef, MaterialDef, QualityDef, ShapeDef, World, WorldDef};
 
 #[cfg(feature = "box2d-comparator")]
@@ -27,6 +26,7 @@ use crate::{
     input::{SharedInputState, WorldPointerEvent},
     liquid_sandbox_scenario,
     particle_world::{PARTICLE_COMMAND_CAPACITY, ParticleCommand},
+    physics_render::{PhysicsRenderer, RenderOptions, RenderTarget, SurfacePreview, ViewTransform},
     renderer::RenderFrameContext,
     report::{
         BodyCommandReport, CameraReport, ConstructionDiagnosticReport, FrameReport,

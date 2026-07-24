@@ -1,12 +1,12 @@
 use std::mem::size_of;
 use std::time::Instant;
 
+use crate::physics_render::{PhysicsRenderer, RenderOptions, RenderTarget, ViewTransform};
 use physbox_contracts::{
     BodyCommandBatchV1, BodyCommandV1, BodyId, BodyStateV1, CapacityRecordV1, CoupledScenarioV1,
     NeutralActionV1, SCHEMA_VERSION, ShapeV1, Validate, Vec2, canonical_hash,
 };
 use physbox_launch::WorldCapacityPreset;
-use physbox_render::{PhysicsRenderer, RenderOptions, RenderTarget, ViewTransform};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 

@@ -2,7 +2,10 @@ use std::fmt::{Display, Formatter};
 use std::mem::size_of;
 
 use bytemuck::{Pod, Zeroable};
-use physbox_sim::{ParticleRenderView, RENDER_VIEW_VERSION, RenderView};
+use physbox_sim::__private::render_view::{ParticleRenderView, RENDER_VIEW_VERSION, RenderView};
+
+pub(crate) const BODY_SHADER_SOURCE: &str = include_str!("physics_body_render.wgsl");
+pub(crate) const PARTICLE_SHADER_SOURCE: &str = include_str!("physics_particle_render.wgsl");
 
 const GRAB_RENDER_VERTEX_COUNT: u32 = 12;
 const GRAB_RENDER_VERTEX_BYTES: u64 = GRAB_RENDER_VERTEX_COUNT as u64 * 16;
@@ -63,14 +66,11 @@ pub struct SurfacePreview {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[cfg_attr(not(test), allow(dead_code))]
 pub enum Background {
     /// Draw the PhysBox world background before physics geometry.
     #[default]
     PhysBox,
-    /// Preserve the caller's existing target contents.
-    Load,
-    /// Clear to transparent before physics geometry.
-    Transparent,
     /// Clear to the supplied color before physics geometry.
     Clear(wgpu::Color),
 }
@@ -205,7 +205,9 @@ impl PhysicsRenderer {
         });
         let grab_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("physbox5_grab_render_prepare_shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("grab_render_prepare.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(
+                include_str!("physics_grab_render_prepare.wgsl").into(),
+            ),
         });
         let grab_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("physbox5_grab_render_prepare_pipeline_layout"),
@@ -270,7 +272,7 @@ impl PhysicsRenderer {
         });
         let render_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("physbox5_body_render_shader"),
-            source: wgpu::ShaderSource::Wgsl(crate::BODY_SHADER_SOURCE.into()),
+            source: wgpu::ShaderSource::Wgsl(BODY_SHADER_SOURCE.into()),
         });
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -420,9 +422,7 @@ impl PhysicsRenderer {
                 b: 0.035,
                 a: 1.0,
             }),
-            Background::Transparent => wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
             Background::Clear(color) => wgpu::LoadOp::Clear(color),
-            Background::Load => wgpu::LoadOp::Load,
         };
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("physbox5_body_render_pass"),
@@ -450,8 +450,6 @@ impl PhysicsRenderer {
                 pass.set_pipeline(&self.background_pipeline);
                 pass.draw(0..3, 0..1);
             }
-            Background::Load => {}
-            Background::Transparent => {}
             Background::Clear(_) => {}
         }
         pass.set_pipeline(&self.body_pipeline);
@@ -563,7 +561,7 @@ impl ParticleRenderer {
         });
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("physbox5_particle_render"),
-            source: wgpu::ShaderSource::Wgsl(crate::PARTICLE_SHADER_SOURCE.into()),
+            source: wgpu::ShaderSource::Wgsl(PARTICLE_SHADER_SOURCE.into()),
         });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("physbox5_particle_render_pipeline_layout"),
