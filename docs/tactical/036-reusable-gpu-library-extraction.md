@@ -168,6 +168,14 @@ Gate: `physbox-engine` consumes `physbox-sim` as its only product mechanical
 implementation, ordinary scenarios retain results and graph accounting, and a
 surface-free public rigid-world smoke steps successfully.
 
+Extraction checkpoint, 2026-07-24: body storage and generational slot
+allocation, awake/sleep state and work compaction, exact sleep grouping,
+lifecycle retirement, construction intent mechanics, grab intent mechanics,
+and their GPU shaders now live in `physbox-sim`. Temporary hidden re-exports
+keep engine validation callers source-compatible. Engine profile wrappers no
+longer enter mechanical construction; they project once into the semantic
+`PhysicsConfigurationV3` value.
+
 ### S36.5 — Optional reusable renderer
 
 - [x] Add `physbox-render` with no engine, launch, UI, comparator, shell, or app

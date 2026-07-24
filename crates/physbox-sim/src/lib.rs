@@ -8,10 +8,59 @@
 //! exposes live state only through GPU views or explicitly requested
 //! asynchronous observations.
 
+mod awake_work;
+mod body_lifecycle;
+mod body_state;
 mod clock;
 mod config;
+mod construction;
 mod definition;
+mod exact_sleep_grouping;
+mod grab;
 mod render_view;
+mod sleep_contacts;
+mod sleep_diagnostics;
+#[cfg(test)]
+mod test_support;
+
+pub(crate) use body_state::GpuBodyStorage;
+#[cfg(test)]
+pub(crate) use test_support::{create_instance, gpu_context, p5_1_rectangle_floor_scenario};
+
+#[doc(hidden)]
+pub mod __private {
+    pub mod awake_work {
+        pub use crate::awake_work::*;
+    }
+
+    pub mod body_lifecycle {
+        pub use crate::body_lifecycle::*;
+    }
+
+    pub mod body_state {
+        pub use crate::body_state::*;
+    }
+
+    pub mod construction {
+        pub use crate::construction::*;
+    }
+
+    pub mod exact_sleep_grouping {
+        pub use crate::exact_sleep_grouping::*;
+    }
+
+    pub mod grab {
+        pub use crate::grab::*;
+    }
+
+    pub mod sleep_contacts {
+        pub use crate::sleep_contacts::*;
+    }
+
+    pub mod sleep_diagnostics {
+        pub use crate::sleep_diagnostics::*;
+    }
+}
 
 pub use clock::{
     DEFAULT_FIXED_STEP_HZ, DEFAULT_FIXED_STEP_SECONDS, InteractiveClockAction,

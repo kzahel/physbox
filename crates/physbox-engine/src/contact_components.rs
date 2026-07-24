@@ -539,7 +539,10 @@ mod gpu {
             });
             let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some("physbox5_contact_component_shader"),
-                source: wgpu::ShaderSource::Wgsl(include_str!("contact_components.wgsl").into()),
+                source: wgpu::ShaderSource::Wgsl(
+                    physbox_sim::__private::exact_sleep_grouping::CONTACT_COMPONENTS_SHADER_SOURCE
+                        .into(),
+                ),
             });
             let pipeline = |entry_point| {
                 device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {

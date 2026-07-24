@@ -10,7 +10,10 @@ default = []
 solver-lab = []
 
 [dependencies]
+bytemuck.workspace = true
 physbox-contracts = { path = "../physbox-contracts" }
 serde.workspace = true
 wgpu.workspace = true
 
+[dev-dependencies]
+pollster.workspace = true

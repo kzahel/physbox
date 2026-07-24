@@ -1573,7 +1573,9 @@ dependencies = [
 name = "physbox-sim"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
  "physbox-contracts",
+ "pollster",
  "serde",
  "wgpu",
 ]

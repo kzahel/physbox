@@ -13,7 +13,7 @@ const POINT_WORK_STATE_WORDS: u32 = 16;
 const SOLVER_BODY_STATE_WORDS: u32 = 20;
 const POINT_DISPATCH_64_OFFSET: u64 = 4 * size_of::<u32>() as u64;
 
-pub(crate) struct GpuAwakePoints {
+pub struct GpuAwakePoints {
     points: wgpu::Buffer,
     state: Arc<wgpu::Buffer>,
     mapping: wgpu::Buffer,
@@ -30,7 +30,7 @@ pub(crate) struct GpuAwakePoints {
 }
 
 impl GpuAwakePoints {
-    pub(crate) fn new(
+    pub fn new(
         device: &wgpu::Device,
         storage: &GpuBodyStorage,
         source_points: &wgpu::Buffer,
@@ -228,7 +228,7 @@ impl GpuAwakePoints {
         })
     }
 
-    pub(crate) fn bind_solver_prepared(&mut self, device: &wgpu::Device, prepared: &wgpu::Buffer) {
+    pub fn bind_solver_prepared(&mut self, device: &wgpu::Device, prepared: &wgpu::Buffer) {
         let layout = self.scatter_pipeline.get_bind_group_layout(0);
         self.scatter_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("physbox5_awake_point_scatter_bind_group"),
@@ -242,7 +242,7 @@ impl GpuAwakePoints {
         });
     }
 
-    pub(crate) fn encode_compaction(&self, encoder: &mut wgpu::CommandEncoder) {
+    pub fn encode_compaction(&self, encoder: &mut wgpu::CommandEncoder) {
         let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some("physbox5_awake_point_compact_pass"),
             timestamp_writes: None,
@@ -252,7 +252,7 @@ impl GpuAwakePoints {
         pass.dispatch_workgroups(1, 1, 1);
     }
 
-    pub(crate) fn encode_scatter(&self, encoder: &mut wgpu::CommandEncoder) {
+    pub fn encode_scatter(&self, encoder: &mut wgpu::CommandEncoder) {
         let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some("physbox5_awake_point_scatter_pass"),
             timestamp_writes: None,
@@ -262,7 +262,7 @@ impl GpuAwakePoints {
         pass.dispatch_workgroups_indirect(&self.state, POINT_DISPATCH_64_OFFSET);
     }
 
-    pub(crate) fn encode_solver_body_compaction(&self, encoder: &mut wgpu::CommandEncoder) {
+    pub fn encode_solver_body_compaction(&self, encoder: &mut wgpu::CommandEncoder) {
         let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some("physbox5_solver_body_compact_pass"),
             timestamp_writes: None,
@@ -272,23 +272,23 @@ impl GpuAwakePoints {
         pass.dispatch_workgroups(1, 1, 1);
     }
 
-    pub(crate) fn points(&self) -> &wgpu::Buffer {
+    pub fn points(&self) -> &wgpu::Buffer {
         &self.points
     }
 
-    pub(crate) fn state_handle(&self) -> Arc<wgpu::Buffer> {
+    pub fn state_handle(&self) -> Arc<wgpu::Buffer> {
         Arc::clone(&self.state)
     }
 
-    pub(crate) fn solver_body_state_handle(&self) -> Arc<wgpu::Buffer> {
+    pub fn solver_body_state_handle(&self) -> Arc<wgpu::Buffer> {
         Arc::clone(&self.solver_bodies)
     }
 
-    pub(crate) fn persistence_prepared(&self) -> &wgpu::Buffer {
+    pub fn persistence_prepared(&self) -> &wgpu::Buffer {
         &self.persistence_prepared
     }
 
-    pub(crate) fn capacity_record(&self) -> CapacityRecordV1 {
+    pub fn capacity_record(&self) -> CapacityRecordV1 {
         let bytes = self.points.size()
             + self.state.size()
             + self.mapping.size()
@@ -304,7 +304,7 @@ impl GpuAwakePoints {
         }
     }
 
-    pub(crate) fn solver_body_capacity_record(&self) -> CapacityRecordV1 {
+    pub fn solver_body_capacity_record(&self) -> CapacityRecordV1 {
         CapacityRecordV1 {
             class: "solver-body-work".to_owned(),
             capacity_elements: self.solver_bodies.size() / size_of::<u32>() as u64
@@ -317,11 +317,7 @@ impl GpuAwakePoints {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    pub(crate) fn copy_state(
-        &self,
-        encoder: &mut wgpu::CommandEncoder,
-        destination: &wgpu::Buffer,
-    ) {
+    pub fn copy_state(&self, encoder: &mut wgpu::CommandEncoder, destination: &wgpu::Buffer) {
         encoder.copy_buffer_to_buffer(
             &self.state,
             0,
@@ -332,11 +328,7 @@ impl GpuAwakePoints {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    pub(crate) fn copy_mapping(
-        &self,
-        encoder: &mut wgpu::CommandEncoder,
-        destination: &wgpu::Buffer,
-    ) {
+    pub fn copy_mapping(&self, encoder: &mut wgpu::CommandEncoder, destination: &wgpu::Buffer) {
         encoder.copy_buffer_to_buffer(
             &self.mapping,
             0,
@@ -347,7 +339,7 @@ impl GpuAwakePoints {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    pub(crate) fn copy_solver_body_state(
+    pub fn copy_solver_body_state(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         destination: &wgpu::Buffer,

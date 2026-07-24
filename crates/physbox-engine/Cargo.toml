@@ -9,7 +9,7 @@ publish.workspace = true
 default = ["box2d-comparator"]
 box2d-comparator = ["dep:physbox-box2d-comparator"]
 production-validation = []
-solver-lab = ["physbox-launch/solver-lab"]
+solver-lab = ["physbox-launch/solver-lab", "physbox-sim/solver-lab"]
 
 [dependencies]
 bytemuck.workspace = true
