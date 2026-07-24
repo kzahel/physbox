@@ -69,6 +69,80 @@ ADAPTER="$(rg 'PHYSBOX5_MARK_ADAPTER ' "$LOG" | tail -1 | sed 's/^.*PHYSBOX5_MAR
 [[ -n "$ADAPTER" ]] || { echo "error: Android device adapter diagnostics missing; see $LOG" >&2; exit 1; }
 printf '%s\n' "$ADAPTER" | node "$ANDROID_DIR/require-hardware-adapter.mjs"
 CAPTURE_PHASE="${SCENARIO}-final"
+if [[ "${PHYSBOX5_ANDROID_RENDER_SCALE:-0}" = "1" ]]; then
+    [[ "$SCENARIO" = "bootstrap" ]] || {
+        echo "error: Android render-scale validation requires bootstrap" >&2; exit 2;
+    }
+    [[ "${PHYSBOX5_ANDROID_COMPARATOR_TOGGLE:-0}" != "1" \
+        && "${PHYSBOX5_ANDROID_SLEEP_TOGGLE:-0}" != "1" \
+        && "${PHYSBOX5_ANDROID_SOLVER_SLIDER:-0}" != "1" \
+        && "${PHYSBOX5_ANDROID_CONSTRUCTION_CAPTURE:-0}" != "1" \
+        && "${PHYSBOX5_ANDROID_GRAB_CAPTURE:-0}" != "1" ]] || {
+        echo "error: choose only the Android render-scale interaction capture" >&2; exit 2;
+    }
+    node -e '
+      const frame = JSON.parse(process.argv[1]);
+      const scale = frame.r;
+      process.exit(scale?.p === 100 && scale.c === false && scale.m === 0
+        && JSON.stringify(scale.n) === JSON.stringify(scale.w) ? 0 : 1);
+    ' "$REPORT" || {
+        echo "error: Android render-scale validation must start on the direct native path; see $LOG" >&2; exit 1;
+    }
+    SIZE="$(physbox5_android_product_window_size "$ADB" "$SERIAL")"
+    WIDTH="${SIZE%x*}"; HEIGHT="${SIZE#*x}"
+    [[ "$WIDTH" =~ ^[0-9]+$ && "$HEIGHT" =~ ^[0-9]+$ ]] || {
+        echo "error: could not determine Android display size" >&2; exit 1;
+    }
+    UI_POINTS="$(node -e '
+      const w = +process.argv[1], h = +process.argv[2];
+      const [version, pixelsPerPoint, toolbarScale, menuScale] =
+        JSON.parse(process.argv[3]).v;
+      if (version !== 12 || !(pixelsPerPoint > 0 && toolbarScale > 0 && menuScale > 0)) {
+        throw new Error("invalid UI density marker");
+      }
+      const compact = h / pixelsPerPoint < 520 && w > h;
+      console.log([
+        Math.round(38 * toolbarScale), Math.round(50 * toolbarScale),
+        Math.round(300 * menuScale), Math.round(104 * menuScale),
+        Math.round(192 * menuScale), Math.round((compact ? 331 : 553) * menuScale),
+      ].join(" "));
+    ' "$WIDTH" "$HEIGHT" "$REPORT")"
+    read -r MENU_X MENU_Y WORLD_X WORLD_Y SCALE_X SCALE_Y <<< "$UI_POINTS"
+    BEFORE_HASH="$(node -e 'console.log(JSON.parse(process.argv[1]).sceneContract.k)' "$REPORT")"
+    BEFORE_CAMERA="$(node -e 'console.log(JSON.stringify(JSON.parse(process.argv[1]).camera))' "$REPORT")"
+    for EXPECTED_SCALE in 75 50; do
+        "$ADB" -s "$SERIAL" shell input tap "$MENU_X" "$MENU_Y"
+        sleep 0.25
+        "$ADB" -s "$SERIAL" shell input tap "$WORLD_X" "$WORLD_Y"
+        sleep 0.25
+        "$ADB" -s "$SERIAL" shell input tap "$SCALE_X" "$SCALE_Y"
+        SCALE_APPLIED=0
+        for _ in $(seq 1 40); do
+            "$ADB" -s "$SERIAL" logcat -d -t 10000 > "$LOG"
+            REPORT="$(rg 'PHYSBOX5_MARK_FRAME_RENDERED ' "$LOG" | tail -1 | sed 's/^.*PHYSBOX5_MARK_FRAME_RENDERED //')"
+            if node -e '
+              const frame = JSON.parse(process.argv[1]);
+              const expected = Number(process.argv[2]);
+              const beforeHash = process.argv[3];
+              const beforeCamera = process.argv[4];
+              const scale = frame.r;
+              const factor = expected / 100;
+              process.exit(scale?.p === expected && scale.c === true && scale.m > 0
+                && scale.w[0] === Math.ceil(scale.n[0] * factor)
+                && scale.w[1] === Math.ceil(scale.n[1] * factor)
+                && frame.sceneContract.k === beforeHash
+                && JSON.stringify(frame.camera) === beforeCamera ? 0 : 1);
+            ' "$REPORT" "$EXPECTED_SCALE" "$BEFORE_HASH" "$BEFORE_CAMERA"; then
+                SCALE_APPLIED=1; break
+            fi
+            sleep 0.25
+        done
+        [[ "$SCALE_APPLIED" -eq 1 ]] || {
+            echo "error: Android menu did not apply render scale $EXPECTED_SCALE; see $LOG" >&2; exit 1;
+        }
+    done
+    CAPTURE_PHASE="${SCENARIO}-render-scale-50"
+fi
 if [[ "${PHYSBOX5_ANDROID_COMPARATOR_TOGGLE:-0}" = "1" ]]; then
     [[ "$SCENARIO" = "bootstrap" ]] || {
         echo "error: Android comparator toggle requires bootstrap" >&2; exit 2;

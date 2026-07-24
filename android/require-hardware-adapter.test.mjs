@@ -148,6 +148,17 @@ test("physical Android comparator capture selects Box2D and reconciles placement
   assert.match(source, /CAPTURE_PHASE="\$\{SCENARIO\}-box2d-placement"/);
 });
 
+test("physical Android render scale uses the engine menu and compact report", () => {
+  const source = readFileSync(join(androidDir, "validate-device.sh"), "utf8");
+  assert.match(source, /PHYSBOX5_ANDROID_RENDER_SCALE/);
+  assert.match(source, /scale\?\.p === 100 && scale\.c === false && scale\.m === 0/);
+  assert.match(source, /for EXPECTED_SCALE in 75 50/);
+  assert.match(source, /scale\.w\[0\] === Math\.ceil\(scale\.n\[0\] \* factor\)/);
+  assert.match(source, /frame\.sceneContract\.k === beforeHash/);
+  assert.match(source, /JSON\.stringify\(frame\.camera\) === beforeCamera/);
+  assert.match(source, /CAPTURE_PHASE="\$\{SCENARIO\}-render-scale-50"/);
+});
+
 test("APK validation runners stop the product app on every exit", () => {
   const toolchain = readFileSync(join(androidDir, "toolchain.sh"), "utf8");
   assert.match(toolchain, /PHYSBOX5_ANDROID_APP_ID="com\.kzahel\.physbox5"/);
