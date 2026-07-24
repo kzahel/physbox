@@ -42,6 +42,7 @@ mod gpu_observation;
 mod gpu_solver;
 mod gpu_timing;
 mod grab;
+mod interaction;
 mod pair_slot_persistence;
 mod particle_world;
 mod sleep_contacts;
@@ -196,6 +197,13 @@ pub use gpu_observation::{
     GPU_BODY_OBSERVATION_FIXED, GPU_BODY_OBSERVATION_LIVE, GPU_BODY_OBSERVATION_SLEEPING,
     GPU_BODY_OBSERVATION_VERSION, GpuBodyObservation, GpuBodyObservationRecord,
     GpuObservationError,
+};
+pub use interaction::{
+    BODY_SELECTION_CAPACITY, BodySelectionId, CommandId, CommandQueueError, CommandQueueErrorKind,
+    CommandResultRequest, CommandResultRequestError, POINT_CONSTRAINT_CAPACITY, PointConstraintDef,
+    PointConstraintId, PointConstraintTuning, PointQueryDef, QueuedBodySelection,
+    QueuedPointConstraint, WORLD_COMMAND_CAPACITY, WORLD_RESULT_CAPACITY, WorldCommandKind,
+    WorldCommandResult, WorldCommandResults, WorldCommandStatus,
 };
 pub use world::{
     BodySnapshot, BodySnapshotEntry, SnapshotRequest, StepReport, World, WorldCounters, WorldError,

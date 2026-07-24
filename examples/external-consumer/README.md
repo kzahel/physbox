@@ -6,15 +6,20 @@ consumer. It depends only on `physbox-sim`, not `physbox-engine`,
 catalog, or the Box2D comparator.
 
 It creates its own WGPU instance/device/queue, disables one supported sleeping
-toggle, constructs a floor and ball through public definitions, records and
-submits four fixed steps, and requests a final asynchronous body snapshot. It
-does not construct a surface, texture, render pipeline, camera, or presentation
-object. The final bounded readback is proof only and does not advance the
-world.
+toggle, and constructs a floor and ball through public definitions. It proves
+same-step deferred query/constraint chaining, query misses, pending-command
+cancellation, target motion, release, selected-body destruction, complete
+capacity-sized asynchronous result delivery, lifecycle reconciliation, and
+generational slot reuse. Final physics state is validated through the
+canonical `GpuBodyObservation`.
+
+It does not construct a surface, texture, render pipeline, camera, application
+tool, or presentation object. Its bounded readbacks are proof only and do not
+advance the world.
 
 ```sh
 cargo run -p physbox-external-consumer
 ```
 
 Success prints `PHYSBOX_EXTERNAL_CONSUMER_SUCCESS` with bounded body/step
-counts and the observed ball height.
+counts, constrained motion, and the reused body generation.

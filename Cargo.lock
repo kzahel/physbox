@@ -1486,6 +1486,7 @@ dependencies = [
 name = "physbox-external-consumer"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
  "physbox-sim",
  "pollster",
  "wgpu",

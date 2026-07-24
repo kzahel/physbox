@@ -67,8 +67,10 @@ validates final physics state through `GpuBodyObservation`.
 - Point destruction must eventually correct the CPU handle catalog and
   counters, reject stale body IDs, and permit slot reuse without leaking
   authoring capacity.
-- Reset emits deterministic cancellation for observable pending work. Drop
-  releases reservations without requiring observable post-drop results.
+- Cancellation before `step` emits deterministic terminal results. Recorded
+  commands cannot be revoked from the caller's encoder and must reconcile
+  before further admission. Drop releases reservations without requiring
+  observable post-drop results.
 
 ## Ordered delivery slices
 
@@ -76,9 +78,9 @@ validates final physics state through `GpuBodyObservation`.
 
 - [x] Amend the reusable-library topic with the decided API and semantics.
 - [x] Add this tactical to the status index in creation order.
-- [ ] Add documented public command, selection, constraint, tuning, result,
+- [x] Add documented public command, selection, constraint, tuning, result,
       capacity-error, and counter types.
-- [ ] Add compile-time/API tests proving no first-party or rendering
+- [x] Add compile-time/API tests proving no first-party or rendering
       vocabulary enters the public surface.
 
 Gate: public definitions express bounded deferred mechanics without exposing
@@ -86,27 +88,30 @@ private contracts or application intent names.
 
 ### S37.2 — Bounded command admission and same-step dependency graph
 
-- [ ] Reserve generational selection and point-constraint handles
+- [x] Reserve generational selection and point-constraint handles
       synchronously.
-- [ ] Admit query/create/target/destroy commands in a bounded ordered batch.
-- [ ] Support query-to-constraint and query-to-body-destroy chaining in the
+- [x] Admit query/create/target/destroy commands in a bounded ordered batch.
+- [x] Support query-to-constraint and query-to-body-destroy chaining in the
       same step.
-- [ ] Define pending target/end behavior, bounded target admission, reset
-      cancellation, high-water marks, and synchronous rejection accounting.
-- [ ] Preserve all existing `World` construction/destruction behavior.
+- [x] Define pending target/end behavior, bounded target admission,
+      pre-step cancellation, high-water marks, and synchronous rejection
+      accounting.
+- [x] Preserve all existing `World` construction/destruction behavior.
 
 Gate: focused CPU tests cover capacity, generation reuse, stale handles,
 same-step dependency admission, pending operations, reset, and counters.
 
 ### S37.3 — GPU execution and non-lossy lifecycle reconciliation
 
-- [ ] Execute deterministic dynamic-body point selection on the GPU.
-- [ ] Create, tune, update, solve, and destroy one retained point constraint.
-- [ ] Destroy the exact body selected by a deferred query and reconcile its
+- [x] Execute deterministic dynamic-body point selection on the GPU.
+- [x] Create, tune, update, solve, and destroy one retained point constraint.
+- [x] Destroy the exact body selected by a deferred query and reconcile its
       generational identity into the public body catalog.
-- [ ] Write one bounded terminal result for every accepted mutation.
-- [ ] Keep internal reconciliation independent of application event retention.
-- [ ] Keep `step`, observation, and ordinary interactive advancement free of
+- [x] Write one bounded terminal result for every accepted mutation.
+- [x] Keep internal reconciliation independent of lossy application event
+      retention by backpressuring admission until the complete batch
+      reconciles.
+- [x] Keep `step`, observation, and ordinary interactive advancement free of
       mapping, waiting, and private submission.
 
 Gate: GPU tests prove hit/miss, ordered target/release, stale selection and
@@ -115,14 +120,14 @@ accepted result at capacity.
 
 ### S37.4 — Asynchronous result API and external proof
 
-- [ ] Add explicit caller-recorded result copy and nonblocking completion
+- [x] Add explicit caller-recorded result copy and nonblocking completion
       polling.
-- [ ] Reconcile completed body destruction and handle reservations exactly
+- [x] Reconcile completed body destruction and handle reservations exactly
       once.
-- [ ] Extend the default-feature external consumer to perform
+- [x] Extend the default-feature external consumer to perform
       query/drag/release/erase without a renderer.
-- [ ] Validate motion and final live state through `GpuBodyObservation`.
-- [ ] Prove the consumer has no engine, contracts, renderer, workbench,
+- [x] Validate motion and final live state through `GpuBodyObservation`.
+- [x] Prove the consumer has no engine, contracts, renderer, workbench,
       comparator, or internal-feature dependency.
 
 Gate: the external proof compiles and runs using only public default
@@ -131,10 +136,10 @@ physics observation.
 
 ### S37.5 — First-party integration and regression qualification
 
-- [ ] Keep the existing first-party grab/erase behavior and UI contract
+- [x] Keep the existing first-party grab/erase behavior and UI contract
       unchanged, or migrate it only through a behavior-equivalent neutral
       adapter.
-- [ ] Pass focused simulation, engine, dependency-negative, and external
+- [x] Pass focused simulation, engine, dependency-negative, and external
       consumer tests.
 - [ ] Pass `npm run test:fast` and production warnings-denied clippy.
 - [ ] Pass a fresh headless validation and `npm run test:web:lab`.
@@ -150,6 +155,22 @@ Gate: proportional maintained-host evidence passes without a new CPU
 authority, renderer coupling, physics-default change, hidden submission, or
 interactive readback dependency.
 
+Implementation checkpoint, 2026-07-24: the default public crate now reserves
+same-step selections and one point constraint, executes the ordered commands
+on the GPU, writes a fixed result slot for every accepted command, and blocks
+further admission until the complete asynchronous batch reconciles. Query
+misses cancel dependent pending operations; successful body destruction
+retires the exact generation, updates the `World` catalog, rejects the stale
+handle, and permits next-generation slot reuse. Default constraint tuning
+reproduces the existing private spring/damping/limit coefficients.
+
+Focused `physbox-sim` tests pass 41/41; the default-feature public-world
+integration passes 2/2; the surface-free external consumer passes hit, miss,
+drag, release, erase, cancellation, full 64-result delivery, observation, and
+slot reuse; the platform-boundary negatives pass; all-feature
+warnings-denied `physbox-sim` clippy passes; and the all-feature first-party
+engine plus external consumer compile. Cross-host qualification remains.
+
 ## Completion condition
 
 S37 is complete when a separate-style consumer can compose drag/release and
@@ -159,4 +180,3 @@ mutation has a terminal asynchronous result; body/constraint lifecycle
 reconciles without loss or blocking; slots reuse safely; the default-feature
 API remains physics-only; and proportional native, browser, comparator,
 performance, Android, and Quest gates pass.
-

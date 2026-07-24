@@ -162,10 +162,12 @@ first-party interaction mechanics.
 
 `World::step` only records GPU work. It never maps, waits, or submits.
 Applications explicitly request and submit bounded result copies, then poll
-them asynchronously. Reset cancels queued and in-flight commands and releases
-selection, constraint, and result reservations deterministically. Dropping a
-world releases those resources without inventing observable results after the
-consumer has discarded the world.
+them asynchronously. Commands cancelled before `step` receive deterministic
+cancelled results and release their reservations. Once commands have been
+recorded into a caller-owned encoder they cannot be revoked; their result batch
+must be reconciled before admitting more commands. Dropping or replacing a
+world releases all remaining reservations without inventing observable
+results after the consumer has discarded the world.
 
 Public counters distinguish command and result capacity, queued and in-flight
 commands, pending and live constraints, pending body destructions, high-water

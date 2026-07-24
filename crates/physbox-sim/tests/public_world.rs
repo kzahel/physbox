@@ -2,8 +2,9 @@ use std::mem::size_of;
 use std::sync::{Arc, Mutex};
 
 use physbox_sim::{
-    BodyDef, GPU_BODY_OBSERVATION_LIVE, GPU_BODY_OBSERVATION_VERSION, GpuBodyObservationRecord,
-    ShapeDef, StepDef, World, WorldDef,
+    BodyDef, CommandQueueErrorKind, GPU_BODY_OBSERVATION_LIVE, GPU_BODY_OBSERVATION_VERSION,
+    GpuBodyObservationRecord, PointConstraintDef, PointQueryDef, ShapeDef, StepDef, World,
+    WorldCommandKind, WorldCommandResults, WorldCommandStatus, WorldDef,
 };
 
 #[test]
@@ -127,4 +128,303 @@ fn public_world_steps_and_observes_without_a_surface() {
     assert!(snapshot.bodies.iter().all(|body| {
         body.position[0].is_finite() && body.position[1].is_finite() && body.angle.is_finite()
     }));
+}
+
+#[test]
+fn public_world_composes_deferred_drag_release_and_selected_destruction() {
+    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+        backends: wgpu::Backends::PRIMARY,
+        ..Default::default()
+    });
+    let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+        power_preference: wgpu::PowerPreference::HighPerformance,
+        compatible_surface: None,
+        force_fallback_adapter: false,
+    }))
+    .expect("test GPU adapter");
+    let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+        label: Some("physbox_sim_public_interaction_test"),
+        required_features: wgpu::Features::empty(),
+        required_limits: wgpu::Limits::default().using_resolution(adapter.limits()),
+        ..Default::default()
+    }))
+    .expect("test GPU device");
+
+    let mut definition = WorldDef::default();
+    definition.quality.physics.sleeping_enabled = false;
+    let fixed_dt = definition.quality.physics.fixed_dt_seconds();
+    let mut world = World::new(&device, definition).unwrap();
+    let floor = world
+        .create_body(BodyDef::fixed().with_position([0.0, -0.15]))
+        .unwrap();
+    world
+        .create_shape(floor, ShapeDef::rectangle([1.7, 0.15]))
+        .unwrap();
+    let ball = world
+        .create_body(BodyDef::dynamic().with_position([0.0, 0.9]))
+        .unwrap();
+    world
+        .create_shape(ball, ShapeDef::circle(0.22).with_density(1.0))
+        .unwrap();
+    submit_steps(&mut world, &device, &queue, fixed_dt, 1);
+
+    let missed = world
+        .queue_point_query(PointQueryDef::at([10.0, 10.0]))
+        .unwrap();
+    let pending = world
+        .queue_create_point_constraint(
+            missed.selection,
+            PointConstraintDef::at_target([10.0, 10.0]),
+        )
+        .unwrap();
+    world
+        .queue_set_point_constraint_target(pending.constraint, [9.0, 9.0])
+        .unwrap();
+    world
+        .queue_destroy_point_constraint(pending.constraint)
+        .unwrap();
+    let results = submit_command_step(&mut world, &device, &queue, fixed_dt);
+    assert_result(
+        &results,
+        WorldCommandKind::PointQuery,
+        WorldCommandStatus::Missed,
+        None,
+    );
+    assert_result(
+        &results,
+        WorldCommandKind::CreatePointConstraint,
+        WorldCommandStatus::Missed,
+        None,
+    );
+    assert_result(
+        &results,
+        WorldCommandKind::SetPointConstraintTarget,
+        WorldCommandStatus::Cancelled,
+        None,
+    );
+    assert_result(
+        &results,
+        WorldCommandKind::DestroyPointConstraint,
+        WorldCommandStatus::Cancelled,
+        None,
+    );
+
+    let selected = world
+        .queue_point_query(PointQueryDef::at([0.0, 0.9]))
+        .unwrap();
+    let constraint = world
+        .queue_create_point_constraint(
+            selected.selection,
+            PointConstraintDef::at_target([0.0, 0.9]),
+        )
+        .unwrap();
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("physbox_sim_public_interaction_create"),
+    });
+    world
+        .step(&device, &queue, &mut encoder, StepDef::fixed(fixed_dt))
+        .unwrap();
+    queue.submit([encoder.finish()]);
+    assert_eq!(
+        world
+            .queue_point_query(PointQueryDef::at([0.0, 0.9]))
+            .unwrap_err()
+            .kind(),
+        CommandQueueErrorKind::ResultsPending
+    );
+    let results = take_command_results(&mut world, &device, &queue);
+    assert_result(
+        &results,
+        WorldCommandKind::PointQuery,
+        WorldCommandStatus::Succeeded,
+        Some(ball),
+    );
+    assert_result(
+        &results,
+        WorldCommandKind::CreatePointConstraint,
+        WorldCommandStatus::Succeeded,
+        Some(ball),
+    );
+
+    world
+        .queue_set_point_constraint_target(constraint.constraint, [0.45, 0.9])
+        .unwrap();
+    let results = submit_command_step(&mut world, &device, &queue, fixed_dt);
+    assert_result(
+        &results,
+        WorldCommandKind::SetPointConstraintTarget,
+        WorldCommandStatus::Succeeded,
+        Some(ball),
+    );
+    submit_steps(&mut world, &device, &queue, fixed_dt, 30);
+
+    let observation = world.create_gpu_body_observation(&device).unwrap();
+    let moved = observe_body(&device, &queue, &observation, ball.slot());
+    assert_eq!(moved.identity[0], ball.generation());
+    assert_ne!(moved.identity[1] & GPU_BODY_OBSERVATION_LIVE, 0);
+    assert!(moved.pose[0] > 0.05);
+
+    world
+        .queue_destroy_point_constraint(constraint.constraint)
+        .unwrap();
+    let results = submit_command_step(&mut world, &device, &queue, fixed_dt);
+    assert_result(
+        &results,
+        WorldCommandKind::DestroyPointConstraint,
+        WorldCommandStatus::Succeeded,
+        Some(ball),
+    );
+    assert_eq!(
+        world
+            .queue_set_point_constraint_target(constraint.constraint, [0.0, 0.0])
+            .unwrap_err()
+            .kind(),
+        CommandQueueErrorKind::InvalidConstraint
+    );
+
+    let selected = world
+        .queue_point_query(PointQueryDef::at([moved.pose[0], moved.pose[1]]))
+        .unwrap();
+    world
+        .queue_destroy_selected_body(selected.selection)
+        .unwrap();
+    let results = submit_command_step(&mut world, &device, &queue, fixed_dt);
+    assert_result(
+        &results,
+        WorldCommandKind::DestroySelectedBody,
+        WorldCommandStatus::Succeeded,
+        Some(ball),
+    );
+    assert_eq!(world.counters().live_bodies, 1);
+
+    let retired = observe_body(&device, &queue, &observation, ball.slot());
+    assert_eq!(retired.identity[0], ball.generation() + 1);
+    assert_eq!(retired.identity[1] & GPU_BODY_OBSERVATION_LIVE, 0);
+
+    let replacement = world
+        .create_body(BodyDef::dynamic().with_position([-0.8, 1.2]))
+        .unwrap();
+    assert_eq!(replacement.slot(), ball.slot());
+    assert_eq!(replacement.generation(), ball.generation() + 1);
+    world
+        .create_shape(
+            replacement,
+            ShapeDef::circle(0.25)
+                .with_density(0.8)
+                .with_friction(0.5)
+                .with_restitution(0.0),
+        )
+        .unwrap();
+    submit_steps(&mut world, &device, &queue, fixed_dt, 1);
+    let replacement_record = observe_body(&device, &queue, &observation, replacement.slot());
+    assert_eq!(replacement_record.identity[0], replacement.generation());
+    assert_ne!(
+        replacement_record.identity[1] & GPU_BODY_OBSERVATION_LIVE,
+        0
+    );
+}
+
+fn submit_steps(
+    world: &mut World,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    fixed_dt: f32,
+    count: u32,
+) {
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("physbox_sim_public_test_steps"),
+    });
+    for _ in 0..count {
+        world
+            .step(device, queue, &mut encoder, StepDef::fixed(fixed_dt))
+            .unwrap();
+    }
+    queue.submit([encoder.finish()]);
+}
+
+fn submit_command_step(
+    world: &mut World,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    fixed_dt: f32,
+) -> WorldCommandResults {
+    submit_steps(world, device, queue, fixed_dt, 1);
+    take_command_results(world, device, queue)
+}
+
+fn take_command_results(
+    world: &mut World,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+) -> WorldCommandResults {
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("physbox_sim_public_test_results"),
+    });
+    let mut request = world.request_command_results(device, &mut encoder).unwrap();
+    queue.submit([encoder.finish()]);
+    request.begin_map().unwrap();
+    device.poll(wgpu::PollType::Wait).unwrap();
+    world
+        .try_take_command_results(&mut request)
+        .expect("result callback completed")
+        .expect("result batch decoded")
+}
+
+fn assert_result(
+    results: &WorldCommandResults,
+    kind: WorldCommandKind,
+    status: WorldCommandStatus,
+    body: Option<physbox_sim::BodyId>,
+) {
+    assert!(
+        results
+            .results
+            .iter()
+            .any(|result| result.kind == kind && result.status == status && result.body == body),
+        "missing {kind:?}/{status:?} result for {body:?}: {:?}",
+        results.results
+    );
+}
+
+fn observe_body(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    observation: &physbox_sim::GpuBodyObservation,
+    slot: u32,
+) -> GpuBodyObservationRecord {
+    let byte_count =
+        u64::from(observation.capacity()) * size_of::<GpuBodyObservationRecord>() as u64;
+    let readback = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("physbox_sim_public_test_observation"),
+        size: byte_count,
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("physbox_sim_public_test_observation_copy"),
+    });
+    observation.encode(&mut encoder);
+    encoder.copy_buffer_to_buffer(observation.buffer(), 0, &readback, 0, byte_count);
+    queue.submit([encoder.finish()]);
+    let completion = Arc::new(Mutex::new(None));
+    let callback_completion = Arc::clone(&completion);
+    readback
+        .slice(..)
+        .map_async(wgpu::MapMode::Read, move |result| {
+            *callback_completion.lock().unwrap() = Some(result);
+        });
+    device.poll(wgpu::PollType::Wait).unwrap();
+    completion
+        .lock()
+        .unwrap()
+        .take()
+        .expect("observation callback completed")
+        .expect("observation mapping succeeded");
+    let mapped = readback.slice(..).get_mapped_range();
+    let stride = size_of::<GpuBodyObservationRecord>();
+    let start = slot as usize * stride;
+    let record = bytemuck::pod_read_unaligned(&mapped[start..start + stride]);
+    drop(mapped);
+    readback.unmap();
+    record
 }

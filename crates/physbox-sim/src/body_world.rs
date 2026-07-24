@@ -37,6 +37,10 @@ use crate::grab::{
     GRAB_MAX_ANGULAR_SPEED, GRAB_MAX_LINEAR_SPEED, GRAB_SPRING_ACCELERATION, GRAB_STATE_BYTES,
     GrabParamsRaw, GrabStateRaw, NO_GRAB_SLOT, grab_intent_raw,
 };
+use crate::interaction::{
+    WORLD_COMMAND_CAPACITY, WORLD_INTERACTION_COMMANDS_OFFSET, WORLD_INTERACTION_RESULTS_OFFSET,
+    WORLD_RESULT_BYTES, WorldCommandRaw, WorldInteractionStorageRaw,
+};
 use crate::{
     GpuBodyStorage, GpuGatherTopology, GpuSolverExecutionV4, GpuSolverSchedulingPolicyV1,
     body_floor_solver::GpuFixedFloorSolver, generated_contacts::GpuGeneratedContactGraph,
@@ -108,6 +112,9 @@ pub struct GpuBodyWorld {
     grab_intents: wgpu::Buffer,
     #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     grab_state: wgpu::Buffer,
+    world_interaction_storage: wgpu::Buffer,
+    world_interaction_bind_group: wgpu::BindGroup,
+    world_interaction_pipeline: wgpu::ComputePipeline,
     construction_params: wgpu::Buffer,
     construction_intents: wgpu::Buffer,
     construction_state: wgpu::Buffer,
@@ -517,7 +524,9 @@ impl GpuBodyWorld {
                 limits_padding: [GRAB_MAX_LINEAR_SPEED, GRAB_MAX_ANGULAR_SPEED, 0.0, 0.0],
                 counts: [body_count, 0, 0, 0],
             }),
-            usage: wgpu::BufferUsages::UNIFORM,
+            usage: wgpu::BufferUsages::UNIFORM
+                | wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST,
         });
         let command_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("physbox5_body_command_layout"),
@@ -620,6 +629,86 @@ impl GpuBodyWorld {
                 layout: Some(&command_pipeline_layout),
                 module: &command_shader,
                 entry_point: Some("steer_grab"),
+                compilation_options: Default::default(),
+                cache: None,
+            });
+
+        let world_interaction_storage =
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("physbox5_world_interaction_storage"),
+                contents: bytemuck::bytes_of(&WorldInteractionStorageRaw::zeroed()),
+                usage: wgpu::BufferUsages::STORAGE
+                    | wgpu::BufferUsages::COPY_SRC
+                    | wgpu::BufferUsages::COPY_DST,
+            });
+        let world_interaction_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("physbox5_world_interaction_layout"),
+                entries: &[
+                    storage_entry(0, false, wgpu::ShaderStages::COMPUTE),
+                    storage_entry(1, false, wgpu::ShaderStages::COMPUTE),
+                    storage_entry(2, false, wgpu::ShaderStages::COMPUTE),
+                    storage_entry(3, false, wgpu::ShaderStages::COMPUTE),
+                    storage_entry(4, false, wgpu::ShaderStages::COMPUTE),
+                    storage_entry(5, false, wgpu::ShaderStages::COMPUTE),
+                    storage_entry(6, false, wgpu::ShaderStages::COMPUTE),
+                    storage_entry(7, false, wgpu::ShaderStages::COMPUTE),
+                ],
+            });
+        let world_interaction_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("physbox5_world_interaction_bind_group"),
+            layout: &world_interaction_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: storage.pose_buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: storage.motion_buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: storage.metadata_buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: storage.properties_buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: grab_state.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: storage.wake_request_buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: world_interaction_storage.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 7,
+                    resource: grab_params.as_entire_binding(),
+                },
+            ],
+        });
+        let world_interaction_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("physbox5_world_interaction_shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("world_interaction.wgsl").into()),
+        });
+        let world_interaction_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("physbox5_world_interaction_pipeline_layout"),
+                bind_group_layouts: &[&world_interaction_layout],
+                push_constant_ranges: &[],
+            });
+        let world_interaction_pipeline =
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("physbox5_world_interaction_pipeline"),
+                layout: Some(&world_interaction_pipeline_layout),
+                module: &world_interaction_shader,
+                entry_point: Some("apply_world_commands"),
                 compilation_options: Default::default(),
                 cache: None,
             });
@@ -751,6 +840,9 @@ impl GpuBodyWorld {
             grab_constraint_pipeline,
             grab_intents,
             grab_state,
+            world_interaction_storage,
+            world_interaction_bind_group,
+            world_interaction_pipeline,
             construction_params,
             construction_intents,
             construction_state,
@@ -795,6 +887,32 @@ impl GpuBodyWorld {
             plan.particle_ranges,
             plan.frame_timestamps,
             None,
+            None,
+        )
+    }
+
+    pub(crate) fn encode_world_step_with_interactions(
+        &self,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        plan: BodyStepPlan<'_>,
+        world_commands: &[WorldCommandRaw],
+    ) -> Result<CapacityRecordV1, String> {
+        self.encode_steps_internal(
+            queue,
+            encoder,
+            1,
+            plan.batch,
+            plan.ranges,
+            plan.grab_batch,
+            plan.grab_ranges,
+            plan.construction_batch,
+            plan.construction_ranges,
+            plan.particle_commands,
+            plan.particle_ranges,
+            plan.frame_timestamps,
+            None,
+            Some(world_commands),
         )
     }
 
@@ -826,6 +944,7 @@ impl GpuBodyWorld {
             &particle_ranges,
             None,
             beginning_timestamp,
+            None,
         )
     }
 
@@ -845,6 +964,7 @@ impl GpuBodyWorld {
         particle_ranges: &[BodyCommandStepRange],
         frame_timestamps: Option<GpuFrameTimestampPlan<'_>>,
         beginning_timestamp: Option<(&wgpu::QuerySet, u32)>,
+        world_commands: Option<&[WorldCommandRaw]>,
     ) -> Result<CapacityRecordV1, String> {
         if (beginning_timestamp.is_some() || frame_timestamps.is_some()) && steps != 1 {
             return Err("timed body encoding requires exactly one step".to_owned());
@@ -857,6 +977,28 @@ impl GpuBodyWorld {
             return Err(
                 "body, grab, construction, and particle ranges must match the encoded step count"
                     .to_owned(),
+            );
+        }
+        let world_command_count = world_commands.map_or(0, <[WorldCommandRaw]>::len);
+        if world_command_count > WORLD_COMMAND_CAPACITY as usize {
+            return Err(format!(
+                "world command count {world_command_count} exceeds capacity {WORLD_COMMAND_CAPACITY}"
+            ));
+        }
+        if world_command_count != 0 && steps != 1 {
+            return Err("world interaction encoding requires exactly one step".to_owned());
+        }
+        if let Some(world_commands) = world_commands.filter(|commands| !commands.is_empty()) {
+            let header = [world_commands.len() as u32, self.body_count, 0, 0];
+            queue.write_buffer(
+                &self.world_interaction_storage,
+                0,
+                bytemuck::bytes_of(&header),
+            );
+            queue.write_buffer(
+                &self.world_interaction_storage,
+                WORLD_INTERACTION_COMMANDS_OFFSET,
+                bytemuck::cast_slice(world_commands),
             );
         }
         let capacity = self.storage.upload_commands(queue, batch)?;
@@ -1009,6 +1151,15 @@ impl GpuBodyWorld {
                     &self.construction_bind_group,
                     &[parameter_index * CONSTRUCTION_PARAMETER_STRIDE as u32],
                 );
+                pass.dispatch_workgroups(1, 1, 1);
+            }
+            if step_index == 0 && world_command_count != 0 {
+                let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: Some("physbox5_world_interaction_pass"),
+                    timestamp_writes: None,
+                });
+                pass.set_pipeline(&self.world_interaction_pipeline);
+                pass.set_bind_group(0, &self.world_interaction_bind_group, &[]);
                 pass.dispatch_workgroups(1, 1, 1);
             }
             if let Some(parameter_index) = step_parameter_indices[step_index] {
@@ -1225,6 +1376,22 @@ impl GpuBodyWorld {
         );
     }
 
+    pub(crate) fn copy_world_command_results(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        destination: &wgpu::Buffer,
+        command_count: u32,
+    ) {
+        debug_assert!(command_count <= WORLD_COMMAND_CAPACITY);
+        encoder.copy_buffer_to_buffer(
+            &self.world_interaction_storage,
+            WORLD_INTERACTION_RESULTS_OFFSET,
+            destination,
+            0,
+            u64::from(command_count) * WORLD_RESULT_BYTES,
+        );
+    }
+
     pub fn copy_construction_state(
         &self,
         encoder: &mut wgpu::CommandEncoder,
@@ -1325,6 +1492,14 @@ impl GpuBodyWorld {
                 used_elements: 1,
                 allocated_bytes: u64::from(GRAB_STATE_BYTES),
                 high_water_bytes: u64::from(GRAB_STATE_BYTES),
+                overflowed: false,
+            },
+            CapacityRecordV1 {
+                class: "world-interaction-storage".to_owned(),
+                capacity_elements: u64::from(WORLD_COMMAND_CAPACITY),
+                used_elements: 0,
+                allocated_bytes: size_of::<WorldInteractionStorageRaw>() as u64,
+                high_water_bytes: 0,
                 overflowed: false,
             },
             CapacityRecordV1 {
