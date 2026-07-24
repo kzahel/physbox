@@ -302,15 +302,55 @@ regression. Cost is reported, not silently normalized away.
 - [x] Produce fresh headless standard/stabilized artifacts with complete
       provenance.
 - [x] Run Browser WebGPU mechanics and the engine-rendered toggle.
-- [ ] Run ARM64 Android checks, a release APK, and one physical Android
+- [x] Run ARM64 Android checks, a release APK, and one physical Android
       mechanics/pixel/pacing comparison; use and shut down the authorized
       hardware-backed AVD only when no device is available.
-- [ ] Prove compiling the Box2D comparator out leaves the same PhysBox quality
+- [x] Prove compiling the Box2D comparator out leaves the same PhysBox quality
       choices and no foreign runtime dependency.
 
 Gate: every maintained host selects the same mode and scenario contract, all
 accepted mechanics rows are finite/capacity-clean, and interactive pacing is
 reported honestly.
+
+Candidate-B cross-host checkpoint, 2026-07-24: the final ordinary fast lane
+passes in 28.24 seconds including real Browser WebGPU, and warnings-denied
+production clippy passes. Two preceding concurrent engine-test attempts ended
+in an unnamed local process `SIGILL` after 87/181 and 178/181 tests; the
+complete 181-test engine suite then passed serialized and the unchanged
+ordinary fast lane passed on its next run. No assertion or deterministic
+candidate failure reproduced.
+
+The liquid-specific Browser smoke at clean revision
+`f12c016f953d1c7f9e5a0ecdfeaeb34317390383`, provenance
+`/tmp/physbox5-web-s35-candidate-b.json`, passes the 600-step scene, shared
+engine-rendered toggle, persistence, water/erase/surface interaction, and
+capacity checks. It observes Standard at 175 dispatches/819,940 bytes and
+Candidate B at 192/819,972. The explicit comparator-off release build and
+direct test pass with foreign dependency and runtime markers absent while the
+PhysBox coupling choice remains.
+
+The NDK-wrapped ARM64 check, ARM64 release-native/debug APK, and Gradle release
+APK pass. The 15,688,100-byte debug APK is
+`0e90f7013a9a03ecfdd96b5fbeef136d438dc38d4f94aa86879cf30cd495a98f`;
+the 8,473,493-byte unsigned release APK is
+`23d446831905ec9e9405be7904b792115dcb9fa347aa09d8da8966fc466951a6`.
+
+Physical Pixel 7a/Mali-G710 runs use that exact debug APK and separately prove
+passing, overflow-free Standard and Candidate B scene contracts. Candidate B
+reports 192 dispatches, 819,972 bytes, and the explicit stabilized bit. Five
+evenly spaced timestamp-overlay captures per mode measure median rigid,
+liquid, total-GPU, and CPU-encode time of
+`6.48/10.94/18.69/5.41 ms` for Standard versus
+`6.53/10.68/18.35/5.61 ms` for Candidate B. The five-sample total-GPU ranges
+are `17.91–19.53 ms` and `17.89–19.24 ms`; both have median 51 FPS. Across 506
+post-completion compact pacing markers per mode, effective-scale P50 is
+`0.860` versus `0.871`. Repeated screencap stalls depress those scale values,
+and the small mixed timing differences are noise rather than a Candidate B
+speedup. They do show that candidate A's earlier material Pixel regression is
+absent in this comparison. Raw logs are
+`/tmp/physbox5-s35-pixel-{standard,candidate-b}-samples-logcat.txt`; the ten
+screens are `/tmp/physbox5-s35-{standard,candidate-b}-{1..5}.png`. The app was
+force-stopped after each run and no AVD was used.
 
 ### S35.6 — human promotion checkpoint
 
