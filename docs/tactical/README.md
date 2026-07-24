@@ -287,7 +287,7 @@ This README remains the unnumbered index.
 | S33 | Presentation foundation and modular canvas UI | [033-presentation-foundation.md](033-presentation-foundation.md) | active; S33.1 clean baseline/provenance and neutral crate boundary pass, 2026-07-23 |
 | S34 | Render resolution scaling | [034-render-resolution-scaling.md](034-render-resolution-scaling.md) | complete; shared 100/75/50 world scaling, native UI, reports/timing, cross-host and physical Android qualification pass, 2026-07-24 |
 | S35 | Fluid/solid contact stabilization | [035-fluid-solid-contact-stabilization.md](035-fluid-solid-contact-stabilization.md) | active; restart-bound quality contract and permanent wet-overlap corpus first, no default promotion authorized, 2026-07-24 |
-| S36 | Reusable GPU physics library extraction | [036-reusable-gpu-library-extraction.md](036-reusable-gpu-library-extraction.md) | correction active; renderer returned private, public sim-only consumer and Quest path checks pass, cross-host requalification pending, 2026-07-24 |
+| S36 | Reusable GPU physics library extraction | [036-reusable-gpu-library-extraction.md](036-reusable-gpu-library-extraction.md) | complete; renderer private, public sim-only consumer, canonical GPU observation, Quest path, and cross-host requalification pass, 2026-07-24 |
 
 ## Conventions
 

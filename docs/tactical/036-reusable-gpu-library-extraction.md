@@ -1,9 +1,9 @@
 # S36 — Reusable GPU library extraction
 
-Status: correction implemented 2026-07-24; final cross-host requalification is
-in progress. The supported consumer result is one physics-only
+Status: complete 2026-07-24. The supported consumer result is one physics-only
 `physbox-sim` crate. The initially extracted reusable renderer was rejected and
-removed in S36.8.
+removed in S36.8, and the corrected boundary passes cross-host
+requalification.
 
 Governing architecture:
 [reusable GPU physics library boundary](../topics/reusable-gpu-library-boundary.md).
@@ -335,7 +335,7 @@ Final qualification checkpoint, clean code revision `4fef6b8`, 2026-07-24:
       `physbox-sim`.
 - [x] Update dependency negatives and architecture documentation to reject a
       reusable PhysBox renderer.
-- [ ] Re-run the full S36.7 cross-host qualification against the corrected
+- [x] Re-run the full S36.7 cross-host qualification against the corrected
       boundary.
 
 Gate: an independent physics adapter can create, step, and observe a world
@@ -348,7 +348,37 @@ Correction checkpoint, code revision `504e0ff` and Quest revision `b49f4cf`,
 integration test, 132 engine tests including the private particle pixel
 regression, the simulation-only external executable, dependency negatives,
 public rustdoc scan, and Quest `cargo check` pass. Final maintained-host
-qualification remains to be recorded below before closing the checkbox.
+qualification is recorded below.
+
+Final correction qualification checkpoint, clean architecture revision
+`2474f9d`, 2026-07-24:
+
+- `npm run test:fast` passes in 40.14 seconds, including 125 maintained engine
+  tests, the 37 simulation tests, both focused performance probes, dependency
+  negatives, and Browser WebGPU run
+  `9035b251-bce6-4555-b5d2-1a1a88dd95bb`;
+- production warnings-denied clippy and Quest warnings-denied clippy pass;
+- the fresh headless bootstrap run
+  `1784904051776820871-3788463` writes
+  `/tmp/physbox5-s36-physics-only-headless.json` and preserves 175 solver
+  dispatches plus 819,940 solver bytes;
+- solver-lab Browser run `5289a30a-1484-4c3a-a1c8-49090b2e4128` passes the
+  first-party renderer, menus, and comparator. Both direct comparator tests
+  pass, and the explicit release feature-off lane emits
+  `PHYSBOX5_BOX2D_FEATURE_OFF_SUCCESS` with dependency/runtime markers absent;
+- the isolated body performance smoke reports 2.323 ms host P50, 2.343 ms host
+  P95, and 1.926 ms CPU P50. These local warm timings do not support a speed
+  claim; the structural soft-floor contract remains exact and unchanged;
+- the NDK-wrapped ARM64 release-native check, ARM64 debug APK, and Gradle
+  release APK pass. The 15,688,100-byte debug APK has SHA-256
+  `056273650cb277550706fd527aa80f5dfd8db21817ad3a7d383f4c32e611ecad`;
+  the 8,560,541-byte unsigned release APK has SHA-256
+  `db4a37810fb10f34836753416ca82cf78a5115d65ea92f97ec8809b438522745`;
+  and
+- physical Pixel 7a run `1784904248-3799461` validates the ARM64 APK on
+  Mali-G710, captures a non-black 1080×2400 screenshot, writes
+  `/tmp/physbox5-s36-physics-only-arm64-android.png.json`, and stops the app.
+  No AVD was started.
 
 ## Validation artifacts
 
@@ -379,9 +409,7 @@ S36 is complete when:
 6. The governing architecture topic records the final physics-only API and any
    measured deviations.
 
-The initial six conditions passed for the superseded two-crate boundary.
-S36.8 reopens cross-host qualification before the corrected physics-only
-boundary is complete. Publication, API stabilization beyond the recorded
-support classes, Quest feature implementation, public particle authoring, and
-a Quest-owned Box2D backend require separate consumer or release work and do
-not block completion.
+All six conditions now pass for the corrected physics-only boundary.
+Publication, API stabilization beyond the recorded support classes, Quest
+feature implementation, public particle authoring, and a Quest-owned Box2D
+backend require separate consumer or release work and do not block completion.
