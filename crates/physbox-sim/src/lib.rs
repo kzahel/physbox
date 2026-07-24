@@ -11,6 +11,7 @@
 mod clock;
 mod config;
 mod definition;
+mod render_view;
 
 pub use clock::{
     DEFAULT_FIXED_STEP_HZ, DEFAULT_FIXED_STEP_SECONDS, InteractiveClockAction,
@@ -29,3 +30,4 @@ pub use definition::{
     BodyDef, BodyId, BodyType, Circle, DefinitionError, MaterialDef, Rectangle, ShapeDef,
     ShapeGeometry, ShapeId, StepDef, WorldDef,
 };
+pub use render_view::{ParticleRenderView, RENDER_VIEW_VERSION, RenderView};

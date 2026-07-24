@@ -1109,7 +1109,7 @@ impl ComparisonRenderer {
         });
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("physbox5_box2d_render_shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("body_render.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(physbox_render::BODY_SHADER_SOURCE.into()),
         });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("physbox5_box2d_render_pipeline_layout"),

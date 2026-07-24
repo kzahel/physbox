@@ -6,15 +6,17 @@ use std::time::Instant;
 use physbox_contracts::{
     BodyCommandBatchV1, BodyLayoutV1, CapacityRecordV1, SCHEMA_VERSION, Validate, canonical_hash,
 };
+use physbox_render::{
+    BodyRenderTimestamp, PhysicsRenderer, RenderOptions, RenderTarget, ViewTransform,
+};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 use crate::body_state::{BODY_COMMAND_CAPACITY, GpuBodyResetData};
-use crate::body_world::{BodyCommandStepRange, BodyRenderPlan, GpuBodyWorld};
+use crate::body_world::{BodyCommandStepRange, GpuBodyWorld};
 use crate::gpu_context::{
     AdapterDiagnostics, create_instance, request_adapter, request_device_with_features,
 };
-use crate::renderer::RenderFrameTarget;
 use crate::scenario::p5_1_free_flight_scenario;
 
 const VALIDATION_TOLERANCE: f32 = 1.0e-5;
@@ -164,6 +166,7 @@ pub struct GpuBodyBenchmarkSession {
     device: wgpu::Device,
     queue: wgpu::Queue,
     world: GpuBodyWorld,
+    renderer: PhysicsRenderer,
     _texture: wgpu::Texture,
     view: wgpu::TextureView,
     reset_data: GpuBodyResetData,
@@ -224,14 +227,18 @@ impl GpuBodyBenchmarkSession {
             view_formats: &[],
         });
         let view = texture.create_view(&Default::default());
-        let world = GpuBodyWorld::new(&device, format, &scenario)?;
+        let world = GpuBodyWorld::new(&device, &scenario)?;
+        let renderer = PhysicsRenderer::new(&device, format, world.render_view())
+            .map_err(|error| error.to_string())?;
         let reset_data = world.benchmark_reset_data(&scenario.bodies)?;
         let expected = expected_one_step(&scenario);
         let query_count = samples
             .checked_mul(2)
             .ok_or_else(|| "body benchmark query count overflow".to_owned())?;
         let timestamps = timestamps_available.then(|| timestamp_resources(&device, query_count));
-        let capacities = world.benchmark_capacities(viewport[0], viewport[1]);
+        let mut capacities = world.benchmark_capacities(viewport[0], viewport[1]);
+        capacities.extend(renderer.capacity_records(viewport[0], viewport[1]));
+        capacities.sort_by(|left, right| left.class.cmp(&right.class));
         for capacity in &capacities {
             capacity.validate().map_err(|error| error.to_string())?;
         }
@@ -240,6 +247,7 @@ impl GpuBodyBenchmarkSession {
             device,
             queue,
             world,
+            renderer,
             _texture: texture,
             view,
             reset_data,
@@ -298,28 +306,31 @@ impl GpuBodyBenchmarkSession {
             &self.ranges,
             beginning,
         )?;
-        self.world.encode_render_with_timestamp(
-            &self.queue,
-            &mut encoder,
-            RenderFrameTarget {
-                color_view: &self.view,
-                size: self.viewport,
-            },
-            BodyRenderPlan {
-                frame_index: self.frame_index,
-                camera: crate::Camera2d::fixed()
-                    .resolve(self.viewport)
-                    .expect("benchmark target resolves the fixed camera"),
-                grab_pointer_active: false,
-                surface_preview: None,
-                sleep_visuals_enabled: false,
-                current_outer_step: 0,
-                quiet_outer_steps: 0,
-                wake_flash_outer_steps: 0,
-                ending_timestamp: ending,
-                frame_timestamps: None,
-            },
-        );
+        let camera = crate::Camera2d::fixed()
+            .resolve(self.viewport)
+            .expect("benchmark target resolves the fixed camera");
+        self.renderer
+            .encode(
+                &self.queue,
+                &mut encoder,
+                RenderTarget {
+                    color_view: &self.view,
+                    size: self.viewport,
+                },
+                RenderOptions {
+                    frame_index: self.frame_index,
+                    view: ViewTransform {
+                        center: camera.center(),
+                        half_extents: camera.half_extents(),
+                    },
+                    body_timestamp: ending.map(|(query_set, query_index)| BodyRenderTimestamp {
+                        query_set,
+                        query_index,
+                    }),
+                    ..RenderOptions::default()
+                },
+            )
+            .map_err(|error| error.to_string())?;
         self.queue.submit([encoder.finish()]);
         self.frame_index += 1;
         Ok(())

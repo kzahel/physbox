@@ -8,9 +8,7 @@ use physbox_contracts::{
 };
 use wgpu::util::DeviceExt;
 
-use crate::{
-    CameraFrame2d, GpuBodyStorage, body_lifecycle::KILL_ZONE_Y, renderer::RenderFrameTarget,
-};
+use crate::{GpuBodyStorage, body_lifecycle::KILL_ZONE_Y};
 
 pub(crate) const MAX_PRODUCT_PARTICLE_CAPACITY: u32 = 32_768;
 pub(crate) const LIQUID_SANDBOX_PARTICLE_CAPACITY: u32 = 8_192;
@@ -75,15 +73,6 @@ struct ParticleParamsRaw {
     grid: [f32; 4],
     counts: [u32; 4],
     limits: [u32; 4],
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
-struct ParticleRenderParamsRaw {
-    viewport: [f32; 4],
-    camera: [f32; 4],
-    material: [f32; 4],
-    debug: [u32; 4],
 }
 
 #[repr(C)]
@@ -206,7 +195,6 @@ pub(crate) struct GpuParticleWorld {
     _cell_bins: wgpu::Buffer,
     command_batch: wgpu::Buffer,
     _params: wgpu::Buffer,
-    render_params: wgpu::Buffer,
     core_group: wgpu::BindGroup,
     core_begin_step: wgpu::ComputePipeline,
     core_integrate: wgpu::ComputePipeline,
@@ -245,8 +233,6 @@ pub(crate) struct GpuParticleWorld {
     tools_spawn: wgpu::ComputePipeline,
     reset_group: wgpu::BindGroup,
     reset_pipeline: wgpu::ComputePipeline,
-    render_group: wgpu::BindGroup,
-    render_pipeline: wgpu::RenderPipeline,
     body_capacity: u32,
     body_tile_count: u32,
 }
@@ -254,7 +240,6 @@ pub(crate) struct GpuParticleWorld {
 impl GpuParticleWorld {
     pub(crate) fn new(
         device: &wgpu::Device,
-        color_format: wgpu::TextureFormat,
         scenario: &CoupledScenarioV1,
         body_storage: &GpuBodyStorage,
     ) -> Result<Self, String> {
@@ -437,12 +422,6 @@ impl GpuParticleWorld {
             ],
         };
         let params = uniform_init(device, "physbox5_particle_params", &params_value);
-        let render_params = uniform_init(
-            device,
-            "physbox5_particle_render_params",
-            &ParticleRenderParamsRaw::zeroed(),
-        );
-
         let core_layout = layout(
             device,
             "physbox5_particle_core_layout",
@@ -1078,62 +1057,6 @@ impl GpuParticleWorld {
             "reset_particles",
         );
 
-        let render_layout = layout(
-            device,
-            "physbox5_particle_render_layout",
-            &[(0, true), (1, true), (2, true), (3, true)],
-            4,
-            wgpu::ShaderStages::VERTEX,
-        );
-        let render_group = bind_group(
-            device,
-            "physbox5_particle_render_group",
-            &render_layout,
-            &[
-                &positions,
-                &velocities,
-                &density_states,
-                &metadata,
-                &render_params,
-            ],
-        );
-        let render_shader = shader(
-            device,
-            "physbox5_particle_render",
-            include_str!("particle_render.wgsl"),
-        );
-        let render_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("physbox5_particle_render_pipeline_layout"),
-                bind_group_layouts: &[&render_layout],
-                push_constant_ranges: &[],
-            });
-        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("physbox5_particle_render_pipeline"),
-            layout: Some(&render_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &render_shader,
-                entry_point: Some("particle_vertex"),
-                buffers: &[],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &render_shader,
-                entry_point: Some("particle_fragment"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: color_format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview: None,
-            cache: None,
-        });
-
         Ok(Self {
             capacity,
             initial_count,
@@ -1159,7 +1082,6 @@ impl GpuParticleWorld {
             _cell_bins: cell_bins,
             command_batch,
             _params: params,
-            render_params,
             core_group,
             core_begin_step,
             core_integrate,
@@ -1198,8 +1120,6 @@ impl GpuParticleWorld {
             tools_spawn,
             reset_group,
             reset_pipeline,
-            render_group,
-            render_pipeline,
             body_capacity: body_storage.layout().capacity_elements,
             body_tile_count,
         })
@@ -1344,57 +1264,17 @@ impl GpuParticleWorld {
         self.encode_active_compaction(encoder);
     }
 
-    pub(crate) fn encode_render(
-        &self,
-        queue: &wgpu::Queue,
-        encoder: &mut wgpu::CommandEncoder,
-        target: RenderFrameTarget<'_>,
-        camera: CameraFrame2d,
-        frame_index: u64,
-        density_debug: bool,
-    ) {
-        queue.write_buffer(
-            &self.render_params,
-            0,
-            bytemuck::bytes_of(&ParticleRenderParamsRaw {
-                viewport: [
-                    target.size[0] as f32,
-                    target.size[1] as f32,
-                    target.size[0] as f32 / target.size[1].max(1) as f32,
-                    frame_index as f32,
-                ],
-                camera: [
-                    camera.center()[0],
-                    camera.center()[1],
-                    camera.half_extents()[0],
-                    camera.half_extents()[1],
-                ],
-                material: [
-                    self.material.radius.get() * 1.12,
-                    self.material.support_radius(),
-                    self.material.rest_density.get(),
-                    0.0,
-                ],
-                debug: [u32::from(density_debug), 0, 0, 0],
-            }),
-        );
-        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("physbox5_particle_render_pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: target.color_view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Load,
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-        });
-        pass.set_pipeline(&self.render_pipeline);
-        pass.set_bind_group(0, &self.render_group, &[]);
-        pass.draw(0..6, 0..self.capacity);
+    pub(crate) fn render_view(&self) -> physbox_sim::ParticleRenderView<'_> {
+        physbox_sim::ParticleRenderView::from_raw_parts(
+            &self.positions,
+            &self.velocities,
+            &self.density_states,
+            &self.metadata,
+            self.capacity,
+            self.material.radius.get(),
+            self.material.support_radius(),
+            self.material.rest_density.get(),
+        )
     }
 
     pub(crate) const fn capacity(&self) -> u32 {
@@ -2155,7 +2035,7 @@ mod tests {
 
     #[test]
     fn particle_render_order_is_stable_by_slot() {
-        let shader = include_str!("particle_render.wgsl");
+        let shader = physbox_render::PARTICLE_SHADER_SOURCE;
         assert!(shader.contains("let index = instance_index;"));
         assert!(shader.contains("if metadata[index].w == 0u"));
         assert!(!shader.contains("active_indices[instance_index]"));
@@ -2197,13 +2077,7 @@ mod tests {
         .unwrap();
 
         device.push_error_scope(wgpu::ErrorFilter::Validation);
-        let particles = GpuParticleWorld::new(
-            &device,
-            wgpu::TextureFormat::Rgba8UnormSrgb,
-            &scenario,
-            &body_storage,
-        )
-        .unwrap();
+        let particles = GpuParticleWorld::new(&device, &scenario, &body_storage).unwrap();
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("physbox5_particle_pipeline_test"),
         });
@@ -2232,13 +2106,7 @@ mod tests {
             &scenario.rigid.bodies,
         )
         .unwrap();
-        let particles = GpuParticleWorld::new(
-            &device,
-            wgpu::TextureFormat::Rgba8UnormSrgb,
-            &scenario,
-            &body_storage,
-        )
-        .unwrap();
+        let particles = GpuParticleWorld::new(&device, &scenario, &body_storage).unwrap();
         queue.write_buffer(
             &particles.positions,
             0,
@@ -2277,20 +2145,8 @@ mod tests {
             &scenario.rigid.bodies,
         )
         .unwrap();
-        let first = GpuParticleWorld::new(
-            &device,
-            wgpu::TextureFormat::Rgba8UnormSrgb,
-            &scenario,
-            &body_storage,
-        )
-        .unwrap();
-        let second = GpuParticleWorld::new(
-            &device,
-            wgpu::TextureFormat::Rgba8UnormSrgb,
-            &scenario,
-            &body_storage,
-        )
-        .unwrap();
+        let first = GpuParticleWorld::new(&device, &scenario, &body_storage).unwrap();
+        let second = GpuParticleWorld::new(&device, &scenario, &body_storage).unwrap();
         let commands = [
             ParticleCommand::EraseCircle {
                 center: Vec2::new(0.0, 2.0),
@@ -2401,13 +2257,7 @@ mod tests {
             &scenario.rigid.bodies,
         )
         .unwrap();
-        let particles = GpuParticleWorld::new(
-            &device,
-            wgpu::TextureFormat::Rgba8UnormSrgb,
-            &scenario,
-            &body_storage,
-        )
-        .unwrap();
+        let particles = GpuParticleWorld::new(&device, &scenario, &body_storage).unwrap();
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("physbox5_particle_scalar_integration"),
         });
@@ -2488,13 +2338,7 @@ mod tests {
         scenario.validate().unwrap();
         let body_storage =
             GpuBodyStorage::new(&device, 1, BODY_COMMAND_CAPACITY, &scenario.rigid.bodies).unwrap();
-        let particles = GpuParticleWorld::new(
-            &device,
-            wgpu::TextureFormat::Rgba8UnormSrgb,
-            &scenario,
-            &body_storage,
-        )
-        .unwrap();
+        let particles = GpuParticleWorld::new(&device, &scenario, &body_storage).unwrap();
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("physbox5_particle_body_same_step"),
         });
@@ -2576,13 +2420,7 @@ mod tests {
         scenario.validate().unwrap();
         let body_storage =
             GpuBodyStorage::new(&device, 1, BODY_COMMAND_CAPACITY, &scenario.rigid.bodies).unwrap();
-        let particles = GpuParticleWorld::new(
-            &device,
-            wgpu::TextureFormat::Rgba8UnormSrgb,
-            &scenario,
-            &body_storage,
-        )
-        .unwrap();
+        let particles = GpuParticleWorld::new(&device, &scenario, &body_storage).unwrap();
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("physbox5_particle_boundary_pressure"),
         });
@@ -2704,13 +2542,7 @@ mod tests {
             &scenario.rigid.bodies,
         )
         .unwrap();
-        let particles = GpuParticleWorld::new(
-            device,
-            wgpu::TextureFormat::Rgba8UnormSrgb,
-            scenario,
-            &body_storage,
-        )
-        .unwrap();
+        let particles = GpuParticleWorld::new(device, scenario, &body_storage).unwrap();
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("physbox5_particle_boundary_pressure_capacity"),
         });

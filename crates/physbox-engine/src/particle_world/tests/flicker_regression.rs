@@ -1,5 +1,6 @@
 use super::*;
 use crate::Camera2d;
+use physbox_render::{Background, PhysicsRenderer, RenderOptions, RenderTarget, ViewTransform};
 
 #[cfg(not(target_arch = "wasm32"))]
 #[test]
@@ -21,7 +22,25 @@ fn frozen_settled_water_pixels_ignore_active_list_order() {
     )
     .unwrap();
     let format = wgpu::TextureFormat::Rgba8Unorm;
-    let particles = GpuParticleWorld::new(&device, format, &scenario, &body_storage).unwrap();
+    let particles = GpuParticleWorld::new(&device, &scenario, &body_storage).unwrap();
+    let grab_state = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("physbox5_particle_flicker_grab_state"),
+        size: u64::from(crate::grab::GRAB_STATE_BYTES),
+        usage: wgpu::BufferUsages::STORAGE,
+        mapped_at_creation: false,
+    });
+    let render_view = physbox_sim::RenderView::from_raw_parts(
+        body_storage.pose_buffer(),
+        body_storage.properties_buffer(),
+        body_storage.metadata_buffer(),
+        body_storage.active_body_buffer(),
+        body_storage.sleep_state_buffer(),
+        &grab_state,
+        crate::body_state::ACTIVE_BODY_DRAW_OFFSET,
+        crate::body_lifecycle::KILL_ZONE_Y,
+        Some(particles.render_view()),
+    );
+    let renderer = PhysicsRenderer::new(&device, format, render_view).unwrap();
 
     for batch in 0..SETTLING_STEPS.div_ceil(24) {
         let steps = (SETTLING_STEPS - batch * 24).min(24);
@@ -141,33 +160,24 @@ fn copy_order(@builtin(global_invocation_id) invocation: vec3u) {
             pass.set_bind_group(0, &scramble_group, &[]);
             pass.dispatch_workgroups(particles.capacity().div_ceil(64), 1, 1);
         }
-        {
-            encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("physbox5_particle_flicker_clear"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                        store: wgpu::StoreOp::Store,
+        renderer
+            .encode(
+                &queue,
+                &mut encoder,
+                RenderTarget {
+                    color_view: &view,
+                    size: VIEWPORT,
+                },
+                RenderOptions {
+                    view: ViewTransform {
+                        center: camera.center(),
+                        half_extents: camera.half_extents(),
                     },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
-        }
-        particles.encode_render(
-            &queue,
-            &mut encoder,
-            RenderFrameTarget {
-                color_view: &view,
-                size: VIEWPORT,
-            },
-            camera,
-            0,
-            false,
-        );
+                    background: Background::Clear(wgpu::Color::BLACK),
+                    ..RenderOptions::default()
+                },
+            )
+            .unwrap();
         queue.submit([encoder.finish()]);
         let pixels =
             crate::renderer::read_texture(&device, &queue, &texture, VIEWPORT[0], VIEWPORT[1])

@@ -6,16 +6,17 @@ use physbox_contracts::{
     NeutralActionV1, SCHEMA_VERSION, ShapeV1, Validate, Vec2, canonical_hash,
 };
 use physbox_launch::WorldCapacityPreset;
+use physbox_render::{PhysicsRenderer, RenderOptions, RenderTarget, ViewTransform};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 use crate::body_state::BODY_COMMAND_CAPACITY;
-use crate::body_world::{BodyCommandStepRange, BodyRenderPlan, BodyStepPlan, GpuBodyWorld};
+use crate::body_world::{BodyCommandStepRange, BodyStepPlan, GpuBodyWorld};
 use crate::construction::empty_construction_intent_batch;
 use crate::gpu_context::{request_adapter, request_device};
 use crate::grab::empty_grab_intent_batch;
 use crate::particle_world::{GpuParticleDiagnosticsV4, ParticleValidationLayout};
-use crate::renderer::{RenderFrameTarget, map_buffer, read_texture};
+use crate::renderer::{map_buffer, read_texture};
 use crate::{
     AdapterDiagnostics, Camera2d, SLEEP_CYCLE_DIAGNOSTIC_BYTES, SleepCycleMetricsV1,
     SolverProfileConfig, create_instance,
@@ -221,12 +222,13 @@ pub async fn run_gpu_coupled_evidence(
     let view = texture.create_view(&Default::default());
     let world = GpuBodyWorld::new_coupled_with_solver_profile(
         &device,
-        format,
         &configured,
         WorldCapacityPreset::Slots64,
         &profile,
         physbox_launch::FluidSolidCouplingQuality::Standard,
     )?;
+    let renderer = PhysicsRenderer::new(&device, format, world.render_view())
+        .map_err(|error| error.to_string())?;
     let initial_particle_bytes = read_particle_bytes(&device, &queue, &world)?;
     let initial_particles = particle_aggregate(
         world.particle_validation_layout().unwrap(),
@@ -246,6 +248,7 @@ pub async fn run_gpu_coupled_evidence(
         &device,
         &queue,
         &world,
+        &renderer,
         &view,
         config.viewport,
         camera,
@@ -262,6 +265,7 @@ pub async fn run_gpu_coupled_evidence(
         &device,
         &queue,
         &world,
+        &renderer,
         &view,
         config.viewport,
         camera,
@@ -318,7 +322,9 @@ pub async fn run_gpu_coupled_evidence(
         .sleeping_enabled()
         .then(|| read_sleep_cycle(&device, &queue, &world))
         .transpose()?;
-    let capacities = world.benchmark_capacities(config.viewport[0], config.viewport[1]);
+    let mut capacities = world.benchmark_capacities(config.viewport[0], config.viewport[1]);
+    capacities.extend(renderer.capacity_records(config.viewport[0], config.viewport[1]));
+    capacities.sort_by(|left, right| left.class.cmp(&right.class));
     for capacity in &capacities {
         capacity.validate().map_err(|error| error.to_string())?;
     }
@@ -448,6 +454,7 @@ fn submit_samples(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     world: &GpuBodyWorld,
+    renderer: &PhysicsRenderer,
     view: &wgpu::TextureView,
     viewport: [u32; 2],
     camera: crate::CameraFrame2d,
@@ -493,26 +500,27 @@ fn submit_samples(
         let next_completed = completed_steps
             .checked_add(sample_steps)
             .ok_or_else(|| "coupled evidence completed-step count overflowed".to_owned())?;
-        world.encode_render_with_timestamp(
-            queue,
-            &mut encoder,
-            RenderFrameTarget {
-                color_view: view,
-                size: viewport,
-            },
-            BodyRenderPlan {
-                frame_index: u64::from(next_completed),
-                camera,
-                grab_pointer_active: false,
-                surface_preview: None,
-                sleep_visuals_enabled: false,
-                current_outer_step: next_completed,
-                quiet_outer_steps: 30,
-                wake_flash_outer_steps: 10,
-                ending_timestamp: None,
-                frame_timestamps: None,
-            },
-        );
+        renderer
+            .encode(
+                queue,
+                &mut encoder,
+                RenderTarget {
+                    color_view: view,
+                    size: viewport,
+                },
+                RenderOptions {
+                    frame_index: u64::from(next_completed),
+                    view: ViewTransform {
+                        center: camera.center(),
+                        half_extents: camera.half_extents(),
+                    },
+                    current_outer_step: next_completed,
+                    quiet_outer_steps: 30,
+                    wake_flash_outer_steps: 10,
+                    ..RenderOptions::default()
+                },
+            )
+            .map_err(|error| error.to_string())?;
         queue.submit([encoder.finish()]);
         let cpu_encode_submit_seconds = started.elapsed().as_secs_f64();
         device

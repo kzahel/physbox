@@ -136,14 +136,14 @@ changed in this slice.
 
 ### S36.3 — Mechanical/render resource separation
 
-- [ ] Remove target color format, body/particle render pipelines, background
+- [x] Remove target color format, body/particle render pipelines, background
       rendering, camera/view state, and visual theme from the mechanical world.
-- [ ] Introduce an explicit read-only same-device render view over the minimum
+- [x] Introduce an explicit read-only same-device render view over the minimum
       GPU resources and metadata needed to draw.
-- [ ] Keep render metadata distinct from mechanical state and mutation.
-- [ ] Adapt the existing engine-owned renderer to consume the view before
+- [x] Keep render metadata distinct from mechanical state and mutation.
+- [x] Adapt the existing engine-owned renderer to consume the view before
       crossing the crate boundary.
-- [ ] Prove unchanged first-party render composition, simulation reports,
+- [x] Prove unchanged first-party render composition, simulation reports,
       dispatch graphs, and offscreen results.
 
 Gate: the mechanical world constructs and steps without a render target, while
@@ -170,19 +170,34 @@ surface-free public rigid-world smoke steps successfully.
 
 ### S36.5 — Optional reusable renderer
 
-- [ ] Add `physbox-render` with no engine, launch, UI, comparator, shell, or app
+- [x] Add `physbox-render` with no engine, launch, UI, comparator, shell, or app
       dependency.
-- [ ] Move body and particle rendering behind the read-only `RenderView`.
-- [ ] Accept caller-owned target view, extent, world-to-clip transform, load
+- [x] Move body and particle rendering behind the read-only `RenderView`.
+- [x] Accept caller-owned target view, extent, world-to-clip transform, load
       operation, and encoder.
-- [ ] Keep surface creation, device creation, background/final composition,
-      camera gestures, tools, and UI outside the crate.
-- [ ] Adapt `SurfaceRenderer` and `OffscreenRenderer` as first-party wrappers.
-- [ ] Add dependency negatives and focused render-contract tests.
+- [x] Keep surface creation, device creation, background choice/final
+      composition, camera gestures, tools, and UI outside the crate.
+- [x] Adapt `SurfaceRenderer` and `OffscreenRenderer` as first-party wrappers.
+- [x] Add dependency negatives and focused render-contract tests.
 
 Gate: first-party pixels and render accounting remain qualified, while an
 external-style caller can render the same world into its own texture without a
 surface or synchronous mechanical readback.
+
+Implementation checkpoint, 2026-07-24: `GpuBodyWorld` and
+`GpuParticleWorld` no longer accept a target format or construct presentation
+pipelines. They expose a lifetime-bound, read-only same-device `RenderView`.
+The new maintained `physbox-render` crate owns body, grab, particle, and
+optional PhysBox background rendering while the caller chooses the target,
+extent, view transform, load/clear policy, encoder, submission, and
+composition. First-party host, benchmark, and evidence paths now compose that
+renderer explicitly.
+
+The complete 207-test engine library lane, both production and solver-lab
+compile lanes, the particle pixel-order regression, focused renderer tests,
+dependency negatives, and warnings-denied all-feature clippy pass. Mechanical
+dispatch code, defaults, scenario projection, and GPU state layouts are
+unchanged.
 
 ### S36.6 — External-consumer proof and API documentation
 

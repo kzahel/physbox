@@ -5,15 +5,14 @@ use physbox_contracts::{
     ScheduledBodyCommandV1, Validate, Vec2, canonical_hash,
 };
 use physbox_launch::{ValidationScenario, WorldCapacityPreset};
+use physbox_render::{PhysicsRenderer, RenderOptions, RenderTarget, SurfacePreview, ViewTransform};
 
 #[cfg(feature = "box2d-comparator")]
 use crate::comparison::{ComparisonRenderPlan, ComparisonShadow};
 use crate::{
     AdapterDiagnostics, BODY_COMMAND_CAPACITY, BoundedBodyCommands, Camera2d, EngineConfig,
     FrameInput, GpuSolverSchedulingPolicyV1, InputEvent, PointerButton, PointerPhase, StepRequest,
-    body_world::{
-        BodyCommandStepRange, BodyRenderPlan, BodyStepPlan, GpuBodyWorld, SurfacePreview,
-    },
+    body_world::{BodyCommandStepRange, BodyStepPlan, GpuBodyWorld},
     clock::{InteractiveClockInput, SimulationClock},
     construction::{
         BoundedConstructionIntents, CONSTRUCTION_INTENT_CAPACITY, empty_construction_intent_batch,
@@ -204,23 +203,15 @@ fn configured_camera(scenario: ValidationScenario) -> Camera2d {
 
 fn profiled_generated_world(
     device: &wgpu::Device,
-    color_format: wgpu::TextureFormat,
     scenario: &ScenarioV1,
     profile: &crate::SolverProfileConfig,
     world_capacity: WorldCapacityPreset,
 ) -> Result<GpuBodyWorld, String> {
-    GpuBodyWorld::new_generated_with_solver_profile(
-        device,
-        color_format,
-        scenario,
-        world_capacity,
-        profile,
-    )
+    GpuBodyWorld::new_generated_with_solver_profile(device, scenario, world_capacity, profile)
 }
 
 fn profiled_generated_world_with_scheduling(
     device: &wgpu::Device,
-    color_format: wgpu::TextureFormat,
     scenario: &ScenarioV1,
     profile: &crate::SolverProfileConfig,
     world_capacity: WorldCapacityPreset,
@@ -229,24 +220,16 @@ fn profiled_generated_world_with_scheduling(
     if !profile.is_selected() {
         return GpuBodyWorld::new_generated_with_solver_profile(
             device,
-            color_format,
             scenario,
             world_capacity,
             profile,
         );
     }
-    GpuBodyWorld::new_generated_with_scheduling(
-        device,
-        color_format,
-        scenario,
-        world_capacity,
-        scheduling,
-    )
+    GpuBodyWorld::new_generated_with_scheduling(device, scenario, world_capacity, scheduling)
 }
 
 fn profiled_generated_world_with_contact_policy(
     device: &wgpu::Device,
-    color_format: wgpu::TextureFormat,
     scenario: &ScenarioV1,
     profile: &crate::SolverProfileConfig,
     world_capacity: WorldCapacityPreset,
@@ -255,19 +238,12 @@ fn profiled_generated_world_with_contact_policy(
     if !profile.is_selected() {
         return GpuBodyWorld::new_generated_with_solver_profile(
             device,
-            color_format,
             scenario,
             world_capacity,
             profile,
         );
     }
-    GpuBodyWorld::new_generated_with_contact_policy(
-        device,
-        color_format,
-        scenario,
-        world_capacity,
-        identity,
-    )
+    GpuBodyWorld::new_generated_with_contact_policy(device, scenario, world_capacity, identity)
 }
 
 struct PreparedBodyCommands {
@@ -388,8 +364,8 @@ impl BodyInteractionState {
         self.active_pointer
             .filter(|active| active.tool == WorkbenchTool::Surface && self.physbox_commands_enabled)
             .map(|active| SurfacePreview {
-                start: active.down_target,
-                end: active.current_target,
+                start: [active.down_target.x, active.down_target.y],
+                end: [active.current_target.x, active.current_target.y],
             })
     }
 
@@ -957,6 +933,7 @@ pub struct EngineHost {
     solver_bind_group: Option<wgpu::BindGroup>,
     solver_executed: bool,
     body_world: Option<GpuBodyWorld>,
+    body_renderer: Option<PhysicsRenderer>,
     #[cfg(feature = "box2d-comparator")]
     comparison_shadow: ComparisonShadow,
     selected_engine: ComparisonEngine,
@@ -1124,7 +1101,6 @@ impl EngineHost {
             ValidationScenario::LiquidSandbox => Some(
                 GpuBodyWorld::new_coupled_with_solver_profile(
                     device,
-                    color_format,
                     coupled_scenario
                         .as_ref()
                         .expect("liquid launch owns a coupled scenario"),
@@ -1135,7 +1111,7 @@ impl EngineHost {
                 .expect("engine-owned coupled GPU world is valid"),
             ),
             ValidationScenario::BodyFreeFlight => Some(
-                GpuBodyWorld::new(device, color_format, &scenario)
+                GpuBodyWorld::new(device, &scenario)
                     .expect("engine-owned body free-flight GPU world is valid"),
             ),
             ValidationScenario::Bootstrap
@@ -1147,7 +1123,6 @@ impl EngineHost {
             | ValidationScenario::RectangleBucket100 => Some(
                 profiled_generated_world(
                     device,
-                    color_format,
                     &scenario,
                     &config.solver_profile,
                     config.world_capacity,
@@ -1163,7 +1138,6 @@ impl EngineHost {
                     };
                 let world = profiled_generated_world_with_scheduling(
                     device,
-                    color_format,
                     &scenario,
                     &config.solver_profile,
                     config.world_capacity,
@@ -1182,7 +1156,6 @@ impl EngineHost {
                 Some(
                     profiled_generated_world_with_contact_policy(
                         device,
-                        color_format,
                         &scenario,
                         &config.solver_profile,
                         config.world_capacity,
@@ -1200,7 +1173,6 @@ impl EngineHost {
             | ValidationScenario::SolverLabStack16 => Some(
                 profiled_generated_world(
                     device,
-                    color_format,
                     &scenario,
                     &config.solver_profile,
                     config.world_capacity,
@@ -1209,6 +1181,10 @@ impl EngineHost {
             ),
             _ => None,
         };
+        let body_renderer = body_world.as_ref().map(|world| {
+            PhysicsRenderer::new(device, color_format, world.render_view())
+                .expect("engine-owned GPU world has a compatible render view")
+        });
         let scenario_hash = coupled_scenario.as_ref().map_or_else(
             || canonical_hash(&scenario).expect("engine-owned scenario hash is valid"),
             |coupled| canonical_hash(coupled).expect("engine-owned coupled scenario hash is valid"),
@@ -1298,6 +1274,7 @@ impl EngineHost {
             solver_bind_group,
             solver_executed: false,
             body_world,
+            body_renderer,
             #[cfg(feature = "box2d-comparator")]
             comparison_shadow,
             selected_engine: ComparisonEngine::default(),
@@ -1742,7 +1719,7 @@ impl EngineHost {
                     },
                 );
             }
-        } else if let Some(world) = &self.body_world {
+        } else if self.body_world.is_some() {
             let grab_pointer_active = self
                 .body_interaction
                 .as_ref()
@@ -1760,24 +1737,35 @@ impl EngineHost {
                 .saturating_mul(SLEEP_WAKE_FLASH_MILLISECONDS)
                 .div_ceil(1_000)
                 .max(1);
-            world.encode_render_with_timestamp(
-                context.queue,
-                context.encoder,
-                context.world_target,
-                BodyRenderPlan {
-                    frame_index: self.frame_index,
-                    camera: camera_frame,
-                    grab_pointer_active,
-                    surface_preview,
-                    sleep_visuals_enabled: self.ui.sleep_visuals_enabled(),
-                    current_outer_step: self.fixed_steps_total.saturating_add(u64::from(steps))
-                        as u32,
-                    quiet_outer_steps,
-                    wake_flash_outer_steps,
-                    ending_timestamp: None,
-                    frame_timestamps,
-                },
-            );
+            self.body_renderer
+                .as_ref()
+                .expect("GPU body world owns a compatible reusable renderer")
+                .encode(
+                    context.queue,
+                    context.encoder,
+                    RenderTarget {
+                        color_view: context.world_target.color_view,
+                        size: context.world_target.size,
+                    },
+                    RenderOptions {
+                        frame_index: self.frame_index,
+                        view: ViewTransform {
+                            center: camera_frame.center(),
+                            half_extents: camera_frame.half_extents(),
+                        },
+                        grab_pointer_active,
+                        surface_preview,
+                        sleep_visuals_enabled: self.ui.sleep_visuals_enabled(),
+                        current_outer_step: self.fixed_steps_total.saturating_add(u64::from(steps))
+                            as u32,
+                        quiet_outer_steps,
+                        wake_flash_outer_steps,
+                        body_timestamp: frame_timestamps
+                            .map(GpuFrameTimestampPlan::body_render_timestamp),
+                        ..RenderOptions::default()
+                    },
+                )
+                .expect("engine-owned world render plan is valid");
         } else {
             let mut pass = context
                 .encoder
@@ -2835,7 +2823,10 @@ mod body_interaction_tests {
         interaction.capture_pointer_events(&[pointer(1, PointerPhase::Move, end)]);
         assert_eq!(
             interaction.surface_preview(),
-            Some(SurfacePreview { start, end })
+            Some(SurfacePreview {
+                start: [start.x, start.y],
+                end: [end.x, end.y],
+            })
         );
 
         interaction.capture_pointer_events(&[pointer(1, PointerPhase::Up, end)]);

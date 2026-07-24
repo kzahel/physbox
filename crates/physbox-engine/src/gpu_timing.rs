@@ -38,6 +38,14 @@ impl<'a> GpuFrameTimestampPlan<'a> {
         self.marker(3)
     }
 
+    pub(crate) const fn body_render_timestamp(self) -> physbox_render::BodyRenderTimestamp<'a> {
+        let marker = self.body_render_end();
+        physbox_render::BodyRenderTimestamp {
+            query_set: marker.query_set,
+            query_index: marker.query_index,
+        }
+    }
+
     pub(crate) const fn particle_render_end(self) -> GpuTimestampMarker<'a> {
         self.marker(4)
     }

@@ -1472,6 +1472,7 @@ dependencies = [
  "physbox-box2d-comparator",
  "physbox-contracts",
  "physbox-launch",
+ "physbox-render",
  "physbox-sim",
  "physbox-ui",
  "pollster",
@@ -1546,6 +1547,16 @@ dependencies = [
  "physbox-engine",
  "physbox-particle-oracle-common",
  "serde_json",
+]
+
+[[package]]
+name = "physbox-render"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "physbox-contracts",
+ "physbox-sim",
+ "wgpu",
 ]
 
 [[package]]

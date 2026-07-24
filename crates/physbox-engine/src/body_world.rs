@@ -5,7 +5,7 @@ use std::mem::size_of;
 use bytemuck::{Pod, Zeroable};
 use physbox_contracts::{
     BodyCommandBatchV1, BodyLayoutV1, CapacityRecordV1, ConstructionIntentBatchV1,
-    ContactIdentityPolicyV1, GrabIntentBatchV1, ScenarioV1, Validate, Vec2,
+    ContactIdentityPolicyV1, GrabIntentBatchV1, ScenarioV1, Validate,
 };
 use physbox_sim::{FluidSolidCouplingQuality, WorldCapacity as WorldCapacityPreset};
 use wgpu::util::DeviceExt;
@@ -18,14 +18,15 @@ use crate::body_state::{
     ACTIVE_BODY_DISPATCH_64_OFFSET, ACTIVE_BODY_DRAW_OFFSET, BODY_COMMAND_BYTES,
     BODY_COMMAND_CAPACITY, GpuBodyResetData,
 };
+#[cfg(test)]
+use crate::construction::CONSTRUCTION_SURFACE_HALF_THICKNESS;
 use crate::construction::{
     CONSTRUCTION_CIRCLE_INVERSE_INERTIA, CONSTRUCTION_CIRCLE_INVERSE_MASS,
     CONSTRUCTION_CIRCLE_RADIUS, CONSTRUCTION_FRICTION, CONSTRUCTION_INTENT_BYTES,
     CONSTRUCTION_INTENT_CAPACITY, CONSTRUCTION_RECTANGLE_HALF_EXTENTS,
     CONSTRUCTION_RECTANGLE_INVERSE_INERTIA, CONSTRUCTION_RECTANGLE_INVERSE_MASS,
-    CONSTRUCTION_RESTITUTION, CONSTRUCTION_STATE_BYTES, CONSTRUCTION_SURFACE_HALF_THICKNESS,
-    ConstructionIntentRaw, construction_intent_raw, empty_construction_intent_batch,
-    initial_construction_state,
+    CONSTRUCTION_RESTITUTION, CONSTRUCTION_STATE_BYTES, ConstructionIntentRaw,
+    construction_intent_raw, empty_construction_intent_batch, initial_construction_state,
 };
 use crate::gpu_timing::{GpuFrameTimestampPlan, write_timestamp_marker};
 use crate::grab::{
@@ -41,23 +42,12 @@ use crate::{
 
 const COMMAND_PARAMETER_STRIDE: usize = 256;
 const CONSTRUCTION_PARAMETER_STRIDE: usize = 256;
-const GRAB_RENDER_VERTEX_COUNT: u32 = 12;
-const GRAB_RENDER_VERTEX_BYTES: u32 = GRAB_RENDER_VERTEX_COUNT * 16;
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
 struct IntegrationParamsRaw {
     dt_gravity: [f32; 4],
     counts: [u32; 4],
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
-struct RenderParamsRaw {
-    viewport: [f32; 4],
-    camera: [f32; 4],
-    sleep_visualization: [u32; 4],
-    world_bounds: [f32; 4],
 }
 
 #[repr(C)]
@@ -93,25 +83,6 @@ pub(crate) struct BodyStepPlan<'a> {
     pub(crate) frame_timestamps: Option<GpuFrameTimestampPlan<'a>>,
 }
 
-pub(crate) struct BodyRenderPlan<'a> {
-    pub(crate) frame_index: u64,
-    pub(crate) camera: crate::CameraFrame2d,
-    pub(crate) grab_pointer_active: bool,
-    pub(crate) surface_preview: Option<SurfacePreview>,
-    pub(crate) sleep_visuals_enabled: bool,
-    pub(crate) current_outer_step: u32,
-    pub(crate) quiet_outer_steps: u32,
-    pub(crate) wake_flash_outer_steps: u32,
-    pub(crate) ending_timestamp: Option<(&'a wgpu::QuerySet, u32)>,
-    pub(crate) frame_timestamps: Option<GpuFrameTimestampPlan<'a>>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) struct SurfacePreview {
-    pub(crate) start: Vec2,
-    pub(crate) end: Vec2,
-}
-
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GpuConstructionBodySlotEvidence {
@@ -140,14 +111,6 @@ pub(crate) struct GpuBodyWorld {
     construction_bind_group: wgpu::BindGroup,
     construction_pipeline: wgpu::ComputePipeline,
     body_lifecycle: GpuBodyLifecycle,
-    grab_render_vertices: wgpu::Buffer,
-    grab_render_bind_group: wgpu::BindGroup,
-    grab_render_prepare_pipeline: wgpu::ComputePipeline,
-    render_params: wgpu::Buffer,
-    render_bind_group: wgpu::BindGroup,
-    background_pipeline: wgpu::RenderPipeline,
-    body_pipeline: wgpu::RenderPipeline,
-    grab_pipeline: wgpu::RenderPipeline,
     floor_solver: Option<GpuFixedFloorSolver>,
     generated_contacts: Option<GpuGeneratedContactGraph>,
     particles: Option<GpuParticleWorld>,
@@ -192,15 +155,10 @@ impl GeneratedContactBuildOptions {
 }
 
 impl GpuBodyWorld {
-    pub(crate) fn new(
-        device: &wgpu::Device,
-        color_format: wgpu::TextureFormat,
-        scenario: &ScenarioV1,
-    ) -> Result<Self, String> {
+    pub(crate) fn new(device: &wgpu::Device, scenario: &ScenarioV1) -> Result<Self, String> {
         let fixed_step_hz = scenario_fixed_step_hz(scenario)?;
         Self::new_with_generated_contacts(
             device,
-            color_format,
             scenario,
             WorldCapacityPreset::default(),
             GeneratedContactBuildOptions::disabled(fixed_step_hz),
@@ -211,7 +169,6 @@ impl GpuBodyWorld {
     #[cfg(test)]
     pub(crate) fn new_generated(
         device: &wgpu::Device,
-        color_format: wgpu::TextureFormat,
         scenario: &ScenarioV1,
         world_capacity: WorldCapacityPreset,
     ) -> Result<Self, String> {
@@ -219,7 +176,6 @@ impl GpuBodyWorld {
         let scheduling_policy = selected_interactive_scheduling(scenario, world_capacity)?;
         Self::new_with_generated_contacts(
             device,
-            color_format,
             scenario,
             world_capacity,
             GeneratedContactBuildOptions::selected(scheduling_policy, fixed_step_hz),
@@ -229,7 +185,6 @@ impl GpuBodyWorld {
 
     pub(crate) fn new_generated_with_scheduling(
         device: &wgpu::Device,
-        color_format: wgpu::TextureFormat,
         scenario: &ScenarioV1,
         world_capacity: WorldCapacityPreset,
         scheduling_policy: GpuSolverSchedulingPolicyV1,
@@ -237,7 +192,6 @@ impl GpuBodyWorld {
         let fixed_step_hz = scenario_fixed_step_hz(scenario)?;
         Self::new_with_generated_contacts(
             device,
-            color_format,
             scenario,
             world_capacity,
             GeneratedContactBuildOptions::selected(scheduling_policy, fixed_step_hz),
@@ -247,7 +201,6 @@ impl GpuBodyWorld {
 
     pub(crate) fn new_generated_with_contact_policy(
         device: &wgpu::Device,
-        color_format: wgpu::TextureFormat,
         scenario: &ScenarioV1,
         world_capacity: WorldCapacityPreset,
         identity_policy: ContactIdentityPolicyV1,
@@ -256,7 +209,6 @@ impl GpuBodyWorld {
         let scheduling_policy = selected_interactive_scheduling(scenario, world_capacity)?;
         Self::new_with_generated_contacts(
             device,
-            color_format,
             scenario,
             world_capacity,
             GeneratedContactBuildOptions {
@@ -270,7 +222,6 @@ impl GpuBodyWorld {
 
     pub(crate) fn new_generated_with_solver_profile(
         device: &wgpu::Device,
-        color_format: wgpu::TextureFormat,
         scenario: &ScenarioV1,
         world_capacity: WorldCapacityPreset,
         profile: &crate::SolverProfileConfig,
@@ -286,7 +237,6 @@ impl GpuBodyWorld {
             let scheduling_policy = selected_interactive_scheduling(scenario, world_capacity)?;
             return Self::new_with_generated_contacts(
                 device,
-                color_format,
                 scenario,
                 world_capacity,
                 GeneratedContactBuildOptions {
@@ -306,7 +256,6 @@ impl GpuBodyWorld {
         );
         Self::new_with_generated_contacts(
             device,
-            color_format,
             scenario,
             world_capacity,
             GeneratedContactBuildOptions {
@@ -326,7 +275,6 @@ impl GpuBodyWorld {
 
     pub(crate) fn new_coupled_with_solver_profile(
         device: &wgpu::Device,
-        color_format: wgpu::TextureFormat,
         scenario: &physbox_contracts::CoupledScenarioV1,
         world_capacity: WorldCapacityPreset,
         profile: &crate::SolverProfileConfig,
@@ -359,7 +307,6 @@ impl GpuBodyWorld {
         };
         Self::new_with_generated_contacts(
             device,
-            color_format,
             &scenario.rigid,
             world_capacity,
             GeneratedContactBuildOptions {
@@ -376,7 +323,6 @@ impl GpuBodyWorld {
 
     fn new_with_generated_contacts(
         device: &wgpu::Device,
-        color_format: wgpu::TextureFormat,
         scenario: &ScenarioV1,
         world_capacity: WorldCapacityPreset,
         options: GeneratedContactBuildOptions,
@@ -452,7 +398,7 @@ impl GpuBodyWorld {
             })
             .transpose()?;
         let particles = coupled
-            .map(|coupled| GpuParticleWorld::new(device, color_format, coupled, &storage))
+            .map(|coupled| GpuParticleWorld::new(device, coupled, &storage))
             .transpose()?;
         let integration_params = IntegrationParamsRaw {
             dt_gravity: [
@@ -793,191 +739,6 @@ impl GpuBodyWorld {
         let body_lifecycle =
             GpuBodyLifecycle::new(device, &storage, &construction_state, &grab_state)?;
 
-        let render_params = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("physbox5_body_render_params"),
-            size: size_of::<RenderParamsRaw>() as u64,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        let grab_render_vertices = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("physbox5_grab_render_vertices"),
-            size: u64::from(GRAB_RENDER_VERTEX_BYTES),
-            usage: wgpu::BufferUsages::STORAGE
-                | wgpu::BufferUsages::VERTEX
-                | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        let grab_render_prepare_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("physbox5_grab_render_prepare_layout"),
-                entries: &[
-                    storage_entry(0, true, wgpu::ShaderStages::COMPUTE),
-                    storage_entry(1, true, wgpu::ShaderStages::COMPUTE),
-                    storage_entry(2, true, wgpu::ShaderStages::COMPUTE),
-                    uniform_entry(3, wgpu::ShaderStages::COMPUTE),
-                    storage_entry(4, false, wgpu::ShaderStages::COMPUTE),
-                ],
-            });
-        let grab_render_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("physbox5_grab_render_prepare_bind_group"),
-            layout: &grab_render_prepare_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: storage.pose_buffer().as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: storage.metadata_buffer().as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: grab_state.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: render_params.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 4,
-                    resource: grab_render_vertices.as_entire_binding(),
-                },
-            ],
-        });
-        let grab_render_prepare_shader =
-            device.create_shader_module(wgpu::ShaderModuleDescriptor {
-                label: Some("physbox5_grab_render_prepare_shader"),
-                source: wgpu::ShaderSource::Wgsl(include_str!("grab_render_prepare.wgsl").into()),
-            });
-        let grab_render_prepare_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("physbox5_grab_render_prepare_pipeline_layout"),
-                bind_group_layouts: &[&grab_render_prepare_layout],
-                push_constant_ranges: &[],
-            });
-        let grab_render_prepare_pipeline =
-            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                label: Some("physbox5_grab_render_prepare_pipeline"),
-                layout: Some(&grab_render_prepare_pipeline_layout),
-                module: &grab_render_prepare_shader,
-                entry_point: Some("prepare_grab_vertices"),
-                compilation_options: Default::default(),
-                cache: None,
-            });
-        let render_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("physbox5_body_render_layout"),
-            entries: &[
-                storage_entry(0, true, wgpu::ShaderStages::VERTEX),
-                storage_entry(1, true, wgpu::ShaderStages::VERTEX),
-                storage_entry(2, true, wgpu::ShaderStages::VERTEX),
-                uniform_entry(3, wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT),
-                storage_entry(4, true, wgpu::ShaderStages::VERTEX),
-                storage_entry(5, true, wgpu::ShaderStages::VERTEX),
-                storage_entry(6, true, wgpu::ShaderStages::VERTEX),
-            ],
-        });
-        let render_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("physbox5_body_render_bind_group"),
-            layout: &render_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: storage.pose_buffer().as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: storage.properties_buffer().as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: storage.metadata_buffer().as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: render_params.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 4,
-                    resource: storage.active_body_buffer().as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 5,
-                    resource: storage.sleep_state_buffer().as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 6,
-                    resource: grab_state.as_entire_binding(),
-                },
-            ],
-        });
-        let render_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("physbox5_body_render_shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("body_render.wgsl").into()),
-        });
-        let render_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("physbox5_body_render_pipeline_layout"),
-                bind_group_layouts: &[&render_layout],
-                push_constant_ranges: &[],
-            });
-        let pipeline = |label, vertex, fragment, blend, buffers| {
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some(label),
-                layout: Some(&render_pipeline_layout),
-                vertex: wgpu::VertexState {
-                    module: &render_shader,
-                    entry_point: Some(vertex),
-                    buffers,
-                    compilation_options: Default::default(),
-                },
-                fragment: Some(wgpu::FragmentState {
-                    module: &render_shader,
-                    entry_point: Some(fragment),
-                    targets: &[Some(wgpu::ColorTargetState {
-                        format: color_format,
-                        blend,
-                        write_mask: wgpu::ColorWrites::ALL,
-                    })],
-                    compilation_options: Default::default(),
-                }),
-                primitive: wgpu::PrimitiveState::default(),
-                depth_stencil: None,
-                multisample: wgpu::MultisampleState::default(),
-                multiview: None,
-                cache: None,
-            })
-        };
-        let background_pipeline = pipeline(
-            "physbox5_body_background_pipeline",
-            "background_vertex",
-            "background_fragment",
-            None,
-            &[],
-        );
-        let body_pipeline = pipeline(
-            "physbox5_body_render_pipeline",
-            "body_vertex",
-            "body_fragment",
-            Some(wgpu::BlendState::ALPHA_BLENDING),
-            &[],
-        );
-        let grab_vertex_layout = wgpu::VertexBufferLayout {
-            array_stride: 16,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &[wgpu::VertexAttribute {
-                format: wgpu::VertexFormat::Float32x4,
-                offset: 0,
-                shader_location: 0,
-            }],
-        };
-        let grab_pipeline = pipeline(
-            "physbox5_grab_render_pipeline",
-            "grab_vertex",
-            "grab_fragment",
-            Some(wgpu::BlendState::ALPHA_BLENDING),
-            &[grab_vertex_layout],
-        );
-
         Ok(Self {
             storage,
             integration_bind_group,
@@ -994,14 +755,6 @@ impl GpuBodyWorld {
             construction_bind_group,
             construction_pipeline,
             body_lifecycle,
-            grab_render_vertices,
-            grab_render_bind_group,
-            grab_render_prepare_pipeline,
-            render_params,
-            render_bind_group,
-            background_pipeline,
-            body_pipeline,
-            grab_pipeline,
             floor_solver,
             generated_contacts,
             particles,
@@ -1355,104 +1108,18 @@ impl GpuBodyWorld {
         Ok(capacity)
     }
 
-    pub(crate) fn encode_render_with_timestamp(
-        &self,
-        queue: &wgpu::Queue,
-        encoder: &mut wgpu::CommandEncoder,
-        target: crate::renderer::RenderFrameTarget<'_>,
-        plan: BodyRenderPlan<'_>,
-    ) {
-        let params = RenderParamsRaw {
-            viewport: [
-                target.size[0] as f32,
-                target.size[1] as f32,
-                target.size[0] as f32 / target.size[1].max(1) as f32,
-                plan.frame_index as f32,
-            ],
-            camera: [
-                plan.camera.center()[0],
-                plan.camera.center()[1],
-                plan.camera.half_extents()[0],
-                plan.camera.half_extents()[1],
-            ],
-            sleep_visualization: [
-                u32::from(plan.sleep_visuals_enabled),
-                plan.current_outer_step,
-                plan.quiet_outer_steps,
-                plan.wake_flash_outer_steps,
-            ],
-            world_bounds: [KILL_ZONE_Y, 0.0, 0.0, 0.0],
-        };
-        queue.write_buffer(&self.render_params, 0, bytemuck::bytes_of(&params));
-        let surface_preview_active = plan.surface_preview.is_some_and(|preview| {
-            let Some(vertices) = surface_preview_vertices(preview) else {
-                return false;
-            };
-            queue.write_buffer(
-                &self.grab_render_vertices,
-                0,
-                bytemuck::cast_slice(&vertices),
-            );
-            true
-        });
-        if plan.grab_pointer_active {
-            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("physbox5_grab_render_prepare_pass"),
-                timestamp_writes: None,
-            });
-            pass.set_pipeline(&self.grab_render_prepare_pipeline);
-            pass.set_bind_group(0, &self.grab_render_bind_group, &[]);
-            pass.dispatch_workgroups(1, 1, 1);
-        }
-        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("physbox5_body_render_pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: target.color_view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color {
-                        r: 0.008,
-                        g: 0.015,
-                        b: 0.035,
-                        a: 1.0,
-                    }),
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: None,
-            timestamp_writes: plan.ending_timestamp.map(|(query_set, end)| {
-                wgpu::RenderPassTimestampWrites {
-                    query_set,
-                    beginning_of_pass_write_index: None,
-                    end_of_pass_write_index: Some(end),
-                }
-            }),
-            occlusion_query_set: None,
-        });
-        pass.set_bind_group(0, &self.render_bind_group, &[]);
-        pass.set_pipeline(&self.background_pipeline);
-        pass.draw(0..3, 0..1);
-        pass.set_pipeline(&self.body_pipeline);
-        pass.draw_indirect(self.storage.active_body_buffer(), ACTIVE_BODY_DRAW_OFFSET);
-        if plan.grab_pointer_active {
-            pass.set_pipeline(&self.grab_pipeline);
-            pass.set_vertex_buffer(0, self.grab_render_vertices.slice(..));
-            pass.draw(0..GRAB_RENDER_VERTEX_COUNT, 0..1);
-        } else if surface_preview_active {
-            pass.set_pipeline(&self.grab_pipeline);
-            pass.set_vertex_buffer(0, self.grab_render_vertices.slice(..));
-            pass.draw(0..6, 0..1);
-        }
-        drop(pass);
-        write_timestamp_marker(
-            encoder,
-            plan.frame_timestamps
-                .map(GpuFrameTimestampPlan::body_render_end),
-            "physbox5_frame_timing_body_render_end",
-        );
-        if let Some(particles) = &self.particles {
-            particles.encode_render(queue, encoder, target, plan.camera, plan.frame_index, false);
-        }
+    pub(crate) fn render_view(&self) -> physbox_sim::RenderView<'_> {
+        physbox_sim::RenderView::from_raw_parts(
+            self.storage.pose_buffer(),
+            self.storage.properties_buffer(),
+            self.storage.metadata_buffer(),
+            self.storage.active_body_buffer(),
+            self.storage.sleep_state_buffer(),
+            &self.grab_state,
+            ACTIVE_BODY_DRAW_OFFSET,
+            KILL_ZONE_Y,
+            self.particles.as_ref().map(GpuParticleWorld::render_view),
+        )
     }
 
     pub(crate) const fn initial_body_count(&self) -> u32 {
@@ -1602,7 +1269,7 @@ impl GpuBodyWorld {
             .copy_sleep_cycle_metrics(encoder, destination)
     }
 
-    pub(crate) fn benchmark_capacities(&self, width: u32, height: u32) -> Vec<CapacityRecordV1> {
+    pub(crate) fn benchmark_capacities(&self, _width: u32, _height: u32) -> Vec<CapacityRecordV1> {
         let mut records = vec![
             CapacityRecordV1 {
                 class: "body-command-parameters".to_owned(),
@@ -1664,14 +1331,6 @@ impl GpuBodyWorld {
                 overflowed: false,
             },
             CapacityRecordV1 {
-                class: "grab-render-vertices".to_owned(),
-                capacity_elements: u64::from(GRAB_RENDER_VERTEX_COUNT),
-                used_elements: u64::from(GRAB_RENDER_VERTEX_COUNT),
-                allocated_bytes: u64::from(GRAB_RENDER_VERTEX_BYTES),
-                high_water_bytes: u64::from(GRAB_RENDER_VERTEX_BYTES),
-                overflowed: false,
-            },
-            CapacityRecordV1 {
                 class: "grab-parameters".to_owned(),
                 capacity_elements: 1,
                 used_elements: 1,
@@ -1685,14 +1344,6 @@ impl GpuBodyWorld {
                 used_elements: 1,
                 allocated_bytes: size_of::<IntegrationParamsRaw>() as u64,
                 high_water_bytes: size_of::<IntegrationParamsRaw>() as u64,
-                overflowed: false,
-            },
-            CapacityRecordV1 {
-                class: "body-render-parameters".to_owned(),
-                capacity_elements: 1,
-                used_elements: 1,
-                allocated_bytes: size_of::<RenderParamsRaw>() as u64,
-                high_water_bytes: size_of::<RenderParamsRaw>() as u64,
                 overflowed: false,
             },
             CapacityRecordV1 {
@@ -1711,14 +1362,6 @@ impl GpuBodyWorld {
             self.storage.sleep_wake_capacity_record(),
             self.storage.body_capacity_record(),
             self.storage.sleep_state_capacity_record(),
-            CapacityRecordV1 {
-                class: "render-target-rgba8-logical".to_owned(),
-                capacity_elements: u64::from(width) * u64::from(height),
-                used_elements: u64::from(width) * u64::from(height),
-                allocated_bytes: u64::from(width) * u64::from(height) * 4,
-                high_water_bytes: u64::from(width) * u64::from(height) * 4,
-                overflowed: false,
-            },
         ];
         if let Some(generated) = &self.generated_contacts {
             records.push(generated.awake_point_capacity_record());
@@ -2027,48 +1670,6 @@ impl GpuBodyWorld {
             size_of::<[u32; 4]>() as u64,
         );
     }
-}
-
-fn surface_preview_vertices(preview: SurfacePreview) -> Option<[[f32; 4]; 6]> {
-    let delta = [
-        preview.end.x - preview.start.x,
-        preview.end.y - preview.start.y,
-    ];
-    let length = (delta[0] * delta[0] + delta[1] * delta[1]).sqrt();
-    if !length.is_finite() || length < 0.001 {
-        return None;
-    }
-    let perpendicular = [
-        -delta[1] / length * CONSTRUCTION_SURFACE_HALF_THICKNESS,
-        delta[0] / length * CONSTRUCTION_SURFACE_HALF_THICKNESS,
-    ];
-    let start_low = [
-        preview.start.x - perpendicular[0],
-        preview.start.y - perpendicular[1],
-        1.0,
-        1.0,
-    ];
-    let start_high = [
-        preview.start.x + perpendicular[0],
-        preview.start.y + perpendicular[1],
-        1.0,
-        1.0,
-    ];
-    let end_low = [
-        preview.end.x - perpendicular[0],
-        preview.end.y - perpendicular[1],
-        1.0,
-        1.0,
-    ];
-    let end_high = [
-        preview.end.x + perpendicular[0],
-        preview.end.y + perpendicular[1],
-        1.0,
-        1.0,
-    ];
-    Some([
-        start_low, end_low, start_high, start_high, end_low, end_high,
-    ])
 }
 
 fn interactive_body_capacity(
@@ -2416,7 +2017,6 @@ mod tests {
         let scheduling = GpuSolverSchedulingPolicyV1::SELECTED_SMALL_WORLD;
         GpuBodyWorld::new_with_generated_contacts(
             device,
-            wgpu::TextureFormat::Rgba8Unorm,
             scenario,
             WorldCapacityPreset::default(),
             GeneratedContactBuildOptions {
@@ -2466,7 +2066,6 @@ mod tests {
         profile.apply_to_scenario(&mut scenario.rigid).unwrap();
         let standard = GpuBodyWorld::new_coupled_with_solver_profile(
             &device,
-            wgpu::TextureFormat::Rgba8Unorm,
             &scenario,
             WorldCapacityPreset::Slots64,
             &profile,
@@ -2481,7 +2080,6 @@ mod tests {
 
         let stabilized = GpuBodyWorld::new_coupled_with_solver_profile(
             &device,
-            wgpu::TextureFormat::Rgba8Unorm,
             &scenario,
             WorldCapacityPreset::Slots64,
             &profile,
@@ -3128,13 +2726,8 @@ mod tests {
         let (device, queue) =
             pollster::block_on(crate::gpu_context::request_device(&adapter)).unwrap();
         let scenario = crate::p5_2_generated_floor_scenario(8).unwrap();
-        let world = GpuBodyWorld::new_generated(
-            &device,
-            wgpu::TextureFormat::Rgba8Unorm,
-            &scenario,
-            WorldCapacityPreset::default(),
-        )
-        .unwrap();
+        let world = GpuBodyWorld::new_generated(&device, &scenario, WorldCapacityPreset::default())
+            .unwrap();
         assert_eq!(world.body_count, 64);
 
         encode(
@@ -3263,13 +2856,8 @@ mod tests {
         let (device, queue) =
             pollster::block_on(crate::gpu_context::request_device(&adapter)).unwrap();
         let scenario = crate::p5_2_generated_floor_scenario(1).unwrap();
-        let world = GpuBodyWorld::new_generated(
-            &device,
-            wgpu::TextureFormat::Rgba8Unorm,
-            &scenario,
-            WorldCapacityPreset::default(),
-        )
-        .unwrap();
+        let world = GpuBodyWorld::new_generated(&device, &scenario, WorldCapacityPreset::default())
+            .unwrap();
         world.overwrite_body_pose_for_test(&queue, 0, [0.0, KILL_ZONE_Y - 2.0, 0.0, 0.0]);
         world.overwrite_body_pose_for_test(&queue, 1, [0.0, KILL_ZONE_Y - 2.0, 0.0, 0.0]);
         encode(
@@ -3334,13 +2922,9 @@ mod tests {
         let active = read_active_bodies(&device, &queue, &world);
         assert_eq!(&active[20..22], &[0, 1]);
 
-        let exhausted = GpuBodyWorld::new_generated(
-            &device,
-            wgpu::TextureFormat::Rgba8Unorm,
-            &scenario,
-            WorldCapacityPreset::default(),
-        )
-        .unwrap();
+        let exhausted =
+            GpuBodyWorld::new_generated(&device, &scenario, WorldCapacityPreset::default())
+                .unwrap();
         exhausted.overwrite_body_generation_for_test(&queue, 0, u32::MAX);
         exhausted.overwrite_body_pose_for_test(&queue, 0, [0.0, KILL_ZONE_Y - 2.0, 0.0, 0.0]);
         encode(
@@ -3384,13 +2968,8 @@ mod tests {
             pollster::block_on(crate::gpu_context::request_device(&adapter)).unwrap();
         let scenario = crate::p5_2_generated_floor_scenario(1).unwrap();
         let initial_live = scenario.bodies.len() as u32;
-        let world = GpuBodyWorld::new_generated(
-            &device,
-            wgpu::TextureFormat::Rgba8Unorm,
-            &scenario,
-            WorldCapacityPreset::default(),
-        )
-        .unwrap();
+        let world = GpuBodyWorld::new_generated(&device, &scenario, WorldCapacityPreset::default())
+            .unwrap();
         let mut intents = BoundedConstructionIntents::new(CONSTRUCTION_INTENT_CAPACITY).unwrap();
         intents
             .push(ConstructionIntentV1::PlaceCircle {
@@ -3464,13 +3043,8 @@ mod tests {
             pollster::block_on(crate::gpu_context::request_device(&adapter)).unwrap();
         let scenario = crate::p5_2_generated_floor_scenario(1).unwrap();
         let initial_live = scenario.bodies.len() as u32;
-        let world = GpuBodyWorld::new_generated(
-            &device,
-            wgpu::TextureFormat::Rgba8Unorm,
-            &scenario,
-            WorldCapacityPreset::default(),
-        )
-        .unwrap();
+        let world = GpuBodyWorld::new_generated(&device, &scenario, WorldCapacityPreset::default())
+            .unwrap();
         let initial_active = read_active_bodies(&device, &queue, &world);
         let mut intents = BoundedConstructionIntents::new(CONSTRUCTION_INTENT_CAPACITY).unwrap();
         intents
@@ -3531,24 +3105,6 @@ mod tests {
     }
 
     #[test]
-    fn surface_preview_builds_a_bounded_thickness_quad() {
-        let vertices = surface_preview_vertices(SurfacePreview {
-            start: Vec2::new(-1.0, 0.5),
-            end: Vec2::new(1.0, 0.5),
-        })
-        .unwrap();
-        assert_eq!(vertices[0], [-1.0, 0.46, 1.0, 1.0]);
-        assert_eq!(vertices[5], [1.0, 0.54, 1.0, 1.0]);
-        assert!(
-            surface_preview_vertices(SurfacePreview {
-                start: Vec2::ZERO,
-                end: Vec2::ZERO,
-            })
-            .is_none()
-        );
-    }
-
-    #[test]
     fn gpu_construction_capacity_and_generation_failures_are_atomic() {
         let instance = crate::create_instance();
         let adapter = pollster::block_on(crate::gpu_context::request_adapter(&instance, None))
@@ -3556,13 +3112,8 @@ mod tests {
         let (device, queue) =
             pollster::block_on(crate::gpu_context::request_device(&adapter)).unwrap();
         let scenario = crate::p5_2_generated_floor_scenario(2).unwrap();
-        let world = GpuBodyWorld::new_generated(
-            &device,
-            wgpu::TextureFormat::Rgba8Unorm,
-            &scenario,
-            WorldCapacityPreset::default(),
-        )
-        .unwrap();
+        let world = GpuBodyWorld::new_generated(&device, &scenario, WorldCapacityPreset::default())
+            .unwrap();
         let mut fill = BoundedConstructionIntents::new(CONSTRUCTION_INTENT_CAPACITY).unwrap();
         for index in 0..63_u32 {
             fill.push(ConstructionIntentV1::PlaceCircle {
@@ -3594,13 +3145,9 @@ mod tests {
         assert!(!sleep_states[1].awake);
         assert!(sleep_states[63].awake);
 
-        let exhausted = GpuBodyWorld::new_generated(
-            &device,
-            wgpu::TextureFormat::Rgba8Unorm,
-            &scenario,
-            WorldCapacityPreset::default(),
-        )
-        .unwrap();
+        let exhausted =
+            GpuBodyWorld::new_generated(&device, &scenario, WorldCapacityPreset::default())
+                .unwrap();
         let active_before = read_active_bodies(&device, &queue, &exhausted);
         exhausted.overwrite_body_generation_for_test(&queue, 0, u32::MAX);
         let mut erase = BoundedConstructionIntents::new(CONSTRUCTION_INTENT_CAPACITY).unwrap();
@@ -3670,12 +3217,8 @@ mod tests {
         let scenario =
             p5_2_settling_review_scenario(16, P5_2SettlingReviewPolicy::SoftnessOnly).unwrap();
 
-        let product = GpuBodyWorld::new_generated(
-            &device,
-            wgpu::TextureFormat::Rgba8Unorm,
-            &scenario,
-            WorldCapacityPreset::default(),
-        );
+        let product =
+            GpuBodyWorld::new_generated(&device, &scenario, WorldCapacityPreset::default());
         assert!(
             product.as_ref().is_err_and(
                 |error| error == "solver settings differ from the accepted S5.4 baseline"
@@ -3684,7 +3227,6 @@ mod tests {
 
         GpuBodyWorld::new_generated_with_contact_policy(
             &device,
-            wgpu::TextureFormat::Rgba8Unorm,
             &scenario,
             WorldCapacityPreset::default(),
             ContactIdentityPolicyV1::DirectMaximumSeparation,

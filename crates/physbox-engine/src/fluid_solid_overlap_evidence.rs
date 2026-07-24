@@ -293,14 +293,12 @@ fn run_row(
 ) -> Result<GpuFluidSolidOverlapRowV1, String> {
     source.validate().map_err(|error| error.to_string())?;
     let source_hash = canonical_hash(source).map_err(|error| error.to_string())?;
-    let format = wgpu::TextureFormat::Rgba8Unorm;
     let world = match medium {
         FluidSolidOverlapMedium::Dry => {
             let mut scenario = source.dry.clone();
             profile.apply_to_scenario(&mut scenario)?;
             GpuBodyWorld::new_generated_with_solver_profile(
                 device,
-                format,
                 &scenario,
                 WorldCapacityPreset::Slots64,
                 profile,
@@ -311,7 +309,6 @@ fn run_row(
             profile.apply_to_scenario(&mut scenario.rigid)?;
             GpuBodyWorld::new_coupled_with_solver_profile(
                 device,
-                format,
                 &scenario,
                 WorldCapacityPreset::Slots64,
                 profile,
@@ -796,7 +793,9 @@ fn read_post_fluid_candidate_audit(
 fn decode_post_fluid_contact_set(bytes: &[u8]) -> Result<DecodedPostFluidContactSet, String> {
     let capacity_bytes = COLLISION_CAPACITY_COUNTER_BYTES as usize;
     let manifold_bytes = COLLISION_MANIFOLD_BYTES as usize;
-    if bytes.len() < capacity_bytes || (bytes.len() - capacity_bytes) % manifold_bytes != 0 {
+    if bytes.len() < capacity_bytes
+        || !(bytes.len() - capacity_bytes).is_multiple_of(manifold_bytes)
+    {
         return Err("post-fluid candidate audit has an invalid byte count".to_owned());
     }
     let capacity = bytemuck::pod_read_unaligned::<[u32; 4]>(&bytes[..capacity_bytes]);
