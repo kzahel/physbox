@@ -240,6 +240,25 @@ is promising development characterization, not a completeness proof or clean
 acceptance evidence: the audit samples rather than every step and no
 conservative fluid-displacement bound has yet been established.
 
+Clean candidate-B checkpoint, 2026-07-24, source
+`76a77d6a428a652868df382f15809c0e99c25797`: the same-adapter Standard
+artifact
+`/tmp/physbox5-s35-standard-candidate-b-revision-20260724.json` reports
+`14/40` wet-only issue rows across `11/20` source/phase identities and two
+sustained-overlap rows. The Candidate B artifact
+`/tmp/physbox5-s35-stabilized-candidate-b-revision-20260724.json` reports
+`3/40`, `3/20`, and zero respectively. All Candidate B circle-pair,
+three-circle, mixed-pair, and mixed-three-body rows are issue-free; its three
+remaining rows are rectangle re-entry events that recover by the final
+window. Both artifacts pass all 80 rows with finite, capacity-clean state and
+identical clean provenance. Candidate B audits 1,240 sampled corrected
+post-fluid states with zero complete-only misses, zero retained-only
+inconsistencies, and no audit overflow. Its product graph reports 192
+rigid-side dispatches and 819,972 bytes versus Standard's 175 and 819,940:
+the isolated delta is 17 dispatches and 32 bytes. The zero sampled misses are
+strong corpus evidence but remain distinct from a proof covering every
+possible one-step fluid displacement.
+
 Gate: scalar sign/effective-mass checks, GPU finite/capacity checks, dry
 controls, wet two-body rows, and wet multi-body rows pass before performance
 ranking.
