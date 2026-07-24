@@ -38,6 +38,7 @@
     "test:android-tools": "node --test android/*.test.mjs",
     "test:fast": "node scripts/test-fast.mjs",
     "test:perf:smoke": "cargo test --quiet -p physbox-engine --lib --features production-validation performance_smoke -- --nocapture",
+    "measure:coupling:browser": "node scripts/measure-coupling-browser.mjs",
     "test:rust:production": "cargo test --lib --features physbox-engine/production-validation",
     "test:rust:full": "cargo test --workspace",
     "clippy:rust:production": "cargo clippy --all-targets --features physbox-engine/production-validation -- -D warnings",
