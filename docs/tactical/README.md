@@ -214,6 +214,10 @@ unattended through extraction, widget/menu migration, visual changes, and
 cross-host qualification. Those technical slices and their physical
 Quest/AVD evidence now pass; S33 is stopped at its final subjective capture
 review. S33 does not change physics or publish/split the solver.
+Human review on 2026-07-24 opens S34 as a successor presentation-performance
+workstream: one manual shared 100/75/50-percent world render scale, native UI,
+portable composition, explicit timing/reporting, and cross-host qualification.
+It does not expand S33 or change physics, camera, input, or pacing semantics.
 
 Current target supersession, 2026-07-22: the
 [rigid quality target contract](../topics/rigid-quality-targets.md) governs new
@@ -266,6 +270,7 @@ This README remains the unnumbered index.
 | S31 | Coupled liquid sandbox | [031-coupled-liquid-sandbox.md](031-coupled-liquid-sandbox.md) | manual checkpoint; preview mechanics/cross-host lanes and bounded two-target correction pass, measured behavior bands and product/default choices await human review, 2026-07-24 |
 | S32 | Sleeping and exact-grouping default promotion | [032-sleep-default-promotion.md](032-sleep-default-promotion.md) | complete; defaults, migration, opt-outs, native/browser/headless, comparator-feature, ARM64/APK, and physical Quest behavior gates pass, 2026-07-23 |
 | S33 | Presentation foundation and modular canvas UI | [033-presentation-foundation.md](033-presentation-foundation.md) | active; S33.1 clean baseline/provenance and neutral crate boundary pass, 2026-07-23 |
+| S34 | Render resolution scaling | [034-render-resolution-scaling.md](034-render-resolution-scaling.md) | active; contract and implementation direction recorded, 2026-07-24 |
 
 ## Conventions
 

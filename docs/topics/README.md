@@ -41,6 +41,10 @@ a running log.
   boundary, compact icon-toolbar and slider-menu contract, rendering-cost
   constraints, and the intended separation between the sandbox host and future
   publishable simulation/render crates.
+- [Render resolution scaling](render-resolution-scaling.md) — manual
+  100/75/50-percent shared world-render scaling with native-resolution canvas
+  UI, portable composition, launch/persistence ownership, explicit reporting,
+  and cross-host performance qualification.
 - [Rigid quality targets](rigid-quality-targets.md) — current awake stack
   hierarchy: 2/4/8 regression foundation, 12 blocking, 14 stretch, 16 as the
   matched-Box2D frontier diagnostic, and the rule that sleep cannot earn an
