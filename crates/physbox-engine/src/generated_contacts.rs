@@ -58,6 +58,9 @@ const COLLISION_DISPATCHES: u32 = 212;
 const PAIR_SLOT_COLLISION_DISPATCHES: u32 = 15 + PAIR_SLOT_DISPATCHES;
 const BRIDGE_DISPATCHES: u32 = 2;
 const PRODUCT_CANDIDATE_PAIRS_PER_BODY: u32 = 8;
+const POST_FLUID_POSITION_SLOP: f32 = 0.001;
+const POST_FLUID_POSITION_FRACTION: f32 = 0.8;
+const POST_FLUID_MAX_POINT_CORRECTION: f32 = 0.05;
 pub const GPU_GENERATED_CONTACT_BODY_HISTORY_VERSION: u32 = 1;
 #[cfg(not(target_arch = "wasm32"))]
 pub const GPU_GENERATED_CONTACT_PASS_TRACE_VERSION: u32 = 3;
@@ -1473,7 +1476,12 @@ impl PostFluidStabilizer {
                 // One bounded split-impulse-style positional correction is
                 // followed by inward normal-velocity projection only for
                 // points on which that correction activated.
-                tuning: [0.001, 0.8, 0.05, 0.0],
+                tuning: [
+                    POST_FLUID_POSITION_SLOP,
+                    POST_FLUID_POSITION_FRACTION,
+                    POST_FLUID_MAX_POINT_CORRECTION,
+                    0.0,
+                ],
                 counts: [manifold_capacity, storage.layout().capacity_elements, 0, 0],
             }),
             usage: wgpu::BufferUsages::UNIFORM,
@@ -7032,7 +7040,8 @@ mod tests {
     #[cfg(not(feature = "production-validation"))]
     use super::benchmark_gpu_sleeping_city;
     use super::{
-        GpuContactPersistenceTopology, GpuGeneratedContactRunner, SleepPointScanPolicy,
+        GpuContactPersistenceTopology, GpuGeneratedContactRunner, POST_FLUID_MAX_POINT_CORRECTION,
+        POST_FLUID_POSITION_FRACTION, POST_FLUID_POSITION_SLOP, SleepPointScanPolicy,
         product_candidate_capacity,
     };
     use crate::{
@@ -7053,6 +7062,34 @@ mod tests {
         assert_eq!(product_candidate_capacity(100).unwrap(), 800);
         assert_eq!(product_candidate_capacity(10_000).unwrap(), 80_000);
         assert!(product_candidate_capacity(u32::MAX).is_err());
+    }
+
+    #[test]
+    fn post_fluid_scalar_response_pushes_apart_and_projects_only_active_penetration() {
+        let separation = -0.101_f32;
+        let inverse_effective_mass = 2.0_f32;
+        let correction = ((-separation - POST_FLUID_POSITION_SLOP) * POST_FLUID_POSITION_FRACTION)
+            .min(POST_FLUID_MAX_POINT_CORRECTION);
+        let position_lambda = correction / inverse_effective_mass;
+        let body_a_position_delta = -position_lambda;
+        let body_b_position_delta = position_lambda;
+        let corrected_separation = separation + body_b_position_delta - body_a_position_delta;
+        assert!(correction > 0.0);
+        assert!(corrected_separation > separation);
+
+        let body_a_velocity = 1.0_f32;
+        let body_b_velocity = -1.0_f32;
+        let inward_relative_velocity = body_b_velocity - body_a_velocity;
+        let velocity_lambda = (-inward_relative_velocity).max(0.0) / inverse_effective_mass;
+        let projected_a = body_a_velocity - velocity_lambda;
+        let projected_b = body_b_velocity + velocity_lambda;
+        assert!((projected_b - projected_a).abs() <= f32::EPSILON);
+
+        let separated = 0.1_f32;
+        let inactive_correction = ((-separated - POST_FLUID_POSITION_SLOP).max(0.0)
+            * POST_FLUID_POSITION_FRACTION)
+            .min(POST_FLUID_MAX_POINT_CORRECTION);
+        assert_eq!(inactive_correction, 0.0);
     }
 
     #[test]

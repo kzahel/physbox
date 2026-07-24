@@ -156,9 +156,9 @@ observed trial-to-trial sensitivity for candidate comparison.
 
 ### S35.3 — bounded stabilization candidates
 
-- [ ] First compare a post-fluid refresh over the complete portable contact
+- [x] First compare a post-fluid refresh over the complete portable contact
       candidate set plus one position-only nonpenetration iteration.
-- [ ] Prevent immediate re-entry by projecting inward relative contact velocity
+- [x] Prevent immediate re-entry by projecting inward relative contact velocity
       only where the positional recovery activates.
 - [ ] Account separately for candidate generation, narrowphase refresh,
       positional solve, velocity projection, storage, and overflow.
@@ -166,7 +166,7 @@ observed trial-to-trial sensitivity for candidate comparison.
       pre-fluid candidate expansion that proves it misses no accepted
       post-fluid contact. A known-contact-only refresh is diagnostic unless it
       proves complete for the admitted displacement bound.
-- [ ] Stop a candidate immediately if it double-integrates time/gravity,
+- [x] Stop a candidate immediately if it double-integrates time/gravity,
       requires readback, silently drops contacts, or worsens a declared dry
       rigid gate.
 
@@ -181,8 +181,37 @@ narrowphase, and two correction passes. A dirty-tree characterization was
 finite and capacity-clean across all 80 rows and reduced wet issue rows from
 the clean Standard baseline's `17/40` to `1/40`, affected source/phase IDs from
 `12/20` to `1/20`, and sustained-overlap rows from two to zero. That run is
-development evidence only; the checkboxes and gate remain open until the same
-revision has clean Standard/Stabilized artifacts and timing evidence.
+development evidence only; the checkboxes and gate were left open until the
+same revision had clean Standard/Stabilized artifacts and timing evidence.
+
+Clean candidate-A checkpoint, 2026-07-24, source
+`26a95b1f1c28bf2d84a2e399b4d8045d16844f94`: the same adapter/revision
+Standard artifact
+`/tmp/physbox5-s35-standard-overlap-candidate-a-revision-20260724.json`
+records `16/40` wet issue rows, `13/20` affected source/phase IDs, and three
+sustained-overlap rows. The Stabilized artifact
+`/tmp/physbox5-s35-stabilized-overlap-candidate-a-revision-20260724.json`
+records `2/40`, `2/20`, and zero respectively. All circle-pair,
+three-circle, mixed-pair, and mixed-three-body wet rows are issue-free; the
+two remaining rows are rectangle re-entry events that recover by the final
+sample. Both artifacts are `80/80` finite and capacity-clean, source dirty is
+false, and the revision is identical. The Stabilized graph reports 251
+rigid-side dispatches and 819,972 bytes versus Standard's 175 and 819,940:
+the isolated candidate cost is 76 dispatches and 32 bytes. Full-corpus host
+completion was 293.92 seconds versus 308.14 seconds; this noisy fresh-world
+runner rules out a gross host regression but is not a frame-time acceptance
+measurement.
+
+The ordinary fast lane passes in 43.58 seconds, including Browser WebGPU;
+production clippy and the ARM64 release-native APK build pass. A physical
+Pixel 7a/Mali-G710 liquid-sandbox comparison confirms both modes and their
+175/251 dispatch reports. Single timestamp-overlay captures show Standard at
+54 FPS, 90% simulation scale, 6.49 ms rigid, 10.66 ms liquid, and 18.19 ms
+total GPU versus Stabilized at 46 FPS, 78% scale, 6.63 ms rigid, 12.84 ms
+liquid, and 20.50 ms total. These are material regressions, so candidate A
+remains opt-in and is not eligible for default promotion. The failed raw ARM
+`cargo check` that preceded the successful wrapper build lacked the declared
+NDK compiler environment and is not a product failure.
 
 Gate: scalar sign/effective-mass checks, GPU finite/capacity checks, dry
 controls, wet two-body rows, and wet multi-body rows pass before performance
@@ -190,7 +219,7 @@ ranking.
 
 ### S35.4 — quality and cost matrix
 
-- [ ] Compare `standard` and each surviving `stabilized` candidate on the same
+- [x] Compare `standard` and each surviving `stabilized` candidate on the same
       revision and adapter with raw retained samples.
 - [ ] Report dispatch delta, GPU P50/P95/P99 where available, host completion,
       CPU encode/submit, memory, complete work vectors, and cost per simulated
@@ -207,10 +236,10 @@ regression. Cost is reported, not silently normalized away.
 
 ### S35.5 — cross-host qualification
 
-- [ ] Run the ordinary production lane and production clippy.
-- [ ] Produce fresh headless standard/stabilized artifacts with complete
+- [x] Run the ordinary production lane and production clippy.
+- [x] Produce fresh headless standard/stabilized artifacts with complete
       provenance.
-- [ ] Run Browser WebGPU mechanics and the engine-rendered toggle.
+- [x] Run Browser WebGPU mechanics and the engine-rendered toggle.
 - [ ] Run ARM64 Android checks, a release APK, and one physical Android
       mechanics/pixel/pacing comparison; use and shut down the authorized
       hardware-backed AVD only when no device is available.

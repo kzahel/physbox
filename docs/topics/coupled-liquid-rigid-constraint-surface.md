@@ -206,6 +206,13 @@ normal correction and projects inward relative normal velocity only where
 that correction activated. It reuses the rigid contribution buffer, performs
 no second time/gravity integration, and requires no readback. This is an
 experimental behavior selection, not a mechanical or default promotion.
+On the 64-slot/3,952-particle sandbox it raises the rigid/contact graph from
+175 to 251 dispatches while retaining the 92-dispatch particle graph: `+76`,
+or `+28%` across those two graphs. The complete refresh is intentionally the
+quality reference; its SAP rebuild dominates dispatch count. Clean paired
+headless evidence materially improves overlap recovery, but a Pixel 7a
+hardware capture also shows a material interactive cost, so no default
+promotion is authorized.
 
 The S35 permanent baseline corpus now covers isolated circle, three-circle,
 rectangle, mixed-pair, and mixed-three-body construction arrangements across
