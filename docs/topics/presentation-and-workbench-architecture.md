@@ -7,6 +7,12 @@ intended separation between the PhysBox application and a future publishable
 GPU simulation library. It does not itself authorize publishing a crate or
 change physics behavior.
 
+The simulation/render separation proposed here is now specified and authorized
+for local-path consumption by
+[the reusable GPU library boundary](reusable-gpu-library-boundary.md) and
+[S36](../tactical/036-reusable-gpu-library-extraction.md). This topic continues
+to own application composition and presentation.
+
 Authoritative engine direction:
 [one GPU-resident 2D physics world](physbox5-unified-gpu-physics.md).
 Platform ownership:
