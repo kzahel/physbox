@@ -7,8 +7,8 @@ intended separation between the PhysBox application and a future publishable
 GPU simulation library. It does not itself authorize publishing a crate or
 change physics behavior.
 
-The simulation/render separation proposed here is now specified and authorized
-for local-path consumption by
+The physics/application separation proposed here is now specified for
+local-path consumption by
 [the reusable GPU library boundary](reusable-gpu-library-boundary.md) and
 [S36](../tactical/036-reusable-gpu-library-extraction.md). This topic continues
 to own application composition and presentation.
@@ -134,18 +134,14 @@ desktop / browser / Android / headless adapters
              application composition host
                /                    \
               v                      v
-       physbox-ui                 future optional
-     generic canvas UI            physbox-render
-                                    |
-                                    v
-                            future physbox-sim
-                           GPU physics library
+       physbox-ui                physbox-sim
+     generic canvas UI         GPU physics library
 ```
 
-The names `physbox-render` and `physbox-sim` are working architectural names,
-not approved package names. S33 creates only `physbox-ui`. A later dedicated
-design and migration may split rendering and simulation after their GPU
-resource-sharing API is understood.
+`physbox-sim` is now the implemented unpublished local-path physics crate. The
+first-party 2D world renderer remains private to `physbox-engine`; there is no
+public `physbox-render` crate. S33 created only `physbox-ui`, while S36 later
+extracted and then corrected the simulation boundary.
 
 ### `physbox-ui`
 
@@ -201,9 +197,9 @@ The first extraction may retain a product-specific `workbench_ui` module in
 menu using generic widgets rather than reimplementing geometry, hit testing,
 pointer capture, or draw batching.
 
-### Future simulation and rendering crates
+### Physics library and private world rendering
 
-The eventual GPU simulation crate should own the mechanical world, GPU
+The GPU simulation crate owns the mechanical world, GPU
 resource layouts, command encoding, configuration validation, stepping, and
 bounded diagnostics needed to operate it. It should not own:
 
@@ -215,10 +211,11 @@ bounded diagnostics needed to operate it. It should not own:
 - application color choices; or
 - the PhysBox sandbox's scene-selection and review workflow.
 
-A future optional renderer can translate simulation-owned GPU state into body,
-particle, and debug draws without making the simulation depend on the
-workbench. Because the state is GPU resident, this separation requires an
-explicit same-device resource/interoperability contract; it must not introduce
+The first-party engine owns body, particle, and debug drawing. External
+applications implement their own renderers from authored geometry and
+versioned same-device physics observations. The observation contract contains
+physics state only; it does not expose private mechanical layouts or turn the
+simulation into a 2D presentation library. This separation must not introduce
 per-frame CPU body extraction.
 
 Before any crate is actually published, a separate release decision must cover
@@ -383,10 +380,10 @@ equivalence, and violate the fullscreen-canvas browser boundary.
 
 ### Split and publish the complete solver first
 
-Deferred. The simulation/render resource boundary deserves its own design and
-would make this visual work depend on a much larger migration. Extracting
-generic UI now removes a known dependency knot without prematurely freezing
-the physics API.
+Publication remains deferred. S36 extracted an unpublished local-path physics
+crate, but release naming, compatibility, package contents, and stability
+still require a separate decision. Extracting generic UI removed a known
+dependency knot without freezing the physics API.
 
 ### Create a general-purpose application framework
 

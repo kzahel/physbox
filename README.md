@@ -116,18 +116,18 @@ the PhysBox sandbox host:
 ```toml
 [dependencies]
 physbox-sim = { path = "../physbox5/crates/physbox-sim" }
-physbox-render = { path = "../physbox5/crates/physbox-render" }
 ```
 
-These crates remain unpublished and unversioned beyond the current repository
-revision. `physbox-sim` exposes a Box2D-shaped definition/handle/world surface
-with shape-density mass derivation and an optional exact initial mass-data
-override, while retaining caller-owned WGPU submission and asynchronous
-observation.
-`physbox-render` optionally draws the same-device GPU view into a caller-owned
-target; it does not own a surface or presentation loop. Sandbox tools,
-scenario presets, launch policy, UI, and Box2D comparison remain outside the
-supported library surface.
+The crate remains unpublished and unversioned beyond the current repository
+revision. It exposes a Box2D-shaped definition/handle/world surface with
+shape-density mass derivation, an optional exact initial mass-data override,
+caller-owned WGPU submission, a canonical same-device GPU physics
+observation, and asynchronous snapshots.
+
+It exposes no renderer, rendering surface, target, camera, product scene, or
+Box2D comparator. Applications own presentation and may put `physbox-sim`
+behind their own capability-aware physics wrapper alongside an independently
+imported Box2D backend.
 
 See the [reusable library architecture](docs/topics/reusable-gpu-library-boundary.md),
 the [`physbox-sim` contract](crates/physbox-sim/README.md), and the

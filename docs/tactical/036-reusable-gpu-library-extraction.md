@@ -1,11 +1,12 @@
 # S36 — Reusable GPU library extraction
 
-Status: complete 2026-07-24. The real simulation and optional rendering
-libraries, public consumer proof, sibling Quest boundary, first-party
-projection, and proportionate cross-host qualification all pass.
+Status: correction implemented 2026-07-24; final cross-host requalification is
+in progress. The supported consumer result is one physics-only
+`physbox-sim` crate. The initially extracted reusable renderer was rejected and
+removed in S36.8.
 
 Governing architecture:
-[reusable GPU simulation and rendering library boundary](../topics/reusable-gpu-library-boundary.md).
+[reusable GPU physics library boundary](../topics/reusable-gpu-library-boundary.md).
 Authoritative engine direction:
 [one GPU-resident 2D physics world](../topics/physbox5-unified-gpu-physics.md).
 Application composition:
@@ -19,25 +20,27 @@ Performance:
 
 ## Goal
 
-Extract real `physbox-sim` and `physbox-render` workspace crates that an
-independent application can consume by filesystem path. Preserve the existing
-first-party engine and every maintained host while proving a Box2D-shaped
-rigid-world construction/step surface, caller-owned GPU submission, optional
-rendering into a caller-owned texture, supported PhysBox configuration, and
-asynchronous GPU-state observation.
+Extract a real `physbox-sim` workspace crate that an independent application
+can consume by filesystem path. Preserve the existing first-party engine and
+every maintained host while proving a Box2D-shaped rigid-world
+construction/step surface, caller-owned GPU submission, supported PhysBox
+configuration, canonical same-device physics observation, and asynchronous
+snapshots.
 
 The completion proof is a repository-local external-style consumer that has no
 dependency on `physbox-engine`, `physbox-launch`, `physbox-ui`, the Box2D
 comparator, an app crate, or a surface-owning renderer. The separate
-`physbox-quest` repository then consumes the same crates without an upstream
+`physbox-quest` repository then consumes the same crate without an upstream
 Quest dependency.
 
 ## Exclusions
 
-- Do not publish either crate, set `publish = true`, select a crates.io name,
+- Do not publish the crate, set `publish = true`, select a crates.io name,
   or promise semantic-version stability.
 - Do not make `EngineHost`, `SurfaceRenderer`, workbench UI, launch presets,
   scenario catalogs, reports, or the Box2D shadow the reusable API.
+- Do not expose a product/debug renderer, rendering surface, render target,
+  camera, draw contract, or private solver-buffer view.
 - Do not add a CPU product backend, automatic fallback, per-frame mechanical
   readback, or CPU mirror of live body state.
 - Do not introduce a PhysBox-owned generic backend trait for Box2D comparison.
@@ -53,19 +56,18 @@ Quest dependency.
 
 - `physbox-sim` owns mechanical GPU state, command encoding, supported semantic
   configuration, fixed-step admission, stable logical handles, and bounded
-  mechanical diagnostics.
-- `physbox-render` owns optional world rendering from a read-only same-device
-  simulation view into a caller-provided target.
+  mechanical diagnostics and observations.
 - `physbox-engine` owns first-party host composition, scenario projection,
-  tools, camera/input policy, UI, reports, validation, and comparator policy.
+  tools, camera/input policy, world rendering, UI, reports, validation, and
+  comparator policy.
 - `physbox-launch` owns external names, parsing, persistence, and projection
   into simulation configuration; `physbox-sim` may not depend on it.
 - Platform adapters retain lifecycle, surface/target creation, raw event
   collection, native transport, packaging, and presentation only.
 - The caller owns the WGPU device/queue, command encoders, submission,
   surfaces/OpenXR images, and final composition.
-- The simulation-to-render boundary is GPU-to-GPU. No CPU body extraction may
-  become necessary for the next frame.
+- Physics observation may remain GPU-to-GPU. No CPU body extraction may become
+  necessary for the next frame.
 
 ## Unattended execution contract
 
@@ -135,6 +137,10 @@ changed in this slice.
 
 ### S36.3 — Mechanical/render resource separation
 
+Historical intermediate slice, superseded in its public-API aspect by S36.8.
+Separating mechanical and presentation ownership remains correct; making the
+private render-resource bridge a consumer contract does not.
+
 - [x] Remove target color format, body/particle render pipelines, background
       rendering, camera/view state, and visual theme from the mechanical world.
 - [x] Introduce an explicit read-only same-device render view over the minimum
@@ -178,11 +184,11 @@ Temporary hidden re-exports keep engine validation callers source-compatible.
 Engine profile wrappers no longer enter mechanical construction; they project
 once into the semantic `PhysicsConfigurationV3` value.
 
-The public `World` now validates neutral definitions, reserves generational
+The public `World` validates neutral definitions, reserves generational
 body/shape handles, records one fixed outer step into the caller's encoder,
 queues bounded post-initialization construction/destruction through the
-existing GPU command path, exposes bounded counters and a same-device render
-view, and supports an explicitly submitted asynchronous body snapshot. The
+existing GPU command path, exposes bounded counters and canonical physics
+observation, and supports an explicitly submitted asynchronous body snapshot. The
 first-party rigid host projects its authored state through `World`, `BodyDef`,
 and `ShapeDef`, including exact optional mass-property overrides and authored
 initial sleeping state. `ScenarioV1` remains engine-owned for reports,
@@ -191,6 +197,10 @@ retains a private coupled adapter because S36 explicitly does not add a public
 particle-authoring API.
 
 ### S36.5 — Optional reusable renderer
+
+Historical intermediate slice, rejected and reversed by S36.8. These
+checkboxes record what was tried; they do not describe the supported
+architecture.
 
 - [x] Add `physbox-render` with no engine, launch, UI, comparator, shell, or app
       dependency.
@@ -224,12 +234,12 @@ unchanged.
 ### S36.6 — External-consumer proof and API documentation
 
 - [x] Add a non-default workspace example or fixture that depends only on
-      `physbox-sim` and `physbox-render`.
+      `physbox-sim`.
 - [x] Construct a rigid world with Box2D-shaped definitions and stable handles.
 - [x] Record a fixed step into a caller-owned encoder and submit it from the
       consumer.
-- [x] Render into a caller-owned texture and read back only after the bounded
-      proof completes.
+- [x] Observe canonical physics state without constructing any texture,
+      renderer, camera, or surface.
 - [x] Exercise one supported PhysBox quality toggle and one asynchronous
       observation.
 - [x] Document local-path use, current-checkout semantics, device ownership,
@@ -242,17 +252,18 @@ Gate: the proof compiles and runs from public APIs only, produces fresh bounded
 evidence, and no sandbox, launch, scenario, comparator, or surface-owner type
 appears in its dependency graph.
 
-Implementation checkpoint, 2026-07-24: the non-default
-`physbox-external-consumer` package imports only the two reusable PhysBox
-crates. It owns its WGPU lifecycle, disables sleeping through supported
-configuration, constructs a floor and ball, submits one step, draws to a
-transparent caller-owned texture, and completes bounded pixel and body
-readbacks only after submission. Its fresh run emitted
-`PHYSBOX_EXTERNAL_CONSUMER_SUCCESS bodies=2 visible_pixels=254 sleeping=false`.
-The sibling `physbox-quest` repository imports the two crates at
-`../physbox5/crates/{physbox-sim,physbox-render}`, owns its `PhysBoxBackend`
-and entity/handle map, and passes `cargo check` at Quest revision `11dbc7c`.
-PhysBox 5 has no dependency on the sibling repository.
+Corrected implementation checkpoint, 2026-07-24: the non-default
+`physbox-external-consumer` package imports only `physbox-sim`. It owns its
+WGPU lifecycle, disables sleeping through supported configuration, constructs
+a floor and ball, submits four steps, and completes an explicitly requested
+body snapshot. It constructs no renderer, texture, camera, or surface. Its
+fresh run emitted
+`PHYSBOX_EXTERNAL_CONSUMER_SUCCESS bodies=2 steps=4 ball_y=0.876389 sleeping=false`.
+The sibling `physbox-quest` repository imports only
+`../physbox5/crates/physbox-sim`, owns its `PhysBoxBackend` and entity/handle
+map, exposes the canonical GPU physics observation through that adapter, and
+passes `cargo check` at Quest revision `b49f4cf`. PhysBox 5 has no dependency
+on the sibling repository.
 
 ### S36.7 — Cross-host and performance qualification
 
@@ -307,37 +318,70 @@ Final qualification checkpoint, clean code revision `4fef6b8`, 2026-07-24:
   `/tmp/physbox5-s36-final-android-device.png.json`, and stops the product app.
   No AVD was started.
 
+### S36.8 — Physics-only consumer correction
+
+- [x] Delete the standalone `physbox-render` package and its consumer
+      dependency.
+- [x] Return the 2D body/particle/debug renderer and shaders to private
+      `physbox-engine` ownership.
+- [x] Remove `RenderView` and `ParticleRenderView` from the supported
+      `physbox-sim` root API and public rustdoc.
+- [x] Add a versioned canonical `GpuBodyObservation` that projects only pose,
+      motion, generational identity, and public live/sleeping/fixed flags into
+      a dedicated consumer-readable GPU buffer.
+- [x] Keep shape presentation, indirect draw data, target formats, cameras,
+      shaders, and private mechanical layouts out of that observation.
+- [x] Convert the external fixture and sibling Quest adapter to depend only on
+      `physbox-sim`.
+- [x] Update dependency negatives and architecture documentation to reject a
+      reusable PhysBox renderer.
+- [ ] Re-run the full S36.7 cross-host qualification against the corrected
+      boundary.
+
+Gate: an independent physics adapter can create, step, and observe a world
+without importing rendering or first-party application code; public rustdoc
+contains no render-view/product-renderer contract; and the first-party renderer
+continues to behave identically from its private engine owner.
+
+Correction checkpoint, code revision `504e0ff` and Quest revision `b49f4cf`,
+2026-07-24: all focused simulation tests, the no-surface canonical-observation
+integration test, 132 engine tests including the private particle pixel
+regression, the simulation-only external executable, dependency negatives,
+public rustdoc scan, and Quest `cargo check` pass. Final maintained-host
+qualification remains to be recorded below before closing the checkbox.
+
 ## Validation artifacts
 
 Fresh artifacts remain untracked under `/tmp`. They record run ID, source
 revision and dirty state, adapter/host, capture phase, complete scene and
-configuration contract, simulation/render crate versions, WGPU adapter, and
+configuration contract, simulation crate version, WGPU adapter, and
 consumer proof outcome.
 
-The external proof may perform one final bounded readback to validate pixels or
-an asynchronous state snapshot. That flush is evidence after the final
-requested frame, not a product dependency or interactive synchronization
-precedent.
+The external proof may perform one final asynchronous state snapshot. That
+flush is evidence after the final requested frame, not a product dependency or
+interactive synchronization precedent.
 
 ## Completion condition
 
 S36 is complete when:
 
-1. `physbox-sim` and `physbox-render` own the declared production behavior and
-   have enforced dependency boundaries.
-2. `physbox-engine` uses those crates without an alternate mechanical or world
-   rendering implementation.
-3. A public-API-only external fixture constructs, steps, observes, and renders
-   a rigid world with caller-owned GPU lifecycle.
+1. `physbox-sim` owns the declared production mechanics and has an enforced
+   physics-only dependency and API boundary.
+2. `physbox-engine` uses that crate as its mechanical owner and privately owns
+   the first-party world renderer.
+3. A public-API-only external fixture constructs, steps, and observes a rigid
+   world with caller-owned GPU lifecycle and no rendering dependency.
 4. PhysBox 5's maintained native, Browser WebGPU, comparator feature-on/off,
    headless, performance, ARM64, release APK, and physical Android gates pass
    in proportion to the changed boundaries.
 5. The separate Quest consumer can use local path dependencies without an
    upstream Quest dependency or exposure of first-party sandbox machinery.
-6. The governing architecture topic records the final implemented API and any
+6. The governing architecture topic records the final physics-only API and any
    measured deviations.
 
-All six completion conditions pass. Publication, API stabilization beyond the
-recorded support classes, Quest feature implementation, public particle
-authoring, and a Quest-owned Box2D backend require separate consumer or release
-work and do not block S36 completion.
+The initial six conditions passed for the superseded two-crate boundary.
+S36.8 reopens cross-host qualification before the corrected physics-only
+boundary is complete. Publication, API stabilization beyond the recorded
+support classes, Quest feature implementation, public particle authoring, and
+a Quest-owned Box2D backend require separate consumer or release work and do
+not block completion.

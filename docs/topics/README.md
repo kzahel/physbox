@@ -41,12 +41,12 @@ a running log.
   — decided PhysBox 3/4-inspired visual direction, reusable GPU-canvas UI
   boundary, compact icon-toolbar and slider-menu contract, rendering-cost
   constraints, and the intended separation between the sandbox host and future
-  publishable simulation/render crates.
-- [Reusable GPU simulation and rendering library boundary](reusable-gpu-library-boundary.md)
-  — decided caller-owned WGPU lifecycle, Box2D-shaped simulation API,
-  asynchronous observation, read-only same-device render interoperability,
-  supported configuration boundary, and separation from first-party sandbox
-  and comparator policy.
+  publishable physics library.
+- [Reusable GPU physics library boundary](reusable-gpu-library-boundary.md)
+  — implemented physics-only local-path crate, caller-owned WGPU lifecycle,
+  Box2D-shaped simulation API, canonical same-device physics observation,
+  supported configuration boundary, and separation from renderers, first-party
+  sandbox policy, and comparator code.
 - [Render resolution scaling](render-resolution-scaling.md) — manual
   100/75/50-percent shared world-render scaling with native-resolution canvas
   UI, portable composition, launch/persistence ownership, explicit reporting,
