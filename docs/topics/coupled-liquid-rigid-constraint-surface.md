@@ -194,6 +194,16 @@ capacity-clean, and non-overlapping. This is a contribution-capacity fix, not
 a new pressure coefficient, rigid iteration count, damping policy, or coupled
 schedule.
 
+S35 opens a distinct fluid/solid contact-stabilization experiment after later
+review demonstrated that deliberately overlapped rigid bodies can recover in
+the dry control yet remain interpenetrating or re-enter penetration in water.
+The shared launch and WORLD-menu contract now exposes restart-bound
+`standard` and `stabilized` choices. At the initial control checkpoint both
+choices intentionally execute the unchanged 92-dispatch particle graph:
+`standard` remains the fresh default, while `stabilized` is only an explicit
+selector for subsequent measured candidates. No mechanical or default
+promotion is implied by the control itself.
+
 This is independently implemented from the scalar contract. Original
 LiquidFun's boundary contact weight and pressure transfer were consulted as
 algorithm references at pinned revision

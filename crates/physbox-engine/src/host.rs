@@ -1451,6 +1451,29 @@ impl EngineHost {
                         );
                     }
                 }
+                UiAction::ActivateFluidSolidCouplingQuality(quality) => {
+                    if quality != self.config.fluid_solid_coupling_quality {
+                        self.replace_configuration(
+                            context.device,
+                            context.queue,
+                            ConfigurationReplacement {
+                                config: EngineConfig {
+                                    scenario: self.config.scenario,
+                                    world_capacity: self.config.world_capacity,
+                                    fluid_solid_coupling_quality: quality,
+                                    solver_profile: self.config.solver_profile.clone(),
+                                    sleep_visuals_enabled: self.config.sleep_visuals_enabled,
+                                    render_scale: self.config.render_scale,
+                                },
+                                selected_tool: routing.selected_tool,
+                                scenario_activation: false,
+                                scenario_restart: true,
+                                preserve_camera: true,
+                                solver_profiles: self.solver_profiles.clone(),
+                            },
+                        );
+                    }
+                }
                 UiAction::RestartScenario => {
                     self.replace_configuration(
                         context.device,
@@ -1888,6 +1911,7 @@ impl EngineHost {
             particle_rigid_coupling: self.config.scenario == ValidationScenario::LiquidSandbox,
             particle_coupled_schedule: (self.config.scenario == ValidationScenario::LiquidSandbox)
                 .then_some("rigid-then-coupled-batch"),
+            fluid_solid_coupling_quality: self.config.fluid_solid_coupling_quality.name(),
             particle_body_generation_checked: self.config.scenario
                 == ValidationScenario::LiquidSandbox,
             capacity_overflowed: self
@@ -2268,6 +2292,7 @@ impl EngineHost {
                 pacing: &pacing,
                 body_count: visible_body_count,
                 world_capacity: self.config.world_capacity,
+                fluid_solid_coupling_quality: self.config.fluid_solid_coupling_quality,
                 body_capacity: contract.body_capacity,
                 contact_count: contract.contact_point_count,
                 capacity_bytes: contract.solver_capacity_bytes,

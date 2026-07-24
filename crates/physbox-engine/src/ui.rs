@@ -1,6 +1,7 @@
 use physbox_contracts::{ConstructionResultV1, ConstructionStateV1};
 use physbox_launch::{
-    RenderScalePreset, SolverProfileName, ValidationScenario, WorldCapacityPreset,
+    FluidSolidCouplingQuality, RenderScalePreset, SolverProfileName, ValidationScenario,
+    WorldCapacityPreset,
 };
 use physbox_ui::{
     CanvasFrame, CanvasRenderer, HitTarget, InstanceCapacities, InteractionState, Point,
@@ -18,7 +19,7 @@ use crate::{
     report::{FrameTimingReport, RenderScaleReport, UiReport},
 };
 
-pub(crate) const UI_CONTRACT_VERSION: u32 = 12;
+pub(crate) const UI_CONTRACT_VERSION: u32 = 13;
 const STATIC_INSTANCE_CAPACITY: usize = 384;
 const DYNAMIC_INSTANCE_CAPACITY: usize = 512;
 const COMPACT_DENSITY_START_POINTS: f32 = 520.0;
@@ -36,6 +37,7 @@ pub(crate) enum UiAction {
         scenario: ValidationScenario,
     },
     ActivateWorldCapacity(WorldCapacityPreset),
+    ActivateFluidSolidCouplingQuality(FluidSolidCouplingQuality),
     #[cfg(feature = "box2d-comparator")]
     SelectEngine(ComparisonEngine),
     RestartScenario,
@@ -131,6 +133,7 @@ pub(crate) struct UiFrameModel<'a> {
     pub pacing: &'a PacingReport,
     pub body_count: u32,
     pub world_capacity: WorldCapacityPreset,
+    pub fluid_solid_coupling_quality: FluidSolidCouplingQuality,
     pub body_capacity: u32,
     pub contact_count: u32,
     pub capacity_bytes: u64,
@@ -311,6 +314,7 @@ impl WorkbenchUi {
             active_solver_profile: model.solver_profile.profile_name(),
             solver_profile_count: self.solver_profiles.len(),
             world_capacity: model.world_capacity,
+            fluid_solid_coupling_quality: model.fluid_solid_coupling_quality,
             sleeping_effective: model.sleeping_effective,
             sleep_visuals_enabled: self.sleep_visuals_enabled,
             render_scale: self.render_scale,
@@ -329,6 +333,7 @@ impl WorkbenchUi {
                     solver_profiles: &self.solver_profiles,
                     draft_solver_profile: &self.draft_solver_profile,
                     world_capacity: model.world_capacity,
+                    fluid_solid_coupling_quality: model.fluid_solid_coupling_quality,
                     sleeping_effective: model.sleeping_effective,
                     sleep_visuals_enabled: self.sleep_visuals_enabled,
                     render_scale: self.render_scale,
@@ -510,6 +515,10 @@ fn route_events(
                         *menu_open = false;
                         action = Some(UiAction::ActivateWorldCapacity(capacity));
                     }
+                    UiHit::FluidSolidCouplingQuality(quality) => {
+                        *menu_open = false;
+                        action = Some(UiAction::ActivateFluidSolidCouplingQuality(quality));
+                    }
                     UiHit::ToggleSleeping => {
                         let enabled = !draft_solver_profile.physics().sleeping_enabled;
                         draft_solver_profile.set_sleeping_enabled(enabled);
@@ -589,6 +598,7 @@ enum UiHit {
     SolverSlider(crate::solver_profile::SolverParameter),
     SolverScene(ValidationScenario),
     WorldCapacity(WorldCapacityPreset),
+    FluidSolidCouplingQuality(FluidSolidCouplingQuality),
     ToggleSleeping,
     CycleSleepThreshold,
     CycleSleepGrouping,
@@ -740,6 +750,18 @@ impl UiLayout {
                             self.world_capacity_button(index),
                             UiHit::WorldCapacity(capacity),
                         );
+                    }
+                    if scenario == ValidationScenario::LiquidSandbox
+                        && selected_engine == ComparisonEngine::PhysBox
+                    {
+                        for (index, quality) in
+                            FluidSolidCouplingQuality::ALL.into_iter().enumerate()
+                        {
+                            push(
+                                self.world_coupling_quality_button(index),
+                                UiHit::FluidSolidCouplingQuality(quality),
+                            );
+                        }
                     }
                     push(self.world_sleeping_button(), UiHit::ToggleSleeping);
                     push(
@@ -909,6 +931,24 @@ impl UiLayout {
         ]
     }
 
+    fn world_coupling_quality_button(self, index: usize) -> [f32; 4] {
+        if self.compact_landscape() {
+            return [
+                (372.0 + index as f32 * 126.0) * self.menu_scale,
+                154.0 * self.menu_scale,
+                120.0 * self.menu_scale,
+                34.0 * self.menu_scale,
+            ];
+        }
+        let last = self.world_capacity_button(WorldCapacityPreset::ALL.len() - 1);
+        [
+            (24.0 + index as f32 * 172.0) * self.menu_scale,
+            last[1] + last[3] + 12.0 * self.menu_scale,
+            164.0 * self.menu_scale,
+            34.0 * self.menu_scale,
+        ]
+    }
+
     #[cfg(feature = "box2d-comparator")]
     fn world_engine_button(self, index: usize) -> [f32; 4] {
         [
@@ -920,18 +960,18 @@ impl UiLayout {
     }
 
     fn world_sleeping_button(self) -> [f32; 4] {
+        let coupling = self.world_coupling_quality_button(0);
         if self.compact_landscape() {
             return [
-                372.0 * self.menu_scale,
-                154.0 * self.menu_scale,
+                coupling[0],
+                coupling[1] + coupling[3] + 12.0 * self.menu_scale,
                 248.0 * self.menu_scale,
                 34.0 * self.menu_scale,
             ];
         }
-        let last = self.world_capacity_button(WorldCapacityPreset::ALL.len() - 1);
         [
             24.0 * self.menu_scale,
-            last[1] + last[3] + 12.0 * self.menu_scale,
+            coupling[1] + coupling[3] + 12.0 * self.menu_scale,
             336.0 * self.menu_scale,
             34.0 * self.menu_scale,
         ]
@@ -1230,6 +1270,7 @@ impl UiLayout {
             "restore-solver" => self.restore_solver_button(SolverProfileConfig::available().len()),
             "world-tab" => self.menu_tab(MenuPage::World),
             "world-capacity" => self.world_capacity_button(index),
+            "world-coupling-quality" => self.world_coupling_quality_button(index),
             "world-sleeping" => self.world_sleeping_button(),
             "world-sleep-threshold" => self.world_sleep_threshold_button(),
             "world-sleep-grouping" => self.world_sleep_grouping_button(),
@@ -1259,6 +1300,7 @@ struct StaticKey {
     active_solver_profile: SolverProfileName,
     solver_profile_count: usize,
     world_capacity: WorldCapacityPreset,
+    fluid_solid_coupling_quality: FluidSolidCouplingQuality,
     sleeping_effective: bool,
     sleep_visuals_enabled: bool,
     render_scale: RenderScalePreset,
@@ -1361,6 +1403,7 @@ struct StaticBatchModel<'a> {
     solver_profiles: &'a [SolverProfileConfig],
     draft_solver_profile: &'a SolverProfileConfig,
     world_capacity: WorldCapacityPreset,
+    fluid_solid_coupling_quality: FluidSolidCouplingQuality,
     sleeping_effective: bool,
     sleep_visuals_enabled: bool,
     render_scale: RenderScalePreset,
@@ -1381,6 +1424,7 @@ fn static_batch(
         solver_profiles,
         draft_solver_profile,
         world_capacity,
+        fluid_solid_coupling_quality,
         sleeping_effective,
         sleep_visuals_enabled,
         render_scale,
@@ -1599,6 +1643,19 @@ fn static_batch(
                         capacity == world_capacity,
                         1.6 * scale,
                     );
+                }
+                if scenario == ValidationScenario::LiquidSandbox
+                    && selected_engine == ComparisonEngine::PhysBox
+                {
+                    for (index, quality) in FluidSolidCouplingQuality::ALL.into_iter().enumerate() {
+                        canvas.button(
+                            widget_id!(),
+                            Rect::from_array(layout.world_coupling_quality_button(index)),
+                            quality.label(),
+                            quality == fluid_solid_coupling_quality,
+                            1.25 * scale,
+                        );
+                    }
                 }
                 let sleeping_requested = draft_solver_profile.physics().sleeping_enabled;
                 canvas.toggle(
@@ -2103,6 +2160,8 @@ mod tests {
                 layout.world_capacity_button(1),
                 layout.world_capacity_button(2),
                 layout.world_capacity_button(3),
+                layout.world_coupling_quality_button(0),
+                layout.world_coupling_quality_button(1),
                 layout.world_sleeping_button(),
                 layout.world_sleep_threshold_button(),
                 layout.world_sleep_grouping_button(),
@@ -2188,6 +2247,69 @@ mod tests {
         );
         assert_eq!(routed.selected_tool, WorkbenchTool::Circle);
         assert!(!menu_open);
+    }
+
+    #[test]
+    fn liquid_world_menu_emits_one_explicit_coupling_quality_restart_action() {
+        let target = [960, 600];
+        let layout = UiLayout::for_target(target);
+        let mut interactions = InteractionState::default();
+        let mut menu_open = true;
+        let mut menu_page = MenuPage::World;
+        let mut selected_tool = WorkbenchTool::Circle;
+        let mut profiles = SolverProfileConfig::available();
+        let mut draft = SolverProfileConfig::default();
+        let routed = route_events(
+            UiRouteState {
+                menu_open: &mut menu_open,
+                menu_page: &mut menu_page,
+                selected_tool: &mut selected_tool,
+                solver_profiles: &mut profiles,
+                draft_solver_profile: &mut draft,
+                interactions: &mut interactions,
+                scenario: ValidationScenario::LiquidSandbox,
+                selected_engine: ComparisonEngine::PhysBox,
+            },
+            &[pointer(
+                1,
+                PointerPhase::Down,
+                PointerButton::Primary,
+                layout.center_normalized("world-coupling-quality", 1),
+            )],
+            target,
+            DisplayMetrics::ONE,
+        );
+        assert_eq!(
+            routed.action,
+            Some(UiAction::ActivateFluidSolidCouplingQuality(
+                FluidSolidCouplingQuality::Stabilized
+            ))
+        );
+        assert_eq!(routed.selected_tool, WorkbenchTool::Circle);
+        assert!(!menu_open);
+
+        menu_open = true;
+        let hidden = route_events(
+            UiRouteState {
+                menu_open: &mut menu_open,
+                menu_page: &mut menu_page,
+                selected_tool: &mut selected_tool,
+                solver_profiles: &mut profiles,
+                draft_solver_profile: &mut draft,
+                interactions: &mut interactions,
+                scenario: ValidationScenario::Bootstrap,
+                selected_engine: ComparisonEngine::PhysBox,
+            },
+            &[pointer(
+                2,
+                PointerPhase::Down,
+                PointerButton::Primary,
+                layout.center_normalized("world-coupling-quality", 1),
+            )],
+            target,
+            DisplayMetrics::ONE,
+        );
+        assert!(hidden.action.is_none());
     }
 
     #[test]
@@ -2488,6 +2610,7 @@ mod tests {
                 solver_profiles: &profiles,
                 draft_solver_profile: &active,
                 world_capacity: WorldCapacityPreset::Slots64,
+                fluid_solid_coupling_quality: FluidSolidCouplingQuality::Standard,
                 sleeping_effective: false,
                 sleep_visuals_enabled: false,
                 render_scale: RenderScalePreset::Percent100,
@@ -2506,6 +2629,7 @@ mod tests {
                 solver_profiles: &profiles,
                 draft_solver_profile: &active,
                 world_capacity: WorldCapacityPreset::Slots64,
+                fluid_solid_coupling_quality: FluidSolidCouplingQuality::Standard,
                 sleeping_effective: false,
                 sleep_visuals_enabled: false,
                 render_scale: RenderScalePreset::Percent100,
@@ -2524,6 +2648,7 @@ mod tests {
                 solver_profiles: &profiles,
                 draft_solver_profile: &active,
                 world_capacity: WorldCapacityPreset::Slots10000,
+                fluid_solid_coupling_quality: FluidSolidCouplingQuality::Standard,
                 sleeping_effective: false,
                 sleep_visuals_enabled: true,
                 render_scale: RenderScalePreset::Percent50,

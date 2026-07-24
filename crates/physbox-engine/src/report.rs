@@ -10,7 +10,7 @@ use crate::{
     SleepCycleMetricsV1,
 };
 
-pub const SCENE_CONTRACT_VERSION: u32 = 14;
+pub const SCENE_CONTRACT_VERSION: u32 = 15;
 pub const RENDER_SCALE_REPORT_VERSION: u32 = 1;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -37,6 +37,7 @@ pub struct SceneContract {
     pub particle_box2d_interaction: bool,
     pub particle_rigid_coupling: bool,
     pub particle_coupled_schedule: Option<&'static str>,
+    pub fluid_solid_coupling_quality: &'static str,
     pub particle_body_generation_checked: bool,
     pub capacity_overflowed: bool,
     pub generated_solver_execution: Option<GpuSolverExecutionV4>,
@@ -364,6 +365,8 @@ impl FrameReport {
             solver_profile_options: Option<&'a str>,
             #[serde(rename = "k")]
             physics_configuration_hash: &'a str,
+            #[serde(rename = "f", skip_serializing_if = "is_false")]
+            stabilized_fluid_solid_coupling: bool,
             #[serde(rename = "w")]
             requested_sleeping_enabled: bool,
             #[serde(rename = "y")]
@@ -500,6 +503,8 @@ impl FrameReport {
                 solver_profile: self.scene_contract.solver_profile,
                 solver_profile_options: self.scene_contract.solver_profile_options.as_deref(),
                 physics_configuration_hash: &self.scene_contract.physics_configuration_hash,
+                stabilized_fluid_solid_coupling: self.scene_contract.fluid_solid_coupling_quality
+                    == "stabilized",
                 requested_sleeping_enabled: self.scene_contract.requested_sleeping_enabled,
                 effective_sleeping_enabled: self.scene_contract.effective_sleeping_enabled,
                 sleep_speed_threshold: self.scene_contract.sleep_speed_threshold,
@@ -520,6 +525,10 @@ impl FrameReport {
         })
         .expect("compact frame reports are serializable")
     }
+}
+
+const fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 const fn compact_execution(execution: GpuSolverExecutionV4) -> [u32; 8] {
@@ -746,6 +755,7 @@ mod tests {
                 particle_box2d_interaction: false,
                 particle_rigid_coupling: true,
                 particle_coupled_schedule: Some("rigid-then-coupled-batch"),
+                fluid_solid_coupling_quality: "standard",
                 particle_body_generation_checked: true,
                 capacity_overflowed: false,
                 generated_solver_execution: Some(GpuSolverExecutionV4::SELECTED),

@@ -68,19 +68,32 @@ reproduce them through an engine-owned scenario and fresh artifacts.
 
 ### S35.1 — restart-bound quality contract
 
-- [ ] Add `standard` and `stabilized` to the shared launch contract with
+- [x] Add `standard` and `stabilized` to the shared launch contract with
       `standard` as the fresh default.
-- [ ] Persist and restore the choice in shared Rust and mirror a non-default
+- [x] Persist and restore the choice in shared Rust and mirror a non-default
       selection into the browser query.
-- [ ] Expose the choice through the engine-rendered WORLD menu in the liquid
+- [x] Expose the choice through the engine-rendered WORLD menu in the liquid
       sandbox.
-- [ ] Apply a changed choice by one atomic world restart while retaining
+- [x] Apply a changed choice by one atomic world restart while retaining
       camera, tool, solver configuration, capacity, and presentation state.
-- [ ] Report the selected choice and keep `standard` mechanically and
+- [x] Report the selected choice and keep `standard` mechanically and
       structurally identical to the pre-S35 path.
 
 Gate: parser, desktop/web/Android transport, persistence/migration, UI action,
 restart, feature-on/off, and unchanged-standard scene-contract tests pass.
+
+Implementation checkpoint, 2026-07-24: commits `47b2908` and its following
+shared-host slice add the separate launch/configuration choice, versioned
+`physbox5.coupling.v1` browser record, non-default query projection,
+liquid-only PhysBox WORLD control, atomic restart, and scene/UI reporting.
+`standard` remains the default and both choices still execute the unchanged
+92-dispatch particle graph at this checkpoint. The ordinary fast lane,
+production clippy, comparator feature-off build, parser/persistence tests, and
+native shared-host restart test pass. The first fast-lane attempt exposed one
+transient generated-contact GPU replay failure that passed immediately in
+isolation; a later browser attempt exposed stale scripted WORLD coordinates
+after the inserted row. The coordinates are corrected and the complete fast
+lane passes.
 
 ### S35.2 — permanent wet-overlap corpus
 

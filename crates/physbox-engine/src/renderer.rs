@@ -2936,6 +2936,75 @@ mod tests {
         assert_eq!(scale_applied.camera.center, scale_selected.camera.center);
     }
 
+    #[test]
+    fn liquid_world_menu_restarts_into_stabilized_coupling_without_changing_rigid_profile() {
+        let target = [960, 600];
+        let mut renderer = pollster::block_on(OffscreenRenderer::new(
+            target[0],
+            target[1],
+            EngineConfig {
+                scenario: ValidationScenario::LiquidSandbox,
+                ..Default::default()
+            },
+        ))
+        .unwrap();
+        let click = |id, at| {
+            [crate::PointerPhase::Down, crate::PointerPhase::Up]
+                .into_iter()
+                .map(|phase| {
+                    crate::InputEvent::Pointer(crate::PointerEvent {
+                        id,
+                        phase,
+                        button: crate::PointerButton::Primary,
+                        normalized_position: at,
+                    })
+                })
+                .collect::<Vec<_>>()
+        };
+        let layout = crate::ui::UiLayout::for_target(target);
+        let initial = renderer.render(FrameInput::exact(0));
+        assert_eq!(
+            initial.scene_contract.fluid_solid_coupling_quality,
+            "standard"
+        );
+
+        renderer.render(
+            FrameInput::exact(0).with_input_events(click(1, layout.center_normalized("tool", 1))),
+        );
+        renderer.render(
+            FrameInput::exact(0).with_input_events(click(2, layout.center_normalized("menu", 0))),
+        );
+        renderer.render(
+            FrameInput::exact(0)
+                .with_input_events(click(3, layout.center_normalized("world-tab", 0))),
+        );
+        let changed = renderer.render(FrameInput::exact(0).with_input_events(click(
+            4,
+            layout.center_normalized("world-coupling-quality", 1),
+        )));
+        assert_eq!(
+            changed.scene_contract.fluid_solid_coupling_quality,
+            "stabilized"
+        );
+        assert_eq!(
+            changed.scene_contract.physics_configuration_hash,
+            initial.scene_contract.physics_configuration_hash
+        );
+        assert_eq!(
+            changed.scene_contract.particle_dispatches_per_step,
+            initial.scene_contract.particle_dispatches_per_step
+        );
+        assert_eq!(changed.ui.current_tool, "circle");
+        assert_eq!(changed.ui.scenario_restarts_total, 1);
+        assert!(!changed.ui.menu_open);
+        assert_eq!(
+            renderer
+                .launch_preference_selection()
+                .fluid_solid_coupling_quality,
+            physbox_launch::FluidSolidCouplingQuality::Stabilized
+        );
+    }
+
     #[cfg(feature = "solver-lab")]
     #[test]
     fn scene_menu_rejects_an_incompatible_scene_without_automatic_hard_fallback() {

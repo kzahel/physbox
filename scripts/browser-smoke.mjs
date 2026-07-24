@@ -109,8 +109,8 @@ try {
   if (before.frame.sceneContract?.solverProfile !== "soft-coupled") {
     throw new Error(`fresh browser did not use soft-coupled: ${JSON.stringify(before.frame.sceneContract)}`);
   }
-  if (before.frame.ui?.version !== 12 || before.frame.ui?.sleepVisualsEnabled !== false) {
-    throw new Error(`browser did not expose UI contract 12 defaults: ${JSON.stringify(before.frame.ui)}`);
+  if (before.frame.ui?.version !== 13 || before.frame.ui?.sleepVisualsEnabled !== false) {
+    throw new Error(`browser did not expose UI contract 13 defaults: ${JSON.stringify(before.frame.ui)}`);
   }
   if (
     before.frame.renderScale?.requestedPercent !== 100
@@ -305,24 +305,28 @@ try {
   ];
   const worldSleepingCenter = [
     (compactLandscape ? 496 : 192) * uiScale,
-    (compactLandscape ? 171 : 331) * uiScale,
-  ];
-  const worldCapacity64Center = [192 * uiScale, 171 * uiScale];
-  const worldSleepThresholdCenter = [
-    (compactLandscape ? 496 : 192) * uiScale,
     (compactLandscape ? 217 : 377) * uiScale,
   ];
-  const worldSleepGroupingCenter = [
+  const worldCapacity64Center = [192 * uiScale, 171 * uiScale];
+  const worldStabilizedCouplingCenter = [
+    (compactLandscape ? 558 : 278) * uiScale,
+    (compactLandscape ? 171 : 331) * uiScale,
+  ];
+  const worldSleepThresholdCenter = [
     (compactLandscape ? 496 : 192) * uiScale,
     (compactLandscape ? 263 : 423) * uiScale,
   ];
-  const worldSleepVisualsCenter = [
+  const worldSleepGroupingCenter = [
     (compactLandscape ? 496 : 192) * uiScale,
     (compactLandscape ? 309 : 469) * uiScale,
   ];
+  const worldSleepVisualsCenter = [
+    (compactLandscape ? 496 : 192) * uiScale,
+    (compactLandscape ? 355 : 515) * uiScale,
+  ];
   const worldRenderScaleCenter = [
     192 * uiScale,
-    (compactLandscape ? 331 : 553) * uiScale,
+    (compactLandscape ? 331 : 599) * uiScale,
   ];
   const clickWorldControl = async (center) => {
     await page.mouse.click(...menuButtonCenter);
@@ -991,6 +995,35 @@ try {
     );
   }
   if (scenario === "liquid-sandbox") {
+    const beforeCouplingQuality = await page.evaluate(() => globalThis.__physbox5.frame);
+    await clickWorldControl(worldStabilizedCouplingCenter);
+    await page.waitForFunction(
+      ({ restarts, physicsHash, particleDispatches }) => {
+        const frame = globalThis.__physbox5?.frame;
+        return frame?.sceneContract?.fluidSolidCouplingQuality === "stabilized"
+          && frame?.sceneContract?.physicsConfigurationHash === physicsHash
+          && frame?.sceneContract?.particleDispatchesPerStep === particleDispatches
+          && frame?.ui?.scenarioRestartsTotal > restarts
+          && !frame?.ui?.menuOpen;
+      },
+      {
+        restarts: beforeCouplingQuality.ui.scenarioRestartsTotal,
+        physicsHash: beforeCouplingQuality.sceneContract.physicsConfigurationHash,
+        particleDispatches: beforeCouplingQuality.sceneContract.particleDispatchesPerStep,
+      },
+      { timeout: 10_000 },
+    );
+    await page.waitForFunction(
+      () => {
+        const saved = JSON.parse(localStorage.getItem("physbox5.coupling.v1") ?? "null");
+        const url = new URL(location.href);
+        return saved?.version === 1
+          && saved.quality === "stabilized"
+          && url.searchParams.get("coupling-quality") === "stabilized";
+      },
+      null,
+      { timeout: 10_000 },
+    );
     const beforeLiquid = await page.evaluate(() => globalThis.__physbox5.frame);
     const target = [viewportWidth * 0.68, viewportHeight * 0.34];
 

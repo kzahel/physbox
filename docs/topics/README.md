@@ -12,7 +12,8 @@ a running log.
   contacts, broadphase, process-isolated native oracle hierarchy, and later
   coupled-fluid acceptance.
 - [Coupled liquid/rigid constraint surface](coupled-liquid-rigid-constraint-surface.md)
-  — implemented-preview decision, one-GPU-world coupling and wake invariants,
+  — implemented-preview decision, S35 fluid/solid contact-stabilization
+  experiments, one-GPU-world coupling and wake invariants,
   compact particle grid/capacity evidence, bounded two-target particle/body
   response with explicit third-target overflow, measured PhysBox 3/LiquidFun
   disagreements, PhysBox 4 reuse boundary, rigid-only Box2D comparison

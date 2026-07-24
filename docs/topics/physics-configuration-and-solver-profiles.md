@@ -1,13 +1,17 @@
 # Physics configuration and solver profiles
 
 Status: implemented product direction with one qualified custom alternative,
-updated 2026-07-23. Human review selected the soft-coupled solver family, and
+updated 2026-07-24. Human review selected the soft-coupled solver family, and
 the shared code still uses its reviewed 60/4/i1 seed as the fresh ordinary
 solver default. S32 additionally promotes sleeping on with exact
 current-contact-component grouping; the `0.02 m/s` threshold is unchanged.
 Product-owned fixed-step, substep, iteration, contact-response, recovery, and
 sleep settings form one versioned bounded configuration. S25 qualifies
 60/8/i1 as an explicit sleep-off quality alternative without promoting it.
+S35 adds a separate restart-bound fluid/solid coupling-quality choice whose
+`standard` value preserves the current coupled graph while `stabilized`
+remains a mechanically inert experiment selector until measured candidates
+are admitted.
 [S19](../tactical/019-soft-default-and-physics-configuration.md) records the
 ordinary default deployment;
 [S25](../tactical/025-bounded-awake-configuration-qualification.md) records the
@@ -102,6 +106,7 @@ The product configuration separates values whose effects and ownership differ:
 | Solver family | soft-coupled, hard/direct comparison, later explicit candidates | Discrete recurrence, ordering, preparation, and relaxation policy |
 | Sleeping request | on/off request, with separate effective state | Effective on request and on by default after S32; independently switchable off |
 | Sleep threshold/grouping | shared bounded speed threshold; PhysBox exact/local-4/local-8 | Threshold is projected into PhysBox and public Box2D state; grouping is PhysBox-only and exact is the default |
+| Fluid/solid coupling quality | standard/stabilized | Separate restart-bound coupled-world experiment selector; standard is the default and preserves the accepted graph |
 
 One canonical versioned configuration must project into `EngineConfig` and the
 neutral scenario exactly once. `physbox-launch` owns names, parsing, defaults,
@@ -126,6 +131,16 @@ contract and validation artifacts record:
 - requested/effective sleeping state, shared threshold, PhysBox grouping, and
   sleep policy/layout versions;
 - configuration version/hash so a screenshot or metric is reproducible.
+
+Fluid/solid coupling quality is intentionally not part of
+`PhysicsConfigurationV3`: it does not change the rigid solver profile or its
+configuration hash. `physbox-launch` owns its names and default, a separate
+`physbox5.coupling.v1` browser preference persists it, and a non-default choice
+is projected into the shared URL. The liquid-sandbox WORLD page exposes the
+same engine-owned choice. Applying it atomically restarts the world while
+preserving camera, tool, rigid profile, capacity, and presentation state.
+Scene and frame reports record the selected value so future quality and cost
+evidence cannot conflate the two paths.
 
 At the inert S23.2 checkpoint, `--sleeping on|off` and the web query transport
 the request, and `MENU → WORLD → SLEEP REQUEST` provides the same
