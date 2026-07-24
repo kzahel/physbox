@@ -29,11 +29,16 @@ caller polls its device. Interactive advancement never depends on that
 readback.
 
 Initial rigid definitions support arbitrary validated circles and rectangles.
+Shape density normally derives mass and inertia; `MassPropertiesDef` provides
+an explicit Box2D-style initial mass-data override when an authored world must
+preserve exact inverse mass and inertia. `BodyDef::with_sleeping` can author an
+initial sleeper, subject to the world's sleeping configuration.
 Creation after the first step currently uses the existing bounded GPU
 construction path and therefore accepts the standard construction circle or
-rectangle, standard material, and zero initial rotation/velocity. Liquids and
-neutral grab/query commands are mechanically present but do not yet have a
-supported public authoring façade. The `engine-internal` feature and
+rectangle, standard material, derived mass, awake state, and zero initial
+rotation/velocity. Liquids and neutral grab/query commands are mechanically
+present but do not yet have a supported public authoring façade. The
+`engine-internal` feature and
 `__private` module are compatibility plumbing for PhysBox 5 itself, not a
 consumer API.
 
@@ -42,4 +47,3 @@ Run the surface-free public proof with:
 ```sh
 cargo test -p physbox-sim --test public_world
 ```
-

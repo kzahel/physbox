@@ -1,8 +1,7 @@
 # Reusable GPU simulation and rendering library boundary
 
-Status: implemented direction, 2026-07-24; extraction and qualification are
-tracked in
-[S36](../tactical/036-reusable-gpu-library-extraction.md). This topic owns the
+Status: implemented and qualified, 2026-07-24; extraction evidence is recorded
+in [S36](../tactical/036-reusable-gpu-library-extraction.md). This topic owns the
 durable boundary between the GPU-resident mechanical world, optional reusable
 world rendering, and application hosts. It does not authorize publishing a
 crate or changing a physics default.
@@ -86,7 +85,9 @@ The public surface is organized around:
 
 - `WorldDef`, `WorldCapacity`, and `QualityDef`;
 - `World`, `BodyId`, and `ShapeId`;
-- `BodyDef`, `ShapeDef`, material properties, circle and rectangle geometry;
+- `BodyDef`, `ShapeDef`, material properties, circle and rectangle geometry,
+  plus an optional explicit mass-property override analogous to Box2D mass
+  data;
 - queued create, change, and destroy operations;
 - `StepDef` and the fixed-step pacing contract;
 - supported global toggles such as sleeping and their documented PhysBox
@@ -164,6 +165,13 @@ It does not own:
 Validation scenarios remain engine- or tooling-owned neutral projections.
 They may construct a `World` through its supported API, but `ScenarioV1` and
 `ValidationScenario` are not public world definitions.
+
+The implemented first-party rigid host follows that rule: it preserves its
+engine-owned scenario for reporting, oracle, and comparator purposes, but
+projects body state through `World`, `BodyDef`, `ShapeDef`, stable handles,
+optional mass data, and initial sleeping state before mechanical GPU
+construction. The current liquid seed uses a private coupled adapter because
+particle creation is not yet a supported public authoring surface.
 
 ## Configuration support boundary
 
@@ -311,6 +319,13 @@ The extraction must prove:
   affected boundaries; and
 - performance probes show no unexplained material regression from the
   ownership migration.
+
+S36 satisfies this matrix at clean revision `4fef6b8`. The external proof and
+sibling Quest repository compile without engine/application dependencies;
+native, Browser WebGPU, headless, comparator feature-on/off, ARM64/APK, and
+physical Pixel lanes pass. Solver work remains structurally unchanged at 175
+dispatches and 819,940 bytes for the qualified soft-floor probe. Exact commands
+and artifact provenance are retained in the tactical record.
 
 ## Alternatives considered
 

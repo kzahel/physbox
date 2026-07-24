@@ -1,9 +1,8 @@
 # S36 — Reusable GPU library extraction
 
-Status: active, opened 2026-07-24 by human direction. Implementation is
-authorized end to end through the repository-local consumer proof and
-proportionate cross-host qualification, with coherent commits at each passing
-slice.
+Status: complete 2026-07-24. The real simulation and optional rendering
+libraries, public consumer proof, sibling Quest boundary, first-party
+projection, and proportionate cross-host qualification all pass.
 
 Governing architecture:
 [reusable GPU simulation and rendering library boundary](../topics/reusable-gpu-library-boundary.md).
@@ -161,8 +160,10 @@ the unchanged first-party host can still render it without live-state readback.
       operations through the existing GPU command path.
 - [x] Keep scenario catalogs, validation verdicts, reports, and benchmark
       orchestration in engine/lab/tooling owners.
-- [ ] Project current engine scenarios through neutral world definitions and
-      operations instead of exporting `ScenarioV1`.
+- [x] Project current rigid-only engine scenarios through neutral world
+      definitions and operations instead of exporting `ScenarioV1`; retain the
+      coupled particle seed behind the private adapter until particle
+      authoring has a supported public façade.
 
 Gate: `physbox-engine` consumes `physbox-sim` as its only product mechanical
 implementation, ordinary scenarios retain results and graph accounting, and a
@@ -182,9 +183,12 @@ body/shape handles, records one fixed outer step into the caller's encoder,
 queues bounded post-initialization construction/destruction through the
 existing GPU command path, exposes bounded counters and a same-device render
 view, and supports an explicitly submitted asynchronous body snapshot. The
-remaining unchecked migration item is first-party scenario projection through
-that supported façade; engine validation currently reaches the same
-`physbox-sim` implementation through feature-gated compatibility exports.
+first-party rigid host projects its authored state through `World`, `BodyDef`,
+and `ShapeDef`, including exact optional mass-property overrides and authored
+initial sleeping state. `ScenarioV1` remains engine-owned for reports,
+validation metadata, and Box2D shadow projection. The current liquid seed
+retains a private coupled adapter because S36 explicitly does not add a public
+particle-authoring API.
 
 ### S36.5 — Optional reusable renderer
 
@@ -231,7 +235,7 @@ unchanged.
 - [x] Document local-path use, current-checkout semantics, device ownership,
       step ordering, observation latency, feature policy, and unsupported
       internals.
-- [ ] Verify that `physbox-quest` can replace the fixture with sibling path
+- [x] Verify that `physbox-quest` can replace the fixture with sibling path
       dependencies without any PhysBox 5 dependency on Quest.
 
 Gate: the proof compiles and runs from public APIs only, produces fresh bounded
@@ -245,27 +249,63 @@ configuration, constructs a floor and ball, submits one step, draws to a
 transparent caller-owned texture, and completes bounded pixel and body
 readbacks only after submission. Its fresh run emitted
 `PHYSBOX_EXTERNAL_CONSUMER_SUCCESS bodies=2 visible_pixels=254 sleeping=false`.
+The sibling `physbox-quest` repository imports the two crates at
+`../physbox5/crates/{physbox-sim,physbox-render}`, owns its `PhysBoxBackend`
+and entity/handle map, and passes `cargo check` at Quest revision `11dbc7c`.
+PhysBox 5 has no dependency on the sibling repository.
 
 ### S36.7 — Cross-host and performance qualification
 
-- [ ] Run focused crate, engine, renderer, and external-consumer tests while
+- [x] Run focused crate, engine, renderer, and external-consumer tests while
       iterating.
-- [ ] Run `npm run test:fast`.
-- [ ] Run production clippy with warnings denied.
-- [ ] Run a fresh headless scenario with `/tmp` provenance.
-- [ ] Run `npm run test:web:lab`.
-- [ ] Prove default comparator feature-on, direct comparator tests, and
+- [x] Run `npm run test:fast`.
+- [x] Run production clippy with warnings denied.
+- [x] Run a fresh headless scenario with `/tmp` provenance.
+- [x] Run `npm run test:web:lab`.
+- [x] Prove default comparator feature-on, direct comparator tests, and
       explicit feature-off behavior.
-- [ ] Run focused performance probes and explain any material movement in GPU
+- [x] Run focused performance probes and explain any material movement in GPU
       time, CPU encoding, allocation, or dispatch counts.
-- [ ] Run the ARM64 Android check and build a release APK.
-- [ ] Exercise the unchanged first-party world on a physical Android device;
+- [x] Run the ARM64 Android check and build a release APK.
+- [x] Exercise the unchanged first-party world on a physical Android device;
       use and immediately stop an AVD only when no device is available or an
       emulator-specific question exists.
 
 Gate: every affected maintained lane passes; simulation results, dispatch
 graphs, ordinary defaults, pacing, and first-party behavior remain unchanged;
 and the extraction introduces no unexplained material performance regression.
+
+Final qualification checkpoint, clean code revision `4fef6b8`, 2026-07-24:
+
+- focused runs pass 37 simulation unit tests, the public surface-free GPU
+  integration test, 2 renderer tests, 130 engine tests, the external
+  executable, warnings-denied all-feature clippy for the affected crates, the
+  dependency negatives, and `cargo check` in `../physbox-quest`;
+- `npm run test:fast` passes in 34.17 seconds, including Browser WebGPU run
+  `ac2d9b83-5de9-4b9c-9e32-8b618641b5ca`, and production clippy passes with
+  warnings denied;
+- fresh headless bootstrap provenance is
+  `/tmp/physbox5-s36-final-headless.json`, and solver-lab Browser run
+  `ffaa1cd3-948d-4967-a1a3-c308da21239b` passes the engine-rendered menus,
+  default-enabled comparator, and scene contract;
+- both direct comparator tests pass, while the explicit release feature-off
+  lane emits `PHYSBOX5_BOX2D_FEATURE_OFF_SUCCESS` with dependency and runtime
+  markers absent;
+- the focused performance probe reports 2.711 ms host P50, 2.741 ms host P95,
+  and 2.350 ms CPU P50 for the 32-body free-flight sample. Those warm native
+  timings vary across local runs and do not support a speed claim. The
+  structural regression contract is unchanged at 175 solver dispatches and
+  819,940 allocated bytes, with exact replay and clean capacity;
+- the NDK-wrapped ARM64 check, ARM64 release-native/debug APK, and Gradle
+  release APK pass. The 15,688,100-byte debug APK has SHA-256
+  `bce612153ef604074305e2b281f1001d84af6be6b43cb8fd9e67bf4852125ade`;
+  the 8,562,269-byte unsigned release APK has SHA-256
+  `2a304ef23b03e2684d00da00815e5daecaa81364c8037a80a23fe03f32ff428d`;
+  and
+- physical Pixel 7a validation passes the unchanged bootstrap world on
+  Mali-G710, captures a non-black 1080×2400 app screenshot, writes
+  `/tmp/physbox5-s36-final-android-device.png.json`, and stops the product app.
+  No AVD was started.
 
 ## Validation artifacts
 
@@ -297,6 +337,7 @@ S36 is complete when:
 6. The governing architecture topic records the final implemented API and any
    measured deviations.
 
-Publication, API stabilization beyond the recorded support classes, Quest
-feature implementation, and a Quest-owned Box2D backend require separate
-consumer or release work and do not block S36 completion.
+All six completion conditions pass. Publication, API stabilization beyond the
+recorded support classes, Quest feature implementation, public particle
+authoring, and a Quest-owned Box2D backend require separate consumer or release
+work and do not block S36 completion.

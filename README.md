@@ -121,7 +121,9 @@ physbox-render = { path = "../physbox5/crates/physbox-render" }
 
 These crates remain unpublished and unversioned beyond the current repository
 revision. `physbox-sim` exposes a Box2D-shaped definition/handle/world surface
-while retaining caller-owned WGPU submission and asynchronous observation.
+with shape-density mass derivation and an optional exact initial mass-data
+override, while retaining caller-owned WGPU submission and asynchronous
+observation.
 `physbox-render` optionally draws the same-device GPU view into a caller-owned
 target; it does not own a surface or presentation loop. Sandbox tools,
 scenario presets, launch policy, UI, and Box2D comparison remain outside the

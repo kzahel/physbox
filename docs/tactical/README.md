@@ -229,7 +229,10 @@ Human direction on 2026-07-24 opens S36 to extract real `physbox-sim` and
 The caller owns WGPU lifecycle, submission, and presentation; simulation owns
 mechanics and asynchronous observation; rendering consumes one read-only
 same-device view. Sandbox tools, scenarios, launch policy, and the Box2D
-comparator remain outside both crates.
+comparator remain outside both crates. S36 is complete: the engine and
+external proof use the extracted owners, the sibling Quest repository compiles
+through local paths, and native, browser, headless, comparator, performance,
+ARM64/APK, and physical-Android qualification passes.
 
 Current target supersession, 2026-07-22: the
 [rigid quality target contract](../topics/rigid-quality-targets.md) governs new
@@ -284,7 +287,7 @@ This README remains the unnumbered index.
 | S33 | Presentation foundation and modular canvas UI | [033-presentation-foundation.md](033-presentation-foundation.md) | active; S33.1 clean baseline/provenance and neutral crate boundary pass, 2026-07-23 |
 | S34 | Render resolution scaling | [034-render-resolution-scaling.md](034-render-resolution-scaling.md) | complete; shared 100/75/50 world scaling, native UI, reports/timing, cross-host and physical Android qualification pass, 2026-07-24 |
 | S35 | Fluid/solid contact stabilization | [035-fluid-solid-contact-stabilization.md](035-fluid-solid-contact-stabilization.md) | active; restart-bound quality contract and permanent wet-overlap corpus first, no default promotion authorized, 2026-07-24 |
-| S36 | Reusable GPU simulation and rendering library extraction | [036-reusable-gpu-library-extraction.md](036-reusable-gpu-library-extraction.md) | active; architecture and dependency contract recorded, real simulation foundation next, 2026-07-24 |
+| S36 | Reusable GPU simulation and rendering library extraction | [036-reusable-gpu-library-extraction.md](036-reusable-gpu-library-extraction.md) | complete; real sim/render owners, public consumer proof, Quest local paths, rigid scene projection, and cross-host qualification pass, 2026-07-24 |
 
 ## Conventions
 
