@@ -11,9 +11,11 @@ const PRIOR_V4_PHYSICS_PREFERENCE_KEY: &str = "physbox5.physics.v4";
 const PRIOR_V3_PHYSICS_PREFERENCE_KEY: &str = "physbox5.physics.v3";
 const PRIOR_V2_PHYSICS_PREFERENCE_KEY: &str = "physbox5.physics.v2";
 const WORLD_PREFERENCE_KEY: &str = "physbox5.world.v1";
+const PRESENTATION_PREFERENCE_KEY: &str = "physbox5.presentation.v1";
 const LEGACY_SOLVER_PREFERENCE_KEY: &str = "physbox5.solver-lab.v1";
 
 const WORLD_CAPACITY_QUERY_KEY: &str = "body-capacity";
+const SLEEP_VISUALS_QUERY_KEY: &str = "sleep-visuals";
 const PHYSICS_QUERY_KEYS: [&str; 13] = [
     "solver",
     "sim-hz",
@@ -40,6 +42,7 @@ pub trait WebPreferenceStore {
 pub struct LaunchPreferenceSelection {
     pub world_capacity: WorldCapacityPreset,
     pub physics: PhysicsConfigurationV3,
+    pub sleep_visuals_enabled: bool,
 }
 
 impl From<&LaunchOptions> for LaunchPreferenceSelection {
@@ -47,6 +50,7 @@ impl From<&LaunchOptions> for LaunchPreferenceSelection {
         Self {
             world_capacity: options.world_capacity,
             physics: options.physics,
+            sleep_visuals_enabled: options.sleep_visuals_enabled,
         }
     }
 }
@@ -56,6 +60,7 @@ pub struct WebPreferenceController {
     query: Vec<(String, String)>,
     last_physics: Option<String>,
     last_world: Option<String>,
+    last_presentation: Option<String>,
 }
 
 impl WebPreferenceController {
@@ -77,6 +82,16 @@ impl WebPreferenceController {
                 capacity.slots().to_string(),
             ));
         }
+        let has_explicit_sleep_visuals =
+            query.iter().any(|(key, _)| key == SLEEP_VISUALS_QUERY_KEY);
+        if !has_explicit_sleep_visuals
+            && let Some(sleep_visuals_enabled) = load_presentation_preference(store)
+        {
+            query.push((
+                SLEEP_VISUALS_QUERY_KEY.to_owned(),
+                if sleep_visuals_enabled { "on" } else { "off" }.to_owned(),
+            ));
+        }
 
         let request = parse_web_query(&encode_query(&query))?;
         Ok((
@@ -84,6 +99,7 @@ impl WebPreferenceController {
                 query,
                 last_physics: None,
                 last_world: None,
+                last_presentation: None,
             },
             request,
         ))
@@ -114,9 +130,19 @@ impl WebPreferenceController {
             self.last_world = Some(encoded_world);
         }
 
+        let presentation = PresentationPreferenceV1::from(selection.sleep_visuals_enabled);
+        let encoded_presentation = serde_json::to_string(&presentation)
+            .expect("validated presentation preference is serializable");
+        if self.last_presentation.as_deref() != Some(encoded_presentation.as_str()) {
+            let _ = store.write(PRESENTATION_PREFERENCE_KEY, &encoded_presentation);
+            self.last_presentation = Some(encoded_presentation);
+        }
+
         let previous = encode_query(&self.query);
         self.query.retain(|(key, _)| {
-            key != WORLD_CAPACITY_QUERY_KEY && !PHYSICS_QUERY_KEYS.contains(&key.as_str())
+            key != WORLD_CAPACITY_QUERY_KEY
+                && key != SLEEP_VISUALS_QUERY_KEY
+                && !PHYSICS_QUERY_KEYS.contains(&key.as_str())
         });
         if selection.world_capacity != WorldCapacityPreset::default() {
             self.query.push((
@@ -126,6 +152,10 @@ impl WebPreferenceController {
         }
         if selection.physics != PhysicsConfigurationV3::default() {
             append_physics_query(&mut self.query, selection.physics);
+        }
+        if selection.sleep_visuals_enabled {
+            self.query
+                .push((SLEEP_VISUALS_QUERY_KEY.to_owned(), "on".to_owned()));
         }
         let next = encode_query(&self.query);
         (next != previous).then_some(next)
@@ -387,6 +417,28 @@ impl WorldPreferenceV1 {
     }
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PresentationPreferenceV1 {
+    version: u32,
+    sleep_visuals_enabled: bool,
+}
+
+impl From<bool> for PresentationPreferenceV1 {
+    fn from(sleep_visuals_enabled: bool) -> Self {
+        Self {
+            version: 1,
+            sleep_visuals_enabled,
+        }
+    }
+}
+
+impl PresentationPreferenceV1 {
+    fn into_sleep_visuals_enabled(self) -> Option<bool> {
+        (self.version == 1).then_some(self.sleep_visuals_enabled)
+    }
+}
+
 fn load_physics_preference<S: WebPreferenceStore>(store: &S) -> Option<PhysicsConfigurationV3> {
     read_json::<PhysicsPreferenceV5, _>(store, PHYSICS_PREFERENCE_KEY)
         .and_then(PhysicsPreferenceV5::into_physics)
@@ -411,6 +463,11 @@ fn load_physics_preference<S: WebPreferenceStore>(store: &S) -> Option<PhysicsCo
 fn load_world_preference<S: WebPreferenceStore>(store: &S) -> Option<WorldCapacityPreset> {
     read_json::<WorldPreferenceV1, _>(store, WORLD_PREFERENCE_KEY)
         .and_then(WorldPreferenceV1::into_capacity)
+}
+
+fn load_presentation_preference<S: WebPreferenceStore>(store: &S) -> Option<bool> {
+    read_json::<PresentationPreferenceV1, _>(store, PRESENTATION_PREFERENCE_KEY)
+        .and_then(PresentationPreferenceV1::into_sleep_visuals_enabled)
 }
 
 fn read_json<T: for<'de> Deserialize<'de>, S: WebPreferenceStore>(
@@ -552,7 +609,11 @@ mod tests {
     fn current_preferences_restore_before_shared_web_parsing() {
         let store = MemoryStore::default()
             .with(PHYSICS_PREFERENCE_KEY, &custom_preference(5))
-            .with(WORLD_PREFERENCE_KEY, r#"{"version":1,"bodyCapacity":1000}"#);
+            .with(WORLD_PREFERENCE_KEY, r#"{"version":1,"bodyCapacity":1000}"#)
+            .with(
+                PRESENTATION_PREFERENCE_KEY,
+                r#"{"version":1,"sleepVisualsEnabled":true}"#,
+            );
         let (_, request) =
             WebPreferenceController::restore("?scenario=rigid-floor", &store).unwrap();
         assert_eq!(request.options.scenario.name(), "rigid-floor");
@@ -565,6 +626,7 @@ mod tests {
         assert!(request.options.physics.sleeping_enabled);
         assert_eq!(request.options.physics.sleep_speed_threshold, 0.05);
         assert_eq!(request.options.physics.sleep_grouping, SleepGrouping::Exact);
+        assert!(request.options.sleep_visuals_enabled);
     }
 
     #[test]
@@ -585,15 +647,22 @@ mod tests {
     fn explicit_query_has_precedence_over_saved_preferences() {
         let store = MemoryStore::default()
             .with(PHYSICS_PREFERENCE_KEY, &custom_preference(5))
-            .with(WORLD_PREFERENCE_KEY, r#"{"version":1,"bodyCapacity":1000}"#);
-        let (_, request) =
-            WebPreferenceController::restore("?solver=hard-direct&body-capacity=256", &store)
-                .unwrap();
+            .with(WORLD_PREFERENCE_KEY, r#"{"version":1,"bodyCapacity":1000}"#)
+            .with(
+                PRESENTATION_PREFERENCE_KEY,
+                r#"{"version":1,"sleepVisualsEnabled":true}"#,
+            );
+        let (_, request) = WebPreferenceController::restore(
+            "?solver=hard-direct&body-capacity=256&sleep-visuals=off",
+            &store,
+        )
+        .unwrap();
         assert_eq!(request.options.physics, PhysicsConfigurationV3::HARD_DIRECT);
         assert_eq!(
             request.options.world_capacity,
             WorldCapacityPreset::Slots256
         );
+        assert!(!request.options.sleep_visuals_enabled);
     }
 
     #[test]
@@ -669,6 +738,7 @@ mod tests {
                 LaunchPreferenceSelection {
                     world_capacity: WorldCapacityPreset::Slots256,
                     physics,
+                    sleep_visuals_enabled: true,
                 },
                 &store,
             )
@@ -686,6 +756,10 @@ mod tests {
         let world: WorldPreferenceV1 =
             serde_json::from_str(&store.get(WORLD_PREFERENCE_KEY).unwrap()).unwrap();
         assert_eq!(world.body_capacity, 256);
+        let presentation: PresentationPreferenceV1 =
+            serde_json::from_str(&store.get(PRESENTATION_PREFERENCE_KEY).unwrap()).unwrap();
+        assert!(presentation.sleep_visuals_enabled);
+        assert!(search.contains("sleep-visuals=on"));
     }
 
     #[test]
@@ -701,6 +775,7 @@ mod tests {
                 LaunchPreferenceSelection {
                     world_capacity: WorldCapacityPreset::default(),
                     physics: PhysicsConfigurationV3::default(),
+                    sleep_visuals_enabled: false,
                 },
                 &store,
             )
@@ -712,6 +787,7 @@ mod tests {
                     LaunchPreferenceSelection {
                         world_capacity: WorldCapacityPreset::default(),
                         physics: PhysicsConfigurationV3::default(),
+                        sleep_visuals_enabled: false,
                     },
                     &store,
                 )

@@ -10,6 +10,7 @@ pub struct EngineConfig {
     pub scenario: ValidationScenario,
     pub world_capacity: WorldCapacityPreset,
     pub solver_profile: SolverProfileConfig,
+    pub sleep_visuals_enabled: bool,
 }
 
 impl TryFrom<&LaunchOptions> for EngineConfig {
@@ -28,6 +29,7 @@ impl TryFrom<&LaunchOptions> for EngineConfig {
             scenario: options.scenario,
             world_capacity: options.world_capacity,
             solver_profile,
+            sleep_visuals_enabled: options.sleep_visuals_enabled,
         })
     }
 }
@@ -37,6 +39,7 @@ impl EngineConfig {
         LaunchPreferenceSelection {
             world_capacity: self.world_capacity,
             physics: self.solver_profile.physics(),
+            sleep_visuals_enabled: self.sleep_visuals_enabled,
         }
     }
 
@@ -107,5 +110,16 @@ mod tests {
                 .unwrap()
                 .physics_configuration_hash()
         );
+    }
+
+    #[test]
+    fn presentation_launch_preference_reaches_the_shared_engine() {
+        let options = LaunchOptions {
+            sleep_visuals_enabled: true,
+            ..Default::default()
+        };
+        let config = EngineConfig::try_from(&options).unwrap();
+        assert!(config.sleep_visuals_enabled);
+        assert!(config.launch_preference_selection().sleep_visuals_enabled);
     }
 }

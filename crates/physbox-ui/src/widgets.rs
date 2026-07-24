@@ -240,7 +240,7 @@ impl WidgetCanvas {
             bounds,
             role: WidgetRole::HorizontalSlider { steps },
         });
-        let track_height = 4.0_f32.min(bounds.height);
+        let track_height = (bounds.height * 0.12).clamp(4.0, 6.0).min(bounds.height);
         let track = Rect::new(
             bounds.x + 8.0,
             bounds.y + (bounds.height - track_height) * 0.5,
@@ -265,7 +265,7 @@ impl WidgetCanvas {
             track_height * 0.5,
             self.theme.accent,
         );
-        let thumb = bounds.height.min(18.0);
+        let thumb = (bounds.height * 0.55).clamp(18.0, 26.0).min(bounds.height);
         self.rounded_rect(
             Rect::new(
                 track.x + track.width * value - thumb * 0.5,

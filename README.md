@@ -198,7 +198,10 @@ current-contact-component grouping by default. **SLEEP GROUPING** still cycles
 through exact, local-4, and local-8, and the sleeping request can be switched
 off for awake-quality or comparison work. **SLEEP VISUALS** is an independent
 presentation-only toggle: teal is active, amber is accumulating quiet time,
-blue `Z` is asleep, and pink `!` is recently or forcibly woken.
+blue `Z` is asleep, and pink `!` is recently or forcibly woken. The browser
+stores that presentation choice separately under `physbox5.presentation.v1`,
+restores it on the next launch, and mirrors an enabled choice into the
+`sleep-visuals` query setting.
 
 Open **MENU → WORLD** to choose **64 SLOTS**, **256 SLOTS**, **1K SLOTS**, or
 **10K SLOTS**, and to change **SLEEP REQUEST**. A selection rebuilds and

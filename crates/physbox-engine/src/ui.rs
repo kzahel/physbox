@@ -5,7 +5,7 @@ use physbox_ui::{
     PointerButton as CanvasPointerButton, PointerEvent as CanvasPointerEvent,
     PointerId as CanvasPointerId, PointerPhase as CanvasPointerPhase, Primitive, Rect,
     RenderReport as CanvasRenderReport, RenderTarget as CanvasRenderTarget, Theme, WidgetCanvas,
-    WidgetEventKind, WidgetId, WidgetRole, icons,
+    WidgetEventKind, WidgetId, WidgetRole, icons, text_width,
 };
 
 use crate::{
@@ -188,6 +188,7 @@ impl WorkbenchUi {
         color_format: wgpu::TextureFormat,
         solver_profile: SolverProfileConfig,
         solver_profiles: Vec<SolverProfileConfig>,
+        sleep_visuals_enabled: bool,
     ) -> Self {
         Self {
             renderer: CanvasRenderer::new(
@@ -202,7 +203,7 @@ impl WorkbenchUi {
             menu_open: false,
             menu_page: MenuPage::default(),
             selected_tool: WorkbenchTool::default(),
-            sleep_visuals_enabled: false,
+            sleep_visuals_enabled,
             solver_profiles,
             draft_solver_profile: solver_profile,
             interactions: InteractionState::default(),
@@ -817,7 +818,14 @@ impl UiLayout {
         let wide = self.compact_landscape()
             || (page == MenuPage::Scenes && self.scenario_columns() > 1)
             || (page == MenuPage::Solvers && self.solver_profile_columns(solver_profile_count) > 1);
-        let logical = if wide {
+        let logical = if self.phone_portrait() {
+            [
+                12.0,
+                84.0,
+                (self.target_size[0] as f32 / self.menu_scale - 24.0).max(336.0),
+                bottom - 84.0,
+            ]
+        } else if wide {
             [12.0, 84.0, 620.0, bottom - 84.0]
         } else {
             [12.0, 84.0, 360.0, bottom - 84.0]
@@ -981,18 +989,26 @@ impl UiLayout {
     fn solver_parameter_slider(self, index: usize, profile_count: usize) -> [f32; 4] {
         let (base, stride, height) = self.solver_parameter_metrics(profile_count);
         let (column, row) = self.solver_parameter_grid_position(index);
+        let phone_portrait = self.phone_portrait();
+        let logical_width = self.target_size[0] as f32 / self.menu_scale;
+        let x = if self.compact_landscape() {
+            160.0 + column as f32 * 298.0
+        } else if phone_portrait {
+            (logical_width * 0.45).clamp(166.0, 235.0)
+        } else {
+            166.0
+        };
+        let width = if self.compact_landscape() {
+            128.0
+        } else if phone_portrait {
+            (logical_width - x - 24.0).max(1.0)
+        } else {
+            194.0
+        };
         [
-            (if self.compact_landscape() {
-                160.0 + column as f32 * 298.0
-            } else {
-                166.0
-            }) * self.menu_scale,
+            x * self.menu_scale,
             (base + row as f32 * stride) * self.menu_scale,
-            (if self.compact_landscape() {
-                128.0
-            } else {
-                194.0
-            }) * self.menu_scale,
+            width * self.menu_scale,
             height * self.menu_scale,
         ]
     }
@@ -1009,12 +1025,16 @@ impl UiLayout {
         } else {
             0.0
         };
-        let y = (base + 8.0 + row as f32 * stride) * self.menu_scale;
+        let phone_portrait = self.phone_portrait();
+        let y = (base + if phone_portrait { 11.0 } else { 8.0 } + row as f32 * stride)
+            * self.menu_scale;
         (
             [(28.0 + column_offset) * self.menu_scale, y],
             [
                 (if self.compact_landscape() {
                     135.0 + column_offset
+                } else if phone_portrait {
+                    150.0
                 } else {
                     170.0
                 }) * self.menu_scale,
@@ -1099,6 +1119,8 @@ impl UiLayout {
                 + if compact { 4.0 } else { 10.0 },
             if compact {
                 30.0
+            } else if self.phone_portrait() {
+                58.0
             } else if dense {
                 32.0
             } else {
@@ -1106,6 +1128,8 @@ impl UiLayout {
             },
             if compact {
                 28.0
+            } else if self.phone_portrait() {
+                52.0
             } else if dense {
                 30.0
             } else {
@@ -1117,6 +1141,11 @@ impl UiLayout {
     fn compact_landscape(self) -> bool {
         let logical = self.logical_target_size();
         logical[1] < 520.0 && logical[0] > logical[1]
+    }
+
+    fn phone_portrait(self) -> bool {
+        let logical = self.logical_target_size();
+        logical[0] < 520.0 && logical[1] >= logical[0]
     }
 
     fn scenario_columns(self) -> usize {
@@ -1437,12 +1466,23 @@ fn static_batch(
                         } else {
                             crate::solver_profile::display_number_for_ui(value)
                         };
-                    canvas.label(
-                        &display,
-                        Point::new(value_origin[0], value_origin[1]),
-                        1.45 * scale,
-                        theme.accent,
-                    );
+                    let value_pixel_size = if layout.phone_portrait() {
+                        2.1 * scale
+                    } else {
+                        1.45 * scale
+                    };
+                    let value_origin = if layout.phone_portrait() {
+                        let slider = layout.solver_parameter_slider(index, profile_count);
+                        let label_end = label_origin[0]
+                            + text_width(parameter.label(), 1.45 * scale)
+                            + 12.0 * scale;
+                        let right_aligned =
+                            slider[0] - text_width(&display, value_pixel_size) - 12.0 * scale;
+                        Point::new(label_end.max(right_aligned), value_origin[1])
+                    } else {
+                        Point::new(value_origin[0], value_origin[1])
+                    };
+                    canvas.label(&display, value_origin, value_pixel_size, theme.accent);
                     canvas.discrete_slider(
                         widget_id!(),
                         Rect::from_array(layout.solver_parameter_slider(index, profile_count)),
@@ -2442,6 +2482,74 @@ mod tests {
                 assert!(bounds[1] + bounds[3] <= target[1] as f32);
             }
         }
+    }
+
+    #[cfg(feature = "solver-lab")]
+    #[test]
+    fn phone_portrait_solver_sliders_are_wide_with_prominent_values() {
+        let target = [1080, 2400];
+        let display_metrics = DisplayMetrics::new(2.5).unwrap();
+        let profiles = SolverProfileConfig::available();
+        let active = SolverProfileConfig::soft_coupled();
+        let layout = UiLayout::for_display(target, display_metrics);
+        let slider = layout.solver_parameter_slider(0, profiles.len());
+        let (_, value_origin) = layout.solver_parameter_text_origins(0, profiles.len());
+        let panel = layout.menu_panel(MenuPage::Solvers, profiles.len());
+
+        assert!(layout.phone_portrait());
+        assert!(slider[2] / display_metrics.pixels_per_point() >= 240.0);
+        assert!(slider[3] / display_metrics.pixels_per_point() >= 36.0);
+        assert!(value_origin[0] / layout.menu_scale >= 150.0);
+        assert!(value_origin[0] < slider[0]);
+        assert!(panel[0] + panel[2] <= target[0] as f32);
+
+        let batch = static_batch(
+            target,
+            display_metrics,
+            StaticBatchModel {
+                scenario: ValidationScenario::Bootstrap,
+                menu_open: true,
+                menu_page: MenuPage::Solvers,
+                selected_tool: WorkbenchTool::Grab,
+                active_solver_profile: &active,
+                solver_profiles: &profiles,
+                draft_solver_profile: &active,
+                world_capacity: WorldCapacityPreset::Slots64,
+                sleeping_effective: true,
+                sleep_visuals_enabled: false,
+                selected_engine: ComparisonEngine::PhysBox,
+            },
+        );
+        let value_size = batch
+            .primitives
+            .iter()
+            .find_map(|primitive| match primitive {
+                Primitive::Text {
+                    text, pixel_size, ..
+                } if text == "60" => Some(*pixel_size),
+                _ => None,
+            });
+        assert_eq!(value_size, Some(2.1 * layout.menu_scale));
+
+        let text_primitive = |expected: &str| {
+            batch
+                .primitives
+                .iter()
+                .find_map(|primitive| match primitive {
+                    Primitive::Text {
+                        text,
+                        origin,
+                        pixel_size,
+                        ..
+                    } if text == expected => Some((*origin, *pixel_size)),
+                    _ => None,
+                })
+        };
+        let (label_origin, label_size) = text_primitive("STATIC SCALE").unwrap();
+        let (static_value_origin, static_value_size) = text_primitive("2").unwrap();
+        let static_slider = layout.solver_parameter_slider(5, profiles.len());
+        assert!(label_origin.x + text_width("STATIC SCALE", label_size) < static_value_origin.x);
+        assert!(static_value_origin.x + text_width("2", static_value_size) < static_slider[0]);
     }
 
     #[cfg(feature = "solver-lab")]

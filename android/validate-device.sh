@@ -310,9 +310,22 @@ if [[ "${PHYSBOX5_ANDROID_SOLVER_SLIDER:-0}" = "1" ]]; then
         throw new Error("invalid UI density marker");
       }
       const compact = h / pixelsPerPoint < 520 && w > h;
-      const sliderX = compact ? 160 : 166;
-      const sliderWidth = compact ? 128 : 194;
-      const sliderY = (compact ? 176 + 30 : 236 + 38) + (compact ? 28 : 34) * 0.5;
+      const phonePortrait = w / pixelsPerPoint < 520 && h >= w;
+      const menuLogicalWidth = w / menuScale;
+      const sliderX = compact
+        ? 160
+        : phonePortrait
+          ? Math.min(235, Math.max(166, menuLogicalWidth * 0.45))
+          : 166;
+      const sliderWidth = compact
+        ? 128
+        : phonePortrait
+          ? menuLogicalWidth - sliderX - 24
+          : 194;
+      const sliderStride = compact ? 30 : phonePortrait ? 58 : 38;
+      const sliderHeight = compact ? 28 : phonePortrait ? 52 : 34;
+      const sliderY = (compact ? 176 : 236) + sliderStride + sliderHeight * 0.5;
+      const applyY = compact ? 316 : phonePortrait ? 679 : 541;
       const x = (normalized) => Math.round((sliderX + sliderWidth * normalized) * menuScale);
       console.log([
         Math.round(38 * toolbarScale), Math.round(50 * toolbarScale),
@@ -320,7 +333,7 @@ if [[ "${PHYSBOX5_ANDROID_SOLVER_SLIDER:-0}" = "1" ]]; then
         x((4 - 1) / (8 - 1)), Math.round(sliderY * menuScale),
         x((5 - 1) / (8 - 1)), Math.round(sliderY * menuScale),
         Math.round(279 * menuScale),
-        Math.round((compact ? 316 : 541) * menuScale),
+        Math.round(applyY * menuScale),
       ].join(" "));
     ' "$WIDTH" "$HEIGHT" "$REPORT")"
     read -r MENU_X MENU_Y SOLVERS_X SOLVERS_Y SLIDER_START_X SLIDER_START_Y \

@@ -140,6 +140,7 @@ try {
     speculativeDistance: 0.02,
     maxDepenetrationVelocity: 3,
   }, true);
+  await requirePresentationPreference(page, false);
   requireNoGpuValidationErrors(consoleErrors, "browser initial fixed-step presentation");
   await captureCompleteScreenshot(page, initialScreenshot, "browser initial no-input", consoleErrors);
   const bounds = await page.locator("#physbox-canvas").boundingBox();
@@ -160,6 +161,7 @@ try {
     throw new Error(`browser UI density contract is invalid: ${JSON.stringify(before.frame.ui)}`);
   }
   const compactLandscape = viewportHeight < 520 && viewportWidth > viewportHeight;
+  const phonePortrait = viewportWidth < 520 && viewportHeight >= viewportWidth;
   const logicalWidth = viewportWidth / toolbarScale;
   const toolStride = logicalWidth < 460
     ? Math.max(1, (logicalWidth - 78) / 6)
@@ -264,10 +266,15 @@ try {
     const baseY = compactLandscape ? 176 : 236;
     const column = compactLandscape ? index % 2 : 0;
     const row = compactLandscape ? Math.floor(index / 2) : index;
-    const stride = compactLandscape ? 30 : 38;
-    const height = compactLandscape ? 28 : 34;
-    const x = compactLandscape ? 160 + column * 298 : 166;
-    const width = compactLandscape ? 128 : 194;
+    const stride = compactLandscape ? 30 : phonePortrait ? 58 : 38;
+    const height = compactLandscape ? 28 : phonePortrait ? 52 : 34;
+    const menuLogicalWidth = viewportWidth / uiScale;
+    const x = compactLandscape
+      ? 160 + column * 298
+      : phonePortrait
+        ? Math.min(235, Math.max(166, menuLogicalWidth * 0.45))
+        : 166;
+    const width = compactLandscape ? 128 : phonePortrait ? menuLogicalWidth - x - 24 : 194;
     return [
       (x + width * normalized) * uiScale,
       (baseY + row * stride + height / 2) * uiScale,
@@ -275,9 +282,12 @@ try {
   };
   const solverSceneCenter = (index) => [
     (105 + index * 174) * uiScale,
-    (compactLandscape ? 282 : 491) * uiScale,
+    (compactLandscape ? 282 : phonePortrait ? 620 : 491) * uiScale,
   ];
-  const solverApplyCenter = [279 * uiScale, (compactLandscape ? 316 : 541) * uiScale];
+  const solverApplyCenter = [
+    279 * uiScale,
+    (compactLandscape ? 316 : phonePortrait ? 679 : 541) * uiScale,
+  ];
   const worldSleepingCenter = [
     (compactLandscape ? 496 : 192) * uiScale,
     (compactLandscape ? 171 : 331) * uiScale,
@@ -493,6 +503,7 @@ try {
       null,
       { timeout: 30_000 },
     );
+    await requirePresentationPreference(page, true);
     await page.waitForTimeout(750);
     await captureCompleteScreenshot(page, sleepScreenshot, "browser sleep-state visualization");
     for (const threshold of [0.1, 0.01, 0.02]) {
@@ -549,6 +560,7 @@ try {
       null,
       { timeout: 10_000 },
     );
+    await requirePresentationPreference(page, false);
     await page.mouse.click(...menuButtonCenter);
     await page.waitForFunction(() => globalThis.__physbox5?.frame?.ui?.menuOpen, null, { timeout: 10_000 });
     await page.mouse.click(76 * uiScale, 104 * uiScale);
@@ -1258,6 +1270,22 @@ async function requirePhysicsPreference(page, expected, expectClean = false) {
       return stored && addressed;
     },
     { expectedPhysics: expected, clean: expectClean },
+    { timeout: 10_000 },
+  );
+}
+
+async function requirePresentationPreference(page, sleepVisualsEnabled) {
+  await page.waitForFunction(
+    ({ expectedSleepVisuals }) => {
+      const saved = JSON.parse(localStorage.getItem("physbox5.presentation.v1") ?? "null");
+      const url = new URL(location.href);
+      return saved?.version === 1
+        && saved.sleepVisualsEnabled === expectedSleepVisuals
+        && (expectedSleepVisuals
+          ? url.searchParams.get("sleep-visuals") === "on"
+          : !url.searchParams.has("sleep-visuals"));
+    },
+    { expectedSleepVisuals: sleepVisualsEnabled },
     { timeout: 10_000 },
   );
 }

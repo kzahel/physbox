@@ -1278,6 +1278,7 @@ impl EngineHost {
             color_format,
             config.solver_profile.clone(),
             solver_profiles.clone(),
+            config.sleep_visuals_enabled,
         );
         let clock = SimulationClock::new(config.solver_profile.physics().fixed_step_hz);
         let camera = configured_camera(config.scenario);
@@ -1382,6 +1383,7 @@ impl EngineHost {
             self.config.scenario,
             self.selected_engine,
         );
+        self.config.sleep_visuals_enabled = self.ui.sleep_visuals_enabled();
         if let Some(action) = routing.action {
             match action {
                 UiAction::Recenter => {
@@ -1401,6 +1403,7 @@ impl EngineHost {
                                     scenario,
                                     world_capacity: self.config.world_capacity,
                                     solver_profile: self.config.solver_profile.clone(),
+                                    sleep_visuals_enabled: self.config.sleep_visuals_enabled,
                                 },
                                 selected_tool: routing.selected_tool,
                                 scenario_activation: true,
@@ -1421,6 +1424,7 @@ impl EngineHost {
                                     scenario: self.config.scenario,
                                     world_capacity,
                                     solver_profile: self.config.solver_profile.clone(),
+                                    sleep_visuals_enabled: self.config.sleep_visuals_enabled,
                                 },
                                 selected_tool: routing.selected_tool,
                                 scenario_activation: false,
@@ -1468,6 +1472,7 @@ impl EngineHost {
                                 scenario,
                                 world_capacity: self.config.world_capacity,
                                 solver_profile: profile,
+                                sleep_visuals_enabled: self.config.sleep_visuals_enabled,
                             },
                             selected_tool: routing.selected_tool,
                             scenario_activation: scenario != self.config.scenario,
@@ -1489,6 +1494,7 @@ impl EngineHost {
                                 scenario,
                                 world_capacity: self.config.world_capacity,
                                 solver_profile: profile,
+                                sleep_visuals_enabled: self.config.sleep_visuals_enabled,
                             },
                             selected_tool: routing.selected_tool,
                             scenario_activation: scenario != self.config.scenario,
