@@ -1,8 +1,7 @@
 # Render resolution scaling
 
-Status: decided implementation direction, 2026-07-24. Implementation and
-cross-host qualification are tracked by
-[S34](../tactical/034-render-resolution-scaling.md).
+Status: implemented and cross-host qualified, 2026-07-24. Delivery evidence
+is recorded by [S34](../tactical/034-render-resolution-scaling.md).
 
 Governing presentation direction:
 [presentation and modular workbench architecture](presentation-and-workbench-architecture.md).
@@ -151,6 +150,44 @@ Implementation qualification includes:
   behavior/pixel validation; and
 - paired high-pixel-count performance evidence that records all compute,
   world-render, composite, UI, full-frame, pacing, and capacity facts.
+
+## Implementation and measured disposition
+
+The shared implementation follows the decision above. `SurfaceRenderer` and
+`OffscreenRenderer` derive the bounded world extent, retain the direct path at
+100 percent, and supply native presentation plus scaled world targets to the
+one `EngineHost::render_frame` boundary. One fullscreen linear sampler
+composites reduced targets before the existing canvas UI. Native Winit
+lifecycle state retains the selected preset, while browser persistence remains
+shared Rust policy.
+
+Reports publish requested percent, native and world extents, per-axis
+effective scale, direct versus `linear-composite` path, and exact intermediate
+color bytes. Surface timestamp queries now separate composite and UI work.
+The compact Android marker carries the same target facts within its existing
+bounded log-line contract.
+
+Cross-host qualification passed on desktop Vulkan, Browser WebGPU, headless
+Vulkan, and a physical Pixel 7a with Mali-G710 Vulkan. The physical device
+used a 1080x2400 native target and reported a 540x1200 world target plus
+2,592,000 color bytes at 50 percent. Its screenshot confirms native toolbar
+and diagnostic text over the scaled world.
+
+A paired 3840x2160 Browser WebGPU observation on the available AMD Radeon 890M
+host recorded one post-step-31 timestamp sample per preset:
+
+| Preset | World target | Rigid compute | Body + particle render | Composite | UI | Total GPU |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| 100 percent | 3840x2160 | 0.558 ms | 0.766 ms | direct | 0.002 ms | 1.329 ms |
+| 50 percent | 1920x1080 | 0.537 ms | 0.111 ms | 0.711 ms | 0.004 ms | 1.364 ms |
+
+Both runs retained approximately 100 percent effective simulation scale,
+zero slipped wall time, and clean capacity. In this simple bootstrap scene the
+composite consumed the raster saving and total GPU time was about 0.035 ms
+(2.6 percent) higher. This is a useful negative result, not a general
+performance rejection: denser fragment work or a weaker high-resolution GPU
+may still benefit, but the 4K Chromebook must be measured directly before
+claiming that it does. The Chromebook was not available during qualification.
 
 ## Reconsideration triggers
 

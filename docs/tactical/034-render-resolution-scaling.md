@@ -1,6 +1,6 @@
 # S34 — Render resolution scaling
 
-Status: active, 2026-07-24.
+Status: complete, 2026-07-24.
 
 Governing topic:
 [render resolution scaling](../topics/render-resolution-scaling.md).
@@ -139,16 +139,16 @@ Evidence:
 
 ### S34.5 — Cross-host and performance qualification
 
-- [ ] Run focused package and engine tests while iterating.
-- [ ] Run `npm run test:fast`.
-- [ ] Run production clippy with warnings denied.
-- [ ] Produce fresh native-size headless 100/50 percent captures and reports.
-- [ ] Run Browser WebGPU menu/persistence/resize coverage plus paired
+- [x] Run focused package and engine tests while iterating.
+- [x] Run `npm run test:fast`.
+- [x] Run production clippy with warnings denied.
+- [x] Produce fresh native-size headless 100/50 percent captures and reports.
+- [x] Run Browser WebGPU menu/persistence/resize coverage plus paired
   high-pixel-count 100/50 percent evidence.
-- [ ] Prove comparator default feature on and explicit feature off.
-- [ ] Run the ARM64 Android check and build a release APK.
-- [ ] Exercise the setting and pixels on one physical Android device.
-- [ ] Measure paired 100/50 percent compute, render, composite, UI, total GPU,
+- [x] Prove comparator default feature on and explicit feature off.
+- [x] Run the ARM64 Android check and build a release APK.
+- [x] Exercise the setting and pixels on one physical Android device.
+- [x] Measure paired 100/50 percent compute, render, composite, UI, total GPU,
   full-frame, and pacing on the 4K Chromebook when available; otherwise record
   the exact representative-hardware gap without inventing a claim.
 
@@ -156,11 +156,53 @@ Gate: required commands exit successfully, artifacts are fresh and
 capacity-clean, every host exposes the same setting, 100 percent retains the
 current path, and performance conclusions match the measured bottleneck.
 
+Evidence:
+
+- `npm run test:fast` passed in 26.75 seconds, including 175 production engine
+  tests, bounded performance smoke, host/tool tests, platform negatives, and
+  Browser WebGPU run `d7081a0e-9a00-4203-9a53-8c6a5015a874`.
+- `npm run clippy:rust:production` passed with warnings denied.
+- Direct comparator tests passed 2/2. `npm run test:box2d-feature-off` emitted
+  `PHYSBOX5_BOX2D_FEATURE_OFF_SUCCESS`; `npm run test:web:lab` passed as run
+  `eae45c16-0dfc-4293-a844-b1629bc2713c`.
+- Clean revision `cc688a1fce3b34c3f852194caa7e15c482d2aa5f` produced paired
+  960x600 headless artifacts in `/tmp/physbox5-s34-headless.hpuUDI`.
+  `native-100.json` is
+  `4d14fa992ed6b8564777ed672a593751158ae492ece8104d89763e8c868b9665`;
+  `scaled-50.json` is
+  `4126c718c45b30c2a352f6f1c6e0dfa77c1710297c9737e77782522b68110b18`.
+  Both PNGs remain 960x600, both reports share physics and scenario hashes,
+  and both remain scene/UI capacity-clean.
+- Desktop Vulkan passed at 50 percent as run
+  `04068d3b-dc4d-43aa-8d99-ba4a1fa10806`, reporting 480x300 world pixels
+  inside a 960x600 presentation target.
+- The ARM64 NDK check, ARM64 release-native/debug APK, and Gradle release APK
+  passed. The 15,688,100-byte debug APK is
+  `25d2916dec1f0d4668ac3709f9144cdf3eaa1d7ace8ddfb133648d65fe87fea5`;
+  the 8,458,477-byte unsigned release APK is
+  `568d013a0a072a0781430ea2433a95be53c8c39b1177db5355dea7571970b016`.
+- Physical Pixel 7a run `1784879796-3224363` used Mali-G710 Vulkan and the
+  engine-rendered menu to apply 100 → 75 → 50 percent. The clean provenance
+  at `/tmp/physbox5-s34-android-pixel7a.png.json` records 1080x2400 native,
+  540x1200 world, unchanged physics/camera, and a passing scenario. The
+  screenshot SHA-256 is
+  `697d787bffd922b7937f42a48151d964435b59e319293eb5ece35a3d582b74ab`;
+  the app was stopped after capture.
+- Clean revision `f7a482106ac8b8781dd987d56f623acb680ac3d6` produced paired
+  3840x2160 Browser WebGPU runs
+  `f6d8c469-49da-43a3-82df-baab68b93512` and
+  `d4130ee0-b65f-45bc-aa3f-259519b2954c`. The 100-percent sample reported
+  1.329 ms total GPU; 50 percent reported 1.364 ms after a 0.711 ms
+  composite. Both retained approximately 100 percent simulation scale, zero
+  slip, and clean capacity. The available AMD Radeon 890M host therefore
+  shows no bootstrap-scene gain. The target 4K Chromebook was unavailable,
+  so no claim is made for it.
+
 ## Completion condition
 
-S34 is complete when the fresh default remains native resolution; 75 and 50
-percent use one bounded shared scaled-world/native-UI composition path;
-launch, menu, browser persistence, reports, timing, resize, lifecycle,
-offscreen, comparator, and cross-host gates pass; physics/input/scenario
-identity remains unchanged; and paired high-pixel-count evidence states the
-measured benefit or limitation without extrapolation.
+S34 is complete. The fresh default remains native resolution; 75 and 50
+percent use one bounded shared scaled-world/native-UI composition path; launch,
+menu, browser persistence, reports, timing, resize, lifecycle, offscreen,
+comparator, and cross-host gates pass; physics/input/scenario identity remains
+unchanged; and paired high-pixel-count evidence records the measured
+limitation without extrapolation.

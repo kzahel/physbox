@@ -161,6 +161,32 @@ npm run test:web
 The browser host is a fullscreen canvas. Run `npm run serve:web` after building
 and open the printed local URL.
 
+### Render resolution
+
+Open **MENU → WORLD** and choose **RENDER SCALE** to cycle the shared 100, 75,
+and 50 percent presets. The fresh default is 100 percent. Reduced presets
+render the world at the reported smaller extent, linearly composite it to the
+native window/canvas, and then draw the menu, toolbar, and diagnostics at
+native resolution. Physics rate, camera/input semantics, scenario state, and
+final output dimensions do not change.
+
+The same setting is available on desktop, browser, Android, and headless:
+
+```sh
+cargo run -p physbox-desktop -- --render-scale 50
+cargo run -p physbox-headless -- \
+  --render-scale 50 \
+  --output /tmp/physbox5-50.png \
+  --report /tmp/physbox5-50.json
+```
+
+For the browser, use `?render-scale=50`; shared Rust owns URL synchronization
+and browser preference persistence. `FrameReport.renderScale` publishes the
+native and world extents, effective scale, direct/composited path, and
+intermediate color allocation. The option is manual rather than adaptive:
+measure it on the target device because the native composite can offset the
+saved world raster work.
+
 ### Interactive solver and capacity inspection
 
 The deployed browser includes the explicit solver-inspection surface so a
