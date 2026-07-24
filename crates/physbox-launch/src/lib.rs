@@ -9,6 +9,15 @@ use serde::{Deserialize, Serialize};
 
 mod web_preferences;
 
+pub use physbox_sim::{
+    FluidSolidCouplingQuality, MAX_BIASED_ITERATIONS, MAX_CONTACT_DAMPING_RATIO, MAX_CONTACT_HZ,
+    MAX_FIXED_STEP_HZ, MAX_MAX_DEPENETRATION_VELOCITY, MAX_SLEEP_SPEED_THRESHOLD,
+    MAX_SOLVER_SUBSTEPS, MAX_SPECULATIVE_DISTANCE, MAX_STATIC_CONTACT_HZ_MULTIPLIER,
+    MIN_BIASED_ITERATIONS, MIN_CONTACT_DAMPING_RATIO, MIN_CONTACT_HZ, MIN_FIXED_STEP_HZ,
+    MIN_MAX_DEPENETRATION_VELOCITY, MIN_SLEEP_SPEED_THRESHOLD, MIN_SOLVER_SUBSTEPS,
+    MIN_SPECULATIVE_DISTANCE, MIN_STATIC_CONTACT_HZ_MULTIPLIER, PHYSICS_CONFIGURATION_VERSION,
+    PhysicsConfigurationV3, SleepGrouping, SolverProfileName, WorldCapacity as WorldCapacityPreset,
+};
 pub use web_preferences::{LaunchPreferenceSelection, WebPreferenceController, WebPreferenceStore};
 
 pub const ANDROID_STARTUP_ARGV_INTENT_EXTRA: &str = "physbox5.startup.argv";
@@ -17,26 +26,6 @@ pub const DEFAULT_WIDTH: u32 = 960;
 pub const DEFAULT_HEIGHT: u32 = 600;
 pub const DEFAULT_CAPTURE_FRAMES: u32 = 12;
 pub const DEFAULT_CAPTURE_FPS: u32 = 60;
-pub const PHYSICS_CONFIGURATION_VERSION: u32 = 3;
-pub const MIN_FIXED_STEP_HZ: u32 = 15;
-pub const MAX_FIXED_STEP_HZ: u32 = 240;
-pub const MIN_SOLVER_SUBSTEPS: u32 = 1;
-pub const MAX_SOLVER_SUBSTEPS: u32 = 8;
-pub const MIN_BIASED_ITERATIONS: u32 = 1;
-pub const MAX_BIASED_ITERATIONS: u32 = 4;
-pub const MIN_CONTACT_HZ: f32 = 1.0;
-pub const MAX_CONTACT_HZ: f32 = 120.0;
-pub const MIN_CONTACT_DAMPING_RATIO: f32 = 0.5;
-pub const MAX_CONTACT_DAMPING_RATIO: f32 = 20.0;
-pub const MIN_STATIC_CONTACT_HZ_MULTIPLIER: f32 = 0.5;
-pub const MAX_STATIC_CONTACT_HZ_MULTIPLIER: f32 = 16.0;
-pub const MIN_SPECULATIVE_DISTANCE: f32 = 0.0;
-pub const MAX_SPECULATIVE_DISTANCE: f32 = 1.0;
-pub const MIN_MAX_DEPENETRATION_VELOCITY: f32 = 0.1;
-pub const MAX_MAX_DEPENETRATION_VELOCITY: f32 = 100.0;
-pub const MIN_SLEEP_SPEED_THRESHOLD: f32 = 0.001;
-pub const MAX_SLEEP_SPEED_THRESHOLD: f32 = 1.0;
-
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub enum RenderScalePreset {
     #[default]
@@ -91,91 +80,6 @@ impl RenderScalePreset {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum WorldCapacityPreset {
-    #[default]
-    Slots64,
-    Slots256,
-    Slots1000,
-    Slots10000,
-}
-
-impl WorldCapacityPreset {
-    pub const ALL: [Self; 4] = [
-        Self::Slots64,
-        Self::Slots256,
-        Self::Slots1000,
-        Self::Slots10000,
-    ];
-
-    pub const fn slots(self) -> u32 {
-        match self {
-            Self::Slots64 => 64,
-            Self::Slots256 => 256,
-            Self::Slots1000 => 1_000,
-            Self::Slots10000 => 10_000,
-        }
-    }
-
-    pub const fn label(self) -> &'static str {
-        match self {
-            Self::Slots64 => "64 SLOTS",
-            Self::Slots256 => "256 SLOTS",
-            Self::Slots1000 => "1K SLOTS",
-            Self::Slots10000 => "10K SLOTS",
-        }
-    }
-
-    fn parse(value: &str) -> Result<Self, LaunchError> {
-        match value {
-            "64" => Ok(Self::Slots64),
-            "256" => Ok(Self::Slots256),
-            "1000" | "1k" => Ok(Self::Slots1000),
-            "10000" | "10k" => Ok(Self::Slots10000),
-            _ => Err(LaunchError(format!(
-                "--body-capacity must be one of 64, 256, 1000, or 10000; received {value}"
-            ))),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum FluidSolidCouplingQuality {
-    #[default]
-    Standard,
-    Stabilized,
-}
-
-impl FluidSolidCouplingQuality {
-    pub const ALL: [Self; 2] = [Self::Standard, Self::Stabilized];
-
-    pub const fn name(self) -> &'static str {
-        match self {
-            Self::Standard => "standard",
-            Self::Stabilized => "stabilized",
-        }
-    }
-
-    pub const fn label(self) -> &'static str {
-        match self {
-            Self::Standard => "STANDARD",
-            Self::Stabilized => "STABILIZED",
-        }
-    }
-
-    fn parse(value: &str) -> Result<Self, LaunchError> {
-        match value {
-            "standard" => Ok(Self::Standard),
-            "stabilized" => Ok(Self::Stabilized),
-            _ => Err(LaunchError(
-                "--coupling-quality requires standard or stabilized".to_owned(),
-            )),
-        }
-    }
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LaunchHost {
     Desktop,
@@ -200,205 +104,6 @@ pub enum FrameMarkerMode {
     #[default]
     Milestones,
     All,
-}
-
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum SolverProfileName {
-    HardDirect,
-    #[default]
-    SoftCoupled,
-}
-
-impl SolverProfileName {
-    pub const fn name(self) -> &'static str {
-        match self {
-            Self::HardDirect => "hard-direct",
-            Self::SoftCoupled => "soft-coupled",
-        }
-    }
-
-    fn parse(value: &str) -> Result<Self, LaunchError> {
-        match value {
-            "hard-direct" | "selected" => Ok(Self::HardDirect),
-            "soft-coupled" | "branch-robust" => Ok(Self::SoftCoupled),
-            _ => Err(LaunchError(format!("unknown solver profile: {value}"))),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum SleepGrouping {
-    #[serde(rename = "local-4")]
-    Local4,
-    #[serde(rename = "local-8")]
-    Local8,
-    #[default]
-    #[serde(rename = "exact")]
-    Exact,
-}
-
-impl SleepGrouping {
-    pub const ALL: [Self; 3] = [Self::Local4, Self::Local8, Self::Exact];
-
-    pub const fn name(self) -> &'static str {
-        match self {
-            Self::Local4 => "local-4",
-            Self::Local8 => "local-8",
-            Self::Exact => "exact",
-        }
-    }
-
-    pub const fn label(self) -> &'static str {
-        match self {
-            Self::Local4 => "LOCAL 4",
-            Self::Local8 => "LOCAL 8",
-            Self::Exact => "EXACT",
-        }
-    }
-
-    pub const fn wake_propagation_rounds(self) -> Option<u32> {
-        match self {
-            Self::Local4 => Some(4),
-            Self::Local8 => Some(8),
-            Self::Exact => None,
-        }
-    }
-
-    fn parse(value: &str) -> Result<Self, LaunchError> {
-        match value {
-            "local-4" => Ok(Self::Local4),
-            "local-8" => Ok(Self::Local8),
-            "exact" => Ok(Self::Exact),
-            _ => Err(LaunchError(
-                "--sleep-grouping requires local-4, local-8, or exact".to_owned(),
-            )),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PhysicsConfigurationV3 {
-    pub version: u32,
-    pub solver_profile: SolverProfileName,
-    pub fixed_step_hz: u32,
-    pub substeps: u32,
-    pub biased_iterations: u32,
-    pub contact_hertz: f32,
-    pub contact_damping_ratio: f32,
-    pub static_contact_hertz_multiplier: f32,
-    pub speculative_distance: f32,
-    pub max_depenetration_velocity: f32,
-    pub sleeping_enabled: bool,
-    pub sleep_speed_threshold: f32,
-    pub sleep_grouping: SleepGrouping,
-}
-
-impl PhysicsConfigurationV3 {
-    pub const HARD_DIRECT: Self = Self {
-        version: PHYSICS_CONFIGURATION_VERSION,
-        solver_profile: SolverProfileName::HardDirect,
-        fixed_step_hz: 60,
-        substeps: 4,
-        biased_iterations: 2,
-        contact_hertz: 30.0,
-        contact_damping_ratio: 10.0,
-        static_contact_hertz_multiplier: 2.0,
-        speculative_distance: 0.02,
-        max_depenetration_velocity: 3.0,
-        sleeping_enabled: true,
-        sleep_speed_threshold: 0.02,
-        sleep_grouping: SleepGrouping::Exact,
-    };
-
-    pub const SOFT_COUPLED: Self = Self {
-        solver_profile: SolverProfileName::SoftCoupled,
-        biased_iterations: 1,
-        ..Self::HARD_DIRECT
-    };
-
-    pub const fn for_profile(profile: SolverProfileName) -> Self {
-        match profile {
-            SolverProfileName::HardDirect => Self::HARD_DIRECT,
-            SolverProfileName::SoftCoupled => Self::SOFT_COUPLED,
-        }
-    }
-
-    pub fn fixed_dt_seconds(self) -> f32 {
-        1.0 / self.fixed_step_hz as f32
-    }
-
-    pub fn validate(self) -> Result<(), LaunchError> {
-        if self.version != PHYSICS_CONFIGURATION_VERSION {
-            return Err(LaunchError(format!(
-                "unsupported physics configuration version {}, expected {PHYSICS_CONFIGURATION_VERSION}",
-                self.version
-            )));
-        }
-        bounded_integer(
-            "--sim-hz",
-            self.fixed_step_hz,
-            MIN_FIXED_STEP_HZ,
-            MAX_FIXED_STEP_HZ,
-        )?;
-        bounded_integer(
-            "--substeps",
-            self.substeps,
-            MIN_SOLVER_SUBSTEPS,
-            MAX_SOLVER_SUBSTEPS,
-        )?;
-        bounded_integer(
-            "--iterations",
-            self.biased_iterations,
-            MIN_BIASED_ITERATIONS,
-            MAX_BIASED_ITERATIONS,
-        )?;
-        bounded_float(
-            "--contact-hz",
-            self.contact_hertz,
-            MIN_CONTACT_HZ,
-            MAX_CONTACT_HZ,
-        )?;
-        bounded_float(
-            "--contact-damping",
-            self.contact_damping_ratio,
-            MIN_CONTACT_DAMPING_RATIO,
-            MAX_CONTACT_DAMPING_RATIO,
-        )?;
-        bounded_float(
-            "--static-contact-scale",
-            self.static_contact_hertz_multiplier,
-            MIN_STATIC_CONTACT_HZ_MULTIPLIER,
-            MAX_STATIC_CONTACT_HZ_MULTIPLIER,
-        )?;
-        bounded_float(
-            "--speculative-distance",
-            self.speculative_distance,
-            MIN_SPECULATIVE_DISTANCE,
-            MAX_SPECULATIVE_DISTANCE,
-        )?;
-        bounded_float(
-            "--max-depenetration-velocity",
-            self.max_depenetration_velocity,
-            MIN_MAX_DEPENETRATION_VELOCITY,
-            MAX_MAX_DEPENETRATION_VELOCITY,
-        )?;
-        bounded_float(
-            "--sleep-threshold",
-            self.sleep_speed_threshold,
-            MIN_SLEEP_SPEED_THRESHOLD,
-            MAX_SLEEP_SPEED_THRESHOLD,
-        )?;
-        Ok(())
-    }
-}
-
-impl Default for PhysicsConfigurationV3 {
-    fn default() -> Self {
-        Self::SOFT_COUPLED
-    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
@@ -738,13 +443,13 @@ fn apply_option(
                 _ => return Err(LaunchError(format!("unknown scenario: {value}"))),
             }
         }
-        "--body-capacity" => options.world_capacity = WorldCapacityPreset::parse(&value)?,
+        "--body-capacity" => options.world_capacity = parse_world_capacity(&value)?,
         "--coupling-quality" => {
-            options.fluid_solid_coupling_quality = FluidSolidCouplingQuality::parse(&value)?;
+            options.fluid_solid_coupling_quality = parse_coupling_quality(&value)?;
         }
         "--solver" => {
             mark_physics_field(seen_physics_fields, "solver")?;
-            options.physics.solver_profile = SolverProfileName::parse(&value)?;
+            options.physics.solver_profile = parse_solver_profile(&value)?;
         }
         "--solver-options" => {
             if value.is_empty() {
@@ -798,7 +503,7 @@ fn apply_option(
         }
         "--sleep-grouping" => {
             mark_physics_field(seen_physics_fields, "sleep-grouping")?;
-            options.physics.sleep_grouping = SleepGrouping::parse(&value)?;
+            options.physics.sleep_grouping = parse_sleep_grouping(&value)?;
         }
         "--sleep-visuals" => {
             options.sleep_visuals_enabled = match value.as_str() {
@@ -834,6 +539,47 @@ fn apply_option(
     Ok(())
 }
 
+fn parse_world_capacity(value: &str) -> Result<WorldCapacityPreset, LaunchError> {
+    match value {
+        "64" => Ok(WorldCapacityPreset::Slots64),
+        "256" => Ok(WorldCapacityPreset::Slots256),
+        "1000" | "1k" => Ok(WorldCapacityPreset::Slots1000),
+        "10000" | "10k" => Ok(WorldCapacityPreset::Slots10000),
+        _ => Err(LaunchError(format!(
+            "--body-capacity must be one of 64, 256, 1000, or 10000; received {value}"
+        ))),
+    }
+}
+
+fn parse_coupling_quality(value: &str) -> Result<FluidSolidCouplingQuality, LaunchError> {
+    match value {
+        "standard" => Ok(FluidSolidCouplingQuality::Standard),
+        "stabilized" => Ok(FluidSolidCouplingQuality::Stabilized),
+        _ => Err(LaunchError(
+            "--coupling-quality requires standard or stabilized".to_owned(),
+        )),
+    }
+}
+
+fn parse_solver_profile(value: &str) -> Result<SolverProfileName, LaunchError> {
+    match value {
+        "hard-direct" | "selected" => Ok(SolverProfileName::HardDirect),
+        "soft-coupled" | "branch-robust" => Ok(SolverProfileName::SoftCoupled),
+        _ => Err(LaunchError(format!("unknown solver profile: {value}"))),
+    }
+}
+
+fn parse_sleep_grouping(value: &str) -> Result<SleepGrouping, LaunchError> {
+    match value {
+        "local-4" => Ok(SleepGrouping::Local4),
+        "local-8" => Ok(SleepGrouping::Local8),
+        "exact" => Ok(SleepGrouping::Exact),
+        _ => Err(LaunchError(
+            "--sleep-grouping requires local-4, local-8, or exact".to_owned(),
+        )),
+    }
+}
+
 fn preparse_solver_profile(args: &[String]) -> Result<Option<SolverProfileName>, LaunchError> {
     let mut profile = None;
     let mut index = 0;
@@ -850,7 +596,7 @@ fn preparse_solver_profile(args: &[String]) -> Result<Option<SolverProfileName>,
             if profile.is_some() {
                 return Err(LaunchError("duplicate physics option: solver".to_owned()));
             }
-            profile = Some(SolverProfileName::parse(value)?);
+            profile = Some(parse_solver_profile(value)?);
         }
         index += 2;
     }
@@ -901,34 +647,6 @@ fn apply_legacy_solver_options(
     Ok(())
 }
 
-fn bounded_integer(
-    argument: &str,
-    value: u32,
-    minimum: u32,
-    maximum: u32,
-) -> Result<(), LaunchError> {
-    if !(minimum..=maximum).contains(&value) {
-        return Err(LaunchError(format!(
-            "{argument} must be between {minimum} and {maximum}"
-        )));
-    }
-    Ok(())
-}
-
-fn bounded_float(
-    argument: &str,
-    value: f32,
-    minimum: f32,
-    maximum: f32,
-) -> Result<(), LaunchError> {
-    if !value.is_finite() || !(minimum..=maximum).contains(&value) {
-        return Err(LaunchError(format!(
-            "{argument} must be finite and between {minimum} and {maximum}"
-        )));
-    }
-    Ok(())
-}
-
 fn parse_positive(argument: &str, value: &str) -> Result<u32, LaunchError> {
     let parsed = parse_integer(argument, value)?;
     if parsed == 0 {
@@ -952,7 +670,10 @@ fn parse_float(argument: &str, value: &str) -> Result<f32, LaunchError> {
 }
 
 fn validate(host: LaunchHost, options: &LaunchOptions) -> Result<(), LaunchError> {
-    options.physics.validate()?;
+    options
+        .physics
+        .validate()
+        .map_err(|error| LaunchError(error.to_string()))?;
     if host.supports_capture() && options.output.is_none() {
         return Err(LaunchError("headless capture requires --output".to_owned()));
     }

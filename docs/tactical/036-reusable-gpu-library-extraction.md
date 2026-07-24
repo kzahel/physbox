@@ -104,20 +104,35 @@ reconsideration triggers before public code is added.
 
 ### S36.2 — Real simulation crate foundation
 
-- [ ] Add `physbox-sim` to workspace members and maintained default members
+- [x] Add `physbox-sim` to workspace members and maintained default members
       with no engine, launch, UI, comparator, shell, or app dependency.
-- [ ] Move the fixed-step interactive clock and pacing types into the crate.
-- [ ] Define supported semantic `WorldDef`, capacity, quality, step, body,
+- [x] Move the fixed-step interactive clock and pacing types into the crate.
+- [x] Define supported semantic `WorldDef`, capacity, quality, step, body,
       shape, material, geometry, and logical-handle types.
-- [ ] Split launch spelling/presets and engine menu labels from semantic
+- [x] Split launch spelling/presets and engine menu labels from semantic
       simulation validation and defaults.
-- [ ] Retain temporary engine re-exports where they prevent unrelated caller
+- [x] Retain temporary engine re-exports where they prevent unrelated caller
       churn.
-- [ ] Add dependency negatives and focused public contract tests.
+- [x] Add dependency negatives and focused public contract tests.
 
 Gate: `physbox-sim` owns real pacing/configuration behavior, the engine consumes
 it without behavior change, and an independent crate can compile against its
 definitions without pulling application vocabulary.
+
+Implementation checkpoint, 2026-07-24: `physbox-sim` is a maintained leaf
+crate owning the unchanged interactive zero-or-one-step clock, semantic physics
+configuration and validation, capacity, sleeping, coupling-quality, and neutral
+world/body/shape definitions. `physbox-launch` retains spelling, parsing,
+migration, persistence, and compatibility re-exports while depending on the
+simulation owner. The platform-boundary checker rejects engine, launch, UI,
+comparator, shell, and application vocabulary in the simulation crate.
+
+Focused simulation and launch tests pass 43/43. Warnings-denied clippy passes
+for `physbox-sim`, `physbox-launch`, and the production engine library. The
+engine library run passed 207/208 before the existing asynchronous
+atomic-capacity assertion failed once; its exact isolated rerun passed. No GPU
+source, simulation equation, dispatch graph, default, or first-party call site
+changed in this slice.
 
 ### S36.3 — Mechanical/render resource separation
 

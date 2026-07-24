@@ -10,5 +10,6 @@ solver-lab = []
 
 [dependencies]
 form_urlencoded.workspace = true
+physbox-sim = { path = "../physbox-sim" }
 serde.workspace = true
 serde_json.workspace = true

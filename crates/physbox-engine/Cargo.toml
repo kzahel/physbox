@@ -16,6 +16,7 @@ bytemuck.workspace = true
 physbox-box2d-comparator = { path = "../physbox-box2d-comparator", optional = true }
 physbox-launch = { path = "../physbox-launch" }
 physbox-contracts = { path = "../physbox-contracts" }
+physbox-sim = { path = "../physbox-sim" }
 physbox-ui = { path = "../physbox-ui" }
 serde.workspace = true
 serde_json.workspace = true

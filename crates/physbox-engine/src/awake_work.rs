@@ -5,7 +5,7 @@ use physbox_contracts::{
     BodyStateV1, CapacityRecordV1, SLEEP_POLICY_VERSION, SLEEP_STATE_LAYOUT_VERSION,
     SLEEP_TRANSITION_CAUSE_CONFIGURATION, SLEEP_TRANSITION_CAUSE_INITIALIZATION, SleepPolicyV1,
 };
-use physbox_launch::SleepGrouping;
+use physbox_sim::SleepGrouping;
 use wgpu::util::DeviceExt;
 
 use crate::body_state::{ACTIVE_BODY_DISPATCH_64_OFFSET, ACTIVE_BODY_STATE_WORDS};

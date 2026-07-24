@@ -7,7 +7,7 @@ use physbox_contracts::{
     BodyCommandBatchV1, BodyLayoutV1, CapacityRecordV1, ConstructionIntentBatchV1,
     ContactIdentityPolicyV1, GrabIntentBatchV1, ScenarioV1, Validate, Vec2,
 };
-use physbox_launch::{FluidSolidCouplingQuality, WorldCapacityPreset};
+use physbox_sim::{FluidSolidCouplingQuality, WorldCapacity as WorldCapacityPreset};
 use wgpu::util::DeviceExt;
 
 use crate::awake_work::SleepExecutionConfig;

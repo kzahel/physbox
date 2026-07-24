@@ -2,12 +2,12 @@ use physbox_contracts::{
     CONTACT_SOFTNESS_POLICY_VERSION, ContactPolicyV1, ContactSoftnessPolicyV1, FiniteF32,
     ScenarioV1, Validate,
 };
-use physbox_launch::{
+use physbox_launch::ValidationScenario;
+use physbox_sim::{
     MAX_BIASED_ITERATIONS, MAX_CONTACT_DAMPING_RATIO, MAX_CONTACT_HZ, MAX_FIXED_STEP_HZ,
     MAX_SOLVER_SUBSTEPS, MAX_STATIC_CONTACT_HZ_MULTIPLIER, MIN_BIASED_ITERATIONS,
     MIN_CONTACT_DAMPING_RATIO, MIN_CONTACT_HZ, MIN_FIXED_STEP_HZ, MIN_SOLVER_SUBSTEPS,
     MIN_STATIC_CONTACT_HZ_MULTIPLIER, PhysicsConfigurationV3, SleepGrouping, SolverProfileName,
-    ValidationScenario,
 };
 
 #[derive(Clone, Debug, PartialEq)]

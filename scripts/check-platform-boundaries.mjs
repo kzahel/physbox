@@ -140,6 +140,19 @@ for (const path of await files(join(root, "crates", "physbox-ui", "src"))) {
   }
 }
 
+const simManifestPath = join(root, "crates", "physbox-sim", "Cargo.toml");
+const simManifest = await readFile(simManifestPath, "utf8");
+const simForbiddenDependencies = /\bphysbox-(?:engine|launch|ui|box2d-comparator|shell)\s*=/i;
+if (simForbiddenDependencies.test(simManifest)) {
+  failures.push("crates/physbox-sim/Cargo.toml: simulation library depends on application policy");
+}
+const simProductVocabulary = /\b(?:ValidationScenario|WorkbenchTool|UiAction|LaunchOptions|RenderScalePreset|Box2dWorld|ComparisonShadow)\b/;
+for (const path of await files(join(root, "crates", "physbox-sim", "src"))) {
+  if (extname(path) === ".rs" && simProductVocabulary.test(await readFile(path, "utf8"))) {
+    failures.push(`${relative(root, path)}: application vocabulary belongs outside physbox-sim`);
+  }
+}
+
 const oracleDependency = /physbox-box2d-oracle\s*=/i;
 for (const rootName of ["apps", "crates"]) {
   for (const path of await files(join(root, rootName))) {
@@ -157,6 +170,12 @@ if (!uiForbiddenDependencies.test("physbox-engine = { path = \"../physbox-engine
 }
 if (!uiProductVocabulary.test("enum WorkbenchTool { Grab }")) {
   failures.push("boundary self-test failed: UI product vocabulary");
+}
+if (!simForbiddenDependencies.test("physbox-engine = { path = \"../physbox-engine\" }")) {
+  failures.push("boundary self-test failed: simulation dependency direction");
+}
+if (!simProductVocabulary.test("struct LaunchOptions;")) {
+  failures.push("boundary self-test failed: simulation application vocabulary");
 }
 for (const rule of rules) {
   const negativeFixture = rule.name.includes("WGSL")

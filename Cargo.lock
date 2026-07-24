@@ -1472,6 +1472,7 @@ dependencies = [
  "physbox-box2d-comparator",
  "physbox-contracts",
  "physbox-launch",
+ "physbox-sim",
  "physbox-ui",
  "pollster",
  "serde",
@@ -1513,6 +1514,7 @@ name = "physbox-launch"
 version = "0.1.0"
 dependencies = [
  "form_urlencoded",
+ "physbox-sim",
  "serde",
  "serde_json",
 ]
@@ -1554,6 +1556,15 @@ dependencies = [
  "physbox-launch",
  "pollster",
  "winit",
+]
+
+[[package]]
+name = "physbox-sim"
+version = "0.1.0"
+dependencies = [
+ "physbox-contracts",
+ "serde",
+ "wgpu",
 ]
 
 [[package]]
