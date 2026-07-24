@@ -259,6 +259,22 @@ the isolated delta is 17 dispatches and 32 bytes. The zero sampled misses are
 strong corpus evidence but remain distinct from a proof covering every
 possible one-step fluid displacement.
 
+Clean Browser WebGPU timing at revision
+`8312b2f22c9d753e43290ab55d20a6bfe4f81e29`, artifact
+`/tmp/physbox5-s35-candidate-b-browser-clean-20260724.json`, uses one untimed
+system warmup followed by ABBA fresh-world trials, four discarded engine
+samples per trial, and 24 retained samples per trial (`48` per quality) on the
+Radeon 890M/RADV adapter. Standard versus Candidate B measures rigid-compute
+P50 `0.398` versus `0.400 ms`, liquid-compute P50 `2.058` versus `2.055 ms`,
+and total-GPU P50 `2.544` versus `2.534 ms`. Total-GPU P95/P99 are
+`4.683/5.416 ms` versus `3.580/5.917 ms`; CPU-encode P50 is `0.780` versus
+`0.700 ms`. Both modes sustain `60.006` presented FPS and `1.000` effective
+simulation scale. The sub-percent P50 differences and mixed tail movement are
+inside run noise, not evidence that added work is faster. This adapter shows
+no material Candidate B regression in the ordinary 3,952-particle sandbox;
+physical mobile timing remains required because candidate A regressed there
+materially.
+
 Gate: scalar sign/effective-mass checks, GPU finite/capacity checks, dry
 controls, wet two-body rows, and wet multi-body rows pass before performance
 ranking.
