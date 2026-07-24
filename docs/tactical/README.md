@@ -233,6 +233,11 @@ the consumer contract. S36 initially extracted a reusable 2D renderer, then
 corrected that boundary by deleting it and returning world rendering to
 `physbox-engine`. The engine and external proof use the physics-only owner, and
 the sibling Quest repository compiles through the same local path.
+Human review on 2026-07-24 opens S37 to add the reusable rigid-interaction
+primitives required by independent consumers. It exposes bounded deferred
+point queries, temporary point constraints, selected-body destruction, and
+non-lossy asynchronous terminal results while keeping grab/erase tool policy,
+rendering, and backend comparison outside `physbox-sim`.
 
 Current target supersession, 2026-07-22: the
 [rigid quality target contract](../topics/rigid-quality-targets.md) governs new
@@ -288,6 +293,7 @@ This README remains the unnumbered index.
 | S34 | Render resolution scaling | [034-render-resolution-scaling.md](034-render-resolution-scaling.md) | complete; shared 100/75/50 world scaling, native UI, reports/timing, cross-host and physical Android qualification pass, 2026-07-24 |
 | S35 | Fluid/solid contact stabilization | [035-fluid-solid-contact-stabilization.md](035-fluid-solid-contact-stabilization.md) | active; restart-bound quality contract and permanent wet-overlap corpus first, no default promotion authorized, 2026-07-24 |
 | S36 | Reusable GPU physics library extraction | [036-reusable-gpu-library-extraction.md](036-reusable-gpu-library-extraction.md) | complete; renderer private, public sim-only consumer, canonical GPU observation, Quest path, and cross-host requalification pass, 2026-07-24 |
+| S37 | Deferred rigid interaction API | [037-deferred-rigid-interaction-api.md](037-deferred-rigid-interaction-api.md) | active; Box2D-shaped query/constraint/destruction boundary approved for end-to-end implementation, 2026-07-24 |
 
 ## Conventions
 

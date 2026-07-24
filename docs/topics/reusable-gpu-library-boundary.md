@@ -101,6 +101,77 @@ promise synchronous getters for current transforms, contacts, or particles.
 That difference belongs in the consumer's backend adapter rather than being
 hidden by a per-frame CPU mirror.
 
+## Deferred queries, constraints, and lifecycle results
+
+Decided 2026-07-24: reusable rigid interaction is expressed as ordinary
+physics primitives rather than first-party tool intents. The public surface
+adds:
+
+- a bounded point query that reserves and returns a generational
+  `BodySelectionId`;
+- point-constraint creation from a deferred selection, with a synchronously
+  reserved generational `PointConstraintId`;
+- point-constraint target updates and destruction;
+- selected-body destruction; and
+- bounded asynchronous terminal command results and lifecycle counters.
+
+This is the GPU-deferred counterpart of the common Box2D composition:
+query shapes at a point, test eligibility, create/update/destroy a temporary
+constraint, and destroy an identified body. It deliberately does not export
+`BeginGrab`, `EraseAt`, pointer, controller, hand, Quest, OpenXR, tool, or
+comparator vocabulary. A consumer adapter may compose those application
+intents:
+
+```text
+BeginGrab -> point query -> create point constraint
+Update    -> set point-constraint target
+End       -> destroy point constraint
+EraseAt   -> point query -> destroy selected body
+```
+
+Deferred handles are immediately usable by later commands queued for the same
+outer step. Point-constraint creation reserves and returns its handle before
+the query executes. A later query miss produces a terminal result and releases
+the reservation. Target and destroy commands queued while creation is pending
+execute predictably in command order: they either apply to the newly created
+constraint or terminate as cancelled when its dependency misses or fails.
+
+Each accepted state-mutating command has exactly one terminal result:
+`succeeded`, `invalid`, `missed`, `cancelled`, `superseded`, or `failed`.
+Capacity rejection is synchronous and returns no `CommandId`. Target updates
+may either consume bounded command capacity individually or be coalesced;
+when coalesced, every accepted superseded command still receives its terminal
+result. Result delivery may apply bounded backpressure to further command
+admission, but internal lifecycle reconciliation is non-lossy and cannot
+depend on the application polling quickly enough.
+
+Point selection is explicitly deterministic for the first public version:
+
+- only live dynamic bodies qualify;
+- sleeping dynamic bodies qualify and are awakened by a successful
+  constraint;
+- the point must be contained by the authored shape;
+- overlapping hits choose the nearest body origin; and
+- equal-distance hits choose the lowest generational `BodyId`.
+
+Constraint tuning is mechanics-facing: frequency in hertz, damping ratio,
+maximum acceleration, maximum linear speed, and maximum angular speed.
+PhysBox must not label acceleration limiting as force limiting unless it
+implements the required mass scaling. Defaults preserve the current
+first-party interaction mechanics.
+
+`World::step` only records GPU work. It never maps, waits, or submits.
+Applications explicitly request and submit bounded result copies, then poll
+them asynchronously. Reset cancels queued and in-flight commands and releases
+selection, constraint, and result reservations deterministically. Dropping a
+world releases those resources without inventing observable results after the
+consumer has discarded the world.
+
+Public counters distinguish command and result capacity, queued and in-flight
+commands, pending and live constraints, pending body destructions, high-water
+marks, and synchronous rejections. They describe boundedness and lifecycle,
+not sandbox diagnostics or private compute-pass state.
+
 ## GPU ownership and stepping
 
 The application owns:
@@ -240,8 +311,15 @@ The boundary is accepted only when:
 - `physbox-sim` has no application, engine, launch, UI, comparator, shell, or
   rendering dependency;
 - public rustdoc contains no product renderer or render-view type;
+- deferred query/constraint/destruction commands chain within one step,
+  produce one guaranteed terminal result per accepted mutation, and reconcile
+  body and handle lifecycle without synchronous GPU waits;
+- point destruction eventually corrects live-body accounting, invalidates
+  stale public handles, and permits deterministic slot reuse;
 - the external proof depends only on `physbox-sim`, creates and steps a rigid
-  world without a surface, and completes an explicitly requested observation;
+  world without a surface, performs query/constraint/target/release/destruction
+  through the public API, and completes explicitly requested observation and
+  result copies;
 - the separate Quest adapter compiles through the same public local-path API;
 - first-party simulation results, dispatch graphs, reports, pacing, and
   pixels remain unchanged by ownership movement; and
@@ -286,6 +364,10 @@ Revisit API details if:
 
 - a real consumer cannot render or operate from canonical physics
   observations without private layout access or per-frame CPU readback;
+- a useful Box2D-style interaction cannot be composed from neutral point
+  queries and temporary constraints without exposing application tool policy;
+- bounded command-result backpressure prevents an interactive consumer from
+  maintaining its intended fixed-step cadence;
 - a required physical state cannot be represented in a bounded,
   versioned same-device observation;
 - stable logical handles require an unbounded CPU mechanical mirror;
