@@ -31,6 +31,8 @@ const COUNTER_BODY_CONTACTS: u32 = 6u;
 const COUNTER_BODY_CONTRIBUTIONS: u32 = 16u;
 const COUNTER_BODY_CONTRIBUTION_OVERFLOW: u32 = 18u;
 const OVERFLOW_BODY_CONTRIBUTIONS: u32 = 1u << 4u;
+const BODY_CONTRIBUTIONS_PER_PARTICLE: u32 = 2u;
+const HAS_SECOND_BODY_BIT: u32 = 1u << 30u;
 // This identity is bitcast through a float storage lane. Keep the bit pattern
 // finite so every WebGPU WGSL frontend accepts the constant.
 const NO_BODY: u32 = 0x7f7fffffu;
@@ -73,14 +75,19 @@ fn project_boundaries(@builtin(global_invocation_id) invocation: vec3u) {
     if index >= params.counts.x {
         return;
     }
-    contributions[index] = vec4f(0.0, 0.0, 0.0, bitcast<f32>(NO_BODY));
-    contact_generations[index] = 0u;
+    for (var slot = 0u; slot < BODY_CONTRIBUTIONS_PER_PARTICLE; slot += 1u) {
+        let contribution_index = index + slot * params.counts.x;
+        contributions[contribution_index] =
+            vec4f(0.0, 0.0, 0.0, bitcast<f32>(NO_BODY));
+        contact_generations[contribution_index] = 0u;
+    }
     if atomicLoad(&active_flags[index]) == 0u {
         return;
     }
     var world = positions[index].xy;
     var contact_count = 0u;
     var dynamic_contacts = 0u;
+    var contribution_overflow = false;
     for (var body_index = 0u; body_index < params.counts.y; body_index += 1u) {
         let body_flags = body_metadata[body_index].y;
         if (body_flags & BODY_FLAG_LIVE) == 0u {
@@ -112,17 +119,16 @@ fn project_boundaries(@builtin(global_invocation_id) invocation: vec3u) {
                 world += normal * positional_impulse * params.pressure.w;
                 let body_delta = -normal * positional_impulse * body_inverse_mass;
                 let angle_delta = -positional_impulse * body_inverse_inertia * rotational;
-                if dynamic_contacts == 0u {
-                    contributions[index] = vec4f(
+                if dynamic_contacts < BODY_CONTRIBUTIONS_PER_PARTICLE {
+                    let contribution_index = index + dynamic_contacts * params.counts.x;
+                    contributions[contribution_index] = vec4f(
                         body_delta,
                         angle_delta,
                         bitcast<f32>(body_index),
                     );
-                    contact_generations[index] = body_metadata[body_index].x;
-                    atomicAdd(&counters[COUNTER_BODY_CONTRIBUTIONS], 1u);
+                    contact_generations[contribution_index] = body_metadata[body_index].x;
                 } else {
-                    atomicAdd(&counters[COUNTER_BODY_CONTRIBUTION_OVERFLOW], 1u);
-                    atomicOr(&counters[COUNTER_OVERFLOW_FLAGS], OVERFLOW_BODY_CONTRIBUTIONS);
+                    contribution_overflow = true;
                 }
                 dynamic_contacts += 1u;
             }
@@ -130,6 +136,25 @@ fn project_boundaries(@builtin(global_invocation_id) invocation: vec3u) {
             world += normal * penetration;
         }
         contact_count += 1u;
+    }
+    if contribution_overflow {
+        for (var slot = 0u; slot < BODY_CONTRIBUTIONS_PER_PARTICLE; slot += 1u) {
+            let contribution_index = index + slot * params.counts.x;
+            contributions[contribution_index] =
+                vec4f(0.0, 0.0, 0.0, bitcast<f32>(NO_BODY));
+            contact_generations[contribution_index] = 0u;
+        }
+        atomicAdd(&counters[COUNTER_BODY_CONTRIBUTION_OVERFLOW], 1u);
+        atomicOr(&counters[COUNTER_OVERFLOW_FLAGS], OVERFLOW_BODY_CONTRIBUTIONS);
+    } else if dynamic_contacts > 0u {
+        if dynamic_contacts > 1u {
+            let first = contributions[index];
+            contributions[index] = vec4f(
+                first.xyz,
+                bitcast<f32>(bitcast<u32>(first.w) | HAS_SECOND_BODY_BIT),
+            );
+        }
+        atomicAdd(&counters[COUNTER_BODY_CONTRIBUTIONS], dynamic_contacts);
     }
     let previous = positions[index];
     positions[index] = vec4f(world, previous.zw);

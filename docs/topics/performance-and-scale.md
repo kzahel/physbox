@@ -729,6 +729,27 @@ adapter. The row remains finite and capacity-clean with 3,952 active particles,
 92 particle dispatches, and zero overflow. The independent 32K water-only row
 and maximum product bound remain unchanged.
 
+Two-target particle/body correction, 2026-07-24: the current clean-HEAD
+control at `7335fb8` allocates `889,988` particle bytes. The candidate adds
+one 16-byte contribution and one four-byte generation record per particle
+slot, raising that value to `1,053,828` bytes: `+163,840` bytes or `+18.4%`
+inside particle storage (`+4.73%` across the capacity records summed by the
+focused runner). The primary/secondary planar representation preserves 92
+particle dispatches and makes secondary reads conditional on a primary-record
+bit.
+
+The named RADV GFX1150 host was visibly bimodal during measurement, so the
+candidate was not judged from one favorable run. In the initial low-load
+window, 360 control versus 360 candidate outer-step samples measured host
+P50/P95 `6.120/7.591 ms` versus `6.307/7.908 ms`
+(`+3.1%/+4.2%`). A subsequent clean-control/candidate/clean-control window
+shifted both paths upward; its aggregated control P50/P95/P99/mean was
+`13.561/18.865/20.024/14.375 ms`, while the candidate was
+`12.987/19.273/19.920/14.272 ms`. This does not demonstrate a significant host
+regression, but it also does not create a new clean throughput baseline or
+portable performance claim. The memory increase, raw samples, and unchanged
+dispatch count remain the durable cost record.
+
 Clean Browser WebGPU run `b6af663c-69a8-4f6a-ad4e-8f47b7cb0104` at source
 `3680714` completes 624 current product steps at effective scale `1.000046`
 with zero slip. It retains 3,952 authored particles in the 8,192-slot reserve

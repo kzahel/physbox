@@ -203,8 +203,11 @@ an 8K preview reserve with a separate 32K frontier, and process-isolated
 PhysBox 3/LiquidFun evidence. The approved hardware-backed AVD substitution
 passed and shut down when no physical Android device was available. Current
 sleeping-on/exact AVD repeats expose a retained mobile pacing limitation. S31
-is at a manual checkpoint for coupled behavior bands, subjective feel, mobile
-dispatch optimization, and product/default choices.
+also minimizes the reported submerged-pair failure with two bounded
+particle/body records, explicit three-target overflow, unchanged 92-dispatch
+work, and fresh headless/physical-Android qualification. It remains at a
+manual checkpoint for coupled behavior bands, subjective feel, mobile dispatch
+optimization, and product/default choices.
 Human presentation review on 2026-07-23 selected a PhysBox 3/4-inspired visual
 refresh and a reusable GPU-canvas UI boundary as S33. It is active and may run
 unattended through extraction, widget/menu migration, visual changes, and
@@ -260,7 +263,7 @@ This README remains the unnumbered index.
 | S28 | Browser platform-boundary hardening | [028-browser-platform-boundary-hardening.md](028-browser-platform-boundary-hardening.md) | complete; shared Rust owns preferences/query policy, semantic smoke observation is gated, and JS/TS source locks pass, 2026-07-23 |
 | S29 | Interactive Box2D comparison | [029-interactive-box2d-comparison.md](029-interactive-box2d-comparison.md) | complete; default-on shadow, stable actions, authority/feature-off gates, and authorized hardware-backed AVD substitute pass, 2026-07-23 |
 | S30 | Configurable sleep threshold and grouping | [030-configurable-sleep-grouping.md](030-configurable-sleep-grouping.md) | complete; shared threshold, local-4/local-8/exact behavior, cycle diagnostics, matched cost, browser/headless/AVD qualification, and explicit exact disposition pass, 2026-07-23 |
-| S31 | Coupled liquid sandbox | [031-coupled-liquid-sandbox.md](031-coupled-liquid-sandbox.md) | manual checkpoint; selected preview mechanics/cross-host lanes pass, measured behavior bands and product/default choices await human review, 2026-07-23 |
+| S31 | Coupled liquid sandbox | [031-coupled-liquid-sandbox.md](031-coupled-liquid-sandbox.md) | manual checkpoint; preview mechanics/cross-host lanes and bounded two-target correction pass, measured behavior bands and product/default choices await human review, 2026-07-24 |
 | S32 | Sleeping and exact-grouping default promotion | [032-sleep-default-promotion.md](032-sleep-default-promotion.md) | complete; defaults, migration, opt-outs, native/browser/headless, comparator-feature, ARM64/APK, and physical Quest behavior gates pass, 2026-07-23 |
 | S33 | Presentation foundation and modular canvas UI | [033-presentation-foundation.md](033-presentation-foundation.md) | active; S33.1 clean baseline/provenance and neutral crate boundary pass, 2026-07-23 |
 

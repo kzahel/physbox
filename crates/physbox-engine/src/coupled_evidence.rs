@@ -1148,4 +1148,77 @@ mod tests {
         };
         assert!(config.validate().is_err());
     }
+
+    #[test]
+    fn gpu_submerged_circle_pair_stays_capacity_clean_across_particle_phases() {
+        const STEPS: u32 = 60;
+        const RADIUS: f32 = crate::CONSTRUCTION_CIRCLE_RADIUS;
+        const INITIAL_GAP: f32 = 0.1;
+
+        for phase_x in [0.0, 0.025, 0.05, 0.075] {
+            let mut scenario = crate::liquid_sandbox_scenario().unwrap();
+            scenario.id = format!("submerged-circle-pair-phase-{phase_x}");
+            scenario.rigid.id = format!("{}-rigid", scenario.id);
+            scenario.requested_steps = STEPS;
+            scenario.rigid.requested_steps = STEPS;
+
+            let mut left = scenario
+                .rigid
+                .bodies
+                .iter()
+                .find(|body| body.id.slot == 3)
+                .cloned()
+                .unwrap();
+            left.shape = ShapeV1::Circle {
+                radius: physbox_contracts::FiniteF32::new(RADIUS).unwrap(),
+            };
+            left.inverse_mass =
+                physbox_contracts::FiniteF32::new(crate::CONSTRUCTION_CIRCLE_INVERSE_MASS).unwrap();
+            left.inverse_inertia =
+                physbox_contracts::FiniteF32::new(crate::CONSTRUCTION_CIRCLE_INVERSE_INERTIA)
+                    .unwrap();
+            left.material.friction = physbox_contracts::FiniteF32::new(0.5).unwrap();
+            left.position = Vec2::new(phase_x - RADIUS - 0.5 * INITIAL_GAP, 2.0);
+            left.linear_velocity = Vec2::ZERO;
+            left.angular_velocity = physbox_contracts::FiniteF32::new(0.0).unwrap();
+            left.sleeping = false;
+            let mut right = left.clone();
+            right.id.slot = 4;
+            right.position.x = phase_x + RADIUS + 0.5 * INITIAL_GAP;
+            scenario.rigid.bodies.retain(|body| body.id.slot < 3);
+            scenario.rigid.bodies.extend([left, right]);
+            scenario.rigid.bodies.sort_by_key(|body| body.id);
+            scenario.validate().unwrap();
+
+            let run = pollster::block_on(run_gpu_coupled_evidence(
+                scenario,
+                SolverProfileConfig::soft_coupled(),
+                GpuCoupledEvidenceConfigV1 {
+                    viewport: [320, 200],
+                    warmup_steps: 0,
+                    measured_steps: STEPS,
+                    steps_per_sample: STEPS,
+                    capture_body_trajectory: false,
+                },
+            ))
+            .unwrap();
+            let dynamic = run
+                .evidence
+                .bodies
+                .iter()
+                .filter(|body| body.state.id.slot >= 3)
+                .collect::<Vec<_>>();
+            assert_eq!(dynamic.len(), 2);
+            let separation = distance(dynamic[0].state.position, dynamic[1].state.position);
+            let final_gap = separation - 2.0 * RADIUS;
+            assert_eq!(
+                run.evidence.particle_diagnostics.body_contribution_overflow, 0,
+                "phase {phase_x} exceeded bounded particle/body contribution capacity"
+            );
+            assert!(
+                final_gap >= -0.005,
+                "phase {phase_x} ended with circle overlap {final_gap}"
+            );
+        }
+    }
 }

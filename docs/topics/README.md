@@ -13,7 +13,8 @@ a running log.
   coupled-fluid acceptance.
 - [Coupled liquid/rigid constraint surface](coupled-liquid-rigid-constraint-surface.md)
   — implemented-preview decision, one-GPU-world coupling and wake invariants,
-  compact particle grid/capacity evidence, measured PhysBox 3/LiquidFun
+  compact particle grid/capacity evidence, bounded two-target particle/body
+  response with explicit third-target overflow, measured PhysBox 3/LiquidFun
   disagreements, PhysBox 4 reuse boundary, rigid-only Box2D comparison
   semantics, first water/tool/render scope, and final human-review gate.
 - [Liquid dispatch and capacity performance](liquid-dispatch-and-capacity-performance.md)

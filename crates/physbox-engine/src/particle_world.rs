@@ -21,6 +21,7 @@ const GRID_HEIGHT: u32 = 68;
 const GRID_CELL_COUNT: u32 = GRID_WIDTH * GRID_HEIGHT;
 const PARTICLE_WORKGROUP_SIZE: u32 = 64;
 const PARTICLE_SUBSTEPS: u32 = 2;
+const PARTICLE_BODY_CONTRIBUTIONS_PER_PARTICLE: u32 = 2;
 const PARTICLE_BYTES_PER_SLOT: u64 = 64;
 pub const GPU_PARTICLE_DIAGNOSTICS_VERSION: u32 = 4;
 
@@ -326,13 +327,13 @@ impl GpuParticleWorld {
         let body_contributions = empty_storage(
             device,
             "physbox5_particle_body_contributions",
-            u64::from(capacity) * 16,
+            u64::from(capacity) * u64::from(PARTICLE_BODY_CONTRIBUTIONS_PER_PARTICLE) * 16,
             wgpu::BufferUsages::COPY_SRC,
         );
         let body_contact_generations = empty_storage(
             device,
             "physbox5_particle_body_contact_generations",
-            u64::from(capacity) * 4,
+            u64::from(capacity) * u64::from(PARTICLE_BODY_CONTRIBUTIONS_PER_PARTICLE) * 4,
             wgpu::BufferUsages::COPY_SRC,
         );
         let body_tile_count = capacity.div_ceil(PARTICLE_WORKGROUP_SIZE);
@@ -1405,7 +1406,8 @@ impl GpuParticleWorld {
     }
 
     pub(crate) fn allocated_bytes(&self) -> u64 {
-        u64::from(self.capacity) * (PARTICLE_BYTES_PER_SLOT + 20)
+        u64::from(self.capacity)
+            * (PARTICLE_BYTES_PER_SLOT + u64::from(PARTICLE_BODY_CONTRIBUTIONS_PER_PARTICLE) * 20)
             + u64::from(self.body_capacity) * u64::from(self.body_tile_count) * 16
             + u64::from(GRID_CELL_COUNT) * 8
             + u64::from(self.capacity) * 4
@@ -1422,14 +1424,14 @@ impl GpuParticleWorld {
         let mut records = vec![
             capacity(
                 "particle-body-contributions",
-                u64::from(self.capacity),
-                u64::from(self.initial_count),
+                u64::from(self.capacity) * u64::from(PARTICLE_BODY_CONTRIBUTIONS_PER_PARTICLE),
+                u64::from(self.initial_count) * u64::from(PARTICLE_BODY_CONTRIBUTIONS_PER_PARTICLE),
                 16,
             ),
             capacity(
                 "particle-body-contact-generations",
-                u64::from(self.capacity),
-                u64::from(self.initial_count),
+                u64::from(self.capacity) * u64::from(PARTICLE_BODY_CONTRIBUTIONS_PER_PARTICLE),
+                u64::from(self.initial_count) * u64::from(PARTICLE_BODY_CONTRIBUTIONS_PER_PARTICLE),
                 4,
             ),
             capacity(
@@ -2614,72 +2616,109 @@ mod tests {
     }
 
     #[test]
-    fn gpu_boundary_pressure_fails_closed_on_two_dynamic_targets() {
+    fn gpu_boundary_pressure_supports_two_and_rejects_three_dynamic_targets() {
         let instance = crate::create_instance();
         let adapter = pollster::block_on(crate::gpu_context::request_adapter(&instance, None))
             .expect("test GPU adapter");
         let (device, queue) =
             pollster::block_on(crate::gpu_context::request_device(&adapter)).unwrap();
+        let two =
+            particle_target_scenario(&[Vec2::ZERO, Vec2::new(1.24, 0.0)], Vec2::new(0.62, 0.0));
+        let diagnostics = run_particle_scenario(&device, &queue, &two);
+        assert!(diagnostics.boundary_density_contacts >= 2);
+        assert!(diagnostics.boundary_pressure_edges >= 2);
+        assert_eq!(diagnostics.body_contribution_overflow, 0);
+        assert_eq!(diagnostics.overflow_flags & (1 << 4), 0);
+        assert!(diagnostics.capacity_clean);
+
+        let particle = Vec2::new(0.525, 0.303_109);
+        let three = particle_target_scenario(
+            &[
+                Vec2::ZERO,
+                Vec2::new(1.05, 0.0),
+                Vec2::new(0.525, 0.909_327),
+            ],
+            particle,
+        );
+        let diagnostics = run_particle_scenario(&device, &queue, &three);
+        assert!(diagnostics.boundary_density_contacts >= 3);
+        assert!(diagnostics.body_contribution_overflow > 0);
+        assert_ne!(diagnostics.overflow_flags & (1 << 4), 0);
+        assert!(!diagnostics.capacity_clean);
+    }
+
+    fn particle_target_scenario(
+        body_positions: &[Vec2],
+        particle_position: Vec2,
+    ) -> CoupledScenarioV1 {
         let mut scenario = canonical_coupled_scenario(CoupledScenarioKind::ContainedWater).unwrap();
         scenario.particle_capacity = 1;
         scenario.settings.schedule = physbox_contracts::CoupledScheduleV1::RigidThenCoupledBatch;
         scenario.settings.pressure_iterations = 1;
         scenario.rigid.settings.gravity = Vec2::ZERO;
-        let left = physbox_contracts::BodyStateV1 {
-            id: physbox_contracts::BodyId {
-                slot: 0,
-                generation: 1,
-            },
-            shape: physbox_contracts::ShapeV1::Circle {
-                radius: physbox_contracts::FiniteF32::new(0.5).unwrap(),
-            },
-            position: Vec2::ZERO,
-            angle: physbox_contracts::FiniteF32::new(0.0).unwrap(),
-            linear_velocity: Vec2::ZERO,
-            angular_velocity: physbox_contracts::FiniteF32::new(0.0).unwrap(),
-            inverse_mass: physbox_contracts::FiniteF32::new(0.5).unwrap(),
-            inverse_inertia: physbox_contracts::FiniteF32::new(1.0).unwrap(),
-            material: physbox_contracts::MaterialV1 {
-                friction: physbox_contracts::FiniteF32::new(0.0).unwrap(),
-                restitution: physbox_contracts::FiniteF32::new(0.0).unwrap(),
-            },
-            sleeping: false,
-        };
-        let mut right = left.clone();
-        right.id.slot = 1;
-        right.position.x = 1.24;
-        scenario.rigid.bodies = vec![left, right];
+        scenario.rigid.bodies = body_positions
+            .iter()
+            .enumerate()
+            .map(|(slot, position)| physbox_contracts::BodyStateV1 {
+                id: physbox_contracts::BodyId {
+                    slot: slot as u32,
+                    generation: 1,
+                },
+                shape: physbox_contracts::ShapeV1::Circle {
+                    radius: physbox_contracts::FiniteF32::new(0.5).unwrap(),
+                },
+                position: *position,
+                angle: physbox_contracts::FiniteF32::new(0.0).unwrap(),
+                linear_velocity: Vec2::ZERO,
+                angular_velocity: physbox_contracts::FiniteF32::new(0.0).unwrap(),
+                inverse_mass: physbox_contracts::FiniteF32::new(0.5).unwrap(),
+                inverse_inertia: physbox_contracts::FiniteF32::new(1.0).unwrap(),
+                material: physbox_contracts::MaterialV1 {
+                    friction: physbox_contracts::FiniteF32::new(0.0).unwrap(),
+                    restitution: physbox_contracts::FiniteF32::new(0.0).unwrap(),
+                },
+                sleeping: false,
+            })
+            .collect();
         scenario.regions = vec![ParticleRegionV1 {
             id: 0,
             material_id: 0,
-            lower: Vec2::new(0.52, -0.1),
-            upper: Vec2::new(0.72, 0.1),
+            lower: Vec2::new(particle_position.x - 0.1, particle_position.y - 0.1),
+            upper: Vec2::new(particle_position.x + 0.1, particle_position.y + 0.1),
             spacing: physbox_contracts::FiniteF32::new(0.2).unwrap(),
             initial_velocity: Vec2::ZERO,
         }];
         scenario.validate().unwrap();
-        let body_storage =
-            GpuBodyStorage::new(&device, 2, BODY_COMMAND_CAPACITY, &scenario.rigid.bodies).unwrap();
+        scenario
+    }
+
+    fn run_particle_scenario(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        scenario: &CoupledScenarioV1,
+    ) -> GpuParticleDiagnosticsV4 {
+        let body_storage = GpuBodyStorage::new(
+            device,
+            scenario.rigid.bodies.len() as u32,
+            BODY_COMMAND_CAPACITY,
+            &scenario.rigid.bodies,
+        )
+        .unwrap();
         let particles = GpuParticleWorld::new(
-            &device,
+            device,
             wgpu::TextureFormat::Rgba8UnormSrgb,
-            &scenario,
+            scenario,
             &body_storage,
         )
         .unwrap();
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("physbox5_particle_boundary_pressure_overflow"),
+            label: Some("physbox5_particle_boundary_pressure_capacity"),
         });
         particles.encode_step(&mut encoder);
         queue.submit([encoder.finish()]);
         device.poll(wgpu::PollType::Wait).unwrap();
-        let particle_bytes = capture_particle_bytes(&device, &queue, &particles);
-        let diagnostics = particles.decode_validation_state(&particle_bytes).unwrap();
-
-        assert!(diagnostics.boundary_density_contacts > 0);
-        assert!(diagnostics.body_contribution_overflow > 0);
-        assert_ne!(diagnostics.overflow_flags & (1 << 4), 0);
-        assert!(!diagnostics.capacity_clean);
+        let particle_bytes = capture_particle_bytes(device, queue, &particles);
+        particles.decode_validation_state(&particle_bytes).unwrap()
     }
 
     fn capture_particle_bytes(

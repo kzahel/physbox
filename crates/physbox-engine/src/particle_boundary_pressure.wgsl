@@ -27,6 +27,8 @@ const BODY_FLAG_LIVE: u32 = 1u << 0u;
 const BODY_FLAG_RECTANGLE: u32 = 1u << 8u;
 const BODY_FLAG_CIRCLE: u32 = 1u << 9u;
 const PRESSURE_BODY_BIT: u32 = 1u << 31u;
+const BODY_CONTRIBUTIONS_PER_PARTICLE: u32 = 2u;
+const HAS_SECOND_BODY_BIT: u32 = 1u << 30u;
 // These identities are bitcast through a float storage lane. Keep both bit
 // patterns finite and outside every supported body capacity.
 const OVERFLOW_BODY: u32 = 0x7f7ffffeu;
@@ -70,8 +72,12 @@ fn project_boundary_pressure(@builtin(global_invocation_id) invocation: vec3u) {
     if index >= params.counts.x {
         return;
     }
-    contributions[index] = vec4f(0.0, 0.0, 0.0, bitcast<f32>(NO_BODY));
-    contact_generations[index] = 0u;
+    for (var slot = 0u; slot < BODY_CONTRIBUTIONS_PER_PARTICLE; slot += 1u) {
+        let contribution_index = index + slot * params.counts.x;
+        contributions[contribution_index] =
+            vec4f(0.0, 0.0, 0.0, bitcast<f32>(NO_BODY));
+        contact_generations[contribution_index] = 0u;
+    }
     if atomicLoad(&active_flags[index]) == 0u {
         return;
     }
@@ -80,6 +86,7 @@ fn project_boundary_pressure(@builtin(global_invocation_id) invocation: vec3u) {
     let state = density_states[index];
     var remaining = params.pressure.z;
     var dynamic_contacts = 0u;
+    var contribution_overflow = false;
     for (var body_index = 0u; body_index < params.counts.y; body_index += 1u) {
         let flags = body_metadata[body_index].y;
         if (flags & BODY_FLAG_LIVE) == 0u {
@@ -119,21 +126,38 @@ fn project_boundary_pressure(@builtin(global_invocation_id) invocation: vec3u) {
             }
             let positional_impulse = displacement / inverse_effective_mass;
             world += normal * positional_impulse * params.pressure.w;
-            if dynamic_contacts == 0u {
-                contributions[index] = vec4f(
+            if dynamic_contacts < BODY_CONTRIBUTIONS_PER_PARTICLE {
+                let contribution_index = index + dynamic_contacts * params.counts.x;
+                contributions[contribution_index] = vec4f(
                     -normal * positional_impulse * body_inverse_mass,
                     -positional_impulse * body_inverse_inertia * rotational,
                     bitcast<f32>(body_index | PRESSURE_BODY_BIT),
                 );
-                contact_generations[index] = body_metadata[body_index].x;
+                contact_generations[contribution_index] = body_metadata[body_index].x;
             } else {
-                contributions[index] = vec4f(0.0, 0.0, 0.0, bitcast<f32>(OVERFLOW_BODY));
-                contact_generations[index] = 0u;
+                contribution_overflow = true;
             }
             dynamic_contacts += 1u;
         } else {
             world += normal * displacement;
         }
+    }
+    if contribution_overflow {
+        contributions[index] =
+            vec4f(0.0, 0.0, 0.0, bitcast<f32>(OVERFLOW_BODY));
+        contact_generations[index] = 0u;
+        for (var slot = 1u; slot < BODY_CONTRIBUTIONS_PER_PARTICLE; slot += 1u) {
+            let contribution_index = index + slot * params.counts.x;
+            contributions[contribution_index] =
+                vec4f(0.0, 0.0, 0.0, bitcast<f32>(NO_BODY));
+            contact_generations[contribution_index] = 0u;
+        }
+    } else if dynamic_contacts > 1u {
+        let first = contributions[index];
+        contributions[index] = vec4f(
+            first.xyz,
+            bitcast<f32>(bitcast<u32>(first.w) | HAS_SECOND_BODY_BIT),
+        );
     }
     let previous = positions[index];
     positions[index] = vec4f(world, previous.zw);

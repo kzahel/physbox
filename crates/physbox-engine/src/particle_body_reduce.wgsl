@@ -17,13 +17,15 @@ const BODY_FLAG_LIVE: u32 = 1u << 0u;
 const BODY_FLAG_FIXED: u32 = 1u << 2u;
 const TILE_SIZE: u32 = 64u;
 const PRESSURE_BODY_BIT: u32 = 1u << 31u;
-const BODY_INDEX_MASK: u32 = 0x7fffffffu;
+const HAS_SECOND_BODY_BIT: u32 = 1u << 30u;
+const BODY_INDEX_MASK: u32 = 0x3fffffffu;
 const OVERFLOW_BODY: u32 = 0x7f7ffffeu;
 const NO_BODY: u32 = 0x7f7fffffu;
 const COUNTER_OVERFLOW_FLAGS: u32 = 1u;
 const COUNTER_BODY_CONTRIBUTION_OVERFLOW: u32 = 18u;
 const COUNTER_BOUNDARY_PRESSURE_EDGES: u32 = 20u;
 const OVERFLOW_BODY_CONTRIBUTIONS: u32 = 1u << 4u;
+const BODY_CONTRIBUTIONS_PER_PARTICLE: u32 = 2u;
 
 @compute @workgroup_size(64)
 fn reduce_body_contributions(
@@ -51,25 +53,35 @@ fn reduce_body_contributions(
     var pressure_count = 0u;
     var overflow_count = 0u;
     for (var particle_index = first_particle; particle_index < end_particle; particle_index += 1u) {
-        let contribution = contributions[particle_index];
-        let encoded_body = bitcast<u32>(contribution.w);
-        if encoded_body == OVERFLOW_BODY {
+        let first = contributions[particle_index];
+        let first_encoded_body = bitcast<u32>(first.w);
+        if first_encoded_body == OVERFLOW_BODY {
             if body_index == 0u {
                 overflow_count += 1u;
             }
             continue;
         }
-        if !dynamic_body || encoded_body == NO_BODY {
+        if !dynamic_body || first_encoded_body == NO_BODY {
             continue;
         }
-        let pressure_edge = (encoded_body & PRESSURE_BODY_BIT) != 0u;
-        let target_body = encoded_body & BODY_INDEX_MASK;
-        if target_body != body_index {
-            continue;
+        let contribution_count =
+            select(1u, BODY_CONTRIBUTIONS_PER_PARTICLE,
+                (first_encoded_body & HAS_SECOND_BODY_BIT) != 0u);
+        for (var slot = 0u; slot < contribution_count; slot += 1u) {
+            var contribution = first;
+            if slot > 0u {
+                contribution = contributions[particle_index + slot * params.counts.x];
+            }
+            let encoded_body = bitcast<u32>(contribution.w);
+            let pressure_edge = (encoded_body & PRESSURE_BODY_BIT) != 0u;
+            let target_body = encoded_body & BODY_INDEX_MASK;
+            if target_body != body_index {
+                continue;
+            }
+            total += contribution.xyz;
+            count += 1.0;
+            pressure_count += select(0u, 1u, pressure_edge);
         }
-        total += contribution.xyz;
-        count += 1.0;
-        pressure_count += select(0u, 1u, pressure_edge);
     }
     if overflow_count > 0u {
         atomicAdd(&counters[COUNTER_BODY_CONTRIBUTION_OVERFLOW], overflow_count);

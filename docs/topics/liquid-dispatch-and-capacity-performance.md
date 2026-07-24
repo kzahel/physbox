@@ -1,10 +1,11 @@
 # Liquid dispatch and capacity performance
 
-Status: active diagnosed performance issue, 2026-07-23. Physical Pixel 7a
-evidence identifies a reserved-body-capacity scheduling cliff as the primary
-cause of the reported mobile liquid slowdown. The 92-dispatch particle graph
-is a separate material cost at the ordinary 64-body tier. No remediation has
-yet been selected or implemented.
+Status: active diagnosed performance issue, updated 2026-07-24. Physical Pixel
+7a evidence identifies a reserved-body-capacity scheduling cliff as the
+primary cause of the reported mobile liquid slowdown. The 92-dispatch particle
+graph is a separate material cost at the ordinary 64-body tier. No remediation
+for either performance issue has yet been selected or implemented; the
+two-target contribution change below is a correctness-capacity fix.
 
 Governing performance contract:
 [performance and scale](performance-and-scale.md).
@@ -286,6 +287,19 @@ Mali/browser path is therefore not accepted until the timestamp-boundary
 implementation is corrected. Total GPU time remains useful.
 
 ## Current decisions
+
+Correctness-capacity update, 2026-07-24: a minimized submerged-circle failure
+required two generation-checked body-contribution records per particle rather
+than one. The selected primary/secondary planar layout keeps ordinary primary
+reads contiguous and consults the secondary plane only when the primary record
+declares it. It retains the complete 92-dispatch graph. At the 8,192-slot
+product reserve it raises declared particle allocation from the current
+clean-HEAD `889,988` bytes to `1,053,828` bytes (`+163,840`, `+18.4%`).
+Same-machine control/candidate/control timing was bimodal but showed no
+significant host regression: the later aggregated host P50/P95 was
+`13.561/18.865 ms` for control and `12.987/19.273 ms` for the candidate. This
+does not remediate or materially worsen the independently diagnosed dispatch
+cost, and it creates no new throughput claim.
 
 1. Keep 64 rigid-body slots as the ordinary cross-host default. Particle
    capacity remains independent.

@@ -1,6 +1,7 @@
 # Coupled liquid/rigid constraint surface
 
-Status: implemented preview at human behavior/default checkpoint, 2026-07-23.
+Status: implemented preview at human behavior/default checkpoint, updated
+2026-07-24.
 The bounded mechanics, tools, direct rendering, evidence, capacity, Browser,
 and authorized hardware-backed AVD lanes are complete under
 [S31](../tactical/031-coupled-liquid-sandbox.md). Coupled behavior bands,
@@ -173,8 +174,25 @@ the same effective-mass terms as direct particle/body contact: particle
 translation, body translation, and the contact lever arm against body inverse
 inertia. The resulting bounded positional impulse moves the particle and body
 in opposite directions before later iterations consume the new pose. One
-particle may target one dynamic body per pass; a second dynamic target records
-an invalidating overflow rather than dropping an unreported reaction.
+particle may target up to two dynamic bodies per pass. The generation-checked
+records use primary and secondary particle planes so ordinary one-target
+reduction retains contiguous access and reads the secondary plane only when a
+bit on the primary record declares it. A third dynamic target invalidates the
+particle's records and reports body-contribution overflow rather than dropping
+an unreported reaction.
+
+The two-target bound closes a minimized particle-lattice-sensitive coupled
+failure found during hands-on review. Two radius-`0.25` construction circles
+with an initial `0.1` gap at `y=2` ended after 60 default steps with a
+`-0.092786` gap, 14 final-window contribution overflows, and one body's
+horizontal speed at `-1.6637 m/s`; the dry control retained its `0.1` gap.
+With two records, the same phase ends at a `+0.218781` gap, zero overflow, and
+horizontal speeds `-0.0567/+0.0755 m/s`. The permanent regression sweeps four
+quarter-spacing phases and requires zero overflow plus at most `0.005` m
+circle overlap. A separate 16-row gap/phase characterization is finite,
+capacity-clean, and non-overlapping. This is a contribution-capacity fix, not
+a new pressure coefficient, rigid iteration count, damping policy, or coupled
+schedule.
 
 This is independently implemented from the scalar contract. Original
 LiquidFun's boundary contact weight and pressure transfer were consulted as
@@ -466,6 +484,19 @@ cuts declared particle allocation from `3,443,844` to `887,940` bytes. All
 rows are finite and capacity-clean with zero overflow. The 32K row is a
 capacity frontier on this named adapter, not a portable sustained-60-Hz
 product claim.
+
+The 2026-07-24 two-target correction retains the 8,192-slot reserve and 92
+dispatches but adds one 16-byte contribution plus one four-byte generation
+record per slot. Against current clean HEAD, declared particle allocation
+rises from `889,988` to `1,053,828` bytes (`+163,840`, `+18.4%`). An initial
+360-sample control/candidate window measured host P50/P95
+`6.120/7.591 ms` versus `6.307/7.908 ms`; a later bimodal
+control/candidate/control window measured aggregated P50/P95
+`13.561/18.865 ms` versus `12.987/19.273 ms`. The same-machine evidence does
+not show a significant host-time regression, so the correctness change was
+retained without changing particle count, dispatches, pressure coefficients,
+rigid iterations, or the coupled schedule. These dirty-candidate samples are a
+regression check, not a replacement clean throughput baseline.
 
 Current Browser WebGPU run `b6af663c-69a8-4f6a-ad4e-8f47b7cb0104`
 completed 624 product-scene steps at effective scale `1.000046` with zero slip

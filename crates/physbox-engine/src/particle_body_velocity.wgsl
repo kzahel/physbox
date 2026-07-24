@@ -26,6 +26,9 @@ const BODY_FLAG_LIVE: u32 = 1u << 0u;
 const BODY_FLAG_FIXED: u32 = 1u << 2u;
 const BODY_FLAG_RECTANGLE: u32 = 1u << 8u;
 const BODY_FLAG_CIRCLE: u32 = 1u << 9u;
+const BODY_CONTRIBUTIONS_PER_PARTICLE: u32 = 2u;
+const HAS_SECOND_BODY_BIT: u32 = 1u << 30u;
+const BODY_INDEX_MASK: u32 = 0x3fffffffu;
 // This identity is bitcast through a float storage lane. Keep the bit pattern
 // finite so every WebGPU WGSL frontend accepts the constant.
 const NO_BODY: u32 = 0x7f7fffffu;
@@ -68,57 +71,93 @@ fn solve_body_velocity(@builtin(global_invocation_id) invocation: vec3u) {
     if particle_index >= params.counts.x {
         return;
     }
-    let prior = contributions[particle_index];
-    let body_index = bitcast<u32>(prior.w);
-    contributions[particle_index] = vec4f(0.0, 0.0, 0.0, bitcast<f32>(NO_BODY));
-    if body_index == NO_BODY || body_index >= params.counts.y {
+    let empty_contribution = vec4f(0.0, 0.0, 0.0, bitcast<f32>(NO_BODY));
+    let first_prior = contributions[particle_index];
+    let first_encoded_body = bitcast<u32>(first_prior.w);
+    if first_encoded_body == NO_BODY {
+        contributions[particle_index] = empty_contribution;
+        contributions[particle_index + params.counts.x] = empty_contribution;
         return;
     }
-    let identity = body_metadata[body_index];
-    if contact_generations[particle_index] == 0u
-        || contact_generations[particle_index] != identity.x
-        || (identity.y & (BODY_FLAG_LIVE | BODY_FLAG_FIXED)) != BODY_FLAG_LIVE {
-        return;
+    let contact_count =
+        select(1u, BODY_CONTRIBUTIONS_PER_PARTICLE,
+            (first_encoded_body & HAS_SECOND_BODY_BIT) != 0u);
+    var second_prior = empty_contribution;
+    if contact_count > 1u {
+        second_prior = contributions[particle_index + params.counts.x];
     }
-
-    let pose = body_poses[body_index];
-    let motion = body_motions[body_index];
-    let properties = body_properties[body_index];
-    let local = rotate(positions[particle_index].xy - pose.xy, -pose.z);
-    var boundary = LocalBoundary(vec2f(0.0, 1.0), vec2f(0.0));
-    if (identity.y & BODY_FLAG_CIRCLE) != 0u {
-        boundary = circle_boundary(local, properties.x);
-    } else if (identity.y & BODY_FLAG_RECTANGLE) != 0u {
-        boundary = rectangle_boundary(local, properties.xy);
-    } else {
-        return;
-    }
-    let normal = rotate(boundary.normal, pose.z);
-    let contact_point = pose.xy + rotate(boundary.point, pose.z);
-    let lever = contact_point - pose.xy;
-    let surface_velocity = motion.xy + vec2f(
-        -motion.z * lever.y,
-        motion.z * lever.x,
-    );
-    let particle_velocity = velocities[particle_index];
-    let normal_speed = dot(particle_velocity.xy - surface_velocity, normal);
-    let rotational = cross(lever, normal);
-    let inverse_effective_mass = params.pressure.w + properties.z
-        + properties.w * rotational * rotational;
-    if normal_speed >= 0.0 || inverse_effective_mass <= 0.0 {
-        return;
+    for (var slot = 0u; slot < BODY_CONTRIBUTIONS_PER_PARTICLE; slot += 1u) {
+        contributions[particle_index + slot * params.counts.x] = empty_contribution;
     }
 
-    let normal_impulse = -normal_speed / inverse_effective_mass;
-    let particle_impulse = normal * normal_impulse;
-    let body_impulse = -particle_impulse;
-    velocities[particle_index] = vec4f(
-        particle_velocity.xy + particle_impulse * params.pressure.w,
-        particle_velocity.zw,
-    );
-    contributions[particle_index] = vec4f(
-        body_impulse * properties.z,
-        properties.w * cross(lever, body_impulse),
-        bitcast<f32>(body_index),
-    );
+    var particle_velocity = velocities[particle_index];
+    var emitted_contributions = 0u;
+    for (var slot = 0u; slot < contact_count; slot += 1u) {
+        var prior = first_prior;
+        if slot > 0u {
+            prior = second_prior;
+        }
+        let body_index = bitcast<u32>(prior.w) & BODY_INDEX_MASK;
+        if body_index >= params.counts.y {
+            continue;
+        }
+        let contact_index = particle_index + slot * params.counts.x;
+        let identity = body_metadata[body_index];
+        if contact_generations[contact_index] == 0u
+            || contact_generations[contact_index] != identity.x
+            || (identity.y & (BODY_FLAG_LIVE | BODY_FLAG_FIXED)) != BODY_FLAG_LIVE {
+            continue;
+        }
+
+        let pose = body_poses[body_index];
+        let motion = body_motions[body_index];
+        let properties = body_properties[body_index];
+        let local = rotate(positions[particle_index].xy - pose.xy, -pose.z);
+        var boundary = LocalBoundary(vec2f(0.0, 1.0), vec2f(0.0));
+        if (identity.y & BODY_FLAG_CIRCLE) != 0u {
+            boundary = circle_boundary(local, properties.x);
+        } else if (identity.y & BODY_FLAG_RECTANGLE) != 0u {
+            boundary = rectangle_boundary(local, properties.xy);
+        } else {
+            continue;
+        }
+        let normal = rotate(boundary.normal, pose.z);
+        let contact_point = pose.xy + rotate(boundary.point, pose.z);
+        let lever = contact_point - pose.xy;
+        let surface_velocity = motion.xy + vec2f(
+            -motion.z * lever.y,
+            motion.z * lever.x,
+        );
+        let normal_speed = dot(particle_velocity.xy - surface_velocity, normal);
+        let rotational = cross(lever, normal);
+        let inverse_effective_mass = params.pressure.w + properties.z
+            + properties.w * rotational * rotational;
+        if normal_speed >= 0.0 || inverse_effective_mass <= 0.0 {
+            continue;
+        }
+
+        let normal_impulse = -normal_speed / inverse_effective_mass;
+        let particle_impulse = normal * normal_impulse;
+        let body_impulse = -particle_impulse;
+        particle_velocity = vec4f(
+            particle_velocity.xy + particle_impulse * params.pressure.w,
+            particle_velocity.zw,
+        );
+        let output_index =
+            particle_index + emitted_contributions * params.counts.x;
+        contributions[output_index] = vec4f(
+            body_impulse * properties.z,
+            properties.w * cross(lever, body_impulse),
+            bitcast<f32>(body_index),
+        );
+        emitted_contributions += 1u;
+    }
+    if emitted_contributions > 1u {
+        let first = contributions[particle_index];
+        contributions[particle_index] = vec4f(
+            first.xyz,
+            bitcast<f32>(bitcast<u32>(first.w) | HAS_SECOND_BODY_BIT),
+        );
+    }
+    velocities[particle_index] = particle_velocity;
 }

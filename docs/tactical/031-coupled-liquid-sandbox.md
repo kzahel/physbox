@@ -1,10 +1,11 @@
 # S31 — Coupled liquid sandbox
 
 Status: manual checkpoint, end-to-end product preview and cross-host
-qualification reached 2026-07-23. Human review accepted this plan and
-authorized continuous implementation plus proportional validation. Final
-coupled behavior bands, mobile dispatch optimization, and product/default
-choices now return to human review.
+qualification reached 2026-07-23; the minimized submerged-body
+multi-target failure was corrected and requalified 2026-07-24. Human review
+accepted this plan and authorized continuous implementation plus proportional
+validation. Final coupled behavior bands, mobile dispatch optimization, and
+product/default choices now return to human review.
 When no physical Android device is available, the same shared Android path may
 be qualified on a hardware-backed AVD; every AVD run must record that
 substitution and shut the emulator down afterward.
@@ -258,12 +259,14 @@ native-sidecar bands; a light body neither trampolines nor pins; no host
 feedback, delayed packet, drag clamp, or simulation-dependent readback exists.
 
 Coupling-foundation checkpoint: the `rigid-then-coupled-batch` product sandbox
-now emits one bounded positional/contact record per particle, reduces records
-in stable 64-particle tiles on the GPU, and applies equal-and-opposite body
-translation, torque, and surface-relative normal velocity response during the
-same outer step. Each later particle iteration reads the updated PhysBox pose;
-contact generations are checked against current live body metadata, and a
-nonzero response writes the existing GPU fluid-wake cause. The scalar/GPU
+now emits up to two bounded positional/contact records per particle, reduces
+records in stable 64-particle tiles on the GPU, and applies equal-and-opposite
+body translation, torque, and surface-relative normal velocity response during
+the same outer step. The primary and secondary record planes preserve
+contiguous ordinary access and mark the uncommon second edge on the primary
+record. Each later particle iteration reads the updated PhysBox pose; contact
+generations are checked against current live body metadata, and a nonzero
+response writes the existing GPU fluid-wake cause. The scalar/GPU
 centered-contact test bounds linear-momentum residual to `2e-4` with no torque.
 
 The first serial body gather was rejected after a 600-step Vulkan validation
@@ -278,11 +281,12 @@ Boundary-pressure checkpoint: each pressure iteration now adds current fixed
 and dynamic body surfaces as mirrored boundary density samples, recomputes
 particle pressure, and emits an effective-mass positional reaction before
 ordinary non-penetration. The reaction shares displacement across particle
-translation, body translation, and body rotation; two dynamic targets for one
-particle fail closed through the existing overflow bit. Scalar and GPU tests
-cover ghost-distance weight, equal-and-opposite response, non-penetrating
-pressure transfer, centered momentum residual at `2e-4`, and the overflow
-fixture. Fresh 600-step run `1784810660622129649-2472207` completed with
+translation, body translation, and body rotation; two dynamic targets are
+retained and a third target fails closed through the existing overflow bit.
+Scalar and GPU tests cover ghost-distance weight, equal-and-opposite response,
+non-penetrating pressure transfer, centered momentum residual at `2e-4`, the
+two-target path, and the three-target overflow fixture. Fresh 600-step run
+`1784810660622129649-2472207` completed with
 3,952/3,952 finite particles, zero capacity failures, 1,722 final-window
 boundary-density contacts, 108 boundary-pressure edges, and the mass-0.5
 review ball resting at the waterline instead of pinning to the floor or
@@ -293,12 +297,27 @@ per-rigid-substep alternative has not been built or comparatively measured. A
 serial per-body gather was rejected after triggering the Vulkan watchdog; the
 selected bounded particle-tile reduction keeps all response GPU-resident and
 portable. Focused GPU tests now cover same-step equal-and-opposite response,
-off-center torque, boundary pressure, multi-target fail-closed behavior, exact
-command/reset reuse, and the no-particle-readback frame contract. The complete
-corpus also qualifies sleeping off and explicitly selected
+off-center torque, boundary pressure, bounded two-target response,
+three-target fail-closed behavior, exact command/reset reuse, and the
+no-particle-readback frame contract. The complete corpus also qualifies
+sleeping off and explicitly selected
 local-4/local-8/exact wake paths. The selected preview mechanics are
 implemented; comparative schedule evidence and native behavior-band
 disposition remain open.
+
+Submerged-pair correction, 2026-07-24: a half-particle-spacing phase of two
+radius-`0.25` construction circles with an initial `0.1` gap reproduced the
+reported underwater collision/swimming failure after 60 default steps. The
+old one-target path ended with a `-0.092786` gap, 14 final-window
+body-contribution overflows, and one circle at `-1.6637 m/s` horizontally;
+the dry control retained the authored gap. The selected two-plane bounded
+layout ends the same row at `+0.218781`, zero overflow, and
+`-0.0567/+0.0755 m/s` horizontal velocity. Four quarter-spacing phases are a
+permanent GPU regression, and all 16 rows of the external gap/phase
+characterization are non-overlapping and capacity-clean. A focused one-particle
+fixture proves two targets succeed while three retain invalidating overflow.
+This minimizes one capacity/overlap failure; the S31.5 checkbox remains open
+because failures in every metric family have not yet been minimized.
 
 ### S31.4 — water, surface, erase, and comparison UI
 
@@ -633,6 +652,21 @@ contains no emulator. Their provenance correctly records a dirty source tree
 because separate concurrent S33 presentation-planning documents were present;
 these runs qualify this implementation boundary but are not promoted as clean
 performance evidence.
+
+Two-target correction qualification, 2026-07-24: the focused two/three-target
+capacity test and four-phase submerged-pair regression pass, followed by
+`npm run test:fast` and warnings-denied production clippy. Fresh headless run
+`1784872818879395914-3137530` completes 600 liquid steps with 3,952 finite
+active particles, zero overflow, 92 particle dispatches, no
+advancement-dependent readback, and `1,053,828` particle bytes at
+`/tmp/physbox5-two-target-liquid-600-20260724.{png,json}`. The NDK ARM64 check,
+dual-ABI debug build, and Gradle release APK pass; debug/release SHA-256 values
+are `ec1e014d60d068ac51c0b2a967c1bb2b644e6fa87bf2c3c717082c89ed14af3a`
+and `1a054620d5c691ca48c6755aae01f6ec051c8d4208e76907c12ab37f52bd83b2`.
+Physical Pixel 7a run `1784872987-3139725` passes the maintained shared
+bootstrap/pixel gate on Mali-G710. The additional hardware-backed AVD liquid
+run `1784872946-3138656` executes Water, particle Erase, and Surface, captures
+complete pixels, and emits the mandatory shutdown sentinel.
 
 ## Required validation by changed boundary
 
