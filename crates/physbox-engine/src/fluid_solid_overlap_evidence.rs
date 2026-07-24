@@ -297,21 +297,21 @@ fn run_row(
         FluidSolidOverlapMedium::Dry => {
             let mut scenario = source.dry.clone();
             profile.apply_to_scenario(&mut scenario)?;
-            GpuBodyWorld::new_generated_with_solver_profile(
+            GpuBodyWorld::new_generated_with_configuration(
                 device,
                 &scenario,
                 WorldCapacityPreset::Slots64,
-                profile,
+                profile.physics(),
             )?
         }
         FluidSolidOverlapMedium::Wet => {
             let mut scenario = source.wet.clone();
             profile.apply_to_scenario(&mut scenario.rigid)?;
-            GpuBodyWorld::new_coupled_with_solver_profile(
+            GpuBodyWorld::new_coupled_with_configuration(
                 device,
                 &scenario,
                 WorldCapacityPreset::Slots64,
-                profile,
+                profile.physics(),
                 coupling_quality,
             )?
         }

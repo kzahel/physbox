@@ -207,7 +207,12 @@ fn profiled_generated_world(
     profile: &crate::SolverProfileConfig,
     world_capacity: WorldCapacityPreset,
 ) -> Result<GpuBodyWorld, String> {
-    GpuBodyWorld::new_generated_with_solver_profile(device, scenario, world_capacity, profile)
+    GpuBodyWorld::new_generated_with_configuration(
+        device,
+        scenario,
+        world_capacity,
+        profile.physics(),
+    )
 }
 
 fn profiled_generated_world_with_scheduling(
@@ -218,11 +223,11 @@ fn profiled_generated_world_with_scheduling(
     scheduling: GpuSolverSchedulingPolicyV1,
 ) -> Result<GpuBodyWorld, String> {
     if !profile.is_selected() {
-        return GpuBodyWorld::new_generated_with_solver_profile(
+        return GpuBodyWorld::new_generated_with_configuration(
             device,
             scenario,
             world_capacity,
-            profile,
+            profile.physics(),
         );
     }
     GpuBodyWorld::new_generated_with_scheduling(device, scenario, world_capacity, scheduling)
@@ -236,11 +241,11 @@ fn profiled_generated_world_with_contact_policy(
     identity: physbox_contracts::ContactIdentityPolicyV1,
 ) -> Result<GpuBodyWorld, String> {
     if !profile.is_selected() {
-        return GpuBodyWorld::new_generated_with_solver_profile(
+        return GpuBodyWorld::new_generated_with_configuration(
             device,
             scenario,
             world_capacity,
-            profile,
+            profile.physics(),
         );
     }
     GpuBodyWorld::new_generated_with_contact_policy(device, scenario, world_capacity, identity)
@@ -1099,13 +1104,13 @@ impl EngineHost {
         });
         let body_world = match config.scenario {
             ValidationScenario::LiquidSandbox => Some(
-                GpuBodyWorld::new_coupled_with_solver_profile(
+                GpuBodyWorld::new_coupled_with_configuration(
                     device,
                     coupled_scenario
                         .as_ref()
                         .expect("liquid launch owns a coupled scenario"),
                     config.world_capacity,
-                    &config.solver_profile,
+                    config.solver_profile.physics(),
                     config.fluid_solid_coupling_quality,
                 )
                 .expect("engine-owned coupled GPU world is valid"),

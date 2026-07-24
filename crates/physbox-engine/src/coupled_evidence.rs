@@ -220,11 +220,11 @@ pub async fn run_gpu_coupled_evidence(
         view_formats: &[],
     });
     let view = texture.create_view(&Default::default());
-    let world = GpuBodyWorld::new_coupled_with_solver_profile(
+    let world = GpuBodyWorld::new_coupled_with_configuration(
         &device,
         &configured,
         WorldCapacityPreset::Slots64,
-        &profile,
+        profile.physics(),
         physbox_launch::FluidSolidCouplingQuality::Standard,
     )?;
     let renderer = PhysicsRenderer::new(&device, format, world.render_view())

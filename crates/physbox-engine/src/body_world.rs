@@ -220,20 +220,19 @@ impl GpuBodyWorld {
         )
     }
 
-    pub(crate) fn new_generated_with_solver_profile(
+    pub(crate) fn new_generated_with_configuration(
         device: &wgpu::Device,
         scenario: &ScenarioV1,
         world_capacity: WorldCapacityPreset,
-        profile: &crate::SolverProfileConfig,
+        physics: physbox_sim::PhysicsConfigurationV3,
     ) -> Result<Self, String> {
-        let physics = profile.physics();
         let sleep_config = SleepExecutionConfig::configured(
             physics.sleeping_enabled,
             physics.fixed_step_hz,
             physics.sleep_speed_threshold,
             physics.sleep_grouping,
         );
-        if profile.is_selected() {
+        if physics.solver_profile == physbox_sim::SolverProfileName::HardDirect {
             let scheduling_policy = selected_interactive_scheduling(scenario, world_capacity)?;
             return Self::new_with_generated_contacts(
                 device,
@@ -273,38 +272,38 @@ impl GpuBodyWorld {
         )
     }
 
-    pub(crate) fn new_coupled_with_solver_profile(
+    pub(crate) fn new_coupled_with_configuration(
         device: &wgpu::Device,
         scenario: &physbox_contracts::CoupledScenarioV1,
         world_capacity: WorldCapacityPreset,
-        profile: &crate::SolverProfileConfig,
+        physics: physbox_sim::PhysicsConfigurationV3,
         coupling_quality: FluidSolidCouplingQuality,
     ) -> Result<Self, String> {
         scenario.validate().map_err(|error| error.to_string())?;
-        let physics = profile.physics();
         let sleep_config = SleepExecutionConfig::configured(
             physics.sleeping_enabled,
             physics.fixed_step_hz,
             physics.sleep_speed_threshold,
             physics.sleep_grouping,
         );
-        let (execution, scheduling_policy, branch_robust_tunable) = if profile.is_selected() {
-            (
-                GpuSolverExecutionV4::SELECTED,
-                selected_interactive_scheduling(&scenario.rigid, world_capacity)?,
-                false,
-            )
-        } else {
-            let initial_body_count = u32::try_from(scenario.rigid.bodies.len())
-                .map_err(|_| "GPU body count exceeds u32".to_owned())?;
-            (
-                GpuSolverExecutionV4::AUTHORITY_GPU_PROBE,
-                GpuSolverSchedulingPolicyV1::authority_gpu_probe_for_body_capacity(
-                    interactive_body_capacity(initial_body_count, world_capacity)?,
-                ),
-                true,
-            )
-        };
+        let (execution, scheduling_policy, branch_robust_tunable) =
+            if physics.solver_profile == physbox_sim::SolverProfileName::HardDirect {
+                (
+                    GpuSolverExecutionV4::SELECTED,
+                    selected_interactive_scheduling(&scenario.rigid, world_capacity)?,
+                    false,
+                )
+            } else {
+                let initial_body_count = u32::try_from(scenario.rigid.bodies.len())
+                    .map_err(|_| "GPU body count exceeds u32".to_owned())?;
+                (
+                    GpuSolverExecutionV4::AUTHORITY_GPU_PROBE,
+                    GpuSolverSchedulingPolicyV1::authority_gpu_probe_for_body_capacity(
+                        interactive_body_capacity(initial_body_count, world_capacity)?,
+                    ),
+                    true,
+                )
+            };
         Self::new_with_generated_contacts(
             device,
             &scenario.rigid,
@@ -2064,11 +2063,11 @@ mod tests {
         let mut scenario = crate::liquid_sandbox_scenario().unwrap();
         let profile = crate::SolverProfileConfig::soft_coupled();
         profile.apply_to_scenario(&mut scenario.rigid).unwrap();
-        let standard = GpuBodyWorld::new_coupled_with_solver_profile(
+        let standard = GpuBodyWorld::new_coupled_with_configuration(
             &device,
             &scenario,
             WorldCapacityPreset::Slots64,
-            &profile,
+            profile.physics(),
             FluidSolidCouplingQuality::Standard,
         )
         .unwrap();
@@ -2078,11 +2077,11 @@ mod tests {
         assert_eq!(standard.post_fluid_stabilization_allocated_bytes(), 0);
         drop(standard);
 
-        let stabilized = GpuBodyWorld::new_coupled_with_solver_profile(
+        let stabilized = GpuBodyWorld::new_coupled_with_configuration(
             &device,
             &scenario,
             WorldCapacityPreset::Slots64,
-            &profile,
+            profile.physics(),
             FluidSolidCouplingQuality::Stabilized,
         )
         .unwrap();
