@@ -26,7 +26,9 @@ use crate::{
     },
     broadphase_sap::{SapCase, SapPipelines},
     collision_candidates::CandidateSource,
-    collision_narrowphase::{NarrowphaseCase, NarrowphasePipelines, TemporalIdentityStage},
+    collision_narrowphase::{
+        NARROWPHASE_DISPATCHES, NarrowphaseCase, NarrowphasePipelines, TemporalIdentityStage,
+    },
     collision_persistence::{PersistenceCase, PersistencePipelines},
     exact_sleep_grouping::GpuExactSleepGrouping,
     pair_slot_persistence::{
@@ -215,6 +217,22 @@ pub(crate) struct GpuGeneratedContactGraph {
     awake_points: GpuAwakePoints,
     exact_sleep_grouping: Option<GpuExactSleepGrouping>,
     sleep_diagnostics: Option<GpuSleepCycleDiagnostics>,
+    post_fluid_stabilizer: Option<PostFluidStabilizer>,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct PostFluidStabilizationParamsRaw {
+    tuning: [f32; 4],
+    counts: [u32; 4],
+}
+
+struct PostFluidStabilizer {
+    prepare_pipeline: wgpu::ComputePipeline,
+    apply_pipeline: wgpu::ComputePipeline,
+    bind_group: wgpu::BindGroup,
+    _params: wgpu::Buffer,
+    manifold_capacity: u32,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
@@ -242,6 +260,38 @@ impl GpuGeneratedContactGraph {
             false,
             false,
             u32::MAX,
+        )
+    }
+
+    pub(crate) fn new_with_post_fluid_stabilization(
+        device: &wgpu::Device,
+        storage: &GpuBodyStorage,
+        scenario: &ScenarioV1,
+    ) -> Result<Self, String> {
+        validate_selected_settings(scenario)?;
+        let persistence_topology = GpuContactPersistenceTopology::StablePairSlot;
+        Self::new_with_topologies_execution_scheduling_identity_extended_and_authority_mode(
+            device,
+            storage,
+            scenario,
+            persistence_topology,
+            GpuGatherTopology::StableBodyEdge,
+            false,
+            false,
+            u32::MAX,
+            GpuSolverExecutionV4::SELECTED,
+            GpuSolverSchedulingPolicyV1::selected_for_body_capacity(
+                storage.layout().capacity_elements,
+            ),
+            ContactIdentityPolicyV1::SELECTED,
+            crate::GpuSoftFeedbackPolicyV1::SELECTED,
+            crate::GpuNormalRelaxationPolicyV1::SELECTED,
+            crate::GpuContactCoefficientPolicyV1::SELECTED,
+            crate::GpuSubstepContactPolicyV1::SELECTED,
+            crate::GpuRestitutionTimingPolicyV1::SELECTED,
+            false,
+            SleepPointScanPolicy::selected_for(persistence_topology),
+            true,
         )
     }
 
@@ -473,6 +523,7 @@ impl GpuGeneratedContactGraph {
             restitution_timing_policy,
             false,
             SleepPointScanPolicy::selected_for(persistence_topology),
+            false,
         )
     }
 
@@ -504,6 +555,7 @@ impl GpuGeneratedContactGraph {
             crate::GpuRestitutionTimingPolicyV1::AfterEachSubstep,
             true,
             SleepPointScanPolicy::PairSlotManifoldSpan,
+            false,
         )
     }
 
@@ -537,6 +589,7 @@ impl GpuGeneratedContactGraph {
             crate::GpuRestitutionTimingPolicyV1::AfterEachSubstep,
             true,
             SleepPointScanPolicy::PairSlotManifoldSpan,
+            false,
         )
     }
 
@@ -570,6 +623,40 @@ impl GpuGeneratedContactGraph {
             crate::GpuRestitutionTimingPolicyV1::AfterEachSubstep,
             true,
             SleepPointScanPolicy::PairSlotManifoldSpan,
+            false,
+        )
+    }
+
+    pub(crate) fn new_branch_robust_tunable_with_post_fluid_stabilization(
+        device: &wgpu::Device,
+        storage: &GpuBodyStorage,
+        scenario: &ScenarioV1,
+    ) -> Result<Self, String> {
+        crate::branch_robust_gpu_promotion::validate_branch_robust_tunable_settings(
+            &scenario.settings,
+        )?;
+        Self::new_with_topologies_execution_scheduling_identity_extended_and_authority_mode(
+            device,
+            storage,
+            scenario,
+            GpuContactPersistenceTopology::StablePairSlot,
+            GpuGatherTopology::StableBodyEdge,
+            false,
+            false,
+            u32::MAX,
+            GpuSolverExecutionV4::AUTHORITY_GPU_PROBE,
+            GpuSolverSchedulingPolicyV1::authority_gpu_probe_for_body_capacity(
+                storage.layout().capacity_elements,
+            ),
+            ContactIdentityPolicyV1::SELECTED,
+            crate::GpuSoftFeedbackPolicyV1::EveryBiasedIteration,
+            crate::GpuNormalRelaxationPolicyV1::PointSequential,
+            crate::GpuContactCoefficientPolicyV1::AuthorityTunableSoft,
+            crate::GpuSubstepContactPolicyV1::AuthorityBranchRobustFixedAnchorAnalyticalSeparation,
+            crate::GpuRestitutionTimingPolicyV1::AfterEachSubstep,
+            true,
+            SleepPointScanPolicy::PairSlotManifoldSpan,
+            true,
         )
     }
 
@@ -602,6 +689,7 @@ impl GpuGeneratedContactGraph {
             crate::GpuRestitutionTimingPolicyV1::AfterEachSubstep,
             true,
             SleepPointScanPolicy::PackedPointCount,
+            false,
         )
     }
 
@@ -625,6 +713,7 @@ impl GpuGeneratedContactGraph {
         restitution_timing_policy: crate::GpuRestitutionTimingPolicyV1,
         authority_identity: bool,
         sleep_point_scan_policy: SleepPointScanPolicy,
+        post_fluid_stabilization: bool,
     ) -> Result<Self, String> {
         if authority_identity {
             if substep_contact_policy
@@ -763,6 +852,16 @@ impl GpuGeneratedContactGraph {
                 restitution_timing_policy,
             )?;
         awake_points.bind_solver_prepared(device, solver.prepared_buffer());
+        let post_fluid_stabilizer = post_fluid_stabilization
+            .then(|| {
+                PostFluidStabilizer::new(
+                    device,
+                    storage,
+                    &narrowphase,
+                    solver.contribution_buffer(),
+                )
+            })
+            .transpose()?;
         let persistence = GeneratedPersistenceGraph::new(
             device,
             persistence_topology,
@@ -836,6 +935,7 @@ impl GpuGeneratedContactGraph {
             awake_points,
             exact_sleep_grouping,
             sleep_diagnostics,
+            post_fluid_stabilizer,
         })
     }
 
@@ -845,6 +945,17 @@ impl GpuGeneratedContactGraph {
         invalidate_previous_cache: bool,
     ) {
         self.encode_step_with_timestamps(encoder, invalidate_previous_cache, None);
+    }
+
+    pub(crate) fn encode_post_fluid_stabilization(&self, encoder: &mut wgpu::CommandEncoder) {
+        let Some(stabilizer) = &self.post_fluid_stabilizer else {
+            return;
+        };
+        self.broadphase
+            .encode(encoder, &self.broadphase_pipelines, None);
+        self.narrowphase
+            .encode(encoder, &self.narrowphase_pipelines);
+        stabilizer.encode(encoder);
     }
 
     pub(crate) fn encode_step_with_timestamps(
@@ -1136,6 +1247,7 @@ impl GpuGeneratedContactGraph {
             + self.persistence.dispatches()
             + BRIDGE_DISPATCHES
             + self.solver.dispatches_per_step()
+            + self.post_fluid_stabilization_dispatches_per_step()
     }
 
     pub(crate) const fn point_capacity(&self) -> u32 {
@@ -1164,6 +1276,10 @@ impl GpuGeneratedContactGraph {
                 .allocated_bytes
             + self.solver.allocated_bytes()
             + self
+                .post_fluid_stabilizer
+                .as_ref()
+                .map_or(0, PostFluidStabilizer::allocated_bytes)
+            + self
                 .exact_sleep_grouping
                 .as_ref()
                 .map_or(0, GpuExactSleepGrouping::allocated_bytes)
@@ -1171,6 +1287,18 @@ impl GpuGeneratedContactGraph {
                 .sleep_diagnostics
                 .as_ref()
                 .map_or(0, GpuSleepCycleDiagnostics::allocated_bytes)
+    }
+
+    pub(crate) fn post_fluid_stabilization_dispatches_per_step(&self) -> u32 {
+        self.post_fluid_stabilizer.as_ref().map_or(0, |_| {
+            self.broadphase.dispatches() + NARROWPHASE_DISPATCHES + PostFluidStabilizer::DISPATCHES
+        })
+    }
+
+    pub(crate) fn post_fluid_stabilization_allocated_bytes(&self) -> u64 {
+        self.post_fluid_stabilizer
+            .as_ref()
+            .map_or(0, PostFluidStabilizer::allocated_bytes)
     }
 
     pub(crate) fn copy_sleep_cycle_metrics(
@@ -1316,6 +1444,167 @@ pub(crate) fn decode_construction_graph_evidence(
         persistent_pairs: records[3][2],
         overflowed: records.iter().any(|record| record[3] != 0),
     })
+}
+
+impl PostFluidStabilizer {
+    const DISPATCHES: u32 = 2;
+    const CONTRIBUTION_BYTES: u64 = 32;
+
+    fn new(
+        device: &wgpu::Device,
+        storage: &GpuBodyStorage,
+        narrowphase: &NarrowphaseCase,
+        contributions: &wgpu::Buffer,
+    ) -> Result<Self, String> {
+        let manifold_capacity = narrowphase.manifold_capacity();
+        let required_contribution_bytes = u64::from(manifold_capacity)
+            .checked_mul(4)
+            .and_then(|count| count.checked_mul(Self::CONTRIBUTION_BYTES))
+            .ok_or_else(|| "post-fluid contribution byte count overflowed".to_owned())?;
+        if contributions.size() < required_contribution_bytes {
+            return Err(format!(
+                "post-fluid stabilization requires {required_contribution_bytes} contribution bytes, received {}",
+                contributions.size()
+            ));
+        }
+        let params = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("physbox5_post_fluid_stabilization_params"),
+            contents: bytemuck::bytes_of(&PostFluidStabilizationParamsRaw {
+                // One bounded split-impulse-style positional correction is
+                // followed by inward normal-velocity projection only for
+                // points on which that correction activated.
+                tuning: [0.001, 0.8, 0.05, 0.0],
+                counts: [manifold_capacity, storage.layout().capacity_elements, 0, 0],
+            }),
+            usage: wgpu::BufferUsages::UNIFORM,
+        });
+        let storage_layout_entry = |binding, read_only| wgpu::BindGroupLayoutEntry {
+            binding,
+            visibility: wgpu::ShaderStages::COMPUTE,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Storage { read_only },
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        };
+        let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("physbox5_post_fluid_stabilization_layout"),
+            entries: &[
+                storage_layout_entry(0, false),
+                storage_layout_entry(1, false),
+                storage_layout_entry(2, true),
+                storage_layout_entry(4, true),
+                storage_layout_entry(5, true),
+                storage_layout_entry(6, true),
+                storage_layout_entry(7, false),
+                storage_layout_entry(8, false),
+                wgpu::BindGroupLayoutEntry {
+                    binding: 9,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(size_of::<
+                            PostFluidStabilizationParamsRaw,
+                        >() as u64),
+                    },
+                    count: None,
+                },
+            ],
+        });
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("physbox5_post_fluid_stabilization_bind_group"),
+            layout: &layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: storage.pose_buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: storage.motion_buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: storage.properties_buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: narrowphase.manifolds().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: narrowphase.points().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: narrowphase.manifold_capacity_buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 7,
+                    resource: contributions.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 8,
+                    resource: storage.wake_request_buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 9,
+                    resource: params.as_entire_binding(),
+                },
+            ],
+        });
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("physbox5_post_fluid_stabilization_shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("post_fluid_stabilization.wgsl").into()),
+        });
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("physbox5_post_fluid_stabilization_pipeline_layout"),
+            bind_group_layouts: &[&layout],
+            push_constant_ranges: &[],
+        });
+        let pipeline = |label, entry_point| {
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some(label),
+                layout: Some(&pipeline_layout),
+                module: &shader,
+                entry_point: Some(entry_point),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                cache: None,
+            })
+        };
+        Ok(Self {
+            prepare_pipeline: pipeline(
+                "physbox5_post_fluid_stabilization_prepare",
+                "prepare_stabilization",
+            ),
+            apply_pipeline: pipeline(
+                "physbox5_post_fluid_stabilization_apply",
+                "apply_stabilization",
+            ),
+            bind_group,
+            _params: params,
+            manifold_capacity,
+        })
+    }
+
+    fn encode(&self, encoder: &mut wgpu::CommandEncoder) {
+        let workgroups = self.manifold_capacity.div_ceil(WORKGROUP_SIZE);
+        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("physbox5_post_fluid_stabilization"),
+            timestamp_writes: None,
+        });
+        pass.set_bind_group(0, &self.bind_group, &[]);
+        pass.set_pipeline(&self.prepare_pipeline);
+        pass.dispatch_workgroups(workgroups, 1, 1);
+        pass.set_pipeline(&self.apply_pipeline);
+        pass.dispatch_workgroups(workgroups, 1, 1);
+    }
+
+    fn allocated_bytes(&self) -> u64 {
+        self._params.size()
+    }
 }
 
 impl GeneratedPersistenceGraph {

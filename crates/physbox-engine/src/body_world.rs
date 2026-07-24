@@ -7,7 +7,7 @@ use physbox_contracts::{
     BodyCommandBatchV1, BodyLayoutV1, CapacityRecordV1, ConstructionIntentBatchV1,
     ContactIdentityPolicyV1, GrabIntentBatchV1, ScenarioV1, Validate, Vec2,
 };
-use physbox_launch::WorldCapacityPreset;
+use physbox_launch::{FluidSolidCouplingQuality, WorldCapacityPreset};
 use wgpu::util::DeviceExt;
 
 use crate::awake_work::SleepExecutionConfig;
@@ -164,6 +164,7 @@ struct GeneratedContactBuildOptions {
     use_contact_policy_comparator: bool,
     branch_robust_tunable: bool,
     sleep_config: SleepExecutionConfig,
+    post_fluid_stabilization: bool,
 }
 
 impl GeneratedContactBuildOptions {
@@ -174,6 +175,7 @@ impl GeneratedContactBuildOptions {
             use_contact_policy_comparator: false,
             branch_robust_tunable: false,
             sleep_config: SleepExecutionConfig::disabled(fixed_step_hz),
+            post_fluid_stabilization: false,
         }
     }
 
@@ -184,6 +186,7 @@ impl GeneratedContactBuildOptions {
             use_contact_policy_comparator: false,
             branch_robust_tunable: false,
             sleep_config: SleepExecutionConfig::disabled(fixed_step_hz),
+            post_fluid_stabilization: false,
         }
     }
 }
@@ -315,6 +318,7 @@ impl GpuBodyWorld {
                 use_contact_policy_comparator: false,
                 branch_robust_tunable: true,
                 sleep_config,
+                post_fluid_stabilization: false,
             },
             None,
         )
@@ -326,6 +330,7 @@ impl GpuBodyWorld {
         scenario: &physbox_contracts::CoupledScenarioV1,
         world_capacity: WorldCapacityPreset,
         profile: &crate::SolverProfileConfig,
+        coupling_quality: FluidSolidCouplingQuality,
     ) -> Result<Self, String> {
         scenario.validate().map_err(|error| error.to_string())?;
         let physics = profile.physics();
@@ -363,6 +368,7 @@ impl GpuBodyWorld {
                 use_contact_policy_comparator: false,
                 branch_robust_tunable,
                 sleep_config,
+                post_fluid_stabilization: coupling_quality == FluidSolidCouplingQuality::Stabilized,
             },
             Some(scenario),
         )
@@ -382,6 +388,7 @@ impl GpuBodyWorld {
             use_contact_policy_comparator,
             branch_robust_tunable,
             sleep_config,
+            post_fluid_stabilization,
         } = options;
         scenario.validate().map_err(|error| error.to_string())?;
         let initial_live_count = u32::try_from(scenario.bodies.len())
@@ -410,8 +417,16 @@ impl GpuBodyWorld {
             };
         let generated_contacts = generated_solver_configuration
             .map(|(execution, scheduling_policy)| {
-                if branch_robust_tunable {
+                if branch_robust_tunable && post_fluid_stabilization {
+                    GpuGeneratedContactGraph::new_branch_robust_tunable_with_post_fluid_stabilization(
+                        device, &storage, scenario,
+                    )
+                } else if branch_robust_tunable {
                     GpuGeneratedContactGraph::new_branch_robust_tunable(device, &storage, scenario)
+                } else if post_fluid_stabilization {
+                    GpuGeneratedContactGraph::new_with_post_fluid_stabilization(
+                        device, &storage, scenario,
+                    )
                 } else if execution == GpuSolverExecutionV4::SELECTED
                     && scheduling_policy
                         == GpuSolverSchedulingPolicyV1::selected_for_body_capacity(body_count)
@@ -1324,6 +1339,9 @@ impl GpuBodyWorld {
                     )?;
                 }
                 particles.encode_step(encoder);
+                if let Some(generated) = &self.generated_contacts {
+                    generated.encode_post_fluid_stabilization(encoder);
+                }
                 self.body_lifecycle.encode_step(encoder);
             } else if particle_range.count != 0 {
                 return Err("particle commands require a coupled particle world".to_owned());
@@ -1847,6 +1865,20 @@ impl GpuBodyWorld {
 
     pub(crate) fn body_lifecycle_dispatches_per_step(&self) -> u32 {
         self.body_lifecycle.dispatches_per_step()
+    }
+
+    pub(crate) fn post_fluid_stabilization_dispatches_per_step(&self) -> u32 {
+        self.generated_contacts.as_ref().map_or(
+            0,
+            GpuGeneratedContactGraph::post_fluid_stabilization_dispatches_per_step,
+        )
+    }
+
+    pub(crate) fn post_fluid_stabilization_allocated_bytes(&self) -> u64 {
+        self.generated_contacts.as_ref().map_or(
+            0,
+            GpuGeneratedContactGraph::post_fluid_stabilization_allocated_bytes,
+        )
     }
 
     pub(crate) fn body_lifecycle_capacity_bytes(&self) -> u64 {
@@ -2396,6 +2428,53 @@ mod tests {
         world.copy_full_validation_state(&mut encoder, &buffer);
         queue.submit([encoder.finish()]);
         read_buffer(device, &buffer)
+    }
+
+    #[test]
+    fn coupled_quality_restart_selects_only_the_metered_post_fluid_graph() {
+        let instance = crate::create_instance();
+        let adapter = pollster::block_on(crate::gpu_context::request_adapter(&instance, None))
+            .expect("test GPU adapter");
+        let (device, _) = pollster::block_on(crate::gpu_context::request_device(&adapter)).unwrap();
+        let mut scenario = crate::liquid_sandbox_scenario().unwrap();
+        let profile = crate::SolverProfileConfig::soft_coupled();
+        profile.apply_to_scenario(&mut scenario.rigid).unwrap();
+        let standard = GpuBodyWorld::new_coupled_with_solver_profile(
+            &device,
+            wgpu::TextureFormat::Rgba8Unorm,
+            &scenario,
+            WorldCapacityPreset::Slots64,
+            &profile,
+            FluidSolidCouplingQuality::Standard,
+        )
+        .unwrap();
+        let standard_dispatches = standard.solver_dispatches_per_step();
+        let standard_bytes = standard.solver_capacity_bytes();
+        assert_eq!(standard.post_fluid_stabilization_dispatches_per_step(), 0);
+        assert_eq!(standard.post_fluid_stabilization_allocated_bytes(), 0);
+        drop(standard);
+
+        let stabilized = GpuBodyWorld::new_coupled_with_solver_profile(
+            &device,
+            wgpu::TextureFormat::Rgba8Unorm,
+            &scenario,
+            WorldCapacityPreset::Slots64,
+            &profile,
+            FluidSolidCouplingQuality::Stabilized,
+        )
+        .unwrap();
+        let candidate_dispatches = stabilized.post_fluid_stabilization_dispatches_per_step();
+        let candidate_bytes = stabilized.post_fluid_stabilization_allocated_bytes();
+        assert_eq!(candidate_dispatches, 76);
+        assert_eq!(candidate_bytes, 32);
+        assert_eq!(
+            stabilized.solver_dispatches_per_step(),
+            standard_dispatches + candidate_dispatches
+        );
+        assert_eq!(
+            stabilized.solver_capacity_bytes(),
+            standard_bytes + candidate_bytes
+        );
     }
 
     #[test]

@@ -198,11 +198,14 @@ S35 opens a distinct fluid/solid contact-stabilization experiment after later
 review demonstrated that deliberately overlapped rigid bodies can recover in
 the dry control yet remain interpenetrating or re-enter penetration in water.
 The shared launch and WORLD-menu contract now exposes restart-bound
-`standard` and `stabilized` choices. At the initial control checkpoint both
-choices intentionally execute the unchanged 92-dispatch particle graph:
-`standard` remains the fresh default, while `stabilized` is only an explicit
-selector for subsequent measured candidates. No mechanical or default
-promotion is implied by the control itself.
+`standard` and `stabilized` choices. `standard` remains the fresh default and
+retains the pre-S35 graph exactly. The first opt-in `stabilized` candidate
+reruns complete portable candidate generation and narrowphase after the
+unchanged 92-dispatch particle graph, then applies one bounded position-only
+normal correction and projects inward relative normal velocity only where
+that correction activated. It reuses the rigid contribution buffer, performs
+no second time/gravity integration, and requires no readback. This is an
+experimental behavior selection, not a mechanical or default promotion.
 
 The S35 permanent baseline corpus now covers isolated circle, three-circle,
 rectangle, mixed-pair, and mixed-three-body construction arrangements across

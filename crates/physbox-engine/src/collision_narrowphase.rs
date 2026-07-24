@@ -23,7 +23,7 @@ use crate::{
 
 const WORKGROUP_SIZE: u32 = 64;
 const SCAN_WORKGROUP_SIZE: u32 = 256;
-const TOTAL_DISPATCHES: u32 = 15;
+pub(crate) const NARROWPHASE_DISPATCHES: u32 = 15;
 const NARROW_SCRATCH_BYTES: u32 = 144;
 
 #[repr(C)]
@@ -694,7 +694,7 @@ impl NarrowphaseCase {
                     point_capacity,
                     block_count,
                 ],
-                execution: [TOTAL_DISPATCHES, 0, 0, 0],
+                execution: [NARROWPHASE_DISPATCHES, 0, 0, 0],
                 policy: [
                     candidate.speculative_distance(),
                     if authority_identity {

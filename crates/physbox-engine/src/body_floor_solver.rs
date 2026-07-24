@@ -3809,6 +3809,10 @@ impl GpuFixedFloorSolver {
         &self.capacities
     }
 
+    pub(crate) fn contribution_buffer(&self) -> &wgpu::Buffer {
+        &self._contributions
+    }
+
     pub(crate) fn allocated_bytes(&self) -> u64 {
         self._owned_point_input
             .as_ref()

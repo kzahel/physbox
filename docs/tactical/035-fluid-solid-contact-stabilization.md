@@ -170,6 +170,20 @@ observed trial-to-trial sensitivity for candidate comparison.
       requires readback, silently drops contacts, or worsens a declared dry
       rigid gate.
 
+Implementation checkpoint, 2026-07-24: candidate A is wired only to the
+restart-bound `stabilized` coupled world. After the ordinary particle graph it
+reruns the complete product SAP and narrowphase, prepares one split
+position/velocity response per fresh manifold, and applies the endpoint
+responses with portable compare/exchange float accumulation. It reuses the
+existing solver contribution buffer and adds only one 32-byte uniform. The
+metered wet-step delta is 76 dispatches: 59 candidate generation, 15
+narrowphase, and two correction passes. A dirty-tree characterization was
+finite and capacity-clean across all 80 rows and reduced wet issue rows from
+the clean Standard baseline's `17/40` to `1/40`, affected source/phase IDs from
+`12/20` to `1/20`, and sustained-overlap rows from two to zero. That run is
+development evidence only; the checkboxes and gate remain open until the same
+revision has clean Standard/Stabilized artifacts and timing evidence.
+
 Gate: scalar sign/effective-mass checks, GPU finite/capacity checks, dry
 controls, wet two-body rows, and wet multi-body rows pass before performance
 ranking.

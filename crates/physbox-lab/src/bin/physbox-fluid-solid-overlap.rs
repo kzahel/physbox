@@ -4,9 +4,9 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use physbox_engine::{
-    GpuFluidSolidOverlapEvidenceV1, SolverProfileConfig,
-    run_gpu_fluid_solid_overlap_standard_evidence,
+    GpuFluidSolidOverlapEvidenceV1, SolverProfileConfig, run_gpu_fluid_solid_overlap_evidence,
 };
+use physbox_launch::FluidSolidCouplingQuality;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
@@ -48,15 +48,18 @@ fn run() -> Result<(), String> {
                 .map(|bytes| format!("{:x}", Sha256::digest(bytes)))
         })
         .transpose()?;
-    let evidence = pollster::block_on(run_gpu_fluid_solid_overlap_standard_evidence(
+    let evidence = pollster::block_on(run_gpu_fluid_solid_overlap_evidence(
         SolverProfileConfig::soft_coupled(),
+        arguments.coupling_quality,
     ))?;
     let failure = if evidence.capacity_clean_rows != evidence.row_count {
         Some(format!(
             "{} of {} overlap rows were finite and capacity-clean",
             evidence.capacity_clean_rows, evidence.row_count
         ))
-    } else if evidence.wet_only_issue_sources == 0 {
+    } else if arguments.coupling_quality == FluidSolidCouplingQuality::Standard
+        && evidence.wet_only_issue_sources == 0
+    {
         Some("Standard did not reproduce a wet-only sustained-overlap or re-entry row".to_owned())
     } else {
         None
@@ -97,8 +100,9 @@ fn run() -> Result<(), String> {
         ));
     }
     println!(
-        "PHYSBOX5_VALIDATION_SUCCESS host=native scenario=s35-fluid-solid-overlap run_id={} wet_only_issue_rows={} wet_only_issue_sources={} output={}",
+        "PHYSBOX5_VALIDATION_SUCCESS host=native scenario=s35-fluid-solid-overlap run_id={} coupling_quality={} wet_only_issue_rows={} wet_only_issue_sources={} output={}",
         artifact.run_id,
+        artifact.evidence.coupling_quality,
         artifact.evidence.wet_only_issue_rows,
         artifact.evidence.wet_only_issue_sources,
         arguments.output.display()
@@ -110,6 +114,7 @@ struct Arguments {
     run_id: String,
     output: PathBuf,
     require_clean: bool,
+    coupling_quality: FluidSolidCouplingQuality,
 }
 
 impl Arguments {
@@ -118,6 +123,7 @@ impl Arguments {
         let mut run_id = None;
         let mut output = None;
         let mut require_clean = false;
+        let mut coupling_quality = FluidSolidCouplingQuality::Standard;
         while let Some(argument) = values.next() {
             match argument.as_str() {
                 "--run-id" => {
@@ -135,6 +141,21 @@ impl Arguments {
                     ));
                 }
                 "--require-clean" => require_clean = true,
+                "--coupling-quality" => {
+                    coupling_quality = match values
+                        .next()
+                        .ok_or_else(|| "--coupling-quality requires a value".to_owned())?
+                        .as_str()
+                    {
+                        "standard" => FluidSolidCouplingQuality::Standard,
+                        "stabilized" => FluidSolidCouplingQuality::Stabilized,
+                        value => {
+                            return Err(format!(
+                                "unknown coupling quality {value}; expected standard or stabilized"
+                            ));
+                        }
+                    };
+                }
                 _ => return Err(format!("unknown argument {argument}")),
             }
         }
@@ -146,6 +167,7 @@ impl Arguments {
             run_id,
             output: output.ok_or_else(|| "missing --output".to_owned())?,
             require_clean,
+            coupling_quality,
         })
     }
 }

@@ -1130,6 +1130,7 @@ impl EngineHost {
                         .expect("liquid launch owns a coupled scenario"),
                     config.world_capacity,
                     &config.solver_profile,
+                    config.fluid_solid_coupling_quality,
                 )
                 .expect("engine-owned coupled GPU world is valid"),
             ),

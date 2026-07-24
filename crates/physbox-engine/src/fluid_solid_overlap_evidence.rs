@@ -20,7 +20,7 @@ use crate::particle_world::GpuParticleDiagnosticsV4;
 use crate::renderer::map_buffer;
 use crate::{AdapterDiagnostics, SolverProfileConfig, create_instance};
 
-pub const GPU_FLUID_SOLID_OVERLAP_EVIDENCE_VERSION: u32 = 1;
+pub const GPU_FLUID_SOLID_OVERLAP_EVIDENCE_VERSION: u32 = 2;
 pub const FLUID_SOLID_SIGNIFICANT_OVERLAP: f32 = 0.005;
 pub const FLUID_SOLID_OVERLAP_TRIALS_PER_MEDIUM: u32 = 2;
 const FINAL_WINDOW_SAMPLES: usize = 5;
@@ -101,6 +101,9 @@ pub struct GpuFluidSolidOverlapRowV1 {
     pub recovery_steps: u32,
     pub sample_stride: u32,
     pub solver_dispatches_per_step: u32,
+    pub solver_allocated_bytes: u64,
+    pub post_fluid_stabilization_dispatches_per_step: u32,
+    pub post_fluid_stabilization_allocated_bytes: u64,
     pub particle_dispatches_per_step: u32,
     pub body_lifecycle_dispatches_per_step: u32,
     pub construction: ConstructionStateV1,
@@ -138,6 +141,13 @@ pub struct GpuFluidSolidOverlapEvidenceV1 {
 pub async fn run_gpu_fluid_solid_overlap_standard_evidence(
     profile: SolverProfileConfig,
 ) -> Result<GpuFluidSolidOverlapEvidenceV1, String> {
+    run_gpu_fluid_solid_overlap_evidence(profile, FluidSolidCouplingQuality::Standard).await
+}
+
+pub async fn run_gpu_fluid_solid_overlap_evidence(
+    profile: SolverProfileConfig,
+    coupling_quality: FluidSolidCouplingQuality,
+) -> Result<GpuFluidSolidOverlapEvidenceV1, String> {
     let sources = fluid_solid_overlap_sources().map_err(|error| error.to_string())?;
     let instance = create_instance();
     let adapter = request_adapter(&instance, None).await?;
@@ -153,6 +163,7 @@ pub async fn run_gpu_fluid_solid_overlap_standard_evidence(
                     &queue,
                     source,
                     &profile,
+                    coupling_quality,
                     medium,
                     trial_index,
                 )?);
@@ -189,7 +200,7 @@ pub async fn run_gpu_fluid_solid_overlap_standard_evidence(
         version: GPU_FLUID_SOLID_OVERLAP_EVIDENCE_VERSION,
         solver_profile: profile.name(),
         physics: profile.physics(),
-        coupling_quality: FluidSolidCouplingQuality::Standard.name(),
+        coupling_quality: coupling_quality.name(),
         adapter: diagnostics,
         source_count: sources.len() as u32,
         trials_per_medium: FLUID_SOLID_OVERLAP_TRIALS_PER_MEDIUM,
@@ -210,6 +221,7 @@ fn run_row(
     queue: &wgpu::Queue,
     source: &FluidSolidOverlapSourceV1,
     profile: &SolverProfileConfig,
+    coupling_quality: FluidSolidCouplingQuality,
     medium: FluidSolidOverlapMedium,
     trial_index: u32,
 ) -> Result<GpuFluidSolidOverlapRowV1, String> {
@@ -237,6 +249,7 @@ fn run_row(
                 &scenario,
                 WorldCapacityPreset::Slots64,
                 profile,
+                coupling_quality,
             )?
         }
     };
@@ -306,11 +319,15 @@ fn run_row(
         particle_phase_index: source.particle_phase_index,
         particle_phase_offset: source.particle_phase_offset,
         medium,
-        coupling_quality: FluidSolidCouplingQuality::Standard.name(),
+        coupling_quality: coupling_quality.name(),
         settle_steps: source.settle_steps,
         recovery_steps: source.recovery_steps,
         sample_stride: source.sample_stride,
         solver_dispatches_per_step: world.solver_dispatches_per_step(),
+        solver_allocated_bytes: world.solver_capacity_bytes(),
+        post_fluid_stabilization_dispatches_per_step: world
+            .post_fluid_stabilization_dispatches_per_step(),
+        post_fluid_stabilization_allocated_bytes: world.post_fluid_stabilization_allocated_bytes(),
         particle_dispatches_per_step: world.particle_dispatches_per_step(),
         body_lifecycle_dispatches_per_step: world.body_lifecycle_dispatches_per_step(),
         construction,
