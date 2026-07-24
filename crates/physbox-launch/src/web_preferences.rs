@@ -1,9 +1,9 @@
 use serde::{Deserialize, Serialize};
 
 use super::{
-    LaunchError, LaunchOptions, LaunchRequest, PHYSICS_CONFIGURATION_VERSION,
-    PhysicsConfigurationV3, RenderScalePreset, SleepGrouping, SolverProfileName,
-    WorldCapacityPreset, apply_legacy_solver_options, parse_web_query,
+    FluidSolidCouplingQuality, LaunchError, LaunchOptions, LaunchRequest,
+    PHYSICS_CONFIGURATION_VERSION, PhysicsConfigurationV3, RenderScalePreset, SleepGrouping,
+    SolverProfileName, WorldCapacityPreset, apply_legacy_solver_options, parse_web_query,
 };
 
 const PHYSICS_PREFERENCE_KEY: &str = "physbox5.physics.v5";
@@ -11,11 +11,13 @@ const PRIOR_V4_PHYSICS_PREFERENCE_KEY: &str = "physbox5.physics.v4";
 const PRIOR_V3_PHYSICS_PREFERENCE_KEY: &str = "physbox5.physics.v3";
 const PRIOR_V2_PHYSICS_PREFERENCE_KEY: &str = "physbox5.physics.v2";
 const WORLD_PREFERENCE_KEY: &str = "physbox5.world.v1";
+const COUPLING_PREFERENCE_KEY: &str = "physbox5.coupling.v1";
 const PRESENTATION_PREFERENCE_KEY: &str = "physbox5.presentation.v2";
 const PRIOR_V1_PRESENTATION_PREFERENCE_KEY: &str = "physbox5.presentation.v1";
 const LEGACY_SOLVER_PREFERENCE_KEY: &str = "physbox5.solver-lab.v1";
 
 const WORLD_CAPACITY_QUERY_KEY: &str = "body-capacity";
+const COUPLING_QUALITY_QUERY_KEY: &str = "coupling-quality";
 const SLEEP_VISUALS_QUERY_KEY: &str = "sleep-visuals";
 const RENDER_SCALE_QUERY_KEY: &str = "render-scale";
 const PHYSICS_QUERY_KEYS: [&str; 13] = [
@@ -43,6 +45,7 @@ pub trait WebPreferenceStore {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct LaunchPreferenceSelection {
     pub world_capacity: WorldCapacityPreset,
+    pub fluid_solid_coupling_quality: FluidSolidCouplingQuality,
     pub physics: PhysicsConfigurationV3,
     pub sleep_visuals_enabled: bool,
     pub render_scale: RenderScalePreset,
@@ -52,6 +55,7 @@ impl From<&LaunchOptions> for LaunchPreferenceSelection {
     fn from(options: &LaunchOptions) -> Self {
         Self {
             world_capacity: options.world_capacity,
+            fluid_solid_coupling_quality: options.fluid_solid_coupling_quality,
             physics: options.physics,
             sleep_visuals_enabled: options.sleep_visuals_enabled,
             render_scale: options.render_scale,
@@ -64,6 +68,7 @@ pub struct WebPreferenceController {
     query: Vec<(String, String)>,
     last_physics: Option<String>,
     last_world: Option<String>,
+    last_coupling: Option<String>,
     last_presentation: Option<String>,
 }
 
@@ -84,6 +89,15 @@ impl WebPreferenceController {
             query.push((
                 WORLD_CAPACITY_QUERY_KEY.to_owned(),
                 capacity.slots().to_string(),
+            ));
+        }
+        let has_explicit_coupling = query
+            .iter()
+            .any(|(key, _)| key == COUPLING_QUALITY_QUERY_KEY);
+        if !has_explicit_coupling && let Some(quality) = load_coupling_preference(store) {
+            query.push((
+                COUPLING_QUALITY_QUERY_KEY.to_owned(),
+                quality.name().to_owned(),
             ));
         }
         let saved_presentation = load_presentation_preference(store);
@@ -115,6 +129,7 @@ impl WebPreferenceController {
                 query,
                 last_physics: None,
                 last_world: None,
+                last_coupling: None,
                 last_presentation: None,
             },
             request,
@@ -146,6 +161,14 @@ impl WebPreferenceController {
             self.last_world = Some(encoded_world);
         }
 
+        let coupling = CouplingPreferenceV1::from(selection.fluid_solid_coupling_quality);
+        let encoded_coupling = serde_json::to_string(&coupling)
+            .expect("validated coupling preference is serializable");
+        if self.last_coupling.as_deref() != Some(encoded_coupling.as_str()) {
+            let _ = store.write(COUPLING_PREFERENCE_KEY, &encoded_coupling);
+            self.last_coupling = Some(encoded_coupling);
+        }
+
         let presentation = PresentationPreferenceV2::from(selection);
         let encoded_presentation = serde_json::to_string(&presentation)
             .expect("validated presentation preference is serializable");
@@ -158,6 +181,7 @@ impl WebPreferenceController {
         let previous = encode_query(&self.query);
         self.query.retain(|(key, _)| {
             key != WORLD_CAPACITY_QUERY_KEY
+                && key != COUPLING_QUALITY_QUERY_KEY
                 && key != SLEEP_VISUALS_QUERY_KEY
                 && key != RENDER_SCALE_QUERY_KEY
                 && !PHYSICS_QUERY_KEYS.contains(&key.as_str())
@@ -166,6 +190,12 @@ impl WebPreferenceController {
             self.query.push((
                 WORLD_CAPACITY_QUERY_KEY.to_owned(),
                 selection.world_capacity.slots().to_string(),
+            ));
+        }
+        if selection.fluid_solid_coupling_quality != FluidSolidCouplingQuality::default() {
+            self.query.push((
+                COUPLING_QUALITY_QUERY_KEY.to_owned(),
+                selection.fluid_solid_coupling_quality.name().to_owned(),
             ));
         }
         if selection.physics != PhysicsConfigurationV3::default() {
@@ -421,6 +451,28 @@ struct WorldPreferenceV1 {
     body_capacity: u32,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CouplingPreferenceV1 {
+    version: u32,
+    quality: FluidSolidCouplingQuality,
+}
+
+impl From<FluidSolidCouplingQuality> for CouplingPreferenceV1 {
+    fn from(quality: FluidSolidCouplingQuality) -> Self {
+        Self {
+            version: 1,
+            quality,
+        }
+    }
+}
+
+impl CouplingPreferenceV1 {
+    fn into_quality(self) -> Option<FluidSolidCouplingQuality> {
+        (self.version == 1).then_some(self.quality)
+    }
+}
+
 impl From<WorldCapacityPreset> for WorldPreferenceV1 {
     fn from(capacity: WorldCapacityPreset) -> Self {
         Self {
@@ -514,6 +566,11 @@ fn load_physics_preference<S: WebPreferenceStore>(store: &S) -> Option<PhysicsCo
 fn load_world_preference<S: WebPreferenceStore>(store: &S) -> Option<WorldCapacityPreset> {
     read_json::<WorldPreferenceV1, _>(store, WORLD_PREFERENCE_KEY)
         .and_then(WorldPreferenceV1::into_capacity)
+}
+
+fn load_coupling_preference<S: WebPreferenceStore>(store: &S) -> Option<FluidSolidCouplingQuality> {
+    read_json::<CouplingPreferenceV1, _>(store, COUPLING_PREFERENCE_KEY)
+        .and_then(CouplingPreferenceV1::into_quality)
 }
 
 fn load_presentation_preference<S: WebPreferenceStore>(store: &S) -> Option<PresentationSelection> {
@@ -776,6 +833,26 @@ mod tests {
     }
 
     #[test]
+    fn coupling_preference_restores_unless_the_query_overrides_it() {
+        let store = MemoryStore::default().with(
+            COUPLING_PREFERENCE_KEY,
+            r#"{"version":1,"quality":"stabilized"}"#,
+        );
+        let (_, restored) = WebPreferenceController::restore("", &store).unwrap();
+        assert_eq!(
+            restored.options.fluid_solid_coupling_quality,
+            FluidSolidCouplingQuality::Stabilized
+        );
+
+        let (_, overridden) =
+            WebPreferenceController::restore("?coupling-quality=standard", &store).unwrap();
+        assert_eq!(
+            overridden.options.fluid_solid_coupling_quality,
+            FluidSolidCouplingQuality::Standard
+        );
+    }
+
+    #[test]
     fn malformed_and_invalid_records_are_ignored() {
         let store = MemoryStore::default()
             .with(PHYSICS_PREFERENCE_KEY, "{")
@@ -805,6 +882,7 @@ mod tests {
             .synchronize(
                 LaunchPreferenceSelection {
                     world_capacity: WorldCapacityPreset::Slots256,
+                    fluid_solid_coupling_quality: FluidSolidCouplingQuality::Stabilized,
                     physics,
                     sleep_visuals_enabled: true,
                     render_scale: RenderScalePreset::Percent50,
@@ -825,12 +903,16 @@ mod tests {
         let world: WorldPreferenceV1 =
             serde_json::from_str(&store.get(WORLD_PREFERENCE_KEY).unwrap()).unwrap();
         assert_eq!(world.body_capacity, 256);
+        let coupling: CouplingPreferenceV1 =
+            serde_json::from_str(&store.get(COUPLING_PREFERENCE_KEY).unwrap()).unwrap();
+        assert_eq!(coupling.quality, FluidSolidCouplingQuality::Stabilized);
         let presentation: PresentationPreferenceV2 =
             serde_json::from_str(&store.get(PRESENTATION_PREFERENCE_KEY).unwrap()).unwrap();
         assert!(presentation.sleep_visuals_enabled);
         assert_eq!(presentation.render_scale, RenderScalePreset::Percent50);
         assert!(search.contains("sleep-visuals=on"));
         assert!(search.contains("render-scale=50"));
+        assert!(search.contains("coupling-quality=stabilized"));
     }
 
     #[test]
@@ -845,6 +927,7 @@ mod tests {
             .synchronize(
                 LaunchPreferenceSelection {
                     world_capacity: WorldCapacityPreset::default(),
+                    fluid_solid_coupling_quality: FluidSolidCouplingQuality::default(),
                     physics: PhysicsConfigurationV3::default(),
                     sleep_visuals_enabled: false,
                     render_scale: RenderScalePreset::default(),
@@ -858,6 +941,7 @@ mod tests {
                 .synchronize(
                     LaunchPreferenceSelection {
                         world_capacity: WorldCapacityPreset::default(),
+                        fluid_solid_coupling_quality: FluidSolidCouplingQuality::default(),
                         physics: PhysicsConfigurationV3::default(),
                         sleep_visuals_enabled: false,
                         render_scale: RenderScalePreset::default(),

@@ -1363,6 +1363,7 @@ mod tests {
         let config = EngineConfig {
             scenario: ValidationScenario::Bootstrap,
             world_capacity: Default::default(),
+            fluid_solid_coupling_quality: Default::default(),
             solver_profile: crate::SolverProfileConfig::from_physics(physics).unwrap(),
             sleep_visuals_enabled: false,
             render_scale: Default::default(),
@@ -1424,6 +1425,7 @@ mod tests {
             let config = EngineConfig {
                 scenario: ValidationScenario::Bootstrap,
                 world_capacity: Default::default(),
+                fluid_solid_coupling_quality: Default::default(),
                 solver_profile: crate::SolverProfileConfig::from_physics(physics).unwrap(),
                 sleep_visuals_enabled: false,
                 render_scale: Default::default(),
@@ -1486,6 +1488,7 @@ mod tests {
                 EngineConfig {
                     scenario: ValidationScenario::ResetGrab,
                     world_capacity: Default::default(),
+                    fluid_solid_coupling_quality: Default::default(),
                     solver_profile: profile.clone(),
                     sleep_visuals_enabled: false,
                     render_scale: Default::default(),
@@ -1510,6 +1513,7 @@ mod tests {
                 EngineConfig {
                     scenario: ValidationScenario::Bootstrap,
                     world_capacity: Default::default(),
+                    fluid_solid_coupling_quality: Default::default(),
                     solver_profile: profile,
                     sleep_visuals_enabled: false,
                     render_scale: Default::default(),
@@ -2984,6 +2988,7 @@ mod tests {
             EngineConfig {
                 scenario: ValidationScenario::SolverManifoldI2,
                 world_capacity: Default::default(),
+                fluid_solid_coupling_quality: Default::default(),
                 solver_profile: crate::SolverProfileConfig::hard_direct(),
                 sleep_visuals_enabled: false,
                 render_scale: Default::default(),
@@ -3022,6 +3027,7 @@ mod tests {
             EngineConfig {
                 scenario: ValidationScenario::SolverParallelColoring,
                 world_capacity: Default::default(),
+                fluid_solid_coupling_quality: Default::default(),
                 solver_profile: crate::SolverProfileConfig::hard_direct(),
                 sleep_visuals_enabled: false,
                 render_scale: Default::default(),

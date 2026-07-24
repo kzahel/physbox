@@ -140,6 +140,42 @@ impl WorldCapacityPreset {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum FluidSolidCouplingQuality {
+    #[default]
+    Standard,
+    Stabilized,
+}
+
+impl FluidSolidCouplingQuality {
+    pub const ALL: [Self; 2] = [Self::Standard, Self::Stabilized];
+
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Standard => "standard",
+            Self::Stabilized => "stabilized",
+        }
+    }
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Standard => "STANDARD",
+            Self::Stabilized => "STABILIZED",
+        }
+    }
+
+    fn parse(value: &str) -> Result<Self, LaunchError> {
+        match value {
+            "standard" => Ok(Self::Standard),
+            "stabilized" => Ok(Self::Stabilized),
+            _ => Err(LaunchError(
+                "--coupling-quality requires standard or stabilized".to_owned(),
+            )),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LaunchHost {
     Desktop,
@@ -500,6 +536,7 @@ pub struct LaunchOptions {
     pub report: Option<PathBuf>,
     pub scenario: ValidationScenario,
     pub world_capacity: WorldCapacityPreset,
+    pub fluid_solid_coupling_quality: FluidSolidCouplingQuality,
     pub physics: PhysicsConfigurationV3,
     pub sleep_visuals_enabled: bool,
     pub render_scale: RenderScalePreset,
@@ -518,6 +555,7 @@ impl Default for LaunchOptions {
             report: None,
             scenario: ValidationScenario::Bootstrap,
             world_capacity: WorldCapacityPreset::default(),
+            fluid_solid_coupling_quality: FluidSolidCouplingQuality::default(),
             physics: PhysicsConfigurationV3::default(),
             sleep_visuals_enabled: false,
             render_scale: RenderScalePreset::default(),
@@ -602,6 +640,7 @@ pub fn parse_web_query(query: &str) -> Result<LaunchRequest, LaunchError> {
             "height" => "--height",
             "scenario" => "--scenario",
             "body-capacity" => "--body-capacity",
+            "coupling-quality" => "--coupling-quality",
             "solver" => "--solver",
             "solver-options" => "--solver-options",
             "sim-hz" => "--sim-hz",
@@ -642,7 +681,7 @@ pub fn usage(program: &str, host: LaunchHost) -> String {
     } else {
         ""
     };
-    let solver = "\n  --body-capacity N  interactive slots: 64 (default), 256, 1000, or 10000\n  --solver NAME    soft-coupled or hard-direct (aliases: branch-robust, selected)\n  --sim-hz N       outer fixed rate, 15..=240 (default 60)\n  --substeps N     solver substeps, 1..=8 (default 4)\n  --iterations N   biased iterations, 1..=4 (soft default 1, hard default 2)\n  --contact-hz N   requested soft contact hertz, 1..=120\n  --contact-damping N  soft damping ratio, 0.5..=20\n  --static-contact-scale N  static contact hertz multiplier, 0.5..=16\n  --speculative-distance N  contact anticipation distance, 0..=1\n  --max-depenetration-velocity N  overlap recovery speed, 0.1..=100\n  --sleeping MODE  sleeping: on (default) or off\n  --sleep-threshold N  shared sleep speed threshold, 0.001..=1 (default 0.02)\n  --sleep-grouping MODE  PhysBox exact (default), local-4, or local-8\n  --sleep-visuals MODE  sleep-state presentation: off (default) or on\n  --render-scale N  world render scale: 100 (default), 75, or 50 percent";
+    let solver = "\n  --body-capacity N  interactive slots: 64 (default), 256, 1000, or 10000\n  --coupling-quality MODE  fluid/solid quality: standard (default) or stabilized\n  --solver NAME    soft-coupled or hard-direct (aliases: branch-robust, selected)\n  --sim-hz N       outer fixed rate, 15..=240 (default 60)\n  --substeps N     solver substeps, 1..=8 (default 4)\n  --iterations N   biased iterations, 1..=4 (soft default 1, hard default 2)\n  --contact-hz N   requested soft contact hertz, 1..=120\n  --contact-damping N  soft damping ratio, 0.5..=20\n  --static-contact-scale N  static contact hertz multiplier, 0.5..=16\n  --speculative-distance N  contact anticipation distance, 0..=1\n  --max-depenetration-velocity N  overlap recovery speed, 0.1..=100\n  --sleeping MODE  sleeping: on (default) or off\n  --sleep-threshold N  shared sleep speed threshold, 0.001..=1 (default 0.02)\n  --sleep-grouping MODE  PhysBox exact (default), local-4, or local-8\n  --sleep-visuals MODE  sleep-state presentation: off (default) or on\n  --render-scale N  world render scale: 100 (default), 75, or 50 percent";
     format!(
         "Usage: {program} [options]\n\n  --width PX       viewport width (default 960)\n  --height PX      viewport height (default 600)\n  --scenario NAME  bootstrap, body-free-flight, rigid-floor, rigid-stack, liquid-sandbox, rectangle-stack, circle-bucket-100, rectangle-bucket-100, reset-grab, solver-jacobi, solver-colored, solver-manifold-i2, solver-parallel-coloring, settling-hard-8, settling-candidate-8, settling-hard-16, settling-identity-16, settling-softness-16, settling-candidate-16{}{solver}{frame_markers}{capture}\n  -h, --help       print this help",
         if cfg!(feature = "solver-lab") {
@@ -700,6 +739,9 @@ fn apply_option(
             }
         }
         "--body-capacity" => options.world_capacity = WorldCapacityPreset::parse(&value)?,
+        "--coupling-quality" => {
+            options.fluid_solid_coupling_quality = FluidSolidCouplingQuality::parse(&value)?;
+        }
         "--solver" => {
             mark_physics_field(seen_physics_fields, "solver")?;
             options.physics.solver_profile = SolverProfileName::parse(&value)?;
@@ -1016,6 +1058,10 @@ mod tests {
         assert!(request.options.physics.sleeping_enabled);
         assert_eq!(request.options.physics.sleep_grouping, SleepGrouping::Exact);
         assert_eq!(request.options.world_capacity, WorldCapacityPreset::Slots64);
+        assert_eq!(
+            request.options.fluid_solid_coupling_quality,
+            FluidSolidCouplingQuality::Standard
+        );
         assert!(!request.options.sleep_visuals_enabled);
     }
 
@@ -1044,6 +1090,34 @@ mod tests {
 
         let error = parse_tokens(LaunchHost::Desktop, ["--body-capacity", "4096"]).unwrap_err();
         assert!(error.to_string().contains("one of 64, 256, 1000, or 10000"));
+    }
+
+    #[test]
+    fn coupling_quality_shares_every_transport_and_rejects_unknown_modes() {
+        let native =
+            parse_tokens(LaunchHost::Desktop, ["--coupling-quality", "stabilized"]).unwrap();
+        let web = parse_web_query("?coupling-quality=stabilized").unwrap();
+        let android = parse_android_json(r#"["--coupling-quality","stabilized"]"#).unwrap();
+        assert_eq!(
+            native.options.fluid_solid_coupling_quality,
+            FluidSolidCouplingQuality::Stabilized
+        );
+        assert_eq!(
+            native.options.fluid_solid_coupling_quality,
+            web.options.fluid_solid_coupling_quality
+        );
+        assert_eq!(
+            native.options.fluid_solid_coupling_quality,
+            android.options.fluid_solid_coupling_quality
+        );
+
+        let error =
+            parse_tokens(LaunchHost::Desktop, ["--coupling-quality", "automatic"]).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("requires standard or stabilized")
+        );
     }
 
     #[cfg(feature = "solver-lab")]

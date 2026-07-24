@@ -1,6 +1,6 @@
 use physbox_launch::{
-    LaunchOptions, LaunchPreferenceSelection, RenderScalePreset, ValidationScenario,
-    WorldCapacityPreset,
+    FluidSolidCouplingQuality, LaunchOptions, LaunchPreferenceSelection, RenderScalePreset,
+    ValidationScenario, WorldCapacityPreset,
 };
 use sha2::{Digest, Sha256};
 
@@ -10,6 +10,7 @@ use crate::SolverProfileConfig;
 pub struct EngineConfig {
     pub scenario: ValidationScenario,
     pub world_capacity: WorldCapacityPreset,
+    pub fluid_solid_coupling_quality: FluidSolidCouplingQuality,
     pub solver_profile: SolverProfileConfig,
     pub sleep_visuals_enabled: bool,
     pub render_scale: RenderScalePreset,
@@ -30,6 +31,7 @@ impl TryFrom<&LaunchOptions> for EngineConfig {
         Ok(Self {
             scenario: options.scenario,
             world_capacity: options.world_capacity,
+            fluid_solid_coupling_quality: options.fluid_solid_coupling_quality,
             solver_profile,
             sleep_visuals_enabled: options.sleep_visuals_enabled,
             render_scale: options.render_scale,
@@ -41,6 +43,7 @@ impl EngineConfig {
     pub fn launch_preference_selection(&self) -> LaunchPreferenceSelection {
         LaunchPreferenceSelection {
             world_capacity: self.world_capacity,
+            fluid_solid_coupling_quality: self.fluid_solid_coupling_quality,
             physics: self.solver_profile.physics(),
             sleep_visuals_enabled: self.sleep_visuals_enabled,
             render_scale: self.render_scale,
@@ -132,6 +135,29 @@ mod tests {
         assert_eq!(
             config.launch_preference_selection().render_scale,
             RenderScalePreset::Percent50
+        );
+        assert_eq!(
+            config.physics_configuration_hash(),
+            EngineConfig::default().physics_configuration_hash()
+        );
+    }
+
+    #[test]
+    fn coupling_quality_is_shared_restart_state_without_changing_rigid_physics_identity() {
+        let options = LaunchOptions {
+            fluid_solid_coupling_quality: FluidSolidCouplingQuality::Stabilized,
+            ..Default::default()
+        };
+        let config = EngineConfig::try_from(&options).unwrap();
+        assert_eq!(
+            config.fluid_solid_coupling_quality,
+            FluidSolidCouplingQuality::Stabilized
+        );
+        assert_eq!(
+            config
+                .launch_preference_selection()
+                .fluid_solid_coupling_quality,
+            FluidSolidCouplingQuality::Stabilized
         );
         assert_eq!(
             config.physics_configuration_hash(),

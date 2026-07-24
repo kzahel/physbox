@@ -1410,6 +1410,9 @@ impl EngineHost {
                                 config: EngineConfig {
                                     scenario,
                                     world_capacity: self.config.world_capacity,
+                                    fluid_solid_coupling_quality: self
+                                        .config
+                                        .fluid_solid_coupling_quality,
                                     solver_profile: self.config.solver_profile.clone(),
                                     sleep_visuals_enabled: self.config.sleep_visuals_enabled,
                                     render_scale: self.config.render_scale,
@@ -1432,6 +1435,9 @@ impl EngineHost {
                                 config: EngineConfig {
                                     scenario: self.config.scenario,
                                     world_capacity,
+                                    fluid_solid_coupling_quality: self
+                                        .config
+                                        .fluid_solid_coupling_quality,
                                     solver_profile: self.config.solver_profile.clone(),
                                     sleep_visuals_enabled: self.config.sleep_visuals_enabled,
                                     render_scale: self.config.render_scale,
@@ -1481,6 +1487,9 @@ impl EngineHost {
                             config: EngineConfig {
                                 scenario,
                                 world_capacity: self.config.world_capacity,
+                                fluid_solid_coupling_quality: self
+                                    .config
+                                    .fluid_solid_coupling_quality,
                                 solver_profile: profile,
                                 sleep_visuals_enabled: self.config.sleep_visuals_enabled,
                                 render_scale: self.config.render_scale,
@@ -1504,6 +1513,9 @@ impl EngineHost {
                             config: EngineConfig {
                                 scenario,
                                 world_capacity: self.config.world_capacity,
+                                fluid_solid_coupling_quality: self
+                                    .config
+                                    .fluid_solid_coupling_quality,
                                 solver_profile: profile,
                                 sleep_visuals_enabled: self.config.sleep_visuals_enabled,
                                 render_scale: self.config.render_scale,
