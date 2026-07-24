@@ -326,6 +326,9 @@ Final qualification checkpoint, clean code revision `4fef6b8`, 2026-07-24:
       `physbox-engine` ownership.
 - [x] Remove `RenderView` and `ParticleRenderView` from the supported
       `physbox-sim` root API and public rustdoc.
+- [x] Eliminate those rendering-view types from feature-gated migration
+      plumbing as well; the remaining hidden bridge is named and documented
+      only as unstable first-party mechanical resources.
 - [x] Add a versioned canonical `GpuBodyObservation` that projects only pose,
       motion, generational identity, and public live/sleeping/fixed flags into
       a dedicated consumer-readable GPU buffer.
@@ -379,6 +382,21 @@ Final correction qualification checkpoint, clean architecture revision
   Mali-G710, captures a non-black 1080×2400 screenshot, writes
   `/tmp/physbox5-s36-physics-only-arm64-android.png.json`, and stops the app.
   No AVD was started.
+
+Post-qualification tightening at clean revision `b3f4d4e` removes the
+`RenderView` and `ParticleRenderView` names from the internal feature as well.
+The 37 simulation tests, canonical-observation integration test, 132 engine
+tests, public rustdoc scan, strengthened dependency negative, production and
+Quest warnings-denied clippy, and `npm run test:fast` all pass. The latter
+finishes in 35.67 seconds with Browser run
+`03fd414a-1ede-4762-ab7d-b61a11b1b1b1`. The rebuilt 15,688,100-byte ARM64
+debug APK has SHA-256
+`5a19918ec937eace4741c70d8ac5c9aca9bab16ceb7563c730766ee344043536`;
+the 8,560,541-byte unsigned release APK has SHA-256
+`1e2723e284d06e9aff3b1020f594068da197a706fb4cba321ce5960e0c1681d3`.
+Physical Pixel 7a run `1784904569-3812633` validates that exact clean revision
+on Mali-G710 and writes
+`/tmp/physbox5-s36-no-render-view-arm64-android.png.json`.
 
 ## Validation artifacts
 
