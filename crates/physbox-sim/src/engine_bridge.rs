@@ -1,13 +1,13 @@
-//! Read-only same-device resources for optional GPU rendering.
+//! Unstable first-party bridge to private mechanical GPU resources.
 //!
-//! These views borrow a simulation world and are invalidated by mutable world
-//! advancement. The buffers are exposed for binding and indirect drawing only;
-//! writing them is outside the supported consumer contract.
+//! This module exists only for the PhysBox 5 engine during the library
+//! extraction. It is not part of the consumer contract. Resources borrow the
+//! simulation world and are invalidated by mutable world advancement.
 
-pub const RENDER_VIEW_VERSION: u32 = 1;
+pub const ENGINE_RESOURCE_BRIDGE_VERSION: u32 = 1;
 
 #[derive(Clone, Copy)]
-pub struct ParticleRenderView<'a> {
+pub struct EngineParticleResources<'a> {
     positions: &'a wgpu::Buffer,
     velocities: &'a wgpu::Buffer,
     density_states: &'a wgpu::Buffer,
@@ -18,7 +18,7 @@ pub struct ParticleRenderView<'a> {
     rest_density: f32,
 }
 
-impl<'a> ParticleRenderView<'a> {
+impl<'a> EngineParticleResources<'a> {
     #[doc(hidden)]
     #[allow(clippy::too_many_arguments)]
     pub const fn from_raw_parts(
@@ -77,7 +77,7 @@ impl<'a> ParticleRenderView<'a> {
 }
 
 #[derive(Clone, Copy)]
-pub struct RenderView<'a> {
+pub struct EngineBodyResources<'a> {
     poses: &'a wgpu::Buffer,
     properties: &'a wgpu::Buffer,
     metadata: &'a wgpu::Buffer,
@@ -86,10 +86,10 @@ pub struct RenderView<'a> {
     grab_state: &'a wgpu::Buffer,
     active_draw_offset: u64,
     kill_zone_y: f32,
-    particles: Option<ParticleRenderView<'a>>,
+    particles: Option<EngineParticleResources<'a>>,
 }
 
-impl<'a> RenderView<'a> {
+impl<'a> EngineBodyResources<'a> {
     #[doc(hidden)]
     #[allow(clippy::too_many_arguments)]
     pub const fn from_raw_parts(
@@ -101,7 +101,7 @@ impl<'a> RenderView<'a> {
         grab_state: &'a wgpu::Buffer,
         active_draw_offset: u64,
         kill_zone_y: f32,
-        particles: Option<ParticleRenderView<'a>>,
+        particles: Option<EngineParticleResources<'a>>,
     ) -> Self {
         Self {
             poses,
@@ -117,7 +117,7 @@ impl<'a> RenderView<'a> {
     }
 
     pub const fn version(&self) -> u32 {
-        RENDER_VIEW_VERSION
+        ENGINE_RESOURCE_BRIDGE_VERSION
     }
 
     pub const fn poses(&self) -> &'a wgpu::Buffer {
@@ -152,7 +152,7 @@ impl<'a> RenderView<'a> {
         self.kill_zone_y
     }
 
-    pub const fn particles(&self) -> Option<ParticleRenderView<'a>> {
+    pub const fn particles(&self) -> Option<EngineParticleResources<'a>> {
         self.particles
     }
 }

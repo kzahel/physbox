@@ -1111,8 +1111,10 @@ impl GpuBodyWorld {
     }
 
     #[cfg(feature = "engine-internal")]
-    pub fn render_view(&self) -> physbox_sim::__private::render_view::RenderView<'_> {
-        physbox_sim::__private::render_view::RenderView::from_raw_parts(
+    pub fn engine_resources(
+        &self,
+    ) -> physbox_sim::__private::engine_bridge::EngineBodyResources<'_> {
+        physbox_sim::__private::engine_bridge::EngineBodyResources::from_raw_parts(
             self.storage.pose_buffer(),
             self.storage.properties_buffer(),
             self.storage.metadata_buffer(),
@@ -1121,7 +1123,9 @@ impl GpuBodyWorld {
             &self.grab_state,
             ACTIVE_BODY_DRAW_OFFSET,
             KILL_ZONE_Y,
-            self.particles.as_ref().map(GpuParticleWorld::render_view),
+            self.particles
+                .as_ref()
+                .map(GpuParticleWorld::engine_resources),
         )
     }
 

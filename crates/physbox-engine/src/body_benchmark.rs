@@ -228,7 +228,7 @@ impl GpuBodyBenchmarkSession {
         });
         let view = texture.create_view(&Default::default());
         let world = GpuBodyWorld::new(&device, &scenario)?;
-        let renderer = PhysicsRenderer::new(&device, format, world.render_view())
+        let renderer = PhysicsRenderer::new(&device, format, world.engine_resources())
             .map_err(|error| error.to_string())?;
         let reset_data = world.benchmark_reset_data(&scenario.bodies)?;
         let expected = expected_one_step(&scenario);

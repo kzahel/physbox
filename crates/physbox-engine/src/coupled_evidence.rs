@@ -227,7 +227,7 @@ pub async fn run_gpu_coupled_evidence(
         profile.physics(),
         physbox_launch::FluidSolidCouplingQuality::Standard,
     )?;
-    let renderer = PhysicsRenderer::new(&device, format, world.render_view())
+    let renderer = PhysicsRenderer::new(&device, format, world.engine_resources())
         .map_err(|error| error.to_string())?;
     let initial_particle_bytes = read_particle_bytes(&device, &queue, &world)?;
     let initial_particles = particle_aggregate(

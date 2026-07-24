@@ -31,7 +31,8 @@ fn frozen_settled_water_pixels_ignore_active_list_order() {
         usage: wgpu::BufferUsages::STORAGE,
         mapped_at_creation: false,
     });
-    let render_view = physbox_sim::__private::render_view::RenderView::from_raw_parts(
+    let engine_resources =
+        physbox_sim::__private::engine_bridge::EngineBodyResources::from_raw_parts(
         body_storage.pose_buffer(),
         body_storage.properties_buffer(),
         body_storage.metadata_buffer(),
@@ -40,9 +41,9 @@ fn frozen_settled_water_pixels_ignore_active_list_order() {
         &grab_state,
         crate::body_state::ACTIVE_BODY_DRAW_OFFSET,
         crate::body_lifecycle::KILL_ZONE_Y,
-        Some(particles.render_view()),
-    );
-    let renderer = PhysicsRenderer::new(&device, format, render_view).unwrap();
+            Some(particles.engine_resources()),
+        );
+    let renderer = PhysicsRenderer::new(&device, format, engine_resources).unwrap();
 
     for batch in 0..SETTLING_STEPS.div_ceil(24) {
         let steps = (SETTLING_STEPS - batch * 24).min(24);

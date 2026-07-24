@@ -33,6 +33,8 @@ mod config;
 mod construction;
 mod contact_components;
 mod definition;
+#[cfg(feature = "engine-internal")]
+mod engine_bridge;
 mod exact_sleep_grouping;
 mod generated_contacts;
 mod gpu_context;
@@ -42,8 +44,6 @@ mod gpu_timing;
 mod grab;
 mod pair_slot_persistence;
 mod particle_world;
-#[cfg(feature = "engine-internal")]
-mod render_view;
 mod sleep_contacts;
 mod sleep_diagnostics;
 #[cfg(test)]
@@ -155,8 +155,8 @@ pub mod __private {
         pub use crate::particle_world::*;
     }
 
-    pub mod render_view {
-        pub use crate::render_view::*;
+    pub mod engine_bridge {
+        pub use crate::engine_bridge::*;
     }
 
     pub mod sleep_contacts {

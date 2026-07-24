@@ -153,7 +153,7 @@ for (const path of await files(join(root, "crates", "physbox-sim", "src"))) {
   }
 }
 const simRoot = await readFile(join(root, "crates", "physbox-sim", "src", "lib.rs"), "utf8");
-if (/^pub\s+use\s+render_view\b/m.test(simRoot)) {
+if (/\b(?:RenderView|ParticleRenderView|render_view)\b/.test(simRoot)) {
   failures.push("crates/physbox-sim/src/lib.rs: physics library exports rendering internals");
 }
 

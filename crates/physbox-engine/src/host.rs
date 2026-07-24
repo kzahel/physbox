@@ -1246,7 +1246,7 @@ impl EngineHost {
             _ => None,
         };
         let body_renderer = body_world.as_ref().map(|world| {
-            PhysicsRenderer::new(device, color_format, world.render_view())
+            PhysicsRenderer::new(device, color_format, world.engine_resources())
                 .expect("engine-owned GPU world has a compatible render view")
         });
         let scenario_hash = coupled_scenario.as_ref().map_or_else(

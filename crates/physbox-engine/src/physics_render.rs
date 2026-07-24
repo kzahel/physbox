@@ -2,7 +2,9 @@ use std::fmt::{Display, Formatter};
 use std::mem::size_of;
 
 use bytemuck::{Pod, Zeroable};
-use physbox_sim::__private::render_view::{ParticleRenderView, RENDER_VIEW_VERSION, RenderView};
+use physbox_sim::__private::engine_bridge::{
+    ENGINE_RESOURCE_BRIDGE_VERSION, EngineBodyResources, EngineParticleResources,
+};
 
 pub(crate) const BODY_SHADER_SOURCE: &str = include_str!("physics_body_render.wgsl");
 pub(crate) const PARTICLE_SHADER_SOURCE: &str = include_str!("physics_particle_render.wgsl");
@@ -144,11 +146,11 @@ impl PhysicsRenderer {
     pub fn new(
         device: &wgpu::Device,
         color_format: wgpu::TextureFormat,
-        view: RenderView<'_>,
+        view: EngineBodyResources<'_>,
     ) -> Result<Self, RenderError> {
-        if view.version() != RENDER_VIEW_VERSION {
+        if view.version() != ENGINE_RESOURCE_BRIDGE_VERSION {
             return Err(RenderError(format!(
-                "unsupported simulation render view version {}",
+                "unsupported private engine resource bridge version {}",
                 view.version()
             )));
         }
@@ -515,7 +517,7 @@ impl ParticleRenderer {
     fn new(
         device: &wgpu::Device,
         color_format: wgpu::TextureFormat,
-        view: ParticleRenderView<'_>,
+        view: EngineParticleResources<'_>,
     ) -> Self {
         let params = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("physbox5_particle_render_params"),

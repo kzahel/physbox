@@ -1265,8 +1265,10 @@ impl GpuParticleWorld {
     }
 
     #[cfg(any(feature = "engine-internal", all(test, not(feature = "sim-owner"))))]
-    pub fn render_view(&self) -> physbox_sim::__private::render_view::ParticleRenderView<'_> {
-        physbox_sim::__private::render_view::ParticleRenderView::from_raw_parts(
+    pub fn engine_resources(
+        &self,
+    ) -> physbox_sim::__private::engine_bridge::EngineParticleResources<'_> {
+        physbox_sim::__private::engine_bridge::EngineParticleResources::from_raw_parts(
             &self.positions,
             &self.velocities,
             &self.density_states,
