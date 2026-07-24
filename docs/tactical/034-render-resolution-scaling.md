@@ -59,19 +59,32 @@ extent, manual presets, ownership, evidence requirements, and completion.
 
 ### S34.2 — Shared setting and menu
 
-- [ ] Add a bounded 100/75/50 preset owned by `physbox-launch`.
-- [ ] Add shared CLI, web-query, and Android-JSON parsing with 100 percent as
+- [x] Add a bounded 100/75/50 preset owned by `physbox-launch`.
+- [x] Add shared CLI, web-query, and Android-JSON parsing with 100 percent as
   the default.
-- [ ] Project the setting into engine presentation configuration exactly once.
-- [ ] Add one engine-rendered menu control visible in PhysBox and Box2D.
-- [ ] Apply changes without scenario/world rebuild, physics hash change,
+- [x] Project the setting into engine presentation configuration exactly once.
+- [x] Add one engine-rendered menu control visible in PhysBox and Box2D.
+- [x] Apply changes without scenario/world rebuild, physics hash change,
   camera reset, or tool reset.
-- [ ] Migrate browser presentation persistence and URL synchronization in
+- [x] Migrate browser presentation persistence and URL synchronization in
   shared Rust.
 
 Gate: focused launch, preference, engine UI, feature-on, and feature-off tests
 prove the complete setting contract and browser JavaScript remains semantic
 free.
+
+Evidence:
+
+- `cargo test -p physbox-launch --lib`
+- `cargo test -p physbox-engine --lib
+  presentation_launch_preference_reaches_the_shared_engine`
+- `cargo test -p physbox-engine --lib ui::tests`
+- `cargo test -p physbox-engine --lib --no-default-features
+  presentation_launch_preference_reaches_the_shared_engine`
+- `cargo test -p physbox-engine --lib --no-default-features ui::tests`
+- Maintained host compilation:
+  `cargo check -p physbox-engine -p physbox-shell -p physbox-desktop
+  -p physbox-web -p physbox-android -p physbox-headless`
 
 ### S34.3 — Shared composition path
 

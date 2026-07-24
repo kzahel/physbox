@@ -1279,6 +1279,7 @@ impl EngineHost {
             config.solver_profile.clone(),
             solver_profiles.clone(),
             config.sleep_visuals_enabled,
+            config.render_scale,
         );
         let clock = SimulationClock::new(config.solver_profile.physics().fixed_step_hz);
         let camera = configured_camera(config.scenario);
@@ -1335,6 +1336,7 @@ impl EngineHost {
         } = replacement;
         let camera = self.camera;
         let sleep_visuals_enabled = self.ui.sleep_visuals_enabled();
+        let render_scale = self.ui.render_scale();
         let selected_engine = self.selected_engine;
         let frame_timing = self.frame_timing.clone();
         let mut replacement = Self::new(
@@ -1358,6 +1360,7 @@ impl EngineHost {
         replacement
             .ui
             .set_sleep_visuals_enabled(sleep_visuals_enabled);
+        replacement.ui.set_render_scale(render_scale);
         replacement.selected_engine = selected_engine;
         replacement.frame_timing = frame_timing;
         if preserve_camera {
@@ -1384,6 +1387,7 @@ impl EngineHost {
             self.selected_engine,
         );
         self.config.sleep_visuals_enabled = self.ui.sleep_visuals_enabled();
+        self.config.render_scale = self.ui.render_scale();
         if let Some(action) = routing.action {
             match action {
                 UiAction::Recenter => {
@@ -1404,6 +1408,7 @@ impl EngineHost {
                                     world_capacity: self.config.world_capacity,
                                     solver_profile: self.config.solver_profile.clone(),
                                     sleep_visuals_enabled: self.config.sleep_visuals_enabled,
+                                    render_scale: self.config.render_scale,
                                 },
                                 selected_tool: routing.selected_tool,
                                 scenario_activation: true,
@@ -1425,6 +1430,7 @@ impl EngineHost {
                                     world_capacity,
                                     solver_profile: self.config.solver_profile.clone(),
                                     sleep_visuals_enabled: self.config.sleep_visuals_enabled,
+                                    render_scale: self.config.render_scale,
                                 },
                                 selected_tool: routing.selected_tool,
                                 scenario_activation: false,
@@ -1473,6 +1479,7 @@ impl EngineHost {
                                 world_capacity: self.config.world_capacity,
                                 solver_profile: profile,
                                 sleep_visuals_enabled: self.config.sleep_visuals_enabled,
+                                render_scale: self.config.render_scale,
                             },
                             selected_tool: routing.selected_tool,
                             scenario_activation: scenario != self.config.scenario,
@@ -1495,6 +1502,7 @@ impl EngineHost {
                                 world_capacity: self.config.world_capacity,
                                 solver_profile: profile,
                                 sleep_visuals_enabled: self.config.sleep_visuals_enabled,
+                                render_scale: self.config.render_scale,
                             },
                             selected_tool: routing.selected_tool,
                             scenario_activation: scenario != self.config.scenario,

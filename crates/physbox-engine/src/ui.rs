@@ -1,5 +1,7 @@
 use physbox_contracts::{ConstructionResultV1, ConstructionStateV1};
-use physbox_launch::{SolverProfileName, ValidationScenario, WorldCapacityPreset};
+use physbox_launch::{
+    RenderScalePreset, SolverProfileName, ValidationScenario, WorldCapacityPreset,
+};
 use physbox_ui::{
     CanvasFrame, CanvasRenderer, HitTarget, InstanceCapacities, InteractionState, Point,
     PointerButton as CanvasPointerButton, PointerEvent as CanvasPointerEvent,
@@ -120,6 +122,7 @@ pub(crate) struct UiRouting {
     pub action: Option<UiAction>,
     pub selected_tool: WorkbenchTool,
     sleep_visuals_toggled: bool,
+    render_scale_cycled: bool,
 }
 
 pub(crate) struct UiFrameModel<'a> {
@@ -176,6 +179,7 @@ pub(crate) struct WorkbenchUi {
     menu_page: MenuPage,
     selected_tool: WorkbenchTool,
     sleep_visuals_enabled: bool,
+    render_scale: RenderScalePreset,
     solver_profiles: Vec<SolverProfileConfig>,
     draft_solver_profile: SolverProfileConfig,
     interactions: InteractionState,
@@ -189,6 +193,7 @@ impl WorkbenchUi {
         solver_profile: SolverProfileConfig,
         solver_profiles: Vec<SolverProfileConfig>,
         sleep_visuals_enabled: bool,
+        render_scale: RenderScalePreset,
     ) -> Self {
         Self {
             renderer: CanvasRenderer::new(
@@ -204,6 +209,7 @@ impl WorkbenchUi {
             menu_page: MenuPage::default(),
             selected_tool: WorkbenchTool::default(),
             sleep_visuals_enabled,
+            render_scale,
             solver_profiles,
             draft_solver_profile: solver_profile,
             interactions: InteractionState::default(),
@@ -236,6 +242,9 @@ impl WorkbenchUi {
         if routing.sleep_visuals_toggled {
             self.sleep_visuals_enabled = !self.sleep_visuals_enabled;
         }
+        if routing.render_scale_cycled {
+            self.render_scale = self.render_scale.next();
+        }
         routing
     }
 
@@ -260,6 +269,14 @@ impl WorkbenchUi {
 
     pub(crate) fn set_sleep_visuals_enabled(&mut self, enabled: bool) {
         self.sleep_visuals_enabled = enabled;
+    }
+
+    pub(crate) const fn render_scale(&self) -> RenderScalePreset {
+        self.render_scale
+    }
+
+    pub(crate) fn set_render_scale(&mut self, render_scale: RenderScalePreset) {
+        self.render_scale = render_scale;
     }
 
     pub(crate) fn set_solver_profiles(
@@ -295,6 +312,7 @@ impl WorkbenchUi {
             world_capacity: model.world_capacity,
             sleeping_effective: model.sleeping_effective,
             sleep_visuals_enabled: self.sleep_visuals_enabled,
+            render_scale: self.render_scale,
             selected_engine,
         };
         if self.retained_key.as_ref() != Some(&key) {
@@ -312,6 +330,7 @@ impl WorkbenchUi {
                     world_capacity: model.world_capacity,
                     sleeping_effective: model.sleeping_effective,
                     sleep_visuals_enabled: self.sleep_visuals_enabled,
+                    render_scale: self.render_scale,
                     selected_engine,
                 },
             );
@@ -380,6 +399,7 @@ fn route_events(
     let mut forwarded = Vec::with_capacity(events.len());
     let mut action = None;
     let mut sleep_visuals_toggled = false;
+    let mut render_scale_cycled = false;
     let layout = UiLayout::for_display(target_size, display_metrics);
     for event in events.iter().copied() {
         let InputEvent::Pointer(pointer) = event else {
@@ -515,6 +535,10 @@ fn route_events(
                         sleep_visuals_toggled = true;
                         *menu_open = false;
                     }
+                    UiHit::CycleRenderScale => {
+                        render_scale_cycled = true;
+                        *menu_open = false;
+                    }
                     #[cfg(feature = "box2d-comparator")]
                     UiHit::Engine(engine) => {
                         *menu_open = false;
@@ -533,6 +557,7 @@ fn route_events(
         action,
         selected_tool: *selected_tool,
         sleep_visuals_toggled,
+        render_scale_cycled,
     }
 }
 
@@ -567,6 +592,7 @@ enum UiHit {
     CycleSleepThreshold,
     CycleSleepGrouping,
     ToggleSleepVisuals,
+    CycleRenderScale,
     #[cfg(feature = "box2d-comparator")]
     Engine(ComparisonEngine),
     RestoreSolverPreset,
@@ -726,6 +752,7 @@ impl UiLayout {
                         );
                     }
                     push(self.world_sleep_visuals_button(), UiHit::ToggleSleepVisuals);
+                    push(self.world_render_scale_button(), UiHit::CycleRenderScale);
                 }
             }
         }
@@ -811,8 +838,8 @@ impl UiLayout {
                     + if self.compact_landscape() { 4.0 } else { 8.0 }
             }
             MenuPage::World => {
-                let visuals = self.world_sleep_visuals_button();
-                (visuals[1] + visuals[3]) / self.menu_scale + 62.0
+                let render_scale = self.world_render_scale_button();
+                (render_scale[1] + render_scale[3]) / self.menu_scale + 62.0
             }
         };
         let wide = self.compact_landscape()
@@ -936,6 +963,25 @@ impl UiLayout {
             grouping[1] + grouping[3] + 12.0 * self.menu_scale,
             grouping[2],
             grouping[3],
+        ]
+    }
+
+    fn world_render_scale_button(self) -> [f32; 4] {
+        if self.compact_landscape() {
+            let last = self.world_capacity_button(WorldCapacityPreset::ALL.len() - 1);
+            return [
+                last[0],
+                last[1] + last[3] + 12.0 * self.menu_scale,
+                last[2],
+                last[3],
+            ];
+        }
+        let visuals = self.world_sleep_visuals_button();
+        [
+            visuals[0],
+            visuals[1] + visuals[3] + 50.0 * self.menu_scale,
+            visuals[2],
+            visuals[3],
         ]
     }
 
@@ -1187,6 +1233,7 @@ impl UiLayout {
             "world-sleep-threshold" => self.world_sleep_threshold_button(),
             "world-sleep-grouping" => self.world_sleep_grouping_button(),
             "world-sleep-visuals" => self.world_sleep_visuals_button(),
+            "world-render-scale" => self.world_render_scale_button(),
             #[cfg(feature = "box2d-comparator")]
             "world-engine" => self.world_engine_button(index),
             _ => panic!("unknown UI test target"),
@@ -1213,6 +1260,7 @@ struct StaticKey {
     world_capacity: WorldCapacityPreset,
     sleeping_effective: bool,
     sleep_visuals_enabled: bool,
+    render_scale: RenderScalePreset,
     selected_engine: ComparisonEngine,
 }
 
@@ -1314,6 +1362,7 @@ struct StaticBatchModel<'a> {
     world_capacity: WorldCapacityPreset,
     sleeping_effective: bool,
     sleep_visuals_enabled: bool,
+    render_scale: RenderScalePreset,
     selected_engine: ComparisonEngine,
 }
 
@@ -1333,6 +1382,7 @@ fn static_batch(
         world_capacity,
         sleeping_effective,
         sleep_visuals_enabled,
+        render_scale,
         selected_engine,
     } = model;
     let layout = UiLayout::for_display(target_size, display_metrics);
@@ -1602,6 +1652,13 @@ fn static_batch(
                     Point::new(28.0 * scale, visuals[1] + visuals[3] + 31.0 * scale),
                     1.0 * scale,
                     theme.text_muted,
+                );
+                canvas.button(
+                    widget_id!(),
+                    Rect::from_array(layout.world_render_scale_button()),
+                    &format!("RENDER SCALE {}", render_scale.label()),
+                    false,
+                    1.35 * scale,
                 );
             }
         }
@@ -2037,6 +2094,7 @@ mod tests {
                 layout.world_sleep_threshold_button(),
                 layout.world_sleep_grouping_button(),
                 layout.world_sleep_visuals_button(),
+                layout.world_render_scale_button(),
             ] {
                 assert!(bounds[0] >= 0.0 && bounds[1] >= 0.0);
                 assert!(bounds[0] + bounds[2] <= target[0] as f32);
@@ -2293,6 +2351,42 @@ mod tests {
         assert!(!menu_open);
     }
 
+    #[test]
+    fn world_menu_cycles_render_scale_without_a_physics_action() {
+        let target = [960, 600];
+        let layout = UiLayout::for_target(target);
+        let mut interactions = InteractionState::default();
+        let mut menu_open = true;
+        let mut menu_page = MenuPage::World;
+        let mut selected_tool = WorkbenchTool::Grab;
+        let mut profiles = SolverProfileConfig::available();
+        let mut draft = SolverProfileConfig::default();
+        let routed = route_events(
+            UiRouteState {
+                menu_open: &mut menu_open,
+                menu_page: &mut menu_page,
+                selected_tool: &mut selected_tool,
+                solver_profiles: &mut profiles,
+                draft_solver_profile: &mut draft,
+                interactions: &mut interactions,
+                scenario: ValidationScenario::Bootstrap,
+                selected_engine: ComparisonEngine::PhysBox,
+            },
+            &[pointer(
+                1,
+                PointerPhase::Down,
+                PointerButton::Primary,
+                layout.center_normalized("world-render-scale", 0),
+            )],
+            target,
+            DisplayMetrics::ONE,
+        );
+        assert!(routed.render_scale_cycled);
+        assert!(routed.action.is_none());
+        assert_eq!(draft.physics(), SolverProfileConfig::default().physics());
+        assert!(!menu_open);
+    }
+
     #[cfg(feature = "box2d-comparator")]
     #[test]
     fn world_menu_switches_engine_and_hides_physbox_solver_page() {
@@ -2383,6 +2477,7 @@ mod tests {
                 world_capacity: WorldCapacityPreset::Slots64,
                 sleeping_effective: false,
                 sleep_visuals_enabled: false,
+                render_scale: RenderScalePreset::Percent100,
                 selected_engine: ComparisonEngine::PhysBox,
             },
         );
@@ -2400,6 +2495,7 @@ mod tests {
                 world_capacity: WorldCapacityPreset::Slots64,
                 sleeping_effective: false,
                 sleep_visuals_enabled: false,
+                render_scale: RenderScalePreset::Percent100,
                 selected_engine: ComparisonEngine::PhysBox,
             },
         );
@@ -2417,6 +2513,7 @@ mod tests {
                 world_capacity: WorldCapacityPreset::Slots10000,
                 sleeping_effective: false,
                 sleep_visuals_enabled: true,
+                render_scale: RenderScalePreset::Percent50,
                 selected_engine: ComparisonEngine::PhysBox,
             },
         );
@@ -2451,6 +2548,7 @@ mod tests {
                 world_capacity: WorldCapacityPreset::Slots64,
                 sleeping_effective: false,
                 sleep_visuals_enabled: false,
+                render_scale: RenderScalePreset::Percent100,
                 selected_engine: ComparisonEngine::PhysBox,
             },
         );
@@ -2517,6 +2615,7 @@ mod tests {
                 world_capacity: WorldCapacityPreset::Slots64,
                 sleeping_effective: true,
                 sleep_visuals_enabled: false,
+                render_scale: RenderScalePreset::Percent100,
                 selected_engine: ComparisonEngine::PhysBox,
             },
         );

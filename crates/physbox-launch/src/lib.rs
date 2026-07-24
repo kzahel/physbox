@@ -38,6 +38,60 @@ pub const MIN_SLEEP_SPEED_THRESHOLD: f32 = 0.001;
 pub const MAX_SLEEP_SPEED_THRESHOLD: f32 = 1.0;
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub enum RenderScalePreset {
+    #[default]
+    #[serde(rename = "100")]
+    Percent100,
+    #[serde(rename = "75")]
+    Percent75,
+    #[serde(rename = "50")]
+    Percent50,
+}
+
+impl RenderScalePreset {
+    pub const ALL: [Self; 3] = [Self::Percent100, Self::Percent75, Self::Percent50];
+
+    pub const fn percent(self) -> u32 {
+        match self {
+            Self::Percent100 => 100,
+            Self::Percent75 => 75,
+            Self::Percent50 => 50,
+        }
+    }
+
+    pub const fn factor(self) -> f32 {
+        self.percent() as f32 / 100.0
+    }
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Percent100 => "100%",
+            Self::Percent75 => "75%",
+            Self::Percent50 => "50%",
+        }
+    }
+
+    pub const fn next(self) -> Self {
+        match self {
+            Self::Percent100 => Self::Percent75,
+            Self::Percent75 => Self::Percent50,
+            Self::Percent50 => Self::Percent100,
+        }
+    }
+
+    fn parse(value: &str) -> Result<Self, LaunchError> {
+        match value.trim_end_matches('%') {
+            "100" => Ok(Self::Percent100),
+            "75" => Ok(Self::Percent75),
+            "50" => Ok(Self::Percent50),
+            _ => Err(LaunchError(format!(
+                "--render-scale must be one of 100, 75, or 50; received {value}"
+            ))),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum WorldCapacityPreset {
     #[default]
@@ -448,6 +502,7 @@ pub struct LaunchOptions {
     pub world_capacity: WorldCapacityPreset,
     pub physics: PhysicsConfigurationV3,
     pub sleep_visuals_enabled: bool,
+    pub render_scale: RenderScalePreset,
     pub frame_markers: FrameMarkerMode,
 }
 
@@ -465,6 +520,7 @@ impl Default for LaunchOptions {
             world_capacity: WorldCapacityPreset::default(),
             physics: PhysicsConfigurationV3::default(),
             sleep_visuals_enabled: false,
+            render_scale: RenderScalePreset::default(),
             frame_markers: FrameMarkerMode::Milestones,
         }
     }
@@ -560,6 +616,7 @@ pub fn parse_web_query(query: &str) -> Result<LaunchRequest, LaunchError> {
             "sleep-threshold" => "--sleep-threshold",
             "sleep-grouping" => "--sleep-grouping",
             "sleep-visuals" => "--sleep-visuals",
+            "render-scale" => "--render-scale",
             unknown => return Err(LaunchError(format!("unknown web query option: {unknown}"))),
         };
         tokens.push(argument.to_owned());
@@ -585,7 +642,7 @@ pub fn usage(program: &str, host: LaunchHost) -> String {
     } else {
         ""
     };
-    let solver = "\n  --body-capacity N  interactive slots: 64 (default), 256, 1000, or 10000\n  --solver NAME    soft-coupled or hard-direct (aliases: branch-robust, selected)\n  --sim-hz N       outer fixed rate, 15..=240 (default 60)\n  --substeps N     solver substeps, 1..=8 (default 4)\n  --iterations N   biased iterations, 1..=4 (soft default 1, hard default 2)\n  --contact-hz N   requested soft contact hertz, 1..=120\n  --contact-damping N  soft damping ratio, 0.5..=20\n  --static-contact-scale N  static contact hertz multiplier, 0.5..=16\n  --speculative-distance N  contact anticipation distance, 0..=1\n  --max-depenetration-velocity N  overlap recovery speed, 0.1..=100\n  --sleeping MODE  sleeping: on (default) or off\n  --sleep-threshold N  shared sleep speed threshold, 0.001..=1 (default 0.02)\n  --sleep-grouping MODE  PhysBox exact (default), local-4, or local-8\n  --sleep-visuals MODE  sleep-state presentation: off (default) or on";
+    let solver = "\n  --body-capacity N  interactive slots: 64 (default), 256, 1000, or 10000\n  --solver NAME    soft-coupled or hard-direct (aliases: branch-robust, selected)\n  --sim-hz N       outer fixed rate, 15..=240 (default 60)\n  --substeps N     solver substeps, 1..=8 (default 4)\n  --iterations N   biased iterations, 1..=4 (soft default 1, hard default 2)\n  --contact-hz N   requested soft contact hertz, 1..=120\n  --contact-damping N  soft damping ratio, 0.5..=20\n  --static-contact-scale N  static contact hertz multiplier, 0.5..=16\n  --speculative-distance N  contact anticipation distance, 0..=1\n  --max-depenetration-velocity N  overlap recovery speed, 0.1..=100\n  --sleeping MODE  sleeping: on (default) or off\n  --sleep-threshold N  shared sleep speed threshold, 0.001..=1 (default 0.02)\n  --sleep-grouping MODE  PhysBox exact (default), local-4, or local-8\n  --sleep-visuals MODE  sleep-state presentation: off (default) or on\n  --render-scale N  world render scale: 100 (default), 75, or 50 percent";
     format!(
         "Usage: {program} [options]\n\n  --width PX       viewport width (default 960)\n  --height PX      viewport height (default 600)\n  --scenario NAME  bootstrap, body-free-flight, rigid-floor, rigid-stack, liquid-sandbox, rectangle-stack, circle-bucket-100, rectangle-bucket-100, reset-grab, solver-jacobi, solver-colored, solver-manifold-i2, solver-parallel-coloring, settling-hard-8, settling-candidate-8, settling-hard-16, settling-identity-16, settling-softness-16, settling-candidate-16{}{solver}{frame_markers}{capture}\n  -h, --help       print this help",
         if cfg!(feature = "solver-lab") {
@@ -708,6 +765,7 @@ fn apply_option(
                 _ => return Err(LaunchError("--sleep-visuals requires off or on".to_owned())),
             };
         }
+        "--render-scale" => options.render_scale = RenderScalePreset::parse(&value)?,
         "--frame-markers" if host.supports_frame_markers() => {
             options.frame_markers = match value.as_str() {
                 "off" => FrameMarkerMode::Off,
@@ -1090,6 +1148,17 @@ mod tests {
     }
 
     #[test]
+    fn every_transport_can_select_render_scale() {
+        let native = parse_tokens(LaunchHost::Desktop, ["--render-scale", "50"]).unwrap();
+        let web = parse_web_query("?render-scale=50").unwrap();
+        let android = parse_android_json(r#"["--render-scale","50"]"#).unwrap();
+        assert_eq!(native.options.render_scale, RenderScalePreset::Percent50);
+        assert_eq!(native.options.render_scale, web.options.render_scale);
+        assert_eq!(native.options.render_scale, android.options.render_scale);
+        assert_eq!(native.options.render_scale.factor(), 0.5);
+    }
+
+    #[test]
     fn solver_selection_is_order_independent_and_applies_profile_defaults() {
         let request = parse_tokens(
             LaunchHost::Desktop,
@@ -1126,6 +1195,10 @@ mod tests {
                 "requires local-4, local-8, or exact",
             ),
             (vec!["--sleep-visuals", "yes"], "requires off or on"),
+            (
+                vec!["--render-scale", "60"],
+                "must be one of 100, 75, or 50",
+            ),
         ] {
             let error = parse_tokens(LaunchHost::Desktop, arguments).unwrap_err();
             assert!(error.to_string().contains(expected), "{error}");

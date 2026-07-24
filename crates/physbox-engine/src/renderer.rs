@@ -1003,6 +1003,7 @@ mod tests {
             world_capacity: Default::default(),
             solver_profile: crate::SolverProfileConfig::from_physics(physics).unwrap(),
             sleep_visuals_enabled: false,
+            render_scale: Default::default(),
         };
         let run = || {
             let mut renderer = pollster::block_on(OffscreenRenderer::new(320, 200, config.clone()))
@@ -1063,6 +1064,7 @@ mod tests {
                 world_capacity: Default::default(),
                 solver_profile: crate::SolverProfileConfig::from_physics(physics).unwrap(),
                 sleep_visuals_enabled: false,
+                render_scale: Default::default(),
             };
             let run = || {
                 let mut renderer =
@@ -1124,6 +1126,7 @@ mod tests {
                     world_capacity: Default::default(),
                     solver_profile: profile.clone(),
                     sleep_visuals_enabled: false,
+                    render_scale: Default::default(),
                 },
             ))
             .expect("configured reset/grab world initializes");
@@ -1147,6 +1150,7 @@ mod tests {
                     world_capacity: Default::default(),
                     solver_profile: profile,
                     sleep_visuals_enabled: false,
+                    render_scale: Default::default(),
                 },
             ))
             .expect("configured construction world initializes");
@@ -2592,6 +2596,7 @@ mod tests {
                 world_capacity: Default::default(),
                 solver_profile: crate::SolverProfileConfig::hard_direct(),
                 sleep_visuals_enabled: false,
+                render_scale: Default::default(),
             },
         ))
         .unwrap();
@@ -2629,6 +2634,7 @@ mod tests {
                 world_capacity: Default::default(),
                 solver_profile: crate::SolverProfileConfig::hard_direct(),
                 sleep_visuals_enabled: false,
+                render_scale: Default::default(),
             },
         ))
         .unwrap();

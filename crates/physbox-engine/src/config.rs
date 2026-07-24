@@ -1,5 +1,6 @@
 use physbox_launch::{
-    LaunchOptions, LaunchPreferenceSelection, ValidationScenario, WorldCapacityPreset,
+    LaunchOptions, LaunchPreferenceSelection, RenderScalePreset, ValidationScenario,
+    WorldCapacityPreset,
 };
 use sha2::{Digest, Sha256};
 
@@ -11,6 +12,7 @@ pub struct EngineConfig {
     pub world_capacity: WorldCapacityPreset,
     pub solver_profile: SolverProfileConfig,
     pub sleep_visuals_enabled: bool,
+    pub render_scale: RenderScalePreset,
 }
 
 impl TryFrom<&LaunchOptions> for EngineConfig {
@@ -30,6 +32,7 @@ impl TryFrom<&LaunchOptions> for EngineConfig {
             world_capacity: options.world_capacity,
             solver_profile,
             sleep_visuals_enabled: options.sleep_visuals_enabled,
+            render_scale: options.render_scale,
         })
     }
 }
@@ -40,6 +43,7 @@ impl EngineConfig {
             world_capacity: self.world_capacity,
             physics: self.solver_profile.physics(),
             sleep_visuals_enabled: self.sleep_visuals_enabled,
+            render_scale: self.render_scale,
         }
     }
 
@@ -50,11 +54,12 @@ impl EngineConfig {
     }
 }
 
-#[cfg(all(test, feature = "solver-lab"))]
+#[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
+    #[cfg(feature = "solver-lab")]
     fn lab_profile_is_projected_once_and_rejects_non_generated_scenes() {
         let mut options = LaunchOptions {
             scenario: ValidationScenario::SolverLabStack16,
@@ -71,6 +76,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "solver-lab")]
     fn configuration_hash_covers_every_applied_physics_field() {
         let mut options = LaunchOptions {
             physics: physbox_launch::PhysicsConfigurationV3::SOFT_COUPLED,
@@ -116,10 +122,20 @@ mod tests {
     fn presentation_launch_preference_reaches_the_shared_engine() {
         let options = LaunchOptions {
             sleep_visuals_enabled: true,
+            render_scale: RenderScalePreset::Percent50,
             ..Default::default()
         };
         let config = EngineConfig::try_from(&options).unwrap();
         assert!(config.sleep_visuals_enabled);
         assert!(config.launch_preference_selection().sleep_visuals_enabled);
+        assert_eq!(config.render_scale, RenderScalePreset::Percent50);
+        assert_eq!(
+            config.launch_preference_selection().render_scale,
+            RenderScalePreset::Percent50
+        );
+        assert_eq!(
+            config.physics_configuration_hash(),
+            EngineConfig::default().physics_configuration_hash()
+        );
     }
 }
