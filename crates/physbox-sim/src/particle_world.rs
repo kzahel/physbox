@@ -2047,7 +2047,7 @@ mod tests {
     mod flicker_regression {
         include!(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/../physbox-sim/src/particle_world/tests/flicker_regression.rs"
+            "/../physbox-engine/src/particle_flicker_regression.rs"
         ));
     }
     #[test]

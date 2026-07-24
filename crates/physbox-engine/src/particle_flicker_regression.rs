@@ -1,3 +1,4 @@
+// First-party renderer regression; this is not part of physbox-sim.
 use super::*;
 use crate::Camera2d;
 use crate::physics_render::{
