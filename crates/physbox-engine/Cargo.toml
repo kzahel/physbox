@@ -8,7 +8,7 @@ publish.workspace = true
 [features]
 default = ["box2d-comparator"]
 box2d-comparator = ["dep:physbox-box2d-comparator"]
-production-validation = []
+production-validation = ["physbox-sim/production-validation"]
 sim-owner = []
 solver-lab = ["physbox-launch/solver-lab", "physbox-sim/solver-lab"]
 
@@ -18,7 +18,7 @@ physbox-box2d-comparator = { path = "../physbox-box2d-comparator", optional = tr
 physbox-launch = { path = "../physbox-launch" }
 physbox-contracts = { path = "../physbox-contracts" }
 physbox-render = { path = "../physbox-render" }
-physbox-sim = { path = "../physbox-sim" }
+physbox-sim = { path = "../physbox-sim", features = ["engine-internal"] }
 physbox-ui = { path = "../physbox-ui" }
 serde.workspace = true
 serde_json.workspace = true

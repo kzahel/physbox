@@ -166,6 +166,20 @@ for (const path of await files(join(root, "crates", "physbox-render", "src"))) {
   }
 }
 
+const consumerManifestPath = join(root, "examples", "external-consumer", "Cargo.toml");
+const consumerManifest = await readFile(consumerManifestPath, "utf8");
+const consumerForbiddenDependencies = /\bphysbox-(?:engine|launch|ui|box2d-comparator|shell|contracts)\s*=/i;
+if (consumerForbiddenDependencies.test(consumerManifest)) {
+  failures.push("examples/external-consumer/Cargo.toml: consumer proof imports application policy");
+}
+const consumerSource = await readFile(
+  join(root, "examples", "external-consumer", "src", "main.rs"),
+  "utf8",
+);
+if (/\b(?:ValidationScenario|WorkbenchTool|LaunchOptions|ScenarioV1|Box2dWorld|SurfaceRenderer)\b/.test(consumerSource)) {
+  failures.push("examples/external-consumer/src/main.rs: consumer proof uses a non-library application type");
+}
+
 const oracleDependency = /physbox-box2d-oracle\s*=/i;
 for (const rootName of ["apps", "crates"]) {
   for (const path of await files(join(root, rootName))) {
@@ -195,6 +209,9 @@ if (!renderForbiddenDependencies.test("physbox-engine = { path = \"../physbox-en
 }
 if (!renderProductVocabulary.test("enum WorkbenchTool { Grab }")) {
   failures.push("boundary self-test failed: renderer application vocabulary");
+}
+if (!consumerForbiddenDependencies.test("physbox-engine = { path = \"../../crates/physbox-engine\" }")) {
+  failures.push("boundary self-test failed: external consumer dependency");
 }
 for (const rule of rules) {
   const negativeFixture = rule.name.includes("WGSL")

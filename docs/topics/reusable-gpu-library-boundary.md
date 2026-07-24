@@ -1,7 +1,7 @@
 # Reusable GPU simulation and rendering library boundary
 
-Status: decided direction, 2026-07-24; extraction and external-consumer proof
-are tracked in
+Status: implemented direction, 2026-07-24; extraction and qualification are
+tracked in
 [S36](../tactical/036-reusable-gpu-library-extraction.md). This topic owns the
 durable boundary between the GPU-resident mechanical world, optional reusable
 world rendering, and application hosts. It does not authorize publishing a
@@ -72,7 +72,7 @@ world.step(
     &device,
     &queue,
     &mut encoder,
-    StepDef::fixed(Duration::from_secs_f64(1.0 / 60.0)),
+    StepDef::fixed(1.0 / 60.0),
 )?;
 ```
 

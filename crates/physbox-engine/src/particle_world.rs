@@ -1,3 +1,4 @@
+#[allow(unused_imports)]
 pub use physbox_sim::__private::particle_world::*;
 
 #[cfg(test)]

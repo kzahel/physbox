@@ -1484,6 +1484,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "physbox-external-consumer"
+version = "0.1.0"
+dependencies = [
+ "physbox-render",
+ "physbox-sim",
+ "pollster",
+ "wgpu",
+]
+
+[[package]]
 name = "physbox-headless"
 version = "0.1.0"
 dependencies = [
@@ -1577,6 +1587,9 @@ dependencies = [
  "physbox-contracts",
  "pollster",
  "serde",
+ "serde_json",
+ "sha2",
+ "web-time",
  "wgpu",
 ]
 

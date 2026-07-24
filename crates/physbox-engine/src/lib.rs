@@ -57,8 +57,6 @@ mod sleep_diagnostics;
 mod solver_profile;
 mod ui;
 
-#[cfg(not(feature = "solver-lab"))]
-pub(crate) use authority_gpu_probe::*;
 #[cfg(feature = "solver-lab")]
 pub use authority_gpu_probe::{
     AUTHORITY_GPU_COLOR_COUNT, AUTHORITY_GPU_DYNAMIC_COLOR_COUNT,
@@ -102,8 +100,6 @@ pub use body_state::{
     BoundedBodyCommands, GpuBodyStorage, analytic_shape_encoding,
 };
 pub use body_world::GpuConstructionBodySlotEvidence;
-#[cfg(not(feature = "solver-lab"))]
-pub(crate) use branch_robust_gpu_promotion::*;
 #[cfg(feature = "solver-lab")]
 pub use branch_robust_gpu_promotion::{
     BRANCH_ROBUST_GPU_PROMOTION_CANDIDATE_ID, BRANCH_ROBUST_GPU_PROMOTION_FORMULA_ID,

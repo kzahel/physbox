@@ -151,15 +151,15 @@ the unchanged first-party host can still render it without live-state readback.
 
 ### S36.4 — Complete simulation-world extraction
 
-- [ ] Move rigid state/lifecycle, construction, interaction mechanics,
+- [x] Move rigid state/lifecycle, construction, interaction mechanics,
       broadphase, narrowphase, contact persistence, solver, awake/sleep work,
       and mechanical timing into `physbox-sim`.
-- [ ] Move particle and fluid/solid coupling mechanics without changing their
+- [x] Move particle and fluid/solid coupling mechanics without changing their
       compute order, configuration, capacity, or defaults.
-- [ ] Expose a supported world constructor and caller-recorded outer step.
-- [ ] Implement generational body/shape handles and queued create/destroy
+- [x] Expose a supported world constructor and caller-recorded outer step.
+- [x] Implement generational body/shape handles and queued create/destroy
       operations through the existing GPU command path.
-- [ ] Keep scenario catalogs, validation verdicts, reports, and benchmark
+- [x] Keep scenario catalogs, validation verdicts, reports, and benchmark
       orchestration in engine/lab/tooling owners.
 - [ ] Project current engine scenarios through neutral world definitions and
       operations instead of exporting `ScenarioV1`.
@@ -176,6 +176,15 @@ particle lifecycle/tools, and their GPU shaders now live in `physbox-sim`.
 Temporary hidden re-exports keep engine validation callers source-compatible.
 Engine profile wrappers no longer enter mechanical construction; they project
 once into the semantic `PhysicsConfigurationV3` value.
+
+The public `World` now validates neutral definitions, reserves generational
+body/shape handles, records one fixed outer step into the caller's encoder,
+queues bounded post-initialization construction/destruction through the
+existing GPU command path, exposes bounded counters and a same-device render
+view, and supports an explicitly submitted asynchronous body snapshot. The
+remaining unchecked migration item is first-party scenario projection through
+that supported façade; engine validation currently reaches the same
+`physbox-sim` implementation through feature-gated compatibility exports.
 
 ### S36.5 — Optional reusable renderer
 
@@ -210,16 +219,16 @@ unchanged.
 
 ### S36.6 — External-consumer proof and API documentation
 
-- [ ] Add a non-default workspace example or fixture that depends only on
+- [x] Add a non-default workspace example or fixture that depends only on
       `physbox-sim` and `physbox-render`.
-- [ ] Construct a rigid world with Box2D-shaped definitions and stable handles.
-- [ ] Record a fixed step into a caller-owned encoder and submit it from the
+- [x] Construct a rigid world with Box2D-shaped definitions and stable handles.
+- [x] Record a fixed step into a caller-owned encoder and submit it from the
       consumer.
-- [ ] Render into a caller-owned texture and read back only after the bounded
+- [x] Render into a caller-owned texture and read back only after the bounded
       proof completes.
-- [ ] Exercise one supported PhysBox quality toggle and one asynchronous
+- [x] Exercise one supported PhysBox quality toggle and one asynchronous
       observation.
-- [ ] Document local-path use, current-checkout semantics, device ownership,
+- [x] Document local-path use, current-checkout semantics, device ownership,
       step ordering, observation latency, feature policy, and unsupported
       internals.
 - [ ] Verify that `physbox-quest` can replace the fixture with sibling path
@@ -228,6 +237,14 @@ unchanged.
 Gate: the proof compiles and runs from public APIs only, produces fresh bounded
 evidence, and no sandbox, launch, scenario, comparator, or surface-owner type
 appears in its dependency graph.
+
+Implementation checkpoint, 2026-07-24: the non-default
+`physbox-external-consumer` package imports only the two reusable PhysBox
+crates. It owns its WGPU lifecycle, disables sleeping through supported
+configuration, constructs a floor and ball, submits one step, draws to a
+transparent caller-owned texture, and completes bounded pixel and body
+readbacks only after submission. Its fresh run emitted
+`PHYSBOX_EXTERNAL_CONSUMER_SUCCESS bodies=2 visible_pixels=254 sleeping=false`.
 
 ### S36.7 — Cross-host and performance qualification
 

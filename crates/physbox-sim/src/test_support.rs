@@ -102,43 +102,6 @@ pub(crate) fn p5_1_rectangle_floor_scenario(requested_steps: u32) -> Result<Scen
     })
 }
 
-pub(crate) fn create_instance() -> wgpu::Instance {
-    wgpu::Instance::new(&wgpu::InstanceDescriptor {
-        backends: wgpu::Backends::PRIMARY,
-        ..Default::default()
-    })
-}
-
-pub(crate) mod gpu_context {
-    pub(crate) async fn request_adapter(
-        instance: &wgpu::Instance,
-        surface: Option<&wgpu::Surface<'_>>,
-    ) -> Result<wgpu::Adapter, String> {
-        instance
-            .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::HighPerformance,
-                compatible_surface: surface,
-                force_fallback_adapter: false,
-            })
-            .await
-            .map_err(|error| format!("failed to find a WebGPU adapter: {error}"))
-    }
-
-    pub(crate) async fn request_device(
-        adapter: &wgpu::Adapter,
-    ) -> Result<(wgpu::Device, wgpu::Queue), String> {
-        adapter
-            .request_device(&wgpu::DeviceDescriptor {
-                label: Some("physbox_sim_test_device"),
-                required_features: wgpu::Features::empty(),
-                required_limits: wgpu::Limits::default().using_resolution(adapter.limits()),
-                ..Default::default()
-            })
-            .await
-            .map_err(|error| format!("failed to create a WebGPU device: {error}"))
-    }
-}
-
 fn finite(value: f32) -> FiniteF32 {
     FiniteF32::new(value).expect("test fixture constants are finite")
 }

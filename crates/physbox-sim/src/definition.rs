@@ -7,11 +7,15 @@ use crate::{ConfigError, QualityDef, WorldCapacity};
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BodyId {
-    slot: u32,
-    generation: u32,
+    pub(crate) slot: u32,
+    pub(crate) generation: u32,
 }
 
 impl BodyId {
+    pub(crate) const fn from_parts(slot: u32, generation: u32) -> Self {
+        Self { slot, generation }
+    }
+
     pub const fn slot(self) -> u32 {
         self.slot
     }
@@ -24,10 +28,14 @@ impl BodyId {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ShapeId {
-    body: BodyId,
+    pub(crate) body: BodyId,
 }
 
 impl ShapeId {
+    pub(crate) const fn from_body(body: BodyId) -> Self {
+        Self { body }
+    }
+
     pub const fn body(self) -> BodyId {
         self.body
     }

@@ -108,6 +108,34 @@ Read:
 - [Interactive Box2D comparison](docs/topics/interactive-box2d-comparison.md)
 - [Deployment](docs/deployment.md)
 
+## Reusable local crates
+
+Independent applications can consume the current checkout without importing
+the PhysBox sandbox host:
+
+```toml
+[dependencies]
+physbox-sim = { path = "../physbox5/crates/physbox-sim" }
+physbox-render = { path = "../physbox5/crates/physbox-render" }
+```
+
+These crates remain unpublished and unversioned beyond the current repository
+revision. `physbox-sim` exposes a Box2D-shaped definition/handle/world surface
+while retaining caller-owned WGPU submission and asynchronous observation.
+`physbox-render` optionally draws the same-device GPU view into a caller-owned
+target; it does not own a surface or presentation loop. Sandbox tools,
+scenario presets, launch policy, UI, and Box2D comparison remain outside the
+supported library surface.
+
+See the [reusable library architecture](docs/topics/reusable-gpu-library-boundary.md),
+the [`physbox-sim` contract](crates/physbox-sim/README.md), and the
+[external consumer proof](examples/external-consumer/README.md). Run the
+bounded proof with:
+
+```sh
+cargo run -p physbox-external-consumer
+```
+
 ## PhysBox 4 lineage
 
 PhysBox 4 is the preserved evidence archive for the split CPU-rigid/GPU-fluid

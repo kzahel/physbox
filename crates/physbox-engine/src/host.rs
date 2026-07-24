@@ -1766,7 +1766,7 @@ impl EngineHost {
                         quiet_outer_steps,
                         wake_flash_outer_steps,
                         body_timestamp: frame_timestamps
-                            .map(GpuFrameTimestampPlan::body_render_timestamp),
+                            .map(crate::gpu_timing::body_render_timestamp),
                         ..RenderOptions::default()
                     },
                 )

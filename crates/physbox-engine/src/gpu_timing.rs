@@ -2,85 +2,23 @@ use std::mem::size_of;
 use std::sync::{Arc, Mutex};
 
 use crate::FrameTimingReport;
+pub(crate) use physbox_sim::__private::gpu_timing::{
+    GpuFrameTimestampPlan, write_timestamp_marker,
+};
 
 pub(crate) const FRAME_TIMING_SAMPLE_INTERVAL_STEPS: u32 = 30;
 const TIMESTAMP_COUNT: u32 = 7;
 const TIMESTAMP_SLOT_COUNT: u32 = 3;
 const TIMESTAMP_BYTES: u64 = TIMESTAMP_COUNT as u64 * size_of::<u64>() as u64;
 
-#[derive(Clone, Copy)]
-pub(crate) struct GpuFrameTimestampPlan<'a> {
-    query_set: &'a wgpu::QuerySet,
-    query_base: u32,
-}
-
-impl<'a> GpuFrameTimestampPlan<'a> {
-    const fn marker(self, offset: u32) -> GpuTimestampMarker<'a> {
-        GpuTimestampMarker {
-            query_set: self.query_set,
-            query_index: self.query_base + offset,
-        }
+pub(crate) const fn body_render_timestamp(
+    plan: GpuFrameTimestampPlan<'_>,
+) -> physbox_render::BodyRenderTimestamp<'_> {
+    let marker = plan.body_render_end();
+    physbox_render::BodyRenderTimestamp {
+        query_set: marker.query_set,
+        query_index: marker.query_index,
     }
-
-    pub(crate) const fn frame_start(self) -> GpuTimestampMarker<'a> {
-        self.marker(0)
-    }
-
-    pub(crate) const fn rigid_end(self) -> GpuTimestampMarker<'a> {
-        self.marker(1)
-    }
-
-    pub(crate) const fn liquid_end(self) -> GpuTimestampMarker<'a> {
-        self.marker(2)
-    }
-
-    pub(crate) const fn body_render_end(self) -> GpuTimestampMarker<'a> {
-        self.marker(3)
-    }
-
-    pub(crate) const fn body_render_timestamp(self) -> physbox_render::BodyRenderTimestamp<'a> {
-        let marker = self.body_render_end();
-        physbox_render::BodyRenderTimestamp {
-            query_set: marker.query_set,
-            query_index: marker.query_index,
-        }
-    }
-
-    pub(crate) const fn particle_render_end(self) -> GpuTimestampMarker<'a> {
-        self.marker(4)
-    }
-
-    pub(crate) const fn ui_render_end(self) -> GpuTimestampMarker<'a> {
-        self.marker(6)
-    }
-
-    pub(crate) const fn composite_render_end(self) -> GpuTimestampMarker<'a> {
-        self.marker(5)
-    }
-}
-
-#[derive(Clone, Copy)]
-pub(crate) struct GpuTimestampMarker<'a> {
-    query_set: &'a wgpu::QuerySet,
-    query_index: u32,
-}
-
-pub(crate) fn write_timestamp_marker(
-    encoder: &mut wgpu::CommandEncoder,
-    marker: Option<GpuTimestampMarker<'_>>,
-    label: &'static str,
-) {
-    let Some(marker) = marker else {
-        return;
-    };
-    let _pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-        label: Some(label),
-        timestamp_writes: Some(wgpu::ComputePassTimestampWrites {
-            query_set: marker.query_set,
-            beginning_of_pass_write_index: Some(marker.query_index),
-            end_of_pass_write_index: None,
-        }),
-    });
 }
 
 struct PendingSample {
