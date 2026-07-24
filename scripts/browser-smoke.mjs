@@ -18,6 +18,7 @@ const scenesMenuScreenshot = join(captureDirectory, `physbox5-web-scenes-menu${c
 const worldMenuScreenshot = join(captureDirectory, `physbox5-web-world-menu${captureSuffix}.png`);
 const solverMenuScreenshot = join(captureDirectory, `physbox5-web-solver-menu${captureSuffix}.png`);
 const sleepScreenshot = join(captureDirectory, `physbox5-web-sleep${captureSuffix}.png`);
+const renderScaleScreenshot = join(captureDirectory, `physbox5-web-render-scale-50${captureSuffix}.png`);
 const box2dScreenshot = join(captureDirectory, `physbox5-web-box2d${captureSuffix}.png`);
 const solverScreenshot = join(captureDirectory, `physbox5-web-solver${captureSuffix}.png`);
 const grabScreenshot = join(captureDirectory, `physbox5-web-grab${captureSuffix}.png`);
@@ -45,6 +46,7 @@ await rm(scenesMenuScreenshot, { force: true });
 await rm(worldMenuScreenshot, { force: true });
 await rm(solverMenuScreenshot, { force: true });
 await rm(sleepScreenshot, { force: true });
+await rm(renderScaleScreenshot, { force: true });
 await rm(box2dScreenshot, { force: true });
 await rm(solverScreenshot, { force: true });
 await rm(grabScreenshot, { force: true });
@@ -105,6 +107,15 @@ try {
   }
   if (before.frame.ui?.version !== 12 || before.frame.ui?.sleepVisualsEnabled !== false) {
     throw new Error(`browser did not expose UI contract 12 defaults: ${JSON.stringify(before.frame.ui)}`);
+  }
+  if (
+    before.frame.renderScale?.requestedPercent !== 100
+    || before.frame.renderScale?.path !== "direct"
+    || before.frame.renderScale?.intermediateColorBytes !== 0
+    || JSON.stringify(before.frame.renderScale?.presentationSize) !== JSON.stringify(before.frame.targetSize)
+    || JSON.stringify(before.frame.renderScale?.worldRenderSize) !== JSON.stringify(before.frame.targetSize)
+  ) {
+    throw new Error(`browser did not start on the native render path: ${JSON.stringify(before.frame.renderScale)}`);
   }
   if (
     before.frame.ui?.selectedEngine !== "physbox"
@@ -305,12 +316,100 @@ try {
     (compactLandscape ? 496 : 192) * uiScale,
     (compactLandscape ? 309 : 469) * uiScale,
   ];
+  const worldRenderScaleCenter = [
+    192 * uiScale,
+    (compactLandscape ? 331 : 553) * uiScale,
+  ];
   const clickWorldControl = async (center) => {
     await page.mouse.click(...menuButtonCenter);
     await page.waitForFunction(() => globalThis.__physbox5?.frame?.ui?.menuOpen, null, { timeout: 10_000 });
     await page.mouse.click(300 * uiScale, 104 * uiScale);
     await page.mouse.click(...center);
   };
+  const initialPhysicsHash = before.frame.sceneContract.physicsConfigurationHash;
+  const initialCamera = before.frame.camera;
+  await clickWorldControl(worldRenderScaleCenter);
+  await page.waitForFunction(
+    () => {
+      const report = globalThis.__physbox5?.frame?.renderScale;
+      return report?.requestedPercent === 75
+        && report.path === "linear-composite"
+        && report.intermediateColorBytes > 0
+        && report.worldRenderSize[0] === Math.ceil(report.presentationSize[0] * 0.75)
+        && report.worldRenderSize[1] === Math.ceil(report.presentationSize[1] * 0.75);
+    },
+    null,
+    { timeout: 30_000 },
+  );
+  await requirePresentationPreference(page, false, 75);
+  await page.reload({ waitUntil: "networkidle" });
+  await page.waitForFunction(
+    () => globalThis.__physbox5?.ready
+      && globalThis.__physbox5?.frame?.renderScale?.requestedPercent === 75
+      && globalThis.__physbox5?.frame?.renderScale?.path === "linear-composite",
+    null,
+    { timeout: 30_000 },
+  );
+  const resizedViewport = { width: viewportWidth + 37, height: viewportHeight + 19 };
+  await page.setViewportSize(resizedViewport);
+  await page.waitForFunction(
+    ({ originalWidth, originalHeight }) => {
+      const frame = globalThis.__physbox5?.frame;
+      const report = frame?.renderScale;
+      return report?.requestedPercent === 75
+        && report.presentationSize[0] !== originalWidth
+        && report.presentationSize[1] !== originalHeight
+        && report.worldRenderSize[0] === Math.ceil(report.presentationSize[0] * 0.75)
+        && report.worldRenderSize[1] === Math.ceil(report.presentationSize[1] * 0.75)
+        && JSON.stringify(frame.targetSize) === JSON.stringify(report.presentationSize);
+    },
+    {
+      originalWidth: before.frame.targetSize[0],
+      originalHeight: before.frame.targetSize[1],
+    },
+    { timeout: 30_000 },
+  );
+  await page.setViewportSize({ width: viewportWidth, height: viewportHeight });
+  await page.waitForFunction(
+    (nativeSize) =>
+      JSON.stringify(globalThis.__physbox5?.frame?.renderScale?.presentationSize)
+        === JSON.stringify(nativeSize),
+    before.frame.targetSize,
+    { timeout: 30_000 },
+  );
+  await clickWorldControl(worldRenderScaleCenter);
+  await page.waitForFunction(
+    () => {
+      const report = globalThis.__physbox5?.frame?.renderScale;
+      return report?.requestedPercent === 50
+        && report.path === "linear-composite"
+        && report.worldRenderSize[0] === Math.ceil(report.presentationSize[0] * 0.5)
+        && report.worldRenderSize[1] === Math.ceil(report.presentationSize[1] * 0.5);
+    },
+    null,
+    { timeout: 30_000 },
+  );
+  await requirePresentationPreference(page, false, 50);
+  await captureCompleteScreenshot(page, renderScaleScreenshot, "browser 50-percent render scale", consoleErrors);
+  const scaledFrame = await page.evaluate(() => globalThis.__physbox5.frame);
+  if (
+    scaledFrame.sceneContract.physicsConfigurationHash !== initialPhysicsHash
+    || JSON.stringify(scaledFrame.camera) !== JSON.stringify(initialCamera)
+  ) {
+    throw new Error(`render scale changed physics or camera: ${JSON.stringify(scaledFrame)}`);
+  }
+  await clickWorldControl(worldRenderScaleCenter);
+  await page.waitForFunction(
+    () => {
+      const report = globalThis.__physbox5?.frame?.renderScale;
+      return report?.requestedPercent === 100
+        && report.path === "direct"
+        && report.intermediateColorBytes === 0;
+    },
+    null,
+    { timeout: 30_000 },
+  );
+  await requirePresentationPreference(page, false, 100);
   await page.mouse.click(...menuButtonCenter);
   await page.waitForFunction(() => globalThis.__physbox5?.frame?.ui?.menuOpen, null, { timeout: 10_000 });
   await page.evaluate(() => new Promise((resolveFrame) => {
@@ -1070,6 +1169,7 @@ try {
     worldMenuScreenshot,
     solverMenuScreenshot: solverLab ? solverMenuScreenshot : null,
     sleepScreenshot,
+    renderScaleScreenshot,
     box2dScreenshot,
     box2dFrame,
     solverScreenshot: solverLab ? solverScreenshot : null,
@@ -1111,6 +1211,7 @@ try {
       worldMenuScreenshot,
       solverMenuScreenshot: solverLab ? solverMenuScreenshot : null,
       sleepScreenshot,
+      renderScaleScreenshot,
       box2dScreenshot,
       grabScreenshot: capturedGrab ? grabScreenshot : null,
       constructionScreenshot: capturedConstruction ? constructionScreenshot : null,
@@ -1274,18 +1375,22 @@ async function requirePhysicsPreference(page, expected, expectClean = false) {
   );
 }
 
-async function requirePresentationPreference(page, sleepVisualsEnabled) {
+async function requirePresentationPreference(page, sleepVisualsEnabled, renderScale = 100) {
   await page.waitForFunction(
-    ({ expectedSleepVisuals }) => {
-      const saved = JSON.parse(localStorage.getItem("physbox5.presentation.v1") ?? "null");
+    ({ expectedSleepVisuals, expectedRenderScale }) => {
+      const saved = JSON.parse(localStorage.getItem("physbox5.presentation.v2") ?? "null");
       const url = new URL(location.href);
-      return saved?.version === 1
+      return saved?.version === 2
         && saved.sleepVisualsEnabled === expectedSleepVisuals
+        && saved.renderScale === String(expectedRenderScale)
         && (expectedSleepVisuals
           ? url.searchParams.get("sleep-visuals") === "on"
-          : !url.searchParams.has("sleep-visuals"));
+          : !url.searchParams.has("sleep-visuals"))
+        && (expectedRenderScale === 100
+          ? !url.searchParams.has("render-scale")
+          : url.searchParams.get("render-scale") === String(expectedRenderScale));
     },
-    { expectedSleepVisuals: sleepVisualsEnabled },
+    { expectedSleepVisuals: sleepVisualsEnabled, expectedRenderScale: renderScale },
     { timeout: 10_000 },
   );
 }

@@ -147,6 +147,9 @@ impl WinitFrameDriver {
     }
 
     pub fn suspend(&mut self) {
+        if let Some(renderer) = &self.renderer {
+            self.engine_config.render_scale = renderer.launch_preference_selection().render_scale;
+        }
         self.renderer = None;
         self.window = None;
         self.frame_pacer.reset();
@@ -286,11 +289,13 @@ impl WinitFrameDriver {
                     },
                     input_events: std::mem::take(&mut self.pending_input_events),
                 };
-                let report = self
+                let renderer = self
                     .renderer
                     .as_mut()
-                    .ok_or_else(|| "surface renderer is not initialized".to_owned())?
-                    .render(input)?;
+                    .ok_or_else(|| "surface renderer is not initialized".to_owned())?;
+                let report = renderer.render(input)?;
+                self.engine_config.render_scale =
+                    renderer.launch_preference_selection().render_scale;
                 self.frame_pacer.complete_frame(
                     now,
                     window

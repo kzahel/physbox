@@ -15,7 +15,7 @@ use crate::{
     clock::PacingReport,
     engine_selection::ComparisonEngine,
     renderer::{DisplayMetrics, RenderFrameTarget},
-    report::{FrameTimingReport, UiReport},
+    report::{FrameTimingReport, RenderScaleReport, UiReport},
 };
 
 pub(crate) const UI_CONTRACT_VERSION: u32 = 12;
@@ -161,6 +161,7 @@ pub(crate) struct UiFrameModel<'a> {
     pub box2d_sleep_cycle: Option<&'a crate::SleepCycleMetricsV1>,
     pub sleep_cycle_age_frames: Option<u64>,
     pub frame_timing: &'a FrameTimingReport,
+    pub render_scale: &'a RenderScaleReport,
 }
 
 /// Shared canvas UI and input capture.
@@ -1700,11 +1701,11 @@ fn dynamic_batch(
     let height = if model.scenario == ValidationScenario::LiquidSandbox
         && model.selected_engine == ComparisonEngine::PhysBox
     {
-        (if compact_diagnostics { 384.0 } else { 490.0 }) * scale
+        (if compact_diagnostics { 416.0 } else { 530.0 }) * scale
     } else if model.selected_engine != ComparisonEngine::PhysBox {
-        380.0 * scale
+        400.0 * scale
     } else {
-        (if compact_diagnostics { 336.0 } else { 416.0 }) * scale
+        (if compact_diagnostics { 368.0 } else { 456.0 }) * scale
     };
     let logical_width = target_size[0] as f32 / scale;
     let origin = [
@@ -1771,6 +1772,12 @@ fn dynamic_batch(
     let mut lines = vec![
         format!("ENGINE {}", model.selected_engine.label()),
         format!("SCENE {}", model.scenario.name()),
+        format!(
+            "SCALE {}% {}X{}",
+            model.render_scale.requested_percent,
+            model.render_scale.world_render_size[0],
+            model.render_scale.world_render_size[1],
+        ),
     ];
     match model.selected_engine {
         #[cfg(feature = "box2d-comparator")]
@@ -1974,7 +1981,7 @@ fn dynamic_batch(
     batch
 }
 
-fn frame_timing_lines(timing: &FrameTimingReport) -> [String; 4] {
+fn frame_timing_lines(timing: &FrameTimingReport) -> [String; 5] {
     let value = |measurement: Option<f64>| {
         measurement.map_or_else(
             || "N/A".to_owned(),
@@ -2004,9 +2011,13 @@ fn frame_timing_lines(timing: &FrameTimingReport) -> [String; 4] {
             value(timing.liquid_compute_ms)
         ),
         format!(
-            "DRAW B{} P{} UI{}MS",
+            "DRAW B{} P{}MS",
             value(timing.body_render_ms),
             value(timing.particle_render_ms),
+        ),
+        format!(
+            "POST C{} UI{}MS",
+            value(timing.composite_render_ms),
             value(timing.ui_render_ms)
         ),
         format!(
@@ -2043,6 +2054,7 @@ mod tests {
         timing.liquid_compute_ms = Some(2.5);
         timing.body_render_ms = Some(0.5);
         timing.particle_render_ms = Some(0.75);
+        timing.composite_render_ms = Some(0.125);
         timing.ui_render_ms = Some(0.25);
         timing.total_gpu_ms = Some(5.25);
         timing.cpu_encode_ms = Some(1.0);
@@ -2051,8 +2063,9 @@ mod tests {
         let lines = frame_timing_lines(&timing);
         assert_eq!(lines[0], "TIME READY A2 RB1 ASYNC");
         assert_eq!(lines[1], "PHYS RIG 1.25 LIQ 2.50MS");
-        assert_eq!(lines[2], "DRAW B0.50 P0.75 UI0.25MS");
-        assert_eq!(lines[3], "TOTAL GPU5.25 CPU1.00MS");
+        assert_eq!(lines[2], "DRAW B0.50 P0.75MS");
+        assert_eq!(lines[3], "POST C0.12 UI0.25MS");
+        assert_eq!(lines[4], "TOTAL GPU5.25 CPU1.00MS");
     }
 
     #[test]

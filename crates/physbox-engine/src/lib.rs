@@ -215,7 +215,7 @@ pub use renderer::OffscreenRenderer;
 pub use renderer::{DisplayMetrics, SurfaceRenderer};
 pub use report::{
     BodyCommandReport, CameraReport, ConstructionDiagnosticReport, FrameReport, FrameTimingReport,
-    ScenarioResult, SceneContract, UiReport,
+    RenderScaleReport, ScenarioResult, SceneContract, UiReport,
 };
 pub use scenario::{
     AnalyticFixtureKind, P5_2_BUCKET_EVIDENCE_STEPS, P5_2_CENTERED_STACK_EVIDENCE_STEPS,

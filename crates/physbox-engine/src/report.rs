@@ -11,6 +11,7 @@ use crate::{
 };
 
 pub const SCENE_CONTRACT_VERSION: u32 = 14;
+pub const RENDER_SCALE_REPORT_VERSION: u32 = 1;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -209,6 +210,7 @@ pub struct FrameTimingReport {
     pub liquid_compute_ms: Option<f64>,
     pub body_render_ms: Option<f64>,
     pub particle_render_ms: Option<f64>,
+    pub composite_render_ms: Option<f64>,
     pub ui_render_ms: Option<f64>,
     pub total_gpu_ms: Option<f64>,
     pub blocking_readback_for_advancement: bool,
@@ -231,12 +233,25 @@ impl FrameTimingReport {
             liquid_compute_ms: None,
             body_render_ms: None,
             particle_render_ms: None,
+            composite_render_ms: None,
             ui_render_ms: None,
             total_gpu_ms: None,
             blocking_readback_for_advancement: false,
             error: None,
         }
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RenderScaleReport {
+    pub version: u32,
+    pub requested_percent: u32,
+    pub presentation_size: [u32; 2],
+    pub world_render_size: [u32; 2],
+    pub effective_scale: [f32; 2],
+    pub path: &'static str,
+    pub intermediate_color_bytes: u64,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -247,6 +262,7 @@ pub struct FrameReport {
     pub fixed_steps_this_frame: u32,
     pub pointer_events_total: u64,
     pub target_size: [u32; 2],
+    pub render_scale: RenderScaleReport,
     pub pacing: PacingReport,
     pub camera: CameraReport,
     pub ui: UiReport,
@@ -265,12 +281,16 @@ impl FrameReport {
 
     pub fn compact_marker_json(&self) -> String {
         #[derive(Serialize)]
-        #[serde(rename_all = "camelCase")]
         struct CompactPacing<'a> {
+            #[serde(rename = "m")]
             mode: &'a crate::clock::PacingMode,
+            #[serde(rename = "c")]
             completed_outer_steps_total: u64,
+            #[serde(rename = "s")]
             simulated_seconds_total: f64,
+            #[serde(rename = "o")]
             overload_slipped_wall_seconds_total: f64,
+            #[serde(rename = "e")]
             effective_simulation_scale: f64,
         }
 
@@ -296,6 +316,20 @@ impl FrameReport {
             name: &'static str,
             complete: bool,
             passed: bool,
+        }
+
+        #[derive(Serialize)]
+        struct CompactRenderScale {
+            #[serde(rename = "p")]
+            requested_percent: u32,
+            #[serde(rename = "n")]
+            presentation_size: [u32; 2],
+            #[serde(rename = "w")]
+            world_render_size: [u32; 2],
+            #[serde(rename = "c")]
+            composited: bool,
+            #[serde(rename = "m")]
+            intermediate_color_bytes: u64,
         }
 
         #[derive(Serialize)]
@@ -368,6 +402,8 @@ impl FrameReport {
             ui: u32,
             #[serde(rename = "v")]
             ui_density: [f32; 5],
+            #[serde(rename = "r")]
+            render_scale: CompactRenderScale,
             body_commands: CompactBodyCommands,
             #[serde(rename = "d", skip_serializing_if = "Option::is_none")]
             construction_diagnostic: Option<CompactConstructionDiagnostic<'a>>,
@@ -410,6 +446,13 @@ impl FrameReport {
                 self.ui.menu_scale,
                 self.ui.diagnostics_scale,
             ],
+            render_scale: CompactRenderScale {
+                requested_percent: self.render_scale.requested_percent,
+                presentation_size: self.render_scale.presentation_size,
+                world_render_size: self.render_scale.world_render_size,
+                composited: self.render_scale.path == "linear-composite",
+                intermediate_color_bytes: self.render_scale.intermediate_color_bytes,
+            },
             body_commands: CompactBodyCommands {
                 executed_commands_total: self.body_commands.executed_commands_total,
                 executed_construction_intents_total: self
@@ -554,6 +597,15 @@ mod tests {
             fixed_steps_this_frame: 1,
             pointer_events_total: u64::MAX,
             target_size: [u32::MAX, u32::MAX],
+            render_scale: RenderScaleReport {
+                version: RENDER_SCALE_REPORT_VERSION,
+                requested_percent: 50,
+                presentation_size: [u32::MAX, u32::MAX],
+                world_render_size: [u32::MAX / 2 + 1, u32::MAX / 2 + 1],
+                effective_scale: [0.5, 0.5],
+                path: "linear-composite",
+                intermediate_color_bytes: u64::MAX,
+            },
             pacing: PacingReport {
                 mode: PacingMode::InteractiveSlowClock,
                 fixed_step_hz: 60,
@@ -750,6 +802,9 @@ mod tests {
                 | 2
         );
         assert_eq!(compact["b"], u32::MAX);
+        assert_eq!(compact["r"]["p"], 50);
+        assert_eq!(compact["r"]["c"], true);
+        assert_eq!(compact["pacing"]["e"], 1.0);
         assert_eq!(
             compact["v"],
             serde_json::json!([crate::ui::UI_CONTRACT_VERSION as f32, 4.0, 2.0, 2.0, 2.0])

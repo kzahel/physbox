@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use crate::FrameTimingReport;
 
 pub(crate) const FRAME_TIMING_SAMPLE_INTERVAL_STEPS: u32 = 30;
-const TIMESTAMP_COUNT: u32 = 6;
+const TIMESTAMP_COUNT: u32 = 7;
 const TIMESTAMP_SLOT_COUNT: u32 = 3;
 const TIMESTAMP_BYTES: u64 = TIMESTAMP_COUNT as u64 * size_of::<u64>() as u64;
 
@@ -43,6 +43,10 @@ impl<'a> GpuFrameTimestampPlan<'a> {
     }
 
     pub(crate) const fn ui_render_end(self) -> GpuTimestampMarker<'a> {
+        self.marker(6)
+    }
+
+    pub(crate) const fn composite_render_end(self) -> GpuTimestampMarker<'a> {
         self.marker(5)
     }
 }
@@ -134,6 +138,7 @@ struct ResolvedSample {
     liquid_compute_ms: f64,
     body_render_ms: f64,
     particle_render_ms: f64,
+    composite_render_ms: f64,
     ui_render_ms: f64,
     total_gpu_ms: f64,
 }
@@ -309,6 +314,7 @@ impl SurfaceFrameTiming {
             liquid_compute_ms: latest.map(|sample| sample.liquid_compute_ms),
             body_render_ms: latest.map(|sample| sample.body_render_ms),
             particle_render_ms: latest.map(|sample| sample.particle_render_ms),
+            composite_render_ms: latest.map(|sample| sample.composite_render_ms),
             ui_render_ms: latest.map(|sample| sample.ui_render_ms),
             total_gpu_ms: latest.map(|sample| sample.total_gpu_ms),
             blocking_readback_for_advancement: false,
@@ -350,8 +356,9 @@ fn decode_timestamps(
         liquid_compute_ms: milliseconds(1, 2),
         body_render_ms: milliseconds(2, 3),
         particle_render_ms: milliseconds(3, 4),
-        ui_render_ms: milliseconds(4, 5),
-        total_gpu_ms: milliseconds(0, 5),
+        composite_render_ms: milliseconds(4, 5),
+        ui_render_ms: milliseconds(5, 6),
+        total_gpu_ms: milliseconds(0, 6),
     })
 }
 
@@ -361,7 +368,7 @@ mod tests {
 
     #[test]
     fn timestamp_boundaries_decode_into_debug_buckets() {
-        let values = [10_u64, 20, 50, 70, 90, 110];
+        let values = [10_u64, 20, 50, 70, 90, 95, 110];
         let bytes = bytemuck::cast_slice(&values);
         let sample = decode_timestamps(
             bytes,
@@ -378,7 +385,8 @@ mod tests {
         assert_eq!(sample.liquid_compute_ms, 3.0);
         assert_eq!(sample.body_render_ms, 2.0);
         assert_eq!(sample.particle_render_ms, 2.0);
-        assert_eq!(sample.ui_render_ms, 2.0);
+        assert_eq!(sample.composite_render_ms, 0.5);
+        assert_eq!(sample.ui_render_ms, 1.5);
         assert_eq!(sample.total_gpu_ms, 10.0);
     }
 }

@@ -88,33 +88,54 @@ Evidence:
 
 ### S34.3 — Shared composition path
 
-- [ ] Separate native presentation and world-render targets inside the one
+- [x] Separate native presentation and world-render targets inside the one
   frame boundary.
-- [ ] Retain direct world/UI rendering and zero intermediate allocation at
+- [x] Retain direct world/UI rendering and zero intermediate allocation at
   100 percent.
-- [ ] Allocate a bounded sampleable color target and encode one linear
+- [x] Allocate a bounded sampleable color target and encode one linear
   fullscreen composite at 75/50 percent.
-- [ ] Render the canvas UI at native extent after composition.
-- [ ] Recreate only size-dependent presentation resources on resize or scale
+- [x] Render the canvas UI at native extent after composition.
+- [x] Recreate only size-dependent presentation resources on resize or scale
   change.
-- [ ] Exercise the same path in surface and offscreen renderers.
-- [ ] Preserve selected scale through native surface recreation.
+- [x] Exercise the same path in surface and offscreen renderers.
+- [x] Preserve selected scale through native surface recreation.
 
 Gate: target, resize, direct/composite, camera/input, offscreen, and GPU
 validation tests pass with no change to scenario or physics identity.
 
+Evidence:
+
+- Focused offscreen WebGPU tests cover 100/50 paths, odd-size rounding, native
+  output pixels, menu-driven resource changes, camera state, UI density,
+  scenario identity, and physics identity, both with the default comparator
+  feature and `--no-default-features`.
+- Browser WebGPU run `0d9a4fc0-09f9-4d21-bb18-09bdab650ab9` exercised
+  100/75/50 transitions, preference reload, resize at 75 percent, return to
+  the allocation-free native path, and a 960x600 final output. Its 50-percent
+  capture is `/tmp/physbox5-web-render-scale-50.png`.
+
 ### S34.4 — Reports and timing
 
-- [ ] Report native and world extents, requested/effective scale, path, and
+- [x] Report native and world extents, requested/effective scale, path, and
   intermediate bytes.
-- [ ] Add a distinct asynchronous GPU composite bucket without blocking frame
+- [x] Add a distinct asynchronous GPU composite bucket without blocking frame
   advancement.
-- [ ] Display the applied scale and target in the existing bounded HUD.
-- [ ] Update semantic/compact report tests and relevant browser/Android
+- [x] Display the applied scale and target in the existing bounded HUD.
+- [x] Update semantic/compact report tests and relevant browser/Android
   consumers.
 
 Gate: supported and unsupported timestamp adapters report honestly; async
 readback remains bounded and no report value is required for the next frame.
+
+Evidence:
+
+- Timestamp decoding and HUD-line tests cover the rigid, liquid, body,
+  particle, composite, UI, and total buckets.
+- The full browser report publishes the direct path at 960x600 with zero
+  intermediate bytes; the captured reduced frame published a 480x300 world
+  target and a distinct composite measurement.
+- The compact Android marker test retains its sub-940-byte worst-case bound
+  while including the render-scale report.
 
 ### S34.5 — Cross-host and performance qualification
 

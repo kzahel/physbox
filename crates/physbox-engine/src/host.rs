@@ -30,8 +30,8 @@ use crate::{
     renderer::RenderFrameContext,
     report::{
         BodyCommandReport, CameraReport, ConstructionDiagnosticReport, FrameReport,
-        FrameTimingReport, SCENE_CONTRACT_VERSION, ScenarioResult, SceneContract,
-        SleepCycleDiagnosticReport,
+        FrameTimingReport, RENDER_SCALE_REPORT_VERSION, RenderScaleReport, SCENE_CONTRACT_VERSION,
+        ScenarioResult, SceneContract, SleepCycleDiagnosticReport,
     },
     scenario::{
         P5_2_BUCKET_EVIDENCE_STEPS, P5_2_CENTERED_STACK_EVIDENCE_STEPS,
@@ -984,6 +984,10 @@ impl EngineHost {
         self.config.launch_preference_selection()
     }
 
+    pub(crate) const fn render_scale(&self) -> physbox_launch::RenderScalePreset {
+        self.config.render_scale
+    }
+
     pub(crate) fn new(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
@@ -1372,7 +1376,7 @@ impl EngineHost {
     pub fn render_frame(
         &mut self,
         input: FrameInput,
-        context: RenderFrameContext<'_>,
+        mut context: RenderFrameContext<'_>,
     ) -> FrameReport {
         let raw_pointer_count = input
             .input_events
@@ -1381,7 +1385,7 @@ impl EngineHost {
             .count() as u64;
         let mut routing = self.ui.route_events(
             &input.input_events,
-            context.target.size,
+            context.presentation_target.size,
             context.display_metrics,
             self.config.scenario,
             self.selected_engine,
@@ -1518,9 +1522,11 @@ impl EngineHost {
             .ui
             .restrict_selected_tool(self.config.scenario, self.selected_engine);
         self.pointer_events_total = self.pointer_events_total.saturating_add(raw_pointer_count);
-        let (world_events, _) =
-            self.input
-                .apply_events(&mut self.camera, &routing.events, context.target.size);
+        let (world_events, _) = self.input.apply_events(
+            &mut self.camera,
+            &routing.events,
+            context.presentation_target.size,
+        );
         if let Some(interaction) = &mut self.body_interaction {
             interaction
                 .set_physbox_commands_enabled(self.selected_engine == ComparisonEngine::PhysBox);
@@ -1550,14 +1556,14 @@ impl EngineHost {
 
         let camera_frame = self
             .camera
-            .resolve(context.target.size)
+            .resolve(context.presentation_target.size)
             .expect("nonzero frame target resolves the shared camera");
         let params = FrameParams {
             dt_frame: [
                 self.clock.fixed_step_seconds() as f32,
                 self.frame_index as f32,
-                context.target.size[0] as f32,
-                context.target.size[1] as f32,
+                context.world_target.size[0] as f32,
+                context.world_target.size[1] as f32,
             ],
             camera: [
                 camera_frame.center()[0],
@@ -1689,7 +1695,7 @@ impl EngineHost {
                 self.comparison_shadow.encode_render(
                     context.queue,
                     context.encoder,
-                    context.target,
+                    context.world_target,
                     ComparisonRenderPlan {
                         frame_index: self.frame_index,
                         camera: camera_frame,
@@ -1721,7 +1727,7 @@ impl EngineHost {
             world.encode_render_with_timestamp(
                 context.queue,
                 context.encoder,
-                context.target,
+                context.world_target,
                 BodyRenderPlan {
                     frame_index: self.frame_index,
                     camera: camera_frame,
@@ -1742,7 +1748,7 @@ impl EngineHost {
                 .begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("physbox5_bootstrap_render"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: context.target.color_view,
+                        view: context.world_target.color_view,
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Clear(wgpu::Color {
@@ -1785,6 +1791,12 @@ impl EngineHost {
             context.encoder,
             frame_timestamps.map(GpuFrameTimestampPlan::particle_render_end),
             "physbox5_frame_timing_particle_render_end",
+        );
+        context.encode_world_composite();
+        write_timestamp_marker(
+            context.encoder,
+            frame_timestamps.map(GpuFrameTimestampPlan::composite_render_end),
+            "physbox5_frame_timing_composite_render_end",
         );
 
         self.frame_index += 1;
@@ -2215,10 +2227,28 @@ impl EngineHost {
         );
         let mut frame_timing = self.frame_timing.clone();
         frame_timing.sample_submitted_this_frame = frame_timestamps.is_some();
+        let presentation_size = context.presentation_target.size;
+        let world_render_size = context.world_target.size;
+        let render_scale = RenderScaleReport {
+            version: RENDER_SCALE_REPORT_VERSION,
+            requested_percent: context.render_scale.percent(),
+            presentation_size,
+            world_render_size,
+            effective_scale: [
+                world_render_size[0] as f32 / presentation_size[0] as f32,
+                world_render_size[1] as f32 / presentation_size[1] as f32,
+            ],
+            path: if context.intermediate_color_bytes == 0 {
+                "direct"
+            } else {
+                "linear-composite"
+            },
+            intermediate_color_bytes: context.intermediate_color_bytes,
+        };
         let ui = self.ui.encode(
             context.queue,
             context.encoder,
-            context.target,
+            context.presentation_target,
             context.display_metrics,
             UiFrameModel {
                 scenario: self.config.scenario,
@@ -2256,6 +2286,7 @@ impl EngineHost {
                 box2d_sleep_cycle: sleep_cycle_diagnostic.comparison_state.as_ref(),
                 sleep_cycle_age_frames: sleep_cycle_diagnostic.age_frames,
                 frame_timing: &frame_timing,
+                render_scale: &render_scale,
             },
         );
         write_timestamp_marker(
@@ -2268,7 +2299,8 @@ impl EngineHost {
             fixed_steps_total: self.fixed_steps_total,
             fixed_steps_this_frame: steps,
             pointer_events_total: self.pointer_events_total,
-            target_size: context.target.size,
+            target_size: context.presentation_target.size,
+            render_scale,
             pacing,
             camera: CameraReport {
                 version: crate::CAMERA_STATE_VERSION,

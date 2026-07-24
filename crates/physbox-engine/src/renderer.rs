@@ -6,6 +6,7 @@ use crate::{
     gpu_timing::{GpuFrameTimestampPlan, SurfaceFrameTiming},
     host::EngineHost,
 };
+use physbox_launch::RenderScalePreset;
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use web_time::Instant;
@@ -44,13 +45,215 @@ pub(crate) struct RenderFrameTarget<'a> {
     pub size: [u32; 2],
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct RenderFrameComposite<'a> {
+    pipeline: &'a wgpu::RenderPipeline,
+    bind_group: &'a wgpu::BindGroup,
+}
+
 pub(crate) struct RenderFrameContext<'a> {
     pub device: &'a wgpu::Device,
     pub queue: &'a wgpu::Queue,
     pub encoder: &'a mut wgpu::CommandEncoder,
-    pub target: RenderFrameTarget<'a>,
+    pub presentation_target: RenderFrameTarget<'a>,
+    pub world_target: RenderFrameTarget<'a>,
     pub display_metrics: DisplayMetrics,
     pub frame_timestamps: Option<GpuFrameTimestampPlan<'a>>,
+    pub render_scale: RenderScalePreset,
+    pub intermediate_color_bytes: u64,
+    composite: Option<RenderFrameComposite<'a>>,
+}
+
+impl RenderFrameContext<'_> {
+    pub(crate) fn encode_world_composite(&mut self) {
+        let Some(composite) = self.composite else {
+            return;
+        };
+        let mut pass = self.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("physbox5_world_composite"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: self.presentation_target.color_view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+        pass.set_pipeline(composite.pipeline);
+        pass.set_bind_group(0, composite.bind_group, &[]);
+        pass.draw(0..3, 0..1);
+    }
+}
+
+struct WorldCompositor {
+    bind_group_layout: wgpu::BindGroupLayout,
+    sampler: wgpu::Sampler,
+    pipeline: wgpu::RenderPipeline,
+}
+
+impl WorldCompositor {
+    fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> Self {
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("physbox5_world_composite_layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        });
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("physbox5_world_composite_pipeline_layout"),
+            bind_group_layouts: &[&bind_group_layout],
+            push_constant_ranges: &[],
+        });
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("physbox5_world_composite_shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("world_composite.wgsl").into()),
+        });
+        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("physbox5_world_composite_pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vertex_main"),
+                compilation_options: Default::default(),
+                buffers: &[],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fragment_main"),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("physbox5_world_composite_sampler"),
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            ..Default::default()
+        });
+        Self {
+            bind_group_layout,
+            sampler,
+            pipeline,
+        }
+    }
+
+    fn create_scaled_target(
+        &self,
+        device: &wgpu::Device,
+        format: wgpu::TextureFormat,
+        presentation_size: [u32; 2],
+        scale: RenderScalePreset,
+    ) -> Option<ScaledWorldTarget> {
+        let size = scaled_world_extent(presentation_size, scale);
+        if scale == RenderScalePreset::Percent100 {
+            return None;
+        }
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("physbox5_scaled_world_color"),
+            size: wgpu::Extent3d {
+                width: size[0],
+                height: size[1],
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let view = texture.create_view(&Default::default());
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("physbox5_world_composite_bind_group"),
+            layout: &self.bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
+            ],
+        });
+        let color_bytes_per_texel = format
+            .block_copy_size(None)
+            .expect("surface-compatible color formats have one copyable color aspect");
+        Some(ScaledWorldTarget {
+            _texture: texture,
+            view,
+            bind_group,
+            size,
+            scale,
+            presentation_size,
+            color_bytes: u64::from(size[0]) * u64::from(size[1]) * u64::from(color_bytes_per_texel),
+        })
+    }
+}
+
+struct ScaledWorldTarget {
+    _texture: wgpu::Texture,
+    view: wgpu::TextureView,
+    bind_group: wgpu::BindGroup,
+    size: [u32; 2],
+    scale: RenderScalePreset,
+    presentation_size: [u32; 2],
+    color_bytes: u64,
+}
+
+impl ScaledWorldTarget {
+    fn matches(&self, presentation_size: [u32; 2], scale: RenderScalePreset) -> bool {
+        self.presentation_size == presentation_size && self.scale == scale
+    }
+}
+
+pub(crate) fn scaled_world_extent(
+    presentation_size: [u32; 2],
+    scale: RenderScalePreset,
+) -> [u32; 2] {
+    let percent = scale.percent();
+    [
+        presentation_size[0]
+            .saturating_mul(percent)
+            .div_ceil(100)
+            .max(1),
+        presentation_size[1]
+            .saturating_mul(percent)
+            .div_ceil(100)
+            .max(1),
+    ]
 }
 
 pub struct SurfaceRenderer {
@@ -63,6 +266,8 @@ pub struct SurfaceRenderer {
     host: EngineHost,
     diagnostics: AdapterDiagnostics,
     frame_timing: SurfaceFrameTiming,
+    compositor: WorldCompositor,
+    scaled_world_target: Option<ScaledWorldTarget>,
     construction_epoch: Option<(String, u64, u64)>,
     pending_construction_diagnostics: VecDeque<PendingInteractionDiagnostic>,
     pending_sleep_diagnostic: Option<PendingInteractionDiagnostic>,
@@ -116,6 +321,7 @@ impl SurfaceRenderer {
         };
         surface.configure(&device, &surface_config);
         let frame_timing = SurfaceFrameTiming::new(&device, &queue, timestamp_queries_supported);
+        let compositor = WorldCompositor::new(&device, view_format);
         let mut host = EngineHost::new(
             &device,
             &queue,
@@ -134,6 +340,8 @@ impl SurfaceRenderer {
             host,
             diagnostics,
             frame_timing,
+            compositor,
+            scaled_world_target: None,
             construction_epoch: None,
             pending_construction_diagnostics: VecDeque::new(),
             pending_sleep_diagnostic: None,
@@ -158,6 +366,7 @@ impl SurfaceRenderer {
         self.surface_config.width = width;
         self.surface_config.height = height;
         self.surface.configure(&self.device, &self.surface_config);
+        self.scaled_world_target = None;
     }
 
     pub fn render(&mut self, input: FrameInput) -> Result<FrameReport, String> {
@@ -184,6 +393,40 @@ impl SurfaceRenderer {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("physbox5_surface_encoder"),
             });
+        let presentation_size = [self.surface_config.width, self.surface_config.height];
+        let render_scale = self.host.render_scale();
+        if !self
+            .scaled_world_target
+            .as_ref()
+            .is_some_and(|target| target.matches(presentation_size, render_scale))
+        {
+            self.scaled_world_target = self.compositor.create_scaled_target(
+                &self.device,
+                self.view_format,
+                presentation_size,
+                render_scale,
+            );
+        }
+        let presentation_target = RenderFrameTarget {
+            color_view: &view,
+            size: presentation_size,
+        };
+        let (world_target, composite, intermediate_color_bytes) =
+            if let Some(target) = &self.scaled_world_target {
+                (
+                    RenderFrameTarget {
+                        color_view: &target.view,
+                        size: target.size,
+                    },
+                    Some(RenderFrameComposite {
+                        pipeline: &self.compositor.pipeline,
+                        bind_group: &target.bind_group,
+                    }),
+                    target.color_bytes,
+                )
+            } else {
+                (presentation_target, None, 0)
+            };
         let (timing_slot, report, cpu_encode_ms) = {
             let candidate = self.frame_timing.candidate();
             let timing_slot = candidate.map(|(slot, _)| slot);
@@ -194,12 +437,13 @@ impl SurfaceRenderer {
                     device: &self.device,
                     queue: &self.queue,
                     encoder: &mut encoder,
-                    target: RenderFrameTarget {
-                        color_view: &view,
-                        size: [self.surface_config.width, self.surface_config.height],
-                    },
+                    presentation_target,
+                    world_target,
                     display_metrics: self.display_metrics,
                     frame_timestamps: candidate.map(|(_, plan)| plan),
+                    render_scale,
+                    intermediate_color_bytes,
+                    composite,
                 },
             );
             (
@@ -451,6 +695,8 @@ pub struct OffscreenRenderer {
     view: wgpu::TextureView,
     host: EngineHost,
     diagnostics: AdapterDiagnostics,
+    compositor: WorldCompositor,
+    scaled_world_target: Option<ScaledWorldTarget>,
     width: u32,
     height: u32,
 }
@@ -482,6 +728,7 @@ impl OffscreenRenderer {
         });
         let view = texture.create_view(&Default::default());
         let host = EngineHost::new(&device, &queue, format, engine_config, diagnostics.clone());
+        let compositor = WorldCompositor::new(&device, format);
         Ok(Self {
             device,
             queue,
@@ -489,6 +736,8 @@ impl OffscreenRenderer {
             view,
             host,
             diagnostics,
+            compositor,
+            scaled_world_target: None,
             width,
             height,
         })
@@ -498,24 +747,63 @@ impl OffscreenRenderer {
         &self.diagnostics
     }
 
+    pub fn launch_preference_selection(&self) -> physbox_launch::LaunchPreferenceSelection {
+        self.host.launch_preference_selection()
+    }
+
     pub fn render(&mut self, input: FrameInput) -> FrameReport {
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("physbox5_offscreen_encoder"),
             });
+        let presentation_size = [self.width, self.height];
+        let render_scale = self.host.render_scale();
+        if !self
+            .scaled_world_target
+            .as_ref()
+            .is_some_and(|target| target.matches(presentation_size, render_scale))
+        {
+            self.scaled_world_target = self.compositor.create_scaled_target(
+                &self.device,
+                wgpu::TextureFormat::Rgba8UnormSrgb,
+                presentation_size,
+                render_scale,
+            );
+        }
+        let presentation_target = RenderFrameTarget {
+            color_view: &self.view,
+            size: presentation_size,
+        };
+        let (world_target, composite, intermediate_color_bytes) =
+            if let Some(target) = &self.scaled_world_target {
+                (
+                    RenderFrameTarget {
+                        color_view: &target.view,
+                        size: target.size,
+                    },
+                    Some(RenderFrameComposite {
+                        pipeline: &self.compositor.pipeline,
+                        bind_group: &target.bind_group,
+                    }),
+                    target.color_bytes,
+                )
+            } else {
+                (presentation_target, None, 0)
+            };
         let report = self.host.render_frame(
             input,
             RenderFrameContext {
                 device: &self.device,
                 queue: &self.queue,
                 encoder: &mut encoder,
-                target: RenderFrameTarget {
-                    color_view: &self.view,
-                    size: [self.width, self.height],
-                },
+                presentation_target,
+                world_target,
                 display_metrics: DisplayMetrics::ONE,
                 frame_timestamps: None,
+                render_scale,
+                intermediate_color_bytes,
+                composite,
             },
         );
         self.queue.submit([encoder.finish()]);
@@ -859,7 +1147,7 @@ pub(crate) fn map_buffer<'a>(
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
-    use physbox_launch::ValidationScenario;
+    use physbox_launch::{RenderScalePreset, ValidationScenario};
 
     use super::*;
 
@@ -870,6 +1158,80 @@ mod tests {
         for invalid in [0.0, -1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
             assert!(DisplayMetrics::new(invalid).is_err());
         }
+    }
+
+    #[test]
+    fn scaled_world_extents_are_nonzero_and_round_up_deterministically() {
+        assert_eq!(
+            scaled_world_extent([3840, 2160], RenderScalePreset::Percent50),
+            [1920, 1080]
+        );
+        assert_eq!(
+            scaled_world_extent([321, 201], RenderScalePreset::Percent75),
+            [241, 151]
+        );
+        assert_eq!(
+            scaled_world_extent([1, 1], RenderScalePreset::Percent50),
+            [1, 1]
+        );
+    }
+
+    #[test]
+    fn offscreen_render_scale_preserves_native_contract_and_physics_identity() {
+        let target_size = [321, 201];
+        let render = |render_scale| {
+            let config = EngineConfig {
+                render_scale,
+                ..Default::default()
+            };
+            let mut renderer = pollster::block_on(OffscreenRenderer::new(
+                target_size[0],
+                target_size[1],
+                config,
+            ))
+            .unwrap();
+            let report = renderer.render(FrameInput {
+                step_request: crate::StepRequest::Exact { steps: 1 },
+                input_events: Vec::new(),
+            });
+            let state = renderer.read_capture_state().unwrap();
+            let pixel_count = renderer.read_pixels().unwrap().len();
+            (report, state, pixel_count)
+        };
+
+        let (native, native_state, native_pixels) = render(RenderScalePreset::Percent100);
+        let (scaled, scaled_state, scaled_pixels) = render(RenderScalePreset::Percent50);
+
+        assert_eq!(native.target_size, target_size);
+        assert_eq!(native.render_scale.presentation_size, target_size);
+        assert_eq!(native.render_scale.world_render_size, target_size);
+        assert_eq!(native.render_scale.path, "direct");
+        assert_eq!(native.render_scale.intermediate_color_bytes, 0);
+        assert_eq!(scaled.target_size, target_size);
+        assert_eq!(scaled.render_scale.presentation_size, target_size);
+        assert_eq!(scaled.render_scale.world_render_size, [161, 101]);
+        assert_eq!(scaled.render_scale.path, "linear-composite");
+        assert_eq!(
+            scaled.render_scale.intermediate_color_bytes,
+            u64::from(161_u32 * 101 * 4)
+        );
+        assert_eq!(native.ui.pixels_per_point, scaled.ui.pixels_per_point);
+        assert_eq!(native.ui.toolbar_scale, scaled.ui.toolbar_scale);
+        assert_eq!(native.camera.center, scaled.camera.center);
+        assert_eq!(
+            native.scene_contract.physics_configuration_hash,
+            scaled.scene_contract.physics_configuration_hash
+        );
+        assert_eq!(
+            native.scene_contract.scenario_hash,
+            scaled.scene_contract.scenario_hash
+        );
+        assert_eq!(native_state, scaled_state);
+        assert_eq!(
+            native_pixels,
+            (target_size[0] * target_size[1] * 4) as usize
+        );
+        assert_eq!(scaled_pixels, native_pixels);
     }
 
     #[test]
@@ -2540,6 +2902,34 @@ mod tests {
         assert!(!visuals_enabled.scene_contract.effective_sleeping_enabled);
         assert_eq!(visuals_enabled.ui.scenario_restarts_total, 1);
         assert!(!visuals_enabled.ui.menu_open);
+
+        renderer.render(
+            FrameInput::exact(0).with_input_events(click(11, layout.center_normalized("menu", 0))),
+        );
+        renderer.render(
+            FrameInput::exact(0)
+                .with_input_events(click(12, layout.center_normalized("world-tab", 0))),
+        );
+        let scale_selected = renderer.render(
+            FrameInput::exact(0)
+                .with_input_events(click(13, layout.center_normalized("world-render-scale", 0))),
+        );
+        assert_eq!(scale_selected.render_scale.requested_percent, 100);
+        assert_eq!(
+            renderer.launch_preference_selection().render_scale,
+            RenderScalePreset::Percent75
+        );
+        let scale_applied = renderer.render(FrameInput::exact(0));
+        assert_eq!(scale_applied.render_scale.requested_percent, 75);
+        assert_eq!(scale_applied.render_scale.world_render_size, [720, 450]);
+        assert_eq!(scale_applied.render_scale.path, "linear-composite");
+        assert_eq!(scale_applied.ui.current_tool, "circle");
+        assert_eq!(scale_applied.ui.scenario_restarts_total, 1);
+        assert_eq!(
+            scale_applied.scene_contract.physics_configuration_hash,
+            scale_selected.scene_contract.physics_configuration_hash
+        );
+        assert_eq!(scale_applied.camera.center, scale_selected.camera.center);
     }
 
     #[cfg(feature = "solver-lab")]
