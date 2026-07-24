@@ -74,3 +74,43 @@ fn integrate(@builtin(global_invocation_id) invocation: vec3u) {
     positions[index] = vec4f(next_position, position.xy);
     velocities[index] = vec4f(next_velocity, velocity.zw);
 }
+
+@compute @workgroup_size(64)
+fn clear_active(@builtin(global_invocation_id) invocation: vec3u) {
+    if invocation.x != 0u {
+        return;
+    }
+    atomicStore(&counters[COUNTER_ACTIVE], 0u);
+    indirect[0] = 6u;
+    indirect[1] = 0u;
+    indirect[2] = 0u;
+    indirect[3] = 0u;
+    indirect[4] = 0u;
+    indirect[5] = 1u;
+    indirect[6] = 1u;
+    indirect[7] = 0u;
+}
+
+@compute @workgroup_size(64)
+fn compact_active(@builtin(global_invocation_id) invocation: vec3u) {
+    let index = invocation.x;
+    if index >= params.counts.x || atomicLoad(&active_flags[index]) == 0u {
+        return;
+    }
+    let destination = atomicAdd(&counters[COUNTER_ACTIVE], 1u);
+    if destination < params.counts.x {
+        active_indices[destination] = index;
+    } else {
+        atomicOr(&counters[COUNTER_OVERFLOW_FLAGS], 1u);
+    }
+}
+
+@compute @workgroup_size(64)
+fn finalize_active(@builtin(global_invocation_id) invocation: vec3u) {
+    if invocation.x != 0u {
+        return;
+    }
+    let active_count = min(atomicLoad(&counters[COUNTER_ACTIVE]), params.counts.x);
+    indirect[1] = active_count;
+    indirect[4] = (active_count + 63u) / 64u;
+}
