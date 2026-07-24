@@ -140,8 +140,19 @@ affected wet trials are isolated-circle `1/8`, three-circle `2/8`,
 mixed-pair `4/8`, mixed-three-body `7/8`, and rectangle-pair `8/8`. Five wet
 trials retain significant final-window overlap. Every row remains finite and
 capacity-clean with zero particle/body contribution overflow, rigid-contact
-coloring overflow, and uncolored work. A clean-tree artifact is required after
-this slice commits.
+coloring overflow, and uncolored work.
+
+Accepted clean-tree evidence, 2026-07-24:
+`s35-standard-overlap-clean-20260724` at revision `eb95a19`, artifact
+`/tmp/physbox5-s35-standard-overlap-clean-20260724.json`. It passes 80/80
+rows, reports 17 of 40 wet trials across 12 of 20 source/phase identities with
+a water-only issue, and reports 0 of 40 dry trials. Affected wet trials are
+isolated-circle `1/8`, three-circle `1/8`, mixed-pair `3/8`,
+mixed-three-body `7/8`, and rectangle-pair `5/8`; two wet trials retain
+significant final-window overlap. Source dirty is false, patch digest is null,
+and every contribution, rigid-contact finite/coloring, uncolored-work, and
+capacity audit is clean. This meets the S35.2 gate while preserving the
+observed trial-to-trial sensitivity for candidate comparison.
 
 ### S35.3 — bounded stabilization candidates
 
