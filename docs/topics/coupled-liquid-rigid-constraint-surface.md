@@ -204,6 +204,17 @@ choices intentionally execute the unchanged 92-dispatch particle graph:
 selector for subsequent measured candidates. No mechanical or default
 promotion is implied by the control itself.
 
+The S35 permanent baseline corpus now covers isolated circle, three-circle,
+rectangle, mixed-pair, and mixed-three-body construction arrangements across
+four particle-lattice phases, with a dry control for every source. It measures
+every dynamic pair rather than inferring multi-body quality from one selected
+contact. Initial development runs reproduce water-only re-entry in circle-only
+multi-body, rectangle-pair, and mixed-three-body rows without particle,
+contribution, rigid-contact, or coloring overflow. The exact failing phase
+varies between fresh worlds, so repeated trials are part of the evidence
+contract; a fixed two-circle row recovering is not generalized into a
+multi-body or all-circle claim.
+
 This is independently implemented from the scalar contract. Original
 LiquidFun's boundary contact weight and pressure transfer were consulted as
 algorithm references at pinned revision

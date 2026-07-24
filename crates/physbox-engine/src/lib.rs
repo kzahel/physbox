@@ -35,6 +35,8 @@ mod coupled_evidence;
 mod coupled_scenario;
 mod engine_selection;
 mod exact_sleep_grouping;
+#[cfg(all(feature = "solver-lab", not(target_arch = "wasm32")))]
+mod fluid_solid_overlap_evidence;
 mod frame;
 mod generated_contacts;
 mod gpu_context;
@@ -175,6 +177,14 @@ pub use coupled_scenario::{
     FluidSolidOverlapArrangement, FluidSolidOverlapSourceV1, canonical_coupled_scenario,
     canonical_coupled_scenario_hashes, coupled_capacity_scenario, fluid_solid_overlap_source,
     fluid_solid_overlap_sources, liquid_sandbox_scenario,
+};
+#[cfg(all(feature = "solver-lab", not(target_arch = "wasm32")))]
+pub use fluid_solid_overlap_evidence::{
+    FLUID_SOLID_OVERLAP_TRIALS_PER_MEDIUM, FLUID_SOLID_SIGNIFICANT_OVERLAP,
+    FluidSolidOverlapMedium, GPU_FLUID_SOLID_OVERLAP_EVIDENCE_VERSION,
+    GpuFluidSolidMotionMetricsV1, GpuFluidSolidOverlapEvidenceV1, GpuFluidSolidOverlapRowV1,
+    GpuFluidSolidPairMetricsV1, GpuRigidContactDiagnosticsV1,
+    run_gpu_fluid_solid_overlap_standard_evidence,
 };
 pub use frame::{
     FrameInput, InputEvent, PointerButton, PointerEvent, PointerPhase, StepRequest, WheelEvent,

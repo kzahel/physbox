@@ -21,14 +21,16 @@ pub const FLUID_SOLID_OVERLAP_PHASE_OFFSETS: [f32; FLUID_SOLID_OVERLAP_PHASE_COU
 #[serde(rename_all = "kebab-case")]
 pub enum FluidSolidOverlapArrangement {
     CirclePair,
+    CircleThreeBody,
     RectanglePair,
     MixedPair,
     MixedThreeBody,
 }
 
 impl FluidSolidOverlapArrangement {
-    pub const ALL: [Self; 4] = [
+    pub const ALL: [Self; 5] = [
         Self::CirclePair,
+        Self::CircleThreeBody,
         Self::RectanglePair,
         Self::MixedPair,
         Self::MixedThreeBody,
@@ -37,6 +39,7 @@ impl FluidSolidOverlapArrangement {
     pub const fn id(self) -> &'static str {
         match self {
             Self::CirclePair => "circle-pair",
+            Self::CircleThreeBody => "circle-three-body",
             Self::RectanglePair => "rectangle-pair",
             Self::MixedPair => "mixed-pair",
             Self::MixedThreeBody => "mixed-three-body",
@@ -297,6 +300,7 @@ pub fn fluid_solid_overlap_source(
         "fluid-solid-overlap-{}-phase-{particle_phase_index}-v1",
         arrangement.id()
     );
+    let plan = overlap_construction_plan(arrangement, phase_x);
     let requested_steps = FLUID_SOLID_OVERLAP_SETTLE_STEPS + 1 + FLUID_SOLID_OVERLAP_RECOVERY_STEPS;
     let mut wet = liquid_sandbox_scenario()?;
     wet.id = format!("{id}-wet");
@@ -309,7 +313,6 @@ pub fn fluid_solid_overlap_source(
     wet.validate()
         .map_err(|error| ScenarioBuildError(error.to_string()))?;
 
-    let plan = overlap_construction_plan(arrangement, phase_x);
     let mut intents = Vec::with_capacity(plan.len());
     let mut constructed_bodies = Vec::with_capacity(plan.len());
     for (index, (shape, position)) in plan.into_iter().enumerate() {
@@ -389,7 +392,7 @@ impl Validate for FluidSolidOverlapSourceV1 {
             || self.settle_steps != FLUID_SOLID_OVERLAP_SETTLE_STEPS
             || self.recovery_steps != FLUID_SOLID_OVERLAP_RECOVERY_STEPS
             || self.sample_stride == 0
-            || self.recovery_steps % self.sample_stride != 0
+            || !self.recovery_steps.is_multiple_of(self.sample_stride)
             || self.construction.intents.len() != self.constructed_bodies.len()
         {
             return Err(ContractError(
@@ -447,6 +450,20 @@ fn overlap_construction_plan(
             (
                 OverlapConstructionShape::Circle,
                 Vec2::new(phase_x + 0.17, Y),
+            ),
+        ],
+        FluidSolidOverlapArrangement::CircleThreeBody => vec![
+            (
+                OverlapConstructionShape::Circle,
+                Vec2::new(phase_x - 0.17, Y - 0.10),
+            ),
+            (
+                OverlapConstructionShape::Circle,
+                Vec2::new(phase_x + 0.17, Y - 0.10),
+            ),
+            (
+                OverlapConstructionShape::Circle,
+                Vec2::new(phase_x, Y + 0.194),
             ),
         ],
         FluidSolidOverlapArrangement::RectanglePair => vec![
@@ -811,10 +828,12 @@ mod tests {
                 .count();
             assert_eq!(
                 overlapping_pairs,
-                if source.arrangement == FluidSolidOverlapArrangement::MixedThreeBody {
-                    2
-                } else {
-                    1
+                match source.arrangement {
+                    FluidSolidOverlapArrangement::CircleThreeBody => 3,
+                    FluidSolidOverlapArrangement::MixedThreeBody => 2,
+                    FluidSolidOverlapArrangement::CirclePair
+                    | FluidSolidOverlapArrangement::RectanglePair
+                    | FluidSolidOverlapArrangement::MixedPair => 1,
                 },
                 "{} does not author the intended initial overlap graph",
                 source.id

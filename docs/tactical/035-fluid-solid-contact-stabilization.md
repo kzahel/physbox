@@ -97,19 +97,51 @@ lane passes.
 
 ### S35.2 — permanent wet-overlap corpus
 
-- [ ] Add shared circle, rectangle, mixed-shape, and three-or-more-body sources
+- [x] Add shared circle, rectangle, mixed-shape, and three-or-more-body sources
       that settle water before admitting overlapping construction intents.
-- [ ] Sweep at least four particle-lattice phases without authoring
+- [x] Sweep at least four particle-lattice phases without authoring
       host-specific numerical payloads.
-- [ ] Record initial, worst, final, and sustained pairwise signed separation;
+- [x] Record initial, worst, final, and sustained pairwise signed separation;
       separation/re-entry count; maximum linear/angular speed; and finite,
       capacity, contact, contribution, and energy-spike diagnostics.
-- [ ] Retain a dry control for each rigid arrangement.
-- [ ] Prove that no pair/contact/contribution overflow can masquerade as a
+- [x] Retain a dry control for each rigid arrangement.
+- [x] Prove that no pair/contact/contribution overflow can masquerade as a
       stabilization result.
 
 Gate: the current `standard` path reproduces at least one wet-only sustained
 overlap or re-entry row while every row is finite and capacity-accounted.
+
+Implementation checkpoint, 2026-07-24: commit `c4d03bb` and its following
+evidence slice define 20 shared sources: isolated circle, three-circle,
+rectangle, mixed-pair, and mixed-three-body arrangements at four quarter-cell
+horizontal phases. Each settles the product water, admits ordinary
+`PlaceCircle`/`PlaceRectangle` intents on one outer-step boundary, samples all
+dynamic pairs every four recovery steps, and runs a matching dry control.
+`0.005 m` is the significant-overlap threshold; raw signed separations remain
+in the artifact. The sampler also retains speed, angular speed, energy,
+construction, rigid-contact, solver-coloring, particle, contribution, and
+capacity diagnostics.
+
+Two independent dirty-tree development audits of the initial single-trial
+matrix completed all 40 rows capacity-clean. They found 9 and 8 wet-only issue
+sources respectively, with no dry issue, particle/body contribution overflow,
+non-finite rigid contact, coloring overflow, or uncolored work. Across those
+runs, circle-only three-body, rectangle-pair, and mixed-three-body sources
+re-entered; one three-circle row retained significant final-window overlap.
+The isolated circle pair recovered in every preliminary fixed row. Which phase
+failed varied materially between runs, matching the intermittent symptom, so
+the permanent command now runs two dry and two wet trials per source and
+reports affected trials and source identities separately.
+
+The resulting dirty-tree repeated-trial audit passes all 80 rows and reports
+22 of 40 wet trials across 15 of 20 source/phase identities with a water-only
+re-entry or sustained overlap; all 40 dry trials are clear. By arrangement,
+affected wet trials are isolated-circle `1/8`, three-circle `2/8`,
+mixed-pair `4/8`, mixed-three-body `7/8`, and rectangle-pair `8/8`. Five wet
+trials retain significant final-window overlap. Every row remains finite and
+capacity-clean with zero particle/body contribution overflow, rigid-contact
+coloring overflow, and uncolored work. A clean-tree artifact is required after
+this slice commits.
 
 ### S35.3 — bounded stabilization candidates
 
