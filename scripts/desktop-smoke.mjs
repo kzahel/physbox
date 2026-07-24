@@ -6,6 +6,10 @@ import { createInterface } from "node:readline";
 
 const root = resolve(import.meta.dirname, "..");
 const scenario = process.env.PHYSBOX5_SCENARIO ?? "bootstrap";
+const renderScale = Number.parseInt(process.env.PHYSBOX5_RENDER_SCALE ?? "100", 10);
+if (![100, 75, 50].includes(renderScale)) {
+  throw new Error("PHYSBOX5_RENDER_SCALE must be 100, 75, or 50");
+}
 const output = process.env.PHYSBOX5_DESKTOP_REPORT ?? "/tmp/physbox5-desktop.json";
 const logPath = process.env.PHYSBOX5_DESKTOP_LOG ?? "/tmp/physbox5-desktop.log";
 await rm(output, { force: true });
@@ -18,7 +22,10 @@ const executable = resolve(
   "debug",
   process.platform === "win32" ? "physbox-desktop.exe" : "physbox-desktop",
 );
-const child = spawn(executable, ["--scenario", scenario], {
+const child = spawn(executable, [
+  "--scenario", scenario,
+  "--render-scale", String(renderScale),
+], {
   cwd: root,
   stdio: ["ignore", "pipe", "pipe"],
 });
@@ -58,6 +65,18 @@ const report = await new Promise((resolveReport, rejectReport) => {
       finishError(`desktop shared scenario failed: ${JSON.stringify(frame.scenario)}`);
       return;
     }
+    const expectedWorld = frame.renderScale.presentationSize
+      .map((dimension) => Math.ceil(dimension * renderScale / 100));
+    if (
+      frame.renderScale.requestedPercent !== renderScale
+      || JSON.stringify(frame.renderScale.worldRenderSize) !== JSON.stringify(expectedWorld)
+      || (renderScale === 100
+        ? frame.renderScale.path !== "direct" || frame.renderScale.intermediateColorBytes !== 0
+        : frame.renderScale.path !== "linear-composite" || frame.renderScale.intermediateColorBytes <= 0)
+    ) {
+      finishError(`desktop render scale failed: ${JSON.stringify(frame.renderScale)}`);
+      return;
+    }
     settled = true;
     clearTimeout(timeout);
     resolveReport(frame);
@@ -73,7 +92,7 @@ const provenance = {
   sourceRevision: git(["rev-parse", "HEAD"]) ?? "unknown",
   sourceDirty: (git(["status", "--porcelain"]) ?? "unknown") !== "",
   host: "desktop",
-  capturePhase: `${scenario}-final`,
+  capturePhase: `${scenario}-render-scale-${renderScale}`,
   adapter,
   report,
 };
