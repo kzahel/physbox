@@ -158,9 +158,9 @@ current path, and performance conclusions match the measured bottleneck.
 
 Evidence:
 
-- `npm run test:fast` passed in 26.75 seconds, including 175 production engine
+- `npm run test:fast` passed in 22.88 seconds, including 175 production engine
   tests, bounded performance smoke, host/tool tests, platform negatives, and
-  Browser WebGPU run `d7081a0e-9a00-4203-9a53-8c6a5015a874`.
+  Browser WebGPU run `71fe5058-697d-47c0-95cb-f4b79c1b38ae`.
 - `npm run clippy:rust:production` passed with warnings denied.
 - Direct comparator tests passed 2/2. `npm run test:box2d-feature-off` emitted
   `PHYSBOX5_BOX2D_FEATURE_OFF_SUCCESS`; `npm run test:web:lab` passed as run
