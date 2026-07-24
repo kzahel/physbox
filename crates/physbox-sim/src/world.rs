@@ -466,16 +466,22 @@ fn body_state(record: &BodyRecord) -> Result<BodyStateV1, WorldError> {
                 + rectangle.half_extents[1] * rectangle.half_extents[1]),
         ),
     };
-    let inverse_mass = if record.body.body_type == BodyType::Static {
-        0.0
-    } else {
-        1.0 / (shape.material.density * area)
-    };
-    let inverse_inertia = if record.body.body_type == BodyType::Static {
-        0.0
-    } else {
-        inverse_inertia_factor * inverse_mass
-    };
+    let (inverse_mass, inverse_inertia) = record.body.mass_properties.map_or_else(
+        || {
+            let inverse_mass = if record.body.body_type == BodyType::Static {
+                0.0
+            } else {
+                1.0 / (shape.material.density * area)
+            };
+            let inverse_inertia = if record.body.body_type == BodyType::Static {
+                0.0
+            } else {
+                inverse_inertia_factor * inverse_mass
+            };
+            (inverse_mass, inverse_inertia)
+        },
+        |mass| (mass.inverse_mass, mass.inverse_inertia),
+    );
     Ok(BodyStateV1 {
         id: contract_body_id(record.id),
         shape: shape_contract,
@@ -489,8 +495,80 @@ fn body_state(record: &BodyRecord) -> Result<BodyStateV1, WorldError> {
             friction: finite(shape.material.friction)?,
             restitution: finite(shape.material.restitution)?,
         },
-        sleeping: false,
+        sleeping: record.body.sleeping,
     })
+}
+
+#[cfg(feature = "engine-internal")]
+pub fn engine_unconfigured_world(
+    device: &wgpu::Device,
+    world: World,
+) -> Result<GpuBodyWorld, String> {
+    let scenario = world
+        .initial_scenario()
+        .map_err(|error| error.to_string())?;
+    GpuBodyWorld::new(device, &scenario)
+}
+
+#[cfg(feature = "engine-internal")]
+pub fn engine_generated_world(device: &wgpu::Device, world: World) -> Result<GpuBodyWorld, String> {
+    let definition = world.definition;
+    let scenario = world
+        .initial_scenario()
+        .map_err(|error| error.to_string())?;
+    GpuBodyWorld::new_generated_with_configuration(
+        device,
+        &scenario,
+        definition.capacity,
+        definition.quality.physics,
+    )
+}
+
+#[cfg(feature = "engine-internal")]
+pub fn engine_generated_world_with_scheduling(
+    device: &wgpu::Device,
+    world: World,
+    scheduling: crate::GpuSolverSchedulingPolicyV1,
+) -> Result<GpuBodyWorld, String> {
+    let definition = world.definition;
+    let scenario = world
+        .initial_scenario()
+        .map_err(|error| error.to_string())?;
+    if definition.quality.physics.solver_profile != SolverProfileName::HardDirect {
+        return GpuBodyWorld::new_generated_with_configuration(
+            device,
+            &scenario,
+            definition.capacity,
+            definition.quality.physics,
+        );
+    }
+    GpuBodyWorld::new_generated_with_scheduling(device, &scenario, definition.capacity, scheduling)
+}
+
+#[cfg(feature = "engine-internal")]
+pub fn engine_generated_world_with_contact_policy(
+    device: &wgpu::Device,
+    world: World,
+    identity: physbox_contracts::ContactIdentityPolicyV1,
+) -> Result<GpuBodyWorld, String> {
+    let definition = world.definition;
+    let scenario = world
+        .initial_scenario()
+        .map_err(|error| error.to_string())?;
+    if definition.quality.physics.solver_profile != SolverProfileName::HardDirect {
+        return GpuBodyWorld::new_generated_with_configuration(
+            device,
+            &scenario,
+            definition.capacity,
+            definition.quality.physics,
+        );
+    }
+    GpuBodyWorld::new_generated_with_contact_policy(
+        device,
+        &scenario,
+        definition.capacity,
+        identity,
+    )
 }
 
 fn solver_settings(definition: WorldDef) -> SolverSettingsV1 {
@@ -528,6 +606,8 @@ fn validate_runtime_construction(body: BodyDef, shape: ShapeDef) -> Result<(), W
         || body.angle != 0.0
         || body.linear_velocity != [0.0; 2]
         || body.angular_velocity != 0.0
+        || body.mass_properties.is_some()
+        || body.sleeping
         || shape.material
             != (crate::MaterialDef {
                 density: crate::construction::CONSTRUCTION_DENSITY,
@@ -536,7 +616,7 @@ fn validate_runtime_construction(body: BodyDef, shape: ShapeDef) -> Result<(), W
             })
     {
         return Err(WorldError::new(
-            "runtime creation currently requires the standard dynamic construction material and zero initial rotation/velocity",
+            "runtime creation currently requires derived mass, awake state, the standard dynamic construction material, and zero initial rotation/velocity",
         ));
     }
     let geometry_supported = match shape.geometry {
@@ -590,4 +670,45 @@ fn vec2(value: [f32; 2]) -> Vec2 {
 
 fn finite(value: f32) -> Result<FiniteF32, WorldError> {
     FiniteF32::new(value).map_err(|error| WorldError::new(error.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::MassPropertiesDef;
+
+    #[test]
+    fn explicit_initial_mass_and_sleep_state_project_exactly() {
+        let record = BodyRecord {
+            id: BodyId::from_parts(3, 7),
+            body: BodyDef::dynamic()
+                .with_position([1.0, 2.0])
+                .with_mass_properties(MassPropertiesDef::from_inverse(0.75, 4.25))
+                .with_sleeping(true),
+            shape: Some(ShapeDef::rectangle([0.3, 0.2]).with_friction(0.4)),
+            live: true,
+        };
+        let state = body_state(&record).unwrap();
+        assert_eq!(
+            state.id,
+            ContractBodyId {
+                slot: 3,
+                generation: 7
+            }
+        );
+        assert_eq!(state.inverse_mass.get(), 0.75);
+        assert_eq!(state.inverse_inertia.get(), 4.25);
+        assert!(state.sleeping);
+    }
+
+    #[test]
+    fn runtime_construction_rejects_initial_state_overrides() {
+        let body =
+            BodyDef::dynamic().with_mass_properties(MassPropertiesDef::from_inverse(1.0, 1.0));
+        let shape = ShapeDef::circle(crate::construction::CONSTRUCTION_CIRCLE_RADIUS)
+            .with_density(crate::construction::CONSTRUCTION_DENSITY)
+            .with_friction(crate::construction::CONSTRUCTION_FRICTION)
+            .with_restitution(crate::construction::CONSTRUCTION_RESTITUTION);
+        assert!(validate_runtime_construction(body, shape).is_err());
+    }
 }

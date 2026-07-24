@@ -6,6 +6,7 @@ use physbox_contracts::{
 };
 use physbox_launch::{ValidationScenario, WorldCapacityPreset};
 use physbox_render::{PhysicsRenderer, RenderOptions, RenderTarget, SurfacePreview, ViewTransform};
+use physbox_sim::{BodyDef, MassPropertiesDef, MaterialDef, QualityDef, ShapeDef, World, WorldDef};
 
 #[cfg(feature = "box2d-comparator")]
 use crate::comparison::{ComparisonRenderPlan, ComparisonShadow};
@@ -207,12 +208,8 @@ fn profiled_generated_world(
     profile: &crate::SolverProfileConfig,
     world_capacity: WorldCapacityPreset,
 ) -> Result<GpuBodyWorld, String> {
-    GpuBodyWorld::new_generated_with_configuration(
-        device,
-        scenario,
-        world_capacity,
-        profile.physics(),
-    )
+    let world = projected_rigid_world(device, scenario, profile, world_capacity)?;
+    physbox_sim::__private::world::engine_generated_world(device, world)
 }
 
 fn profiled_generated_world_with_scheduling(
@@ -222,15 +219,8 @@ fn profiled_generated_world_with_scheduling(
     world_capacity: WorldCapacityPreset,
     scheduling: GpuSolverSchedulingPolicyV1,
 ) -> Result<GpuBodyWorld, String> {
-    if !profile.is_selected() {
-        return GpuBodyWorld::new_generated_with_configuration(
-            device,
-            scenario,
-            world_capacity,
-            profile.physics(),
-        );
-    }
-    GpuBodyWorld::new_generated_with_scheduling(device, scenario, world_capacity, scheduling)
+    let world = projected_rigid_world(device, scenario, profile, world_capacity)?;
+    physbox_sim::__private::world::engine_generated_world_with_scheduling(device, world, scheduling)
 }
 
 fn profiled_generated_world_with_contact_policy(
@@ -240,15 +230,75 @@ fn profiled_generated_world_with_contact_policy(
     world_capacity: WorldCapacityPreset,
     identity: physbox_contracts::ContactIdentityPolicyV1,
 ) -> Result<GpuBodyWorld, String> {
-    if !profile.is_selected() {
-        return GpuBodyWorld::new_generated_with_configuration(
-            device,
-            scenario,
-            world_capacity,
-            profile.physics(),
-        );
+    let world = projected_rigid_world(device, scenario, profile, world_capacity)?;
+    physbox_sim::__private::world::engine_generated_world_with_contact_policy(
+        device, world, identity,
+    )
+}
+
+fn projected_rigid_world(
+    device: &wgpu::Device,
+    scenario: &ScenarioV1,
+    profile: &crate::SolverProfileConfig,
+    world_capacity: WorldCapacityPreset,
+) -> Result<World, String> {
+    let mut world = World::new(
+        device,
+        WorldDef {
+            gravity: [scenario.settings.gravity.x, scenario.settings.gravity.y],
+            capacity: world_capacity,
+            quality: QualityDef {
+                physics: profile.physics(),
+                fluid_solid_coupling: physbox_sim::FluidSolidCouplingQuality::Standard,
+            },
+        },
+    )
+    .map_err(|error| error.to_string())?;
+    for state in &scenario.bodies {
+        let fixed = state.inverse_mass.get() == 0.0 && state.inverse_inertia.get() == 0.0;
+        let body = if fixed {
+            BodyDef::fixed()
+        } else {
+            BodyDef::dynamic()
+        }
+        .with_position([state.position.x, state.position.y])
+        .with_angle(state.angle.get())
+        .with_linear_velocity([state.linear_velocity.x, state.linear_velocity.y])
+        .with_angular_velocity(state.angular_velocity.get())
+        .with_mass_properties(MassPropertiesDef::from_inverse(
+            state.inverse_mass.get(),
+            state.inverse_inertia.get(),
+        ))
+        .with_sleeping(state.sleeping);
+        let body_id = world.create_body(body).map_err(|error| error.to_string())?;
+        if body_id.slot() != state.id.slot || body_id.generation() != state.id.generation {
+            return Err(format!(
+                "engine scenario body {}:{} does not project to the neutral world handle {}:{}",
+                state.id.slot,
+                state.id.generation,
+                body_id.slot(),
+                body_id.generation(),
+            ));
+        }
+        let material = MaterialDef {
+            density: 1.0,
+            friction: state.material.friction.get(),
+            restitution: state.material.restitution.get(),
+        };
+        let shape = match state.shape {
+            physbox_contracts::ShapeV1::Circle { radius } => ShapeDef::circle(radius.get()),
+            physbox_contracts::ShapeV1::Rectangle { half_extents } => {
+                ShapeDef::rectangle([half_extents.x, half_extents.y])
+            }
+        }
+        .with_density(material.density)
+        .with_friction(material.friction)
+        .with_restitution(material.restitution);
+        world
+            .create_shape(body_id, shape)
+            .map_err(|error| error.to_string())?;
     }
-    GpuBodyWorld::new_generated_with_contact_policy(device, scenario, world_capacity, identity)
+    Ok(world)
 }
 
 struct PreparedBodyCommands {
@@ -1115,10 +1165,19 @@ impl EngineHost {
                 )
                 .expect("engine-owned coupled GPU world is valid"),
             ),
-            ValidationScenario::BodyFreeFlight => Some(
-                GpuBodyWorld::new(device, &scenario)
-                    .expect("engine-owned body free-flight GPU world is valid"),
-            ),
+            ValidationScenario::BodyFreeFlight => {
+                let world = projected_rigid_world(
+                    device,
+                    &scenario,
+                    &config.solver_profile,
+                    config.world_capacity,
+                )
+                .expect("engine-owned body free-flight scenario projects into a neutral world");
+                Some(
+                    physbox_sim::__private::world::engine_unconfigured_world(device, world)
+                        .expect("engine-owned body free-flight GPU world is valid"),
+                )
+            }
             ValidationScenario::Bootstrap
             | ValidationScenario::RigidFloor
             | ValidationScenario::ResetGrab

@@ -2172,7 +2172,10 @@ mod gpu {
         })
     }
 
-    #[cfg(test)]
+    // These GPU evidence fixtures are authored by the first-party engine.
+    // Keep them out of the standalone simulation crate's test build rather
+    // than importing the engine's scenario catalog across the library seam.
+    #[cfg(all(test, not(feature = "sim-owner")))]
     mod tests {
         use super::*;
 

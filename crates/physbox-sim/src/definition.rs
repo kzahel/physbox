@@ -57,6 +57,8 @@ pub struct BodyDef {
     pub angle: f32,
     pub linear_velocity: [f32; 2],
     pub angular_velocity: f32,
+    pub mass_properties: Option<MassPropertiesDef>,
+    pub sleeping: bool,
 }
 
 impl BodyDef {
@@ -67,6 +69,8 @@ impl BodyDef {
             angle: 0.0,
             linear_velocity: [0.0; 2],
             angular_velocity: 0.0,
+            mass_properties: None,
+            sleeping: false,
         }
     }
 
@@ -97,17 +101,68 @@ impl BodyDef {
         self
     }
 
+    /// Overrides shape-density-derived mass properties.
+    ///
+    /// This is the GPU-world equivalent of a Box2D-style explicit mass-data
+    /// override. Ordinary callers should prefer shape density.
+    pub const fn with_mass_properties(mut self, mass_properties: MassPropertiesDef) -> Self {
+        self.mass_properties = Some(mass_properties);
+        self
+    }
+
+    pub const fn with_sleeping(mut self, sleeping: bool) -> Self {
+        self.sleeping = sleeping;
+        self
+    }
+
     pub fn validate(self) -> Result<(), DefinitionError> {
         finite_pair("body position", self.position)?;
         finite("body angle", self.angle)?;
         finite_pair("body linear velocity", self.linear_velocity)?;
-        finite("body angular velocity", self.angular_velocity)
+        finite("body angular velocity", self.angular_velocity)?;
+        if let Some(mass_properties) = self.mass_properties {
+            mass_properties.validate(self.body_type)?;
+        }
+        Ok(())
     }
 }
 
 impl Default for BodyDef {
     fn default() -> Self {
         Self::dynamic()
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MassPropertiesDef {
+    pub inverse_mass: f32,
+    pub inverse_inertia: f32,
+}
+
+impl MassPropertiesDef {
+    pub const fn from_inverse(inverse_mass: f32, inverse_inertia: f32) -> Self {
+        Self {
+            inverse_mass,
+            inverse_inertia,
+        }
+    }
+
+    fn validate(self, body_type: BodyType) -> Result<(), DefinitionError> {
+        finite("inverse mass", self.inverse_mass)?;
+        finite("inverse inertia", self.inverse_inertia)?;
+        let valid = match body_type {
+            BodyType::Static => self.inverse_mass == 0.0 && self.inverse_inertia == 0.0,
+            BodyType::Dynamic => self.inverse_mass > 0.0 && self.inverse_inertia > 0.0,
+        };
+        if valid {
+            Ok(())
+        } else {
+            Err(DefinitionError(
+                "static inverse mass/inertia must be zero and dynamic values must be positive"
+                    .to_owned(),
+            ))
+        }
     }
 }
 
@@ -325,7 +380,11 @@ mod tests {
     #[test]
     fn public_definitions_validate_before_gpu_allocation() {
         WorldDef::default().validate().unwrap();
-        BodyDef::dynamic().validate().unwrap();
+        BodyDef::dynamic()
+            .with_mass_properties(MassPropertiesDef::from_inverse(1.0, 2.0))
+            .with_sleeping(true)
+            .validate()
+            .unwrap();
         ShapeDef::circle(0.25).validate(BodyType::Dynamic).unwrap();
         ShapeDef::rectangle([0.3, 0.2])
             .validate(BodyType::Static)
@@ -344,6 +403,12 @@ mod tests {
             ShapeDef::circle(1.0)
                 .with_density(0.0)
                 .validate(BodyType::Dynamic)
+                .is_err()
+        );
+        assert!(
+            BodyDef::fixed()
+                .with_mass_properties(MassPropertiesDef::from_inverse(1.0, 0.0))
+                .validate()
                 .is_err()
         );
     }

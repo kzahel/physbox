@@ -1,5 +1,9 @@
 #![forbid(unsafe_code)]
 #![cfg_attr(not(feature = "engine-internal"), allow(dead_code))]
+#![cfg_attr(
+    all(feature = "solver-lab", target_arch = "wasm32"),
+    allow(dead_code, unused_imports)
+)]
 
 //! GPU-resident two-dimensional physics without application or presentation
 //! ownership.
@@ -156,6 +160,13 @@ pub mod __private {
     pub mod sleep_diagnostics {
         pub use crate::sleep_diagnostics::*;
     }
+
+    pub mod world {
+        pub use crate::world::{
+            engine_generated_world, engine_generated_world_with_contact_policy,
+            engine_generated_world_with_scheduling, engine_unconfigured_world,
+        };
+    }
 }
 
 pub use clock::{
@@ -172,8 +183,8 @@ pub use config::{
     PhysicsConfigurationV3, QualityDef, SleepGrouping, SolverProfileName, WorldCapacity,
 };
 pub use definition::{
-    BodyDef, BodyId, BodyType, Circle, DefinitionError, MaterialDef, Rectangle, ShapeDef,
-    ShapeGeometry, ShapeId, StepDef, WorldDef,
+    BodyDef, BodyId, BodyType, Circle, DefinitionError, MassPropertiesDef, MaterialDef, Rectangle,
+    ShapeDef, ShapeGeometry, ShapeId, StepDef, WorldDef,
 };
 pub use render_view::{ParticleRenderView, RENDER_VIEW_VERSION, RenderView};
 pub use world::{
