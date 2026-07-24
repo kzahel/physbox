@@ -1,12 +1,66 @@
 use physbox_contracts::{
-    BodyId, BodyStateV1, CoupledScenarioV1, CoupledScheduleV1, CoupledSettingsV1, FiniteF32,
-    GrabTuningV1, MaterialV1, NeutralActionV1, ParticleMaterialV1, ParticleRegionV1,
+    BodyId, BodyStateV1, CONSTRUCTION_INTENT_CONTRACT_VERSION, ConstructionIntentBatchV1,
+    ConstructionIntentV1, ContractError, CoupledScenarioV1, CoupledScheduleV1, CoupledSettingsV1,
+    FiniteF32, GrabTuningV1, MaterialV1, NeutralActionV1, ParticleMaterialV1, ParticleRegionV1,
     SCHEMA_VERSION, ScenarioV1, ShapeV1, SolverSettingsV1, Validate, Vec2, canonical_hash,
 };
+use serde::Serialize;
 
 use crate::ScenarioBuildError;
 
 pub const COUPLED_CANONICAL_SOURCE_COUNT: usize = 7;
+pub const FLUID_SOLID_OVERLAP_SOURCE_VERSION: u32 = 1;
+pub const FLUID_SOLID_OVERLAP_PHASE_COUNT: usize = 4;
+pub const FLUID_SOLID_OVERLAP_SETTLE_STEPS: u32 = 120;
+pub const FLUID_SOLID_OVERLAP_RECOVERY_STEPS: u32 = 120;
+pub const FLUID_SOLID_OVERLAP_SAMPLE_STRIDE: u32 = 4;
+pub const FLUID_SOLID_OVERLAP_PHASE_OFFSETS: [f32; FLUID_SOLID_OVERLAP_PHASE_COUNT] =
+    [0.0, 0.025, 0.05, 0.075];
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum FluidSolidOverlapArrangement {
+    CirclePair,
+    RectanglePair,
+    MixedPair,
+    MixedThreeBody,
+}
+
+impl FluidSolidOverlapArrangement {
+    pub const ALL: [Self; 4] = [
+        Self::CirclePair,
+        Self::RectanglePair,
+        Self::MixedPair,
+        Self::MixedThreeBody,
+    ];
+
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::CirclePair => "circle-pair",
+            Self::RectanglePair => "rectangle-pair",
+            Self::MixedPair => "mixed-pair",
+            Self::MixedThreeBody => "mixed-three-body",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FluidSolidOverlapSourceV1 {
+    pub version: u32,
+    pub id: String,
+    pub arrangement: FluidSolidOverlapArrangement,
+    pub particle_phase_index: u32,
+    pub particle_phase_offset: Vec2,
+    pub settle_steps: u32,
+    pub recovery_steps: u32,
+    pub sample_stride: u32,
+    pub wet: CoupledScenarioV1,
+    pub dry: ScenarioV1,
+    pub construction: ConstructionIntentBatchV1,
+    pub constructed_bodies: Vec<BodyStateV1>,
+    pub monitored_pairs: Vec<[BodyId; 2]>,
+}
 pub const COUPLED_CANONICAL_SOURCE_HASHES_V1: [(&str, &str); COUPLED_CANONICAL_SOURCE_COUNT] = [
     (
         "coupled-contained-water-v1",
@@ -225,6 +279,234 @@ pub fn liquid_sandbox_scenario() -> Result<CoupledScenarioV1, ScenarioBuildError
         .validate()
         .map_err(|error| ScenarioBuildError(error.to_string()))?;
     Ok(scenario)
+}
+
+pub fn fluid_solid_overlap_source(
+    arrangement: FluidSolidOverlapArrangement,
+    particle_phase_index: u32,
+) -> Result<FluidSolidOverlapSourceV1, ScenarioBuildError> {
+    let phase_x = *FLUID_SOLID_OVERLAP_PHASE_OFFSETS
+        .get(particle_phase_index as usize)
+        .ok_or_else(|| {
+            ScenarioBuildError(format!(
+                "fluid/solid overlap particle phase {particle_phase_index} is outside 0..{}",
+                FLUID_SOLID_OVERLAP_PHASE_COUNT
+            ))
+        })?;
+    let id = format!(
+        "fluid-solid-overlap-{}-phase-{particle_phase_index}-v1",
+        arrangement.id()
+    );
+    let requested_steps = FLUID_SOLID_OVERLAP_SETTLE_STEPS + 1 + FLUID_SOLID_OVERLAP_RECOVERY_STEPS;
+    let mut wet = liquid_sandbox_scenario()?;
+    wet.id = format!("{id}-wet");
+    wet.seed = 0x5035_3500 + (arrangement as u64) * 16 + u64::from(particle_phase_index);
+    wet.requested_steps = requested_steps;
+    wet.rigid.id = format!("{id}-wet-rigid");
+    wet.rigid.seed = wet.seed;
+    wet.rigid.requested_steps = requested_steps;
+    wet.rigid.bodies.retain(|body| body.id.slot < 3);
+    wet.validate()
+        .map_err(|error| ScenarioBuildError(error.to_string()))?;
+
+    let plan = overlap_construction_plan(arrangement, phase_x);
+    let mut intents = Vec::with_capacity(plan.len());
+    let mut constructed_bodies = Vec::with_capacity(plan.len());
+    for (index, (shape, position)) in plan.into_iter().enumerate() {
+        let sequence = index as u32 + 1;
+        intents.push(match shape {
+            OverlapConstructionShape::Circle => ConstructionIntentV1::PlaceCircle {
+                sequence,
+                world_target: position,
+            },
+            OverlapConstructionShape::Rectangle => ConstructionIntentV1::PlaceRectangle {
+                sequence,
+                world_target: position,
+            },
+        });
+        constructed_bodies.push(construction_body(index as u32 + 3, shape, position));
+    }
+    let construction = ConstructionIntentBatchV1 {
+        schema_version: SCHEMA_VERSION,
+        contract_version: CONSTRUCTION_INTENT_CONTRACT_VERSION,
+        capacity_intents: crate::construction::CONSTRUCTION_INTENT_CAPACITY,
+        attempted_intents: intents.len() as u64,
+        overflowed: false,
+        intents,
+    };
+    construction
+        .validate()
+        .map_err(|error| ScenarioBuildError(error.to_string()))?;
+
+    let mut monitored_pairs = Vec::new();
+    for left in 0..constructed_bodies.len() {
+        for right in left + 1..constructed_bodies.len() {
+            monitored_pairs.push([constructed_bodies[left].id, constructed_bodies[right].id]);
+        }
+    }
+    let mut dry = wet.rigid.clone();
+    dry.id = format!("{id}-dry-rigid");
+    dry.seed = wet.seed ^ 0x4452_5900;
+    dry.validate()
+        .map_err(|error| ScenarioBuildError(error.to_string()))?;
+
+    let source = FluidSolidOverlapSourceV1 {
+        version: FLUID_SOLID_OVERLAP_SOURCE_VERSION,
+        id,
+        arrangement,
+        particle_phase_index,
+        particle_phase_offset: Vec2::new(phase_x, 0.0),
+        settle_steps: FLUID_SOLID_OVERLAP_SETTLE_STEPS,
+        recovery_steps: FLUID_SOLID_OVERLAP_RECOVERY_STEPS,
+        sample_stride: FLUID_SOLID_OVERLAP_SAMPLE_STRIDE,
+        wet,
+        dry,
+        construction,
+        constructed_bodies,
+        monitored_pairs,
+    };
+    source
+        .validate()
+        .map_err(|error| ScenarioBuildError(error.to_string()))?;
+    Ok(source)
+}
+
+pub fn fluid_solid_overlap_sources() -> Result<Vec<FluidSolidOverlapSourceV1>, ScenarioBuildError> {
+    FluidSolidOverlapArrangement::ALL
+        .into_iter()
+        .flat_map(|arrangement| {
+            (0..FLUID_SOLID_OVERLAP_PHASE_COUNT as u32)
+                .map(move |phase| fluid_solid_overlap_source(arrangement, phase))
+        })
+        .collect()
+}
+
+impl Validate for FluidSolidOverlapSourceV1 {
+    fn validate(&self) -> Result<(), ContractError> {
+        if self.version != FLUID_SOLID_OVERLAP_SOURCE_VERSION
+            || self.id.is_empty()
+            || self.particle_phase_index >= FLUID_SOLID_OVERLAP_PHASE_COUNT as u32
+            || self.settle_steps != FLUID_SOLID_OVERLAP_SETTLE_STEPS
+            || self.recovery_steps != FLUID_SOLID_OVERLAP_RECOVERY_STEPS
+            || self.sample_stride == 0
+            || self.recovery_steps % self.sample_stride != 0
+            || self.construction.intents.len() != self.constructed_bodies.len()
+        {
+            return Err(ContractError(
+                "invalid fluid/solid overlap source identity or bounds".to_owned(),
+            ));
+        }
+        self.particle_phase_offset.validate()?;
+        self.wet.validate()?;
+        self.dry.validate()?;
+        self.construction.validate()?;
+        for body in &self.constructed_bodies {
+            body.validate()?;
+        }
+        let expected_pairs =
+            self.constructed_bodies.len() * self.constructed_bodies.len().saturating_sub(1) / 2;
+        if self.monitored_pairs.len() != expected_pairs
+            || self
+                .monitored_pairs
+                .windows(2)
+                .any(|pair| pair[0] >= pair[1])
+            || self.monitored_pairs.iter().any(|pair| {
+                pair[0] >= pair[1]
+                    || pair.iter().any(|body| {
+                        self.constructed_bodies
+                            .binary_search_by_key(body, |candidate| candidate.id)
+                            .is_err()
+                    })
+            })
+        {
+            return Err(ContractError(
+                "fluid/solid overlap monitored pairs must be complete, sorted, and live".to_owned(),
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy)]
+enum OverlapConstructionShape {
+    Circle,
+    Rectangle,
+}
+
+fn overlap_construction_plan(
+    arrangement: FluidSolidOverlapArrangement,
+    phase_x: f32,
+) -> Vec<(OverlapConstructionShape, Vec2)> {
+    const Y: f32 = 2.0;
+    match arrangement {
+        FluidSolidOverlapArrangement::CirclePair => vec![
+            (
+                OverlapConstructionShape::Circle,
+                Vec2::new(phase_x - 0.17, Y),
+            ),
+            (
+                OverlapConstructionShape::Circle,
+                Vec2::new(phase_x + 0.17, Y),
+            ),
+        ],
+        FluidSolidOverlapArrangement::RectanglePair => vec![
+            (
+                OverlapConstructionShape::Rectangle,
+                Vec2::new(phase_x - 0.21, Y),
+            ),
+            (
+                OverlapConstructionShape::Rectangle,
+                Vec2::new(phase_x + 0.21, Y),
+            ),
+        ],
+        FluidSolidOverlapArrangement::MixedPair => vec![
+            (
+                OverlapConstructionShape::Circle,
+                Vec2::new(phase_x - 0.185, Y),
+            ),
+            (
+                OverlapConstructionShape::Rectangle,
+                Vec2::new(phase_x + 0.185, Y),
+            ),
+        ],
+        FluidSolidOverlapArrangement::MixedThreeBody => vec![
+            (OverlapConstructionShape::Rectangle, Vec2::new(phase_x, Y)),
+            (
+                OverlapConstructionShape::Circle,
+                Vec2::new(phase_x - 0.34, Y),
+            ),
+            (
+                OverlapConstructionShape::Circle,
+                Vec2::new(phase_x + 0.34, Y),
+            ),
+        ],
+    }
+}
+
+fn construction_body(slot: u32, shape: OverlapConstructionShape, position: Vec2) -> BodyStateV1 {
+    let (shape, inverse_mass, inverse_inertia) = match shape {
+        OverlapConstructionShape::Circle => (
+            ShapeV1::Circle {
+                radius: finite(crate::construction::CONSTRUCTION_CIRCLE_RADIUS),
+            },
+            crate::construction::CONSTRUCTION_CIRCLE_INVERSE_MASS,
+            crate::construction::CONSTRUCTION_CIRCLE_INVERSE_INERTIA,
+        ),
+        OverlapConstructionShape::Rectangle => (
+            ShapeV1::Rectangle {
+                half_extents: Vec2::new(
+                    crate::construction::CONSTRUCTION_RECTANGLE_HALF_EXTENTS[0],
+                    crate::construction::CONSTRUCTION_RECTANGLE_HALF_EXTENTS[1],
+                ),
+            },
+            crate::construction::CONSTRUCTION_RECTANGLE_INVERSE_MASS,
+            crate::construction::CONSTRUCTION_RECTANGLE_INVERSE_INERTIA,
+        ),
+    };
+    let mut body = body(slot, shape, position, inverse_mass, inverse_inertia, false);
+    body.material.friction = finite(crate::construction::CONSTRUCTION_FRICTION);
+    body.material.restitution = finite(crate::construction::CONSTRUCTION_RESTITUTION);
+    body
 }
 
 pub fn coupled_capacity_scenario(
@@ -471,6 +753,110 @@ mod tests {
         );
         assert!(scenario.particle_capacity < crate::particle_world::MAX_PRODUCT_PARTICLE_CAPACITY);
         assert_eq!(scenario.regions.len(), 1);
+    }
+
+    #[test]
+    fn fluid_solid_overlap_sources_are_complete_permissive_and_phase_distinct() {
+        let sources = fluid_solid_overlap_sources().unwrap();
+        assert_eq!(
+            sources.len(),
+            FluidSolidOverlapArrangement::ALL.len() * FLUID_SOLID_OVERLAP_PHASE_COUNT
+        );
+        let mut ids = BTreeSet::new();
+        let mut hashes = BTreeSet::new();
+        for source in &sources {
+            source.validate().unwrap();
+            assert!(ids.insert(source.id.clone()), "duplicate {}", source.id);
+            assert!(
+                hashes.insert(canonical_hash(source).unwrap()),
+                "duplicate source projection {}",
+                source.id
+            );
+            assert_eq!(source.wet.rigid.bodies.len(), 3);
+            assert_eq!(source.dry.bodies.len(), 3);
+            assert!(
+                source.construction.intents.iter().all(|intent| matches!(
+                    intent,
+                    ConstructionIntentV1::PlaceCircle { .. }
+                        | ConstructionIntentV1::PlaceRectangle { .. }
+                )),
+                "{} bypasses the permissive product placement path",
+                source.id
+            );
+            for (index, body) in source.constructed_bodies.iter().enumerate() {
+                assert!(
+                    source.constructed_bodies[..index]
+                        .iter()
+                        .all(|placed| !axis_aligned_body_contains(placed, body.position)),
+                    "{} would be rejected because a placement center lies inside an earlier body",
+                    source.id
+                );
+            }
+            let overlapping_pairs = source
+                .monitored_pairs
+                .iter()
+                .filter(|pair| {
+                    let left = source
+                        .constructed_bodies
+                        .iter()
+                        .find(|body| body.id == pair[0])
+                        .unwrap();
+                    let right = source
+                        .constructed_bodies
+                        .iter()
+                        .find(|body| body.id == pair[1])
+                        .unwrap();
+                    axis_aligned_separation(left, right) < 0.0
+                })
+                .count();
+            assert_eq!(
+                overlapping_pairs,
+                if source.arrangement == FluidSolidOverlapArrangement::MixedThreeBody {
+                    2
+                } else {
+                    1
+                },
+                "{} does not author the intended initial overlap graph",
+                source.id
+            );
+        }
+    }
+
+    fn axis_aligned_body_contains(body: &BodyStateV1, point: Vec2) -> bool {
+        let delta = Vec2::new(point.x - body.position.x, point.y - body.position.y);
+        match body.shape {
+            ShapeV1::Circle { radius } => {
+                delta.x * delta.x + delta.y * delta.y <= radius.get() * radius.get()
+            }
+            ShapeV1::Rectangle { half_extents } => {
+                delta.x.abs() <= half_extents.x && delta.y.abs() <= half_extents.y
+            }
+        }
+    }
+
+    fn axis_aligned_separation(left: &BodyStateV1, right: &BodyStateV1) -> f32 {
+        let delta_x = (right.position.x - left.position.x).abs();
+        let delta_y = (right.position.y - left.position.y).abs();
+        match (left.shape, right.shape) {
+            (ShapeV1::Circle { radius: left }, ShapeV1::Circle { radius: right }) => {
+                (delta_x * delta_x + delta_y * delta_y).sqrt() - left.get() - right.get()
+            }
+            (
+                ShapeV1::Rectangle { half_extents: left },
+                ShapeV1::Rectangle {
+                    half_extents: right,
+                },
+            ) => (delta_x - left.x - right.x).max(delta_y - left.y - right.y),
+            (ShapeV1::Circle { radius }, ShapeV1::Rectangle { half_extents })
+            | (ShapeV1::Rectangle { half_extents }, ShapeV1::Circle { radius }) => {
+                let outside_x = (delta_x - half_extents.x).max(0.0);
+                let outside_y = (delta_y - half_extents.y).max(0.0);
+                let inside = (delta_x - half_extents.x)
+                    .max(delta_y - half_extents.y)
+                    .min(0.0);
+                (outside_x * outside_x + outside_y * outside_y).sqrt() + inside - radius.get()
+            }
+        }
     }
 
     #[test]

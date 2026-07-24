@@ -169,8 +169,12 @@ pub use coupled_evidence::{
 };
 pub use coupled_scenario::{
     COUPLED_CANONICAL_SOURCE_COUNT, COUPLED_CANONICAL_SOURCE_HASHES_V1, CoupledScenarioKind,
-    canonical_coupled_scenario, canonical_coupled_scenario_hashes, coupled_capacity_scenario,
-    liquid_sandbox_scenario,
+    FLUID_SOLID_OVERLAP_PHASE_COUNT, FLUID_SOLID_OVERLAP_PHASE_OFFSETS,
+    FLUID_SOLID_OVERLAP_RECOVERY_STEPS, FLUID_SOLID_OVERLAP_SAMPLE_STRIDE,
+    FLUID_SOLID_OVERLAP_SETTLE_STEPS, FLUID_SOLID_OVERLAP_SOURCE_VERSION,
+    FluidSolidOverlapArrangement, FluidSolidOverlapSourceV1, canonical_coupled_scenario,
+    canonical_coupled_scenario_hashes, coupled_capacity_scenario, fluid_solid_overlap_source,
+    fluid_solid_overlap_sources, liquid_sandbox_scenario,
 };
 pub use frame::{
     FrameInput, InputEvent, PointerButton, PointerEvent, PointerPhase, StepRequest, WheelEvent,
