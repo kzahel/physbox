@@ -13,18 +13,18 @@ Related records:
 
 ## Decision
 
-The project name is **PhysBox** and the canonical repository will be
+The project name is **PhysBox** and the canonical repository is
 `kzahel/physbox`. The reusable library crate remains `physbox-sim`: it is more
 specific than the repository name and already names the physics-only consumer
 boundary. The current repository's trailing generation number is historical
 development scaffolding, not public product identity.
 
-The existing public `kzahel/physbox` project is a separate Matter.js sandbox.
-It will move to `kzahel/physbox-matter`, use that subpath for its existing
-GitHub Pages deployment, and be labeled clearly enough that old and new
-projects are not confused. GitHub repository redirects are useful for ordinary
-links after a rename, but project Pages URLs do not inherit that redirect, so
-the old app and the `kzahel.github.io/games` index must be updated explicitly.
+The former public `kzahel/physbox` project is a separate Matter.js sandbox. It
+moved to `kzahel/physbox-matter`, uses that subpath for its existing GitHub
+Pages deployment, and is labeled clearly enough that old and new projects are
+not confused. GitHub repository redirects are useful for ordinary links after
+a rename, but project Pages URLs do not inherit that redirect, so the old app
+and the `kzahel.github.io/games` index were updated explicitly.
 
 PhysBox source owned by this repository is licensed under MIT. The root
 license is the authoritative text and every Cargo package inherits the
@@ -40,6 +40,8 @@ The intended public description is:
 
 Public copy must be concrete about current scope:
 
+- the product motivation is a fun, touch-friendly water sandbox with particle
+  counts beyond the practical range of CPU-oriented 2D physics;
 - GPU-resident rigid bodies, sleeping, interaction primitives, and preview
   coupled water;
 - Rust consumers that supply WGPU lifecycle, submission, and rendering;
@@ -47,6 +49,49 @@ Public copy must be concrete about current scope:
 - no CPU product fallback and no SharedArrayBuffer requirement;
 - an unstable pre-release API and preview-quality water; and
 - diagnostics and stress scenes that are not benchmark claims.
+
+## Product thesis and lineage
+
+PhysBox is engine work in service of a game idea, not GPU architecture in
+search of an application. The intended experience is a high-particle-count
+water sandbox where the player pours and erases water, builds containers and
+machines, and directly manipulates rigid toys that float, rotate, and respond
+to waves. The technical thesis is that a portable GPU-native 2D engine can
+eventually support materially higher useful water counts than CPU-oriented
+engines without sacrificing coherent rigid/fluid interaction. Until the
+performance contract supplies a controlled comparison, public copy presents
+that as motivation rather than a measured conclusion.
+
+The public narrative follows the actual repository lineage inspected on
+2026-07-28:
+
+1. **PhysBox Matter** began as a Matter.js browser construction sandbox. It
+   established direct placement, grabbing, erasing, vehicles, walls, camera,
+   and touch interaction, but did not yet contain simulated water.
+2. **PhysBox 2** rebuilt the sandbox on Planck.js/Box2D. It added CPU
+   finite-volume column water with buoyancy and a sand brush implemented as
+   ordinary rigid circles capped at 1,000 bodies.
+3. **PhysBox 3** migrated the rigid world to Box2D v3 WASM and replaced the
+   column approximation with a reduced LiquidFun-derived particle sidecar.
+   Particle stepping and equal-and-opposite rigid coupling stayed synchronous
+   inside one WASM module, avoiding a hot JavaScript boundary, but the default
+   particle system capped fluid at 4,000 and remained an early CPU-oriented
+   water path.
+4. **PhysBox 4** started a new Rust/WebGPU engine specifically to move
+   high-count PBF/XPBD water and rendering onto the GPU. It demonstrated
+   32K/128K/512K/1M allocation and stress lanes, but used a CPU Rapier rigid
+   world connected through uploaded collider snapshots and delayed reaction
+   readback. The resulting multi-step feedback delay and energy/feel problems
+   established that high-count water alone was insufficient.
+5. **PhysBox** makes rigid and water state authoritative in one GPU-resident
+   fixed-step graph. Same-step response removes the CPU/GPU mechanical
+   feedback loop, and the later `physbox-sim` extraction lets the showcase,
+   Quest, and future sandbox game consume that engine as a library.
+
+The authoritative
+[GPU physics direction](physbox5-unified-gpu-physics.md#why-this-is-a-new-engine-direction)
+owns the detailed PhysBox 3/4/current mechanical analysis. This record owns how
+that history is summarized for public positioning.
 
 The root README uses the GitHub Pages **PhysBox Web Showcase** as its prominent
 hands-on link. The existing fullscreen app at

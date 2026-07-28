@@ -1,18 +1,53 @@
 # PhysBox
 
-GPU-resident 2D rigid-body and preview-water physics for Rust, `wgpu`, and
-WebGPU.
+An experimental GPU-resident 2D physics engine for high-particle-count water
+sandboxes, built with Rust, `wgpu`, and WebGPU.
 
 **[Try the PhysBox Web Showcase](https://kzahel.github.io/physbox/)**
 
-PhysBox keeps authoritative simulation state and mechanics on the GPU. A Rust
-consumer supplies the WGPU device, queue, command encoders, submission, and
-rendering; `physbox-sim` supplies bounded world construction, fixed-step
-physics, deferred interaction, and render-neutral GPU observations.
+## Why PhysBox?
 
-The project is experimental. Its public API is not yet stable, water remains
-preview quality, and no crate has been published to crates.io. Stress-scene
-diagnostics are useful for exploration but are not benchmark claims.
+PhysBox exists to make a water sandbox game: pour and erase large amounts of
+water, build containers and machines, and let rigid toys float, tumble, and get
+hit by waves. The motivating thesis is that a GPU-native 2D engine can make
+that experience work at particle counts beyond CPU-oriented physics engines
+while keeping the water and rigid bodies in one coherent world.
+
+The architecture grew out of several working sandbox generations:
+
+- [PhysBox Matter](https://github.com/kzahel/physbox-matter) established the
+  browser construction-toy loop with placeable bodies, cars, walls, grabbing,
+  erasing, and touch controls.
+- [PhysBox 2](https://github.com/kzahel/physbox2) moved the sandbox to
+  Planck.js/Box2D and added finite-volume column water, buoyancy, and granular
+  particles. Its sand was still ordinary CPU rigid bodies and was capped at
+  1,000 grains.
+- [PhysBox 3](https://github.com/kzahel/physbox3) moved rigid physics to Box2D
+  v3 WASM and replaced column water with a LiquidFun-derived particle sidecar.
+  Water and rigid bodies interacted synchronously inside one WASM module, but
+  the default fluid ceiling was 4,000 particles and the water remained an
+  early CPU-oriented implementation.
+- PhysBox 4 moved the particle solver and renderer to WebGPU, with explicit
+  stress capacities reaching hundreds of thousands of particles. Its rigid
+  world remained on the CPU: collider poses went to the GPU and fluid reaction
+  packets came back later. That delay could make floating bodies lag, gain
+  energy, or feel disconnected from the water.
+- This PhysBox generation puts rigid bodies and water in the same GPU-resident
+  fixed-step graph. Equal-and-opposite response happens against current state,
+  and rendering consumes the resulting GPU buffers directly.
+
+The current repository is the engine extracted from that game lineage, not the
+finished game. `physbox-sim` lets the Web Showcase, Quest, and future sandbox
+clients supply their own WGPU lifecycle and rendering while reusing bounded
+world construction, fixed-step physics, deferred interaction, and
+render-neutral GPU observations. The
+[technical direction](docs/topics/physbox5-unified-gpu-physics.md#why-this-is-a-new-engine-direction)
+records the detailed PhysBox 3 → 4 → current architecture decision.
+
+The project is experimental. The higher-than-CPU particle-count thesis still
+needs controlled comparative evidence; it is not a benchmark claim. The
+public API is not yet stable, water remains preview quality, and no crate has
+been published to crates.io.
 
 ## What works
 
