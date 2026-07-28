@@ -6,11 +6,11 @@ test("diagnoses insecure HTTP before browser WebGPU support", () => {
   const message = webGpuUnavailableMessage({
     isSecureContext: false,
     protocol: "http:",
-    host: "100.76.216.59:8080",
+    host: "192.0.2.10:8080",
   });
 
   assert.match(message, /WebGPU requires a secure context/);
-  assert.match(message, /http:\/\/100\.76\.216\.59:8080/);
+  assert.match(message, /http:\/\/192\.0\.2\.10:8080/);
   assert.match(message, /likely reason WebGPU is unavailable/);
   assert.match(message, /HTTPS/);
 });

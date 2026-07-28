@@ -70,7 +70,7 @@ any repository rename.
       default branch so its existing Pages workflow deploys the new subpath.
 - [x] Update the PhysBox entry in `kzahel/kzahel.github.io` `/games` to the new
       project name and URL, commit, and push.
-- [ ] Verify repository URLs, successful Pages Actions, and the deployed
+- [x] Verify repository URLs, successful Pages Actions, and the deployed
       `/physbox-matter/` and `/games` links.
 
 Gate: the old public project remains reachable and correctly labeled after it
@@ -78,16 +78,16 @@ releases the canonical repository name.
 
 External migration checkpoint, 2026-07-28:
 
-- Legacy commit `66babf2` renames the package and README to PhysBox Matter,
-  changes the Vite base to `/physbox-matter/`, and adds MIT. Its production
-  build passed before push.
+- Legacy commits `66babf2` and `bcb7825` rename the package, README, and
+  document title to PhysBox Matter, change the Vite base to
+  `/physbox-matter/`, and add MIT. Production builds passed before each push.
 - `kzahel/physbox-matter` remains public on `master`. Pages workflow run
-  `30355256873` built and deployed that exact commit successfully; the served
-  HTML uses `/physbox-matter/` asset URLs.
+  `30355876053` built and deployed final commit `bcb7825` successfully; the
+  served HTML names PhysBox Matter and uses `/physbox-matter/` asset URLs.
 - Games-site commit `77b9306` points the legacy card at
-  `/physbox-matter/`, labels it PhysBox Matter, and identifies Matter.js. The
-  source is pushed; final deployed-link verification waits for the legacy
-  Pages rebuild and CDN refresh.
+  `/physbox-matter/`, labels it PhysBox Matter, and identifies Matter.js.
+  Pages run `30355310651` succeeded and the deployed `/games/` source serves
+  that exact link and copy.
 
 ### S41.3 — Private canonical repository identity
 
@@ -145,12 +145,12 @@ advertises no public PhysBox showcase URL before the visibility/Pages review.
 
 ### S41.6 — Private candidate audit and checkpoint
 
-- [ ] Run format, maintained tests, production warnings-denied clippy, Cargo
+- [x] Run format, maintained tests, production warnings-denied clippy, Cargo
       metadata/license checks, README/link checks, and relevant build smokes.
-- [ ] Run a history-aware secret scan plus tracked-file checks for credentials,
+- [x] Run a history-aware secret scan plus tracked-file checks for credentials,
       generated artifacts, private endpoints, large files, and ownership/
       redistribution hazards.
-- [ ] Inspect repository settings and the exact candidate diff/history; record
+- [x] Inspect repository settings and the exact candidate diff/history; record
       accepted personal-data exposure and unresolved findings.
 - [ ] Push only a private review branch if useful; do not push `main`.
 - [ ] Stop for human review before visibility, new PhysBox Pages, releases,
@@ -158,6 +158,46 @@ advertises no public PhysBox showcase URL before the visibility/Pages review.
 
 Gate: all detected issues are fixed or explicitly surfaced, and the exact
 private candidate is reviewable without triggering production deployment.
+
+Private audit checkpoint, 2026-07-28:
+
+- Checksum-verified Gitleaks `8.30.1` scanned all 695 commits and about
+  342.63 MB of uncompressed Git history with zero findings. A separate raw
+  directory scan found only three false positives in ignored reference
+  checkouts (two Box2D map-test identifiers and one dependency name); none is
+  tracked by this repository.
+- The current 536-file tree contains no tracked credential file, `.env`,
+  generated build directory, attachment, package cache, private key, or
+  unexpected executable. The expected binary files are the Gradle wrapper and
+  the manifest-pinned Box2D comparator WASM.
+- The largest blobs are deleted historical evidence JSON, headed by one
+  approximately 93 MB uncompressed manifest. They make the packed Git history
+  approximately 33.18 MiB but do not appear in the current tree. History is
+  retained because revision evidence already refers to it and the owner
+  rejected a rewrite; repository size remains a publication-review item.
+- The only commit author email is `kgraehl@gmail.com`, explicitly accepted by
+  the owner. The current tree replaces a real Tailscale IP fixture with
+  RFC 5737 TEST-NET-1 and removes the temporary tailnet hostname from current
+  evidence prose. Both values remain visible in older commits unless history
+  is rewritten; neither is a credential.
+- Full Cargo metadata reports no dependency with missing license metadata.
+  `r-efi` offers MIT or Apache-2.0 in addition to LGPL. npm metadata reports
+  no missing license and one LGPL-3.0 `sharp-libvips` platform package used by
+  the Wrangler development dependency; it is not part of the built browser
+  artifact. The packaged Box2D subset and WASM match an exact MIT source
+  manifest.
+- GitHub reports the engine repository private with no Actions runs, repository
+  secrets, variables, Pages site, or workflow directory. Branch protection is
+  unavailable under the current private plan; protection/security settings
+  therefore remain a required visibility-time review. Issues and Projects are
+  enabled. The existing Cloudflare worker/bucket/domain names are public
+  deployment identifiers and no account id or token is tracked.
+- Final `npm run test:fast` passed in 27.37 seconds, including Browser WebGPU
+  run `204a64c0-2897-413e-ac3d-96b719645c0f`. Production warnings-denied
+  clippy passed. Showcase run
+  `19d8446f-b6cb-47ba-8bc7-a2d5000bd76c` passed 1K–10K rigid and
+  4K/8K/16K Water stress plus the startup diagnostic with no page/console
+  errors. Cargo metadata and every local README link also pass.
 
 ## Stop conditions
 

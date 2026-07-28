@@ -233,11 +233,9 @@ Automated qualification checkpoint, 2026-07-28:
   host, launch, renderer, or Android/Quest adapter behavior changed, so this
   consumer-owned web interaction slice does not justify another APK or
   physical-device run before the human product checkpoint.
-- The local server still listens on `0.0.0.0:8080`; Tailscale Serve returns
-  the packaged artifact at
-  `https://zblinux.tail71bc5c.ts.net:8444/` as a secure tailnet-only origin.
-  No push, public repository change, Pages configuration, or deployment
-  occurred.
+- The local server still listens on `0.0.0.0:8080`; Tailscale Serve made the
+  packaged artifact available at a secure tailnet-only HTTPS origin. No push,
+  public repository change, Pages configuration, or deployment occurred.
 - The deliberately deferred choices remain half-RAF rendering, render
   interpolation, publication, Box2D comparison, tuning/tool-size controls,
   and a Quest-owned runtime Water interaction surface. The 32K water frontier
@@ -313,9 +311,8 @@ Revised implementation and qualification checkpoint, 2026-07-28:
   `PHYSBOX5_VALIDATION_SUCCESS`. Artifacts are
   `/tmp/physbox5-s40-review-liquid-600-20260728.{png,json}`.
 - The refreshed laptop capture is `/tmp/physbox-showcase.png`. The packaged
-  artifact remains tailnet-only at
-  `https://zblinux.tail71bc5c.ts.net:8444/`, served through the existing
-  `0.0.0.0:8080` process. No push, public repository change, Pages
+  artifact remains available through a tailnet-only HTTPS origin backed by the
+  existing `0.0.0.0:8080` process. No push, public repository change, Pages
   configuration, or deployment occurred.
 
 ### S40.8 — Second human-review revisions

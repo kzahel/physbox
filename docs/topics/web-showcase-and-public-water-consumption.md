@@ -383,9 +383,8 @@ mechanics, fixed-step defaults, or first-party host behavior:
   `0b17111a4aefbe1d998e01dd3e84b62b02ec1a41`;
 - the favorable selector stops at 16K particles because a cold 32K coupled
   stress frame did not return within 90 seconds on the development host; and
-- the exact artifact remains reviewable at the secure tailnet-only
-  `https://zblinux.tail71bc5c.ts.net:8444/` URL. No publication or deployment
-  action occurred.
+- the exact artifact remains reviewable at a secure tailnet-only HTTPS origin.
+  No publication or deployment action occurred.
 
 Human review now owns the next choice: keep the compact surface as-is, improve
 its presentation or curated scenes, expose runtime Water interaction in the
@@ -413,9 +412,17 @@ workstreams. Revised packaged Browser WebGPU run
 
 The maintained fast lane, production clippy, fresh 600-step coupled headless
 run, ARM64 Android check, and all 20 Quest consumer tests pass. The compact
-laptop capture contains no footer copy and remains reviewable at
-`https://zblinux.tail71bc5c.ts.net:8444/`. S40 remains active until a human
-evaluates this revised artifact.
+laptop capture contains no footer copy and remains reviewable through the
+tailnet-only HTTPS proxy. That was an intermediate review checkpoint.
+
+Final human review removed the 20K/50K rigid presets, added exact 1K, retained
+2K/5K/10K, and re-authored all rigid stress tiers as independent small stacks
+whose sleep state can be shown by a renderer-only tint. Water stress now ends
+at 16K; 32K remains manually allocatable but has no authored preset after two
+bounded attempts stalled before advancing two frames. Packaged Browser WebGPU
+run `a79a8b90-9512-48d6-ad57-01d9abf07ff1` passed the final catalog, tools,
+navigation, reset/configuration, and visualization surface. S40 is complete;
+open-source preparation and publication are separate decisions.
 
 ## Alternatives rejected
 
