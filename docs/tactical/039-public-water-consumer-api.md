@@ -146,7 +146,7 @@ Showcase checkpoint, 2026-07-28:
   both observation projections, and both draw pipelines in one caller-owned
   encoder/submission.
 - Final packaged Browser WebGPU run
-  `dcbdcafc-c07b-4b5a-9c38-9a84c7cb0a34` passes the existing rigid
+  `1629d29e-58a3-4471-aded-859826dfb8ce` passes the existing rigid
   selector/pause/reset/drag gates, then advances the water scene for 99 fixed
   frames and 100 fixed steps. It reports 2,650 particles, clean console/GPU
   validation, `crossOriginIsolated=false`, and a 3,324,794-byte debug WASM
