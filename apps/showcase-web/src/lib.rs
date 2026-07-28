@@ -165,10 +165,17 @@ impl Scene {
         })
     }
 
-    fn pointer(&mut self, phase: u8, normalized_x: f32, normalized_y: f32) {
+    fn pointer(
+        &mut self,
+        phase: u8,
+        normalized_x: f32,
+        normalized_y: f32,
+        viewport_size: [u32; 2],
+    ) {
+        let camera = fitted_camera(self.camera, viewport_size);
         self.pointer_target = [
-            self.camera[0] + (normalized_x.clamp(0.0, 1.0) * 2.0 - 1.0) * self.camera[2],
-            self.camera[1] + (1.0 - normalized_y.clamp(0.0, 1.0) * 2.0) * self.camera[3],
+            camera[0] + (normalized_x.clamp(0.0, 1.0) * 2.0 - 1.0) * camera[2],
+            camera[1] + (1.0 - normalized_y.clamp(0.0, 1.0) * 2.0) * camera[3],
         ];
         match phase {
             0 => {
@@ -309,8 +316,13 @@ impl Scene {
         } else {
             None
         };
-        self.renderer
-            .encode(queue, &mut encoder, target, size, self.camera);
+        self.renderer.encode(
+            queue,
+            &mut encoder,
+            target,
+            size,
+            fitted_camera(self.camera, size),
+        );
         queue.submit([encoder.finish()]);
         if let Some(request) = result_request.as_mut() {
             request.begin_map().map_err(|error| error.to_string())?;
@@ -664,7 +676,12 @@ impl ShowcaseApp {
 
     #[wasm_bindgen(js_name = pointerEvent)]
     pub fn pointer_event(&mut self, phase: u8, x: f32, y: f32) {
-        self.scene.pointer(phase, x, y);
+        self.scene.pointer(
+            phase,
+            x,
+            y,
+            [self.surface_config.width, self.surface_config.height],
+        );
     }
 
     #[wasm_bindgen(getter)]
@@ -948,6 +965,18 @@ fn build_scene(
     Ok((world, visuals, [0.0, 0.0, 8.0, 5.0], initial_particle_count))
 }
 
+#[cfg(any(target_arch = "wasm32", test))]
+fn fitted_camera(mut camera: [f32; 4], viewport_size: [u32; 2]) -> [f32; 4] {
+    let viewport_aspect = viewport_size[0].max(1) as f32 / viewport_size[1].max(1) as f32;
+    let authored_aspect = camera[2] / camera[3];
+    if viewport_aspect > authored_aspect {
+        camera[2] = camera[3] * viewport_aspect;
+    } else {
+        camera[3] = camera[2] / viewport_aspect;
+    }
+    camera
+}
+
 #[cfg(target_arch = "wasm32")]
 fn add_body(
     world: &mut World,
@@ -1017,5 +1046,20 @@ mod tests {
             WATER_AND_RIGID
         );
         assert!(SceneName::parse("liquid-sandbox").is_err());
+    }
+
+    #[test]
+    fn camera_aspect_fit_preserves_world_units_and_authored_frame() {
+        let authored = [0.0, 0.0, 8.0, 5.0];
+        assert_eq!(fitted_camera(authored, [1_600, 1_000]), authored);
+
+        for size in [[1_600, 900], [900, 1_600], [1, 1], [2_560, 1_600]] {
+            let fitted = fitted_camera(authored, size);
+            assert!(fitted[2] >= authored[2]);
+            assert!(fitted[3] >= authored[3]);
+            let pixels_per_world_x = size[0] as f32 / (2.0 * fitted[2]);
+            let pixels_per_world_y = size[1] as f32 / (2.0 * fitted[3]);
+            assert!((pixels_per_world_x - pixels_per_world_y).abs() < 0.000_1);
+        }
     }
 }

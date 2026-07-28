@@ -35,8 +35,8 @@ try {
     ],
   });
   const page = await browserSession.browser.newPage({
-    viewport: { width: 1180, height: 900 },
-    deviceScaleFactor: 1,
+    viewport: { width: 1512, height: 800 },
+    deviceScaleFactor: 2,
   });
   const errors = [];
   const consoleProblems = [];
