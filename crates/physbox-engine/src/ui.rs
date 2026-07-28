@@ -745,7 +745,9 @@ impl UiLayout {
                     {
                         push(self.world_engine_button(index), UiHit::Engine(engine));
                     }
-                    for (index, capacity) in WorldCapacityPreset::ALL.into_iter().enumerate() {
+                    for (index, capacity) in
+                        WorldCapacityPreset::PRODUCT_PRESETS.into_iter().enumerate()
+                    {
                         push(
                             self.world_capacity_button(index),
                             UiHit::WorldCapacity(capacity),
@@ -940,7 +942,7 @@ impl UiLayout {
                 34.0 * self.menu_scale,
             ];
         }
-        let last = self.world_capacity_button(WorldCapacityPreset::ALL.len() - 1);
+        let last = self.world_capacity_button(WorldCapacityPreset::PRODUCT_PRESETS.len() - 1);
         [
             (24.0 + index as f32 * 172.0) * self.menu_scale,
             last[1] + last[3] + 12.0 * self.menu_scale,
@@ -1009,7 +1011,7 @@ impl UiLayout {
 
     fn world_render_scale_button(self) -> [f32; 4] {
         if self.compact_landscape() {
-            let last = self.world_capacity_button(WorldCapacityPreset::ALL.len() - 1);
+            let last = self.world_capacity_button(WorldCapacityPreset::PRODUCT_PRESETS.len() - 1);
             return [
                 last[0],
                 last[1] + last[3] + 12.0 * self.menu_scale,
@@ -1635,7 +1637,9 @@ fn static_batch(
                         1.4 * scale,
                     );
                 }
-                for (index, capacity) in WorldCapacityPreset::ALL.into_iter().enumerate() {
+                for (index, capacity) in
+                    WorldCapacityPreset::PRODUCT_PRESETS.into_iter().enumerate()
+                {
                     canvas.button(
                         widget_id!(),
                         Rect::from_array(layout.world_capacity_button(index)),

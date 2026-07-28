@@ -487,7 +487,7 @@ impl WorldPreferenceV1 {
         if self.version != 1 {
             return None;
         }
-        WorldCapacityPreset::ALL
+        WorldCapacityPreset::PRODUCT_PRESETS
             .into_iter()
             .find(|capacity| capacity.slots() == self.body_capacity)
     }
