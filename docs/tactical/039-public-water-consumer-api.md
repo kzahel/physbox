@@ -125,15 +125,37 @@ Public API checkpoint, 2026-07-28:
 
 ### S39.4 — Web showcase water scene
 
-- [ ] Add Water and rigid bodies using only public definitions.
-- [ ] Draw the particle observation in the showcase-owned renderer.
-- [ ] Demonstrate visible two-way coupling and reset/pause/resize behavior.
-- [ ] Label the scene and copy as preview and avoid unqualified scale or parity
+- [x] Add Water and rigid bodies using only public definitions.
+- [x] Draw the particle observation in the showcase-owned renderer.
+- [x] Demonstrate visible two-way coupling and reset/pause/resize behavior.
+- [x] Label the scene and copy as preview and avoid unqualified scale or parity
       claims.
-- [ ] Extend the packaged Browser WebGPU smoke to select and exercise water.
+- [x] Extend the packaged Browser WebGPU smoke to select and exercise water.
 
 Gate: the local web showcase is the primary iteration surface for public water
 consumption and uses no internal feature or CPU pose/particle loop.
+
+Showcase checkpoint, 2026-07-28:
+
+- Water and rigid bodies authors 2,650 particles, four dynamic shapes, the
+  basin, and an angled fixed obstacle solely through public `World`,
+  `ParticleSystemDef`, body/shape definitions, and the two canonical GPU
+  observations.
+- The app-owned particle renderer reads only the versioned observation,
+  renders water before consumer-owned rigid geometry, and keeps mechanics,
+  both observation projections, and both draw pipelines in one caller-owned
+  encoder/submission.
+- Packaged Browser WebGPU run
+  `0be7f9d2-55a1-4dc8-8858-8182579e5b55` passes the existing rigid
+  selector/pause/reset/drag gates, then advances the water scene for 99 fixed
+  steps. It reports 2,650 particles, clean console/GPU validation,
+  `crossOriginIsolated=false`, and a 3,324,794-byte debug WASM module. The
+  inspected coupled capture is `/tmp/physbox-showcase.png`; provenance is
+  `/tmp/physbox-showcase.json`.
+- Focused WASM warnings-denied app clippy and platform dependency negatives
+  pass. The dependency's existing WASM-wide `Arc<Buffer>` clippy warnings are
+  outside this slice; `--no-deps` isolates the new app while the governed
+  production clippy lane remains the shared final gate.
 
 ### S39.5 — Cross-consumer and maintained-host qualification
 

@@ -15,6 +15,7 @@ struct ShapeVisual {
 struct RenderParams {
     camera: vec4f,
     viewport: vec4f,
+    material: vec4f,
 };
 
 struct VertexOutput {

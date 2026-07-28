@@ -9,6 +9,11 @@ const scenes = {
     title: "Stack and sleep",
     description: "A compact stability stack settles, groups, and sleeps entirely on the GPU.",
   },
+  "water-and-rigid": {
+    title: "Water and rigid bodies",
+    description:
+      "Preview water and rigid shapes exchange motion in one coupled GPU world.",
+  },
 };
 
 const canvas = document.querySelector("#showcase-canvas");
@@ -88,7 +93,11 @@ function renderFrame(timestamp) {
   if (failed) return;
   try {
     app.render(timestamp);
-    statusText.textContent = `${app.liveBodies} bodies · ${app.fixedSteps} fixed steps`;
+    const particles = app.particleCount
+      ? `${app.particleCount} water particles · `
+      : "";
+    statusText.textContent =
+      `${app.liveBodies} bodies · ${particles}${app.fixedSteps} fixed steps`;
     globalThis.__physboxShowcase = {
       ready: app.frameCount > 1,
       scene: app.scene,
@@ -96,6 +105,7 @@ function renderFrame(timestamp) {
       fixedSteps: Number(app.fixedSteps),
       fixedStepsThisFrame: app.fixedStepsThisFrame,
       liveBodies: app.liveBodies,
+      particleCount: app.particleCount,
       dragging: app.dragging,
       crossOriginIsolated: globalThis.crossOriginIsolated,
     };

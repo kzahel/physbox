@@ -7,9 +7,10 @@ use std::mem::size_of;
 use bytemuck::{Pod, Zeroable};
 #[cfg(target_arch = "wasm32")]
 use physbox_sim::{
-    BodyDef, CommandResultRequest, GpuBodyObservation, InteractiveClockAction,
-    InteractiveClockInput, PointConstraintDef, PointConstraintId, PointQueryDef, ShapeDef,
-    ShapeGeometry, SimulationClock, StepDef, World, WorldCommandKind, WorldCommandStatus, WorldDef,
+    BodyDef, CommandResultRequest, GpuBodyObservation, GpuParticleObservation,
+    InteractiveClockAction, InteractiveClockInput, ParticleRegionDef, ParticleSystemDef,
+    PointConstraintDef, PointConstraintId, PointQueryDef, ShapeDef, ShapeGeometry, SimulationClock,
+    StepDef, World, WorldCommandKind, WorldCommandStatus, WorldDef,
 };
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
@@ -22,12 +23,15 @@ use wgpu::util::DeviceExt;
 const PLAYGROUND: &str = "playground";
 #[cfg(any(target_arch = "wasm32", test))]
 const STACK_AND_SLEEP: &str = "stack-and-sleep";
+#[cfg(any(target_arch = "wasm32", test))]
+const WATER_AND_RIGID: &str = "water-and-rigid";
 
 #[cfg(any(target_arch = "wasm32", test))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum SceneName {
     Playground,
     StackAndSleep,
+    WaterAndRigid,
 }
 
 #[cfg(any(target_arch = "wasm32", test))]
@@ -36,6 +40,7 @@ impl SceneName {
         match value {
             PLAYGROUND => Ok(Self::Playground),
             STACK_AND_SLEEP => Ok(Self::StackAndSleep),
+            WATER_AND_RIGID => Ok(Self::WaterAndRigid),
             _ => Err(format!("unknown showcase scene {value:?}")),
         }
     }
@@ -44,6 +49,7 @@ impl SceneName {
         match self {
             Self::Playground => PLAYGROUND,
             Self::StackAndSleep => STACK_AND_SLEEP,
+            Self::WaterAndRigid => WATER_AND_RIGID,
         }
     }
 }
@@ -70,6 +76,8 @@ struct RenderParams {
     camera: [f32; 4],
     /// `[pixel_width, pixel_height, reserved, reserved]`.
     viewport: [f32; 4],
+    /// `[particle render radius, reserved, reserved, reserved]`.
+    material: [f32; 4],
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -77,9 +85,11 @@ struct Scene {
     name: SceneName,
     world: World,
     observation: GpuBodyObservation,
+    particle_observation: Option<GpuParticleObservation>,
     renderer: BodyRenderer,
     clock: SimulationClock,
     camera: [f32; 4],
+    initial_particle_count: u32,
     frame_count: u64,
     last_steps: u32,
     last_timestamp_ms: Option<f64>,
@@ -102,7 +112,7 @@ impl Scene {
         format: wgpu::TextureFormat,
         name: SceneName,
     ) -> Result<Self, String> {
-        let (mut world, visuals, camera) = build_scene(device, name)?;
+        let (mut world, visuals, camera, initial_particle_count) = build_scene(device, name)?;
         let fixed_dt = world.definition().quality.physics.fixed_dt_seconds();
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("physbox_showcase_scene_bootstrap"),
@@ -114,15 +124,32 @@ impl Scene {
             .create_gpu_body_observation(device)
             .map_err(|error| error.to_string())?;
         observation.encode(&mut encoder);
+        let particle_observation = if initial_particle_count == 0 {
+            None
+        } else {
+            let observation = world
+                .create_gpu_particle_observation(device)
+                .map_err(|error| error.to_string())?;
+            observation.encode(&mut encoder);
+            Some(observation)
+        };
         queue.submit([encoder.finish()]);
-        let renderer = BodyRenderer::new(device, format, &observation, &visuals);
+        let renderer = BodyRenderer::new(
+            device,
+            format,
+            &observation,
+            particle_observation.as_ref(),
+            &visuals,
+        );
         Ok(Self {
             name,
             world,
             observation,
+            particle_observation,
             renderer,
             clock: SimulationClock::default(),
             camera,
+            initial_particle_count,
             frame_count: 0,
             last_steps: 1,
             last_timestamp_ms: None,
@@ -220,14 +247,14 @@ impl Scene {
             self.begin_pending = false;
             self.pointer_dirty = false;
             self.commands_queued = true;
-        } else if self.pointer_dirty {
-            if let Some(constraint) = self.constraint {
-                self.world
-                    .queue_set_point_constraint_target(constraint, self.pointer_target)
-                    .map_err(|error| error.to_string())?;
-                self.pointer_dirty = false;
-                self.commands_queued = true;
-            }
+        } else if self.pointer_dirty
+            && let Some(constraint) = self.constraint
+        {
+            self.world
+                .queue_set_point_constraint_target(constraint, self.pointer_target)
+                .map_err(|error| error.to_string())?;
+            self.pointer_dirty = false;
+            self.commands_queued = true;
         }
         Ok(())
     }
@@ -270,6 +297,9 @@ impl Scene {
             encoded_commands = report.queued_operations > 0;
         }
         self.observation.encode(&mut encoder);
+        if let Some(observation) = &self.particle_observation {
+            observation.encode(&mut encoder);
+        }
         let mut result_request = if encoded_commands {
             Some(
                 self.world
@@ -299,6 +329,15 @@ struct BodyRenderer {
     bind_group: wgpu::BindGroup,
     pipeline: wgpu::RenderPipeline,
     capacity: u32,
+    particles: Option<ParticleRenderer>,
+}
+
+#[cfg(target_arch = "wasm32")]
+struct ParticleRenderer {
+    bind_group: wgpu::BindGroup,
+    pipeline: wgpu::RenderPipeline,
+    capacity: u32,
+    radius: f32,
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -307,6 +346,7 @@ impl BodyRenderer {
         device: &wgpu::Device,
         format: wgpu::TextureFormat,
         observation: &GpuBodyObservation,
+        particle_observation: Option<&GpuParticleObservation>,
         visuals: &[ShapeVisual],
     ) -> Self {
         let shape_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -389,11 +429,14 @@ impl BodyRenderer {
             multiview: None,
             cache: None,
         });
+        let particles = particle_observation
+            .map(|observation| ParticleRenderer::new(device, format, observation, &params));
         Self {
             params,
             bind_group,
             pipeline,
             capacity: observation.capacity(),
+            particles,
         }
     }
 
@@ -411,6 +454,14 @@ impl BodyRenderer {
             bytemuck::bytes_of(&RenderParams {
                 camera,
                 viewport: [size[0] as f32, size[1] as f32, 0.0, 0.0],
+                material: [
+                    self.particles
+                        .as_ref()
+                        .map_or(0.0, |particles| particles.radius),
+                    0.0,
+                    0.0,
+                    0.0,
+                ],
             }),
         );
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -432,9 +483,95 @@ impl BodyRenderer {
             timestamp_writes: None,
             occlusion_query_set: None,
         });
+        if let Some(particles) = &self.particles {
+            pass.set_pipeline(&particles.pipeline);
+            pass.set_bind_group(0, &particles.bind_group, &[]);
+            pass.draw(0..6, 0..particles.capacity);
+        }
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, &self.bind_group, &[]);
         pass.draw(0..6, 0..self.capacity);
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+impl ParticleRenderer {
+    fn new(
+        device: &wgpu::Device,
+        format: wgpu::TextureFormat,
+        observation: &GpuParticleObservation,
+        params: &wgpu::Buffer,
+    ) -> Self {
+        let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("physbox_showcase_particle_render_layout"),
+            entries: &[
+                storage_entry(0),
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+        });
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("physbox_showcase_particle_render_group"),
+            layout: &layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: observation.buffer().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: params.as_entire_binding(),
+                },
+            ],
+        });
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("physbox_showcase_particle_shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("particle_render.wgsl").into()),
+        });
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("physbox_showcase_particle_pipeline_layout"),
+            bind_group_layouts: &[&layout],
+            push_constant_ranges: &[],
+        });
+        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("physbox_showcase_particle_pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("particle_vertex"),
+                buffers: &[],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("particle_fragment"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
+        Self {
+            bind_group,
+            pipeline,
+            capacity: observation.capacity(),
+            radius: observation.particle_radius() * 1.15,
+        }
     }
 }
 
@@ -555,6 +692,11 @@ impl ShowcaseApp {
         self.scene.world.counters().live_bodies
     }
 
+    #[wasm_bindgen(getter, js_name = particleCount)]
+    pub fn particle_count(&self) -> u32 {
+        self.scene.initial_particle_count
+    }
+
     #[wasm_bindgen(getter)]
     pub fn dragging(&self) -> bool {
         self.scene.constraint.is_some()
@@ -639,7 +781,7 @@ pub async fn start(canvas: HtmlCanvasElement, scene_name: String) -> Result<Show
 fn build_scene(
     device: &wgpu::Device,
     name: SceneName,
-) -> Result<(World, Vec<ShapeVisual>, [f32; 4]), String> {
+) -> Result<(World, Vec<ShapeVisual>, [f32; 4], u32), String> {
     let mut world = World::new(device, WorldDef::default()).map_err(|error| error.to_string())?;
     let mut visuals = vec![ShapeVisual::zeroed(); BODY_CAPACITY];
     add_body(
@@ -672,7 +814,7 @@ fn build_scene(
             .with_restitution(0.0),
         [0.12, 0.18, 0.27, 1.0],
     )?;
-    match name {
+    let initial_particle_count = match name {
         SceneName::Playground => {
             for row in 0..3 {
                 for column in 0..6 {
@@ -706,6 +848,7 @@ fn build_scene(
                     }
                 }
             }
+            0
         }
         SceneName::StackAndSleep => {
             for index in 0..8 {
@@ -732,9 +875,77 @@ fn build_scene(
                     palette(index + 8),
                 )?;
             }
+            0
         }
-    }
-    Ok((world, visuals, [0.0, 0.0, 8.0, 5.0]))
+        SceneName::WaterAndRigid => {
+            add_body(
+                &mut world,
+                &mut visuals,
+                BodyDef::fixed()
+                    .with_position([2.0, -2.0])
+                    .with_angle(-0.18),
+                ShapeDef::rectangle([2.1, 0.16])
+                    .with_density(0.0)
+                    .with_friction(0.65)
+                    .with_restitution(0.0),
+                [0.14, 0.22, 0.34, 1.0],
+            )?;
+            for (index, (position, geometry)) in [
+                (
+                    [-4.2, 2.2],
+                    ShapeGeometry::Circle(physbox_sim::Circle { radius: 0.5 }),
+                ),
+                (
+                    [-2.8, 2.7],
+                    ShapeGeometry::Rectangle(physbox_sim::Rectangle {
+                        half_extents: [0.58, 0.46],
+                    }),
+                ),
+                (
+                    [0.2, 1.3],
+                    ShapeGeometry::Rectangle(physbox_sim::Rectangle {
+                        half_extents: [0.72, 0.38],
+                    }),
+                ),
+                (
+                    [3.2, 2.8],
+                    ShapeGeometry::Circle(physbox_sim::Circle { radius: 0.62 }),
+                ),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let shape = match geometry {
+                    ShapeGeometry::Circle(circle) => ShapeDef::circle(circle.radius),
+                    ShapeGeometry::Rectangle(rectangle) => {
+                        ShapeDef::rectangle(rectangle.half_extents)
+                    }
+                }
+                .with_density(0.9)
+                .with_friction(0.52)
+                .with_restitution(0.02);
+                add_body(
+                    &mut world,
+                    &mut visuals,
+                    BodyDef::dynamic()
+                        .with_position(position)
+                        .with_angle((index as f32 - 1.5) * 0.09),
+                    shape,
+                    palette(index + 2),
+                )?;
+            }
+            let particles = ParticleSystemDef::water(4_096)
+                .with_region(ParticleRegionDef::rectangle([-6.5, -4.0], [-1.2, 1.0], 0.1));
+            let count = particles
+                .initial_particle_count()
+                .map_err(|error| error.to_string())?;
+            world
+                .set_particle_system(particles)
+                .map_err(|error| error.to_string())?;
+            count
+        }
+    };
+    Ok((world, visuals, [0.0, 0.0, 8.0, 5.0], initial_particle_count))
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -800,6 +1011,10 @@ mod tests {
         assert_eq!(
             SceneName::parse(STACK_AND_SLEEP).unwrap().slug(),
             STACK_AND_SLEEP
+        );
+        assert_eq!(
+            SceneName::parse(WATER_AND_RIGID).unwrap().slug(),
+            WATER_AND_RIGID
         );
         assert!(SceneName::parse("liquid-sandbox").is_err());
     }

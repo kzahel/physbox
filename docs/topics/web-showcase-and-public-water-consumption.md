@@ -1,6 +1,8 @@
 # Web showcase and public water consumption
 
-Status: decided 2026-07-28; implementation tracked by S38 and S39.
+Status: decided and implemented locally 2026-07-28. S38 is complete; S39's
+public authoring, particle observation, and showcase consumption are
+implemented, with cross-host qualification still active.
 
 This topic defines the first-party PhysBox Web Showcase, its relationship to
 the existing workbench and Quest consumer, and the minimum public particle

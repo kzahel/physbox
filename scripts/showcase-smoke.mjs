@@ -128,6 +128,16 @@ try {
   await page.waitForFunction(() => !globalThis.__physboxShowcase?.dragging, null, {
     timeout: 5_000,
   });
+
+  await page.locator("#scene-select").selectOption("water-and-rigid");
+  await page.waitForFunction(
+    () =>
+      globalThis.__physboxShowcase?.scene === "water-and-rigid" &&
+      globalThis.__physboxShowcase.particleCount > 2_000 &&
+      globalThis.__physboxShowcase.fixedSteps >= 90,
+    null,
+    { timeout: 30_000 },
+  );
   await page.screenshot({ path: screenshot, fullPage: true });
 
   state = await page.evaluate(() => globalThis.__physboxShowcase);
