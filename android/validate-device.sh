@@ -47,6 +47,10 @@ if [[ "$SKIP_BUILD" -eq 0 ]]; then PHYSBOX5_ANDROID_ABI="$ABI" "$ANDROID_DIR/bui
 APK="$ANDROID_DIR/app/build/outputs/apk/debug/app-debug.apk"
 [[ -f "$APK" ]] || { echo "error: APK missing: $APK" >&2; exit 1; }
 "$ADB" -s "$SERIAL" install -r "$APK" >/dev/null
+# A cold package manager can emit its install-completion force-stop shortly
+# after `adb install` returns. Let that lifecycle settle before the explicit
+# validation stop/start sequence so it cannot terminate the fresh activity.
+sleep 2
 "$ADB" -s "$SERIAL" logcat -c
 "$ADB" -s "$SERIAL" shell am force-stop com.kzahel.physbox5
 STARTUP_ARGV="[\"--scenario\",\"$SCENARIO\",\"--frame-markers\",\"all\"]"
