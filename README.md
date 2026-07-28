@@ -3,6 +3,8 @@
 GPU-resident 2D rigid-body and preview-water physics for Rust, `wgpu`, and
 WebGPU.
 
+**[Open the live WebGPU demo](https://physbox5.kzahel.com/)**
+
 PhysBox keeps authoritative simulation state and mechanics on the GPU. A Rust
 consumer supplies the WGPU device, queue, command encoders, submission, and
 rendering; `physbox-sim` supplies bounded world construction, fixed-step
@@ -54,8 +56,9 @@ IP over HTTP can load the page but generally cannot expose WebGPU; put the
 listener behind HTTPS when testing from another device. The showcase does not
 require `SharedArrayBuffer`, cross-origin isolation, or COOP/COEP headers.
 
-No public showcase URL is advertised yet. Repository visibility and GitHub
-Pages deployment are intentionally held for review.
+The live demo linked above is the advanced fullscreen workbench. The smaller
+standalone showcase described in this section does not have a public URL yet;
+repository visibility and GitHub Pages deployment remain held for review.
 
 ## Run the workbench
 

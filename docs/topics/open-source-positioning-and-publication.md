@@ -48,6 +48,10 @@ Public copy must be concrete about current scope:
 - an unstable pre-release API and preview-quality water; and
 - diagnostics and stress scenes that are not benchmark claims.
 
+The root README prominently links the existing public fullscreen WebGPU
+workbench at `https://physbox5.kzahel.com/`. That link does not imply that the
+standalone Web Showcase or its future GitHub Pages deployment is public.
+
 ## Repository and compatibility boundary
 
 The private GitHub repository may be renamed before publication. It must remain
