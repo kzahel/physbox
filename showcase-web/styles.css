@@ -164,6 +164,19 @@ select {
   width: 76px;
 }
 
+.sleep-toggle {
+  display: inline-flex;
+  height: 28px;
+  gap: 4px;
+  align-items: center;
+  padding: 0 4px;
+  color: var(--muted);
+}
+
+.sleep-toggle input {
+  margin: 0;
+}
+
 button {
   min-width: 54px;
   padding: 0 9px;
@@ -247,6 +260,11 @@ canvas {
   height: 100%;
   touch-action: none;
   cursor: default;
+}
+
+canvas:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -2px;
 }
 
 canvas[data-tool="drag"] {

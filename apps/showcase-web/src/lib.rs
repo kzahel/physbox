@@ -31,30 +31,32 @@ const STACK_AND_SLEEP: &str = "stack-and-sleep";
 #[cfg(any(target_arch = "wasm32", test))]
 const WATER_AND_RIGID: &str = "water-and-rigid";
 #[cfg(any(target_arch = "wasm32", test))]
+const RIGID_STRESS_1K: &str = "rigid-stress-1k";
+#[cfg(any(target_arch = "wasm32", test))]
 const RIGID_STRESS_2K: &str = "rigid-stress-2k";
 #[cfg(any(target_arch = "wasm32", test))]
 const RIGID_STRESS_5K: &str = "rigid-stress-5k";
 #[cfg(any(target_arch = "wasm32", test))]
 const RIGID_STRESS_10K: &str = "rigid-stress-10k";
 #[cfg(any(target_arch = "wasm32", test))]
-const RIGID_STRESS_20K: &str = "rigid-stress-20k";
+const WATER_STRESS_4K: &str = "water-stress-4k";
 #[cfg(any(target_arch = "wasm32", test))]
-const RIGID_STRESS_50K: &str = "rigid-stress-50k";
+const WATER_STRESS_8K: &str = "water-stress-8k";
 #[cfg(any(target_arch = "wasm32", test))]
-const WATER_STRESS: &str = "water-stress";
-
+const WATER_STRESS_16K: &str = "water-stress-16k";
 #[cfg(any(target_arch = "wasm32", test))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum SceneName {
     Playground,
     StackAndSleep,
     WaterAndRigid,
+    RigidStress1k,
     RigidStress2k,
     RigidStress5k,
     RigidStress10k,
-    RigidStress20k,
-    RigidStress50k,
-    WaterStress,
+    WaterStress4k,
+    WaterStress8k,
+    WaterStress16k,
 }
 
 #[cfg(any(target_arch = "wasm32", test))]
@@ -64,12 +66,13 @@ impl SceneName {
             PLAYGROUND => Ok(Self::Playground),
             STACK_AND_SLEEP => Ok(Self::StackAndSleep),
             WATER_AND_RIGID => Ok(Self::WaterAndRigid),
+            RIGID_STRESS_1K => Ok(Self::RigidStress1k),
             RIGID_STRESS_2K => Ok(Self::RigidStress2k),
             RIGID_STRESS_5K => Ok(Self::RigidStress5k),
             RIGID_STRESS_10K => Ok(Self::RigidStress10k),
-            RIGID_STRESS_20K => Ok(Self::RigidStress20k),
-            RIGID_STRESS_50K => Ok(Self::RigidStress50k),
-            WATER_STRESS => Ok(Self::WaterStress),
+            WATER_STRESS_4K => Ok(Self::WaterStress4k),
+            WATER_STRESS_8K => Ok(Self::WaterStress8k),
+            WATER_STRESS_16K => Ok(Self::WaterStress16k),
             _ => Err(format!("unknown showcase scene {value:?}")),
         }
     }
@@ -79,26 +82,38 @@ impl SceneName {
             Self::Playground => PLAYGROUND,
             Self::StackAndSleep => STACK_AND_SLEEP,
             Self::WaterAndRigid => WATER_AND_RIGID,
+            Self::RigidStress1k => RIGID_STRESS_1K,
             Self::RigidStress2k => RIGID_STRESS_2K,
             Self::RigidStress5k => RIGID_STRESS_5K,
             Self::RigidStress10k => RIGID_STRESS_10K,
-            Self::RigidStress20k => RIGID_STRESS_20K,
-            Self::RigidStress50k => RIGID_STRESS_50K,
-            Self::WaterStress => WATER_STRESS,
+            Self::WaterStress4k => WATER_STRESS_4K,
+            Self::WaterStress8k => WATER_STRESS_8K,
+            Self::WaterStress16k => WATER_STRESS_16K,
         }
     }
 
     const fn authors_water(self) -> bool {
-        matches!(self, Self::WaterAndRigid | Self::WaterStress)
+        matches!(
+            self,
+            Self::WaterAndRigid | Self::WaterStress4k | Self::WaterStress8k | Self::WaterStress16k
+        )
     }
 
     const fn rigid_stress_body_count(self) -> Option<u32> {
         match self {
+            Self::RigidStress1k => Some(1_000),
             Self::RigidStress2k => Some(2_000),
             Self::RigidStress5k => Some(5_000),
             Self::RigidStress10k => Some(10_000),
-            Self::RigidStress20k => Some(20_000),
-            Self::RigidStress50k => Some(50_000),
+            _ => None,
+        }
+    }
+
+    const fn water_stress_capacity(self) -> Option<u32> {
+        match self {
+            Self::WaterStress4k => Some(4_096),
+            Self::WaterStress8k => Some(8_192),
+            Self::WaterStress16k => Some(16_384),
             _ => None,
         }
     }
@@ -122,16 +137,17 @@ impl ShowcaseConfig {
 
     const fn for_scene(name: SceneName) -> Self {
         let body_capacity = match name {
+            SceneName::RigidStress1k => WorldCapacity::Slots1000,
             SceneName::RigidStress2k => WorldCapacity::Slots2000,
             SceneName::RigidStress5k => WorldCapacity::Slots5000,
             SceneName::RigidStress10k => WorldCapacity::Slots10000,
-            SceneName::RigidStress20k => WorldCapacity::Slots20000,
-            SceneName::RigidStress50k => WorldCapacity::Slots50000,
             _ => Self::DEFAULT.body_capacity,
         };
         Self {
             body_capacity,
-            particle_capacity: if name.authors_water() {
+            particle_capacity: if let Some(capacity) = name.water_stress_capacity() {
+                Some(capacity)
+            } else if name.authors_water() {
                 Some(4_096)
             } else {
                 None
@@ -148,20 +164,18 @@ impl ShowcaseConfig {
             2_000 => WorldCapacity::Slots2000,
             5_000 => WorldCapacity::Slots5000,
             10_000 => WorldCapacity::Slots10000,
-            20_000 => WorldCapacity::Slots20000,
-            50_000 => WorldCapacity::Slots50000,
             _ => {
                 return Err(format!(
-                    "showcase body capacity must be 64, 256, 1000, 2000, 5000, 10000, 20000, or 50000; got {body_capacity}"
+                    "showcase body capacity must be 64, 256, 1000, 2000, 5000, or 10000; got {body_capacity}"
                 ));
             }
         };
         let particle_capacity = match particle_capacity {
             0 => None,
-            4_096 | 8_192 | 16_384 => Some(particle_capacity),
+            4_096 | 8_192 | 16_384 | 32_768 => Some(particle_capacity),
             _ => {
                 return Err(format!(
-                    "showcase water capacity must be None, 4096, 8192, or 16384; got {particle_capacity}"
+                    "showcase water capacity must be None, 4096, 8192, 16384, or 32768; got {particle_capacity}"
                 ));
             }
         };
@@ -697,7 +711,7 @@ impl Scene {
         if let Some(target) = self.pending_water_target.take() {
             match self
                 .world
-                .queue_particle_emission(ParticleEmissionDef::water_circle(target, 0.28))
+                .queue_particle_emission(ParticleEmissionDef::water_circle(target, 0.4))
             {
                 Ok(_) => self.tool_notice = None,
                 Err(error) => self.tool_notice = Some(error.to_string()),
@@ -843,6 +857,7 @@ struct BodyRenderer {
     bind_group: wgpu::BindGroup,
     pipeline: wgpu::RenderPipeline,
     capacity: u32,
+    sleep_visualization: bool,
     particles: Option<ParticleRenderer>,
 }
 
@@ -951,8 +966,17 @@ impl BodyRenderer {
             bind_group,
             pipeline,
             capacity: observation.capacity(),
+            sleep_visualization: true,
             particles,
         }
+    }
+
+    fn set_sleep_visualization(&mut self, enabled: bool) {
+        self.sleep_visualization = enabled;
+    }
+
+    const fn sleep_visualization(&self) -> bool {
+        self.sleep_visualization
     }
 
     fn write_visual(&self, queue: &wgpu::Queue, slot: u32, visual: ShapeVisual) {
@@ -981,7 +1005,7 @@ impl BodyRenderer {
                     self.particles
                         .as_ref()
                         .map_or(0.0, |particles| particles.radius),
-                    0.0,
+                    if self.sleep_visualization { 1.0 } else { 0.0 },
                     0.0,
                     0.0,
                 ],
@@ -1266,6 +1290,11 @@ impl ShowcaseApp {
         );
     }
 
+    #[wasm_bindgen(js_name = setSleepVisualization)]
+    pub fn set_sleep_visualization(&mut self, enabled: bool) {
+        self.scene.renderer.set_sleep_visualization(enabled);
+    }
+
     #[wasm_bindgen(getter)]
     pub fn scene(&self) -> String {
         self.scene.name.slug().to_owned()
@@ -1359,6 +1388,11 @@ impl ShowcaseApp {
     #[wasm_bindgen(getter, js_name = waterAvailable)]
     pub fn water_available(&self) -> bool {
         self.scene.config.particle_capacity.is_some()
+    }
+
+    #[wasm_bindgen(getter, js_name = sleepVisualization)]
+    pub fn sleep_visualization(&self) -> bool {
+        self.scene.renderer.sleep_visualization()
     }
 
     #[wasm_bindgen(getter, js_name = cameraCenterX)]
@@ -1480,32 +1514,37 @@ pub async fn start(canvas: HtmlCanvasElement, scene_name: String) -> Result<Show
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct RigidStressLayout {
     target_bodies: u32,
+    stack_count: u32,
+    dynamic_bodies: u32,
     columns: u32,
     rows: u32,
     lower: [f32; 2],
     upper: [f32; 2],
-    half_size: f32,
 }
 
 #[cfg(any(target_arch = "wasm32", test))]
 fn rigid_stress_layout(target_bodies: u32) -> RigidStressLayout {
     const BOUNDARY_BODIES: u32 = 3;
-    let dynamic_bodies = target_bodies.saturating_sub(BOUNDARY_BODIES);
+    const MAX_DYNAMIC_BODIES_PER_STACK: u32 = 5;
+    let field_bodies = target_bodies.saturating_sub(BOUNDARY_BODIES);
+    let stack_count = field_bodies
+        .div_ceil(MAX_DYNAMIC_BODIES_PER_STACK + 1)
+        .max(1);
+    let dynamic_bodies = field_bodies.saturating_sub(stack_count);
     let lower = [-14.0, -8.6];
     let upper = [14.0, 8.8];
     let width = upper[0] - lower[0];
     let height = upper[1] - lower[1];
-    let columns = ((dynamic_bodies as f32 * width / height).sqrt().ceil() as u32).max(1);
-    let rows = dynamic_bodies.div_ceil(columns).max(1);
-    let step_x = width / columns as f32;
-    let step_y = height / rows as f32;
+    let columns = ((stack_count as f32 * width / height).sqrt().ceil() as u32).max(1);
+    let rows = stack_count.div_ceil(columns).max(1);
     RigidStressLayout {
         target_bodies,
+        stack_count,
+        dynamic_bodies,
         columns,
         rows,
         lower,
         upper,
-        half_size: step_x.min(step_y) * 0.38,
     }
 }
 
@@ -1538,7 +1577,7 @@ fn build_scene(
             layout.target_bodies
         ));
     }
-    let water_stress_region = if name == SceneName::WaterStress {
+    let water_stress_region = if name.water_stress_capacity().is_some() {
         config.particle_capacity.map(water_stress_region)
     } else {
         None
@@ -1751,38 +1790,67 @@ fn build_scene(
                 0
             }
         }
-        SceneName::RigidStress2k
+        SceneName::RigidStress1k
+        | SceneName::RigidStress2k
         | SceneName::RigidStress5k
-        | SceneName::RigidStress10k
-        | SceneName::RigidStress20k
-        | SceneName::RigidStress50k => {
+        | SceneName::RigidStress10k => {
             let layout = rigid_stress_layout.expect("rigid stress layout was computed above");
-            let dynamic_count = layout
-                .target_bodies
-                .saturating_sub(world.counters().live_bodies);
-            let step_x = (layout.upper[0] - layout.lower[0]) / layout.columns as f32;
-            let step_y = (layout.upper[1] - layout.lower[1]) / layout.rows as f32;
-            for index in 0..dynamic_count {
-                let column = index % layout.columns;
-                let row = index / layout.columns;
-                let position = [
-                    layout.lower[0] + (column as f32 + 0.5) * step_x,
-                    layout.lower[1] + (row as f32 + 0.5) * step_y,
+            let cell_width = (layout.upper[0] - layout.lower[0]) / layout.columns as f32;
+            let cell_height = (layout.upper[1] - layout.lower[1]) / layout.rows as f32;
+            let platform_half_extents = [cell_width * 0.38, cell_height * 0.028];
+            let dynamic_half_extents = [cell_width * 0.3, cell_height * 0.065];
+            let base_stack_height = layout.dynamic_bodies / layout.stack_count;
+            let taller_stack_count = layout.dynamic_bodies % layout.stack_count;
+            let mut authored_dynamics = 0u32;
+            for stack_index in 0..layout.stack_count {
+                let column = stack_index % layout.columns;
+                let row = stack_index / layout.columns;
+                let cell_lower = [
+                    layout.lower[0] + column as f32 * cell_width,
+                    layout.lower[1] + row as f32 * cell_height,
+                ];
+                let platform_position = [
+                    cell_lower[0] + cell_width * 0.5,
+                    cell_lower[1] + cell_height * 0.08,
                 ];
                 add_body(
                     &mut world,
                     &mut visuals,
-                    BodyDef::dynamic().with_position(position),
-                    ShapeDef::rectangle([layout.half_size, layout.half_size])
-                        .with_density(0.8)
-                        .with_friction(0.5)
+                    BodyDef::fixed().with_position(platform_position),
+                    ShapeDef::rectangle(platform_half_extents)
+                        .with_density(0.0)
+                        .with_friction(0.65)
                         .with_restitution(0.0),
-                    palette(index as usize),
+                    [0.15, 0.21, 0.29, 1.0],
                 )?;
+                let bodies_in_stack =
+                    base_stack_height + u32::from(stack_index < taller_stack_count);
+                let platform_top = platform_position[1] + platform_half_extents[1];
+                for level in 0..bodies_in_stack {
+                    let position = [
+                        platform_position[0],
+                        platform_top
+                            + dynamic_half_extents[1]
+                            + level as f32 * dynamic_half_extents[1] * 2.0,
+                    ];
+                    add_body(
+                        &mut world,
+                        &mut visuals,
+                        BodyDef::dynamic().with_position(position),
+                        ShapeDef::rectangle(dynamic_half_extents)
+                            .with_density(0.8)
+                            .with_friction(0.65)
+                            .with_restitution(0.0),
+                        palette(authored_dynamics as usize),
+                    )?;
+                    authored_dynamics += 1;
+                }
             }
+            debug_assert_eq!(authored_dynamics, layout.dynamic_bodies);
+            debug_assert_eq!(world.counters().live_bodies, layout.target_bodies);
             0
         }
-        SceneName::WaterStress => {
+        SceneName::WaterStress4k | SceneName::WaterStress8k | SceneName::WaterStress16k => {
             let (lower, upper, expected_count) =
                 water_stress_region.unwrap_or(([-6.5, -4.0], [6.5, 1.0], 0));
             let water_width = upper[0] - lower[0];
@@ -1930,18 +1998,30 @@ mod tests {
             WATER_AND_RIGID
         );
         assert_eq!(
+            SceneName::parse(RIGID_STRESS_1K)
+                .unwrap()
+                .rigid_stress_body_count(),
+            Some(1_000)
+        );
+        assert_eq!(
             SceneName::parse(RIGID_STRESS_2K).unwrap().slug(),
             RIGID_STRESS_2K
         );
         assert_eq!(
-            SceneName::parse(RIGID_STRESS_50K)
+            SceneName::parse(RIGID_STRESS_10K)
                 .unwrap()
                 .rigid_stress_body_count(),
-            Some(50_000)
+            Some(10_000)
         );
-        assert_eq!(SceneName::parse(WATER_STRESS).unwrap().slug(), WATER_STRESS);
-        assert!(!SceneName::RigidStress20k.authors_water());
-        assert!(SceneName::WaterStress.authors_water());
+        assert_eq!(
+            SceneName::parse(WATER_STRESS_16K)
+                .unwrap()
+                .water_stress_capacity(),
+            Some(16_384)
+        );
+        assert!(!SceneName::RigidStress10k.authors_water());
+        assert!(SceneName::WaterStress16k.authors_water());
+        assert!(SceneName::parse("water-stress-32k").is_err());
         assert!(SceneName::parse("liquid-sandbox").is_err());
     }
 
@@ -1959,16 +2039,26 @@ mod tests {
             ShowcaseConfig::DEFAULT
         );
         assert_eq!(
-            ShowcaseConfig::for_scene(SceneName::RigidStress50k)
+            ShowcaseConfig::for_scene(SceneName::RigidStress1k)
                 .body_capacity
                 .slots(),
-            50_000
+            1_000
         );
         assert_eq!(
-            ShowcaseConfig::parse(50_000, 8_192, 30).unwrap(),
+            ShowcaseConfig::for_scene(SceneName::RigidStress10k)
+                .body_capacity
+                .slots(),
+            10_000
+        );
+        assert_eq!(
+            ShowcaseConfig::for_scene(SceneName::WaterStress16k).particle_capacity,
+            Some(16_384)
+        );
+        assert_eq!(
+            ShowcaseConfig::parse(10_000, 32_768, 30).unwrap(),
             ShowcaseConfig {
-                body_capacity: WorldCapacity::Slots50000,
-                particle_capacity: Some(8_192),
+                body_capacity: WorldCapacity::Slots10000,
+                particle_capacity: Some(32_768),
                 physics_hz: 30,
             }
         );
@@ -1980,7 +2070,8 @@ mod tests {
         assert!(ShowcaseConfig::parse(256, 1_024, 60).is_err());
         assert!(ShowcaseConfig::parse(256, 8_192, 120).is_err());
         assert!(ShowcaseConfig::parse(256, 8_192, 90).is_err());
-        for capacity in [4_096, 8_192, 16_384] {
+        assert!(ShowcaseConfig::parse(20_000, 8_192, 30).is_err());
+        for capacity in [4_096, 8_192, 16_384, 32_768] {
             let (lower, upper, count) = water_stress_region(capacity);
             assert!(count <= capacity * 4 / 5);
             assert!(count >= capacity * 79 / 100);
@@ -1991,11 +2082,13 @@ mod tests {
 
     #[test]
     fn rigid_stress_variants_are_exact_bounded_and_spatially_inspectable() {
-        for target in [2_000, 5_000, 10_000, 20_000, 50_000] {
+        for target in [1_000, 2_000, 5_000, 10_000] {
             let layout = rigid_stress_layout(target);
             assert_eq!(layout.target_bodies, target);
-            assert!(layout.columns * layout.rows >= target - 3);
-            assert!(layout.half_size > 0.0);
+            assert_eq!(3 + layout.stack_count + layout.dynamic_bodies, target);
+            assert!(layout.dynamic_bodies >= target * 4 / 5);
+            assert!(layout.dynamic_bodies <= layout.stack_count * 5);
+            assert!(layout.columns * layout.rows >= layout.stack_count);
             assert!(layout.lower[0] >= -16.0 && layout.lower[1] >= -10.0);
             assert!(layout.upper[0] <= 16.0 && layout.upper[1] <= 24.0);
         }

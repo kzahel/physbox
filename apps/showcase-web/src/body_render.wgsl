@@ -68,7 +68,8 @@ fn body_vertex(
     );
     let world = body.pose.xy + rotated;
     let clip = (world - params.camera.xy) / max(params.camera.zw, vec2f(0.0001));
-    let sleeping = (body.identity.y & BODY_SLEEPING) != 0u;
+    let sleeping = (body.identity.y & BODY_SLEEPING) != 0u
+        && params.material.y > 0.5;
     let color = select(shape.color, mix(shape.color, vec4f(0.45, 0.53, 0.62, 1.0), 0.45), sleeping);
     return VertexOutput(
         vec4f(clip, 0.0, 1.0),

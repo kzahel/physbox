@@ -228,22 +228,18 @@ pub enum WorldCapacity {
     Slots2000,
     Slots5000,
     Slots10000,
-    Slots20000,
-    Slots50000,
 }
 
 impl WorldCapacity {
     /// Every public fixed-capacity tier, including opt-in large-scale
     /// consumer tiers.
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 6] = [
         Self::Slots64,
         Self::Slots256,
         Self::Slots1000,
         Self::Slots2000,
         Self::Slots5000,
         Self::Slots10000,
-        Self::Slots20000,
-        Self::Slots50000,
     ];
 
     /// The compact cross-host workbench/launch menu. Larger public consumers
@@ -263,8 +259,6 @@ impl WorldCapacity {
             Self::Slots2000 => 2_000,
             Self::Slots5000 => 5_000,
             Self::Slots10000 => 10_000,
-            Self::Slots20000 => 20_000,
-            Self::Slots50000 => 50_000,
         }
     }
 
@@ -276,8 +270,6 @@ impl WorldCapacity {
             Self::Slots2000 => "2K SLOTS",
             Self::Slots5000 => "5K SLOTS",
             Self::Slots10000 => "10K SLOTS",
-            Self::Slots20000 => "20K SLOTS",
-            Self::Slots50000 => "50K SLOTS",
         }
     }
 }
@@ -353,7 +345,7 @@ mod tests {
         assert_eq!(WorldCapacity::default().slots(), 64);
         assert_eq!(
             WorldCapacity::ALL.map(WorldCapacity::slots),
-            [64, 256, 1_000, 2_000, 5_000, 10_000, 20_000, 50_000]
+            [64, 256, 1_000, 2_000, 5_000, 10_000]
         );
         assert_eq!(
             WorldCapacity::PRODUCT_PRESETS.map(WorldCapacity::slots),

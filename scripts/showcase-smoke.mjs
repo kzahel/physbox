@@ -76,15 +76,55 @@ try {
     state.liveBodies !== 8 ||
     state.bodyCapacity !== 256 ||
     state.particleCapacity !== 4096 ||
-    !state.waterAvailable
+    !state.waterAvailable ||
+    !state.sleepVisualization ||
+    !(await page.locator("#sleep-visuals-input").isChecked())
   ) {
     throw new Error(`invalid default water state: ${JSON.stringify(state)}`);
+  }
+  const sceneOptions = await page
+    .locator("#scene-select option")
+    .evaluateAll((options) => options.map((option) => option.value));
+  for (const scene of [
+    "rigid-stress-1k",
+    "rigid-stress-2k",
+    "rigid-stress-5k",
+    "rigid-stress-10k",
+  ]) {
+    if (!sceneOptions.includes(scene)) {
+      throw new Error(`showcase scene catalog is missing ${scene}`);
+    }
+  }
+  if (sceneOptions.includes("rigid-stress-20k") || sceneOptions.includes("rigid-stress-50k")) {
+    throw new Error(`showcase retains rejected rigid stress tiers: ${sceneOptions}`);
   }
   const physicsOptions = await page
     .locator("#physics-select option")
     .evaluateAll((options) => options.map((option) => option.value));
   if (JSON.stringify(physicsOptions) !== JSON.stringify(["30", "60"])) {
     throw new Error(`unexpected physics options: ${JSON.stringify(physicsOptions)}`);
+  }
+  const bodyCapacityOptions = await page
+    .locator("#body-capacity-select option")
+    .evaluateAll((options) => options.map((option) => option.value));
+  if (
+    JSON.stringify(bodyCapacityOptions) !==
+    JSON.stringify(["64", "256", "1000", "2000", "5000", "10000"])
+  ) {
+    throw new Error(
+      `unexpected body capacity options: ${JSON.stringify(bodyCapacityOptions)}`,
+    );
+  }
+  const waterCapacityOptions = await page
+    .locator("#water-capacity-select option")
+    .evaluateAll((options) => options.map((option) => option.value));
+  if (
+    JSON.stringify(waterCapacityOptions) !==
+    JSON.stringify(["0", "4096", "8192", "16384", "32768"])
+  ) {
+    throw new Error(
+      `unexpected water capacity options: ${JSON.stringify(waterCapacityOptions)}`,
+    );
   }
   if (
     (await page.locator('label[for="body-capacity-select"]').textContent()).trim() !==
@@ -154,10 +194,10 @@ try {
   );
   const waterBefore = (await currentState(page)).particleCount;
   await selectTool(page, "water");
-  await dragCanvas(page, [0.62, 0.25], [0.72, 0.34]);
+  await clickCanvas(page, 0.67, 0.3);
   await waitForState(
     page,
-    (candidate, initial) => candidate.particleCount > initial,
+    (candidate, initial) => candidate.particleCount >= initial + 51,
     waterBefore,
   );
 
@@ -176,6 +216,28 @@ try {
     (candidate, pausedStep) => candidate.fixedSteps > pausedStep,
     afterPause,
   );
+
+  await page.locator("#sleep-visuals-input").uncheck();
+  await waitForState(page, (candidate) => !candidate.sleepVisualization);
+  await page.locator("#scene-select").selectOption("rigid-stress-1k");
+  await waitForState(
+    page,
+    (candidate) =>
+      candidate.scene === "rigid-stress-1k" &&
+      candidate.liveBodies === 1_000 &&
+      candidate.bodyCapacity === 1_000 &&
+      candidate.particleCapacity === 0 &&
+      !candidate.sleepVisualization &&
+      candidate.fixedSteps >= 2,
+  );
+  if (
+    (await page.locator("#body-capacity-select").inputValue()) !== "1000" ||
+    (await page.locator("#sleep-visuals-input").isChecked())
+  ) {
+    throw new Error("1K stress defaults or Sleep tint persistence are incorrect");
+  }
+  await page.locator("#sleep-visuals-input").check();
+  await waitForState(page, (candidate) => candidate.sleepVisualization);
 
   await page.locator("#scene-select").selectOption("rigid-stress-2k");
   await waitForState(
@@ -226,26 +288,81 @@ try {
       Math.abs(candidate.cameraHalfHeight - 10) < 0.001,
   );
 
-  await page.locator("#scene-select").selectOption("rigid-stress-50k");
+  const cameraBeforeArrow = await currentState(page);
+  await page.locator("#showcase-canvas").focus();
+  await page.keyboard.press("ArrowRight");
+  await waitForState(
+    page,
+    (candidate, initial) => candidate.cameraCenterX > initial.cameraCenterX + 0.1,
+    cameraBeforeArrow,
+  );
+  const cameraAfterArrow = await currentState(page);
+  await page.locator("#pause-button").focus();
+  await page.keyboard.press("ArrowLeft");
+  await page.waitForTimeout(50);
+  const cameraAfterButtonArrow = await currentState(page);
+  if (
+    cameraAfterButtonArrow.cameraCenterX !== cameraAfterArrow.cameraCenterX ||
+    cameraAfterButtonArrow.cameraCenterY !== cameraAfterArrow.cameraCenterY
+  ) {
+    throw new Error("arrow navigation intercepted a focused button");
+  }
+
+  await page.locator("#scene-select").selectOption("rigid-stress-10k");
   await waitForState(
     page,
     (candidate) =>
-      candidate.scene === "rigid-stress-50k" &&
-      candidate.liveBodies === 50_000 &&
-      candidate.bodyCapacity === 50_000 &&
+      candidate.scene === "rigid-stress-10k" &&
+      candidate.liveBodies === 10_000 &&
+      candidate.bodyCapacity === 10_000 &&
+      candidate.particleCapacity === 0 &&
       candidate.fixedSteps >= 2,
   );
   state = await currentState(page);
   if (
     state.fixedStepsThisFrame > 1 ||
     state.physicsHz !== 30 ||
-    state.particleCapacity !== 0 ||
     state.waterAvailable
   ) {
-    throw new Error(`invalid 50K stress state: ${JSON.stringify(state)}`);
+    throw new Error(`invalid 10K stress state: ${JSON.stringify(state)}`);
+  }
+
+  for (const [scene, capacity] of [
+    ["water-stress-4k", 4_096],
+    ["water-stress-8k", 8_192],
+    ["water-stress-16k", 16_384],
+  ]) {
+    console.log(`checking ${scene}`);
+    await page.locator("#scene-select").selectOption(scene);
+    await waitForState(
+      page,
+      (candidate, expected) =>
+        candidate.scene === expected.scene &&
+        candidate.bodyCapacity === 256 &&
+        candidate.liveBodies === 11 &&
+        candidate.particleCapacity === expected.capacity &&
+        candidate.particleCount >= Math.floor(expected.capacity * 0.79) &&
+        candidate.fixedSteps >= 2,
+      { scene, capacity },
+    );
+    console.log(`advanced ${scene}`);
+    if ((await page.locator("#water-capacity-select").inputValue()) !== String(capacity)) {
+      throw new Error(`${scene} did not select its exact Max water tier`);
+    }
+  }
+
+  state = await currentState(page);
+  if (
+    state.fixedStepsThisFrame > 1 ||
+    state.physicsHz !== 30 ||
+    state.scene !== "water-stress-16k" ||
+    state.particleCapacity !== 16_384 ||
+    !state.waterAvailable
+  ) {
+    throw new Error(`invalid 16K water stress state: ${JSON.stringify(state)}`);
   }
   const status = await page.locator("#status-text").textContent();
-  for (const field of ["FPS", "physics", "main", "bodies 50000/50000"]) {
+  for (const field of ["FPS", "physics", "main", "bodies 11/256", "water"]) {
     if (!status.includes(field)) {
       throw new Error(`showcase diagnostic line is missing ${field}: ${status}`);
     }

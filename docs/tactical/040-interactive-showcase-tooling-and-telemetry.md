@@ -1,10 +1,13 @@
 # S40 — Interactive showcase tooling and telemetry
 
-Status: active 2026-07-28. Two automated checkpoints passed. Human review now
-caps public rigid stress at 10K, reopens the existing 32K particle frontier as
-an explicit Water stress tier, requires click-only Water placement, and adds
-keyboard camera navigation. Publication and the lower-value presentation
-experiments listed below remain held.
+Status: complete 2026-07-28. Human review accepted the compact showcase after
+three bounded revision passes. Public rigid stress ends at 10K, one-click
+Water placement and keyboard camera navigation work, rigid stress scenes use
+independently settling stacks with optional sleep tint, and 16K is the largest
+authored Water stress scene. The 32K allocation option remains available for
+manual use, but its authored preset was rejected after repeated browser stalls.
+Publication and the lower-value presentation experiments listed below remain
+held.
 
 Governing architecture:
 [web showcase and public water consumption](../topics/web-showcase-and-public-water-consumption.md).
@@ -270,7 +273,7 @@ Automated qualification checkpoint, 2026-07-28:
 - [x] Run the proportional maintained/public-consumer gates, refresh the
       secure Tailscale artifact, commit measured evidence, and stop at a new
       human checkpoint.
-- [ ] Review the revised secure artifact and decide whether S40 is complete.
+- [x] Review the revised secure artifact and decide whether S40 is complete.
 
 Gate: the revised UI remains compact above the fold, dry and water
 configuration is predictable, high-count scenes remain bounded and navigable,
@@ -322,53 +325,82 @@ Revised implementation and qualification checkpoint, 2026-07-28:
       state, the public observation, or adding a render pass.
 - [x] Keep configuration validation messages on a dedicated toolbar row so a
       long error cannot crowd or displace the compact controls.
-- [ ] Add a packaged regression in which one Water-tool click, with no pointer
+- [x] Add a packaged regression in which one Water-tool click, with no pointer
       movement, visibly increases live particles after an admitted step.
       Correct any input/coalescing or visibility issue exposed by that exact
       path without forcing a physics step or weakening zero-or-one pacing.
-- [ ] Remove Rigid stress 20K and 50K from the showcase and remove the public
+- [x] Remove Rigid stress 20K and 50K from the showcase and remove the public
       20K/50K capacity variants added only for those scenes. Retain exact
       Rigid stress 2K/5K/10K and the unchanged four workbench product presets.
-- [ ] Replace the single Water stress scene with explicit 4K/8K/16K/32K
-      variants whose selected `Max water` tier is applied on scene selection.
-- [ ] Restore 32,768 as a showcase water option under the existing public
+- [x] Replace the single Water stress scene with explicit 4K/8K/16K variants
+      whose selected `Max water` tier is applied on scene selection.
+- [x] Restore 32,768 as a showcase water option under the existing public
       particle limit and rerun the cold Browser WebGPU frontier. Preserve the
       earlier 90-second miss as historical evidence rather than silently
       deleting it.
-- [ ] Let ArrowLeft/Right/Up/Down pan the consumer camera when ordinary page
+- [x] Let ArrowLeft/Right/Up/Down pan the consumer camera when ordinary page
       controls are not handling the key. Preserve select/button keyboard
       behavior and physics state.
-- [ ] Requalify the packaged browser path, maintained/public-consumer gates,
+- [x] Requalify the packaged browser path, maintained/public-consumer gates,
       secure artifact, and laptop capture; record exact 32K results and stop
       for human review.
 
-Gate: a stationary Water click works, rigid showcase scope ends at 10K, all
-four water stress tiers are selectable and bounded, arrow navigation is
-non-mechanical, and 32K remains a diagnostic stress frontier rather than a
-performance or quality claim.
+Gate: a stationary Water click works, rigid showcase scope ends at 10K, the
+4K/8K/16K Water stress tiers are selectable and bounded, arrow navigation is
+non-mechanical, and 32K remains a manual capacity frontier rather than a
+one-click stress scene or performance/quality claim.
 
 ### S40.9 — Settling stress scenes and sleep legibility
 
-- [ ] Add an exact Rigid stress 1K scene using the existing public 1K world
+- [x] Add an exact Rigid stress 1K scene using the existing public 1K world
       capacity.
-- [ ] Re-author every rigid stress tier as many isolated stacks of at most
+- [x] Re-author every rigid stress tier as many isolated stacks of at most
       five dynamic bodies on fixed pads. Preserve the exact named live-body
       count and at least 80 percent dynamic bodies, but avoid turning one
       persistently unquiet body into a blocker for the entire default exact
       contact component.
-- [ ] Add a compact, default-on `Sleep tint` checkbox that changes only the
+- [x] Add a compact, default-on `Sleep tint` checkbox that changes only the
       showcase renderer's use of the public sleeping flag. It must not toggle
       engine sleeping, configuration, stepping, or physics state.
-- [ ] Qualify exact construction, reset/tool behavior, toggle persistence
+- [x] Qualify exact construction, reset/tool behavior, toggle persistence
       across scene rebuilds, and visible settling in Browser WebGPU without a
       synchronous observation readback.
-- [ ] Commit the bounded slice and return to the unresolved 32K Water stress
-      product checkpoint.
+- [x] Commit the bounded slice and resolve the 32K Water stress product
+      checkpoint without exposing a preset that repeatedly stalls.
 
 Gate: 1K/2K/5K/10K retain exact named capacity, rigid stress is predominantly
 dynamic but partitioned into qualified small settling structures, and the
 sleep control is unambiguously a visualization toggle rather than a mechanics
 toggle.
+
+Final showcase checkpoint, 2026-07-28:
+
+- Exact 1K/2K/5K/10K stress layouts reserve three boundary bodies, then split
+  the field across one fixed pad per stack and at most five dynamics per pad.
+  The resulting scenes retain exact named occupancy and more than 80 percent
+  dynamic bodies while no single exact sleep component spans the full field.
+- Browser captures at 2K visibly distinguish the default muted sleep tint
+  from original body colors. The checkbox persists across scene rebuilds and
+  changes only the render parameter derived from the existing public sleeping
+  observation.
+- The 32K allocation option remains accepted by configuration and usable for
+  manually emitted water. Two cold authored 32K stress attempts failed to
+  advance two frames within a 180-second bound on the development browser, so
+  the one-click scene was removed. The maximum authored Water stress scene is
+  16K.
+- Packaged Browser WebGPU run
+  `a79a8b90-9512-48d6-ad57-01d9abf07ff1` passed exact construction, stationary
+  Water click, reset/tool state, camera navigation, sleep-tint persistence,
+  rigid 1K and 10K, and Water stress 4K/8K/16K with no page or console errors.
+  It ended at 13,104/16,384 live particles after 12 fixed steps. The focused
+  showcase Rust tests also passed.
+- `npm run test:fast` passed in 29.54 seconds, including maintained Browser
+  WebGPU run `d4cf6e97-c8fe-4081-8c29-73bddbdaed30`; production
+  warnings-denied clippy and the ARM64 Android check passed. All 20 sibling
+  Quest consumer tests also passed against the final public capacity surface.
+- Human review judged the demo sufficient to move on to private
+  open-source preparation. S40 is complete; publication remains a separate
+  explicit checkpoint.
 
 ## Stop conditions
 

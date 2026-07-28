@@ -21,9 +21,15 @@ const scenes = {
     defaultBodies: 256,
     defaultWater: 4096,
   },
+  "rigid-stress-1k": {
+    title: "Rigid stress 1K",
+    description: "Authors exactly 1,000 bodies in independent settling stacks.",
+    defaultBodies: 1000,
+    defaultWater: 0,
+  },
   "rigid-stress-2k": {
     title: "Rigid stress 2K",
-    description: "Authors exactly 2,000 bodies; raise Max bodies for placement headroom.",
+    description: "Authors exactly 2,000 bodies in independent settling stacks.",
     defaultBodies: 2000,
     defaultWater: 0,
   },
@@ -39,23 +45,23 @@ const scenes = {
     defaultBodies: 10000,
     defaultWater: 0,
   },
-  "rigid-stress-20k": {
-    title: "Rigid stress 20K",
-    description: "Heavy: authors exactly 20,000 bodies in a navigable packed field.",
-    defaultBodies: 20000,
-    defaultWater: 0,
-  },
-  "rigid-stress-50k": {
-    title: "Rigid stress 50K",
-    description: "Heavy: authors exactly 50,000 bodies; live numbers are diagnostic only.",
-    defaultBodies: 50000,
-    defaultWater: 0,
-  },
-  "water-stress": {
-    title: "Water stress",
-    description: "Fills about 80% of the selected water tier with coupled rigid shapes.",
+  "water-stress-4k": {
+    title: "Water stress 4K",
+    description: "Fills about 80% of the 4K water tier with coupled rigid shapes.",
     defaultBodies: 256,
     defaultWater: 4096,
+  },
+  "water-stress-8k": {
+    title: "Water stress 8K",
+    description: "Fills about 80% of the 8K water tier with coupled rigid shapes.",
+    defaultBodies: 256,
+    defaultWater: 8192,
+  },
+  "water-stress-16k": {
+    title: "Water stress 16K",
+    description: "Heavy: fills about 80% of the 16K water tier.",
+    defaultBodies: 256,
+    defaultWater: 16384,
   },
 };
 
@@ -66,6 +72,7 @@ const waterToolButton = document.querySelector("#tool-water");
 const bodyCapacitySelect = document.querySelector("#body-capacity-select");
 const waterCapacitySelect = document.querySelector("#water-capacity-select");
 const physicsSelect = document.querySelector("#physics-select");
+const sleepVisualsInput = document.querySelector("#sleep-visuals-input");
 const sceneHeading = document.querySelector("#scene-heading");
 const sceneDescription = document.querySelector("#scene-description");
 const sceneHint = document.querySelector("#scene-hint");
@@ -81,6 +88,7 @@ let failed = false;
 let configDirty = false;
 let pointerActive = false;
 let selectedTool = "drag";
+let sleepVisualization = true;
 let lastPointer = null;
 let frameTimes = [];
 let mainThreadMs = 0;
@@ -102,8 +110,10 @@ async function boot() {
   updateSceneCopy(scene);
   resizeCanvas();
   app = await start(canvas, scene);
+  app.setSleepVisualization(sleepVisualization);
   installControls();
   installPointerInput();
+  installKeyboardInput();
   updateToolAvailability();
   updateHint();
   new ResizeObserver(resizeCanvas).observe(canvas);
@@ -140,6 +150,10 @@ function installControls() {
     updatePause();
   });
   resetButton.addEventListener("click", () => applyConfiguration(sceneSelect.value));
+  sleepVisualsInput.addEventListener("change", () => {
+    sleepVisualization = sleepVisualsInput.checked;
+    app.setSleepVisualization(sleepVisualization);
+  });
 }
 
 function installPointerInput() {
@@ -149,6 +163,7 @@ function installPointerInput() {
       event.preventDefault();
       if (name === "pointerdown") {
         pointerActive = true;
+        canvas.focus({ preventScroll: true });
         lastPointer = [xFromEvent(event), yFromEvent(event)];
         canvas.setPointerCapture(event.pointerId);
       }
@@ -189,6 +204,27 @@ function installPointerInput() {
   );
 }
 
+function installKeyboardInput() {
+  addEventListener("keydown", (event) => {
+    if (
+      event.defaultPrevented ||
+      ["INPUT", "SELECT", "BUTTON", "TEXTAREA"].includes(event.target?.tagName)
+    ) {
+      return;
+    }
+    const panByKey = {
+      ArrowLeft: [0.08, 0],
+      ArrowRight: [-0.08, 0],
+      ArrowUp: [0, 0.08],
+      ArrowDown: [0, -0.08],
+    };
+    const delta = panByKey[event.key];
+    if (!delta) return;
+    event.preventDefault();
+    app.panView(delta[0], delta[1]);
+  });
+}
+
 function applyConfiguration(scene) {
   try {
     app.configureAndReset(
@@ -197,6 +233,7 @@ function applyConfiguration(scene) {
       Number.parseInt(waterCapacitySelect.value, 10),
       Number.parseInt(physicsSelect.value, 10),
     );
+    app.setSleepVisualization(sleepVisualization);
   } catch (error) {
     configDirty = true;
     configState.textContent = error instanceof Error ? error.message : String(error);
@@ -289,6 +326,7 @@ function renderFrame(timestamp) {
       gpuTimingAvailable: app.gpuTimingAvailable,
       gpuTimingError: app.gpuTimingError ?? null,
       waterAvailable: app.waterAvailable,
+      sleepVisualization: app.sleepVisualization,
       tool: selectedTool,
       toolNotice: app.toolNotice ?? null,
       configDirty,

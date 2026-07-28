@@ -1,10 +1,11 @@
 # Web showcase and public water consumption
 
-Status: decided and locally qualified through S40's second automated
-checkpoint on 2026-07-28. Human review now caps rigid stress at 10K, reopens
-32K Water stress, requires stationary-click Water placement, and adds arrow-key
-camera navigation. GitHub Pages configuration, repository publication, and
-Box2D comparison remain deliberately held for separate review.
+Status: decided and locally qualified through completed S40 on 2026-07-28.
+Human review caps rigid stress at 10K, accepts 4K/8K/16K authored Water stress,
+requires stationary-click Water placement and arrow-key camera navigation,
+and retains 32K only as a manually configurable allocation frontier. GitHub
+Pages configuration, repository publication, and Box2D comparison remain
+deliberately held for separate review.
 
 This topic defines the first-party PhysBox Web Showcase, its relationship to
 the existing workbench and Quest consumer, and the minimum public particle
@@ -193,16 +194,17 @@ Two consumer-owned scenes extend the catalog:
   while allowing the default exact sleeping policy to settle independent
   components. Rigid stress above 10K is not part of the public showcase after
   direct human review.
-- **Water stress 4K/8K/16K/32K** fills approximately 80 percent of its named
+- **Water stress 4K/8K/16K** fills approximately 80 percent of its named
   particle capacity, while reserving slots for the water tool.
 
-The 10,000-body and 16,384/32,768-particle showcase tiers are explicit heavy
-options, not startup defaults. An earlier bounded cold Browser WebGPU check
-did not return its first 32K coupled stress frame within 90 seconds while 16K
-did advance. Human direction explicitly reopens 32K for a new measurement;
-the old miss remains evidence until superseded by a clean result. Stress
-scenes demonstrate bounded scale and overload behavior; they are not
-benchmark or quality claims.
+The 10,000-body and 16,384-particle authored showcase tiers are explicit heavy
+options, not startup defaults. The `Max water` control also retains 32,768 as
+a manual allocation option. An initial cold Browser WebGPU check did not
+return its first 32K coupled stress frame within 90 seconds; two later attempts
+did not advance two frames within 180 seconds. Because 16K did advance, the
+32K authored preset was rejected instead of exposing an attractive
+browser-stall trap. Stress scenes demonstrate bounded scale and overload
+behavior; they are not benchmark or quality claims.
 
 The showcase owns camera navigation. Pan and arrow keys change only the
 consumer camera, and wheel/trackpad zoom preserves the world point under the

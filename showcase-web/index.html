@@ -26,12 +26,13 @@
           <option value="playground">Playground</option>
           <option value="stack-and-sleep">Stack and sleep</option>
           <option value="water-and-rigid" selected>Water and rigid bodies</option>
+          <option value="rigid-stress-1k">Rigid stress 1K</option>
           <option value="rigid-stress-2k">Rigid stress 2K</option>
           <option value="rigid-stress-5k">Rigid stress 5K</option>
           <option value="rigid-stress-10k">Rigid stress 10K</option>
-          <option value="rigid-stress-20k">Rigid stress 20K</option>
-          <option value="rigid-stress-50k">Rigid stress 50K</option>
-          <option value="water-stress">Water stress</option>
+          <option value="water-stress-4k">Water stress 4K</option>
+          <option value="water-stress-8k">Water stress 8K</option>
+          <option value="water-stress-16k">Water stress 16K</option>
         </select>
         <fieldset class="tool-buttons" aria-label="Tool">
           <legend>Tool:</legend>
@@ -99,8 +100,6 @@
           <option value="2000">2K</option>
           <option value="5000">5K</option>
           <option value="10000">10K</option>
-          <option value="20000">20K</option>
-          <option value="50000">50K</option>
         </select>
         <label for="water-capacity-select">Max water:</label>
         <select id="water-capacity-select" class="capacity-select">
@@ -108,12 +107,17 @@
           <option value="4096" selected>4K</option>
           <option value="8192">8K</option>
           <option value="16384">16K</option>
+          <option value="32768">32K</option>
         </select>
         <label for="physics-select">Physics:</label>
         <select id="physics-select" class="rate-select">
           <option value="30">30 Hz</option>
           <option value="60" selected>60 Hz</option>
         </select>
+        <span class="sleep-toggle">
+          <input id="sleep-visuals-input" type="checkbox" checked />
+          <label for="sleep-visuals-input">Sleep tint</label>
+        </span>
         <button id="pause-button" type="button" aria-pressed="false">Pause</button>
         <button id="reset-button" type="button">Reset</button>
       </form>
@@ -137,6 +141,7 @@
             id="showcase-canvas"
             width="1200"
             height="750"
+            tabindex="0"
             aria-label="Interactive PhysBox physics scene"
           ></canvas>
           <div class="status" aria-live="polite">
