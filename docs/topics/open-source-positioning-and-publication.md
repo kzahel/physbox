@@ -51,15 +51,17 @@ Public copy must be concrete about current scope:
 ## Repository and compatibility boundary
 
 The private GitHub repository may be renamed before publication. It must remain
-private throughout preparation. Work is committed locally and may be pushed to
-a private review branch, but `main` is not pushed as part of this workstream:
-the existing pre-push hook owns the separate
-`physbox5.kzahel.com` production deployment after a successful `main` push.
+private throughout preparation. Human review on 2026-07-28 selected one
+main-only development line rather than a temporary publication-prep branch.
+The prepared source is pushed to private `main`, and the existing pre-push hook
+continues to own the separate `physbox5.kzahel.com` production deployment
+after a successful `main` push.
 
 The GitHub Pages showcase is a later, repository-specific deployment. It does
 not replace, configure, or weaken the existing clean-worktree custom-domain
-deployment. No Pages workflow or public visibility change is authorized by
-private preparation.
+deployment. A normal private `main` push may schedule that existing deployment,
+but no Pages workflow or public visibility change is authorized by private
+preparation.
 
 Renaming the repository does not justify a broad compatibility rewrite.
 Crate names remain `physbox-*`; `PHYSBOX5_*` validation markers, Android

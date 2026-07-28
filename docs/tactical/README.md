@@ -315,7 +315,7 @@ This README remains the unnumbered index.
 | S38 | Web showcase foundation | [038-web-showcase-foundation.md](038-web-showcase-foundation.md) | complete; standalone public-sim consumer and plain packaged Browser WebGPU smoke pass, Pages held, 2026-07-28 |
 | S39 | Public water consumer API | [039-public-water-consumer-api.md](039-public-water-consumer-api.md) | complete; public water authoring/observation, Web Showcase, maintained-host qualification, and physical Quest consumer pass, 2026-07-28 |
 | S40 | Interactive showcase tooling and telemetry | [040-interactive-showcase-tooling-and-telemetry.md](040-interactive-showcase-tooling-and-telemetry.md) | complete; 1K–10K settling stress, sleep tint, Water/camera fixes, and 4K–16K water tiers pass; stalled 32K preset rejected, 2026-07-28 |
-| S41 | Private open-source preparation | [041-private-open-source-preparation.md](041-private-open-source-preparation.md) | manual checkpoint; private review branch qualified, legacy Pages repaired, MIT/README/audit complete, visibility and new Pages held, 2026-07-28 |
+| S41 | Private open-source preparation | [041-private-open-source-preparation.md](041-private-open-source-preparation.md) | manual checkpoint; private main qualified, legacy Pages repaired, MIT/README/audit complete, visibility and new Pages held, 2026-07-28 |
 
 ## Conventions
 

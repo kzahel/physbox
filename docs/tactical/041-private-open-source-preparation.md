@@ -1,10 +1,10 @@
 # S41 — Private open-source preparation
 
-Status: manual checkpoint 2026-07-28. The private candidate is qualified and
-pushed only to `open-source-prep`. Human review selected PhysBox as the public
-product, `kzahel/physbox` as the canonical repository, `physbox-sim` as the
-library crate, and MIT licensing, but visibility, new PhysBox Pages, releases,
-and crate publication remain held.
+Status: manual checkpoint 2026-07-28. The private candidate is qualified on
+`main`. Human review selected one main-only development line, PhysBox as the
+public product, `kzahel/physbox` as the canonical repository,
+`physbox-sim` as the library crate, and MIT licensing. Visibility, new PhysBox
+Pages, releases, and crate publication remain held.
 
 Governing decision:
 [open-source positioning and publication](../topics/open-source-positioning-and-publication.md).
@@ -26,8 +26,8 @@ PhysBox GitHub Pages deployment unconfigured.
 
 - Do not make `kzahel/physbox` public.
 - Do not add or enable GitHub Pages for the new PhysBox showcase.
-- Do not push the current repository's `main` branch or trigger its existing
-  `physbox5.kzahel.com` pre-push production deployment.
+- Do not bypass, weaken, or conflate the existing `physbox5.kzahel.com`
+  exact-main-SHA deployment with the later GitHub Pages deployment.
 - Do not publish crates, create a release or tag, announce the project, open
   issues publicly, or promise a stable API.
 - Do not rewrite Git history, author identity, evidence revisions, compatibility
@@ -154,7 +154,8 @@ advertises no public PhysBox showcase URL before the visibility/Pages review.
       redistribution hazards.
 - [x] Inspect repository settings and the exact candidate diff/history; record
       accepted personal-data exposure and unresolved findings.
-- [x] Push only a private review branch if useful; do not push `main`.
+- [x] Push the qualified candidate to private `main` and remove the temporary
+      review branch so this repository retains one development line.
 - [x] Stop for human review before visibility, new PhysBox Pages, releases,
       tags, or crates.io publication.
 
@@ -200,11 +201,11 @@ Private audit checkpoint, 2026-07-28:
   `19d8446f-b6cb-47ba-8bc7-a2d5000bd76c` passed 1K–10K rigid and
   4K/8K/16K Water stress plus the startup diagnostic with no page/console
   errors. Cargo metadata and every local README link also pass.
-- The qualified source/audit tip `be2a626` and this checkpoint record were
-  pushed only to the private `open-source-prep` branch. Remote `main` remains
-  at `7de4d6c`, so the branch-specific push did not schedule the existing
-  production deployment. GitHub still reports private visibility, default
-  branch `main`, no PhysBox Pages site, and no Actions workflow.
+- Human review rejected the temporary review-branch split and selected private
+  `main` for the qualified candidate. The ordinary push therefore leaves the
+  existing exact-main-SHA deployment hook intact and removes
+  `open-source-prep`. GitHub still reports private visibility, default branch
+  `main`, no PhysBox Pages site, and no Actions workflow.
 
 ## Stop conditions
 
