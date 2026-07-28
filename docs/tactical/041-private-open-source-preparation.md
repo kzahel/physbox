@@ -125,16 +125,23 @@ license/manifest and keeps dependency/reference licensing separate.
 
 ### S41.5 — Public README
 
-- [ ] Replace the internal chronology-first README with a compact public entry
+- [x] Replace the internal chronology-first README with a compact public entry
       point covering value, status, capabilities, limits, library architecture,
       local native/web/showcase use, validation, documentation, and licensing.
-- [ ] Use PhysBox product identity, `physbox-sim` for consumer examples, and
+- [x] Use PhysBox product identity, `physbox-sim` for consumer examples, and
       no public demo URL until the later Pages decision.
-- [ ] Link durable technical records instead of duplicating their changing
+- [x] Link durable technical records instead of duplicating their changing
       detail or making benchmark/parity claims.
 
 Gate: a new visitor can understand what the project is, how to run it, what is
 experimental, and where the authoritative details live.
+
+README checkpoint, 2026-07-28: the root entry point now leads with the
+GPU-resident physics/library purpose, gives bounded showcase/workbench/library
+commands, explains HTTPS versus SAB requirements, records the unstable API,
+preview water, missing CPU fallback, and non-benchmark diagnostics, and points
+changing technical detail at the durable topic records. It intentionally
+advertises no public PhysBox showcase URL before the visibility/Pages review.
 
 ### S41.6 — Private candidate audit and checkpoint
 
