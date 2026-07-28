@@ -200,11 +200,11 @@ Private audit checkpoint, 2026-07-28:
   `19d8446f-b6cb-47ba-8bc7-a2d5000bd76c` passed 1K–10K rigid and
   4K/8K/16K Water stress plus the startup diagnostic with no page/console
   errors. Cargo metadata and every local README link also pass.
-- Candidate `be2a626` was pushed only to the private
-  `open-source-prep` branch. Remote `main` remains at `7de4d6c`, so the
-  branch-specific push did not schedule the existing production deployment.
-  GitHub still reports private visibility, default branch `main`, no PhysBox
-  Pages site, and no Actions workflow.
+- The qualified source/audit tip `be2a626` and this checkpoint record were
+  pushed only to the private `open-source-prep` branch. Remote `main` remains
+  at `7de4d6c`, so the branch-specific push did not schedule the existing
+  production deployment. GitHub still reports private visibility, default
+  branch `main`, no PhysBox Pages site, and no Actions workflow.
 
 ## Stop conditions
 
