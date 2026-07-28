@@ -250,6 +250,12 @@ the showcase, and qualifies the same public surface for the sibling Quest
 consumer. Both are complete: local Browser WebGPU, headless, performance,
 Android AVD, and physical Quest evidence pass. Neither workstream adds Box2D
 comparison, publishes Pages, or changes coupled mechanics/defaults.
+Human direction later on 2026-07-28 opens S40 through a local review
+checkpoint. It adds neutral bounded runtime water emission and asynchronous
+counts to the public library, then consumer-owned placement tools,
+reset-applied capacity/rate controls, stress scenes, and compact live
+diagnostics to the showcase. Half-RAF rendering, interpolation, publication,
+comparison, and new tuning remain held for that checkpoint.
 
 Current target supersession, 2026-07-22: the
 [rigid quality target contract](../topics/rigid-quality-targets.md) governs new
@@ -308,6 +314,7 @@ This README remains the unnumbered index.
 | S37 | Deferred rigid interaction API | [037-deferred-rigid-interaction-api.md](037-deferred-rigid-interaction-api.md) | complete; public query/constraint/destruction, terminal results, lifecycle reuse, external proof, and cross-host qualification pass, 2026-07-24 |
 | S38 | Web showcase foundation | [038-web-showcase-foundation.md](038-web-showcase-foundation.md) | complete; standalone public-sim consumer and plain packaged Browser WebGPU smoke pass, Pages held, 2026-07-28 |
 | S39 | Public water consumer API | [039-public-water-consumer-api.md](039-public-water-consumer-api.md) | complete; public water authoring/observation, Web Showcase, maintained-host qualification, and physical Quest consumer pass, 2026-07-28 |
+| S40 | Interactive showcase tooling and telemetry | [040-interactive-showcase-tooling-and-telemetry.md](040-interactive-showcase-tooling-and-telemetry.md) | active; implementation authorized through a local Browser WebGPU human checkpoint, 2026-07-28 |
 
 ## Conventions
 

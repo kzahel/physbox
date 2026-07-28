@@ -1,8 +1,10 @@
 # Web showcase and public water consumption
 
-Status: decided, implemented, and locally qualified 2026-07-28. S38 and S39
-are complete. GitHub Pages configuration, repository publication, and Box2D
-comparison remain deliberately held for separate review.
+Status: decided and locally qualified through S39 on 2026-07-28. S40 is active
+to add bounded interactive authoring, stress scenes, and diagnostic telemetry
+before a human product checkpoint. GitHub Pages configuration, repository
+publication, and Box2D comparison remain deliberately held for separate
+review.
 
 This topic defines the first-party PhysBox Web Showcase, its relationship to
 the existing workbench and Quest consumer, and the minimum public particle
@@ -52,8 +54,9 @@ remain `physbox5`; renaming them is independent work with substantially wider
 cost.
 
 The first screen should explain what the visitor is seeing, then get out of
-the way. A compact HTML scene selector, reset/pause controls, short per-scene
-description, and direct manipulation hints are appropriate. Debug reports,
+the way. A compact HTML scene selector, reset/pause controls, direct
+manipulation tools, bounded capacity and fixed-rate choices, short per-scene
+description, and a terse live diagnostic line are appropriate. Debug reports,
 solver tuning, validation controls, native-menu duplication, and internal
 milestone vocabulary are not.
 
@@ -124,10 +127,85 @@ The caller continues to own encoders, submission, ordering, targets, and
 rendering. No CPU result is required to advance or render the next interactive
 frame.
 
-Runtime emission, erasure, particle selection, multiple materials, material
-tuning, smooth-surface meshing, and particle snapshots are not part of this
-first API. They require their own consumer need and interaction/lifecycle
+S40 adds one bounded runtime operation: enqueue a semantic preview-water
+circle emission for the next admitted step. The command validates its finite
+center, radius, spacing, velocity, supported world bounds, and maximum
+requested particle count before queueing. It is accepted only by a world with
+a configured particle system and uses the same bounded deferred GPU command
+path as the first-party engine. Queue capacity, exact slot allocation, and the
+private material identifier remain implementation details.
+
+The library also exposes a compact asynchronous particle-count snapshot for
+diagnostics. It reports stable capacity, current live count, cumulative
+spawned count, and cumulative capacity/command drops. The caller explicitly
+encodes a copy, submits it, and polls a nonblocking request; simulation and
+rendering never depend on the CPU result.
+
+Runtime erasure, particle selection, multiple materials, material tuning,
+smooth-surface meshing, and full particle snapshots remain outside the public
+surface. They require a separate consumer need and interaction/lifecycle
 contract.
+
+## Interactive showcase controls
+
+The S40 showcase toolbar remains deliberately compact:
+
+- **Scene** selects the curated catalog.
+- **Tool** selects Drag, Box, or Water. Water is enabled only for a scene
+  authored with a particle system; selecting a rigid-only scene returns the
+  tool to Drag.
+- **Bodies** selects the public world-capacity tier.
+- **Water** selects a bounded particle capacity.
+- **Physics** selects a fixed 30, 60, 120, or 240 Hz rate.
+- **Pause** and **Reset** control the current world.
+
+Capacity and physics-rate changes are pending configuration. They take effect
+only when Reset is pressed or a new scene is selected because they determine
+GPU allocation and the simulation clock. The UI must make pending state
+visible and must not silently recreate the world while the visitor is
+interacting.
+
+Drag keeps the existing public point-query/constraint path. Box places one
+standard dynamic box through public body/shape construction. Water click or
+drag submits throttled neutral emission commands; raw pointer frequency may
+not become an unbounded GPU command stream. Tool size, body material editing,
+water erasure, and persisted configurations are deferred.
+
+Two consumer-owned scenes extend the catalog:
+
+- **Rigid stress** fills approximately 90 percent of the selected rigid-body
+  tier, while reserving slots for interactive placement.
+- **Water stress** fills approximately 80 percent of the selected particle
+  capacity, while reserving slots for the water tool.
+
+The 10,000-body and 32,768-particle frontiers are explicit heavy options, not
+startup defaults. Stress scenes demonstrate bounded scale and overload
+behavior; they are not benchmark or quality claims.
+
+## Live diagnostics
+
+The showcase may display rolling display FPS, admitted physics rate versus
+the configured fixed rate, effective simulation scale, main-thread frame
+work, optional GPU frame/physics duration, and current body/water occupancy.
+These are sparse, rolling, environment-dependent diagnostics for the person
+using the page. They are not retained benchmark samples and must not be
+presented as comparative evidence.
+
+GPU durations are optional. When the adapter supports portable timestamp
+queries, the application may record sparse caller-owned markers and read them
+back asynchronously with delayed buffers. It must display unavailable when
+the feature is absent and may not block an interactive frame. It does not
+expose private solver-pass timing through `physbox-sim`.
+
+Display cadence and fixed-step cadence remain separate. In particular, a
+120 Hz requested physics rate on a 60 Hz `requestAnimationFrame` source
+achieves at most about 60 admitted steps per second under the zero-or-one
+contract, and the diagnostic must show that slowdown honestly.
+
+An optional render-rate cap and render interpolation are deferred until the
+S40 human checkpoint. A cap alone would intentionally lower presentation
+cadence; interpolation would require a defined pair of GPU observations and
+latency/identity semantics. Neither is smuggled into this tooling slice.
 
 ## Pacing, headers, and comparison policy
 
@@ -199,6 +277,23 @@ Any material change to solver equations, water parameters, coupled scheduling,
 product defaults, or existing first-party scene outcomes is an architecture or
 product decision and stops unattended implementation for human review.
 
+S40 additionally proves:
+
+- public runtime emission validation, bounded queueing, capacity-drop
+  reporting, and unchanged rigid-only and pre-step water behavior;
+- reset-applied capacity/rate configuration and correct Water-tool
+  availability;
+- box placement, throttled water painting, stress scenes, pause/reset, and
+  scene switching in a packaged Browser WebGPU run;
+- compact occupancy and cadence diagnostics without synchronous GPU/CPU
+  dependency;
+- graceful `n/a` behavior when timestamp queries are unavailable; and
+- unchanged maintained-host mechanics and defaults.
+
+S40 stops at a human checkpoint after those gates. Publication, Box2D,
+half-RAF rendering, interpolation, new material/size controls, and promotion
+of any performance or water-quality claim require a new decision.
+
 Qualification completed on 2026-07-28 without changing those mechanics or
 defaults:
 
@@ -256,6 +351,8 @@ Revisit this decision if:
   capacity frontier;
 - Quest requires runtime particle lifecycle or a different stable observation
   field;
+- live showcase use demonstrates that render-rate limiting or interpolation
+  materially improves review on high-refresh displays;
 - public review requires a qualified Box2D comparison; or
 - the repository/package naming becomes a genuine discoverability blocker
   after the showcase has a reviewed public URL.
