@@ -4,9 +4,10 @@ use std::sync::{Arc, Mutex};
 use physbox_sim::{
     BodyDef, CommandQueueErrorKind, GPU_BODY_OBSERVATION_LIVE, GPU_BODY_OBSERVATION_VERSION,
     GPU_PARTICLE_OBSERVATION_LIVE, GPU_PARTICLE_OBSERVATION_VERSION, GpuBodyObservationRecord,
-    GpuParticleObservationRecord, PREVIEW_WATER_RADIUS, ParticleRegionDef, ParticleSystemDef,
-    PointConstraintDef, PointQueryDef, ShapeDef, StepDef, World, WorldCommandKind,
-    WorldCommandResults, WorldCommandStatus, WorldDef,
+    GpuParticleObservationRecord, PARTICLE_COUNT_SNAPSHOT_VERSION,
+    PARTICLE_EMISSION_COMMAND_CAPACITY, PREVIEW_WATER_RADIUS, ParticleEmissionDef,
+    ParticleRegionDef, ParticleSystemDef, PointConstraintDef, PointQueryDef, ShapeDef, StepDef,
+    World, WorldCommandKind, WorldCommandResults, WorldCommandStatus, WorldDef,
 };
 
 #[test]
@@ -61,6 +62,13 @@ fn public_world_steps_and_observes_without_a_surface() {
 
     let observation = world.create_gpu_body_observation(&device).unwrap();
     assert!(world.create_gpu_particle_observation(&device).is_err());
+    assert!(
+        world
+            .queue_particle_emission(ParticleEmissionDef::water_circle([0.0, 1.0], 0.2))
+            .unwrap_err()
+            .to_string()
+            .contains("configured particle system")
+    );
     assert_eq!(observation.version(), GPU_BODY_OBSERVATION_VERSION);
     assert_eq!(
         observation.record_stride_bytes() as usize,
@@ -209,6 +217,76 @@ fn public_world_steps_and_observes_preview_water_without_private_layouts() {
     for record in records.iter().skip(initial_count as usize) {
         assert_eq!(record.identity[1] & GPU_PARTICLE_OBSERVATION_LIVE, 0);
     }
+
+    let initial_counts = take_particle_counts(&world, &device, &queue);
+    assert_eq!(initial_counts.version, PARTICLE_COUNT_SNAPSHOT_VERSION);
+    assert_eq!(initial_counts.capacity, 64);
+    assert_eq!(initial_counts.live_particles, initial_count);
+    assert_eq!(initial_counts.spawned_particles, 0);
+    assert_eq!(initial_counts.dropped_particles, 0);
+
+    let emission = ParticleEmissionDef::water_circle([0.8, 0.8], 0.2);
+    let requested = world.queue_particle_emission(emission).unwrap();
+    assert_eq!(world.counters().queued_particle_emissions, 1);
+    assert_eq!(
+        world.counters().particle_emission_capacity,
+        PARTICLE_EMISSION_COMMAND_CAPACITY
+    );
+    let report = submit_steps(&mut world, &device, &queue, fixed_dt, 1);
+    assert_eq!(report.queued_operations, 1);
+    assert_eq!(world.counters().queued_particle_emissions, 0);
+    let emitted_counts = take_particle_counts(&world, &device, &queue);
+    assert_eq!(
+        emitted_counts.live_particles,
+        initial_count + requested,
+        "the first bounded emission fits"
+    );
+    assert_eq!(emitted_counts.spawned_particles, requested);
+    assert_eq!(emitted_counts.dropped_particles, 0);
+
+    let overflow_requested = world
+        .queue_particle_emission(ParticleEmissionDef::water_circle([0.8, 1.4], 0.5))
+        .unwrap();
+    submit_steps(&mut world, &device, &queue, fixed_dt, 1);
+    let full_counts = take_particle_counts(&world, &device, &queue);
+    let available = 64 - emitted_counts.live_particles;
+    assert_eq!(full_counts.live_particles, 64);
+    assert_eq!(
+        full_counts.spawned_particles,
+        requested + available,
+        "spawn count records only claimed slots"
+    );
+    assert_eq!(
+        full_counts.dropped_particles,
+        overflow_requested - available,
+        "capacity drops remain visible without blocking the step"
+    );
+
+    let mut queued_world = World::new(&device, definition).unwrap();
+    queued_world
+        .set_particle_system(
+            ParticleSystemDef::water(64).with_region(ParticleRegionDef::rectangle(
+                [-0.1, 0.0],
+                [0.1, 0.2],
+                0.1,
+            )),
+        )
+        .unwrap();
+    for index in 0..PARTICLE_EMISSION_COMMAND_CAPACITY {
+        queued_world
+            .queue_particle_emission(ParticleEmissionDef::water_circle(
+                [-1.0 + index as f32 * 0.001, 1.0],
+                0.05,
+            ))
+            .unwrap();
+    }
+    assert!(
+        queued_world
+            .queue_particle_emission(ParticleEmissionDef::water_circle([0.0, 1.0], 0.05))
+            .unwrap_err()
+            .to_string()
+            .contains("queue capacity")
+    );
 }
 
 #[test]
@@ -411,16 +489,20 @@ fn submit_steps(
     queue: &wgpu::Queue,
     fixed_dt: f32,
     count: u32,
-) {
+) -> physbox_sim::StepReport {
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
         label: Some("physbox_sim_public_test_steps"),
     });
+    let mut report = None;
     for _ in 0..count {
-        world
-            .step(device, queue, &mut encoder, StepDef::fixed(fixed_dt))
-            .unwrap();
+        report = Some(
+            world
+                .step(device, queue, &mut encoder, StepDef::fixed(fixed_dt))
+                .unwrap(),
+        );
     }
     queue.submit([encoder.finish()]);
+    report.expect("submit at least one public world step")
 }
 
 fn submit_command_step(
@@ -449,6 +531,26 @@ fn take_command_results(
         .try_take_command_results(&mut request)
         .expect("result callback completed")
         .expect("result batch decoded")
+}
+
+fn take_particle_counts(
+    world: &World,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+) -> physbox_sim::ParticleCountSnapshot {
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("physbox_sim_public_test_particle_counts"),
+    });
+    let mut request = world
+        .request_particle_count_snapshot(device, &mut encoder)
+        .unwrap();
+    queue.submit([encoder.finish()]);
+    request.begin_map().unwrap();
+    device.poll(wgpu::PollType::Wait).unwrap();
+    request
+        .try_take()
+        .expect("particle-count callback completed")
+        .expect("particle-count snapshot decoded")
 }
 
 fn assert_result(

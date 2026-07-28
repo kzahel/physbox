@@ -1319,6 +1319,18 @@ impl GpuBodyWorld {
             .create_gpu_particle_observation(device)
     }
 
+    pub(crate) fn copy_particle_count_snapshot(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        destination: &wgpu::Buffer,
+    ) -> Result<(), String> {
+        self.particles
+            .as_ref()
+            .ok_or_else(|| "the world has no configured particle system".to_owned())?
+            .copy_count_snapshot(encoder, destination);
+        Ok(())
+    }
+
     pub const fn initial_body_count(&self) -> u32 {
         self.initial_live_count
     }

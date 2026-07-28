@@ -20,11 +20,13 @@ use crate::interaction::{
     cancelled_result, decode_results,
 };
 use crate::{
-    BodyDef, BodyId, BodyType, PREVIEW_WATER_RADIUS, ParticleSystemDef, ShapeDef, ShapeGeometry,
-    ShapeId, SolverProfileName, StepDef, WorldDef,
+    BodyDef, BodyId, BodyType, PARTICLE_EMISSION_COMMAND_CAPACITY, PREVIEW_WATER_RADIUS,
+    ParticleEmissionDef, ParticleSystemDef, ShapeDef, ShapeGeometry, ShapeId, SolverProfileName,
+    StepDef, WorldDef,
 };
 
 const BODY_POSE_BYTES: u64 = size_of::<[f32; 4]>() as u64;
+const PARTICLE_COUNT_SNAPSHOT_WORDS: usize = 5;
 
 #[derive(Clone, Debug)]
 struct BodyRecord {
@@ -89,6 +91,7 @@ pub struct World {
     generations: Vec<u32>,
     inner: Option<GpuBodyWorld>,
     particle_system: Option<ParticleSystemDef>,
+    queued_particle_emissions: Vec<crate::particle_world::ParticleCommand>,
     queued_construction: Vec<ConstructionIntentV1>,
     next_sequence: u32,
     outer_step: u64,
@@ -122,6 +125,9 @@ impl World {
             generations: vec![0; capacity as usize],
             inner: None,
             particle_system: None,
+            queued_particle_emissions: Vec::with_capacity(
+                PARTICLE_EMISSION_COMMAND_CAPACITY as usize,
+            ),
             queued_construction: Vec::new(),
             next_sequence: 1,
             outer_step: 0,
@@ -159,6 +165,45 @@ impl World {
         definition.validate().map_err(WorldError::definition)?;
         self.particle_system = Some(definition);
         Ok(())
+    }
+
+    /// Queues one bounded circle of semantic preview water for the next
+    /// admitted step.
+    ///
+    /// This operation requires a configured particle system. The returned
+    /// count is the requested count; eventual capacity drops are available
+    /// through `request_particle_count_snapshot`.
+    pub fn queue_particle_emission(
+        &mut self,
+        definition: ParticleEmissionDef,
+    ) -> Result<u32, WorldError> {
+        if self.particle_system.is_none() {
+            return Err(WorldError::new(
+                "particle emission requires a configured particle system",
+            ));
+        }
+        let requested = definition
+            .requested_particle_count()
+            .map_err(WorldError::definition)?;
+        if self.queued_particle_emissions.len() == PARTICLE_EMISSION_COMMAND_CAPACITY as usize {
+            return Err(WorldError::new(format!(
+                "particle emission queue capacity {PARTICLE_EMISSION_COMMAND_CAPACITY} is exhausted for this step"
+            )));
+        }
+        let sequence = self.take_sequence()?;
+        self.queued_particle_emissions
+            .push(crate::particle_world::ParticleCommand::EmitCircle {
+                center: Vec2::new(definition.center[0], definition.center[1]),
+                radius: definition.radius,
+                spacing: definition.spacing,
+                initial_velocity: Vec2::new(
+                    definition.initial_velocity[0],
+                    definition.initial_velocity[1],
+                ),
+                material_id: 0,
+                sequence,
+            });
+        Ok(requested)
     }
 
     pub fn create_body(&mut self, body: BodyDef) -> Result<BodyId, WorldError> {
@@ -462,7 +507,9 @@ impl World {
         }
         let queued_world_commands = self.queued_world_commands.len() as u32;
         let queued_construction = self.queued_construction.len() as u32;
-        let queued_operations = queued_construction + queued_world_commands;
+        let queued_particle_emissions = self.queued_particle_emissions.len() as u32;
+        let queued_operations =
+            queued_construction + queued_world_commands + queued_particle_emissions;
         let body_commands = empty_body_commands();
         let grab = empty_grab_intents();
         let construction = ConstructionIntentBatchV1 {
@@ -477,6 +524,10 @@ impl World {
         let construction_range = [BodyCommandStepRange {
             start: 0,
             count: queued_construction,
+        }];
+        let particle_range = [BodyCommandStepRange {
+            start: 0,
+            count: queued_particle_emissions,
         }];
         let raw_world_commands = self
             .queued_world_commands
@@ -505,14 +556,15 @@ impl World {
                     grab_ranges: &empty_range,
                     construction_batch: &construction,
                     construction_ranges: &construction_range,
-                    particle_commands: &[],
-                    particle_ranges: &empty_range,
+                    particle_commands: &self.queued_particle_emissions,
+                    particle_ranges: &particle_range,
                     frame_timestamps: None,
                 },
                 &raw_world_commands,
             )
             .map_err(WorldError::new)?;
         self.queued_construction.clear();
+        self.queued_particle_emissions.clear();
         self.outer_step = self.outer_step.saturating_add(1);
         if let Some(next_result_token) = next_result_token {
             let token = self.next_result_token;
@@ -721,6 +773,42 @@ impl World {
             .map_err(|error| WorldError::new(error.to_string()))
     }
 
+    /// Records a compact copy of public particle occupancy/lifecycle counts.
+    ///
+    /// The caller submits the encoder, calls `begin_map`, polls its device,
+    /// and checks `try_take`. Simulation and rendering never depend on this
+    /// asynchronous diagnostic result.
+    pub fn request_particle_count_snapshot(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+    ) -> Result<ParticleCountSnapshotRequest, WorldError> {
+        let inner = self
+            .inner
+            .as_ref()
+            .ok_or_else(|| WorldError::new("step the world before requesting particle counts"))?;
+        let capacity = self
+            .particle_system
+            .as_ref()
+            .ok_or_else(|| WorldError::new("the world has no configured particle system"))?
+            .capacity();
+        let readback = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("physbox_sim_particle_count_snapshot"),
+            size: crate::particle_world::PARTICLE_COUNT_SNAPSHOT_BYTES,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        inner
+            .copy_particle_count_snapshot(encoder, &readback)
+            .map_err(WorldError::new)?;
+        Ok(ParticleCountSnapshotRequest {
+            readback,
+            completion: Arc::new(Mutex::new(None)),
+            capacity,
+            mapping_started: false,
+        })
+    }
+
     pub fn counters(&self) -> WorldCounters {
         let queued_destructions = self
             .queued_world_commands
@@ -738,8 +826,9 @@ impl World {
             outer_steps: self.outer_step,
             live_bodies: self.live_body_count(),
             capacity_bodies: self.definition.capacity.slots(),
-            pending_operations: (self.queued_construction.len() + self.queued_world_commands.len())
-                as u32,
+            pending_operations: (self.queued_construction.len()
+                + self.queued_world_commands.len()
+                + self.queued_particle_emissions.len()) as u32,
             gpu_initialized: self.inner.is_some(),
             command_capacity: WORLD_COMMAND_CAPACITY,
             result_capacity: crate::WORLD_RESULT_CAPACITY,
@@ -767,6 +856,8 @@ impl World {
             command_high_water: self.command_high_water,
             result_high_water: self.result_high_water,
             command_rejections: self.command_rejections,
+            particle_emission_capacity: PARTICLE_EMISSION_COMMAND_CAPACITY,
+            queued_particle_emissions: self.queued_particle_emissions.len() as u32,
         }
     }
 
@@ -1050,6 +1141,101 @@ pub struct SnapshotRequest {
     mapping_started: bool,
 }
 
+pub const PARTICLE_COUNT_SNAPSHOT_VERSION: u32 = 1;
+
+/// Stable compact particle occupancy and lifecycle counts from one submitted
+/// GPU copy.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ParticleCountSnapshot {
+    pub version: u32,
+    pub capacity: u32,
+    pub live_particles: u32,
+    pub spawned_particles: u32,
+    pub erased_particles: u32,
+    pub killed_particles: u32,
+    pub dropped_particles: u32,
+}
+
+pub struct ParticleCountSnapshotRequest {
+    readback: wgpu::Buffer,
+    completion: Arc<Mutex<Option<Result<(), String>>>>,
+    capacity: u32,
+    mapping_started: bool,
+}
+
+impl ParticleCountSnapshotRequest {
+    /// Starts asynchronous mapping after submission of the encoder containing
+    /// the count copy. This method never polls or waits for the device.
+    pub fn begin_map(&mut self) -> Result<(), WorldError> {
+        if self.mapping_started {
+            return Err(WorldError::new(
+                "particle-count mapping was already started",
+            ));
+        }
+        self.mapping_started = true;
+        let callback_completion = Arc::clone(&self.completion);
+        self.readback
+            .slice(..)
+            .map_async(wgpu::MapMode::Read, move |result| {
+                *callback_completion
+                    .lock()
+                    .expect("particle-count completion lock is not poisoned") =
+                    Some(result.map_err(|error| error.to_string()));
+            });
+        Ok(())
+    }
+
+    /// Returns `None` until the submitted copy has completed and the device
+    /// has been polled.
+    pub fn try_take(&mut self) -> Option<Result<ParticleCountSnapshot, WorldError>> {
+        if !self.mapping_started {
+            return None;
+        }
+        let result = self
+            .completion
+            .lock()
+            .expect("particle-count completion lock is not poisoned")
+            .take()?;
+        if let Err(error) = result {
+            self.readback.unmap();
+            return Some(Err(WorldError::new(format!(
+                "particle-count mapping failed: {error}"
+            ))));
+        }
+        let bytes = self.readback.slice(..).get_mapped_range();
+        let words = match bytemuck::try_cast_slice::<u8, u32>(&bytes) {
+            Ok(words) if words.len() == PARTICLE_COUNT_SNAPSHOT_WORDS => words,
+            Ok(words) => {
+                let count = words.len();
+                drop(bytes);
+                self.readback.unmap();
+                return Some(Err(WorldError::new(format!(
+                    "particle-count snapshot has {count} words, expected {PARTICLE_COUNT_SNAPSHOT_WORDS}"
+                ))));
+            }
+            Err(error) => {
+                drop(bytes);
+                self.readback.unmap();
+                return Some(Err(WorldError::new(format!(
+                    "particle-count snapshot decode failed: {error}"
+                ))));
+            }
+        };
+        let snapshot = ParticleCountSnapshot {
+            version: PARTICLE_COUNT_SNAPSHOT_VERSION,
+            capacity: self.capacity,
+            live_particles: words[0],
+            spawned_particles: words[1],
+            erased_particles: words[2],
+            killed_particles: words[3],
+            dropped_particles: words[4],
+        };
+        drop(bytes);
+        self.readback.unmap();
+        Some(Ok(snapshot))
+    }
+}
+
 impl SnapshotRequest {
     /// Starts asynchronous mapping after the caller has submitted the encoder
     /// containing the snapshot copy.
@@ -1142,6 +1328,8 @@ pub struct WorldCounters {
     pub command_high_water: u32,
     pub result_high_water: u32,
     pub command_rejections: u64,
+    pub particle_emission_capacity: u32,
+    pub queued_particle_emissions: u32,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

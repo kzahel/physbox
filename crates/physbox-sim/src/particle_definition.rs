@@ -1,11 +1,95 @@
 use serde::Serialize;
 
-use crate::{DefinitionError, particle_world::MAX_PRODUCT_PARTICLE_CAPACITY};
+use crate::{
+    DefinitionError,
+    particle_world::{MAX_PRODUCT_PARTICLE_CAPACITY, PARTICLE_COMMAND_CAPACITY},
+};
 
 pub const PREVIEW_WATER_RADIUS: f32 = 0.05;
 pub const MAX_PARTICLE_CAPACITY: u32 = MAX_PRODUCT_PARTICLE_CAPACITY;
+pub const PARTICLE_EMISSION_COMMAND_CAPACITY: u32 = PARTICLE_COMMAND_CAPACITY;
+pub const MAX_PARTICLES_PER_EMISSION: u32 = 4_096;
 const PREVIEW_WATER_LOWER_BOUND: [f32; 2] = [-16.0, -10.0];
 const PREVIEW_WATER_UPPER_BOUND: [f32; 2] = [16.0, 24.0];
+
+/// One bounded circle of semantic preview water to emit on the next step.
+///
+/// The default spacing is the current preview-water particle diameter.
+/// Emission changes particle lifecycle only; it does not expose or change
+/// solver/material parameters.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ParticleEmissionDef {
+    pub center: [f32; 2],
+    pub radius: f32,
+    pub spacing: f32,
+    pub initial_velocity: [f32; 2],
+}
+
+impl ParticleEmissionDef {
+    pub const fn water_circle(center: [f32; 2], radius: f32) -> Self {
+        Self {
+            center,
+            radius,
+            spacing: PREVIEW_WATER_RADIUS * 2.0,
+            initial_velocity: [0.0, 0.0],
+        }
+    }
+
+    pub const fn with_spacing(mut self, spacing: f32) -> Self {
+        self.spacing = spacing;
+        self
+    }
+
+    pub const fn with_initial_velocity(mut self, initial_velocity: [f32; 2]) -> Self {
+        self.initial_velocity = initial_velocity;
+        self
+    }
+
+    pub fn requested_particle_count(self) -> Result<u32, DefinitionError> {
+        self.validate()?;
+        circle_particle_count(self.radius, self.spacing)
+    }
+
+    pub fn validate(self) -> Result<(), DefinitionError> {
+        if !self
+            .center
+            .into_iter()
+            .chain(self.initial_velocity)
+            .chain([self.radius, self.spacing])
+            .all(f32::is_finite)
+        {
+            return Err(DefinitionError::new(
+                "particle emission center, radius, spacing, and velocity must be finite",
+            ));
+        }
+        if self.radius <= 0.0 {
+            return Err(DefinitionError::new(
+                "preview-water emission radius must be positive",
+            ));
+        }
+        if self.spacing < PREVIEW_WATER_RADIUS * 2.0 {
+            return Err(DefinitionError::new(format!(
+                "preview-water emission spacing must be at least {}",
+                PREVIEW_WATER_RADIUS * 2.0
+            )));
+        }
+        let lower = [self.center[0] - self.radius, self.center[1] - self.radius];
+        let upper = [self.center[0] + self.radius, self.center[1] + self.radius];
+        if !lower.into_iter().chain(upper).all(f32::is_finite)
+            || lower[0] < PREVIEW_WATER_LOWER_BOUND[0]
+            || lower[1] < PREVIEW_WATER_LOWER_BOUND[1]
+            || upper[0] > PREVIEW_WATER_UPPER_BOUND[0]
+            || upper[1] > PREVIEW_WATER_UPPER_BOUND[1]
+        {
+            return Err(DefinitionError::new(
+                "particle emission is outside the supported preview-water world bounds",
+            ));
+        }
+        circle_particle_count(self.radius, self.spacing)?;
+        Ok(())
+    }
+}
 
 /// One rectangular block of initially live preview-water particles.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
@@ -173,6 +257,19 @@ impl ParticleSystemDef {
     }
 }
 
+pub(crate) fn circle_particle_count(radius: f32, spacing: f32) -> Result<u32, DefinitionError> {
+    let approximate = (std::f32::consts::PI * radius * radius / (spacing * spacing)).ceil();
+    if !approximate.is_finite()
+        || approximate <= 0.0
+        || approximate > MAX_PARTICLES_PER_EMISSION as f32
+    {
+        return Err(DefinitionError::new(format!(
+            "particle emission count is outside 1..={MAX_PARTICLES_PER_EMISSION}"
+        )));
+    }
+    Ok(approximate as u32)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -205,6 +302,30 @@ mod tests {
         assert!(
             ParticleSystemDef::water(32)
                 .with_region(ParticleRegionDef::rectangle([0.0, 0.0], [0.3, 0.3], 0.05))
+                .validate()
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn preview_water_emission_is_bounded_and_uses_semantic_defaults() {
+        let emission =
+            ParticleEmissionDef::water_circle([0.0, 1.0], 0.3).with_initial_velocity([0.2, -0.1]);
+        assert_eq!(emission.spacing, PREVIEW_WATER_RADIUS * 2.0);
+        assert_eq!(emission.requested_particle_count().unwrap(), 29);
+        assert!(
+            ParticleEmissionDef::water_circle([16.0, 0.0], 0.3)
+                .validate()
+                .is_err()
+        );
+        assert!(
+            ParticleEmissionDef::water_circle([0.0, 0.0], 100.0)
+                .validate()
+                .is_err()
+        );
+        assert!(
+            emission
+                .with_spacing(PREVIEW_WATER_RADIUS)
                 .validate()
                 .is_err()
         );

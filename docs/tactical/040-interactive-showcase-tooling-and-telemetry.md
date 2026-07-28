@@ -76,21 +76,40 @@ publication, comparison, or render-cadence architecture.
 
 ### S40.2 — Neutral runtime water surface
 
-- [ ] Add a validated public semantic-water circle emission definition.
-- [ ] Queue at most the library's bounded number of commands for the next
+- [x] Add a validated public semantic-water circle emission definition.
+- [x] Queue at most the library's bounded number of commands for the next
       admitted step and report queue-full/unsupported-world errors without
       mutating GPU state.
-- [ ] Reuse the existing internal GPU emission path and preserve pre-step
+- [x] Reuse the existing internal GPU emission path and preserve pre-step
       region authoring and rigid-only stepping.
-- [ ] Add a stable compact particle-count snapshot request with explicit
+- [x] Add a stable compact particle-count snapshot request with explicit
       encode, asynchronous map, and nonblocking completion.
-- [ ] Add CPU and focused GPU tests for invalid definitions, queue bounds,
+- [x] Add CPU and focused GPU tests for invalid definitions, queue bounds,
       successful emission, capacity drops, count consistency, and reset.
-- [ ] Extend the public external-consumer proof without exposing private
+- [x] Extend the public external-consumer proof without exposing private
       particle layouts or requiring CPU results for advancement.
 
 Gate: a public consumer can add bounded preview water at runtime and observe
 eventual occupancy/capacity drops through a neutral, asynchronous API.
+
+Library checkpoint, 2026-07-28:
+
+- `ParticleEmissionDef::water_circle` defaults to the current `0.1 m`
+  particle-diameter spacing and validates finite center/radius/spacing/
+  velocity, supported world bounds, and `1..=4,096` requested particles.
+- `World::queue_particle_emission` admits at most 64 commands for the next
+  ordinary step, rejects rigid-only worlds and overflow before recording, and
+  projects to the existing internal single-material GPU command path. No
+  solver parameter, pass order, or default changed.
+- `ParticleCountSnapshotRequest` explicitly copies five stable words and maps
+  asynchronously. Its version-1 result reports capacity, live, cumulative
+  spawned/erased/killed, and dropped particles; it carries no particle pose or
+  private counter layout.
+- The focused public GPU test proves exact successful emission followed by
+  capacity saturation/drop accounting. All 44 library unit tests and 3 public
+  GPU integrations pass. The independent surface-free consumer reports
+  `PHYSBOX_EXTERNAL_CONSUMER_SUCCESS ... water_particles=37` after observing
+  24 initial and 13 runtime-emitted particles.
 
 ### S40.3 — Configurable showcase world and scenes
 

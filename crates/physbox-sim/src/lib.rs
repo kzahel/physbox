@@ -212,8 +212,10 @@ pub use interaction::{
     WorldCommandResult, WorldCommandResults, WorldCommandStatus,
 };
 pub use particle_definition::{
-    MAX_PARTICLE_CAPACITY, PREVIEW_WATER_RADIUS, ParticleRegionDef, ParticleSystemDef,
+    MAX_PARTICLE_CAPACITY, MAX_PARTICLES_PER_EMISSION, PARTICLE_EMISSION_COMMAND_CAPACITY,
+    PREVIEW_WATER_RADIUS, ParticleEmissionDef, ParticleRegionDef, ParticleSystemDef,
 };
 pub use world::{
-    BodySnapshot, BodySnapshotEntry, SnapshotRequest, StepReport, World, WorldCounters, WorldError,
+    BodySnapshot, BodySnapshotEntry, PARTICLE_COUNT_SNAPSHOT_VERSION, ParticleCountSnapshot,
+    ParticleCountSnapshotRequest, SnapshotRequest, StepReport, World, WorldCounters, WorldError,
 };

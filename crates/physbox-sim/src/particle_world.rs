@@ -14,6 +14,7 @@ pub const MAX_PRODUCT_PARTICLE_CAPACITY: u32 = 32_768;
 pub const LIQUID_SANDBOX_PARTICLE_CAPACITY: u32 = 8_192;
 pub const PARTICLE_COMMAND_CAPACITY: u32 = 64;
 const PARTICLE_COUNTER_WORDS: u32 = 21;
+pub(crate) const PARTICLE_COUNT_SNAPSHOT_BYTES: u64 = 20;
 const GRID_WIDTH: u32 = 64;
 const GRID_HEIGHT: u32 = 68;
 const GRID_CELL_COUNT: u32 = GRID_WIDTH * GRID_HEIGHT;
@@ -125,7 +126,9 @@ impl ParticleCommand {
                 if !radius.is_finite() || !spacing.is_finite() || radius <= 0.0 || spacing <= 0.0 {
                     return Err("particle emission requires positive finite radius/spacing".into());
                 }
-                let spawn_count = circle_spawn_count(radius, spacing)?;
+                let spawn_count =
+                    crate::particle_definition::circle_particle_count(radius, spacing)
+                        .map_err(|error| error.to_string())?;
                 Ok(ParticleCommandRaw {
                     kind_count_material_sequence: [1, spawn_count, material_id, sequence],
                     center_radius_spacing: [center.x, center.y, radius, spacing],
@@ -1444,6 +1447,17 @@ impl GpuParticleWorld {
         );
     }
 
+    pub(crate) fn copy_count_snapshot(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        destination: &wgpu::Buffer,
+    ) {
+        // Stable public readback order:
+        // active, spawned, erased, killed, command/capacity drops.
+        encoder.copy_buffer_to_buffer(&self.counters, 0, destination, 0, 4);
+        encoder.copy_buffer_to_buffer(&self.counters, 9 * 4, destination, 4, 4 * 4);
+    }
+
     pub fn decode_validation_state(
         &self,
         bytes: &[u8],
@@ -1826,14 +1840,6 @@ fn initial_particle_data(
     })
 }
 
-fn circle_spawn_count(radius: f32, spacing: f32) -> Result<u32, String> {
-    let approximate = (std::f32::consts::PI * radius * radius / (spacing * spacing)).ceil();
-    if !approximate.is_finite() || approximate <= 0.0 || approximate > 4_096.0 {
-        return Err("particle emission count is outside 1..=4096".to_owned());
-    }
-    Ok(approximate as u32)
-}
-
 fn layout(
     device: &wgpu::Device,
     label: &'static str,
@@ -2048,7 +2054,7 @@ mod tests {
             sequence: 2,
         };
         assert_eq!(erase.raw().unwrap().kind_count_material_sequence[0], 2);
-        assert!(circle_spawn_count(100.0, 0.001).is_err());
+        assert!(crate::particle_definition::circle_particle_count(100.0, 0.001).is_err());
     }
 
     #[test]

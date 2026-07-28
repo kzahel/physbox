@@ -12,8 +12,9 @@ cancellation, target motion, release, selected-body destruction, complete
 capacity-sized asynchronous result delivery, lifecycle reconciliation, and
 generational slot reuse. Final physics state is validated through the
 canonical `GpuBodyObservation`. A second bounded world configures public
-preview water before its first step and validates live particles through
-`GpuParticleObservation`.
+preview water before its first step, emits one bounded runtime water circle,
+validates live particles through `GpuParticleObservation`, and reads stable
+occupancy through the nonblocking `ParticleCountSnapshotRequest`.
 
 It does not construct a surface, texture, render pipeline, camera, application
 tool, or presentation object. Its bounded readbacks are proof only and do not

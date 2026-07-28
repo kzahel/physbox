@@ -3,9 +3,9 @@ use std::sync::mpsc;
 
 use physbox_sim::{
     BodyDef, BodyId, CommandQueueErrorKind, GpuBodyObservationRecord, GpuParticleObservationRecord,
-    ParticleRegionDef, ParticleSystemDef, PointConstraintDef, PointQueryDef, ShapeDef, StepDef,
-    WORLD_COMMAND_CAPACITY, World, WorldCommandKind, WorldCommandResults, WorldCommandStatus,
-    WorldDef,
+    ParticleEmissionDef, ParticleRegionDef, ParticleSystemDef, PointConstraintDef, PointQueryDef,
+    ShapeDef, StepDef, WORLD_COMMAND_CAPACITY, World, WorldCommandKind, WorldCommandResults,
+    WorldCommandStatus, WorldDef,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -234,7 +234,32 @@ fn prove_public_water(
     if live == 0 {
         return Err("public particle observation contained no live water".into());
     }
-    Ok(live)
+    let requested =
+        world.queue_particle_emission(ParticleEmissionDef::water_circle([0.8, 0.8], 0.2))?;
+    submit_steps(
+        &mut world,
+        device,
+        queue,
+        definition.quality.physics.fixed_dt_seconds(),
+        1,
+    )?;
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("physbox_external_particle_counts"),
+    });
+    let mut counts = world.request_particle_count_snapshot(device, &mut encoder)?;
+    queue.submit([encoder.finish()]);
+    counts.begin_map()?;
+    device.poll(wgpu::PollType::Wait)?;
+    let counts = counts
+        .try_take()
+        .ok_or("public particle-count callback did not complete")??;
+    if counts.live_particles != live as u32 + requested
+        || counts.spawned_particles != requested
+        || counts.dropped_particles != 0
+    {
+        return Err(format!("unexpected public runtime-water counts: {counts:?}").into());
+    }
+    Ok(counts.live_particles as usize)
 }
 
 fn submit_steps(
