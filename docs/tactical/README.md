@@ -305,8 +305,8 @@ This README remains the unnumbered index.
 | S35 | Fluid/solid contact stabilization | [035-fluid-solid-contact-stabilization.md](035-fluid-solid-contact-stabilization.md) | active; restart-bound quality contract and permanent wet-overlap corpus first, no default promotion authorized, 2026-07-24 |
 | S36 | Reusable GPU physics library extraction | [036-reusable-gpu-library-extraction.md](036-reusable-gpu-library-extraction.md) | complete; renderer private, public sim-only consumer, canonical GPU observation, Quest path, and cross-host requalification pass, 2026-07-24 |
 | S37 | Deferred rigid interaction API | [037-deferred-rigid-interaction-api.md](037-deferred-rigid-interaction-api.md) | complete; public query/constraint/destruction, terminal results, lifecycle reuse, external proof, and cross-host qualification pass, 2026-07-24 |
-| S38 | Web showcase foundation | [038-web-showcase-foundation.md](038-web-showcase-foundation.md) | active; local standalone rigid showcase, no Pages publication, 2026-07-28 |
-| S39 | Public water consumer API | [039-public-water-consumer-api.md](039-public-water-consumer-api.md) | proposed; follows the S38 consumer boundary, 2026-07-28 |
+| S38 | Web showcase foundation | [038-web-showcase-foundation.md](038-web-showcase-foundation.md) | complete; standalone public-sim consumer and plain packaged Browser WebGPU smoke pass, Pages held, 2026-07-28 |
+| S39 | Public water consumer API | [039-public-water-consumer-api.md](039-public-water-consumer-api.md) | active; S38 consumer boundary passes, public preview-water authoring and observation next, 2026-07-28 |
 
 ## Conventions
 

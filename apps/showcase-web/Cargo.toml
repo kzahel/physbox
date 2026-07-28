@@ -1,0 +1,21 @@
+[package]
+name = "physbox-showcase-web"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+bytemuck.workspace = true
+console_error_panic_hook.workspace = true
+physbox-sim = { path = "../../crates/physbox-sim" }
+wasm-bindgen.workspace = true
+wasm-bindgen-futures.workspace = true
+wgpu.workspace = true
+
+[dependencies.web-sys]
+workspace = true
+features = ["HtmlCanvasElement", "Window", "console"]

@@ -66,6 +66,9 @@ for (const path of trackedEvidence.split("\n").filter(Boolean)) {
 
 for (const path of await files(appRoot)) {
   if (![".rs", ".toml"].includes(extname(path))) continue;
+  if (relative(appRoot, path).startsWith(`showcase-web${process.platform === "win32" ? "\\" : "/"}`)) {
+    continue;
+  }
   const source = await readFile(path, "utf8");
   for (const rule of rules) {
     if (rule.pattern.test(source)) failures.push(`${relative(root, path)}: ${rule.name}`);
@@ -171,6 +174,21 @@ if (/\b(?:ValidationScenario|WorkbenchTool|LaunchOptions|ScenarioV1|Box2dWorld|S
   failures.push("examples/external-consumer/src/main.rs: consumer proof uses a non-library application type");
 }
 
+const showcaseManifestPath = join(root, "apps", "showcase-web", "Cargo.toml");
+const showcaseManifest = await readFile(showcaseManifestPath, "utf8");
+const showcaseForbiddenDependencies =
+  /\bphysbox-(?:engine|launch|render|ui|box2d-comparator|shell|contracts)\s*=/i;
+if (showcaseForbiddenDependencies.test(showcaseManifest)) {
+  failures.push("apps/showcase-web/Cargo.toml: showcase consumer imports application policy");
+}
+const showcaseSource = await readFile(
+  join(root, "apps", "showcase-web", "src", "lib.rs"),
+  "utf8",
+);
+if (/\bphysbox_sim::__private\b|\bengine-internal\b/.test(showcaseSource + showcaseManifest)) {
+  failures.push("apps/showcase-web: showcase consumer uses the private simulation bridge");
+}
+
 const oracleDependency = /physbox-box2d-oracle\s*=/i;
 for (const rootName of ["apps", "crates"]) {
   for (const path of await files(join(root, rootName))) {
@@ -197,6 +215,9 @@ if (!simProductVocabulary.test("struct LaunchOptions;")) {
 }
 if (!consumerForbiddenDependencies.test("physbox-engine = { path = \"../../crates/physbox-engine\" }")) {
   failures.push("boundary self-test failed: external consumer dependency");
+}
+if (!showcaseForbiddenDependencies.test("physbox-engine = { path = \"../../crates/physbox-engine\" }")) {
+  failures.push("boundary self-test failed: showcase dependency");
 }
 for (const rule of rules) {
   const negativeFixture = rule.name.includes("WGSL")

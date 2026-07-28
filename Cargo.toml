@@ -3,6 +3,7 @@ members = [
   "apps/android",
   "apps/desktop",
   "apps/headless",
+  "apps/showcase-web",
   "apps/web",
   "crates/physbox-box2d-comparator",
   "crates/physbox-engine",

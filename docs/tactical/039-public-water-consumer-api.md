@@ -1,6 +1,8 @@
 # S39 — Public water consumer API
 
-Status: proposed 2026-07-28; begins after the rigid S38 boundary passes.
+Status: active 2026-07-28. S38's rigid consumer boundary and packaged Browser
+WebGPU smoke pass; public water authoring begins on that proven application
+surface.
 
 Governing architecture:
 [web showcase and public water consumption](../topics/web-showcase-and-public-water-consumption.md).
@@ -60,7 +62,7 @@ equations, or define a final material-tuning API.
 
 ### S39.1 — Public definitions and validation
 
-- [ ] Promote this tactical to active after S38's dependency boundary passes.
+- [x] Promote this tactical to active after S38's dependency boundary passes.
 - [ ] Add documented water system and rectangular region definitions.
 - [ ] Add a one-time pre-step `World::set_particle_system` operation.
 - [ ] Project definitions into the existing coupled scenario internally

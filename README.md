@@ -95,6 +95,7 @@ Read:
 - [Current product capability status](docs/topics/product-capability-status.md)
 - [PhysBox 3 and PhysBox 4 feature usage](docs/topics/predecessor-feature-usage.md)
 - [Presentation and modular workbench architecture](docs/topics/presentation-and-workbench-architecture.md)
+- [Web showcase and public water consumption](docs/topics/web-showcase-and-public-water-consumption.md)
 - [Coupled liquid/rigid constraint surface](docs/topics/coupled-liquid-rigid-constraint-surface.md)
 - [S31 coupled-liquid sandbox](docs/tactical/031-coupled-liquid-sandbox.md)
 - [S33 presentation foundation](docs/tactical/033-presentation-foundation.md)
@@ -137,6 +138,30 @@ bounded proof with:
 ```sh
 cargo run -p physbox-external-consumer
 ```
+
+## PhysBox Web Showcase
+
+The standalone Web Showcase is a separate first-party consumer of public
+`physbox-sim`. It owns its HTML controls, scenes, browser surface, and renderer;
+it does not import the workbench engine or Box2D comparator.
+
+Build and serve it locally with:
+
+```sh
+npm run build:showcase
+npm run serve:showcase
+```
+
+Then open `http://127.0.0.1:8080/`. The focused Browser WebGPU smoke is:
+
+```sh
+npm run test:showcase
+```
+
+The package uses relative assets, works below a static URL subpath, and does
+not require COOP/COEP headers, cross-origin isolation, or
+`SharedArrayBuffer`. GitHub Pages configuration and publication are
+deliberately held until repository visibility is reviewed.
 
 ## PhysBox 4 lineage
 

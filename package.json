@@ -16,6 +16,7 @@
     "android:env": "bash android/check-env.sh",
     "build:web": "node scripts/build-web.mjs",
     "build:web:lab": "node scripts/build-web.mjs --solver-lab",
+    "build:showcase": "node scripts/build-showcase-web.mjs",
     "inspect:web": "npm run build:web:lab && npm run serve:web",
     "bundle:web": "node scripts/build-web.mjs --release --solver-lab --output dist-web",
     "benchmark:bodies-browser": "node scripts/browser-body-benchmark.mjs",
@@ -33,6 +34,7 @@
     "references:status": "node scripts/references.mjs status",
     "references:sync": "node scripts/references.mjs sync",
     "serve:web": "node scripts/serve-web.mjs",
+    "serve:showcase": "node scripts/serve-showcase-web.mjs",
     "test:desktop": "bash scripts/with-host-env.sh --linux-x11 node scripts/desktop-smoke.mjs",
     "test:host-tools": "node --test scripts/host-env.test.mjs",
     "test:android-tools": "node --test android/*.test.mjs",
@@ -45,6 +47,7 @@
     "clippy:rust:full": "cargo clippy --workspace --all-targets -- -D warnings",
     "test:web": "node scripts/browser-smoke.mjs",
     "test:web:lab": "PHYSBOX5_SOLVER_LAB=1 PHYSBOX5_CAPTURE_SUFFIX=solver-lab node scripts/browser-smoke.mjs",
+    "test:showcase": "node scripts/showcase-smoke.mjs",
     "test:box2d-feature-off": "node scripts/check-box2d-comparator-feature-off.mjs",
     "prepare": "bash scripts/install-git-hooks.sh"
   },

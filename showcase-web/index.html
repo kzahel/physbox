@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Explore PhysBox, a GPU-resident 2D physics engine built for portable WebGPU."
+    />
+    <title>PhysBox Web Showcase</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='5' y='5' width='22' height='22' rx='6' fill='%2344c9f2'/%3E%3Crect x='11' y='11' width='16' height='16' rx='4' fill='%2307101d'/%3E%3C/svg%3E"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="masthead">
+      <a class="brand" href="./" aria-label="PhysBox showcase home">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span>PhysBox</span>
+      </a>
+      <p class="eyebrow">GPU-resident 2D physics</p>
+    </header>
+
+    <main>
+      <section class="intro" aria-labelledby="showcase-title">
+        <div>
+          <p class="kicker">WebGPU · one authoritative world</p>
+          <h1 id="showcase-title">Physics that stays on the GPU.</h1>
+          <p class="lede">
+            Pick a scene, drag a body, and see the same physics library used by
+            native and immersive applications—running here without a server.
+          </p>
+        </div>
+
+        <form class="controls" aria-label="Showcase controls" onsubmit="return false">
+          <label>
+            <span>Scene</span>
+            <select id="scene-select">
+              <option value="playground">Playground</option>
+              <option value="stack-and-sleep">Stack and sleep</option>
+            </select>
+          </label>
+          <button id="pause-button" type="button" aria-pressed="false">Pause</button>
+          <button id="reset-button" class="secondary" type="button">Reset</button>
+        </form>
+      </section>
+
+      <section class="stage" aria-labelledby="scene-heading">
+        <div class="stage-copy">
+          <div>
+            <p class="scene-index">LIVE SCENE</p>
+            <h2 id="scene-heading">Playground</h2>
+            <p id="scene-description">
+              Mixed circles and boxes share one GPU-resident rigid world.
+            </p>
+          </div>
+          <p class="hint"><span aria-hidden="true">↗</span> Drag any moving body</p>
+        </div>
+        <div class="canvas-shell">
+          <canvas
+            id="showcase-canvas"
+            width="1200"
+            height="750"
+            aria-label="Interactive PhysBox physics scene"
+          ></canvas>
+          <div class="status" aria-live="polite">
+            <span class="status-dot" aria-hidden="true"></span>
+            <span id="status-text">Starting WebGPU…</span>
+          </div>
+          <p id="fatal-error" role="alert" hidden></p>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <p>PhysBox Web Showcase · preview build</p>
+      <p>Public library consumer · no SharedArrayBuffer required</p>
+    </footer>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
