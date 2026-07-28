@@ -48,10 +48,11 @@ a running log.
   supported configuration boundary, and separation from renderers, first-party
   sandbox policy, and comparator code.
 - [Web showcase and public water consumption](web-showcase-and-public-water-consumption.md)
-  — decided three-application topology, standalone external-style browser
-  showcase, app-owned HTML/renderer/scenes, plain static-host contract,
-  deferred Box2D comparison, and minimum public preview-water authoring and
-  GPU observation surface for web and Quest consumers.
+  — implemented and locally qualified three-application topology, standalone
+  external-style browser showcase, app-owned HTML/renderer/scenes, plain
+  static-host contract, deferred Box2D comparison, and minimum public
+  preview-water authoring and GPU observation surface proven by web and Quest
+  consumers.
 - [Render resolution scaling](render-resolution-scaling.md) — manual
   100/75/50-percent shared world-render scaling with native-resolution canvas
   UI, portable composition, launch/persistence ownership, explicit reporting,

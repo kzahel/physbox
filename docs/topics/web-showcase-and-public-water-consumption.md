@@ -1,8 +1,8 @@
 # Web showcase and public water consumption
 
-Status: decided and implemented locally 2026-07-28. S38 is complete; S39's
-public authoring, particle observation, and showcase consumption are
-implemented, with cross-host qualification still active.
+Status: decided, implemented, and locally qualified 2026-07-28. S38 and S39
+are complete. GitHub Pages configuration, repository publication, and Box2D
+comparison remain deliberately held for separate review.
 
 This topic defines the first-party PhysBox Web Showcase, its relationship to
 the existing workbench and Quest consumer, and the minimum public particle
@@ -198,6 +198,35 @@ S38 and S39 must prove:
 Any material change to solver equations, water parameters, coupled scheduling,
 product defaults, or existing first-party scene outcomes is an architecture or
 product decision and stops unattended implementation for human review.
+
+Qualification completed on 2026-07-28 without changing those mechanics or
+defaults:
+
+- the packaged Browser WebGPU showcase passed at `/showcase-web/` with
+  `crossOriginIsolated=false`, all three scenes, public pointer interaction,
+  reset/pause/resize, 2,650 water particles, and no private PhysBox dependency;
+- the public GPU integration and surface-free external consumer passed with
+  finite live/inactive particle records, while the maintained
+  `npm run test:fast`, production warnings-denied clippy, and
+  `npm run test:web:lab` lanes remained green;
+- a clean 600-step headless liquid run retained 3,952 finite particles in an
+  8,192-slot capacity with 92 particle dispatches, no overflow, and unchanged
+  first-party coupled scene work;
+- the retained Browser WebGPU performance sample measured the unchanged
+  first-party Standard path at 2.556 ms total GPU P50 and Stabilized at
+  2.508 ms. Public observation is opt-in and structurally adds one compute
+  projection plus 48 bytes per capacity slot only when a consumer creates and
+  encodes it;
+- the ARM64 Android check and release APK passed, followed by a hardware-backed
+  Vulkan AVD liquid capture with fresh provenance and clean shutdown; and
+- sibling Quest revision `521d617` rendered 1,088 publicly authored water
+  particles from the same canonical observation in distinct stereo views on a
+  physical Quest 3. Its existing rigid scene remains the default and Box2D
+  rejects the water scene explicitly.
+
+The showcase remains a favorable capability demonstration, not a quality,
+parity, or performance promotion. Water keeps its preview label while S31 and
+S35 remain at their recorded review checkpoints.
 
 ## Alternatives rejected
 

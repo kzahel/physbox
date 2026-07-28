@@ -1,8 +1,8 @@
 # S39 — Public water consumer API
 
-Status: active 2026-07-28. S38's rigid consumer boundary and packaged Browser
-WebGPU smoke pass; public water authoring begins on that proven application
-surface.
+Status: complete 2026-07-28. Public preview-water authoring and canonical GPU
+observation work in the standalone Web Showcase and sibling Quest consumer;
+maintained browser, headless, performance, and Android qualification pass.
 
 Governing architecture:
 [web showcase and public water consumption](../topics/web-showcase-and-public-water-consumption.md).
@@ -81,7 +81,7 @@ solver or presentation internals.
       `World::step`.
 - [x] Preserve first-party private coupled construction and standard/stabilized
       behavior without duplicate mechanics.
-- [ ] Add focused GPU tests for initial count, finite state, rigid response,
+- [x] Add focused GPU tests for initial count, finite state, rigid response,
       capacity cleanliness, and unchanged rigid-only dispatch behavior.
 
 Gate: the default-feature public world advances coupled water and rigid bodies
@@ -145,13 +145,13 @@ Showcase checkpoint, 2026-07-28:
   renders water before consumer-owned rigid geometry, and keeps mechanics,
   both observation projections, and both draw pipelines in one caller-owned
   encoder/submission.
-- Packaged Browser WebGPU run
-  `0be7f9d2-55a1-4dc8-8858-8182579e5b55` passes the existing rigid
+- Final packaged Browser WebGPU run
+  `dcbdcafc-c07b-4b5a-9c38-9a84c7cb0a34` passes the existing rigid
   selector/pause/reset/drag gates, then advances the water scene for 99 fixed
-  steps. It reports 2,650 particles, clean console/GPU validation,
-  `crossOriginIsolated=false`, and a 3,324,794-byte debug WASM module. The
-  inspected coupled capture is `/tmp/physbox-showcase.png`; provenance is
-  `/tmp/physbox-showcase.json`.
+  frames and 100 fixed steps. It reports 2,650 particles, clean console/GPU
+  validation, `crossOriginIsolated=false`, and a 3,324,794-byte debug WASM
+  module. The inspected coupled capture is `/tmp/physbox-showcase.png`;
+  provenance is `/tmp/physbox-showcase.json`.
 - Focused WASM warnings-denied app clippy and platform dependency negatives
   pass. The dependency's existing WASM-wide `Arc<Buffer>` clippy warnings are
   outside this slice; `--no-deps` isolates the new app while the governed
@@ -159,25 +159,76 @@ Showcase checkpoint, 2026-07-28:
 
 ### S39.5 — Cross-consumer and maintained-host qualification
 
-- [ ] Run focused public definition, GPU, observation, external-consumer, and
+- [x] Run focused public definition, GPU, observation, external-consumer, and
       showcase tests.
-- [ ] Run `npm run test:fast` and production warnings-denied clippy.
-- [ ] Run a fresh coupled headless validation with `/tmp` provenance.
-- [ ] Run the focused liquid performance smoke and record projection overhead,
+- [x] Run `npm run test:fast` and production warnings-denied clippy.
+- [x] Run a fresh coupled headless validation with `/tmp` provenance.
+- [x] Run the focused liquid performance smoke and record projection overhead,
       allocation, and dispatch changes.
-- [ ] Run `npm run test:web:lab`, ARM64 Android check, and release APK because
+- [x] Run `npm run test:web:lab`, ARM64 Android check, and release APK because
       shared coupled construction changes.
-- [ ] Compile/test the sibling Quest repository against the final API and
+- [x] Compile/test the sibling Quest repository against the final API and
       record its revision.
-- [ ] If Quest rendering integration is mechanically obvious under its own
+- [x] If Quest rendering integration is mechanically obvious under its own
       architecture, add it and perform its required checks; otherwise stop at
       the exact product/presentation decision fork.
-- [ ] Update the topic, tactical, and status index with measured evidence and
+- [x] Update the topic, tactical, and status index with measured evidence and
       remaining preview limitations.
 
 Gate: public water works in two independent-style consumers, maintained
 workbench behavior is unchanged, and proportional coupled/platform evidence
 passes.
+
+Qualification and measured evidence, 2026-07-28:
+
+- Focused public authoring/observation integration passes 3/3, including
+  finite coupled state, 24 live water records, inactive capacity slots, rigid
+  response, and the unchanged rigid-only path. The independent surface-free
+  client reports
+  `PHYSBOX_EXTERNAL_CONSUMER_SUCCESS ... water_particles=24`; the final
+  showcase smoke is recorded under S39.4.
+- At clean mechanics revision `5718782`, `npm run test:fast` passed in
+  28.24 seconds, including maintained Browser WebGPU run
+  `cb63eaba-032c-4888-829c-b40589e9379b`; production warnings-denied clippy
+  and `npm run test:web:lab` run
+  `7f7c88a6-35db-4ea8-bdaa-2c28f344036f` also passed.
+- Clean headless run `1785225210096091372-1633817` advanced the maintained
+  `liquid-sandbox` for 600 explicit steps with 3,952 finite particles in an
+  8,192-slot capacity, 92 particle dispatches, 1,053,828 particle bytes,
+  two-way rigid coupling, and no overflow, escape, kill, or drop. Its capture
+  and provenance are
+  `/tmp/physbox5-s39-liquid-600-20260728.{png,json}`.
+- Browser performance run
+  `s35-coupling-browser-5e412d5e-1b03-42bb-a3a6-73371e0f77c4` retained eight
+  samples per quality. Standard measured 0.750 ms CPU encode, 2.061 ms liquid,
+  and 2.556 ms total GPU P50; Stabilized measured 0.700 ms, 2.037 ms, and
+  2.508 ms respectively. Both retained the existing 92 particle dispatches
+  and capacity-clean work. The canonical observation is opt-in: it adds one
+  `ceil(capacity / 64)` compute projection and 48 bytes per capacity slot only
+  when created and encoded. That is 196,608 bytes and 64 workgroups for the
+  showcase's 4,096 capacity, or 1,572,864 bytes and 512 workgroups at the
+  supported 32,768 frontier; no first-party allocation, dispatch, tuning, or
+  default changed.
+- The ARM64 Android check, debug APK, and 8,576,621-byte unsigned release APK
+  passed. Final clean harness revision `aa1f542` then passed the
+  hardware-backed Vulkan AVD `liquid-sandbox` lane as run
+  `1785225656-1641436`: 2,560 × 1,600 nonblack capture, 3,952 particles,
+  8,192 capacity, valid two-way coupling, no overflow, and confirmed emulator
+  shutdown. Artifacts are `/tmp/physbox5-android-avd.png{,.json}`.
+- Sibling Quest revision `521d617` consumes the same public API in an opt-in
+  `water-bucket-v0` scene while retaining `rigid-bucket-v0` as default. Its
+  20 host tests, host/ARM64 warnings-denied clippy, release APK, and physical
+  Quest 3 capture pass. The headset rendered 1,088 particles from a 2,048-slot
+  canonical observation as Quest-owned stereo geometry, produced distinct
+  1,680 × 1,760 eye images, and completed application/display cleanup.
+  Artifacts are under
+  `/tmp/physbox-quest-water-bucket-v0-20260728`.
+
+No stop condition fired. The integration did not require a shared renderer,
+private layout, CPU particle mirror, parameter/default change, or Quest
+product-default decision. Preview quality, runtime particle lifecycle,
+Box2D comparison, repository publication, and Pages deployment remain outside
+this completed workstream.
 
 ## Stop conditions
 

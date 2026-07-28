@@ -247,8 +247,9 @@ scenes, rendering, and local static packaging while explicitly holding GitHub
 Pages publication. S39 then exposes pre-step preview-water authoring and a
 canonical particle GPU observation through `physbox-sim`, demonstrates it in
 the showcase, and qualifies the same public surface for the sibling Quest
-consumer. Neither workstream adds Box2D comparison or changes coupled
-mechanics/defaults.
+consumer. Both are complete: local Browser WebGPU, headless, performance,
+Android AVD, and physical Quest evidence pass. Neither workstream adds Box2D
+comparison, publishes Pages, or changes coupled mechanics/defaults.
 
 Current target supersession, 2026-07-22: the
 [rigid quality target contract](../topics/rigid-quality-targets.md) governs new
@@ -306,7 +307,7 @@ This README remains the unnumbered index.
 | S36 | Reusable GPU physics library extraction | [036-reusable-gpu-library-extraction.md](036-reusable-gpu-library-extraction.md) | complete; renderer private, public sim-only consumer, canonical GPU observation, Quest path, and cross-host requalification pass, 2026-07-24 |
 | S37 | Deferred rigid interaction API | [037-deferred-rigid-interaction-api.md](037-deferred-rigid-interaction-api.md) | complete; public query/constraint/destruction, terminal results, lifecycle reuse, external proof, and cross-host qualification pass, 2026-07-24 |
 | S38 | Web showcase foundation | [038-web-showcase-foundation.md](038-web-showcase-foundation.md) | complete; standalone public-sim consumer and plain packaged Browser WebGPU smoke pass, Pages held, 2026-07-28 |
-| S39 | Public water consumer API | [039-public-water-consumer-api.md](039-public-water-consumer-api.md) | active; S38 consumer boundary passes, public preview-water authoring and observation next, 2026-07-28 |
+| S39 | Public water consumer API | [039-public-water-consumer-api.md](039-public-water-consumer-api.md) | complete; public water authoring/observation, Web Showcase, maintained-host qualification, and physical Quest consumer pass, 2026-07-28 |
 
 ## Conventions
 
