@@ -1,10 +1,10 @@
 # S40 — Interactive showcase tooling and telemetry
 
-Status: active 2026-07-28. The first automated checkpoint passed, and human
-review reopened the workstream for compact icon tools, configuration-owned
-water, 30/60 Hz-only pacing choices, explicit 2K-through-50K rigid stress
-variants, and large-scene navigation. Publication and the lower-value
-presentation experiments listed below remain held.
+Status: active 2026-07-28. Two automated checkpoints passed. Human review now
+caps public rigid stress at 10K, reopens the existing 32K particle frontier as
+an explicit Water stress tier, requires click-only Water placement, and adds
+keyboard camera navigation. Publication and the lower-value presentation
+experiments listed below remain held.
 
 Governing architecture:
 [web showcase and public water consumption](../topics/web-showcase-and-public-water-consumption.md).
@@ -315,6 +315,33 @@ Revised implementation and qualification checkpoint, 2026-07-28:
   `0.0.0.0:8080` process. No push, public repository change, Pages
   configuration, or deployment occurred.
 
+### S40.8 — Second human-review revisions
+
+- [ ] Add a packaged regression in which one Water-tool click, with no pointer
+      movement, visibly increases live particles after an admitted step.
+      Correct any input/coalescing or visibility issue exposed by that exact
+      path without forcing a physics step or weakening zero-or-one pacing.
+- [ ] Remove Rigid stress 20K and 50K from the showcase and remove the public
+      20K/50K capacity variants added only for those scenes. Retain exact
+      Rigid stress 2K/5K/10K and the unchanged four workbench product presets.
+- [ ] Replace the single Water stress scene with explicit 4K/8K/16K/32K
+      variants whose selected `Max water` tier is applied on scene selection.
+- [ ] Restore 32,768 as a showcase water option under the existing public
+      particle limit and rerun the cold Browser WebGPU frontier. Preserve the
+      earlier 90-second miss as historical evidence rather than silently
+      deleting it.
+- [ ] Let ArrowLeft/Right/Up/Down pan the consumer camera when ordinary page
+      controls are not handling the key. Preserve select/button keyboard
+      behavior and physics state.
+- [ ] Requalify the packaged browser path, maintained/public-consumer gates,
+      secure artifact, and laptop capture; record exact 32K results and stop
+      for human review.
+
+Gate: a stationary Water click works, rigid showcase scope ends at 10K, all
+four water stress tiers are selectable and bounded, arrow navigation is
+non-mechanical, and 32K remains a diagnostic stress frontier rather than a
+performance or quality claim.
+
 ## Stop conditions
 
 Stop before continuing if:
@@ -335,7 +362,7 @@ Stop before continuing if:
 
 After qualification, review:
 
-1. Are the compact icon controls and nine-scene catalog the right public demo
+1. Are the compact icon controls and revised scene catalog the right public demo
    surface?
 2. Are the Box/Water tool sizes and stress densities useful without exposing
    advanced tuning?

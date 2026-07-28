@@ -1,11 +1,10 @@
 # Web showcase and public water consumption
 
-Status: decided and locally qualified through S40's revised automated gates on
-2026-07-28. Icon tools, configuration-owned water, 30/60 Hz choices,
-2K-through-50K rigid stress variants, and camera navigation are implemented;
-S40 awaits review of the revised artifact. GitHub Pages configuration,
-repository publication, and Box2D comparison remain deliberately held for
-separate review.
+Status: decided and locally qualified through S40's second automated
+checkpoint on 2026-07-28. Human review now caps rigid stress at 10K, reopens
+32K Water stress, requires stationary-click Water placement, and adds arrow-key
+camera navigation. GitHub Pages configuration, repository publication, and
+Box2D comparison remain deliberately held for separate review.
 
 This topic defines the first-party PhysBox Web Showcase, its relationship to
 the existing workbench and Quest consumer, and the minimum public particle
@@ -188,25 +187,25 @@ water erasure, and persisted configurations are deferred.
 
 Two consumer-owned scenes extend the catalog:
 
-- **Rigid stress 2K/5K/10K/20K/50K** author the exact named live-body count
-  into a matching default capacity. A larger `Max bodies` tier may be selected
-  before Reset to restore placement headroom.
-- **Water stress** fills approximately 80 percent of the selected particle
-  capacity, while reserving slots for the water tool.
+- **Rigid stress 2K/5K/10K** author the exact named live-body count into a
+  matching default capacity. Rigid stress above 10K is not part of the public
+  showcase after direct human review.
+- **Water stress 4K/8K/16K/32K** fills approximately 80 percent of its named
+  particle capacity, while reserving slots for the water tool.
 
-The 10,000-through-50,000-body and 16,384-particle showcase tiers are explicit
-heavy options, not startup defaults. The library's 32,768-particle capacity
-frontier is not a showcase option: a bounded cold Browser WebGPU check did not
-return its first 32K coupled stress frame within 90 seconds on the development
-host, while the 16K tier did advance. That frontier remains available to
-purpose-built evidence tools and may be reconsidered after optimization.
-Stress scenes demonstrate bounded scale and overload behavior; they are not
+The 10,000-body and 16,384/32,768-particle showcase tiers are explicit heavy
+options, not startup defaults. An earlier bounded cold Browser WebGPU check
+did not return its first 32K coupled stress frame within 90 seconds while 16K
+did advance. Human direction explicitly reopens 32K for a new measurement;
+the old miss remains evidence until superseded by a clean result. Stress
+scenes demonstrate bounded scale and overload behavior; they are not
 benchmark or quality claims.
 
-The showcase owns camera navigation. Pan changes only the consumer camera, and
-wheel/trackpad zoom preserves the world point under the pointer. Scene
-selection and Reset restore the authored home frame. Navigation never changes
-physics state or requires a GPU readback.
+The showcase owns camera navigation. Pan and arrow keys change only the
+consumer camera, and wheel/trackpad zoom preserves the world point under the
+pointer. Arrow keys do not intercept select/button editing. Scene selection
+and Reset restore the authored home frame. Navigation never changes physics
+state or requires a GPU readback.
 
 ## Live diagnostics
 
