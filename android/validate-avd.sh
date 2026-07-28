@@ -116,7 +116,7 @@ if [[ "${PHYSBOX5_ANDROID_SLEEP_TOGGLE:-0}" = "1" ]]; then
       const w = +process.argv[1], h = +process.argv[2];
       const [version, pixelsPerPoint, toolbarScale, menuScale] =
         JSON.parse(process.argv[3]).v;
-      if (version !== 12 || !(pixelsPerPoint > 0 && toolbarScale > 0 && menuScale > 0)) {
+      if (version !== 13 || !(pixelsPerPoint > 0 && toolbarScale > 0 && menuScale > 0)) {
         throw new Error("invalid UI density marker");
       }
       const compact = h / pixelsPerPoint < 520 && w > h;
@@ -233,7 +233,7 @@ if [[ "${PHYSBOX5_ANDROID_CONSTRUCTION_CAPTURE:-0}" = "1" ]]; then
     BEFORE_CONSTRUCTION="$(node -e 'console.log(JSON.parse(process.argv[1]).bodyCommands.c)' "$REPORT")"
     TOOL_POINT="$(node -e '
       const [version, , toolbarScale] = JSON.parse(process.argv[1]).v;
-      if (version !== 12 || !(toolbarScale > 0)) throw new Error("invalid UI density marker");
+      if (version !== 13 || !(toolbarScale > 0)) throw new Error("invalid UI density marker");
       console.log(`${Math.round(229 * toolbarScale)} ${Math.round(50 * toolbarScale)}`);
     ' "$REPORT")"
     read -r TOOL_X TOOL_Y <<< "$TOOL_POINT"
@@ -259,7 +259,7 @@ if [[ "${PHYSBOX5_ANDROID_LIQUID_CAPTURE:-0}" = "1" ]]; then
     TOOL_POINTS="$(node -e '
       const w = +process.argv[1], h = +process.argv[2];
       const [version, , toolbarScale] = JSON.parse(process.argv[3]).v;
-      if (version !== 12 || !(toolbarScale > 0)) throw new Error("invalid UI density marker");
+      if (version !== 13 || !(toolbarScale > 0)) throw new Error("invalid UI density marker");
       const logicalWidth = w / toolbarScale;
       const stride = logicalWidth < 460 ? Math.max(1, (logicalWidth - 78) / 6) : 58;
       const width = logicalWidth < 460 ? Math.max(1, stride - 6) : 52;
