@@ -1288,6 +1288,7 @@ impl GpuParticleWorld {
         self.initial_count
     }
 
+    #[cfg(not(all(test, not(feature = "sim-owner"))))]
     pub fn create_gpu_particle_observation(
         &self,
         device: &wgpu::Device,
