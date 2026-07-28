@@ -1,9 +1,10 @@
 # S40 — Interactive showcase tooling and telemetry
 
-Status: active 2026-07-28. Implementation and automated qualification are
-complete; the exact local Browser WebGPU artifact is awaiting the mandatory
-human checkpoint. Publication and the lower-value presentation experiments
-listed below remain held.
+Status: active 2026-07-28. The first automated checkpoint passed, and human
+review reopened the workstream for compact icon tools, configuration-owned
+water, 30/60 Hz-only pacing choices, explicit 2K-through-50K rigid stress
+variants, and large-scene navigation. Publication and the lower-value
+presentation experiments listed below remain held.
 
 Governing architecture:
 [web showcase and public water consumption](../topics/web-showcase-and-public-water-consumption.md).
@@ -50,7 +51,8 @@ return the next high-value product choices to a human checkpoint.
   result. It knows no HTML tool, scene, camera, or pointer-gesture concept.
 - The showcase owns tool selection, click/drag mapping, throttling policy,
   scene catalog, stress layouts, capacity/rate presets, pending-reset
-  presentation, renderer metadata, and live diagnostic presentation.
+  presentation, camera pan/zoom, renderer metadata, and live diagnostic
+  presentation.
 - `World::step` remains caller-encoded and zero-or-one admitted. Runtime
   commands are consumed at the next admitted step and never cause an extra
   step.
@@ -235,9 +237,44 @@ Automated qualification checkpoint, 2026-07-28:
   occurred.
 - The deliberately deferred choices remain half-RAF rendering, render
   interpolation, publication, Box2D comparison, tuning/tool-size controls,
-  further visual treatment, and a Quest-owned runtime Water interaction
-  surface. The 32K water frontier also remains outside the favorable selector
-  pending optimization or purpose-built evidence.
+  and a Quest-owned runtime Water interaction surface. The 32K water frontier
+  also remains outside the favorable selector pending optimization or
+  purpose-built evidence.
+
+### S40.7 — Human-review revisions
+
+- [ ] Replace the Tool dropdown with individually labeled icon buttons for
+      body drag, box placement, water painting, and camera pan.
+- [ ] Relabel the allocation controls `Max bodies` and `Max water`, add
+      `None` as the dry-scene water default, and make any non-`None` water
+      selection configure runtime-emittable water after Reset regardless of
+      scene-authored initial particles.
+- [ ] Start on Water and rigid bodies with water configured, while scene
+      selection restores each scene's dry/water default before rebuilding.
+- [ ] Restrict the public physics selector to 30 and 60 Hz. Do not change the
+      library's valid fixed-rate contract; 120/240 Hz were misleading
+      showcase presentation because four solver substeps make them 480/960
+      internal substeps per simulated second and RAF admission produces
+      slow-time on ordinary displays.
+- [ ] Add exact Rigid stress 2K, 5K, 10K, 20K, and 50K scene variants with
+      matching public-library capacity tiers and explicit scale language that
+      remains diagnostic rather than a benchmark claim.
+- [ ] Add consumer-owned camera pan and pointer-anchored wheel/trackpad zoom;
+      Reset or scene selection restores the authored home frame.
+- [ ] Remove the footer disclaimer/capability sentence instead of spending
+      permanent first-screen space on non-actionable copy.
+- [ ] Extend focused and packaged Browser WebGPU tests through optional-water
+      reset, icon-tool state, pan/zoom projection, and at least one bounded
+      high-capacity frontier. Record 50K construction/advancement separately
+      from any performance claim.
+- [ ] Run the proportional maintained/public-consumer gates, refresh the
+      secure Tailscale artifact, commit measured evidence, and stop at a new
+      human checkpoint.
+
+Gate: the revised UI remains compact above the fold, dry and water
+configuration is predictable, high-count scenes remain bounded and navigable,
+and neither their live diagnostics nor successful construction is promoted as
+a performance result.
 
 ## Stop conditions
 

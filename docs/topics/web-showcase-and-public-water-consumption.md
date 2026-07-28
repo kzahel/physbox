@@ -1,9 +1,9 @@
 # Web showcase and public water consumption
 
-Status: decided and locally qualified through S40's automated gates on
-2026-07-28. Bounded interactive authoring, stress scenes, and diagnostic
-telemetry are implemented; S40 remains active at its mandatory human product
-checkpoint. GitHub Pages configuration, repository publication, and Box2D
+Status: decided and locally qualified through S40's first automated gates on
+2026-07-28. Human review reopened S40 for icon tools, configuration-owned
+water, 30/60 Hz choices, 2K-through-50K rigid stress variants, and camera
+navigation. GitHub Pages configuration, repository publication, and Box2D
 comparison remain deliberately held for separate review.
 
 This topic defines the first-party PhysBox Web Showcase, its relationship to
@@ -151,12 +151,11 @@ contract.
 The S40 showcase toolbar remains deliberately compact:
 
 - **Scene** selects the curated catalog.
-- **Tool** selects Drag, Box, or Water. Water is enabled only for a scene
-  authored with a particle system; selecting a rigid-only scene returns the
-  tool to Drag.
-- **Bodies** selects the public world-capacity tier.
-- **Water** selects a bounded particle capacity.
-- **Physics** selects a fixed 30, 60, 120, or 240 Hz rate.
+- **Tool** is a group of individually labeled icon buttons for body Drag, Box,
+  Water, and camera Pan; it is not a dropdown.
+- **Max bodies** selects the public world-capacity tier.
+- **Max water** selects `None` or a bounded particle capacity.
+- **Physics** selects only 30 or 60 Hz.
 - **Pause** and **Reset** control the current world.
 
 Capacity and physics-rate changes are pending configuration. They take effect
@@ -164,6 +163,12 @@ only when Reset is pressed or a new scene is selected because they determine
 GPU allocation and the simulation clock. The UI must make pending state
 visible and must not silently recreate the world while the visitor is
 interacting.
+
+Water availability follows the applied `Max water` configuration, not the
+scene name. Dry scenes select `None` by default; choosing a capacity and
+pressing Reset creates an initially empty semantic-water system so the Water
+tool can emit into that scene. Water-authored scenes select a bounded water
+default, and Water and rigid bodies is the initial showcase scene.
 
 Drag keeps the existing public point-query/constraint path. Box places one
 standard dynamic box through public body/shape construction. Water click or
@@ -173,19 +178,25 @@ water erasure, and persisted configurations are deferred.
 
 Two consumer-owned scenes extend the catalog:
 
-- **Rigid stress** fills approximately 90 percent of the selected rigid-body
-  tier, while reserving slots for interactive placement.
+- **Rigid stress 2K/5K/10K/20K/50K** author the exact named live-body count
+  into a matching default capacity. A larger `Max bodies` tier may be selected
+  before Reset to restore placement headroom.
 - **Water stress** fills approximately 80 percent of the selected particle
   capacity, while reserving slots for the water tool.
 
-The 10,000-body and 16,384-particle showcase tiers are explicit heavy options,
-not startup defaults. The library's 32,768-particle capacity frontier is not a
-showcase option: a bounded cold Browser WebGPU check did not return its first
-32K coupled stress frame within 90 seconds on the development host, while the
-16K tier did advance. That frontier remains available to purpose-built
-evidence tools and may be reconsidered after optimization. Stress scenes
-demonstrate bounded scale and overload behavior; they are not benchmark or
-quality claims.
+The 10,000-through-50,000-body and 16,384-particle showcase tiers are explicit
+heavy options, not startup defaults. The library's 32,768-particle capacity
+frontier is not a showcase option: a bounded cold Browser WebGPU check did not
+return its first 32K coupled stress frame within 90 seconds on the development
+host, while the 16K tier did advance. That frontier remains available to
+purpose-built evidence tools and may be reconsidered after optimization.
+Stress scenes demonstrate bounded scale and overload behavior; they are not
+benchmark or quality claims.
+
+The showcase owns camera navigation. Pan changes only the consumer camera, and
+wheel/trackpad zoom preserves the world point under the pointer. Scene
+selection and Reset restore the authored home frame. Navigation never changes
+physics state or requires a GPU readback.
 
 ## Live diagnostics
 
@@ -202,10 +213,12 @@ back asynchronously with delayed buffers. It must display unavailable when
 the feature is absent and may not block an interactive frame. It does not
 expose private solver-pass timing through `physbox-sim`.
 
-Display cadence and fixed-step cadence remain separate. In particular, a
-120 Hz requested physics rate on a 60 Hz `requestAnimationFrame` source
-achieves at most about 60 admitted steps per second under the zero-or-one
-contract, and the diagnostic must show that slowdown honestly.
+Display cadence and fixed-step cadence remain separate. The showcase exposes
+only 30 and 60 Hz because every outer step already contains four solver
+substeps. Higher valid library rates remain available to purpose-built
+consumers, but presenting 120/240 Hz beside ordinary RAF implied
+480/960 internal substeps per simulated second and mostly demonstrated
+slow-time rather than a useful demo-quality choice.
 
 An optional render-rate cap and render interpolation are deferred until the
 S40 human checkpoint. A cap alone would intentionally lower presentation
