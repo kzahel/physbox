@@ -347,6 +347,29 @@ four water stress tiers are selectable and bounded, arrow navigation is
 non-mechanical, and 32K remains a diagnostic stress frontier rather than a
 performance or quality claim.
 
+### S40.9 — Settling stress scenes and sleep legibility
+
+- [ ] Add an exact Rigid stress 1K scene using the existing public 1K world
+      capacity.
+- [ ] Re-author every rigid stress tier as many isolated stacks of at most
+      five dynamic bodies on fixed pads. Preserve the exact named live-body
+      count and at least 80 percent dynamic bodies, but avoid turning one
+      persistently unquiet body into a blocker for the entire default exact
+      contact component.
+- [ ] Add a compact, default-on `Sleep tint` checkbox that changes only the
+      showcase renderer's use of the public sleeping flag. It must not toggle
+      engine sleeping, configuration, stepping, or physics state.
+- [ ] Qualify exact construction, reset/tool behavior, toggle persistence
+      across scene rebuilds, and visible settling in Browser WebGPU without a
+      synchronous observation readback.
+- [ ] Commit the bounded slice and return to the unresolved 32K Water stress
+      product checkpoint.
+
+Gate: 1K/2K/5K/10K retain exact named capacity, rigid stress is predominantly
+dynamic but partitioned into qualified small settling structures, and the
+sleep control is unambiguously a visualization toggle rather than a mechanics
+toggle.
+
 ## Stop conditions
 
 Stop before continuing if:

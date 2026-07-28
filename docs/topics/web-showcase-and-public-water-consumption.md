@@ -187,9 +187,12 @@ water erasure, and persisted configurations are deferred.
 
 Two consumer-owned scenes extend the catalog:
 
-- **Rigid stress 2K/5K/10K** author the exact named live-body count into a
-  matching default capacity. Rigid stress above 10K is not part of the public
-  showcase after direct human review.
+- **Rigid stress 1K/2K/5K/10K** author the exact named live-body count into a
+  matching default capacity. Each field uses many isolated stacks of at most
+  five dynamics on fixed pads, retaining at least 80 percent dynamic bodies
+  while allowing the default exact sleeping policy to settle independent
+  components. Rigid stress above 10K is not part of the public showcase after
+  direct human review.
 - **Water stress 4K/8K/16K/32K** fills approximately 80 percent of its named
   particle capacity, while reserving slots for the water tool.
 
@@ -211,6 +214,12 @@ Circle orientation is also presentation policy: the showcase renderer draws a
 short radial mark in each circle's local frame so rotation from the public body
 observation is legible. This does not change collision geometry, physics state,
 or the reusable observation contract.
+
+Sleeping color is likewise renderer-only. A default-on `Sleep tint` checkbox
+controls whether the showcase mixes the public sleeping flag into body color.
+It never enables or disables sleeping, rebuilds the world, or changes physics
+state; the explicit wording avoids confusing visualization state with the
+engine's default-on sleeping policy.
 
 ## Live diagnostics
 
