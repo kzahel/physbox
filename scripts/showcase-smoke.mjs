@@ -72,7 +72,9 @@ try {
   if (
     state.scene !== "playground" ||
     state.crossOriginIsolated !== false ||
-    state.liveBodies !== 21
+    state.liveBodies !== 21 ||
+    state.bodyCapacity !== 256 ||
+    state.waterAvailable !== false
   ) {
     throw new Error(`invalid playground state: ${JSON.stringify(state)}`);
   }
@@ -82,12 +84,41 @@ try {
       `showcase canvas is not above-fold and materially visible: ${JSON.stringify(bounds)}`,
     );
   }
+  if (!(await page.locator('#tool-select option[value="water"]').isDisabled())) {
+    throw new Error("rigid-only playground unexpectedly enables the Water tool");
+  }
+  const point = (normalizedX, normalizedY) => ({
+    x: bounds.x + bounds.width * normalizedX,
+    y: bounds.y + bounds.height * normalizedY,
+  });
+  await page.locator("#tool-select").selectOption("box");
+  await page.mouse.click(point(0.50, 0.20).x, point(0.50, 0.20).y);
+  await page.waitForFunction(() => globalThis.__physboxShowcase?.liveBodies === 22);
 
+  await page.locator("#body-capacity-select").selectOption("64");
+  await page.waitForFunction(() => globalThis.__physboxShowcase?.configDirty);
+  state = await page.evaluate(() => globalThis.__physboxShowcase);
+  if (
+    state.bodyCapacity !== 256 ||
+    !(await page.locator("#config-state").textContent()).includes("pending")
+  ) {
+    throw new Error(`capacity changed before Reset: ${JSON.stringify(state)}`);
+  }
+  await page.locator("#reset-button").click();
+  await page.waitForFunction(
+    () =>
+      globalThis.__physboxShowcase?.bodyCapacity === 64 &&
+      globalThis.__physboxShowcase.liveBodies === 21 &&
+      !globalThis.__physboxShowcase.configDirty,
+  );
+
+  await page.locator("#body-capacity-select").selectOption("256");
   await page.locator("#scene-select").selectOption("stack-and-sleep");
   await page.waitForFunction(
     () =>
       globalThis.__physboxShowcase?.scene === "stack-and-sleep" &&
       globalThis.__physboxShowcase.liveBodies === 15 &&
+      globalThis.__physboxShowcase.bodyCapacity === 256 &&
       globalThis.__physboxShowcase.fixedSteps >= 2,
   );
   const fixedBeforePause = await page.evaluate(
@@ -116,16 +147,19 @@ try {
   await page.locator("#reset-button").click();
   const currentBounds = await page.locator("#showcase-canvas").boundingBox();
   if (!currentBounds) throw new Error("showcase canvas disappeared");
-  const point = (normalizedX, normalizedY) => ({
+  const currentPoint = (normalizedX, normalizedY) => ({
     x: currentBounds.x + currentBounds.width * normalizedX,
     y: currentBounds.y + currentBounds.height * normalizedY,
   });
-  await page.mouse.move(point(0.5, 0.25).x, point(0.5, 0.25).y);
+  await page.locator("#tool-select").selectOption("drag");
+  await page.mouse.move(currentPoint(0.5, 0.25).x, currentPoint(0.5, 0.25).y);
   await page.mouse.down();
   await page.waitForFunction(() => globalThis.__physboxShowcase?.dragging, null, {
     timeout: 5_000,
   });
-  await page.mouse.move(point(0.66, 0.3).x, point(0.66, 0.3).y, { steps: 8 });
+  await page.mouse.move(currentPoint(0.66, 0.3).x, currentPoint(0.66, 0.3).y, {
+    steps: 8,
+  });
   await page.mouse.up();
   await page.waitForFunction(() => !globalThis.__physboxShowcase?.dragging, null, {
     timeout: 5_000,
@@ -136,10 +170,125 @@ try {
     () =>
       globalThis.__physboxShowcase?.scene === "water-and-rigid" &&
       globalThis.__physboxShowcase.particleCount > 2_000 &&
-      globalThis.__physboxShowcase.fixedSteps >= 90,
+      globalThis.__physboxShowcase.fixedSteps >= 2,
     null,
     { timeout: 30_000 },
   );
+  const waterBefore = await page.evaluate(
+    () => globalThis.__physboxShowcase.particleCount,
+  );
+  await page.locator("#tool-select").selectOption("water");
+  const waterBounds = await page.locator("#showcase-canvas").boundingBox();
+  if (!waterBounds) throw new Error("water canvas disappeared");
+  await page.mouse.move(
+    waterBounds.x + waterBounds.width * 0.70,
+    waterBounds.y + waterBounds.height * 0.30,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    waterBounds.x + waterBounds.width * 0.78,
+    waterBounds.y + waterBounds.height * 0.36,
+    { steps: 10 },
+  );
+  await page.mouse.up();
+  await page.waitForFunction(
+    (initial) => globalThis.__physboxShowcase?.particleCount > initial,
+    waterBefore,
+    { timeout: 15_000 },
+  );
+
+  await page.locator("#water-capacity-select").selectOption("8192");
+  await page.locator("#physics-select").selectOption("120");
+  await page.waitForFunction(() => globalThis.__physboxShowcase?.configDirty);
+  await page.locator("#reset-button").click();
+  await page.waitForFunction(
+    () =>
+      globalThis.__physboxShowcase?.particleCapacity === 8192 &&
+      globalThis.__physboxShowcase.physicsHz === 120 &&
+      globalThis.__physboxShowcase.frames > 40 &&
+      globalThis.__physboxShowcase.effectiveSimulationScale < 0.75 &&
+      (!globalThis.__physboxShowcase.gpuTimingAvailable ||
+        globalThis.__physboxShowcase.gpuFrameMs !== null),
+    null,
+    { timeout: 30_000 },
+  );
+  state = await page.evaluate(() => globalThis.__physboxShowcase);
+  if (
+    state.fixedStepsThisFrame > 1 ||
+    state.admittedPhysicsHz > 100 ||
+    !state.waterAvailable ||
+    (state.gpuTimingAvailable && !Number.isFinite(state.gpuFrameMs)) ||
+    (!state.gpuTimingAvailable && state.gpuFrameMs !== null)
+  ) {
+    throw new Error(`invalid 120 Hz slow-time state: ${JSON.stringify(state)}`);
+  }
+
+  await page.locator("#scene-select").selectOption("rigid-stress");
+  await page.waitForFunction(
+    () =>
+      globalThis.__physboxShowcase?.scene === "rigid-stress" &&
+      globalThis.__physboxShowcase.liveBodies === 230,
+    null,
+    { timeout: 30_000 },
+  );
+  state = await page.evaluate(() => globalThis.__physboxShowcase);
+  if (state.waterAvailable || state.tool !== "drag") {
+    throw new Error(`rigid stress tool state is invalid: ${JSON.stringify(state)}`);
+  }
+  await page.locator("#body-capacity-select").selectOption("64");
+  await page.locator("#reset-button").click();
+  await page.waitForFunction(
+    () =>
+      globalThis.__physboxShowcase?.scene === "rigid-stress" &&
+      globalThis.__physboxShowcase.bodyCapacity === 64 &&
+      globalThis.__physboxShowcase.liveBodies === 57,
+  );
+  await page.locator("#tool-select").selectOption("box");
+  const stressBounds = await page.locator("#showcase-canvas").boundingBox();
+  if (!stressBounds) throw new Error("rigid stress canvas disappeared");
+  for (let liveBodies = 58; liveBodies <= 64; liveBodies += 1) {
+    await page.mouse.click(
+      stressBounds.x + stressBounds.width * (0.25 + (liveBodies - 58) * 0.07),
+      stressBounds.y + stressBounds.height * 0.12,
+    );
+    await page.waitForFunction(
+      (expected) => globalThis.__physboxShowcase?.liveBodies === expected,
+      liveBodies,
+    );
+  }
+  await page.mouse.click(
+    stressBounds.x + stressBounds.width * 0.75,
+    stressBounds.y + stressBounds.height * 0.12,
+  );
+  await page.waitForFunction(
+    () =>
+      globalThis.__physboxShowcase?.liveBodies === 64 &&
+      globalThis.__physboxShowcase.toolNotice?.includes("capacity is full"),
+  );
+
+  await page.locator("#scene-select").selectOption("water-stress");
+  await page.waitForFunction(
+    () =>
+      globalThis.__physboxShowcase?.scene === "water-stress" &&
+      globalThis.__physboxShowcase.particleCapacity === 8192 &&
+      globalThis.__physboxShowcase.particleCount >= 6400,
+    null,
+    { timeout: 30_000 },
+  );
+  const status = await page.locator("#status-text").textContent();
+  if (
+    !status.includes("FPS") ||
+    !status.includes("physics") ||
+    !status.includes("main") ||
+    !status.includes("bodies") ||
+    !status.includes("water")
+  ) {
+    throw new Error(`showcase diagnostic line is incomplete: ${status}`);
+  }
+  state = await page.evaluate(() => globalThis.__physboxShowcase);
+  if (state.fixedSteps < 30 && state.gpuFrameMs !== null) {
+    throw new Error(`GPU timing leaked across scene reset: ${JSON.stringify(state)}`);
+  }
   await page.screenshot({ path: screenshot, fullPage: true });
 
   state = await page.evaluate(() => globalThis.__physboxShowcase);

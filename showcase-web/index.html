@@ -26,9 +26,38 @@
           <option value="playground">Playground</option>
           <option value="stack-and-sleep">Stack and sleep</option>
           <option value="water-and-rigid">Water and rigid bodies</option>
+          <option value="rigid-stress">Rigid stress</option>
+          <option value="water-stress">Water stress</option>
+        </select>
+        <label for="tool-select">Tool:</label>
+        <select id="tool-select" class="short-select">
+          <option value="drag">Drag</option>
+          <option value="box">Box</option>
+          <option value="water">Water</option>
+        </select>
+        <label for="body-capacity-select">Bodies:</label>
+        <select id="body-capacity-select" class="capacity-select">
+          <option value="64">64</option>
+          <option value="256" selected>256</option>
+          <option value="1000">1K</option>
+          <option value="10000">10K (heavy)</option>
+        </select>
+        <label for="water-capacity-select">Water:</label>
+        <select id="water-capacity-select" class="capacity-select">
+          <option value="4096">4K</option>
+          <option value="8192">8K</option>
+          <option value="16384">16K (heavy)</option>
+        </select>
+        <label for="physics-select">Physics:</label>
+        <select id="physics-select" class="rate-select">
+          <option value="30">30 Hz</option>
+          <option value="60" selected>60 Hz</option>
+          <option value="120">120 Hz</option>
+          <option value="240">240 Hz</option>
         </select>
         <button id="pause-button" type="button" aria-pressed="false">Pause</button>
         <button id="reset-button" type="button">Reset</button>
+        <span id="config-state" aria-live="polite"></span>
       </form>
     </header>
 
@@ -42,7 +71,7 @@
               Mixed circles and boxes share one GPU-resident rigid world.
             </span>
           </p>
-          <p class="hint">Drag any moving body</p>
+          <p class="hint" id="scene-hint">Drag any moving body</p>
         </div>
         <div class="canvas-shell">
           <canvas
@@ -61,8 +90,8 @@
     </main>
 
     <footer>
-      Water is preview quality. Public <code>physbox-sim</code> consumer; no
-      SharedArrayBuffer required.
+      Water is preview quality. Live numbers are diagnostics, not benchmarks.
+      Public <code>physbox-sim</code> consumer; no SharedArrayBuffer required.
     </footer>
 
     <script type="module" src="./app.js"></script>

@@ -70,9 +70,10 @@ footer {
 
 .controls {
   display: flex;
-  gap: 6px;
+  gap: 4px;
   align-items: center;
   margin: 0;
+  white-space: nowrap;
 }
 
 .controls label {
@@ -90,14 +91,44 @@ button {
 }
 
 select {
-  width: 190px;
   padding: 0 24px 0 7px;
+}
+
+#scene-select {
+  width: 170px;
+}
+
+.short-select {
+  width: 72px;
+}
+
+.capacity-select {
+  width: 84px;
+}
+
+.rate-select {
+  width: 76px;
 }
 
 button {
   min-width: 54px;
   padding: 0 9px;
   cursor: pointer;
+}
+
+select:disabled {
+  color: #6f767d;
+  cursor: not-allowed;
+}
+
+#config-state {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+#config-state.pending {
+  color: #f1c36b;
 }
 
 select:hover,
@@ -150,11 +181,23 @@ canvas {
   width: 100%;
   height: 100%;
   touch-action: none;
+  cursor: default;
+}
+
+canvas[data-tool="drag"] {
   cursor: grab;
 }
 
-canvas:active {
+canvas[data-tool="drag"]:active {
   cursor: grabbing;
+}
+
+canvas[data-tool="box"] {
+  cursor: copy;
+}
+
+canvas[data-tool="water"] {
+  cursor: crosshair;
 }
 
 .status {
@@ -169,6 +212,10 @@ canvas:active {
   background: rgba(16, 18, 20, 0.86);
   color: var(--muted);
   font-size: 11px;
+  max-width: calc(100% - 14px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   pointer-events: none;
 }
 
@@ -198,26 +245,32 @@ footer code {
   color: inherit;
 }
 
-@media (max-width: 700px) {
+@media (max-width: 1100px) {
+  .identity span {
+    display: none;
+  }
+}
+
+@media (max-width: 900px) {
   body {
     width: calc(100% - 10px);
   }
 
   .masthead {
-    min-height: 74px;
+    min-height: 78px;
     align-items: flex-start;
     flex-direction: column;
-    gap: 5px;
+    gap: 4px;
     justify-content: center;
   }
 
   .controls {
     width: 100%;
+    flex-wrap: wrap;
   }
 
-  select {
-    min-width: 0;
-    flex: 1;
+  #scene-select {
+    width: 160px;
   }
 
   .stage-copy {
@@ -229,20 +282,20 @@ footer code {
   }
 
   .canvas-shell {
-    height: max(340px, calc(100dvh - 148px));
+    height: max(340px, calc(100dvh - 152px));
   }
 }
 
-@media (max-width: 430px) {
-  .identity span {
-    display: none;
-  }
-
+@media (max-width: 600px) {
   .controls label {
     position: absolute;
     overflow: hidden;
     width: 1px;
     height: 1px;
     clip: rect(0 0 0 0);
+  }
+
+  #config-state {
+    display: none;
   }
 }

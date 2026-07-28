@@ -245,6 +245,40 @@ pub struct ShapeDef {
 }
 
 impl ShapeDef {
+    /// The standard rectangle currently supported by deferred runtime
+    /// construction.
+    ///
+    /// This semantic constructor keeps the supported size and material inside
+    /// the simulation crate so consumers do not copy private construction
+    /// constants.
+    pub const fn standard_runtime_rectangle() -> Self {
+        Self {
+            geometry: ShapeGeometry::Rectangle(Rectangle {
+                half_extents: crate::construction::CONSTRUCTION_RECTANGLE_HALF_EXTENTS,
+            }),
+            material: MaterialDef {
+                density: crate::construction::CONSTRUCTION_DENSITY,
+                friction: crate::construction::CONSTRUCTION_FRICTION,
+                restitution: crate::construction::CONSTRUCTION_RESTITUTION,
+            },
+        }
+    }
+
+    /// The standard circle currently supported by deferred runtime
+    /// construction.
+    pub const fn standard_runtime_circle() -> Self {
+        Self {
+            geometry: ShapeGeometry::Circle(Circle {
+                radius: crate::construction::CONSTRUCTION_CIRCLE_RADIUS,
+            }),
+            material: MaterialDef {
+                density: crate::construction::CONSTRUCTION_DENSITY,
+                friction: crate::construction::CONSTRUCTION_FRICTION,
+                restitution: crate::construction::CONSTRUCTION_RESTITUTION,
+            },
+        }
+    }
+
     pub const fn circle(radius: f32) -> Self {
         Self {
             geometry: ShapeGeometry::Circle(Circle { radius }),
@@ -427,5 +461,19 @@ mod tests {
         assert_eq!(body.slot(), 3);
         assert_eq!(body.generation(), 7);
         assert_eq!(shape.body(), body);
+    }
+
+    #[test]
+    fn semantic_runtime_shapes_own_the_supported_construction_values() {
+        ShapeDef::standard_runtime_rectangle()
+            .validate(BodyType::Dynamic)
+            .unwrap();
+        ShapeDef::standard_runtime_circle()
+            .validate(BodyType::Dynamic)
+            .unwrap();
+        assert_eq!(
+            ShapeDef::standard_runtime_rectangle().material.density,
+            crate::construction::CONSTRUCTION_DENSITY
+        );
     }
 }

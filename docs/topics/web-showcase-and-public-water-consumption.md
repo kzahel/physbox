@@ -178,9 +178,14 @@ Two consumer-owned scenes extend the catalog:
 - **Water stress** fills approximately 80 percent of the selected particle
   capacity, while reserving slots for the water tool.
 
-The 10,000-body and 32,768-particle frontiers are explicit heavy options, not
-startup defaults. Stress scenes demonstrate bounded scale and overload
-behavior; they are not benchmark or quality claims.
+The 10,000-body and 16,384-particle showcase tiers are explicit heavy options,
+not startup defaults. The library's 32,768-particle capacity frontier is not a
+showcase option: a bounded cold Browser WebGPU check did not return its first
+32K coupled stress frame within 90 seconds on the development host, while the
+16K tier did advance. That frontier remains available to purpose-built
+evidence tools and may be reconsidered after optimization. Stress scenes
+demonstrate bounded scale and overload behavior; they are not benchmark or
+quality claims.
 
 ## Live diagnostics
 

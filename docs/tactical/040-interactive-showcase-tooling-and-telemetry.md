@@ -113,15 +113,15 @@ Library checkpoint, 2026-07-28:
 
 ### S40.3 — Configurable showcase world and scenes
 
-- [ ] Add pending body-capacity, water-capacity, and 30/60/120/240 Hz controls
+- [x] Add pending body-capacity, water-capacity, and 30/60/120/240 Hz controls
       that apply on Reset or scene selection.
-- [ ] Rebuild renderer allocations and the simulation clock consistently with
+- [x] Rebuild renderer allocations and the simulation clock consistently with
       the selected world settings.
-- [ ] Add Rigid stress near 90 percent of selected body capacity with
+- [x] Add Rigid stress near 90 percent of selected body capacity with
       placement headroom.
-- [ ] Add Water stress near 80 percent of selected water capacity with
+- [x] Add Water stress near 80 percent of selected water capacity with
       emission headroom.
-- [ ] Keep 10K bodies and 32K particles explicit heavy options and preserve
+- [x] Keep 10K bodies and 16K particles explicit heavy options and preserve
       compact first-screen layout at laptop dimensions.
 
 Gate: all five scenes construct solely through the public simulation API at
@@ -130,15 +130,15 @@ live world.
 
 ### S40.4 — Placement tools
 
-- [ ] Add compact Drag/Box/Water HTML selection.
-- [ ] Keep Drag on the current public deferred query/constraint path.
-- [ ] Place one standard dynamic box on click through public body and shape
+- [x] Add compact Drag/Box/Water HTML selection.
+- [x] Keep Drag on the current public deferred query/constraint path.
+- [x] Place one standard dynamic box on click through public body and shape
       construction, updating only consumer-owned renderer metadata.
-- [ ] Paint bounded preview water on click/drag through the public emission
+- [x] Paint bounded preview water on click/drag through the public emission
       operation with at most one coalesced emission per admitted fixed step.
-- [ ] Disable Water for rigid-only scenes and return selection to Drag when
+- [x] Disable Water for rigid-only scenes and return selection to Drag when
       changing to one.
-- [ ] Surface full body/water capacity without crashing, blocking, or silently
+- [x] Surface full body/water capacity without crashing, blocking, or silently
       switching mechanics.
 
 Gate: packaged Browser WebGPU automation and human interaction can place,
@@ -146,18 +146,41 @@ drag, and paint as allowed by the current scene and capacity.
 
 ### S40.5 — Live diagnostic telemetry
 
-- [ ] Display rolling `requestAnimationFrame` FPS, configured/admitted physics
+- [x] Display rolling `requestAnimationFrame` FPS, configured/admitted physics
       Hz, effective simulation scale, and main-thread frame work.
-- [ ] Display authoritative body occupancy and eventual particle
+- [x] Display authoritative body occupancy and eventual particle
       occupancy/capacity from stable public counters.
-- [ ] Add sparse optional caller-owned GPU frame/physics timestamps with
+- [x] Add sparse optional caller-owned GPU frame/physics timestamps with
       delayed nonblocking readback, or display `GPU n/a` when unsupported.
-- [ ] Label live numbers as diagnostics, keep them out of retained benchmark
+- [x] Label live numbers as diagnostics, keep them out of retained benchmark
       evidence, and verify that a requested rate above display cadence shows
       slowdown rather than catch-up.
 
 Gate: the diagnostic line is compact, honest about unavailable/stale data,
 and never becomes an admission or rendering dependency.
+
+Showcase implementation checkpoint, 2026-07-28:
+
+- One reset path constructs the selected 64/256/1K/10K body tier, 4K/8K/16K
+  water tier, and 30/60/120/240 Hz clock/configuration together. Control
+  changes remain visibly pending until Reset; scene selection applies them.
+- Rigid stress authors 90 percent of each tier. A separate Browser WebGPU
+  frontier check constructed and advanced 9,000 live bodies in the 10,000-slot
+  tier at a requested 30 Hz. Water stress authors at least 79 percent of each
+  offered tier; the 16K row constructed 13,104 particles and advanced.
+- The library still supports 32,768 particle slots, but a cold coupled 32K
+  stress selection did not return its first page state within a bounded
+  90-second Browser WebGPU check on this host. It was removed from the
+  favorable public selector instead of being presented as a usable demo tier.
+- Packaged run `1768f17e-1cd9-43a9-9d27-87f36b00f3d1` passes Box placement,
+  Drag creation/release, Water drag emission, pending/reset semantics, both
+  stress scenes, exact 64-body capacity signaling, 8,192-capacity/6,497-live
+  water, and zero page/console validation errors at 1,512 × 800 with DPR 2.
+- The same smoke requests 120 Hz, proves zero-or-one steps and an admitted rate
+  below 100 Hz/effective scale below `0.75`, and accepts either finite sparse
+  timestamp-query results or the explicit unavailable path. Timing samples are
+  triple-buffered every 30 admitted steps and invalidated on every scene
+  rebuild so old scene numbers are never relabeled as current.
 
 ### S40.6 — Qualification and human checkpoint
 
