@@ -5,8 +5,9 @@ use std::sync::{Arc, Mutex};
 use physbox_contracts::{
     BodyCommandBatchV1, BodyId as ContractBodyId, BodyStateV1, ConstructionIntentBatchV1,
     ConstructionIntentV1, ConstructionResultV1, ContactPolicyV1, ContactSoftnessPolicyV1,
-    FiniteF32, GRAB_INTENT_CONTRACT_VERSION, GrabIntentBatchV1, MaterialV1, SCHEMA_VERSION,
-    ScenarioV1, ShapeV1, SolverSettingsV1, Vec2,
+    CoupledScenarioV1, CoupledScheduleV1, CoupledSettingsV1, FiniteF32,
+    GRAB_INTENT_CONTRACT_VERSION, GrabIntentBatchV1, MaterialV1, ParticleMaterialV1,
+    ParticleRegionV1, SCHEMA_VERSION, ScenarioV1, ShapeV1, SolverSettingsV1, Vec2,
 };
 
 use crate::body_world::{BodyCommandStepRange, BodyStepPlan, GpuBodyWorld};
@@ -19,8 +20,8 @@ use crate::interaction::{
     cancelled_result, decode_results,
 };
 use crate::{
-    BodyDef, BodyId, BodyType, ShapeDef, ShapeGeometry, ShapeId, SolverProfileName, StepDef,
-    WorldDef,
+    BodyDef, BodyId, BodyType, PREVIEW_WATER_RADIUS, ParticleSystemDef, ShapeDef, ShapeGeometry,
+    ShapeId, SolverProfileName, StepDef, WorldDef,
 };
 
 const BODY_POSE_BYTES: u64 = size_of::<[f32; 4]>() as u64;
@@ -87,6 +88,7 @@ pub struct World {
     bodies: Vec<Option<BodyRecord>>,
     generations: Vec<u32>,
     inner: Option<GpuBodyWorld>,
+    particle_system: Option<ParticleSystemDef>,
     queued_construction: Vec<ConstructionIntentV1>,
     next_sequence: u32,
     outer_step: u64,
@@ -119,6 +121,7 @@ impl World {
             bodies: vec![None; capacity as usize],
             generations: vec![0; capacity as usize],
             inner: None,
+            particle_system: None,
             queued_construction: Vec::new(),
             next_sequence: 1,
             outer_step: 0,
@@ -139,6 +142,23 @@ impl World {
 
     pub const fn definition(&self) -> WorldDef {
         self.definition
+    }
+
+    /// Installs one initial preview-water system before the first step.
+    pub fn set_particle_system(&mut self, definition: ParticleSystemDef) -> Result<(), WorldError> {
+        if self.inner.is_some() {
+            return Err(WorldError::new(
+                "particle system must be configured before the first step",
+            ));
+        }
+        if self.particle_system.is_some() {
+            return Err(WorldError::new(
+                "the current world supports one particle system",
+            ));
+        }
+        definition.validate().map_err(WorldError::definition)?;
+        self.particle_system = Some(definition);
+        Ok(())
     }
 
     pub fn create_body(&mut self, body: BodyDef) -> Result<BodyId, WorldError> {
@@ -420,15 +440,25 @@ impl World {
         }
         if self.inner.is_none() {
             let scenario = self.initial_scenario()?;
-            self.inner = Some(
+            self.inner = Some(if self.particle_system.is_some() {
+                let coupled = self.initial_coupled_scenario(scenario)?;
+                GpuBodyWorld::new_coupled_with_configuration(
+                    device,
+                    &coupled,
+                    self.definition.capacity,
+                    self.definition.quality.physics,
+                    self.definition.quality.fluid_solid_coupling,
+                )
+                .map_err(WorldError::new)?
+            } else {
                 GpuBodyWorld::new_generated_with_configuration(
                     device,
                     &scenario,
                     self.definition.capacity,
                     self.definition.quality.physics,
                 )
-                .map_err(WorldError::new)?,
-            );
+                .map_err(WorldError::new)?
+            });
         }
         let queued_world_commands = self.queued_world_commands.len() as u32;
         let queued_construction = self.queued_construction.len() as u32;
@@ -678,6 +708,19 @@ impl World {
             .map_err(|error| WorldError::new(error.to_string()))
     }
 
+    /// Creates a reusable same-device observation of public particle physics
+    /// state. Configure particles and step the world once before creating it.
+    pub fn create_gpu_particle_observation(
+        &self,
+        device: &wgpu::Device,
+    ) -> Result<crate::GpuParticleObservation, WorldError> {
+        self.inner
+            .as_ref()
+            .ok_or_else(|| WorldError::new("step the world before creating a GPU observation"))?
+            .create_gpu_particle_observation(device)
+            .map_err(|error| WorldError::new(error.to_string()))
+    }
+
     pub fn counters(&self) -> WorldCounters {
         let queued_destructions = self
             .queued_world_commands
@@ -749,6 +792,46 @@ impl World {
             bodies,
             manifolds: Vec::new(),
             contact_cache: Vec::new(),
+            actions: Vec::new(),
+        })
+    }
+
+    fn initial_coupled_scenario(&self, rigid: ScenarioV1) -> Result<CoupledScenarioV1, WorldError> {
+        let definition = self
+            .particle_system
+            .as_ref()
+            .ok_or_else(|| WorldError::new("particle system is not configured"))?;
+        let mut material = ParticleMaterialV1::water_v1(0);
+        material.radius = finite(PREVIEW_WATER_RADIUS)?;
+        let regions = definition
+            .regions()
+            .iter()
+            .enumerate()
+            .map(|(index, region)| {
+                Ok(ParticleRegionV1 {
+                    id: u32::try_from(index)
+                        .map_err(|_| WorldError::new("particle region count exceeds u32"))?,
+                    material_id: 0,
+                    lower: vec2(region.lower),
+                    upper: vec2(region.upper),
+                    spacing: finite(region.spacing)?,
+                    initial_velocity: vec2(region.initial_velocity),
+                })
+            })
+            .collect::<Result<Vec<_>, WorldError>>()?;
+        let mut settings = CoupledSettingsV1::initial();
+        settings.schedule = CoupledScheduleV1::RigidThenCoupledBatch;
+        Ok(CoupledScenarioV1 {
+            schema_version: SCHEMA_VERSION,
+            contract_version: physbox_contracts::COUPLED_CONTRACT_VERSION,
+            id: "physbox-sim-preview-water-world".to_owned(),
+            seed: 0,
+            requested_steps: rigid.requested_steps,
+            particle_capacity: definition.capacity(),
+            rigid,
+            settings,
+            materials: vec![material],
+            regions,
             actions: Vec::new(),
         })
     }

@@ -11,7 +11,9 @@ same-step deferred query/constraint chaining, query misses, pending-command
 cancellation, target motion, release, selected-body destruction, complete
 capacity-sized asynchronous result delivery, lifecycle reconciliation, and
 generational slot reuse. Final physics state is validated through the
-canonical `GpuBodyObservation`.
+canonical `GpuBodyObservation`. A second bounded world configures public
+preview water before its first step and validates live particles through
+`GpuParticleObservation`.
 
 It does not construct a surface, texture, render pipeline, camera, application
 tool, or presentation object. Its bounded readbacks are proof only and do not
@@ -22,4 +24,5 @@ cargo run -p physbox-external-consumer
 ```
 
 Success prints `PHYSBOX_EXTERNAL_CONSUMER_SUCCESS` with bounded body/step
-counts, constrained motion, and the reused body generation.
+counts, constrained motion, the reused body generation, and the observed
+preview-water particle count.

@@ -63,11 +63,11 @@ equations, or define a final material-tuning API.
 ### S39.1 — Public definitions and validation
 
 - [x] Promote this tactical to active after S38's dependency boundary passes.
-- [ ] Add documented water system and rectangular region definitions.
-- [ ] Add a one-time pre-step `World::set_particle_system` operation.
-- [ ] Project definitions into the existing coupled scenario internally
+- [x] Add documented water system and rectangular region definitions.
+- [x] Add a one-time pre-step `World::set_particle_system` operation.
+- [x] Project definitions into the existing coupled scenario internally
       without exposing contract types.
-- [ ] Add CPU tests for validation, region ordering, capacity overflow, empty
+- [x] Add CPU tests for validation, region ordering, capacity overflow, empty
       authoring, late configuration, and unchanged rigid-only construction.
 
 Gate: a public consumer can describe current preview water without naming
@@ -75,11 +75,11 @@ solver or presentation internals.
 
 ### S39.2 — Coupled public stepping
 
-- [ ] Construct the existing `GpuParticleWorld` inside public `World` when a
+- [x] Construct the existing `GpuParticleWorld` inside public `World` when a
       particle system is configured.
-- [ ] Record the unchanged rigid/particle/coupling pass graph from
+- [x] Record the unchanged rigid/particle/coupling pass graph from
       `World::step`.
-- [ ] Preserve first-party private coupled construction and standard/stabilized
+- [x] Preserve first-party private coupled construction and standard/stabilized
       behavior without duplicate mechanics.
 - [ ] Add focused GPU tests for initial count, finite state, rigid response,
       capacity cleanliness, and unchanged rigid-only dispatch behavior.
@@ -89,17 +89,39 @@ through the existing authoritative GPU state.
 
 ### S39.3 — Canonical particle observation
 
-- [ ] Add a stable public particle observation record and flags.
-- [ ] Project private state with an explicitly encoded compute pass into a
+- [x] Add a stable public particle observation record and flags.
+- [x] Project private state with an explicitly encoded compute pass into a
       public buffer.
-- [ ] Add layout/version, capacity, radius, buffer-usage, and inactive-slot
+- [x] Add layout/version, capacity, radius, buffer-usage, and inactive-slot
       tests.
-- [ ] Extend the surface-free external consumer to encode and inspect one
+- [x] Extend the surface-free external consumer to encode and inspect one
       bounded particle observation without renderer or CPU advancement
       dependency.
 
 Gate: an independent consumer can render or compute from live water state
 without learning a private solver layout.
+
+Public API checkpoint, 2026-07-28:
+
+- `ParticleSystemDef::water` and `ParticleRegionDef::rectangle` validate one
+  bounded pre-step preview-water system, the current `0.05 m` particle radius,
+  diameter-or-greater spacing, finite initial velocity, supported authored
+  world bounds, nonempty placement, and exact capacity before coupled GPU
+  allocation.
+- `World::set_particle_system` is one-time and pre-step. `World::step`
+  internally projects it into the existing coupled scenario and constructs the
+  same `GpuParticleWorld`, standard/stabilized policy, rigid storage, and
+  particle pass graph used by the first-party engine.
+- `GpuParticleObservationRecord` is a version-1 48-byte projection containing
+  position, velocity, generation, public live flag, slot, and material ID.
+  The observation's `STORAGE | COPY_SRC` buffer is explicitly encoded by the
+  caller and exposes no grid, density, pressure, correction, coupling, or
+  indirect-draw state.
+- The surface-free public GPU integration passes 3/3, including 24 live water
+  records and inactive capacity slots. The external-style consumer emits
+  `PHYSBOX_EXTERNAL_CONSUMER_SUCCESS ... water_particles=24`. All-feature
+  engine compilation, all-feature warnings-denied simulation clippy, and
+  platform dependency negatives pass.
 
 ### S39.4 — Web showcase water scene
 

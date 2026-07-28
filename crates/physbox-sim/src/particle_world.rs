@@ -1288,6 +1288,20 @@ impl GpuParticleWorld {
         self.initial_count
     }
 
+    pub fn create_gpu_particle_observation(
+        &self,
+        device: &wgpu::Device,
+    ) -> Result<crate::GpuParticleObservation, crate::GpuObservationError> {
+        crate::GpuParticleObservation::new(
+            device,
+            &self.positions,
+            &self.velocities,
+            &self.metadata,
+            self.capacity,
+            self.material.radius.get(),
+        )
+    }
+
     pub fn allocated_bytes(&self) -> u64 {
         u64::from(self.capacity)
             * (PARTICLE_BYTES_PER_SLOT + u64::from(PARTICLE_BODY_CONTRIBUTIONS_PER_PARTICLE) * 20)

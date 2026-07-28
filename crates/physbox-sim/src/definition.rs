@@ -349,6 +349,10 @@ impl Default for WorldDef {
 pub struct DefinitionError(String);
 
 impl DefinitionError {
+    pub(crate) fn new(message: impl Into<String>) -> Self {
+        Self(message.into())
+    }
+
     fn from_config(error: ConfigError) -> Self {
         Self(error.to_string())
     }

@@ -1307,6 +1307,18 @@ impl GpuBodyWorld {
         )
     }
 
+    pub fn create_gpu_particle_observation(
+        &self,
+        device: &wgpu::Device,
+    ) -> Result<crate::GpuParticleObservation, crate::GpuObservationError> {
+        self.particles
+            .as_ref()
+            .ok_or_else(|| {
+                crate::GpuObservationError::new("the world has no configured particle system")
+            })?
+            .create_gpu_particle_observation(device)
+    }
+
     pub const fn initial_body_count(&self) -> u32 {
         self.initial_live_count
     }

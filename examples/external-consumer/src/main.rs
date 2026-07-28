@@ -2,9 +2,10 @@ use std::mem::size_of;
 use std::sync::mpsc;
 
 use physbox_sim::{
-    BodyDef, BodyId, CommandQueueErrorKind, GpuBodyObservationRecord, PointConstraintDef,
-    PointQueryDef, ShapeDef, StepDef, WORLD_COMMAND_CAPACITY, World, WorldCommandKind,
-    WorldCommandResults, WorldCommandStatus, WorldDef,
+    BodyDef, BodyId, CommandQueueErrorKind, GpuBodyObservationRecord, GpuParticleObservationRecord,
+    ParticleRegionDef, ParticleSystemDef, PointConstraintDef, PointQueryDef, ShapeDef, StepDef,
+    WORLD_COMMAND_CAPACITY, World, WorldCommandKind, WorldCommandResults, WorldCommandStatus,
+    WorldDef,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -187,8 +188,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err("result-capacity batch lost an accepted point query".into());
     }
 
+    let water_particles = prove_public_water(&device, &queue)?;
     println!(
-        "PHYSBOX_EXTERNAL_CONSUMER_SUCCESS bodies={} steps={} moved_x={:.6} replacement={}:{} sleeping={}",
+        "PHYSBOX_EXTERNAL_CONSUMER_SUCCESS bodies={} steps={} moved_x={:.6} replacement={}:{} sleeping={} water_particles={water_particles}",
         world.counters().live_bodies,
         world.counters().outer_steps,
         moved_ball.pose[0],
@@ -197,6 +199,42 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         definition.quality.physics.sleeping_enabled
     );
     Ok(())
+}
+
+fn prove_public_water(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+) -> Result<usize, Box<dyn std::error::Error>> {
+    let definition = WorldDef::default();
+    let mut world = World::new(device, definition)?;
+    let floor = world.create_body(BodyDef::fixed().with_position([0.0, -0.15]))?;
+    world.create_shape(floor, ShapeDef::rectangle([1.7, 0.15]))?;
+    let ball = world.create_body(BodyDef::dynamic().with_position([0.0, 0.65]))?;
+    world.create_shape(ball, ShapeDef::circle(0.18).with_density(0.8))?;
+    world.set_particle_system(
+        ParticleSystemDef::water(64).with_region(ParticleRegionDef::rectangle(
+            [-0.3, 0.0],
+            [0.3, 0.4],
+            0.1,
+        )),
+    )?;
+    submit_steps(
+        &mut world,
+        device,
+        queue,
+        definition.quality.physics.fixed_dt_seconds(),
+        1,
+    )?;
+    let observation = world.create_gpu_particle_observation(device)?;
+    let records = read_particle_observation(device, queue, &observation)?;
+    let live = records
+        .iter()
+        .filter(|record| record.identity[1] & physbox_sim::GPU_PARTICLE_OBSERVATION_LIVE != 0)
+        .count();
+    if live == 0 {
+        return Err("public particle observation contained no live water".into());
+    }
+    Ok(live)
 }
 
 fn submit_steps(
@@ -285,6 +323,43 @@ fn read_observation(
         .map_err(|error| error.to_string())?;
     let mapped = readback.slice(..).get_mapped_range();
     let records = bytemuck::cast_slice::<u8, GpuBodyObservationRecord>(&mapped).to_vec();
+    drop(mapped);
+    readback.unmap();
+    Ok(records)
+}
+
+fn read_particle_observation(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    observation: &physbox_sim::GpuParticleObservation,
+) -> Result<Vec<GpuParticleObservationRecord>, Box<dyn std::error::Error>> {
+    let byte_count =
+        u64::from(observation.capacity()) * size_of::<GpuParticleObservationRecord>() as u64;
+    let readback = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("physbox_external_particle_observation_readback"),
+        size: byte_count,
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("physbox_external_observe_particles"),
+    });
+    observation.encode(&mut encoder);
+    encoder.copy_buffer_to_buffer(observation.buffer(), 0, &readback, 0, byte_count);
+    queue.submit([encoder.finish()]);
+    let (sender, receiver) = mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(wgpu::MapMode::Read, move |result| {
+            let _ = sender.send(result);
+        });
+    device.poll(wgpu::PollType::Wait)?;
+    receiver
+        .recv()
+        .map_err(|error| error.to_string())?
+        .map_err(|error| error.to_string())?;
+    let mapped = readback.slice(..).get_mapped_range();
+    let records = bytemuck::cast_slice(&mapped).to_vec();
     drop(mapped);
     readback.unmap();
     Ok(records)

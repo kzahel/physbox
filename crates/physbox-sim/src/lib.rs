@@ -39,11 +39,13 @@ mod exact_sleep_grouping;
 mod generated_contacts;
 mod gpu_context;
 mod gpu_observation;
+mod gpu_particle_observation;
 mod gpu_solver;
 mod gpu_timing;
 mod grab;
 mod interaction;
 mod pair_slot_persistence;
+mod particle_definition;
 mod particle_world;
 mod sleep_contacts;
 mod sleep_diagnostics;
@@ -198,12 +200,19 @@ pub use gpu_observation::{
     GPU_BODY_OBSERVATION_VERSION, GpuBodyObservation, GpuBodyObservationRecord,
     GpuObservationError,
 };
+pub use gpu_particle_observation::{
+    GPU_PARTICLE_OBSERVATION_LIVE, GPU_PARTICLE_OBSERVATION_VERSION, GpuParticleObservation,
+    GpuParticleObservationRecord,
+};
 pub use interaction::{
     BODY_SELECTION_CAPACITY, BodySelectionId, CommandId, CommandQueueError, CommandQueueErrorKind,
     CommandResultRequest, CommandResultRequestError, POINT_CONSTRAINT_CAPACITY, PointConstraintDef,
     PointConstraintId, PointConstraintTuning, PointQueryDef, QueuedBodySelection,
     QueuedPointConstraint, WORLD_COMMAND_CAPACITY, WORLD_RESULT_CAPACITY, WorldCommandKind,
     WorldCommandResult, WorldCommandResults, WorldCommandStatus,
+};
+pub use particle_definition::{
+    MAX_PARTICLE_CAPACITY, PREVIEW_WATER_RADIUS, ParticleRegionDef, ParticleSystemDef,
 };
 pub use world::{
     BodySnapshot, BodySnapshotEntry, SnapshotRequest, StepReport, World, WorldCounters, WorldError,

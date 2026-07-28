@@ -3,8 +3,10 @@ use std::sync::{Arc, Mutex};
 
 use physbox_sim::{
     BodyDef, CommandQueueErrorKind, GPU_BODY_OBSERVATION_LIVE, GPU_BODY_OBSERVATION_VERSION,
-    GpuBodyObservationRecord, PointConstraintDef, PointQueryDef, ShapeDef, StepDef, World,
-    WorldCommandKind, WorldCommandResults, WorldCommandStatus, WorldDef,
+    GPU_PARTICLE_OBSERVATION_LIVE, GPU_PARTICLE_OBSERVATION_VERSION, GpuBodyObservationRecord,
+    GpuParticleObservationRecord, PREVIEW_WATER_RADIUS, ParticleRegionDef, ParticleSystemDef,
+    PointConstraintDef, PointQueryDef, ShapeDef, StepDef, World, WorldCommandKind,
+    WorldCommandResults, WorldCommandStatus, WorldDef,
 };
 
 #[test]
@@ -58,6 +60,7 @@ fn public_world_steps_and_observes_without_a_surface() {
     assert_eq!(report.live_bodies, 2);
 
     let observation = world.create_gpu_body_observation(&device).unwrap();
+    assert!(world.create_gpu_particle_observation(&device).is_err());
     assert_eq!(observation.version(), GPU_BODY_OBSERVATION_VERSION);
     assert_eq!(
         observation.record_stride_bytes() as usize,
@@ -128,6 +131,84 @@ fn public_world_steps_and_observes_without_a_surface() {
     assert!(snapshot.bodies.iter().all(|body| {
         body.position[0].is_finite() && body.position[1].is_finite() && body.angle.is_finite()
     }));
+}
+
+#[test]
+fn public_world_steps_and_observes_preview_water_without_private_layouts() {
+    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+        backends: wgpu::Backends::PRIMARY,
+        ..Default::default()
+    });
+    let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+        power_preference: wgpu::PowerPreference::HighPerformance,
+        compatible_surface: None,
+        force_fallback_adapter: false,
+    }))
+    .expect("test GPU adapter");
+    let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+        label: Some("physbox_sim_public_water_test"),
+        required_features: wgpu::Features::empty(),
+        required_limits: wgpu::Limits::default().using_resolution(adapter.limits()),
+        ..Default::default()
+    }))
+    .expect("test GPU device");
+
+    let definition = WorldDef::default();
+    let fixed_dt = definition.quality.physics.fixed_dt_seconds();
+    let mut world = World::new(&device, definition).unwrap();
+    let floor = world
+        .create_body(BodyDef::fixed().with_position([0.0, -0.15]))
+        .unwrap();
+    world
+        .create_shape(floor, ShapeDef::rectangle([1.7, 0.15]))
+        .unwrap();
+    let ball = world
+        .create_body(BodyDef::dynamic().with_position([0.0, 0.65]))
+        .unwrap();
+    world
+        .create_shape(ball, ShapeDef::circle(0.18).with_density(0.8))
+        .unwrap();
+    let particles = ParticleSystemDef::water(64).with_region(
+        ParticleRegionDef::rectangle([-0.3, 0.0], [0.3, 0.4], 0.1)
+            .with_initial_velocity([0.05, 0.0]),
+    );
+    let initial_count = particles.initial_particle_count().unwrap();
+    world.set_particle_system(particles.clone()).unwrap();
+    assert!(world.set_particle_system(particles).is_err());
+    submit_steps(&mut world, &device, &queue, fixed_dt, 1);
+    assert!(
+        world
+            .set_particle_system(ParticleSystemDef::water(8))
+            .is_err()
+    );
+
+    let observation = world.create_gpu_particle_observation(&device).unwrap();
+    assert_eq!(observation.version(), GPU_PARTICLE_OBSERVATION_VERSION);
+    assert_eq!(observation.capacity(), 64);
+    assert_eq!(observation.particle_radius(), PREVIEW_WATER_RADIUS);
+    assert_eq!(
+        observation.record_stride_bytes() as usize,
+        size_of::<GpuParticleObservationRecord>()
+    );
+    let records = observe_particles(&device, &queue, &observation);
+    let live = records
+        .iter()
+        .filter(|record| record.identity[1] & GPU_PARTICLE_OBSERVATION_LIVE != 0)
+        .collect::<Vec<_>>();
+    assert_eq!(live.len(), initial_count as usize);
+    for (slot, record) in live.into_iter().enumerate() {
+        assert_eq!(
+            record.identity,
+            [1, GPU_PARTICLE_OBSERVATION_LIVE, slot as u32, 0]
+        );
+        assert!(record.position[0].is_finite());
+        assert!(record.position[1].is_finite());
+        assert!(record.motion[0].is_finite());
+        assert!(record.motion[1].is_finite());
+    }
+    for record in records.iter().skip(initial_count as usize) {
+        assert_eq!(record.identity[1] & GPU_PARTICLE_OBSERVATION_LIVE, 0);
+    }
 }
 
 #[test]
@@ -427,4 +508,44 @@ fn observe_body(
     drop(mapped);
     readback.unmap();
     record
+}
+
+fn observe_particles(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    observation: &physbox_sim::GpuParticleObservation,
+) -> Vec<GpuParticleObservationRecord> {
+    let byte_count =
+        u64::from(observation.capacity()) * size_of::<GpuParticleObservationRecord>() as u64;
+    let readback = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("physbox_sim_public_test_particle_observation"),
+        size: byte_count,
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("physbox_sim_public_test_particle_observation_copy"),
+    });
+    observation.encode(&mut encoder);
+    encoder.copy_buffer_to_buffer(observation.buffer(), 0, &readback, 0, byte_count);
+    queue.submit([encoder.finish()]);
+    let completion = Arc::new(Mutex::new(None));
+    let callback_completion = Arc::clone(&completion);
+    readback
+        .slice(..)
+        .map_async(wgpu::MapMode::Read, move |result| {
+            *callback_completion.lock().unwrap() = Some(result);
+        });
+    device.poll(wgpu::PollType::Wait).unwrap();
+    completion
+        .lock()
+        .unwrap()
+        .take()
+        .expect("particle observation callback completed")
+        .expect("particle observation mapping succeeded");
+    let mapped = readback.slice(..).get_mapped_range();
+    let records = bytemuck::cast_slice(&mapped).to_vec();
+    drop(mapped);
+    readback.unmap();
+    records
 }
