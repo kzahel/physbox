@@ -389,9 +389,17 @@ try {
       `browser problems: page=${errors.join("; ")} console=${consoleProblems.join("; ")}`,
     );
   }
-  const wasm = await stat(
-    join(artifactDirectory, "pkg", "physbox_showcase_web_bg.wasm"),
-  );
+  const wasmBytes = externalBaseUrl
+    ? await page.evaluate(async () => {
+        const response = await fetch("./pkg/physbox_showcase_web_bg.wasm");
+        if (!response.ok) throw new Error(`WASM returned HTTP ${response.status}`);
+        return (await response.arrayBuffer()).byteLength;
+      })
+    : (
+        await stat(
+          join(artifactDirectory, "pkg", "physbox_showcase_web_bg.wasm"),
+        )
+      ).size;
   const provenance = {
     runId: randomUUID(),
     host: "browser-webgpu",
@@ -399,12 +407,12 @@ try {
     urlPath: new URL(pageUrl).pathname,
     crossOriginIsolated: state.crossOriginIsolated,
     finalState: state,
-    wasmBytes: wasm.size,
+    wasmBytes,
     screenshot,
   };
   await writeFile(provenancePath, `${JSON.stringify(provenance, null, 2)}\n`);
   console.log(
-    `PHYSBOX_SHOWCASE_SUCCESS run=${provenance.runId} scene=${state.scene} steps=${state.fixedSteps} wasmBytes=${wasm.size}`,
+    `PHYSBOX_SHOWCASE_SUCCESS run=${provenance.runId} scene=${state.scene} steps=${state.fixedSteps} wasmBytes=${wasmBytes}`,
   );
   console.log(`showcase capture: ${screenshot}`);
   console.log(`showcase provenance: ${provenancePath}`);

@@ -12,7 +12,14 @@ const required = [
   "startup-diagnostics.js",
   "styles.css",
 ];
-const textExtensions = new Set([".css", ".d.ts", ".html", ".js"]);
+const forbiddenSourceMachineValues = [
+  Buffer.from("/home/"),
+  Buffer.from("/Users/"),
+  Buffer.from("/private/"),
+  Buffer.from("/tmp/"),
+  Buffer.from("C:\\Users\\"),
+  Buffer.from(".ts.net"),
+];
 const files = [];
 
 await walk(directory);
@@ -34,16 +41,11 @@ for (const { path, size } of files.sort((left, right) =>
   bytes += size;
   digest.update(`${name}\0${size}\0`);
   digest.update(content);
-  if (textExtensions.has(extension(name))) {
-    const text = content.toString("utf8");
-    for (const forbidden of [
-      "/home/",
-      "C:\\Users\\",
-      ".ts.net",
-    ]) {
-      if (text.includes(forbidden)) {
-        throw new Error(`${name} contains source-machine value ${forbidden}`);
-      }
+  for (const forbidden of forbiddenSourceMachineValues) {
+    if (content.includes(forbidden)) {
+      throw new Error(
+        `${name} contains source-machine value ${forbidden.toString("utf8")}`,
+      );
     }
   }
 }
@@ -81,10 +83,4 @@ async function walk(path) {
       );
     }
   }
-}
-
-function extension(path) {
-  if (path.endsWith(".d.ts")) return ".d.ts";
-  const index = path.lastIndexOf(".");
-  return index < 0 ? "" : path.slice(index);
 }

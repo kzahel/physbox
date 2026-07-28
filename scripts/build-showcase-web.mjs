@@ -1,5 +1,6 @@
 import { cp, mkdir, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
+import { homedir } from "node:os";
 import { delimiter, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 
@@ -25,6 +26,24 @@ const bindgen = join(
   process.platform === "win32" ? "wasm-bindgen.exe" : "wasm-bindgen",
 );
 const packageOutput = join(output, "pkg");
+const buildEnvironment = { ...process.env };
+const remapFlags = [
+  `--remap-path-prefix=${root}=/physbox`,
+  `--remap-path-prefix=${resolve(process.env.CARGO_HOME ?? join(homedir(), ".cargo"))}=/cargo`,
+];
+if (buildEnvironment.CARGO_ENCODED_RUSTFLAGS) {
+  buildEnvironment.CARGO_ENCODED_RUSTFLAGS = [
+    buildEnvironment.CARGO_ENCODED_RUSTFLAGS,
+    ...remapFlags,
+  ].join("\x1f");
+} else {
+  buildEnvironment.RUSTFLAGS = [
+    buildEnvironment.RUSTFLAGS,
+    ...remapFlags,
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
 
 run("cargo", [
   "build",
@@ -33,7 +52,7 @@ run("cargo", [
   "wasm32-unknown-unknown",
   "-p",
   "physbox-showcase-web",
-]);
+], buildEnvironment);
 if (!existsSync(bindgen)) {
   run("cargo", [
     "install",
@@ -63,13 +82,13 @@ run(bindgen, [
 ]);
 console.log(`${release ? "release" : "debug"} PhysBox Web Showcase ready at ${output}`);
 
-function run(command, args) {
+function run(command, args, environment = process.env) {
   const result = spawnSync(command, args, {
     cwd: root,
     stdio: "inherit",
     env: {
-      ...process.env,
-      PATH: `${join(toolRoot, "bin")}${delimiter}${process.env.PATH ?? ""}`,
+      ...environment,
+      PATH: `${join(toolRoot, "bin")}${delimiter}${environment.PATH ?? ""}`,
     },
   });
   if (result.status !== 0) {
