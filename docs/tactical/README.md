@@ -241,6 +241,14 @@ rendering, and backend comparison outside `physbox-sim`. S37 is complete:
 default-feature external hit/miss/drag/release/destruction, full-capacity
 results, generational reuse, cross-host builds, and physical Quest pipeline
 initialization pass. The Quest-owned action adapter remains downstream work.
+Human direction on 2026-07-28 opens S38 and S39 in that order. S38 builds a
+standalone external-style PhysBox Web Showcase with app-owned HTML controls,
+scenes, rendering, and local static packaging while explicitly holding GitHub
+Pages publication. S39 then exposes pre-step preview-water authoring and a
+canonical particle GPU observation through `physbox-sim`, demonstrates it in
+the showcase, and qualifies the same public surface for the sibling Quest
+consumer. Neither workstream adds Box2D comparison or changes coupled
+mechanics/defaults.
 
 Current target supersession, 2026-07-22: the
 [rigid quality target contract](../topics/rigid-quality-targets.md) governs new
@@ -297,6 +305,8 @@ This README remains the unnumbered index.
 | S35 | Fluid/solid contact stabilization | [035-fluid-solid-contact-stabilization.md](035-fluid-solid-contact-stabilization.md) | active; restart-bound quality contract and permanent wet-overlap corpus first, no default promotion authorized, 2026-07-24 |
 | S36 | Reusable GPU physics library extraction | [036-reusable-gpu-library-extraction.md](036-reusable-gpu-library-extraction.md) | complete; renderer private, public sim-only consumer, canonical GPU observation, Quest path, and cross-host requalification pass, 2026-07-24 |
 | S37 | Deferred rigid interaction API | [037-deferred-rigid-interaction-api.md](037-deferred-rigid-interaction-api.md) | complete; public query/constraint/destruction, terminal results, lifecycle reuse, external proof, and cross-host qualification pass, 2026-07-24 |
+| S38 | Web showcase foundation | [038-web-showcase-foundation.md](038-web-showcase-foundation.md) | active; local standalone rigid showcase, no Pages publication, 2026-07-28 |
+| S39 | Public water consumer API | [039-public-water-consumer-api.md](039-public-water-consumer-api.md) | proposed; follows the S38 consumer boundary, 2026-07-28 |
 
 ## Conventions
 
