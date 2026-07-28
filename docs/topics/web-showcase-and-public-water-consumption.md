@@ -1,8 +1,8 @@
 # Web showcase and public water consumption
 
-Status: decided and locally qualified through completed S40 on 2026-07-28;
-public GitHub Pages publication is authorized under S42. Human review caps
-rigid stress at 10K, accepts 4K/8K/16K authored Water stress, requires
+Status: decided, locally qualified through completed S40, and published to
+GitHub Pages through completed S42 on 2026-07-28. Human review caps rigid
+stress at 10K, accepts 4K/8K/16K authored Water stress, requires
 stationary-click Water placement and arrow-key camera navigation, and retains
 32K only as a manually configurable allocation frontier. Box2D comparison
 remains held for separate review.
@@ -41,7 +41,7 @@ canvas leaf remains unchanged. Ordinary HTML controls and scenario names are
 allowed in the showcase because they are consumer-owned application policy,
 not a duplicated browser implementation of the workbench.
 
-The first version remains a standalone static web build. S42 publishes its
+The first version remains a standalone static web build. S42 published its
 release artifact at `https://kzahel.github.io/physbox/` through a GitHub
 Actions Pages workflow. Relative assets preserve project-subpath hosting.
 GitHub Pages owns only this consumer artifact; it does not deploy the
@@ -282,9 +282,9 @@ Before publication, the built artifact must:
 - load without cross-origin-isolation headers; and
 - pass a local browser smoke from the exact packaged directory.
 
-The future Pages workflow, permissions, public repository state, canonical
-URL, analytics, and custom-domain choice remain outside S38/S39. They require
-explicit owner review.
+Pages workflow permissions, public repository state, and the canonical URL
+remained outside S38/S39 and received explicit owner review under S42.
+Analytics and any custom-domain choice remain unapproved.
 
 ## Divergence policy
 
@@ -423,6 +423,22 @@ bounded attempts stalled before advancing two frames. Packaged Browser WebGPU
 run `a79a8b90-9512-48d6-ad57-01d9abf07ff1` passed the final catalog, tools,
 navigation, reset/configuration, and visualization surface. S40 is complete;
 open-source preparation and publication are separate decisions.
+
+S42 publication completed on 2026-07-28 from source
+`a9bd7baf229da6ceab913437480cf7ec1c190dc4`:
+
+- GitHub Pages workflow run `30359030945` built and deployed the release
+  showcase successfully through the `github-pages` environment;
+- build-machine path remapping made the hosted and local eight-file artifacts
+  byte-identical at 1,197,327 bytes with canonical digest
+  `1f9f7f3528c23d57fca68eead89a865c696064874cdb133285755accb546cdc7`;
+- deployed Browser WebGPU run
+  `c749f8b5-6071-4753-9630-2b4c4a4328e5` passed the complete catalog at the
+  project subpath with `crossOriginIsolated=false` and a 1,094,187-byte WASM
+  module; and
+- `kzahel/physbox` is public under MIT while crate publication, a release/tag,
+  analytics, custom Pages domains, Box2D comparison, and benchmark claims
+  remain excluded.
 
 ## Alternatives rejected
 

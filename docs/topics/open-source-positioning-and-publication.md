@@ -1,6 +1,6 @@
 # Open-source positioning and publication
 
-Status: public repository and Web Showcase publication authorized under S42
+Status: public repository and Web Showcase publication completed under S42
 on 2026-07-28. Crate publication, a release/tag, and any custom-domain change
 remain explicit later human checkpoints.
 
@@ -57,10 +57,10 @@ separately in the section that explains the full first-party integration.
 ## Repository and compatibility boundary
 
 Private preparation completed on one main-only development line. Human review
-on 2026-07-28 authorizes changing `kzahel/physbox` to public and publishing
-the exact standalone showcase from `main` through GitHub Pages. The existing
-pre-push hook continues to own the separate `physbox5.kzahel.com` production
-deployment after a successful `main` push.
+on 2026-07-28 authorized changing `kzahel/physbox` to public and publishing
+the exact standalone showcase from `main` through GitHub Pages; S42 completed
+both operations. The existing pre-push hook continues to own the separate
+`physbox5.kzahel.com` production deployment after a successful `main` push.
 
 The GitHub Pages showcase is a repository-specific deployment. It builds the
 standalone public-library consumer into a static artifact and deploys that

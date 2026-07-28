@@ -1,8 +1,9 @@
 # S42 — Public repository and Web Showcase Pages
 
-Status: active 2026-07-28. Human review accepts the S41 candidate, authorizes
-public visibility for `kzahel/physbox`, and selects the standalone PhysBox Web
-Showcase as the canonical public demo.
+Status: complete 2026-07-28. `kzahel/physbox` is public under MIT, the
+standalone PhysBox Web Showcase is the canonical public demo on GitHub Pages,
+and the existing fullscreen application remains the separately deployed
+advanced workbench.
 
 Governing decisions:
 [open-source positioning and publication](../topics/open-source-positioning-and-publication.md)
@@ -102,13 +103,16 @@ browser, link, license, and secret gates before visibility changes.
 Local release checkpoint, 2026-07-28:
 
 - Rust `1.92.0` and locked wasm-bindgen CLI `0.2.125` produce an eight-file
-  release artifact totaling 1,197,567 bytes with canonical digest
-  `7c0c92451a813610ddf6395c0db4fbb6ad3f33aac866d16652cb85cd83baf46d`.
-  The validator rejects symlinks, custom-domain/header files, root-relative
-  assets, source-machine paths, and a missing source link.
-- Browser WebGPU run `dcc8badd-7b35-4c3e-8bf4-fea9510c4c61` serves those exact
-  bytes from `/physbox/`, reaches all 1K–10K rigid and 4K/8K/16K Water stress
-  tiers, and ends with 14 fixed steps and a 1,094,427-byte WASM module.
+  release artifact totaling 1,197,327 bytes with canonical digest
+  `1f9f7f3528c23d57fca68eead89a865c696064874cdb133285755accb546cdc7`.
+  Compiler path remapping makes those bytes identical on the development host
+  and hosted Linux runner. The validator rejects symlinks,
+  custom-domain/header files, root-relative assets, source-machine paths in
+  text or binary files, and a missing source link.
+- Browser WebGPU run `46d474ed-126f-4300-ac79-9d00c3630aba` serves those exact
+  bytes below a local project subpath, reaches all 1K–10K rigid and
+  4K/8K/16K Water stress tiers, and ends with 13 fixed steps and a
+  1,094,187-byte WASM module.
 - Checksum-verified actionlint `1.7.12` accepts the workflow. The selected
   official Actions are the current release majors on 2026-07-28:
   checkout/setup-node v7, cache/configure-pages v6, and
@@ -121,21 +125,21 @@ Local release checkpoint, 2026-07-28:
 - `npm run clippy:rust:production` passes with warnings denied. All local
   README targets resolve, the advanced workbench returns HTTP 200, and the
   Pages artifact validator still reports the canonical digest above.
-- Gitleaks `8.28.0` scans 702 reachable commits and 342.66 MB with zero
+- Gitleaks `8.28.0` scans 704 reachable commits and 342.66 MB with zero
   findings. The workflow passes actionlint, grants no global permissions,
   grants the build only repository/Pages reads, and grants only Pages/OIDC
   writes to the deployment job.
 
 ### S42.5 — Visibility and Pages deployment
 
-- [ ] Change `kzahel/physbox` from private to public and verify MIT metadata,
+- [x] Change `kzahel/physbox` from private to public and verify MIT metadata,
       description, topics, default `main`, and public clone access.
-- [ ] Enable GitHub Pages with Actions as the source, push the qualified
+- [x] Enable GitHub Pages with Actions as the source, push the qualified
       workflow/README commit to `main`, and wait for the exact workflow run.
-- [ ] Verify the deployed HTTPS root and all static assets, successful WebGPU
+- [x] Verify the deployed HTTPS root and all static assets, successful WebGPU
       startup without cross-origin isolation, repository source link, and
       expected scene catalog.
-- [ ] Verify the separately scheduled custom-domain deployment still uses the
+- [x] Verify the separately scheduled custom-domain deployment still uses the
       exact pushed SHA and remains reachable.
 
 Gate: both public URLs serve their intentionally different applications from
@@ -144,14 +148,37 @@ publication side effect.
 
 ### S42.6 — Evidence and handoff
 
-- [ ] Record repository visibility, exact source SHA, Pages workflow/run/
+- [x] Record repository visibility, exact source SHA, Pages workflow/run/
       deployment URL, release artifact size/hash, browser run, and custom-domain
       deployment result.
-- [ ] Update topic/tactical status and stop for public launch review.
+- [x] Update topic/tactical status and stop for public launch review.
 
 Gate: a visitor can clone the MIT repository, open the canonical Web Showcase,
 and intentionally find the advanced workbench; evidence identifies the exact
 public source and deployment.
+
+Publication checkpoint, 2026-07-28:
+
+- Repository `https://github.com/kzahel/physbox` reports public visibility,
+  MIT, default `main`, the intended description/topics, the Web Showcase
+  homepage, and succeeds through an unauthenticated HTTPS clone lookup.
+- Pages workflow run
+  `https://github.com/kzahel/physbox/actions/runs/30359030945` succeeds for
+  exact source `a9bd7baf229da6ceab913437480cf7ec1c190dc4`. Its eight-file
+  1,197,327-byte artifact has canonical digest
+  `1f9f7f3528c23d57fca68eead89a865c696064874cdb133285755accb546cdc7`;
+  the hosted 1,094,187-byte WASM is byte-identical to the local release.
+- `https://kzahel.github.io/physbox/` and all CSS, JavaScript, and WASM assets
+  return HTTP 200 over enforced HTTPS without COOP/COEP headers. Deployed
+  Browser WebGPU run `c749f8b5-6071-4753-9630-2b4c4a4328e5` passes the full
+  catalog with `crossOriginIsolated=false`, including 10K rigid and 16K Water
+  stress.
+- The advanced workbench remains reachable at
+  `https://physbox5.kzahel.com/`; the independent clean-worktree deployment
+  completed exact source `a9bd7baf229da6ceab913437480cf7ec1c190dc4` as
+  Cloudflare version `94f8532c-c5ec-448a-b55d-f10023658686`.
+- The root workspace retains `publish = false`; the repository has no remote
+  tag or GitHub release, and no crate/package publication occurred.
 
 ## Stop conditions
 
