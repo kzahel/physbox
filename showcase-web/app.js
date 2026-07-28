@@ -1,4 +1,5 @@
 import init, { start } from "./pkg/physbox_showcase_web.js";
+import { webGpuUnavailableMessage } from "./startup-diagnostics.js";
 
 const scenes = {
   playground: {
@@ -30,7 +31,15 @@ let paused = false;
 let failed = false;
 
 async function boot() {
-  if (!navigator.gpu) throw new Error("WebGPU is not available in this browser");
+  if (!navigator.gpu) {
+    throw new Error(
+      webGpuUnavailableMessage({
+        isSecureContext: globalThis.isSecureContext,
+        protocol: location.protocol,
+        host: location.host,
+      }),
+    );
+  }
   await init();
   const scene = sceneFromHash();
   sceneSelect.value = scene;
@@ -135,7 +144,8 @@ function fail(error) {
   const message = error instanceof Error ? error.message : String(error);
   fatalError.textContent = `PhysBox could not start: ${message}`;
   fatalError.hidden = false;
-  statusText.textContent = "WebGPU unavailable";
+  statusText.textContent =
+    !globalThis.isSecureContext && !navigator.gpu ? "Secure HTTPS required" : "Startup failed";
   globalThis.__physboxShowcase = { ready: false, error: message };
   console.error(error);
 }

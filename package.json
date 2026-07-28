@@ -47,7 +47,7 @@
     "clippy:rust:full": "cargo clippy --workspace --all-targets -- -D warnings",
     "test:web": "node scripts/browser-smoke.mjs",
     "test:web:lab": "PHYSBOX5_SOLVER_LAB=1 PHYSBOX5_CAPTURE_SUFFIX=solver-lab node scripts/browser-smoke.mjs",
-    "test:showcase": "node scripts/showcase-smoke.mjs",
+    "test:showcase": "node --test scripts/showcase-startup-diagnostics.test.mjs && node scripts/showcase-smoke.mjs",
     "test:box2d-feature-off": "node scripts/check-box2d-comparator-feature-off.mjs",
     "prepare": "bash scripts/install-git-hooks.sh"
   },

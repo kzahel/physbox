@@ -153,9 +153,17 @@ npm run serve:showcase
 ```
 
 The showcase server binds to `0.0.0.0:8080` by default. Open
-`http://127.0.0.1:8080/` on the same machine or use that machine's IP address
-from another device. Set `HOST=127.0.0.1` or `PORT=<port>` to override the
-listener. The focused Browser WebGPU smoke is:
+`http://127.0.0.1:8080/` on the same machine. Remote browsers require an HTTPS
+origin for WebGPU; a raw LAN or Tailscale IP over HTTP can load the page shell
+but cannot start the engine. Put the listener behind a trusted HTTPS proxy such
+as Tailscale Serve:
+
+```sh
+sudo tailscale serve --bg --https=8444 8080
+```
+
+Open the HTTPS URL reported by Tailscale. Set `HOST=127.0.0.1` or
+`PORT=<port>` to override the listener. The focused Browser WebGPU smoke is:
 
 ```sh
 npm run test:showcase
