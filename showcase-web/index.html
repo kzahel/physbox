@@ -25,35 +25,94 @@
         <select id="scene-select">
           <option value="playground">Playground</option>
           <option value="stack-and-sleep">Stack and sleep</option>
-          <option value="water-and-rigid">Water and rigid bodies</option>
-          <option value="rigid-stress">Rigid stress</option>
+          <option value="water-and-rigid" selected>Water and rigid bodies</option>
+          <option value="rigid-stress-2k">Rigid stress 2K</option>
+          <option value="rigid-stress-5k">Rigid stress 5K</option>
+          <option value="rigid-stress-10k">Rigid stress 10K</option>
+          <option value="rigid-stress-20k">Rigid stress 20K</option>
+          <option value="rigid-stress-50k">Rigid stress 50K</option>
           <option value="water-stress">Water stress</option>
         </select>
-        <label for="tool-select">Tool:</label>
-        <select id="tool-select" class="short-select">
-          <option value="drag">Drag</option>
-          <option value="box">Box</option>
-          <option value="water">Water</option>
-        </select>
-        <label for="body-capacity-select">Bodies:</label>
+        <fieldset class="tool-buttons" aria-label="Tool">
+          <legend>Tool:</legend>
+          <button
+            id="tool-drag"
+            class="tool-button"
+            type="button"
+            data-tool="drag"
+            aria-label="Drag body"
+            aria-pressed="true"
+            title="Drag body"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="5"></circle>
+              <path d="M12 2v5M12 17v5M2 12h5M17 12h5"></path>
+            </svg>
+          </button>
+          <button
+            id="tool-box"
+            class="tool-button"
+            type="button"
+            data-tool="box"
+            aria-label="Place box"
+            aria-pressed="false"
+            title="Place box"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="5" y="5" width="14" height="14"></rect>
+              <path d="M12 8v8M8 12h8"></path>
+            </svg>
+          </button>
+          <button
+            id="tool-water"
+            class="tool-button"
+            type="button"
+            data-tool="water"
+            aria-label="Add water"
+            aria-pressed="false"
+            title="Add water"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M8 3C6 6 4.5 8.2 4.5 11a3.5 3.5 0 0 0 7 0C11.5 8.2 10 6 8 3Z"></path>
+              <path d="M16.5 8c-1.7 2.5-3 4.4-3 6.8a3 3 0 0 0 6 0c0-2.4-1.3-4.3-3-6.8Z"></path>
+            </svg>
+          </button>
+          <button
+            id="tool-pan"
+            class="tool-button"
+            type="button"
+            data-tool="pan"
+            aria-label="Pan camera"
+            aria-pressed="false"
+            title="Pan camera; wheel or trackpad zooms"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 2v20M2 12h20M12 2l-3 3M12 2l3 3M12 22l-3-3M12 22l3-3M2 12l3-3M2 12l3 3M22 12l-3-3M22 12l-3 3"></path>
+            </svg>
+          </button>
+        </fieldset>
+        <label for="body-capacity-select">Max bodies:</label>
         <select id="body-capacity-select" class="capacity-select">
           <option value="64">64</option>
           <option value="256" selected>256</option>
           <option value="1000">1K</option>
-          <option value="10000">10K (heavy)</option>
+          <option value="2000">2K</option>
+          <option value="5000">5K</option>
+          <option value="10000">10K</option>
+          <option value="20000">20K</option>
+          <option value="50000">50K</option>
         </select>
-        <label for="water-capacity-select">Water:</label>
+        <label for="water-capacity-select">Max water:</label>
         <select id="water-capacity-select" class="capacity-select">
-          <option value="4096">4K</option>
+          <option value="0">None</option>
+          <option value="4096" selected>4K</option>
           <option value="8192">8K</option>
-          <option value="16384">16K (heavy)</option>
+          <option value="16384">16K</option>
         </select>
         <label for="physics-select">Physics:</label>
         <select id="physics-select" class="rate-select">
           <option value="30">30 Hz</option>
           <option value="60" selected>60 Hz</option>
-          <option value="120">120 Hz</option>
-          <option value="240">240 Hz</option>
         </select>
         <button id="pause-button" type="button" aria-pressed="false">Pause</button>
         <button id="reset-button" type="button">Reset</button>
@@ -65,10 +124,10 @@
       <section class="stage" aria-labelledby="scene-heading">
         <div class="stage-copy">
           <p>
-            <strong id="scene-heading">Playground</strong>
+            <strong id="scene-heading">Water and rigid bodies</strong>
             <span aria-hidden="true"> — </span>
             <span id="scene-description">
-              Mixed circles and boxes share one GPU-resident rigid world.
+              Preview water and rigid shapes exchange motion in one coupled GPU world.
             </span>
           </p>
           <p class="hint" id="scene-hint">Drag any moving body</p>
@@ -88,11 +147,6 @@
         </div>
       </section>
     </main>
-
-    <footer>
-      Water is preview quality. Live numbers are diagnostics, not benchmarks.
-      Public <code>physbox-sim</code> consumer; no SharedArrayBuffer required.
-    </footer>
 
     <script type="module" src="./app.js"></script>
   </body>

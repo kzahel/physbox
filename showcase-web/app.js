@@ -5,34 +5,64 @@ const scenes = {
   playground: {
     title: "Playground",
     description: "Mixed circles and boxes share one GPU-resident rigid world.",
-    water: false,
+    defaultBodies: 256,
+    defaultWater: 0,
   },
   "stack-and-sleep": {
     title: "Stack and sleep",
     description: "A compact stability stack settles, groups, and sleeps entirely on the GPU.",
-    water: false,
+    defaultBodies: 256,
+    defaultWater: 0,
   },
   "water-and-rigid": {
     title: "Water and rigid bodies",
     description:
       "Preview water and rigid shapes exchange motion in one coupled GPU world.",
-    water: true,
+    defaultBodies: 256,
+    defaultWater: 4096,
   },
-  "rigid-stress": {
-    title: "Rigid stress",
-    description: "Fills about 90% of the selected body tier and leaves placement headroom.",
-    water: false,
+  "rigid-stress-2k": {
+    title: "Rigid stress 2K",
+    description: "Authors exactly 2,000 bodies; raise Max bodies for placement headroom.",
+    defaultBodies: 2000,
+    defaultWater: 0,
+  },
+  "rigid-stress-5k": {
+    title: "Rigid stress 5K",
+    description: "Authors exactly 5,000 bodies; raise Max bodies for placement headroom.",
+    defaultBodies: 5000,
+    defaultWater: 0,
+  },
+  "rigid-stress-10k": {
+    title: "Rigid stress 10K",
+    description: "Authors exactly 10,000 bodies; use Pan and wheel/trackpad zoom to inspect.",
+    defaultBodies: 10000,
+    defaultWater: 0,
+  },
+  "rigid-stress-20k": {
+    title: "Rigid stress 20K",
+    description: "Heavy: authors exactly 20,000 bodies in a navigable packed field.",
+    defaultBodies: 20000,
+    defaultWater: 0,
+  },
+  "rigid-stress-50k": {
+    title: "Rigid stress 50K",
+    description: "Heavy: authors exactly 50,000 bodies; live numbers are diagnostic only.",
+    defaultBodies: 50000,
+    defaultWater: 0,
   },
   "water-stress": {
     title: "Water stress",
     description: "Fills about 80% of the selected water tier with coupled rigid shapes.",
-    water: true,
+    defaultBodies: 256,
+    defaultWater: 4096,
   },
 };
 
 const canvas = document.querySelector("#showcase-canvas");
 const sceneSelect = document.querySelector("#scene-select");
-const toolSelect = document.querySelector("#tool-select");
+const toolButtons = [...document.querySelectorAll(".tool-button")];
+const waterToolButton = document.querySelector("#tool-water");
 const bodyCapacitySelect = document.querySelector("#body-capacity-select");
 const waterCapacitySelect = document.querySelector("#water-capacity-select");
 const physicsSelect = document.querySelector("#physics-select");
@@ -50,6 +80,8 @@ let paused = false;
 let failed = false;
 let configDirty = false;
 let pointerActive = false;
+let selectedTool = "drag";
+let lastPointer = null;
 let frameTimes = [];
 let mainThreadMs = 0;
 
@@ -66,6 +98,7 @@ async function boot() {
   await init();
   const scene = sceneFromHash();
   sceneSelect.value = scene;
+  applySceneDefaults(scene);
   updateSceneCopy(scene);
   resizeCanvas();
   app = await start(canvas, scene);
@@ -81,11 +114,14 @@ async function boot() {
 function installControls() {
   sceneSelect.addEventListener("change", () => {
     const scene = sceneSelect.value;
+    applySceneDefaults(scene);
     applyConfiguration(scene);
     history.replaceState(null, "", `#${scene}`);
     updateSceneCopy(scene);
   });
-  toolSelect.addEventListener("change", updateHint);
+  for (const button of toolButtons) {
+    button.addEventListener("click", () => setTool(button.dataset.tool));
+  }
   for (const control of [
     bodyCapacitySelect,
     waterCapacitySelect,
@@ -95,6 +131,7 @@ function installControls() {
       configDirty = true;
       configState.textContent = "pending Reset";
       configState.classList.add("pending");
+      configState.classList.remove("error");
     });
   }
   pauseButton.addEventListener("click", () => {
@@ -112,40 +149,79 @@ function installPointerInput() {
       event.preventDefault();
       if (name === "pointerdown") {
         pointerActive = true;
+        lastPointer = [xFromEvent(event), yFromEvent(event)];
         canvas.setPointerCapture(event.pointerId);
       }
       const bounds = canvas.getBoundingClientRect();
       const x = (event.clientX - bounds.left) / Math.max(bounds.width, 1);
       const y = (event.clientY - bounds.top) / Math.max(bounds.height, 1);
-      if (toolSelect.value === "drag") {
+      if (selectedTool === "drag") {
         app.pointerEvent(phase, x, y);
-      } else if (toolSelect.value === "box" && name === "pointerdown") {
+      } else if (selectedTool === "box" && name === "pointerdown") {
         app.placeBox(x, y);
       } else if (
-        toolSelect.value === "water" &&
+        selectedTool === "water" &&
         (name === "pointerdown" || (name === "pointermove" && pointerActive))
       ) {
         app.emitWater(x, y);
+      } else if (selectedTool === "pan" && name === "pointermove" && pointerActive) {
+        const [lastX, lastY] = lastPointer ?? [x, y];
+        app.panView(x - lastX, y - lastY);
       }
-      if (name === "pointerup" || name === "pointercancel") pointerActive = false;
+      lastPointer = [x, y];
+      if (name === "pointerup" || name === "pointercancel") {
+        pointerActive = false;
+        lastPointer = null;
+      }
     });
   }
+  canvas.addEventListener(
+    "wheel",
+    (event) => {
+      event.preventDefault();
+      const bounds = canvas.getBoundingClientRect();
+      const x = (event.clientX - bounds.left) / Math.max(bounds.width, 1);
+      const y = (event.clientY - bounds.top) / Math.max(bounds.height, 1);
+      const delta = Math.max(-500, Math.min(500, event.deltaY));
+      app.zoomView(x, y, Math.exp(delta * 0.0015));
+    },
+    { passive: false },
+  );
 }
 
 function applyConfiguration(scene) {
-  app.configureAndReset(
-    scene,
-    Number.parseInt(bodyCapacitySelect.value, 10),
-    Number.parseInt(waterCapacitySelect.value, 10),
-    Number.parseInt(physicsSelect.value, 10),
-  );
+  try {
+    app.configureAndReset(
+      scene,
+      Number.parseInt(bodyCapacitySelect.value, 10),
+      Number.parseInt(waterCapacitySelect.value, 10),
+      Number.parseInt(physicsSelect.value, 10),
+    );
+  } catch (error) {
+    configDirty = true;
+    configState.textContent = error instanceof Error ? error.message : String(error);
+    configState.classList.remove("pending");
+    configState.classList.add("error");
+    return;
+  }
   configDirty = false;
   configState.textContent = "";
   configState.classList.remove("pending");
+  configState.classList.remove("error");
   paused = false;
   updatePause();
   updateToolAvailability();
   updateHint();
+}
+
+function xFromEvent(event) {
+  const bounds = canvas.getBoundingClientRect();
+  return (event.clientX - bounds.left) / Math.max(bounds.width, 1);
+}
+
+function yFromEvent(event) {
+  const bounds = canvas.getBoundingClientRect();
+  return (event.clientY - bounds.top) / Math.max(bounds.height, 1);
 }
 
 function resizeCanvas() {
@@ -213,10 +289,13 @@ function renderFrame(timestamp) {
       gpuTimingAvailable: app.gpuTimingAvailable,
       gpuTimingError: app.gpuTimingError ?? null,
       waterAvailable: app.waterAvailable,
-      tool: toolSelect.value,
+      tool: selectedTool,
       toolNotice: app.toolNotice ?? null,
       configDirty,
       dragging: app.dragging,
+      cameraCenterX: app.cameraCenterX,
+      cameraCenterY: app.cameraCenterY,
+      cameraHalfHeight: app.cameraHalfHeight,
       crossOriginIsolated: globalThis.crossOriginIsolated,
     };
     requestAnimationFrame(renderFrame);
@@ -227,7 +306,7 @@ function renderFrame(timestamp) {
 
 function sceneFromHash() {
   const candidate = location.hash.slice(1);
-  return Object.hasOwn(scenes, candidate) ? candidate : "playground";
+  return Object.hasOwn(scenes, candidate) ? candidate : "water-and-rigid";
 }
 
 function updateSceneCopy(scene) {
@@ -235,13 +314,33 @@ function updateSceneCopy(scene) {
   sceneDescription.textContent = scenes[scene].description;
 }
 
+function applySceneDefaults(scene) {
+  bodyCapacitySelect.value = String(scenes[scene].defaultBodies);
+  waterCapacitySelect.value = String(scenes[scene].defaultWater);
+}
+
 function updateToolAvailability() {
-  const waterOption = toolSelect.querySelector('option[value="water"]');
-  waterOption.disabled = !scenes[sceneSelect.value].water;
-  if (waterOption.disabled && toolSelect.value === "water") {
-    toolSelect.value = "drag";
+  waterToolButton.disabled = !app.waterAvailable;
+  if (waterToolButton.disabled && selectedTool === "water") {
+    setTool("drag");
+  } else {
+    updateToolButtons();
   }
-  canvas.dataset.tool = toolSelect.value;
+}
+
+function setTool(tool) {
+  const button = toolButtons.find((candidate) => candidate.dataset.tool === tool);
+  if (!button || button.disabled) return;
+  selectedTool = tool;
+  updateToolButtons();
+  updateHint();
+}
+
+function updateToolButtons() {
+  for (const button of toolButtons) {
+    button.setAttribute("aria-pressed", String(button.dataset.tool === selectedTool));
+  }
+  canvas.dataset.tool = selectedTool;
 }
 
 function updateHint() {
@@ -249,9 +348,10 @@ function updateHint() {
     drag: "Drag any moving body",
     box: "Click to place a standard box",
     water: "Click or drag to add preview water",
+    pan: "Drag to pan; wheel or trackpad to zoom",
   };
-  sceneHint.textContent = hints[toolSelect.value];
-  canvas.dataset.tool = toolSelect.value;
+  sceneHint.textContent = hints[selectedTool];
+  canvas.dataset.tool = selectedTool;
 }
 
 function updatePause() {

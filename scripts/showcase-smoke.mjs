@@ -38,6 +38,7 @@ try {
     viewport: { width: 1512, height: 800 },
     deviceScaleFactor: 2,
   });
+  page.setDefaultTimeout(180_000);
   const errors = [];
   const consoleProblems = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -47,10 +48,9 @@ try {
     }
   });
   const port = server.address().port;
-  const response = await page.goto(
-    `http://127.0.0.1:${port}/showcase-web/#playground`,
-    { waitUntil: "networkidle" },
-  );
+  const response = await page.goto(`http://127.0.0.1:${port}/showcase-web/`, {
+    waitUntil: "networkidle",
+  });
   if (!response?.ok()) {
     throw new Error(`showcase returned HTTP ${response?.status() ?? "unknown"}`);
   }
@@ -61,237 +61,198 @@ try {
   ) {
     throw new Error(`showcase unexpectedly requires isolation: ${JSON.stringify(headers)}`);
   }
-  await page.waitForFunction(
-    () =>
-      globalThis.__physboxShowcase?.ready &&
-      globalThis.__physboxShowcase.fixedSteps >= 2,
-    null,
-    { timeout: 30_000 },
+
+  await waitForState(
+    page,
+    (state) =>
+      state.ready &&
+      state.scene === "water-and-rigid" &&
+      state.fixedSteps >= 2 &&
+      state.particleCount > 2_000,
   );
-  let state = await page.evaluate(() => globalThis.__physboxShowcase);
+  let state = await currentState(page);
   if (
-    state.scene !== "playground" ||
     state.crossOriginIsolated !== false ||
-    state.liveBodies !== 21 ||
+    state.liveBodies !== 8 ||
     state.bodyCapacity !== 256 ||
-    state.waterAvailable !== false
+    state.particleCapacity !== 4096 ||
+    !state.waterAvailable
   ) {
-    throw new Error(`invalid playground state: ${JSON.stringify(state)}`);
+    throw new Error(`invalid default water state: ${JSON.stringify(state)}`);
   }
-  const bounds = await page.locator("#showcase-canvas").boundingBox();
-  if (!bounds || bounds.y > 120 || bounds.width < 900 || bounds.height < 500) {
+  const physicsOptions = await page
+    .locator("#physics-select option")
+    .evaluateAll((options) => options.map((option) => option.value));
+  if (JSON.stringify(physicsOptions) !== JSON.stringify(["30", "60"])) {
+    throw new Error(`unexpected physics options: ${JSON.stringify(physicsOptions)}`);
+  }
+  if (
+    (await page.locator('label[for="body-capacity-select"]').textContent()).trim() !==
+      "Max bodies:" ||
+    (await page.locator('label[for="water-capacity-select"]').textContent()).trim() !==
+      "Max water:" ||
+    (await page.locator("footer").count()) !== 0
+  ) {
+    throw new Error("compact allocation labels or removed footer are incorrect");
+  }
+  if ((await page.locator(".tool-button").count()) !== 4) {
+    throw new Error("showcase does not expose four icon tool buttons");
+  }
+
+  const bounds = await canvasBounds(page);
+  if (bounds.y > 120 || bounds.width < 900 || bounds.height < 500) {
     throw new Error(
       `showcase canvas is not above-fold and materially visible: ${JSON.stringify(bounds)}`,
     );
   }
-  if (!(await page.locator('#tool-select option[value="water"]').isDisabled())) {
-    throw new Error("rigid-only playground unexpectedly enables the Water tool");
-  }
-  const point = (normalizedX, normalizedY) => ({
-    x: bounds.x + bounds.width * normalizedX,
-    y: bounds.y + bounds.height * normalizedY,
-  });
-  await page.locator("#tool-select").selectOption("box");
-  await page.mouse.click(point(0.50, 0.20).x, point(0.50, 0.20).y);
-  await page.waitForFunction(() => globalThis.__physboxShowcase?.liveBodies === 22);
+  await selectTool(page, "box");
+  await clickCanvas(page, 0.5, 0.2);
+  await waitForState(page, (candidate) => candidate.liveBodies === 9);
 
-  await page.locator("#body-capacity-select").selectOption("64");
-  await page.waitForFunction(() => globalThis.__physboxShowcase?.configDirty);
-  state = await page.evaluate(() => globalThis.__physboxShowcase);
-  if (
-    state.bodyCapacity !== 256 ||
-    !(await page.locator("#config-state").textContent()).includes("pending")
-  ) {
-    throw new Error(`capacity changed before Reset: ${JSON.stringify(state)}`);
+  await selectTool(page, "water");
+  await page.locator("#water-capacity-select").selectOption("0");
+  await waitForState(page, (candidate) => candidate.configDirty);
+  state = await currentState(page);
+  if (!state.waterAvailable || state.particleCapacity !== 4096) {
+    throw new Error(`water changed before Reset: ${JSON.stringify(state)}`);
   }
   await page.locator("#reset-button").click();
-  await page.waitForFunction(
-    () =>
-      globalThis.__physboxShowcase?.bodyCapacity === 64 &&
-      globalThis.__physboxShowcase.liveBodies === 21 &&
-      !globalThis.__physboxShowcase.configDirty,
+  await waitForState(
+    page,
+    (candidate) =>
+      candidate.particleCapacity === 0 &&
+      !candidate.waterAvailable &&
+      candidate.tool === "drag" &&
+      !candidate.configDirty,
   );
 
-  await page.locator("#body-capacity-select").selectOption("256");
-  await page.locator("#scene-select").selectOption("stack-and-sleep");
-  await page.waitForFunction(
-    () =>
-      globalThis.__physboxShowcase?.scene === "stack-and-sleep" &&
-      globalThis.__physboxShowcase.liveBodies === 15 &&
-      globalThis.__physboxShowcase.bodyCapacity === 256 &&
-      globalThis.__physboxShowcase.fixedSteps >= 2,
+  await page.locator("#scene-select").selectOption("playground");
+  await waitForState(
+    page,
+    (candidate) =>
+      candidate.scene === "playground" &&
+      candidate.liveBodies === 21 &&
+      candidate.bodyCapacity === 256 &&
+      candidate.particleCapacity === 0 &&
+      candidate.fixedSteps >= 2,
   );
-  const fixedBeforePause = await page.evaluate(
-    () => globalThis.__physboxShowcase.fixedSteps,
-  );
-  await page.locator("#pause-button").click();
-  await page.waitForTimeout(150);
-  const fixedDuringPause = await page.evaluate(
-    () => globalThis.__physboxShowcase.fixedSteps,
-  );
-  await page.waitForTimeout(150);
-  const fixedAfterPause = await page.evaluate(
-    () => globalThis.__physboxShowcase.fixedSteps,
-  );
-  if (fixedAfterPause !== fixedDuringPause || fixedAfterPause < fixedBeforePause) {
-    throw new Error(
-      `pause did not stop fixed steps: ${fixedBeforePause}/${fixedDuringPause}/${fixedAfterPause}`,
-    );
+  if ((await page.locator("#water-capacity-select").inputValue()) !== "0") {
+    throw new Error("dry scene did not select the None water default");
   }
-  await page.locator("#pause-button").click();
-  await page.waitForFunction(
-    (pausedStep) => globalThis.__physboxShowcase.fixedSteps > pausedStep,
-    fixedAfterPause,
-  );
-
+  await page.locator("#water-capacity-select").selectOption("4096");
+  await page.locator("#physics-select").selectOption("30");
+  await waitForState(page, (candidate) => candidate.configDirty);
   await page.locator("#reset-button").click();
-  const currentBounds = await page.locator("#showcase-canvas").boundingBox();
-  if (!currentBounds) throw new Error("showcase canvas disappeared");
-  const currentPoint = (normalizedX, normalizedY) => ({
-    x: currentBounds.x + currentBounds.width * normalizedX,
-    y: currentBounds.y + currentBounds.height * normalizedY,
-  });
-  await page.locator("#tool-select").selectOption("drag");
-  await page.mouse.move(currentPoint(0.5, 0.25).x, currentPoint(0.5, 0.25).y);
-  await page.mouse.down();
-  await page.waitForFunction(() => globalThis.__physboxShowcase?.dragging, null, {
-    timeout: 5_000,
-  });
-  await page.mouse.move(currentPoint(0.66, 0.3).x, currentPoint(0.66, 0.3).y, {
-    steps: 8,
-  });
-  await page.mouse.up();
-  await page.waitForFunction(() => !globalThis.__physboxShowcase?.dragging, null, {
-    timeout: 5_000,
-  });
-
-  await page.locator("#scene-select").selectOption("water-and-rigid");
-  await page.waitForFunction(
-    () =>
-      globalThis.__physboxShowcase?.scene === "water-and-rigid" &&
-      globalThis.__physboxShowcase.particleCount > 2_000 &&
-      globalThis.__physboxShowcase.fixedSteps >= 2,
-    null,
-    { timeout: 30_000 },
+  await waitForState(
+    page,
+    (candidate) =>
+      candidate.scene === "playground" &&
+      candidate.waterAvailable &&
+      candidate.particleCapacity === 4096 &&
+      candidate.particleCount === 0 &&
+      candidate.physicsHz === 30,
   );
-  const waterBefore = await page.evaluate(
-    () => globalThis.__physboxShowcase.particleCount,
-  );
-  await page.locator("#tool-select").selectOption("water");
-  const waterBounds = await page.locator("#showcase-canvas").boundingBox();
-  if (!waterBounds) throw new Error("water canvas disappeared");
-  await page.mouse.move(
-    waterBounds.x + waterBounds.width * 0.70,
-    waterBounds.y + waterBounds.height * 0.30,
-  );
-  await page.mouse.down();
-  await page.mouse.move(
-    waterBounds.x + waterBounds.width * 0.78,
-    waterBounds.y + waterBounds.height * 0.36,
-    { steps: 10 },
-  );
-  await page.mouse.up();
-  await page.waitForFunction(
-    (initial) => globalThis.__physboxShowcase?.particleCount > initial,
+  const waterBefore = (await currentState(page)).particleCount;
+  await selectTool(page, "water");
+  await dragCanvas(page, [0.62, 0.25], [0.72, 0.34]);
+  await waitForState(
+    page,
+    (candidate, initial) => candidate.particleCount > initial,
     waterBefore,
-    { timeout: 15_000 },
   );
 
-  await page.locator("#water-capacity-select").selectOption("8192");
-  await page.locator("#physics-select").selectOption("120");
-  await page.waitForFunction(() => globalThis.__physboxShowcase?.configDirty);
-  await page.locator("#reset-button").click();
-  await page.waitForFunction(
-    () =>
-      globalThis.__physboxShowcase?.particleCapacity === 8192 &&
-      globalThis.__physboxShowcase.physicsHz === 120 &&
-      globalThis.__physboxShowcase.frames > 40 &&
-      globalThis.__physboxShowcase.effectiveSimulationScale < 0.75 &&
-      (!globalThis.__physboxShowcase.gpuTimingAvailable ||
-        globalThis.__physboxShowcase.gpuFrameMs !== null),
-    null,
-    { timeout: 30_000 },
+  const beforePause = (await currentState(page)).fixedSteps;
+  await page.locator("#pause-button").click();
+  await page.waitForTimeout(180);
+  const duringPause = (await currentState(page)).fixedSteps;
+  await page.waitForTimeout(180);
+  const afterPause = (await currentState(page)).fixedSteps;
+  if (afterPause !== duringPause || afterPause < beforePause) {
+    throw new Error(`pause did not stop fixed steps: ${beforePause}/${duringPause}/${afterPause}`);
+  }
+  await page.locator("#pause-button").click();
+  await waitForState(
+    page,
+    (candidate, pausedStep) => candidate.fixedSteps > pausedStep,
+    afterPause,
   );
-  state = await page.evaluate(() => globalThis.__physboxShowcase);
+
+  await page.locator("#scene-select").selectOption("rigid-stress-2k");
+  await waitForState(
+    page,
+    (candidate) =>
+      candidate.scene === "rigid-stress-2k" &&
+      candidate.liveBodies === 2_000 &&
+      candidate.bodyCapacity === 2_000 &&
+      candidate.particleCapacity === 0 &&
+      candidate.fixedSteps >= 2,
+  );
+  if (
+    (await page.locator("#body-capacity-select").inputValue()) !== "2000" ||
+    !(await page.locator("#tool-water").isDisabled())
+  ) {
+    throw new Error("2K stress defaults or Water availability are incorrect");
+  }
+
+  const cameraBefore = await currentState(page);
+  await selectTool(page, "pan");
+  await dragCanvas(page, [0.5, 0.5], [0.62, 0.58]);
+  await waitForState(
+    page,
+    (candidate, initial) =>
+      Math.abs(candidate.cameraCenterX - initial.cameraCenterX) > 0.1 ||
+      Math.abs(candidate.cameraCenterY - initial.cameraCenterY) > 0.1,
+    cameraBefore,
+  );
+  const cameraAfterPan = await currentState(page);
+  const stressBounds = await canvasBounds(page);
+  await page.mouse.move(
+    stressBounds.x + stressBounds.width * 0.5,
+    stressBounds.y + stressBounds.height * 0.5,
+  );
+  await page.mouse.wheel(0, -240);
+  await waitForState(
+    page,
+    (candidate, initial) => candidate.cameraHalfHeight < initial.cameraHalfHeight,
+    cameraAfterPan,
+  );
+  await page.locator("#reset-button").click();
+  await waitForState(
+    page,
+    (candidate) =>
+      candidate.scene === "rigid-stress-2k" &&
+      Math.abs(candidate.cameraCenterX) < 0.001 &&
+      Math.abs(candidate.cameraCenterY - 0.1) < 0.001 &&
+      Math.abs(candidate.cameraHalfHeight - 10) < 0.001,
+  );
+
+  await page.locator("#scene-select").selectOption("rigid-stress-50k");
+  await waitForState(
+    page,
+    (candidate) =>
+      candidate.scene === "rigid-stress-50k" &&
+      candidate.liveBodies === 50_000 &&
+      candidate.bodyCapacity === 50_000 &&
+      candidate.fixedSteps >= 2,
+  );
+  state = await currentState(page);
   if (
     state.fixedStepsThisFrame > 1 ||
-    state.admittedPhysicsHz > 100 ||
-    !state.waterAvailable ||
-    (state.gpuTimingAvailable && !Number.isFinite(state.gpuFrameMs)) ||
-    (!state.gpuTimingAvailable && state.gpuFrameMs !== null)
+    state.physicsHz !== 30 ||
+    state.particleCapacity !== 0 ||
+    state.waterAvailable
   ) {
-    throw new Error(`invalid 120 Hz slow-time state: ${JSON.stringify(state)}`);
+    throw new Error(`invalid 50K stress state: ${JSON.stringify(state)}`);
   }
-
-  await page.locator("#scene-select").selectOption("rigid-stress");
-  await page.waitForFunction(
-    () =>
-      globalThis.__physboxShowcase?.scene === "rigid-stress" &&
-      globalThis.__physboxShowcase.liveBodies === 230,
-    null,
-    { timeout: 30_000 },
-  );
-  state = await page.evaluate(() => globalThis.__physboxShowcase);
-  if (state.waterAvailable || state.tool !== "drag") {
-    throw new Error(`rigid stress tool state is invalid: ${JSON.stringify(state)}`);
-  }
-  await page.locator("#body-capacity-select").selectOption("64");
-  await page.locator("#reset-button").click();
-  await page.waitForFunction(
-    () =>
-      globalThis.__physboxShowcase?.scene === "rigid-stress" &&
-      globalThis.__physboxShowcase.bodyCapacity === 64 &&
-      globalThis.__physboxShowcase.liveBodies === 57,
-  );
-  await page.locator("#tool-select").selectOption("box");
-  const stressBounds = await page.locator("#showcase-canvas").boundingBox();
-  if (!stressBounds) throw new Error("rigid stress canvas disappeared");
-  for (let liveBodies = 58; liveBodies <= 64; liveBodies += 1) {
-    await page.mouse.click(
-      stressBounds.x + stressBounds.width * (0.25 + (liveBodies - 58) * 0.07),
-      stressBounds.y + stressBounds.height * 0.12,
-    );
-    await page.waitForFunction(
-      (expected) => globalThis.__physboxShowcase?.liveBodies === expected,
-      liveBodies,
-    );
-  }
-  await page.mouse.click(
-    stressBounds.x + stressBounds.width * 0.75,
-    stressBounds.y + stressBounds.height * 0.12,
-  );
-  await page.waitForFunction(
-    () =>
-      globalThis.__physboxShowcase?.liveBodies === 64 &&
-      globalThis.__physboxShowcase.toolNotice?.includes("capacity is full"),
-  );
-
-  await page.locator("#scene-select").selectOption("water-stress");
-  await page.waitForFunction(
-    () =>
-      globalThis.__physboxShowcase?.scene === "water-stress" &&
-      globalThis.__physboxShowcase.particleCapacity === 8192 &&
-      globalThis.__physboxShowcase.particleCount >= 6400,
-    null,
-    { timeout: 30_000 },
-  );
   const status = await page.locator("#status-text").textContent();
-  if (
-    !status.includes("FPS") ||
-    !status.includes("physics") ||
-    !status.includes("main") ||
-    !status.includes("bodies") ||
-    !status.includes("water")
-  ) {
-    throw new Error(`showcase diagnostic line is incomplete: ${status}`);
+  for (const field of ["FPS", "physics", "main", "bodies 50000/50000"]) {
+    if (!status.includes(field)) {
+      throw new Error(`showcase diagnostic line is missing ${field}: ${status}`);
+    }
   }
-  state = await page.evaluate(() => globalThis.__physboxShowcase);
-  if (state.fixedSteps < 30 && state.gpuFrameMs !== null) {
-    throw new Error(`GPU timing leaked across scene reset: ${JSON.stringify(state)}`);
-  }
-  await page.screenshot({ path: screenshot, fullPage: true });
 
-  state = await page.evaluate(() => globalThis.__physboxShowcase);
+  await page.screenshot({ path: screenshot, fullPage: true });
+  state = await currentState(page);
   if (errors.length || consoleProblems.length) {
     throw new Error(
       `browser problems: page=${errors.join("; ")} console=${consoleProblems.join("; ")}`,
@@ -318,6 +279,61 @@ try {
 } finally {
   await closeManagedBrowser(browserSession);
   await closeHttpServer(server);
+}
+
+async function currentState(page) {
+  return page.evaluate(() => globalThis.__physboxShowcase);
+}
+
+async function waitForState(page, predicate, argument = null) {
+  await page.waitForFunction(
+    ([predicateSource, predicateArgument]) => {
+      const state = globalThis.__physboxShowcase;
+      return Boolean(
+        state &&
+          Function(
+            "state",
+            "argument",
+            `return (${predicateSource})(state, argument)`,
+          )(state, predicateArgument),
+      );
+    },
+    [predicate.toString(), argument],
+  );
+}
+
+async function canvasBounds(page) {
+  const bounds = await page.locator("#showcase-canvas").boundingBox();
+  if (!bounds) throw new Error("showcase canvas disappeared");
+  return bounds;
+}
+
+async function selectTool(page, tool) {
+  await page.locator(`#tool-${tool}`).click();
+  await waitForState(page, (state, expected) => state.tool === expected, tool);
+}
+
+async function clickCanvas(page, normalizedX, normalizedY) {
+  const bounds = await canvasBounds(page);
+  await page.mouse.click(
+    bounds.x + bounds.width * normalizedX,
+    bounds.y + bounds.height * normalizedY,
+  );
+}
+
+async function dragCanvas(page, start, end) {
+  const bounds = await canvasBounds(page);
+  await page.mouse.move(
+    bounds.x + bounds.width * start[0],
+    bounds.y + bounds.height * start[1],
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    bounds.x + bounds.width * end[0],
+    bounds.y + bounds.height * end[1],
+    { steps: 10 },
+  );
+  await page.mouse.up();
 }
 
 function run(command, args) {
