@@ -34,19 +34,24 @@ a {
 }
 
 .masthead {
-  display: flex;
+  display: grid;
+  grid-template-areas:
+    "identity controls"
+    "config config";
+  grid-template-columns: minmax(0, 1fr) auto;
   min-height: 48px;
-  gap: 16px;
+  column-gap: 16px;
   align-items: center;
-  justify-content: space-between;
   border-bottom: 1px solid var(--line);
 }
 
 .identity {
+  grid-area: identity;
   display: flex;
   min-width: 0;
   gap: 9px;
   align-items: baseline;
+  overflow: hidden;
   white-space: nowrap;
 }
 
@@ -68,6 +73,7 @@ h1 a {
 }
 
 .controls {
+  grid-area: controls;
   display: flex;
   gap: 4px;
   align-items: center;
@@ -175,6 +181,7 @@ button:disabled {
 }
 
 #config-state {
+  grid-area: config;
   min-width: 0;
   color: var(--muted);
   font-size: 11px;
@@ -185,6 +192,7 @@ button:disabled {
 }
 
 #config-state.error {
+  text-align: left;
   color: #ff9aa5;
 }
 
@@ -309,10 +317,14 @@ canvas[data-tool="pan"] {
   }
 
   .masthead {
+    grid-template-areas:
+      "identity"
+      "controls"
+      "config";
+    grid-template-columns: 1fr;
     min-height: 78px;
     align-items: flex-start;
-    flex-direction: column;
-    gap: 4px;
+    row-gap: 4px;
     justify-content: center;
   }
 

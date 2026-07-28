@@ -320,6 +320,8 @@ Revised implementation and qualification checkpoint, 2026-07-28:
 - [x] Render a restrained showcase-owned radial mark on circles so their
       observed rotation is legible without changing geometry, simulation
       state, the public observation, or adding a render pass.
+- [x] Keep configuration validation messages on a dedicated toolbar row so a
+      long error cannot crowd or displace the compact controls.
 - [ ] Add a packaged regression in which one Water-tool click, with no pointer
       movement, visibly increases live particles after an admitted step.
       Correct any input/coalescing or visibility issue exposed by that exact
