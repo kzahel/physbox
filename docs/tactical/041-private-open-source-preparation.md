@@ -1,8 +1,10 @@
 # S41 — Private open-source preparation
 
-Status: active 2026-07-28. Human review selected PhysBox as the public product,
-`kzahel/physbox` as the canonical repository, `physbox-sim` as the library
-crate, MIT licensing, and a private preparation pass before publication.
+Status: manual checkpoint 2026-07-28. The private candidate is qualified and
+pushed only to `open-source-prep`. Human review selected PhysBox as the public
+product, `kzahel/physbox` as the canonical repository, `physbox-sim` as the
+library crate, and MIT licensing, but visibility, new PhysBox Pages, releases,
+and crate publication remain held.
 
 Governing decision:
 [open-source positioning and publication](../topics/open-source-positioning-and-publication.md).
@@ -152,8 +154,8 @@ advertises no public PhysBox showcase URL before the visibility/Pages review.
       redistribution hazards.
 - [x] Inspect repository settings and the exact candidate diff/history; record
       accepted personal-data exposure and unresolved findings.
-- [ ] Push only a private review branch if useful; do not push `main`.
-- [ ] Stop for human review before visibility, new PhysBox Pages, releases,
+- [x] Push only a private review branch if useful; do not push `main`.
+- [x] Stop for human review before visibility, new PhysBox Pages, releases,
       tags, or crates.io publication.
 
 Gate: all detected issues are fixed or explicitly surfaced, and the exact
@@ -198,6 +200,11 @@ Private audit checkpoint, 2026-07-28:
   `19d8446f-b6cb-47ba-8bc7-a2d5000bd76c` passed 1K–10K rigid and
   4K/8K/16K Water stress plus the startup diagnostic with no page/console
   errors. Cargo metadata and every local README link also pass.
+- Candidate `be2a626` was pushed only to the private
+  `open-source-prep` branch. Remote `main` remains at `7de4d6c`, so the
+  branch-specific push did not schedule the existing production deployment.
+  GitHub still reports private visibility, default branch `main`, no PhysBox
+  Pages site, and no Actions workflow.
 
 ## Stop conditions
 
