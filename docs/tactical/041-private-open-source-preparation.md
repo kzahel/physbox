@@ -62,13 +62,13 @@ any repository rename.
 
 ### S41.2 — Legacy Matter.js rename and Pages repair
 
-- [ ] Update the clean legacy checkout to identify itself as
+- [x] Update the clean legacy checkout to identify itself as
       `physbox-matter`, use `/physbox-matter/` as its Vite base and live-demo
       URL, and include its MIT license.
-- [ ] Commit the legacy changes, rename `kzahel/physbox` to
+- [x] Commit the legacy changes, rename `kzahel/physbox` to
       `kzahel/physbox-matter`, update its local remote, and push the prepared
       default branch so its existing Pages workflow deploys the new subpath.
-- [ ] Update the PhysBox entry in `kzahel/kzahel.github.io` `/games` to the new
+- [x] Update the PhysBox entry in `kzahel/kzahel.github.io` `/games` to the new
       project name and URL, commit, and push.
 - [ ] Verify repository URLs, successful Pages Actions, and the deployed
       `/physbox-matter/` and `/games` links.
@@ -76,28 +76,52 @@ any repository rename.
 Gate: the old public project remains reachable and correctly labeled after it
 releases the canonical repository name.
 
+External migration checkpoint, 2026-07-28:
+
+- Legacy commit `66babf2` renames the package and README to PhysBox Matter,
+  changes the Vite base to `/physbox-matter/`, and adds MIT. Its production
+  build passed before push.
+- `kzahel/physbox-matter` remains public on `master`. Pages workflow run
+  `30355256873` built and deployed that exact commit successfully; the served
+  HTML uses `/physbox-matter/` asset URLs.
+- Games-site commit `77b9306` points the legacy card at
+  `/physbox-matter/`, labels it PhysBox Matter, and identifies Matter.js. The
+  source is pushed; final deployed-link verification waits for the legacy
+  Pages rebuild and CDN refresh.
+
 ### S41.3 — Private canonical repository identity
 
-- [ ] Rename private `kzahel/physbox5` to `kzahel/physbox`.
-- [ ] Update this checkout's `origin`, root package identity, and stable
+- [x] Rename private `kzahel/physbox5` to `kzahel/physbox`.
+- [x] Update this checkout's `origin`, root package identity, and stable
       repository references without rewriting compatibility/historical names.
-- [ ] Set the private repository description and bounded discovery topics.
-- [ ] Confirm visibility remains private and default branch remains `main`.
+- [x] Set the private repository description and bounded discovery topics.
+- [x] Confirm visibility remains private and default branch remains `main`.
 
 Gate: `kzahel/physbox` names the current private repository, while no current
 source push or production deployment has occurred.
 
+Identity checkpoint, 2026-07-28: GitHub reports `kzahel/physbox` private on
+default branch `main`, with the decided description and `rust`, `webgpu`,
+`wgpu`, `physics-engine`, `gpu-computing`, and `2d-physics` topics. This
+checkout's `origin` is `git@github.com:kzahel/physbox.git`. No current source
+branch was pushed and the custom-domain deployment did not run.
+
 ### S41.4 — MIT and third-party metadata
 
-- [ ] Add the canonical MIT license at the repository root.
-- [ ] Add workspace MIT/repository metadata and explicit inheritance to every
+- [x] Add the canonical MIT license at the repository root.
+- [x] Add workspace MIT/repository metadata and explicit inheritance to every
       owned Cargo package while retaining `publish = false`.
-- [ ] Add a concise third-party notice that preserves the packaged Box2D
+- [x] Add a concise third-party notice that preserves the packaged Box2D
       comparator license/manifest boundary and dependency ownership.
-- [ ] Check Cargo metadata and license expressions for every package.
+- [x] Check Cargo metadata and license expressions for every package.
 
 Gate: every owned Cargo package declares MIT and the canonical repository;
 vendored and dependency code is not silently relicensed.
+
+Metadata checkpoint, 2026-07-28: `cargo metadata --no-deps` reports `MIT`,
+`https://github.com/kzahel/physbox`, and an empty publication allow-list for
+all 20 workspace packages. The root notice preserves the packaged Box2D MIT
+license/manifest and keeps dependency/reference licensing separate.
 
 ### S41.5 — Public README
 
