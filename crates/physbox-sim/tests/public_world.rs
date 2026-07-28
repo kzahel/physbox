@@ -287,6 +287,28 @@ fn public_world_steps_and_observes_preview_water_without_private_layouts() {
             .to_string()
             .contains("queue capacity")
     );
+
+    let mut empty_world = World::new(&device, definition).unwrap();
+    let floor = empty_world
+        .create_body(BodyDef::fixed().with_position([0.0, -0.15]))
+        .unwrap();
+    empty_world
+        .create_shape(floor, ShapeDef::rectangle([1.7, 0.15]))
+        .unwrap();
+    empty_world
+        .set_particle_system(ParticleSystemDef::water(64))
+        .unwrap();
+    assert_eq!(
+        empty_world
+            .queue_particle_emission(ParticleEmissionDef::water_circle([0.0, 0.8], 0.2))
+            .unwrap(),
+        requested
+    );
+    submit_steps(&mut empty_world, &device, &queue, fixed_dt, 1);
+    let empty_counts = take_particle_counts(&empty_world, &device, &queue);
+    assert_eq!(empty_counts.live_particles, requested);
+    assert_eq!(empty_counts.spawned_particles, requested);
+    assert_eq!(empty_counts.dropped_particles, 0);
 }
 
 #[test]

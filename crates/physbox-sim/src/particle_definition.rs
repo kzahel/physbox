@@ -192,8 +192,10 @@ impl ParticleRegionDef {
 
 /// Pre-step authoring for the current single-material preview-water system.
 ///
-/// This definition owns initial particle placement, not fluid solver tuning.
-/// It may be installed on a `World` exactly once before the first step.
+/// This definition owns optional initial particle placement, not fluid solver
+/// tuning. An empty region list creates an initially empty system for runtime
+/// emission. It may be installed on a `World` exactly once before the first
+/// step.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ParticleSystemDef {
@@ -240,17 +242,12 @@ impl ParticleSystemDef {
                 "particle capacity must be within 1..={MAX_PARTICLE_CAPACITY}"
             )));
         }
-        if self.regions.is_empty() {
-            return Err(DefinitionError::new(
-                "preview water requires at least one particle region",
-            ));
-        }
         let mut total = 0u32;
         for region in &self.regions {
             let remaining = self.capacity - total;
             total += region.particle_count(remaining)?;
         }
-        if total == 0 {
+        if !self.regions.is_empty() && total == 0 {
             return Err(DefinitionError::new(
                 "authored particle regions produced no particles",
             ));
@@ -274,8 +271,10 @@ mod tests {
     }
 
     #[test]
-    fn preview_water_rejects_empty_invalid_and_over_capacity_authoring() {
-        assert!(ParticleSystemDef::water(32).validate().is_err());
+    fn preview_water_accepts_empty_and_rejects_invalid_or_over_capacity_authoring() {
+        let empty = ParticleSystemDef::water(32);
+        empty.validate().unwrap();
+        assert_eq!(empty.initial_particle_count().unwrap(), 0);
         assert!(
             ParticleSystemDef::water(0)
                 .with_region(ParticleRegionDef::rectangle([0.0, 0.0], [0.2, 0.2], 0.1))

@@ -1825,9 +1825,6 @@ fn initial_particle_data(
             y += region.spacing.get();
         }
     }
-    if active_count == 0 {
-        return Err("authored particle regions produced no particles".to_owned());
-    }
     let mut counters = [0; PARTICLE_COUNTER_WORDS as usize];
     counters[0] = active_count;
     counters[8] = active_count;

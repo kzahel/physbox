@@ -225,15 +225,23 @@ pub enum WorldCapacity {
     Slots64,
     Slots256,
     Slots1000,
+    Slots2000,
+    Slots5000,
     Slots10000,
+    Slots20000,
+    Slots50000,
 }
 
 impl WorldCapacity {
-    pub const ALL: [Self; 4] = [
+    pub const ALL: [Self; 8] = [
         Self::Slots64,
         Self::Slots256,
         Self::Slots1000,
+        Self::Slots2000,
+        Self::Slots5000,
         Self::Slots10000,
+        Self::Slots20000,
+        Self::Slots50000,
     ];
 
     pub const fn slots(self) -> u32 {
@@ -241,7 +249,11 @@ impl WorldCapacity {
             Self::Slots64 => 64,
             Self::Slots256 => 256,
             Self::Slots1000 => 1_000,
+            Self::Slots2000 => 2_000,
+            Self::Slots5000 => 5_000,
             Self::Slots10000 => 10_000,
+            Self::Slots20000 => 20_000,
+            Self::Slots50000 => 50_000,
         }
     }
 
@@ -250,7 +262,11 @@ impl WorldCapacity {
             Self::Slots64 => "64 SLOTS",
             Self::Slots256 => "256 SLOTS",
             Self::Slots1000 => "1K SLOTS",
+            Self::Slots2000 => "2K SLOTS",
+            Self::Slots5000 => "5K SLOTS",
             Self::Slots10000 => "10K SLOTS",
+            Self::Slots20000 => "20K SLOTS",
+            Self::Slots50000 => "50K SLOTS",
         }
     }
 }
@@ -324,6 +340,10 @@ mod tests {
             PhysicsConfigurationV3::SOFT_COUPLED
         );
         assert_eq!(WorldCapacity::default().slots(), 64);
+        assert_eq!(
+            WorldCapacity::ALL.map(WorldCapacity::slots),
+            [64, 256, 1_000, 2_000, 5_000, 10_000, 20_000, 50_000]
+        );
         assert_eq!(SleepGrouping::default(), SleepGrouping::Exact);
     }
 

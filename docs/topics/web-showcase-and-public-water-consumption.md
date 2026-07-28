@@ -103,8 +103,8 @@ consumer:
 - one pre-step `ParticleSystemDef` with a bounded capacity;
 - one selected version-1 water material using the current qualified preview
   parameters;
-- one or more validated rectangular `ParticleRegionDef` values with initial
-  velocity;
+- zero or more validated rectangular `ParticleRegionDef` values with initial
+  velocity, where zero creates an initially empty system for runtime emission;
 - `World::set_particle_system` before the first step; and
 - a reusable, explicitly encoded `GpuParticleObservation`.
 
@@ -145,6 +145,15 @@ Runtime erasure, particle selection, multiple materials, material tuning,
 smooth-surface meshing, and full particle snapshots remain outside the public
 surface. They require a separate consumer need and interaction/lifecycle
 contract.
+
+Human-review refinement, 2026-07-28: an empty initial region list is now valid
+because runtime emission is a public operation. The system still allocates and
+validates one bounded semantic-water capacity before the first step, starts
+with zero live particles, and exposes the same GPU observation/count
+contracts. This avoids hidden seed particles when a consumer enables Water in
+an otherwise dry scene. The public rigid capacity enum additionally gains
+2K/5K/20K/50K opt-in tiers for the explicit showcase stress variants; the
+64-slot default and every existing tier remain unchanged.
 
 ## Interactive showcase controls
 
