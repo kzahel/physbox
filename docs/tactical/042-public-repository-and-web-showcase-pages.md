@@ -60,14 +60,14 @@ name and owner for each public application.
 
 ### S42.2 — Reproducible Pages artifact
 
-- [ ] Add a least-privilege GitHub Actions workflow that builds the release
+- [x] Add a least-privilege GitHub Actions workflow that builds the release
       `physbox-showcase-web` WASM/static artifact from `main`.
-- [ ] Use the workspace Rust version, exact locked wasm-bindgen CLI version,
+- [x] Use the workspace Rust version, exact locked wasm-bindgen CLI version,
       official current GitHub Pages actions, dependency caching, and no
       repository secret.
-- [ ] Upload only the generated showcase directory and deploy it through the
+- [x] Upload only the generated showcase directory and deploy it through the
       `github-pages` environment.
-- [ ] Keep workflow path triggers broad enough for every showcase/library
+- [x] Keep workflow path triggers broad enough for every showcase/library
       input and narrow enough that documentation-only changes do not redeploy
       identical bytes.
 
@@ -76,10 +76,10 @@ wrangler, custom-domain resources, cross-origin headers, or private inputs.
 
 ### S42.3 — Public entry points
 
-- [ ] Rename remaining first-screen “web demo” copy to **PhysBox Web
+- [x] Rename remaining first-screen “web demo” copy to **PhysBox Web
       Showcase** and include a compact repository source link.
-- [ ] Make `https://kzahel.github.io/physbox/` the prominent README link.
-- [ ] Link `https://physbox5.kzahel.com/` only from the advanced workbench
+- [x] Make `https://kzahel.github.io/physbox/` the prominent README link.
+- [x] Link `https://physbox5.kzahel.com/` only from the advanced workbench
       section and explain the additional first-party integration surface.
 
 Gate: the prominent link opens the simple public-library showcase, while the
@@ -87,10 +87,10 @@ advanced link is accurate and discoverable without competing for identity.
 
 ### S42.4 — Local release qualification
 
-- [ ] Build the exact release artifact into a clean temporary directory and
+- [x] Build the exact release artifact into a clean temporary directory and
       verify relative URLs, expected files, no source-machine paths, and no
       isolation-header dependency.
-- [ ] Serve the release artifact from a project subpath and run a real Browser
+- [x] Serve the release artifact from a project subpath and run a real Browser
       WebGPU smoke against it.
 - [ ] Run `npm run test:fast`, production warnings-denied clippy, workflow
       syntax/security checks, README links, and a final tracked-tree/history
@@ -98,6 +98,21 @@ advanced link is accurate and discoverable without competing for identity.
 
 Gate: the exact public source and static release bytes pass maintained,
 browser, link, license, and secret gates before visibility changes.
+
+Local release checkpoint, 2026-07-28:
+
+- Rust `1.92.0` and locked wasm-bindgen CLI `0.2.125` produce an eight-file
+  release artifact totaling 1,197,567 bytes with canonical digest
+  `7c0c92451a813610ddf6395c0db4fbb6ad3f33aac866d16652cb85cd83baf46d`.
+  The validator rejects symlinks, custom-domain/header files, root-relative
+  assets, source-machine paths, and a missing source link.
+- Browser WebGPU run `dcc8badd-7b35-4c3e-8bf4-fea9510c4c61` serves those exact
+  bytes from `/physbox/`, reaches all 1K–10K rigid and 4K/8K/16K Water stress
+  tiers, and ends with 14 fixed steps and a 1,094,427-byte WASM module.
+- Checksum-verified actionlint `1.7.12` accepts the workflow. The selected
+  official Actions are the current release majors on 2026-07-28:
+  checkout/setup-node v7, cache/configure-pages v6, and
+  upload-pages-artifact/deploy-pages v5.
 
 ### S42.5 — Visibility and Pages deployment
 

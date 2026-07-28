@@ -3,7 +3,7 @@
 GPU-resident 2D rigid-body and preview-water physics for Rust, `wgpu`, and
 WebGPU.
 
-**[Open the live WebGPU demo](https://physbox5.kzahel.com/)**
+**[Try the PhysBox Web Showcase](https://kzahel.github.io/physbox/)**
 
 PhysBox keeps authoritative simulation state and mechanics on the GPU. A Rust
 consumer supplies the WGPU device, queue, command encoders, submission, and
@@ -42,6 +42,8 @@ The standalone showcase is the simplest capability tour. It has compact HTML
 scene/tool controls while simulation and rendering use the public
 `physbox-sim` surface.
 
+**[Open the Web Showcase](https://kzahel.github.io/physbox/)**
+
 ```sh
 npm run setup:host
 npm run build:showcase
@@ -56,11 +58,9 @@ IP over HTTP can load the page but generally cannot expose WebGPU; put the
 listener behind HTTPS when testing from another device. The showcase does not
 require `SharedArrayBuffer`, cross-origin isolation, or COOP/COEP headers.
 
-The live demo linked above is the advanced fullscreen workbench. The smaller
-standalone showcase described in this section does not have a public URL yet;
-repository visibility and GitHub Pages deployment remain held for review.
+## Advanced workbench
 
-## Run the workbench
+**[Open the advanced WebGPU workbench](https://physbox5.kzahel.com/)**
 
 On a supported Linux or macOS development host:
 
@@ -86,8 +86,8 @@ npm run serve:web
 
 The workbench is the advanced first-party integration and validation surface.
 It includes engine-owned tools, configuration, scenarios, diagnostics, and the
-optional Box2D comparison. The Web Showcase is a smaller library-consumer demo,
-not another implementation of the workbench.
+optional Box2D comparison. The Web Showcase is the smaller canonical public
+demo and library consumer, not another implementation of the workbench.
 
 ## Use the library
 

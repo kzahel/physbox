@@ -10,15 +10,25 @@ import {
 import { startServer } from "./server.mjs";
 
 const root = resolve(import.meta.dirname, "..");
+const artifactDirectory = resolve(
+  process.env.PHYSBOX_SHOWCASE_ARTIFACT_DIRECTORY ??
+    join(root, "target", "showcase-web"),
+);
+const serverRoot = resolve(
+  process.env.PHYSBOX_SHOWCASE_SERVER_ROOT ?? join(root, "target"),
+);
+const urlPath = process.env.PHYSBOX_SHOWCASE_URL_PATH ?? "/showcase-web/";
 const captureDirectory = resolve(
   process.env.PHYSBOX_SHOWCASE_CAPTURE_DIRECTORY ?? "/tmp",
 );
 const screenshot = join(captureDirectory, "physbox-showcase.png");
 const provenancePath = join(captureDirectory, "physbox-showcase.json");
 await mkdir(captureDirectory, { recursive: true });
-run(process.execPath, [join(root, "scripts", "build-showcase-web.mjs")]);
+if (process.env.PHYSBOX_SHOWCASE_SKIP_BUILD !== "1") {
+  run(process.execPath, [join(root, "scripts", "build-showcase-web.mjs")]);
+}
 
-const server = await startServer(join(root, "target"), 0, {
+const server = await startServer(serverRoot, 0, {
   crossOriginIsolation: false,
 });
 let browserSession;
@@ -48,7 +58,7 @@ try {
     }
   });
   const port = server.address().port;
-  const response = await page.goto(`http://127.0.0.1:${port}/showcase-web/`, {
+  const response = await page.goto(`http://127.0.0.1:${port}${urlPath}`, {
     waitUntil: "networkidle",
   });
   if (!response?.ok()) {
@@ -376,12 +386,12 @@ try {
     );
   }
   const wasm = await stat(
-    join(root, "target", "showcase-web", "pkg", "physbox_showcase_web_bg.wasm"),
+    join(artifactDirectory, "pkg", "physbox_showcase_web_bg.wasm"),
   );
   const provenance = {
     runId: randomUUID(),
     host: "browser-webgpu",
-    urlPath: "/showcase-web/",
+    urlPath,
     crossOriginIsolated: state.crossOriginIsolated,
     finalState: state,
     wasmBytes: wasm.size,

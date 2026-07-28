@@ -17,6 +17,8 @@
     "build:web": "node scripts/build-web.mjs",
     "build:web:lab": "node scripts/build-web.mjs --solver-lab",
     "build:showcase": "node scripts/build-showcase-web.mjs",
+    "build:showcase:pages": "node scripts/build-showcase-web.mjs --release --output dist-showcase",
+    "check:showcase:pages": "node scripts/check-showcase-pages-artifact.mjs dist-showcase",
     "inspect:web": "npm run build:web:lab && npm run serve:web",
     "bundle:web": "node scripts/build-web.mjs --release --solver-lab --output dist-web",
     "benchmark:bodies-browser": "node scripts/browser-body-benchmark.mjs",
