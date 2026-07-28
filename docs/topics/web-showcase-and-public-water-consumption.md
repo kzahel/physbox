@@ -207,6 +207,11 @@ pointer. Arrow keys do not intercept select/button editing. Scene selection
 and Reset restore the authored home frame. Navigation never changes physics
 state or requires a GPU readback.
 
+Circle orientation is also presentation policy: the showcase renderer draws a
+short radial mark in each circle's local frame so rotation from the public body
+observation is legible. This does not change collision geometry, physics state,
+or the reusable observation contract.
+
 ## Live diagnostics
 
 The showcase may display rolling display FPS, admitted physics rate versus

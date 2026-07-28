@@ -91,6 +91,16 @@ fn body_fragment(input: VertexOutput) -> @location(0) vec4f {
     );
     let rim = smoothstep(0.82, 0.98, edge);
     let motion_tint = vec3f(0.12, 0.21, 0.28) * input.speed;
-    let color = mix(input.color.rgb + motion_tint, input.color.rgb * 0.48, rim);
+    var color = mix(input.color.rgb + motion_tint, input.color.rgb * 0.48, rim);
+    if input.kind == 1u {
+        // Local +X rotates with the body, making angular motion visible without
+        // adding another render pass or changing the public shape observation.
+        let spoke_width = 0.055;
+        let spoke_cross = 1.0 - smoothstep(spoke_width, spoke_width * 1.8, abs(input.local.y));
+        let spoke_start = smoothstep(0.04, 0.13, input.local.x);
+        let spoke_end = 1.0 - smoothstep(0.68, 0.82, input.local.x);
+        let spoke = spoke_cross * spoke_start * spoke_end;
+        color = mix(color, color * 0.24, spoke * 0.88);
+    }
     return vec4f(color, input.color.a);
 }
