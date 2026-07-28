@@ -16,48 +16,33 @@
   </head>
   <body>
     <header class="masthead">
-      <a class="brand" href="./" aria-label="PhysBox showcase home">
-        <span class="brand-mark" aria-hidden="true"></span>
-        <span>PhysBox</span>
-      </a>
-      <p class="eyebrow">GPU-resident 2D physics</p>
+      <div class="identity">
+        <h1><a href="./">PhysBox web demo</a></h1>
+        <span>GPU-resident 2D physics / WebGPU</span>
+      </div>
+      <form class="controls" aria-label="Demo controls" onsubmit="return false">
+        <label for="scene-select">Scene:</label>
+        <select id="scene-select">
+          <option value="playground">Playground</option>
+          <option value="stack-and-sleep">Stack and sleep</option>
+          <option value="water-and-rigid">Water and rigid bodies</option>
+        </select>
+        <button id="pause-button" type="button" aria-pressed="false">Pause</button>
+        <button id="reset-button" type="button">Reset</button>
+      </form>
     </header>
 
     <main>
-      <section class="intro" aria-labelledby="showcase-title">
-        <div>
-          <p class="kicker">WebGPU · one authoritative world</p>
-          <h1 id="showcase-title">Physics that stays on the GPU.</h1>
-          <p class="lede">
-            Pick a scene, drag a body, and see the same physics library used by
-            native and immersive applications—running here without a server.
-          </p>
-        </div>
-
-        <form class="controls" aria-label="Showcase controls" onsubmit="return false">
-          <label>
-            <span>Scene</span>
-            <select id="scene-select">
-              <option value="playground">Playground</option>
-              <option value="stack-and-sleep">Stack and sleep</option>
-              <option value="water-and-rigid">Water and rigid bodies</option>
-            </select>
-          </label>
-          <button id="pause-button" type="button" aria-pressed="false">Pause</button>
-          <button id="reset-button" class="secondary" type="button">Reset</button>
-        </form>
-      </section>
-
       <section class="stage" aria-labelledby="scene-heading">
         <div class="stage-copy">
-          <div>
-            <p class="scene-index">LIVE SCENE</p>
-            <h2 id="scene-heading">Playground</h2>
-            <p id="scene-description">
+          <p>
+            <strong id="scene-heading">Playground</strong>
+            <span aria-hidden="true"> — </span>
+            <span id="scene-description">
               Mixed circles and boxes share one GPU-resident rigid world.
-            </p>
-          </div>
-          <p class="hint"><span aria-hidden="true">↗</span> Drag any moving body</p>
+            </span>
+          </p>
+          <p class="hint">Drag any moving body</p>
         </div>
         <div class="canvas-shell">
           <canvas
@@ -76,8 +61,8 @@
     </main>
 
     <footer>
-      <p>PhysBox Web Showcase · water mechanics are preview quality</p>
-      <p>Public library consumer · no SharedArrayBuffer required</p>
+      Water is preview quality. Public <code>physbox-sim</code> consumer; no
+      SharedArrayBuffer required.
     </footer>
 
     <script type="module" src="./app.js"></script>

@@ -77,8 +77,10 @@ try {
     throw new Error(`invalid playground state: ${JSON.stringify(state)}`);
   }
   const bounds = await page.locator("#showcase-canvas").boundingBox();
-  if (!bounds || bounds.width < 900 || bounds.height < 500) {
-    throw new Error(`showcase canvas is not materially visible: ${JSON.stringify(bounds)}`);
+  if (!bounds || bounds.y > 120 || bounds.width < 900 || bounds.height < 500) {
+    throw new Error(
+      `showcase canvas is not above-fold and materially visible: ${JSON.stringify(bounds)}`,
+    );
   }
 
   await page.locator("#scene-select").selectOption("stack-and-sleep");
