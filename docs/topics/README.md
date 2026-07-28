@@ -53,6 +53,10 @@ a running log.
   static-host contract, deferred Box2D comparison, and minimum public
   preview-water authoring and GPU observation surface proven by web and Quest
   consumers.
+- [Open-source positioning and publication](open-source-positioning-and-publication.md)
+  — PhysBox product/repository identity, `physbox-sim` library naming, MIT and
+  third-party licensing boundary, private preparation/publication split,
+  compatibility-name policy, deployment separation, and release review gate.
 - [Render resolution scaling](render-resolution-scaling.md) — manual
   100/75/50-percent shared world-render scaling with native-resolution canvas
   UI, portable composition, launch/persistence ownership, explicit reporting,
