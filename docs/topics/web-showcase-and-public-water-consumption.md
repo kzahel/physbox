@@ -1,10 +1,10 @@
 # Web showcase and public water consumption
 
-Status: decided and locally qualified through S39 on 2026-07-28. S40 is active
-to add bounded interactive authoring, stress scenes, and diagnostic telemetry
-before a human product checkpoint. GitHub Pages configuration, repository
-publication, and Box2D comparison remain deliberately held for separate
-review.
+Status: decided and locally qualified through S40's automated gates on
+2026-07-28. Bounded interactive authoring, stress scenes, and diagnostic
+telemetry are implemented; S40 remains active at its mandatory human product
+checkpoint. GitHub Pages configuration, repository publication, and Box2D
+comparison remain deliberately held for separate review.
 
 This topic defines the first-party PhysBox Web Showcase, its relationship to
 the existing workbench and Quest consumer, and the minimum public particle
@@ -327,6 +327,33 @@ defaults:
 The showcase remains a favorable capability demonstration, not a quality,
 parity, or performance promotion. Water keeps its preview label while S31 and
 S35 remain at their recorded review checkpoints.
+
+S40 automated qualification completed on 2026-07-28 without changing solver
+mechanics, fixed-step defaults, or first-party host behavior:
+
+- packaged Browser WebGPU run
+  `d60a3c09-07fd-4759-b2fa-d73c55c7d600` passed the five-scene/tool/config
+  interaction script at 1,512 × 800 and DPR 2, ending with 6,497 live
+  particles in the selected 8,192-slot Water stress tier;
+- the same script proved explicit capacity signaling, pending/reset
+  configuration, zero-or-one step overload at a requested 120 Hz, delayed
+  timestamp-query results when supported, and clean timing invalidation on a
+  scene rebuild;
+- `npm run test:fast`, production warnings-denied clippy, a clean 600-step
+  coupled headless run, the ARM64 Android check, and all 20 sibling Quest
+  consumer tests passed at source
+  `0b17111a4aefbe1d998e01dd3e84b62b02ec1a41`;
+- the favorable selector stops at 16K particles because a cold 32K coupled
+  stress frame did not return within 90 seconds on the development host; and
+- the exact artifact remains reviewable at the secure tailnet-only
+  `https://zblinux.tail71bc5c.ts.net:8444/` URL. No publication or deployment
+  action occurred.
+
+Human review now owns the next choice: keep the compact surface as-is, improve
+its presentation or curated scenes, expose runtime Water interaction in the
+Quest-owned adapter, open a separate render-cadence/interpolation workstream,
+prepare static publication, or plan an independently qualified Box2D
+comparison.
 
 ## Alternatives rejected
 

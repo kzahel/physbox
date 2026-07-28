@@ -1,8 +1,9 @@
 # S40 — Interactive showcase tooling and telemetry
 
-Status: active 2026-07-28. Human direction authorizes implementation through
-one locally reviewable Browser WebGPU checkpoint; publication and the
-lower-value presentation experiments listed below remain held.
+Status: active 2026-07-28. Implementation and automated qualification are
+complete; the exact local Browser WebGPU artifact is awaiting the mandatory
+human checkpoint. Publication and the lower-value presentation experiments
+listed below remain held.
 
 Governing architecture:
 [web showcase and public water consumption](../topics/web-showcase-and-public-water-consumption.md).
@@ -106,7 +107,7 @@ Library checkpoint, 2026-07-28:
   spawned/erased/killed, and dropped particles; it carries no particle pose or
   private counter layout.
 - The focused public GPU test proves exact successful emission followed by
-  capacity saturation/drop accounting. All 44 library unit tests and 3 public
+  capacity saturation/drop accounting. All 45 library unit tests and 3 public
   GPU integrations pass. The independent surface-free consumer reports
   `PHYSBOX_EXTERNAL_CONSUMER_SUCCESS ... water_particles=37` after observing
   24 initial and 13 runtime-emitted particles.
@@ -172,7 +173,7 @@ Showcase implementation checkpoint, 2026-07-28:
   stress selection did not return its first page state within a bounded
   90-second Browser WebGPU check on this host. It was removed from the
   favorable public selector instead of being presented as a usable demo tier.
-- Packaged run `1768f17e-1cd9-43a9-9d27-87f36b00f3d1` passes Box placement,
+- Packaged run `d60a3c09-07fd-4759-b2fa-d73c55c7d600` passes Box placement,
   Drag creation/release, Water drag emission, pending/reset semantics, both
   stress scenes, exact 64-body capacity signaling, 8,192-capacity/6,497-live
   water, and zero page/console validation errors at 1,512 × 800 with DPR 2.
@@ -184,17 +185,17 @@ Showcase implementation checkpoint, 2026-07-28:
 
 ### S40.6 — Qualification and human checkpoint
 
-- [ ] Run focused public API, showcase, dependency-negative, and packaged
+- [x] Run focused public API, showcase, dependency-negative, and packaged
       Browser WebGPU tests.
-- [ ] Run `npm run test:fast` and production warnings-denied clippy.
-- [ ] Run one fresh coupled headless smoke because public coupled command
+- [x] Run `npm run test:fast` and production warnings-denied clippy.
+- [x] Run one fresh coupled headless smoke because public coupled command
       routing changes.
-- [ ] Run proportional maintained browser/ARM64 checks if shared coupled
+- [x] Run proportional maintained browser/ARM64 checks if shared coupled
       construction requires them; record why physical-device behavior is or
       is not affected.
-- [ ] Keep the local server reachable through the already reviewed secure
+- [x] Keep the local server reachable through the already reviewed secure
       Tailscale URL and produce a fresh laptop-size capture.
-- [ ] Record measured evidence, limitations, and exact deferred choices in
+- [x] Record measured evidence, limitations, and exact deferred choices in
       this tactical and the governing topic.
 - [ ] Stop for human review of the working demo and choose the next
       high-value slice.
@@ -202,6 +203,41 @@ Showcase implementation checkpoint, 2026-07-28:
 Gate: the exact packaged local artifact is reviewable with clean WebGPU
 operation, all authorized behavior is qualified, and no publication action
 has occurred.
+
+Automated qualification checkpoint, 2026-07-28:
+
+- Final packaged run `d60a3c09-07fd-4759-b2fa-d73c55c7d600` passed
+  `npm run test:showcase` at 1,512 × 800 CSS pixels and DPR 2. Its final Water
+  stress state had 11/64 live bodies, 6,497/8,192 live particles, no drops,
+  120 Hz configured versus about 40 Hz admitted, and no page or console
+  errors. The fresh capture is `/tmp/physbox-showcase.png`; the smoke also
+  exercises a finite timestamp-query sample before its final scene reset.
+- `npm run test:fast` passed in 28.24 seconds, including the maintained real
+  Browser WebGPU run
+  `45a4749a-5213-4834-82b8-25398b8e2753`. Production warnings-denied clippy
+  passed. The showcase dependency-negative/platform-boundary check and its
+  focused startup-diagnosis/public API tests remained green.
+- Clean headless run `1785232576637621795-1682862` at source
+  `0b17111a4aefbe1d998e01dd3e84b62b02ec1a41` completed 600 explicit
+  liquid-sandbox steps with 3,952/8,192 GPU-resident particles and emitted
+  `PHYSBOX5_VALIDATION_SUCCESS`. Its artifacts are
+  `/tmp/physbox5-s40-liquid-600-20260728.{png,json}`.
+- `cargo ndk -t arm64-v8a --platform 28 check -p physbox-android --lib`
+  passed. The sibling Quest consumer's 20 tests passed against the final local
+  public library, including its public water scene. No solver, first-party
+  host, launch, renderer, or Android/Quest adapter behavior changed, so this
+  consumer-owned web interaction slice does not justify another APK or
+  physical-device run before the human product checkpoint.
+- The local server still listens on `0.0.0.0:8080`; Tailscale Serve returns
+  the packaged artifact at
+  `https://zblinux.tail71bc5c.ts.net:8444/` as a secure tailnet-only origin.
+  No push, public repository change, Pages configuration, or deployment
+  occurred.
+- The deliberately deferred choices remain half-RAF rendering, render
+  interpolation, publication, Box2D comparison, tuning/tool-size controls,
+  further visual treatment, and a Quest-owned runtime Water interaction
+  surface. The 32K water frontier also remains outside the favorable selector
+  pending optimization or purpose-built evidence.
 
 ## Stop conditions
 
