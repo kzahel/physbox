@@ -13,6 +13,7 @@ use crate::{GpuBodyStorage, body_lifecycle::KILL_ZONE_Y};
 pub const MAX_PRODUCT_PARTICLE_CAPACITY: u32 = 32_768;
 pub const LIQUID_SANDBOX_PARTICLE_CAPACITY: u32 = 8_192;
 pub const PARTICLE_COMMAND_CAPACITY: u32 = 64;
+pub const MAX_PARTICLES_PER_EMISSION: u32 = 4_096;
 const PARTICLE_COUNTER_WORDS: u32 = 21;
 pub(crate) const PARTICLE_COUNT_SNAPSHOT_BYTES: u64 = 20;
 const GRID_WIDTH: u32 = 64;
@@ -126,9 +127,7 @@ impl ParticleCommand {
                 if !radius.is_finite() || !spacing.is_finite() || radius <= 0.0 || spacing <= 0.0 {
                     return Err("particle emission requires positive finite radius/spacing".into());
                 }
-                let spawn_count =
-                    crate::particle_definition::circle_particle_count(radius, spacing)
-                        .map_err(|error| error.to_string())?;
+                let spawn_count = circle_particle_count(radius, spacing)?;
                 Ok(ParticleCommandRaw {
                     kind_count_material_sequence: [1, spawn_count, material_id, sequence],
                     center_radius_spacing: [center.x, center.y, radius, spacing],
@@ -158,6 +157,19 @@ impl ParticleCommand {
             Self::EmitCircle { sequence, .. } | Self::EraseCircle { sequence, .. } => sequence,
         }
     }
+}
+
+pub(crate) fn circle_particle_count(radius: f32, spacing: f32) -> Result<u32, String> {
+    let approximate = (std::f32::consts::PI * radius * radius / (spacing * spacing)).ceil();
+    if !approximate.is_finite()
+        || approximate <= 0.0
+        || approximate > MAX_PARTICLES_PER_EMISSION as f32
+    {
+        return Err(format!(
+            "particle emission count is outside 1..={MAX_PARTICLES_PER_EMISSION}"
+        ));
+    }
+    Ok(approximate as u32)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -2054,7 +2066,7 @@ mod tests {
             sequence: 2,
         };
         assert_eq!(erase.raw().unwrap().kind_count_material_sequence[0], 2);
-        assert!(crate::particle_definition::circle_particle_count(100.0, 0.001).is_err());
+        assert!(circle_particle_count(100.0, 0.001).is_err());
     }
 
     #[test]

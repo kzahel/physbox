@@ -2,13 +2,15 @@ use serde::Serialize;
 
 use crate::{
     DefinitionError,
-    particle_world::{MAX_PRODUCT_PARTICLE_CAPACITY, PARTICLE_COMMAND_CAPACITY},
+    particle_world::{
+        MAX_PRODUCT_PARTICLE_CAPACITY, PARTICLE_COMMAND_CAPACITY, circle_particle_count,
+    },
 };
 
 pub const PREVIEW_WATER_RADIUS: f32 = 0.05;
 pub const MAX_PARTICLE_CAPACITY: u32 = MAX_PRODUCT_PARTICLE_CAPACITY;
 pub const PARTICLE_EMISSION_COMMAND_CAPACITY: u32 = PARTICLE_COMMAND_CAPACITY;
-pub const MAX_PARTICLES_PER_EMISSION: u32 = 4_096;
+pub use crate::particle_world::MAX_PARTICLES_PER_EMISSION;
 const PREVIEW_WATER_LOWER_BOUND: [f32; 2] = [-16.0, -10.0];
 const PREVIEW_WATER_UPPER_BOUND: [f32; 2] = [16.0, 24.0];
 
@@ -48,7 +50,7 @@ impl ParticleEmissionDef {
 
     pub fn requested_particle_count(self) -> Result<u32, DefinitionError> {
         self.validate()?;
-        circle_particle_count(self.radius, self.spacing)
+        circle_particle_count(self.radius, self.spacing).map_err(DefinitionError::new)
     }
 
     pub fn validate(self) -> Result<(), DefinitionError> {
@@ -86,7 +88,7 @@ impl ParticleEmissionDef {
                 "particle emission is outside the supported preview-water world bounds",
             ));
         }
-        circle_particle_count(self.radius, self.spacing)?;
+        circle_particle_count(self.radius, self.spacing).map_err(DefinitionError::new)?;
         Ok(())
     }
 }
@@ -255,19 +257,6 @@ impl ParticleSystemDef {
         }
         Ok(total)
     }
-}
-
-pub(crate) fn circle_particle_count(radius: f32, spacing: f32) -> Result<u32, DefinitionError> {
-    let approximate = (std::f32::consts::PI * radius * radius / (spacing * spacing)).ceil();
-    if !approximate.is_finite()
-        || approximate <= 0.0
-        || approximate > MAX_PARTICLES_PER_EMISSION as f32
-    {
-        return Err(DefinitionError::new(format!(
-            "particle emission count is outside 1..={MAX_PARTICLES_PER_EMISSION}"
-        )));
-    }
-    Ok(approximate as u32)
 }
 
 #[cfg(test)]
