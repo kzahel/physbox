@@ -13,6 +13,7 @@ const contentTypes = new Map([
 export async function startServer(root, port = 0, options = {}) {
   const resolvedRoot = resolve(root);
   const crossOriginIsolation = options.crossOriginIsolation ?? true;
+  const host = options.host ?? "127.0.0.1";
   const server = createServer(async (request, response) => {
     try {
       const url = new URL(request.url ?? "/", "http://127.0.0.1");
@@ -43,7 +44,7 @@ export async function startServer(root, port = 0, options = {}) {
   });
   await new Promise((resolveListen, reject) => {
     server.once("error", reject);
-    server.listen(port, "127.0.0.1", resolveListen);
+    server.listen(port, host, resolveListen);
   });
   return server;
 }

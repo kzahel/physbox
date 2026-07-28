@@ -152,7 +152,10 @@ npm run build:showcase
 npm run serve:showcase
 ```
 
-Then open `http://127.0.0.1:8080/`. The focused Browser WebGPU smoke is:
+The showcase server binds to `0.0.0.0:8080` by default. Open
+`http://127.0.0.1:8080/` on the same machine or use that machine's IP address
+from another device. Set `HOST=127.0.0.1` or `PORT=<port>` to override the
+listener. The focused Browser WebGPU smoke is:
 
 ```sh
 npm run test:showcase
