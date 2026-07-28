@@ -199,7 +199,7 @@ Showcase implementation checkpoint, 2026-07-28:
       Tailscale URL and produce a fresh laptop-size capture.
 - [x] Record measured evidence, limitations, and exact deferred choices in
       this tactical and the governing topic.
-- [ ] Stop for human review of the working demo and choose the next
+- [x] Stop for human review of the working demo and choose the next
       high-value slice.
 
 Gate: the exact packaged local artifact is reviewable with clean WebGPU
@@ -243,38 +243,77 @@ Automated qualification checkpoint, 2026-07-28:
 
 ### S40.7 — Human-review revisions
 
-- [ ] Replace the Tool dropdown with individually labeled icon buttons for
+- [x] Replace the Tool dropdown with individually labeled icon buttons for
       body drag, box placement, water painting, and camera pan.
-- [ ] Relabel the allocation controls `Max bodies` and `Max water`, add
+- [x] Relabel the allocation controls `Max bodies` and `Max water`, add
       `None` as the dry-scene water default, and make any non-`None` water
       selection configure runtime-emittable water after Reset regardless of
       scene-authored initial particles.
-- [ ] Start on Water and rigid bodies with water configured, while scene
+- [x] Start on Water and rigid bodies with water configured, while scene
       selection restores each scene's dry/water default before rebuilding.
-- [ ] Restrict the public physics selector to 30 and 60 Hz. Do not change the
+- [x] Restrict the public physics selector to 30 and 60 Hz. Do not change the
       library's valid fixed-rate contract; 120/240 Hz were misleading
       showcase presentation because four solver substeps make them 480/960
       internal substeps per simulated second and RAF admission produces
       slow-time on ordinary displays.
-- [ ] Add exact Rigid stress 2K, 5K, 10K, 20K, and 50K scene variants with
+- [x] Add exact Rigid stress 2K, 5K, 10K, 20K, and 50K scene variants with
       matching public-library capacity tiers and explicit scale language that
       remains diagnostic rather than a benchmark claim.
-- [ ] Add consumer-owned camera pan and pointer-anchored wheel/trackpad zoom;
+- [x] Add consumer-owned camera pan and pointer-anchored wheel/trackpad zoom;
       Reset or scene selection restores the authored home frame.
-- [ ] Remove the footer disclaimer/capability sentence instead of spending
+- [x] Remove the footer disclaimer/capability sentence instead of spending
       permanent first-screen space on non-actionable copy.
-- [ ] Extend focused and packaged Browser WebGPU tests through optional-water
+- [x] Extend focused and packaged Browser WebGPU tests through optional-water
       reset, icon-tool state, pan/zoom projection, and at least one bounded
       high-capacity frontier. Record 50K construction/advancement separately
       from any performance claim.
-- [ ] Run the proportional maintained/public-consumer gates, refresh the
+- [x] Run the proportional maintained/public-consumer gates, refresh the
       secure Tailscale artifact, commit measured evidence, and stop at a new
       human checkpoint.
+- [ ] Review the revised secure artifact and decide whether S40 is complete.
 
 Gate: the revised UI remains compact above the fold, dry and water
 configuration is predictable, high-count scenes remain bounded and navigable,
 and neither their live diagnostics nor successful construction is promoted as
 a performance result.
+
+Revised implementation and qualification checkpoint, 2026-07-28:
+
+- Public `ParticleSystemDef::water(capacity)` now validly creates an initially
+  empty semantic-water system. The existing GPU emission path populated it
+  from zero in focused public GPU tests and in packaged Playground automation;
+  no seed particle, CPU state mirror, material setting, or mechanics change
+  was introduced.
+- Public `WorldCapacity` gained explicit 2K/5K/20K/50K opt-in tiers. The first
+  maintained gate exposed that iterating every tier would also enlarge the
+  workbench WORLD menu. `PRODUCT_PRESETS` now preserves its existing
+  64/256/1K/10K menu, launch, persistence, layout, and defaults while the
+  standalone public consumer selects its larger capacity directly.
+- Packaged Browser WebGPU run
+  `d62d7972-9972-4dd4-a3b7-167c215b7d66` passed at 1,512 × 800 CSS pixels and
+  DPR 2 with no page/console errors. It proved the default water scene, icon
+  Box and Water actions, `None`-until-Reset semantics, enabling initially
+  empty water in Playground, 30/60-only options, pause/resume, exact 2K,
+  camera pan/anchored zoom/reset, and exact 50K construction/advancement.
+- The final captured 50K state had 50,000/50,000 live bodies and completed 12
+  outer steps. Its live 30 Hz request was overloaded at about 11.6 admitted
+  Hz and `0.386x` effective simulation scale on this run. Those numbers
+  demonstrate honest slow-time diagnostics only; they are not retained
+  benchmark evidence or a 50K rate claim.
+- `npm run test:fast` passed in 29.00 seconds, including maintained Browser
+  WebGPU run `5d0e0a31-c54d-4eea-b674-f051bdb5c35e`; production
+  warnings-denied clippy, the ARM64 Android check, and all 20 sibling Quest
+  consumer tests passed.
+- Clean headless run `1785234521747070107-1710488` at source
+  `383373c9775ee3159db5ea6d81a4bd71136af55d` completed 600 liquid-sandbox
+  steps with 3,952/8,192 particles and
+  `PHYSBOX5_VALIDATION_SUCCESS`. Artifacts are
+  `/tmp/physbox5-s40-review-liquid-600-20260728.{png,json}`.
+- The refreshed laptop capture is `/tmp/physbox-showcase.png`. The packaged
+  artifact remains tailnet-only at
+  `https://zblinux.tail71bc5c.ts.net:8444/`, served through the existing
+  `0.0.0.0:8080` process. No push, public repository change, Pages
+  configuration, or deployment occurred.
 
 ## Stop conditions
 
@@ -296,7 +335,7 @@ Stop before continuing if:
 
 After qualification, review:
 
-1. Are the compact controls and five-scene catalog the right public demo
+1. Are the compact icon controls and nine-scene catalog the right public demo
    surface?
 2. Are the Box/Water tool sizes and stress densities useful without exposing
    advanced tuning?

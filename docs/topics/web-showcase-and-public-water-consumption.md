@@ -1,10 +1,11 @@
 # Web showcase and public water consumption
 
-Status: decided and locally qualified through S40's first automated gates on
-2026-07-28. Human review reopened S40 for icon tools, configuration-owned
-water, 30/60 Hz choices, 2K-through-50K rigid stress variants, and camera
-navigation. GitHub Pages configuration, repository publication, and Box2D
-comparison remain deliberately held for separate review.
+Status: decided and locally qualified through S40's revised automated gates on
+2026-07-28. Icon tools, configuration-owned water, 30/60 Hz choices,
+2K-through-50K rigid stress variants, and camera navigation are implemented;
+S40 awaits review of the revised artifact. GitHub Pages configuration,
+repository publication, and Box2D comparison remain deliberately held for
+separate review.
 
 This topic defines the first-party PhysBox Web Showcase, its relationship to
 the existing workbench and Quest consumer, and the minimum public particle
@@ -376,6 +377,30 @@ its presentation or curated scenes, expose runtime Water interaction in the
 Quest-owned adapter, open a separate render-cadence/interpolation workstream,
 prepare static publication, or plan an independently qualified Box2D
 comparison.
+
+Human review selected the S40.7 revisions rather than one of those deferred
+workstreams. Revised packaged Browser WebGPU run
+`d62d7972-9972-4dd4-a3b7-167c215b7d66` proves:
+
+- the page starts on Water and rigid bodies with `Max water: 4K`;
+- dry scenes select `None`, while choosing a water capacity and pressing Reset
+  creates a genuinely empty GPU particle system that accepts runtime Water;
+- four icon buttons select body Drag, Box, Water, or camera Pan, and
+  pointer-anchored wheel/trackpad zoom plus Reset restore the expected
+  consumer camera projection;
+- the only presented fixed rates are 30 and 60 Hz;
+- exact Rigid stress 2K/5K/10K/20K/50K variants use direct opt-in public
+  capacities without changing the workbench's four cross-host product
+  presets; and
+- the 50K variant constructed 50,000/50,000 live bodies and advanced 12
+  zero-or-one outer steps. Its captured overload is diagnostic evidence, not
+  a rate, quality, or comparative performance claim.
+
+The maintained fast lane, production clippy, fresh 600-step coupled headless
+run, ARM64 Android check, and all 20 Quest consumer tests pass. The compact
+laptop capture contains no footer copy and remains reviewable at
+`https://zblinux.tail71bc5c.ts.net:8444/`. S40 remains active until a human
+evaluates this revised artifact.
 
 ## Alternatives rejected
 
