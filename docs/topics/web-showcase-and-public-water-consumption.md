@@ -1,11 +1,11 @@
 # Web showcase and public water consumption
 
-Status: decided and locally qualified through completed S40 on 2026-07-28.
-Human review caps rigid stress at 10K, accepts 4K/8K/16K authored Water stress,
-requires stationary-click Water placement and arrow-key camera navigation,
-and retains 32K only as a manually configurable allocation frontier. GitHub
-Pages configuration, repository publication, and Box2D comparison remain
-deliberately held for separate review.
+Status: decided and locally qualified through completed S40 on 2026-07-28;
+public GitHub Pages publication is authorized under S42. Human review caps
+rigid stress at 10K, accepts 4K/8K/16K authored Water stress, requires
+stationary-click Water placement and arrow-key camera navigation, and retains
+32K only as a manually configurable allocation frontier. Box2D comparison
+remains held for separate review.
 
 This topic defines the first-party PhysBox Web Showcase, its relationship to
 the existing workbench and Quest consumer, and the minimum public particle
@@ -41,18 +41,18 @@ canvas leaf remains unchanged. Ordinary HTML controls and scenario names are
 allowed in the showcase because they are consumer-owned application policy,
 not a duplicated browser implementation of the workbench.
 
-The first version is a standalone local web build. It must remain compatible
-with static subpath hosting and use only relative assets, but it does not add
-or enable GitHub Pages, a Pages workflow, a custom domain, or any production
-deployment. Publication waits for the repository-visibility review requested
-by the owner.
+The first version remains a standalone static web build. S42 publishes its
+release artifact at `https://kzahel.github.io/physbox/` through a GitHub
+Actions Pages workflow. Relative assets preserve project-subpath hosting.
+GitHub Pages owns only this consumer artifact; it does not deploy the
+fullscreen workbench or change the existing custom domain.
 
 ## Product and naming boundary
 
 Public copy uses the product name **PhysBox** and the descriptive label
-**PhysBox Web Showcase**. The repository, package, and compatibility names may
-remain `physbox5`; renaming them is independent work with substantially wider
-cost.
+**PhysBox Web Showcase**. The repository is `kzahel/physbox` and the reusable
+crate remains `physbox-sim`; historical compatibility identifiers may retain
+`physbox5`.
 
 The first screen should explain what the visitor is seeing, then get out of
 the way. A compact HTML scene selector, reset/pause controls, direct

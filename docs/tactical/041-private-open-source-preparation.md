@@ -1,10 +1,9 @@
 # S41 — Private open-source preparation
 
-Status: manual checkpoint 2026-07-28. The private candidate is qualified on
-`main`. Human review selected one main-only development line, PhysBox as the
-public product, `kzahel/physbox` as the canonical repository,
-`physbox-sim` as the library crate, and MIT licensing. Visibility, new PhysBox
-Pages, releases, and crate publication remain held.
+Status: complete 2026-07-28. The private candidate qualified on `main`, and
+human review accepted its naming, MIT metadata, README, history exposure, and
+audit. S42 separately owns the later public visibility and GitHub Pages
+decision; releases and crate publication remain held.
 
 Governing decision:
 [open-source positioning and publication](../topics/open-source-positioning-and-publication.md).

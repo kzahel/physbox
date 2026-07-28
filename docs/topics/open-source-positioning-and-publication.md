@@ -1,8 +1,8 @@
 # Open-source positioning and publication
 
-Status: decided for private preparation on 2026-07-28. Repository visibility,
-the first public release, crate publication, and the new PhysBox GitHub Pages
-deployment remain explicit later human checkpoints.
+Status: public repository and Web Showcase publication authorized under S42
+on 2026-07-28. Crate publication, a release/tag, and any custom-domain change
+remain explicit later human checkpoints.
 
 Related records:
 
@@ -48,24 +48,26 @@ Public copy must be concrete about current scope:
 - an unstable pre-release API and preview-quality water; and
 - diagnostics and stress scenes that are not benchmark claims.
 
-The root README prominently links the existing public fullscreen WebGPU
-workbench at `https://physbox5.kzahel.com/`. That link does not imply that the
-standalone Web Showcase or its future GitHub Pages deployment is public.
+The root README uses the GitHub Pages **PhysBox Web Showcase** as its prominent
+hands-on link. The existing fullscreen app at
+`https://physbox5.kzahel.com/` is labeled **advanced workbench** and linked
+separately in the section that explains the full first-party integration.
+“Demo” is generic prose rather than a third application name.
 
 ## Repository and compatibility boundary
 
-The private GitHub repository may be renamed before publication. It must remain
-private throughout preparation. Human review on 2026-07-28 selected one
-main-only development line rather than a temporary publication-prep branch.
-The prepared source is pushed to private `main`, and the existing pre-push hook
-continues to own the separate `physbox5.kzahel.com` production deployment
-after a successful `main` push.
+Private preparation completed on one main-only development line. Human review
+on 2026-07-28 authorizes changing `kzahel/physbox` to public and publishing
+the exact standalone showcase from `main` through GitHub Pages. The existing
+pre-push hook continues to own the separate `physbox5.kzahel.com` production
+deployment after a successful `main` push.
 
-The GitHub Pages showcase is a later, repository-specific deployment. It does
-not replace, configure, or weaken the existing clean-worktree custom-domain
-deployment. A normal private `main` push may schedule that existing deployment,
-but no Pages workflow or public visibility change is authorized by private
-preparation.
+The GitHub Pages showcase is a repository-specific deployment. It builds the
+standalone public-library consumer into a static artifact and deploys that
+artifact to `https://kzahel.github.io/physbox/` through a `github-pages`
+environment. It does not replace, configure, or weaken the existing
+clean-worktree custom-domain deployment. One `main` push may independently
+schedule both owners.
 
 Renaming the repository does not justify a broad compatibility rewrite.
 Crate names remain `physbox-*`; `PHYSBOX5_*` validation markers, Android
