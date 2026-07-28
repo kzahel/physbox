@@ -92,7 +92,7 @@ advanced link is accurate and discoverable without competing for identity.
       isolation-header dependency.
 - [x] Serve the release artifact from a project subpath and run a real Browser
       WebGPU smoke against it.
-- [ ] Run `npm run test:fast`, production warnings-denied clippy, workflow
+- [x] Run `npm run test:fast`, production warnings-denied clippy, workflow
       syntax/security checks, README links, and a final tracked-tree/history
       secret scan.
 
@@ -113,6 +113,18 @@ Local release checkpoint, 2026-07-28:
   official Actions are the current release majors on 2026-07-28:
   checkout/setup-node v7, cache/configure-pages v6, and
   upload-pages-artifact/deploy-pages v5.
+- The clean isolated `npm run test:fast` rerun passes in 21.73 seconds,
+  including Browser WebGPU run `8003390f-31dd-41dd-9716-a12393e3c06e`.
+  A preceding invocation run concurrently with production clippy was
+  invalidated after one Rust GPU test process terminated with `SIGILL`;
+  the required isolated rerun is the recorded gate.
+- `npm run clippy:rust:production` passes with warnings denied. All local
+  README targets resolve, the advanced workbench returns HTTP 200, and the
+  Pages artifact validator still reports the canonical digest above.
+- Gitleaks `8.28.0` scans 702 reachable commits and 342.66 MB with zero
+  findings. The workflow passes actionlint, grants no global permissions,
+  grants the build only repository/Pages reads, and grants only Pages/OIDC
+  writes to the deployment job.
 
 ### S42.5 — Visibility and Pages deployment
 

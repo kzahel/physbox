@@ -18,6 +18,7 @@ const serverRoot = resolve(
   process.env.PHYSBOX_SHOWCASE_SERVER_ROOT ?? join(root, "target"),
 );
 const urlPath = process.env.PHYSBOX_SHOWCASE_URL_PATH ?? "/showcase-web/";
+const externalBaseUrl = process.env.PHYSBOX_SHOWCASE_BASE_URL;
 const captureDirectory = resolve(
   process.env.PHYSBOX_SHOWCASE_CAPTURE_DIRECTORY ?? "/tmp",
 );
@@ -28,9 +29,11 @@ if (process.env.PHYSBOX_SHOWCASE_SKIP_BUILD !== "1") {
   run(process.execPath, [join(root, "scripts", "build-showcase-web.mjs")]);
 }
 
-const server = await startServer(serverRoot, 0, {
-  crossOriginIsolation: false,
-});
+const server = externalBaseUrl
+  ? null
+  : await startServer(serverRoot, 0, {
+      crossOriginIsolation: false,
+    });
 let browserSession;
 try {
   browserSession = await launchManagedBrowser({
@@ -57,8 +60,9 @@ try {
       consoleProblems.push(`${message.type()}: ${message.text()}`);
     }
   });
-  const port = server.address().port;
-  const response = await page.goto(`http://127.0.0.1:${port}${urlPath}`, {
+  const pageUrl =
+    externalBaseUrl ?? `http://127.0.0.1:${server.address().port}${urlPath}`;
+  const response = await page.goto(pageUrl, {
     waitUntil: "networkidle",
   });
   if (!response?.ok()) {
@@ -391,7 +395,8 @@ try {
   const provenance = {
     runId: randomUUID(),
     host: "browser-webgpu",
-    urlPath,
+    url: pageUrl,
+    urlPath: new URL(pageUrl).pathname,
     crossOriginIsolated: state.crossOriginIsolated,
     finalState: state,
     wasmBytes: wasm.size,
@@ -405,7 +410,9 @@ try {
   console.log(`showcase provenance: ${provenancePath}`);
 } finally {
   await closeManagedBrowser(browserSession);
-  await closeHttpServer(server);
+  if (server) {
+    await closeHttpServer(server);
+  }
 }
 
 async function currentState(page) {
