@@ -650,7 +650,14 @@ pub fn liquid_scale_benchmark_source(
     let width = columns as f32 * spacing;
     let height = rows as f32 * spacing;
     let lower = Vec2::new(-0.5 * width, -6.0);
-    let upper = Vec2::new(lower.x + width, lower.y + height);
+    // Keep the intended final column despite accumulated f32 stepping error
+    // in the shared particle-region decoder at the 256-column frontier.
+    let upper_x_guard = if columns >= 256 {
+        spacing * 1.0e-3
+    } else {
+        0.0
+    };
+    let upper = Vec2::new(lower.x + width + upper_x_guard, lower.y + height);
     let center_y = 0.5 * (lower.y + upper.y);
     let id = format!("liquid-scale-{}-{particle_count}-v1", solid_tier.id());
     let seed = 0x5035_4300
@@ -992,6 +999,18 @@ mod tests {
                 let columns = ((region.upper.x - region.lower.x) / spacing).round() as u32;
                 let rows = ((region.upper.y - region.lower.y) / spacing).round() as u32;
                 assert_eq!(columns * rows, particle_count);
+                let radius = source.scenario.materials[0].radius.get();
+                let mut decoded_count = 0;
+                let mut y = region.lower.y + radius;
+                while y <= region.upper.y - radius + 1.0e-6 {
+                    let mut x = region.lower.x + radius;
+                    while x <= region.upper.x - radius + 1.0e-6 {
+                        decoded_count += 1;
+                        x += spacing;
+                    }
+                    y += spacing;
+                }
+                assert_eq!(decoded_count, particle_count);
             }
         }
 
