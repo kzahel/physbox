@@ -4,9 +4,11 @@ Status: active diagnosed performance issue and measured optimization program,
 updated 2026-08-10. Physical Pixel
 7a evidence identifies a reserved-body-capacity scheduling cliff as the
 primary cause of the reported mobile liquid slowdown. The 92-dispatch particle
-graph is a separate material cost at the ordinary 64-body tier. No remediation
-for either performance issue has yet been selected or implemented; the
-two-target contribution change below is a correctness-capacity fix.
+graph is a separate material cost at the ordinary 64-body tier. S43 has now
+qualified and selected the existing workgroup-per-island rigid dispatch form
+through the 128-slot/100-dynamic-body tier; live-count routing above larger
+reserves and the particle graph remain active work. The two-target contribution
+change below is a correctness-capacity fix.
 
 Governing performance contract:
 [performance and scale](performance-and-scale.md).
@@ -64,6 +66,30 @@ the compact live list.
 The 64-body preset remains the correct ordinary default and does not reduce
 the independent 8,192-particle reserve. Selecting 64 is a useful immediate
 workaround, not closure of either scaling problem.
+
+### Selected 128-slot rigid dispatch tier
+
+S43 qualified the existing `WorkgroupPerIsland` dispatch form through 128
+reserved body slots. The selected solver equations, substeps, iterations,
+contact coloring, and compacted color order are unchanged. A focused
+100-dynamic-circle bucket differential was bit-exact for bodies, manifolds,
+cache, contacts, color assignment, and compacted work order against the
+`PerColorIndirect` form. The 129-slot-and-above construction tier keeps the
+existing scalable per-color fallback.
+
+Pre-commit candidate probes on the 100-solid + 8K liquid source produced:
+
+| Host | Form | Dispatches | Host P50 | Host P95 |
+| --- | --- | ---: | ---: | ---: |
+| Native Metal | per-color baseline | 644 | 8.865 ms | 10.933 ms |
+| Native Metal | island candidate | 277 | 8.072 ms | 8.685 ms |
+| Chrome WebGPU | per-color baseline | 644 | 15.415 ms | 16.070 ms |
+| Chrome WebGPU | island candidate | 277 | 10.365 ms | 11.025 ms |
+
+These dirty-tree rows select the implementation candidate but are not final
+claim evidence. S43 retains a clean same-revision recapture, live-count routing
+for oversized reserves, rigid-only/full-frame controls, and physical Android
+qualification as separate gates.
 
 ### S43 clean cross-host physics baseline
 

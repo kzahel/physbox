@@ -216,7 +216,7 @@ samples; no optimization starts from an unmeasured attribution assumption.
 
 ### S43.5 — live-work rigid schedule routing
 
-- [ ] Qualify workgroup-per-island execution through the bounded 128-slot,
+- [x] Qualify workgroup-per-island execution through the bounded 128-slot,
       100-dynamic-body benchmark topology without changing solver equations or
       color/order semantics.
 - [ ] Route from GPU-visible live/topology work rather than reserved capacity,
@@ -225,6 +225,16 @@ samples; no optimization starts from an unmeasured attribution assumption.
       observation, duplicate solving, dropped work, or watchdog exposure.
 - [ ] Compare native, Browser, and physical Android 20/100 rigid-only and 8K
       coupled rows on the same revision.
+
+Qualification checkpoint, 2026-08-10: the existing workgroup-per-island graph
+is now selected through 128 reserved body slots, while 129 and above retain the
+existing per-color fallback. A focused 100-dynamic-circle bucket differential
+produced bit-exact bodies, manifolds, cache, contacts, color assignment, and
+compacted order between both dispatch forms. No solver equation, iteration,
+color, or order changed. Dirty-tree candidate probes reduced the 100-solid +
+8K row from 644 to 277 dispatches. Native host P95 changed from `10.933` to
+`8.685 ms`; Chrome WebGPU changed from `16.070` to `11.025 ms`. Clean
+same-revision evidence and the live-count routing/growth work remain open.
 
 Gate: the selected route is mechanically equivalent, capacity-clean, portable,
 and materially reduces the diagnosed 128-slot mobile rigid cost; otherwise it

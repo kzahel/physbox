@@ -411,7 +411,7 @@ pub struct GpuSolverSchedulingPolicyV1 {
 }
 
 impl GpuSolverSchedulingPolicyV1 {
-    pub const SMALL_WORLD_BODY_CAPACITY_MAX: u32 = 64;
+    pub const SMALL_WORLD_BODY_CAPACITY_MAX: u32 = 128;
 
     pub const SERIAL_CONTROL: Self = Self {
         version: GPU_SOLVER_SCHEDULING_POLICY_VERSION,
@@ -6982,9 +6982,9 @@ mod tests {
     }
 
     #[test]
-    fn selected_dispatch_policy_keeps_the_scalable_schedule_above_the_small_world_tier() {
-        let small = GpuSolverSchedulingPolicyV1::selected_for_body_capacity(64);
-        let scalable = GpuSolverSchedulingPolicyV1::selected_for_body_capacity(65);
+    fn selected_dispatch_policy_keeps_the_scalable_schedule_above_the_qualified_island_tier() {
+        let small = GpuSolverSchedulingPolicyV1::selected_for_body_capacity(128);
+        let scalable = GpuSolverSchedulingPolicyV1::selected_for_body_capacity(129);
         assert_eq!(small, GpuSolverSchedulingPolicyV1::SELECTED_SMALL_WORLD);
         assert_eq!(scalable, GpuSolverSchedulingPolicyV1::SELECTED);
         assert_eq!(small.color_maintenance, scalable.color_maintenance);
