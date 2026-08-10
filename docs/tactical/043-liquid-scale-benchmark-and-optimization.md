@@ -233,8 +233,7 @@ produced bit-exact bodies, manifolds, cache, contacts, color assignment, and
 compacted order between both dispatch forms. No solver equation, iteration,
 color, or order changed. Dirty-tree candidate probes reduced the 100-solid +
 8K row from 644 to 277 dispatches. Native host P95 changed from `10.933` to
-`8.685 ms`; Chrome WebGPU changed from `16.070` to `11.025 ms`. Clean
-same-revision cross-host evidence remains open.
+`8.685 ms`; Chrome WebGPU changed from `16.070` to `11.025 ms`.
 
 Live-routing checkpoint, 2026-08-10: interactive construction now selects one
 solver graph from the known initial live-body population, not its reserve. The
@@ -247,13 +246,24 @@ to 129 live bodies in two 64-command GPU construction batches. Its final body
 snapshot was bit-exact with a 129-body world that selected the fallback at
 construction. No readback selected or changed either graph.
 
+Clean routing recapture, 2026-08-10: revision
+`59774164a11898b4d8ff101cffb6d3efc59c11d5` retained comparator-off release
+rows for both coupled 8K tiers. Native 20/100-solid host P95 was
+`7.101/8.205 ms`; Chrome WebGPU was `11.380/11.345 ms`. The corresponding
+dispatch counts were `273/277`, every row retained exactly 8,192 particles,
+and every capacity/correctness field passed. This removes the former 5 ms
+Chrome separation without a particle-count or quality change. The package is
+retained under `evidence/p5.3-s43-live-routing-5977416/`. Rigid-only and
+physical Android rows remain open, so the final comparison item is not yet
+complete.
+
 Gate: the selected route is mechanically equivalent, capacity-clean, portable,
 and materially reduces the diagnosed 128-slot mobile rigid cost; otherwise it
 is rejected with evidence and the general schedule remains selected.
 
 ### S43.6 — particle pass and live-work execution
 
-- [ ] Measure encoding consecutive particle dispatches in fewer WebGPU compute
+- [x] Measure encoding consecutive particle dispatches in fewer WebGPU compute
       passes while retaining required visibility and identical final state.
 - [ ] Move safe per-particle kernels from capacity-sized direct dispatch to the
       GPU compact live list and indirect work count.
@@ -265,6 +275,15 @@ is rejected with evidence and the general schedule remains selected.
 Gate: a retained candidate lowers CPU encode or GPU/host cost on Browser or
 physical Android without changing mechanics; neutral or regressing candidates
 are reverted or left unselected with their evidence.
+
+Pass-boundary disposition, 2026-08-10: a candidate recorded the ordinary 92
+particle dispatches into one compute pass while retaining their exact pipeline
+and dispatch order. A same-device differential against the current
+one-pass-per-dispatch form failed exact particle and body-state equality before
+timing. WebGPU storage visibility between these kernels therefore depends on
+the existing pass boundaries on the tested Metal implementation. The candidate
+was reverted uncommitted; fewer passes are not a portable optimization unless
+a later design removes the data dependency itself.
 
 ### S43.7 — particle/body spatial candidates
 

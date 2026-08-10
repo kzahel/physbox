@@ -98,10 +98,36 @@ Pre-commit candidate probes on the 100-solid + 8K liquid source produced:
 | Chrome WebGPU | per-color baseline | 644 | 15.415 ms | 16.070 ms |
 | Chrome WebGPU | island candidate | 277 | 10.365 ms | 11.025 ms |
 
-These dirty-tree rows select the implementation candidate but are not final
-claim evidence. S43 retains a clean same-revision recapture,
-rigid-only/full-frame controls, and physical Android qualification as separate
-gates.
+These dirty-tree rows selected the implementation candidate. Clean revision
+`59774164a11898b4d8ff101cffb6d3efc59c11d5` then retained the following
+comparator-off release recapture:
+
+| Host | Dynamic solids | Particles | Dispatches | Host P50 | Host P95 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Native Metal | 20 | 8K | 273 | 6.461 ms | 7.101 ms |
+| Native Metal | 100 | 8K | 277 | 7.912 ms | 8.205 ms |
+| Chrome WebGPU | 20 | 8K | 273 | 10.550 ms | 11.380 ms |
+| Chrome WebGPU | 100 | 8K | 277 | 10.490 ms | 11.345 ms |
+
+All four rows retained exactly 8,192 live particles and passed their finite,
+identity, capacity, overflow, and work-contract checks. Their local timestamp
+clocks remained unusable, so only host completion is compared. The package is
+retained under `evidence/p5.3-s43-live-routing-5977416/`. This clean evidence
+confirms that the selected route removes the former 371-dispatch and roughly
+5 ms Chrome cliff. Rigid-only/full-frame controls and physical Android
+qualification remain separate gates.
+
+### Rejected single-pass particle encoding
+
+S43 also tested whether the 92 particle dispatches could retain their exact
+pipeline and dispatch order inside one WebGPU compute pass. A same-device
+differential against the current pass-per-dispatch graph failed exact particle
+and body-state equality before any performance ranking. On the tested Metal
+implementation, the existing pass boundaries provide storage visibility that
+this mechanically identical-looking recording does not preserve. The
+candidate was reverted uncommitted. Future pass reduction must remove or
+reformulate a data dependency and prove identical state; merely coalescing
+encoders is not portable.
 
 ### S43 clean cross-host physics baseline
 
