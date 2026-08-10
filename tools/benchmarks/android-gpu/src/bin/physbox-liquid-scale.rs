@@ -20,7 +20,8 @@ fn run() -> Result<(), String> {
         arguments.particle_count,
         arguments.warmup,
         arguments.samples,
-    );
+    )
+    .with_particle_capacity(arguments.particle_capacity);
     let provenance = ProvenanceV1 {
         run_id: arguments.run_id.clone(),
         source_revision: arguments.source_revision,
@@ -88,6 +89,7 @@ struct Arguments {
     toolchain: String,
     solid_tier: LiquidScaleSolidTier,
     particle_count: u32,
+    particle_capacity: u32,
     warmup: u32,
     samples: u32,
     output: PathBuf,
@@ -103,6 +105,7 @@ impl Arguments {
         let mut toolchain = None;
         let mut solid_tier = None;
         let mut particle_count = None;
+        let mut particle_capacity = None;
         let mut warmup = None;
         let mut samples = None;
         let mut output = None;
@@ -119,13 +122,15 @@ impl Arguments {
                 "--host" => host = Some(value),
                 "--toolchain" => toolchain = Some(value),
                 "--solid-tier" => solid_tier = Some(parse_tier(&value)?),
-                "--particles" => particle_count = Some(parse_u32(&value, "particles")?),
+                "--particles" => particle_count = Some(parse_nonnegative_u32(&value, "particles")?),
+                "--capacity" => particle_capacity = Some(parse_u32(&value, "capacity")?),
                 "--warmup" => warmup = Some(parse_u32(&value, "warmup")?),
                 "--samples" => samples = Some(parse_u32(&value, "samples")?),
                 "--output" => output = Some(PathBuf::from(value)),
                 _ => return Err(format!("unknown argument {argument}")),
             }
         }
+        let particle_count = required(particle_count, "--particles")?;
         Ok(Self {
             run_id: required(run_id, "--run-id")?,
             source_revision: required(source_revision, "--source-revision")?,
@@ -134,7 +139,8 @@ impl Arguments {
             host: required(host, "--host")?,
             toolchain: required(toolchain, "--toolchain")?,
             solid_tier: required(solid_tier, "--solid-tier")?,
-            particle_count: required(particle_count, "--particles")?,
+            particle_count,
+            particle_capacity: particle_capacity.unwrap_or(particle_count),
             warmup: required(warmup, "--warmup")?,
             samples: required(samples, "--samples")?,
             output: required(output, "--output")?,
@@ -161,6 +167,12 @@ fn parse_u32(value: &str, label: &str) -> Result<u32, String> {
         .ok()
         .filter(|value| *value != 0)
         .ok_or_else(|| format!("{label} must be a positive integer"))
+}
+
+fn parse_nonnegative_u32(value: &str, label: &str) -> Result<u32, String> {
+    value
+        .parse::<u32>()
+        .map_err(|_| format!("{label} must be a nonnegative integer"))
 }
 
 fn parse_bool(value: &str) -> Result<bool, String> {

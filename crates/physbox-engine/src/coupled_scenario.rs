@@ -18,6 +18,8 @@ pub const FLUID_SOLID_OVERLAP_PHASE_OFFSETS: [f32; FLUID_SOLID_OVERLAP_PHASE_COU
     [0.0, 0.025, 0.05, 0.075];
 pub const LIQUID_SCALE_BENCHMARK_VERSION: u32 = 1;
 pub const LIQUID_SCALE_PARTICLE_COUNTS: [u32; 5] = [1_024, 4_096, 8_192, 16_384, 32_768];
+pub const LIQUID_SCALE_FIXED_RESERVE_CAPACITY: u32 = 8_192;
+pub const LIQUID_SCALE_FIXED_RESERVE_LIVE_COUNTS: [u32; 5] = [0, 1, 1_024, 4_096, 8_192];
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -64,6 +66,7 @@ pub struct LiquidScaleBenchmarkSourceV1 {
     pub dynamic_solid_count: u32,
     pub fixed_solid_count: u32,
     pub particle_count: u32,
+    pub particle_capacity: u32,
     pub expected_body_capacity: u32,
     pub scenario: CoupledScenarioV1,
 }
@@ -645,7 +648,25 @@ pub fn liquid_scale_benchmark_source(
     solid_tier: LiquidScaleSolidTier,
     particle_count: u32,
 ) -> Result<LiquidScaleBenchmarkSourceV1, ScenarioBuildError> {
-    let (columns, rows) = liquid_scale_particle_grid(particle_count)?;
+    liquid_scale_benchmark_source_with_capacity(solid_tier, particle_count, particle_count)
+}
+
+pub fn liquid_scale_benchmark_source_with_capacity(
+    solid_tier: LiquidScaleSolidTier,
+    particle_count: u32,
+    particle_capacity: u32,
+) -> Result<LiquidScaleBenchmarkSourceV1, ScenarioBuildError> {
+    if !LIQUID_SCALE_PARTICLE_COUNTS.contains(&particle_capacity)
+        || particle_count > particle_capacity
+        || (particle_count != particle_capacity
+            && (particle_capacity != LIQUID_SCALE_FIXED_RESERVE_CAPACITY
+                || !LIQUID_SCALE_FIXED_RESERVE_LIVE_COUNTS.contains(&particle_count)))
+    {
+        return Err(ScenarioBuildError(format!(
+            "unsupported liquid scale population {particle_count}/{particle_capacity}"
+        )));
+    }
+    let (columns, rows) = liquid_scale_particle_grid(particle_capacity)?;
     let spacing = 0.1;
     let width = columns as f32 * spacing;
     let height = rows as f32 * spacing;
@@ -659,7 +680,14 @@ pub fn liquid_scale_benchmark_source(
     };
     let upper = Vec2::new(lower.x + width + upper_x_guard, lower.y + height);
     let center_y = 0.5 * (lower.y + upper.y);
-    let id = format!("liquid-scale-{}-{particle_count}-v1", solid_tier.id());
+    let id = if particle_count == particle_capacity {
+        format!("liquid-scale-{}-{particle_count}-v1", solid_tier.id())
+    } else {
+        format!(
+            "liquid-scale-{}-{particle_count}-of-{particle_capacity}-v1",
+            solid_tier.id()
+        )
+    };
     let seed = 0x5035_4300
         + u64::from(particle_count)
         + u64::from(solid_tier.dynamic_solid_count()) * 0x1_0000;
@@ -696,27 +724,41 @@ pub fn liquid_scale_benchmark_source(
     };
     let mut water = ParticleMaterialV1::water_v1(0);
     water.radius = finite(0.05);
+    let regions = if particle_count == 0 {
+        Vec::new()
+    } else {
+        let (live_columns, live_rows) = liquid_scale_particle_grid(particle_count)?;
+        let live_upper_x_guard = if live_columns >= 256 {
+            spacing * 1.0e-3
+        } else {
+            0.0
+        };
+        vec![ParticleRegionV1 {
+            id: 0,
+            material_id: 0,
+            lower,
+            upper: Vec2::new(
+                lower.x + live_columns as f32 * spacing + live_upper_x_guard,
+                lower.y + live_rows as f32 * spacing,
+            ),
+            spacing: finite(spacing),
+            initial_velocity: Vec2::ZERO,
+        }]
+    };
     let scenario = CoupledScenarioV1 {
         schema_version: SCHEMA_VERSION,
         contract_version: physbox_contracts::COUPLED_CONTRACT_VERSION,
         id: id.clone(),
         seed,
         requested_steps,
-        particle_capacity: particle_count,
+        particle_capacity,
         rigid,
         settings: CoupledSettingsV1 {
             schedule: CoupledScheduleV1::RigidThenCoupledBatch,
             ..CoupledSettingsV1::initial()
         },
         materials: vec![water],
-        regions: vec![ParticleRegionV1 {
-            id: 0,
-            material_id: 0,
-            lower,
-            upper,
-            spacing: finite(spacing),
-            initial_velocity: Vec2::ZERO,
-        }],
+        regions,
         actions: Vec::new(),
     };
     scenario
@@ -732,6 +774,7 @@ pub fn liquid_scale_benchmark_source(
         dynamic_solid_count: solid_tier.dynamic_solid_count(),
         fixed_solid_count: 3,
         particle_count,
+        particle_capacity,
         expected_body_capacity: solid_tier.expected_body_capacity(),
         scenario,
     })
@@ -739,6 +782,7 @@ pub fn liquid_scale_benchmark_source(
 
 fn liquid_scale_particle_grid(particle_count: u32) -> Result<(u32, u32), ScenarioBuildError> {
     match particle_count {
+        1 => Ok((1, 1)),
         1_024 => Ok((32, 32)),
         4_096 => Ok((64, 64)),
         8_192 => Ok((128, 64)),
@@ -989,6 +1033,7 @@ mod tests {
 
                 assert_eq!(source.version, LIQUID_SCALE_BENCHMARK_VERSION);
                 assert_eq!(source.particle_count, particle_count);
+                assert_eq!(source.particle_capacity, particle_count);
                 assert_eq!(source.scenario.particle_capacity, particle_count);
                 assert_eq!(source.dynamic_solid_count, solid_tier.dynamic_solid_count());
                 assert_eq!(source.fixed_solid_count, 3);
@@ -1031,6 +1076,30 @@ mod tests {
     #[test]
     fn liquid_scale_source_rejects_an_unsupported_particle_count() {
         assert!(liquid_scale_benchmark_source(LiquidScaleSolidTier::WaterOnly, 2_048).is_err());
+    }
+
+    #[test]
+    fn liquid_scale_fixed_reserve_sources_keep_exact_live_populations() {
+        for particle_count in LIQUID_SCALE_FIXED_RESERVE_LIVE_COUNTS {
+            let source = liquid_scale_benchmark_source_with_capacity(
+                LiquidScaleSolidTier::Solids20,
+                particle_count,
+                LIQUID_SCALE_FIXED_RESERVE_CAPACITY,
+            )
+            .unwrap();
+            let authored_count = source.scenario.regions.first().map_or(0, |region| {
+                let spacing = region.spacing.get();
+                let columns = ((region.upper.x - region.lower.x) / spacing).round() as u32;
+                let rows = ((region.upper.y - region.lower.y) / spacing).round() as u32;
+                columns * rows
+            });
+            assert_eq!(source.particle_count, particle_count);
+            assert_eq!(
+                source.particle_capacity,
+                LIQUID_SCALE_FIXED_RESERVE_CAPACITY
+            );
+            assert_eq!(authored_count, particle_count);
+        }
     }
 
     #[test]

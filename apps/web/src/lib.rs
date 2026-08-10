@@ -371,6 +371,7 @@ pub async fn run_body_benchmark(
 pub async fn run_liquid_scale_benchmark(
     solid_tier: String,
     particle_count: u32,
+    particle_capacity: u32,
     warmup_steps: u32,
     samples: u32,
     run_id: String,
@@ -388,7 +389,8 @@ pub async fn run_liquid_scale_benchmark(
         particle_count,
         warmup_steps,
         samples,
-    );
+    )
+    .with_particle_capacity(particle_capacity);
     let provenance = ProvenanceV1 {
         run_id,
         source_revision,

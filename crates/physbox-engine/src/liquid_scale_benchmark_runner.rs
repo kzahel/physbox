@@ -27,7 +27,7 @@ use crate::{
     LiquidScaleGpuStageTimingV1, LiquidScaleGpuStageV1, LiquidScaleGpuTimestampStatusV1,
     LiquidScaleHostKindV1, LiquidScaleTimingModeV1, LiquidScaleTimingSeriesV1,
     LiquidScaleTimingsV1, LiquidScaleWorkVectorV1, SolverProfileConfig,
-    liquid_scale_benchmark_source,
+    liquid_scale_benchmark_source_with_capacity,
 };
 
 const FRAME_QUERY_COUNT: u32 = 3;
@@ -101,8 +101,12 @@ impl LiquidScaleBenchmarkSession {
             _ => {}
         }
 
-        let source = liquid_scale_benchmark_source(config.solid_tier, config.particle_count)
-            .map_err(|error| error.to_string())?;
+        let source = liquid_scale_benchmark_source_with_capacity(
+            config.solid_tier,
+            config.particle_count,
+            config.resolved_particle_capacity(),
+        )
+        .map_err(|error| error.to_string())?;
         let total_steps = config
             .warmup_steps
             .checked_add(config.retained_samples)
@@ -144,7 +148,7 @@ impl LiquidScaleBenchmarkSession {
             ));
         }
         if world.initial_particle_count() != config.particle_count
-            || world.particle_capacity() != config.particle_count
+            || world.particle_capacity() != config.resolved_particle_capacity()
         {
             return Err(
                 "liquid benchmark world did not create the exact particle population".to_owned(),

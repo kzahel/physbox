@@ -1,7 +1,10 @@
 use physbox_contracts::{CapacityRecordV1, ContractError, ProvenanceV1, SCHEMA_VERSION, Validate};
 use serde::{Deserialize, Serialize};
 
-use crate::{LIQUID_SCALE_BENCHMARK_VERSION, LIQUID_SCALE_PARTICLE_COUNTS, LiquidScaleSolidTier};
+use crate::{
+    LIQUID_SCALE_BENCHMARK_VERSION, LIQUID_SCALE_FIXED_RESERVE_CAPACITY,
+    LIQUID_SCALE_FIXED_RESERVE_LIVE_COUNTS, LIQUID_SCALE_PARTICLE_COUNTS, LiquidScaleSolidTier,
+};
 
 pub const LIQUID_SCALE_ARTIFACT_VERSION: u32 = 1;
 pub const LIQUID_SCALE_PERCENTILE_METHOD: &str = "nearest-rank-ceil-v1";
@@ -41,6 +44,8 @@ pub struct LiquidScaleBenchmarkConfigV1 {
     pub timing_mode: LiquidScaleTimingModeV1,
     pub solid_tier: LiquidScaleSolidTier,
     pub particle_count: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub particle_capacity: Option<u32>,
     pub warmup_steps: u32,
     pub retained_samples: u32,
     pub outer_steps_per_sample: u32,
@@ -68,6 +73,7 @@ impl LiquidScaleBenchmarkConfigV1 {
             timing_mode: LiquidScaleTimingModeV1::PhysicsOnlyExplicitSteps,
             solid_tier,
             particle_count,
+            particle_capacity: None,
             warmup_steps,
             retained_samples,
             outer_steps_per_sample: 1,
@@ -83,12 +89,27 @@ impl LiquidScaleBenchmarkConfigV1 {
             interactive_duration_seconds: None,
         }
     }
+
+    pub fn with_particle_capacity(mut self, particle_capacity: u32) -> Self {
+        self.particle_capacity =
+            (particle_capacity != self.particle_count).then_some(particle_capacity);
+        self
+    }
+
+    pub fn resolved_particle_capacity(&self) -> u32 {
+        self.particle_capacity.unwrap_or(self.particle_count)
+    }
 }
 
 impl Validate for LiquidScaleBenchmarkConfigV1 {
     fn validate(&self) -> Result<(), ContractError> {
+        let particle_capacity = self.resolved_particle_capacity();
+        let standard_population = self.particle_capacity.is_none()
+            && LIQUID_SCALE_PARTICLE_COUNTS.contains(&self.particle_count);
+        let fixed_reserve_population = particle_capacity == LIQUID_SCALE_FIXED_RESERVE_CAPACITY
+            && LIQUID_SCALE_FIXED_RESERVE_LIVE_COUNTS.contains(&self.particle_count);
         if self.version != LIQUID_SCALE_BENCHMARK_VERSION
-            || !LIQUID_SCALE_PARTICLE_COUNTS.contains(&self.particle_count)
+            || (!standard_population && !fixed_reserve_population)
             || self.warmup_steps == 0
             || self.retained_samples == 0
             || self.outer_steps_per_sample != 1
@@ -585,7 +606,7 @@ impl Validate for LiquidScaleBenchmarkArtifactV1 {
         if self.work.dynamic_bodies != self.config.solid_tier.dynamic_solid_count()
             || self.work.fixed_bodies != 3
             || self.work.body_capacity != self.config.solid_tier.expected_body_capacity()
-            || self.work.particle_capacity != self.config.particle_count
+            || self.work.particle_capacity != self.config.resolved_particle_capacity()
             || self.work.live_particles != self.config.particle_count
         {
             return Err(ContractError(

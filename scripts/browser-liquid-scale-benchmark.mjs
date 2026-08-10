@@ -11,7 +11,11 @@ const output = process.env.PHYSBOX5_LIQUID_SCALE_OUTPUT
   ?? "/tmp/physbox5-browser-liquid-scale.json";
 const temporary = `${output}.tmp`;
 const solidTier = process.env.PHYSBOX5_LIQUID_SOLIDS ?? "20";
-const particleCount = positiveInteger("PHYSBOX5_LIQUID_PARTICLES", "4096");
+const particleCount = nonnegativeInteger("PHYSBOX5_LIQUID_PARTICLES", "4096");
+const particleCapacity = positiveInteger(
+  "PHYSBOX5_LIQUID_CAPACITY",
+  String(particleCount),
+);
 const warmupSteps = positiveInteger("PHYSBOX5_LIQUID_WARMUP", "16");
 const samples = positiveInteger("PHYSBOX5_LIQUID_SAMPLES", "30");
 if (!["water-only", "20", "100"].includes(solidTier)) {
@@ -61,6 +65,7 @@ try {
       return JSON.parse(await module.runLiquidScaleBenchmark(
         parameters.solidTier,
         parameters.particleCount,
+        parameters.particleCapacity,
         parameters.warmupSteps,
         parameters.samples,
         parameters.runId,
@@ -75,6 +80,7 @@ try {
     {
       solidTier,
       particleCount,
+      particleCapacity,
       warmupSteps,
       samples,
       runId,
@@ -101,6 +107,12 @@ try {
 function positiveInteger(name, fallback) {
   const value = Number(process.env[name] ?? fallback);
   if (!Number.isSafeInteger(value) || value <= 0) throw new Error(`${name} must be positive`);
+  return value;
+}
+
+function nonnegativeInteger(name, fallback) {
+  const value = Number(process.env[name] ?? fallback);
+  if (!Number.isSafeInteger(value) || value < 0) throw new Error(`${name} must be nonnegative`);
   return value;
 }
 

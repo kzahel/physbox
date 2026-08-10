@@ -30,6 +30,7 @@ enum Matrix {
     Row {
         solid_tier: LiquidScaleSolidTier,
         particle_count: u32,
+        particle_capacity: u32,
     },
 }
 
@@ -104,13 +105,14 @@ fn execute_matrix(
         .ok_or_else(|| "liquid benchmark requires rustc provenance".to_owned())?;
     let rows = matrix_rows(&arguments.matrix);
     let mut artifacts = Vec::with_capacity(rows.len());
-    for (solid_tier, particle_count) in rows {
+    for (solid_tier, particle_count, particle_capacity) in rows {
         let config = LiquidScaleBenchmarkConfigV1::physics_only(
             solid_tier,
             particle_count,
             arguments.warmup_steps,
             arguments.retained_samples,
-        );
+        )
+        .with_particle_capacity(particle_capacity);
         let provenance = ProvenanceV1 {
             run_id: run_id.to_owned(),
             source_revision: source_revision.clone(),
@@ -203,12 +205,21 @@ fn parse_arguments() -> Result<Arguments, String> {
             Matrix::Row {
                 solid_tier: parse_tier(tier)?,
                 particle_count: parse_particles(particles)?,
+                particle_capacity: parse_particles(particles)?,
+            },
+            PathBuf::from(output),
+        ),
+        [mode, tier, particles, capacity, output] if mode == "fixed-reserve" => (
+            Matrix::Row {
+                solid_tier: parse_tier(tier)?,
+                particle_count: parse_fixed_reserve_live_particles(particles)?,
+                particle_capacity: parse_particles(capacity)?,
             },
             PathBuf::from(output),
         ),
         _ => {
             return Err(
-                "usage: physbox-liquid-scale selected|full OUTPUT [--warmup N] [--samples N]\n       physbox-liquid-scale row water-only|20|100 1024|4096|8192|16384|32768 OUTPUT [--warmup N] [--samples N]"
+                "usage: physbox-liquid-scale selected|full OUTPUT [--warmup N] [--samples N]\n       physbox-liquid-scale row water-only|20|100 1024|4096|8192|16384|32768 OUTPUT [--warmup N] [--samples N]\n       physbox-liquid-scale fixed-reserve water-only|20|100 0|1|1024|4096|8192 8192 OUTPUT [--warmup N] [--samples N]"
                     .to_owned(),
             );
         }
@@ -221,16 +232,16 @@ fn parse_arguments() -> Result<Arguments, String> {
     })
 }
 
-fn matrix_rows(matrix: &Matrix) -> Vec<(LiquidScaleSolidTier, u32)> {
+fn matrix_rows(matrix: &Matrix) -> Vec<(LiquidScaleSolidTier, u32, u32)> {
     match matrix {
         Matrix::Selected => vec![
-            (LiquidScaleSolidTier::Solids20, 8_192),
-            (LiquidScaleSolidTier::Solids100, 8_192),
+            (LiquidScaleSolidTier::Solids20, 8_192, 8_192),
+            (LiquidScaleSolidTier::Solids100, 8_192, 8_192),
         ],
         Matrix::Full => {
             let mut rows = [1_024, 4_096, 8_192, 16_384, 32_768]
                 .into_iter()
-                .map(|particles| (LiquidScaleSolidTier::WaterOnly, particles))
+                .map(|particles| (LiquidScaleSolidTier::WaterOnly, particles, particles))
                 .collect::<Vec<_>>();
             for tier in [
                 LiquidScaleSolidTier::Solids20,
@@ -239,7 +250,7 @@ fn matrix_rows(matrix: &Matrix) -> Vec<(LiquidScaleSolidTier, u32)> {
                 rows.extend(
                     [4_096, 8_192, 16_384]
                         .into_iter()
-                        .map(|particles| (tier, particles)),
+                        .map(|particles| (tier, particles, particles)),
                 );
             }
             rows
@@ -247,7 +258,8 @@ fn matrix_rows(matrix: &Matrix) -> Vec<(LiquidScaleSolidTier, u32)> {
         Matrix::Row {
             solid_tier,
             particle_count,
-        } => vec![(*solid_tier, *particle_count)],
+            particle_capacity,
+        } => vec![(*solid_tier, *particle_count, *particle_capacity)],
     }
 }
 
@@ -266,6 +278,16 @@ fn parse_particles(value: &str) -> Result<u32, String> {
         .contains(&particles)
         .then_some(particles)
         .ok_or_else(|| "liquid particles must be 1024, 4096, 8192, 16384, or 32768".to_owned())
+}
+
+fn parse_fixed_reserve_live_particles(value: &str) -> Result<u32, String> {
+    let particles = value
+        .parse::<u32>()
+        .map_err(|_| "liquid live particles must be 0, 1, 1024, 4096, or 8192".to_owned())?;
+    [0, 1, 1_024, 4_096, 8_192]
+        .contains(&particles)
+        .then_some(particles)
+        .ok_or_else(|| "liquid live particles must be 0, 1, 1024, 4096, or 8192".to_owned())
 }
 
 fn positive_u32(label: &str, value: &str) -> Result<u32, String> {
