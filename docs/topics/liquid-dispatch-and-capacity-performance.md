@@ -65,6 +65,53 @@ The 64-body preset remains the correct ordinary default and does not reduce
 the independent 8,192-particle reserve. Selecting 64 is a useful immediate
 workaround, not closure of either scaling problem.
 
+### S43 clean cross-host physics baseline
+
+The first clean S43 matrix at revision `f6b5682d3744fcc6c017b24b7350836da5ebd222`
+used a comparator-off release build, 16 untimed one-step warmups, and 30 raw
+retained explicit-step samples. Every accepted row preserved its exact active
+population, finite state, generational identity, and zero capacity overflow.
+The native manifest SHA-256 is
+`a0225dfd45fe0c9f1c8068e99ea55cc917e1275b36ca1d0fb73224bb7bd17fb5`.
+The local package is retained under
+`evidence/p5.3-s43-baseline-f6b5682/`; it is not deployment or public-claim
+evidence.
+
+| Host | Dynamic solids | Particles | Body slots | Dispatches | CPU encode P95 | Host P50 | Host P95 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Native Metal | 0 | 1K | 64 | 273 | 2.236 ms | 6.497 ms | 6.848 ms |
+| Native Metal | 0 | 4K | 64 | 273 | 3.481 ms | 6.629 ms | 6.861 ms |
+| Native Metal | 0 | 8K | 64 | 273 | 2.473 ms | 6.621 ms | 8.217 ms |
+| Native Metal | 0 | 16K | 64 | 273 | 2.396 ms | 6.643 ms | 7.644 ms |
+| Native Metal | 0 | 32K | 64 | 273 | 2.602 ms | 6.987 ms | 8.349 ms |
+| Native Metal | 20 | 4K | 64 | 273 | 2.563 ms | 6.582 ms | 7.173 ms |
+| Native Metal | 20 | 8K | 64 | 273 | 2.394 ms | 6.580 ms | 7.931 ms |
+| Native Metal | 20 | 16K | 64 | 273 | 2.420 ms | 7.935 ms | 8.848 ms |
+| Native Metal | 100 | 4K | 128 | 644 | 2.630 ms | 8.495 ms | 9.924 ms |
+| Native Metal | 100 | 8K | 128 | 644 | 2.745 ms | 8.865 ms | 10.933 ms |
+| Native Metal | 100 | 16K | 128 | 644 | 2.939 ms | 9.550 ms | 11.124 ms |
+| Chrome WebGPU | 0 | 4K | 64 | 273 | 0.370 ms | 10.395 ms | 11.265 ms |
+| Chrome WebGPU | 0 | 8K | 64 | 273 | 0.310 ms | 10.530 ms | 11.405 ms |
+| Chrome WebGPU | 0 | 16K | 64 | 273 | 0.270 ms | 10.495 ms | 11.320 ms |
+| Chrome WebGPU | 20 | 4K | 64 | 273 | 0.285 ms | 10.635 ms | 11.235 ms |
+| Chrome WebGPU | 20 | 8K | 64 | 273 | 0.350 ms | 10.575 ms | 11.390 ms |
+| Chrome WebGPU | 20 | 16K | 64 | 273 | 0.335 ms | 10.515 ms | 11.400 ms |
+| Chrome WebGPU | 100 | 4K | 128 | 644 | 0.385 ms | 15.430 ms | 16.245 ms |
+| Chrome WebGPU | 100 | 8K | 128 | 644 | 0.370 ms | 15.415 ms | 16.070 ms |
+| Chrome WebGPU | 100 | 16K | 128 | 644 | 0.375 ms | 15.490 ms | 16.450 ms |
+
+Metal returned an advertised but all-zero timestamp clock; Chrome returned
+advertised but backward timestamp markers. Both clocks are rejected, and no
+GPU P50/P95 or grouped stage claim is made from this matrix. The valid host
+surface is nevertheless decisive about the first structural target: raw water
+and 20 solids remain essentially flat across 4K–16K, while the 64-to-128 body
+slot transition raises the graph by 371 dispatches and adds roughly 5 ms in
+Chrome independent of particle count. This agrees with the earlier physical
+Pixel attribution. S43 therefore retains live/topology-driven rigid routing
+first, then particle pass/live-work execution, before spatial coupling or grid
+reuse candidates. A matched rigid-only control is still required before a
+numerical rigid-versus-particle subtraction is reported.
+
 ## Why PhysBox 5 is materially different from PhysBox 4
 
 PhysBox 4 and PhysBox 5 both simulate particles on the GPU, but they do not

@@ -183,17 +183,33 @@ AVD is portability evidence only.
 
 ### S43.4 — clean baseline matrix and first disposition
 
-- [ ] Capture raw-water `1K/4K/8K/16K/32K` physics-only rows.
-- [ ] Capture coupled `20/100 × 4K/8K/16K` physics-only rows plus rigid-only
-      controls; add 32K only while the bounded runner remains responsive.
+- [x] Capture raw-water `1K/4K/8K/16K/32K` physics-only rows.
+- [x] Capture coupled `20/100 × 4K/8K/16K` physics-only rows; add 32K only
+      while the bounded runner remains responsive.
+- [ ] Capture matched rigid-only controls for the 20/100-solid topology.
 - [ ] Capture full-frame 20/100-solid 8K rows and the 16K targets on native and
       Browser WebGPU.
 - [ ] Run paired Android-native and Browser WebGPU rows on the same physical
       Pixel 7a when available.
-- [ ] Publish a stage-dominance and scaling report without subtracting
+- [x] Publish a stage-dominance and scaling report without subtracting
       unrelated controls or treating mean-only measurements as percentiles.
-- [ ] Confirm, revise, or reject the preliminary structural optimization order
+- [x] Confirm, revise, or reject the preliminary structural optimization order
       from the measured work and time.
+
+Clean physics-only checkpoint, 2026-08-10: revision `f6b5682` produced eleven
+native rows and nine Chrome 151 WebGPU rows with 16 warmup steps and 30 raw
+retained samples. The native manifest SHA-256 is
+`a0225dfd45fe0c9f1c8068e99ea55cc917e1275b36ca1d0fb73224bb7bd17fb5`.
+Both local timestamp clocks were unusable, so the retained comparison uses
+host-completion P95 rather than inventing GPU-stage values. Native 20-solid
+8K/16K measured `7.931/8.848 ms`; native 100-solid 8K/16K measured
+`10.933/11.124 ms`. Browser 20-solid 8K/16K measured `11.390/11.400 ms`;
+Browser 100-solid 8K/16K measured `16.070/16.450 ms`. At 64 body slots, raw
+water and 20 solids were flat across particle tiers. Crossing to 128 slots
+raised the declared graph from 273 to 644 dispatches and added about 5 ms in
+Chrome independent of particle count. Together with the earlier physical
+Pixel stage evidence, this confirms live-work rigid routing as the first
+optimization. Full-frame, rigid-control, and Android rows remain open.
 
 Gate: the baseline explains the 20-to-100 and 64-to-128 transitions with raw
 samples; no optimization starts from an unmeasured attribution assumption.
