@@ -1,6 +1,7 @@
 # Liquid dispatch and capacity performance
 
-Status: active diagnosed performance issue, updated 2026-07-24. Physical Pixel
+Status: active diagnosed performance issue and measured optimization program,
+updated 2026-08-10. Physical Pixel
 7a evidence identifies a reserved-body-capacity scheduling cliff as the
 primary cause of the reported mobile liquid slowdown. The 92-dispatch particle
 graph is a separate material cost at the ordinary 64-body tier. No remediation
@@ -16,7 +17,26 @@ Unified product direction:
 Pacing:
 [simulation time and overload](simulation-time-and-overload.md).
 Current implementation workstream:
+[S43 liquid scale benchmark and optimization](../tactical/043-liquid-scale-benchmark-and-optimization.md),
+following the implemented-preview
 [S31 coupled liquid sandbox](../tactical/031-coupled-liquid-sandbox.md).
+
+S43 activation, 2026-08-10: human direction authorizes a benchmark-first
+optimization program around raw water plus 20- and 100-dynamic-solid scenes.
+The two solid tiers deliberately bracket the current 64-slot scheduling
+boundary: the 20-solid scene is expected to use a 32-slot world, while 100
+dynamics plus fixed boundaries requires approximately 128 slots. The initial
+target hierarchy is 20+8K as the ordinary gate, 20+16K as a strong demo,
+100+8K as the headline, 100+16K as stretch, and 32K as a capacity frontier
+unless a complete qualified row actually sustains its declared rate.
+
+The work first creates one shared physics-only and full-frame measurement
+surface across native, Browser WebGPU, and standalone Android-native Vulkan.
+Only then may it select among live-work rigid routing, fewer compute passes,
+active-particle indirect execution, spatial particle/body candidates,
+bounded contribution accumulation, or conservative grid reuse. The fixed
+delta, particle substeps/iterations, same-step coupling invariant, sleeping
+default, and no-catch-up policy do not change to make a timing row pass.
 
 ## Conclusion
 
