@@ -129,6 +129,31 @@ candidate was reverted uncommitted. Future pass reduction must remove or
 reformulate a data dependency and prove identical state; merely coalescing
 encoders is not portable.
 
+### Rejected active-particle indirect candidate
+
+S43 added a fixed-reserve benchmark that can hold particle allocation at 8,192
+slots while creating exactly `0/1/1K/4K/8K` live particles. A candidate routed
+16 per-particle dispatches per outer step through the existing GPU compact
+active count. The first form incorrectly treated spatial cell records as the
+authoritative active list for correction and velocity apply work. A Chrome
+full-live trial exposed the error: particles outside the grid no longer
+received velocity reconstruction and the final work vector collapsed to zero
+grid insertions while all identities remained live. That form was rejected on
+correctness before ranking.
+
+A corrected form used the authoritative active list for every routed kernel.
+It passed pipeline validation and a focused mechanics differential and
+restored the 20-solid + 8K Chrome row at `11.385 ms` host P95, effectively
+unchanged from the clean `11.380 ms` baseline. It did not produce stable sparse
+timing. Two 120-sample zero-live Chrome trials on the same 8K reserve swung
+between an apparent large improvement and a regression as host completion
+shifted markedly over each run. The final native zero-live row was also not
+better than its full-live neighbor (`7.720` versus `7.040 ms` P95). With no
+repeatable Browser improvement and no physical Android result, S43 reverted
+the candidate and retained only the fixed-reserve measurement surface. A
+future retry should use paired short trials on one thermally observed physical
+mobile device and must keep active identity separate from spatial membership.
+
 ### S43 clean cross-host physics baseline
 
 The first clean S43 matrix at revision `f6b5682d3744fcc6c017b24b7350836da5ebd222`

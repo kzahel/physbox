@@ -265,11 +265,12 @@ is rejected with evidence and the general schedule remains selected.
 
 - [x] Measure encoding consecutive particle dispatches in fewer WebGPU compute
       passes while retaining required visibility and identical final state.
-- [ ] Move safe per-particle kernels from capacity-sized direct dispatch to the
-      GPU compact live list and indirect work count.
-- [ ] Make zero-live and fixed-reserve `1/1K/4K/8K` rows expose bounded
+- [x] Evaluate safe per-particle kernels on the GPU compact live list and
+      indirect work count, including an all-active-list correction after the
+      first spatial-list design failed.
+- [x] Make zero-live and fixed-reserve `1/1K/4K/8K` rows expose bounded
       meaningful work without CPU particle counts.
-- [ ] Retain final-only validation, command/reset behavior, kill/escape,
+- [x] Exercise final-only validation, command/reset behavior, kill/escape,
       rendering observations, and capacity failure semantics.
 
 Gate: a retained candidate lowers CPU encode or GPU/host cost on Browser or
@@ -284,6 +285,30 @@ timing. WebGPU storage visibility between these kernels therefore depends on
 the existing pass boundaries on the tested Metal implementation. The candidate
 was reverted uncommitted; fewer passes are not a portable optimization unless
 a later design removes the data dependency itself.
+
+Active-work disposition, 2026-08-10: the fixed-reserve benchmark now creates
+an 8,192-slot particle world with exactly `0/1/1K/4K/8K` live particles. A
+candidate moved integration, boundary-density, correction-apply,
+velocity-reconstruction, and viscosity-apply work to GPU-written indirect
+counts. Its first version incorrectly used compact spatial records for apply
+kernels; Chrome's full 8K row eventually retained 8,192 live identities but
+reported zero grid work because particles outside the grid stopped receiving
+velocity reconstruction. That candidate failed correctness and was replaced
+by an all-active-list design. The corrected version passed pipeline and
+three-step active-versus-capacity mechanics checks and restored a valid Chrome
+8K row at `11.385 ms` host P95, effectively equal to the clean `11.380 ms`
+control.
+
+The sparse timing did not reproduce. An early 120-sample Chrome zero-live
+trial appeared to improve host P50/P95 from `9.570/15.640 ms` to
+`5.140/6.015 ms`, but the corrected final candidate measured
+`14.385/15.360 ms` under the same declared row. Native final zero-live P95 was
+`7.720 ms`, versus `7.040 ms` for the full 8K row. The browser raw samples
+showed pronounced run-length frequency/throttling shifts, so neither the
+early win nor the later regression is a stable candidate effect. With no
+repeatable Browser gain, no physical Android device, and no full-live
+improvement, the active-particle candidate was reverted uncommitted. The
+fixed-reserve contract is retained for a future paired physical-device trial.
 
 ### S43.7 — particle/body spatial candidates
 
