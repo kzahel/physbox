@@ -84,7 +84,7 @@ by changing quality.
 
 Every scenario reports dynamic and fixed solids separately. The 20-solid lane
 uses 20 dynamic circle/rectangle bodies plus fixed container boundaries and
-should naturally fit a 32-slot rigid capacity. The 100-solid lane uses 100
+uses the product minimum 64-slot rigid capacity. The 100-solid lane uses 100
 dynamic bodies plus the same boundary semantics and should naturally fit a
 128-slot capacity. This deliberately brackets the current 64-slot rigid
 scheduling boundary.
@@ -119,14 +119,14 @@ Every accepted artifact records at least:
 
 ### S43.1 — shared benchmark definitions and schema
 
-- [ ] Add versioned parameterized raw-water, 20-solid, and 100-solid scenario
+- [x] Add versioned parameterized raw-water, 20-solid, and 100-solid scenario
       definitions owned by shared Rust.
-- [ ] Generate the supported particle tiers with approximately constant
+- [x] Generate the supported particle tiers with approximately constant
       authored density and exact requested active counts.
 - [ ] Define versioned configuration, work-vector, timing-series, percentile,
       capacity, correctness, provenance, and artifact contracts.
-- [ ] Add canonical hashes, validation negatives, deterministic construction,
-      and tests proving the 32-slot/128-slot capacity bracket.
+- [x] Add canonical hashes, validation negatives, deterministic construction,
+      and tests proving the 64-slot/128-slot capacity bracket.
 - [ ] Keep benchmark vocabulary out of browser glue and application-owned
       showcase scene definitions.
 

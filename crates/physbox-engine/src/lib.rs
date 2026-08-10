@@ -171,9 +171,11 @@ pub use coupled_scenario::{
     FLUID_SOLID_OVERLAP_PHASE_COUNT, FLUID_SOLID_OVERLAP_PHASE_OFFSETS,
     FLUID_SOLID_OVERLAP_RECOVERY_STEPS, FLUID_SOLID_OVERLAP_SAMPLE_STRIDE,
     FLUID_SOLID_OVERLAP_SETTLE_STEPS, FLUID_SOLID_OVERLAP_SOURCE_VERSION,
-    FluidSolidOverlapArrangement, FluidSolidOverlapSourceV1, canonical_coupled_scenario,
-    canonical_coupled_scenario_hashes, coupled_capacity_scenario, fluid_solid_overlap_source,
-    fluid_solid_overlap_sources, liquid_sandbox_scenario,
+    FluidSolidOverlapArrangement, FluidSolidOverlapSourceV1, LIQUID_SCALE_BENCHMARK_VERSION,
+    LIQUID_SCALE_PARTICLE_COUNTS, LiquidScaleBenchmarkSourceV1, LiquidScaleSolidTier,
+    canonical_coupled_scenario, canonical_coupled_scenario_hashes, coupled_capacity_scenario,
+    fluid_solid_overlap_source, fluid_solid_overlap_sources, liquid_sandbox_scenario,
+    liquid_scale_benchmark_source,
 };
 #[cfg(all(feature = "solver-lab", not(target_arch = "wasm32")))]
 pub use fluid_solid_overlap_evidence::{

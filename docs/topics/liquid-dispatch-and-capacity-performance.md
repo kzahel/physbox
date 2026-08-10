@@ -24,7 +24,7 @@ following the implemented-preview
 S43 activation, 2026-08-10: human direction authorizes a benchmark-first
 optimization program around raw water plus 20- and 100-dynamic-solid scenes.
 The two solid tiers deliberately bracket the current 64-slot scheduling
-boundary: the 20-solid scene is expected to use a 32-slot world, while 100
+boundary: the 20-solid scene uses the product minimum 64-slot world, while 100
 dynamics plus fixed boundaries requires approximately 128 slots. The initial
 target hierarchy is 20+8K as the ordinary gate, 20+16K as a strong demo,
 100+8K as the headline, 100+16K as stretch, and 32K as a capacity frontier
