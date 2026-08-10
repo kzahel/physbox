@@ -131,6 +131,7 @@ impl LiquidScaleBenchmarkSession {
         let mut scenario = source.scenario.clone();
         if config.timing_mode == LiquidScaleTimingModeV1::FullFrameInteractive {
             scenario.requested_steps = total_steps;
+            scenario.rigid.requested_steps = total_steps;
         }
         let profile = SolverProfileConfig::default();
         profile.apply_to_scenario(&mut scenario.rigid)?;
