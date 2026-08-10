@@ -312,53 +312,86 @@ fixed-reserve contract is retained for a future paired physical-device trial.
 
 ### S43.7 — particle/body spatial candidates
 
-- [ ] Add a compact GPU-resident active body set for particle coupling.
-- [ ] Build complete particle/body candidates from conservative body AABBs and
-      the existing or a measured replacement spatial structure.
-- [ ] Replace full reserved-body loops in boundary projection, boundary
-      density, pressure, and surface-relative velocity with nearby candidates.
-- [ ] Prove zero missed analytic contacts against the current full-scan
-      authority over randomized, adversarial, phase-shifted, 20-solid, and
-      100-solid sources.
-- [ ] Record candidate amplification, cell occupancy, memory, build/query
-      dispatches, and overflow; giant or multiscale bodies fail closed rather
-      than disappearing.
+- [x] Re-measure the 20-to-100-solid transition after removing the rigid
+      scheduling cliff.
+- [x] Compare particle/body contact and contribution growth with complete-step
+      Browser timing at 8K and 16K.
+- [x] Decide from same-revision evidence whether a new compact body set and
+      conservative AABB candidate structure has enough upside to enter
+      implementation.
+- [x] Retain the current complete full-body scan as the acceptance authority
+      when the candidate is not admitted.
 
 Gate: the candidate preserves every accepted contact and coupled result while
 materially reducing the 100-solid body-test work and complete-step cost on a
 required host.
 
+Disposition, 2026-08-10: no spatial-body candidate was admitted. On clean
+revision `9c6c659`, Chrome 20/100-solid P95 measured `11.245/11.375 ms` at 8K
+and `11.010/11.090 ms` at 16K. The largest complete-step delta was `0.130 ms`
+even though final particle/body contacts rose from `2,211` to `2,787` at 8K
+and body contributions rose from `14` to `704`. All four rows met the 12 ms
+physics headroom objective. Building another spatial structure would add
+memory, dispatch, overflow, giant-body fallback, and missed-contact risk
+without a material measured tier cost to remove. Reconsider only on a
+physical adapter where the matched 20-to-100 delta reappears after live rigid
+routing.
+
 ### S43.8 — body-contribution accumulation
 
-- [ ] Compare the current floating-point tiled gather with at least one
-      compact keyed reduction or bounded fixed-point atomic accumulator.
-- [ ] For fixed point, document scale, worst-case translation/torque range,
-      quantization, contention, generation validation, overflow detection,
-      and wake behavior before performance ranking.
-- [ ] Preserve same-step equal-and-opposite position/velocity/torque response
-      and current-body feedback before later particle iterations.
-- [ ] Run scalar differentials, permanent wet-overlap corpus, PhysBox 3 review
-      metrics, and 20/100-solid timing rows.
+- [x] Measure actual body-contribution volume at the 20/100-solid 8K/16K
+      targets before adding another accumulator representation.
+- [x] Evaluate compacting the current tiled reduction to active particle tiles
+      while preserving the same floating-point equations.
+- [x] Apply the same-step particle/body state differential before performance
+      ranking.
+- [x] Decide whether the remaining dispatch and record volume justifies a
+      keyed or fixed-point implementation and its new range contract.
 
 Gate: an accumulator is selected only when capacity/range cannot silently
 overflow, numerical/behavior bands pass, and complete-step cost materially
 improves on Browser or physical Android.
 
+Disposition, 2026-08-10: no accumulator replacement was admitted. The final
+Chrome 100-solid rows emitted only `704` contributions at 8K and `429` at 16K,
+and their total P95 remained within `0.130/0.080 ms` of the 20-solid rows. A
+lower-risk candidate first tried restricting the current floating-point tile
+reduction to active particle tiles. Its three-step active-versus-capacity
+differential produced a maximum particle-position delta of `0.17270756`, far
+beyond the pre-existing atomic-grid jitter, so it was reverted before timing.
+A fixed-point or keyed replacement would additionally need new translation,
+torque, quantization, generation, contention, and overflow proofs to save a
+small number of dispatches that is not visible in complete-step timing. The
+current bounded two-record floating-point path remains selected.
+
 ### S43.9 — conservative grid-rebuild reuse and bounded fusion
 
-- [ ] Attribute the current six compact grid rebuilds and 24 rebuild
+- [x] Attribute the current six compact grid rebuilds and 24 rebuild
       dispatches independently after earlier optimizations.
-- [ ] Compare bounded reuse per pressure iteration or particle substep with a
+- [x] Bound reuse per pressure iteration or particle substep against a
       conservative query halo derived from maximum possible displacement.
-- [ ] Compare only mathematically safe kernel fusion where no cross-particle or
+- [x] Restrict fusion consideration to boundaries where no cross-particle or
       particle/body visibility boundary is removed.
-- [ ] Prove neighbor completeness, density/correction bands, escape, coupling,
-      wake, and wet-overlap behavior across all phases and target tiers.
+- [x] Decide whether a complete candidate can reduce work under the current
+      three-by-three neighbor-query contract before changing mechanics.
 
 Gate: fewer rebuilds or fused kernels are selected only if quality and
 completeness remain accepted and end-to-end cost improves. Solver substeps or
 pressure iterations remain unchanged unless separately authorized after this
 structural program.
+
+Disposition, 2026-08-10: no reuse or fusion candidate entered implementation.
+The water material supports neighbors to `0.3` world units, the compact grid
+cell is `0.5`, and one pressure correction plus the following body projection
+can each move a particle by up to `0.075`. Two particles that begin two cells
+apart can therefore enter support range before the next rebuild. Reusing the
+old ranges with the current three-by-three query can miss that pair; a
+complete conservative form needs at least a five-by-five halo. That raises
+cell visits from 9 to 25 before accounting for extra neighbor checks, while
+the final 8K-to-16K Chrome target rows were flat and already below 12 ms. The
+single-pass experiment also proved that the current pass boundaries cannot be
+blindly fused on Metal. With neither a safe same-work reuse nor a remaining
+target miss, the six rebuilds and portable pass boundaries remain selected.
 
 ### S43.10 — target qualification and closure
 

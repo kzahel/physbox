@@ -154,6 +154,37 @@ the candidate and retained only the fixed-reserve measurement surface. A
 future retry should use paired short trials on one thermally observed physical
 mobile device and must keep active identity separate from spatial membership.
 
+### Later structural candidates not admitted
+
+The clean post-routing target recapture at revision `9c6c659` removed the
+remaining benchmark signal for a new particle/body spatial index. Chrome
+20/100-solid host P95 was `11.245/11.375 ms` at 8K and `11.010/11.090 ms` at
+16K. The 100-solid rows produced hundreds more final body contributions, but
+the complete-step difference stayed at or below `0.130 ms`. A spatial body
+candidate would therefore add an AABB build, storage, overflow policy, and
+giant-body fallback without a material measured tier cost. The complete
+full-body scan remains the authority until a matched physical-device row
+shows otherwise.
+
+The current two-record floating-point body contribution path also remains
+selected. An attempted active-tile reduction changed particle position by as
+much as `0.17270756` after three steps and failed the state differential before
+timing. A keyed or fixed-point replacement was not admitted after the clean
+100-solid rows showed only `704` final contributions at 8K and `429` at 16K
+with no material complete-step penalty. Its range, torque, quantization,
+contention, generation, wake, and overflow contract would cost more
+qualification than the measured upside supports.
+
+Finally, simple compact-grid reuse is not neighbor-complete under the current
+three-by-three query. Water support radius is `0.3`, cell width is `0.5`, and
+particle pressure correction plus body projection can move each particle by
+up to `0.15` between rebuilds. Particles initially two cells apart can enter
+support range, requiring at least a five-by-five conservative halo. That
+raises cell visits from 9 to 25 and has no measured target miss to justify it.
+Together with the failed single-pass differential, this leaves the six
+compact rebuilds and existing visibility boundaries selected for this
+workstream.
+
 ### S43 clean cross-host physics baseline
 
 The first clean S43 matrix at revision `f6b5682d3744fcc6c017b24b7350836da5ebd222`
