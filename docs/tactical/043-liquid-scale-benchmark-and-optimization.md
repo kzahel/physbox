@@ -123,11 +123,11 @@ Every accepted artifact records at least:
       definitions owned by shared Rust.
 - [x] Generate the supported particle tiers with approximately constant
       authored density and exact requested active counts.
-- [ ] Define versioned configuration, work-vector, timing-series, percentile,
+- [x] Define versioned configuration, work-vector, timing-series, percentile,
       capacity, correctness, provenance, and artifact contracts.
 - [x] Add canonical hashes, validation negatives, deterministic construction,
       and tests proving the 64-slot/128-slot capacity bracket.
-- [ ] Keep benchmark vocabulary out of browser glue and application-owned
+- [x] Keep benchmark vocabulary out of browser glue and application-owned
       showcase scene definitions.
 
 Gate: every host can consume one shared definition; malformed counts, capacity

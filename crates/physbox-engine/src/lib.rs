@@ -47,6 +47,7 @@ mod gpu_timing;
 mod grab;
 mod host;
 mod input;
+mod liquid_scale_benchmark;
 mod pair_slot_persistence;
 mod particle_world;
 mod physics_render;
@@ -217,6 +218,15 @@ pub use gpu_solver::{
 };
 pub use grab::{GrabValidationState, provisional_grab_tuning};
 pub use input::{INPUT_TRACE_VERSION, InputTraceError, InputTraceFrameV1, InputTraceV1};
+pub use liquid_scale_benchmark::{
+    LIQUID_SCALE_ARTIFACT_VERSION, LIQUID_SCALE_COUPLING_ITERATIONS, LIQUID_SCALE_FIXED_DT_SECONDS,
+    LIQUID_SCALE_PARTICLE_SUBSTEPS, LIQUID_SCALE_PERCENTILE_METHOD,
+    LIQUID_SCALE_PRESSURE_ITERATIONS, LIQUID_SCALE_RIGID_SUBSTEPS, LIQUID_SCALE_SUCCESS_SENTINEL,
+    LiquidScaleBenchmarkArtifactV1, LiquidScaleBenchmarkConfigV1, LiquidScaleCorrectnessV1,
+    LiquidScaleCouplingQualityV1, LiquidScaleGpuStageTimingV1, LiquidScaleGpuStageV1,
+    LiquidScaleGpuTimestampStatusV1, LiquidScaleHostKindV1, LiquidScaleTimingModeV1,
+    LiquidScaleTimingSeriesV1, LiquidScaleTimingsV1, LiquidScaleWorkVectorV1,
+};
 #[cfg(all(feature = "solver-lab", not(target_arch = "wasm32")))]
 pub use pair_slot_persistence::{
     GpuPairSlotPersistenceBenchmarkOutput, GpuPairSlotPersistenceOutput,

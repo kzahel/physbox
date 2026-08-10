@@ -4,7 +4,7 @@ use physbox_contracts::{
     FiniteF32, GrabTuningV1, MaterialV1, NeutralActionV1, ParticleMaterialV1, ParticleRegionV1,
     SCHEMA_VERSION, ScenarioV1, ShapeV1, SolverSettingsV1, Validate, Vec2, canonical_hash,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::ScenarioBuildError;
 
@@ -19,7 +19,7 @@ pub const FLUID_SOLID_OVERLAP_PHASE_OFFSETS: [f32; FLUID_SOLID_OVERLAP_PHASE_COU
 pub const LIQUID_SCALE_BENCHMARK_VERSION: u32 = 1;
 pub const LIQUID_SCALE_PARTICLE_COUNTS: [u32; 5] = [1_024, 4_096, 8_192, 16_384, 32_768];
 
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum LiquidScaleSolidTier {
     WaterOnly,
