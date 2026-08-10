@@ -485,7 +485,20 @@ impl LiquidScaleBenchmarkSession {
                 sustained_60_hz: false,
             },
         };
-        artifact.validate().map_err(|error| error.to_string())?;
+        artifact.validate().map_err(|error| {
+            format!(
+                "{error}; finalActiveParticles={}; expected={}; finite={}; generationsAndLiveFlagsValid={}; capacityClean={}; overflowFlags={}; gridOverflow={}; commandDrops={}; bodyContributionOverflow={}",
+                artifact.correctness.final_active_particles,
+                artifact.correctness.expected_final_active_particles,
+                artifact.correctness.final_state_finite,
+                artifact.correctness.generations_and_live_flags_valid,
+                artifact.correctness.capacity_clean,
+                particle_diagnostics.overflow_flags,
+                particle_diagnostics.grid_overflow,
+                particle_diagnostics.command_drops,
+                particle_diagnostics.body_contribution_overflow,
+            )
+        })?;
         Ok(LiquidScalePhysicsBenchmarkRun {
             artifact,
             adapter: self.adapter,

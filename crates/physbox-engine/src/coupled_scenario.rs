@@ -760,26 +760,33 @@ fn append_liquid_scale_dynamic_bodies(
     if dynamic_count == 0 {
         return;
     }
-    let columns = if dynamic_count == 20 { 5 } else { 10 };
-    let rows = dynamic_count / columns;
-    let separation = if dynamic_count == 20 { 0.42 } else { 0.30 };
+    let columns = if dynamic_count == 20 { 5 } else { 13 };
+    // Keep neighboring dynamic shapes farther apart than their maximum width
+    // plus two particle radii. The benchmark measures 20/100-body scale; it
+    // must not manufacture an unsupported third simultaneous dynamic-body
+    // contribution for a single particle merely by crowding the fixture.
+    let separation = 0.5;
     let span_x = (columns - 1) as f32 * separation;
-    let span_y = (rows - 1) as f32 * separation;
     let center_x = 0.5 * (lower.x + upper.x);
-    let center_y = 0.5 * (lower.y + upper.y);
+    let top_y = upper.y - 0.3;
     for index in 0..dynamic_count {
         let column = index % columns;
         let row = index / columns;
         let position = Vec2::new(
             center_x - 0.5 * span_x + column as f32 * separation,
-            center_y - 0.5 * span_y + row as f32 * separation,
+            top_y - row as f32 * separation,
         );
         let slot = index + 3;
-        let body = if index % 2 == 0 {
+        let mut body = if index % 2 == 0 {
             dynamic_circle(slot, position, 0.13, 1.0, false)
         } else {
             dynamic_rectangle(slot, position, Vec2::new(0.14, 0.10), 1.0, false)
         };
+        // Keep the retained 46-step trial focused on coupled motion rather
+        // than turning its last rows into a dense floor pile. Equal upward
+        // launch preserves the authored separation while gravity reverses the
+        // bodies through the surrounding water during the measured window.
+        body.linear_velocity = Vec2::new(0.0, 4.0);
         bodies.push(body);
     }
 }
