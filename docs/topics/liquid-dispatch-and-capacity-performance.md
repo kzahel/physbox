@@ -221,6 +221,44 @@ an existing Metal render test, and the ordinary Browser smoke times out after
 Chrome reports backward timestamp markers; the comparator-off release Browser
 benchmark rows themselves complete and explicitly reject that clock.
 
+### Clean full-frame target disposition
+
+Clean revision `a5e53797781374f3d47c9dc2f04be12a0156aba3` runs one fixed
+outer step plus the shared world renderer at 960x600 for 1,800 paced frames.
+It never catches up. Accepted rows preserve their exact particle population,
+remain finite and capacity-clean, compile the comparator out, and cover at
+least 30 measured seconds. The benchmark excludes engine UI, so this is a
+matched demo-render path rather than a complete product-frame claim.
+
+| Host | Dynamic solids | Particles | Host P50 | Host P95 | Scale | Disposition |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| Native Metal | 20 | 8K | 14.560 ms | 17.153 ms | 0.999998 | P95 miss |
+| Native Metal | 100 | 8K | 14.090 ms | 17.769 ms | 0.999762 | P95 miss |
+| Chrome WebGPU | 20 | 8K | 15.345 ms | 16.365 ms | 0.999914 | pass |
+| Chrome WebGPU | 100 | 8K | 15.365 ms | 16.470 ms | 0.999953 | pass |
+| Native Metal | 20 | 16K | 15.299 ms | 17.555 ms | 0.999982 | P95 miss |
+| Chrome WebGPU | 20 | 16K | 15.040 ms | 16.305 ms | 0.999894 | pass |
+| Native Metal | 100 | 16K | — | — | — | reject: 69 lost, 2 contribution overflows |
+| Chrome WebGPU | 100 | 16K | — | — | — | unmeasured after native hard stop |
+| Native Metal | 0 | 32K | 12.737 ms | 14.301 ms | 0.999957 | pass: frontier |
+| Chrome WebGPU | 0 | 32K | 15.200 ms | 16.255 ms | 0.999892 | pass: frontier |
+
+The strict local sustained gate requires host P95 at or below 16.667 ms in
+addition to at least 0.95 effective scale and clean mechanics/capacity. Chrome
+therefore qualifies both 8K solid tiers and the 20-solid 16K strong target.
+Native remains almost exactly real-time but misses the percentile gate on all
+three coupled rows. Raw water at 32K passes on both local hosts and becomes the
+qualified frontier. The 100-solid 16K row is an authoritative rejection, not a
+performance miss; no dependent Browser run followed it.
+
+The standalone Android tool now exposes the same full-frame mode, render
+extent, duration, and artifact validation and passes its ARM64 release check.
+No non-emulator Android device was attached, so the mobile performance matrix
+remains unmeasured. Accepted artifacts and the fresh 600-step headless capture
+are retained under `evidence/p5.3-s43-fullframe-a5e5379/`; its verified
+manifest SHA-256 is
+`d93e1505ed0d32adc14c805819140473b831d8365fccd586c20747adee7389b9`.
+
 ### S43 clean cross-host physics baseline
 
 The first clean S43 matrix at revision `f6b5682d3744fcc6c017b24b7350836da5ebd222`

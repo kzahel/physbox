@@ -1,8 +1,8 @@
 # S43 — Liquid scale benchmark and optimization
 
-Status: local implementation and physics-target qualification complete;
-physical Android, matched Browser/16K full-frame target rows, and two maintained-host
-gate failures remain open, 2026-08-10. Human direction authorizes continuous
+Status: local native/Browser implementation, optimization, and target
+disposition complete; physical Android and two maintained-host gate failures
+remain open, 2026-08-10. Human direction authorizes continuous
 execution, proportional validation, and coherent commits through the final
 evidence and disposition. The work starts from clean `main` at
 `6696c1a97c19e8ff53ea48496a4d3d096aaaf1e9`.
@@ -179,6 +179,13 @@ accepted; teardown emitted `PHYSBOX5_ANDROID_AVD_SHUTDOWN_SUCCESS`. No physical
 Android device was attached. The cross-host proof item and S43.3 gate remain
 open until an Android artifact exists.
 
+The standalone Android runner now also transports the shared `full-frame`
+timing mode, 960x600 render extent, 30-second duration, and default 1,800-frame
+window. Its host identity and artifact timing mode are verified after the
+atomic pull. The native tool and shell transport pass warnings-denied clippy,
+the 16 Android-tool tests, and an ARM64 release check. This makes the physical
+lane ready to run but does not substitute a compile result for a device row.
+
 Gate: one selected 4K row passes on native desktop, Browser WebGPU, Android
 ARM64 build, and a physical Android device when available; a hardware-backed
 AVD is portability evidence only.
@@ -189,8 +196,9 @@ AVD is portability evidence only.
 - [x] Capture coupled `20/100 × 4K/8K/16K` physics-only rows; add 32K only
       while the bounded runner remains responsive.
 - [ ] Capture matched rigid-only controls for the 20/100-solid topology.
-- [ ] Capture full-frame 20/100-solid 8K rows and the 16K targets on native and
-      Browser WebGPU.
+- [x] Capture full-frame native/Browser 20/100-solid 8K rows and 20-solid 16K;
+      stop the dependent Browser 100-solid 16K row after its native hard
+      rejection.
 - [ ] Run paired Android-native and Browser WebGPU rows on the same physical
       Pixel 7a when available.
 - [x] Publish a stage-dominance and scaling report without subtracting
@@ -403,8 +411,8 @@ target miss, the six rebuilds and portable pass boundaries remain selected.
 - [x] Re-run the complete accepted native matrix with raw samples and clean
       provenance.
 - [x] Re-run selected Browser WebGPU 20/100-solid 8K/16K physics-only rows.
-- [ ] Run matched full-frame Browser target rows and interactive 30-second
-      pacing gates.
+- [x] Run matched full-frame Browser target rows and interactive 30-second
+      pacing gates through the native 100-solid 16K hard-stop boundary.
 - [x] Run `npm run test:fast`, production warnings-denied clippy, focused
       `physbox-sim`/benchmark tests, and one fresh headless coupled artifact.
 - [x] Run the ARM64 Android check, release APK, and standalone native benchmark
@@ -437,35 +445,56 @@ Thus the ordinary, strong, headline, and stretch targets all pass the declared
 12 ms physics-only objective on local native Metal and Browser WebGPU. Native
 raw-water 32K also remains capacity-clean at `8.163 ms` P95, but it is still a
 bounded frontier result rather than a sustained or cross-host product claim.
-Matched rigid-only controls, clean Browser and 16K target-topology full-frame
-pacing, and all physical Android rates remain unmeasured.
+At this checkpoint, matched rigid-only controls, clean target-topology
+full-frame pacing, and all physical Android rates remained unmeasured.
 
-Full-frame implementation/capacity checkpoint, 2026-08-10: the new matched
-runner submits exactly one fixed outer step plus the shared world renderer per
-paced frame at 960×600 and never catches up. The original 20+8K native source
-passed 1,800 frames at `16.193 ms` host P95 and `0.999963` effective scale.
-The first 100+8K run rejected the two-record contribution capacity with 350
-overflows and 13 lost particles. A controlled at-rest source retained all
-particles but still exposed 372 overflows. The version-2 source therefore
-retains the sparse tier's upward traversal and starts only the dense tier at
-rest; both exact populations remain contained for 1,800 steps. The admitted
-four-record bounded layout accepts four simultaneous targets while a fifth
-fails closed. Its dirty
-candidate 100+8K native row retained all 8,192 particles, reported zero
-overflow, and measured `11.306/14.464/16.164 ms` host P50/P95/P99,
-`0.999975` effective scale, and `0.000764` seconds slip. Clean native and
-Browser recapture remain the qualification gate.
+Clean full-frame disposition, 2026-08-10: revision
+`a5e53797781374f3d47c9dc2f04be12a0156aba3` submits exactly one fixed outer
+step plus the shared world renderer per paced frame at 960x600 and never
+catches up. Each accepted row ran 1,800 measured frames over at least 30
+seconds, retained its exact requested population, remained finite and
+capacity-clean, and compiled the comparator out. This benchmark path includes
+the shared world renderer but not the engine UI, so it is target-topology demo
+evidence rather than a complete product-UI claim.
+
+| Host | Dynamic solids | Particles | Host P50 | Host P95 | Scale | Slip | Disposition |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| Native Metal | 20 | 8K | 14.560 ms | 17.153 ms | 0.999998 | 0.000060 s | miss: P95 |
+| Native Metal | 100 | 8K | 14.090 ms | 17.769 ms | 0.999762 | 0.007150 s | miss: P95 |
+| Chrome WebGPU | 20 | 8K | 15.345 ms | 16.365 ms | 0.999914 | 0.002570 s | pass |
+| Chrome WebGPU | 100 | 8K | 15.365 ms | 16.470 ms | 0.999953 | 0.001415 s | pass |
+| Native Metal | 20 | 16K | 15.299 ms | 17.555 ms | 0.999982 | 0.000544 s | miss: P95 |
+| Chrome WebGPU | 20 | 16K | 15.040 ms | 16.305 ms | 0.999894 | 0.003170 s | pass |
+| Native Metal | 100 | 16K | — | — | — | — | reject: 69 lost, 2 contribution overflows |
+| Chrome WebGPU | 100 | 16K | — | — | — | — | unmeasured after native hard stop |
+| Native Metal | 0 | 32K | 12.737 ms | 14.301 ms | 0.999957 | 0.001292 s | pass: frontier |
+| Chrome WebGPU | 0 | 32K | 15.200 ms | 16.255 ms | 0.999892 | 0.003250 s | pass: frontier |
+
+The strict sustained gate requires effective scale at least `0.95`, zero
+correctness/capacity rejection, and host-completion P95 at or below the
+16.667 ms outer interval. Browser WebGPU therefore passes the ordinary and
+headline 8K tiers, the 20-solid 16K strong target, and raw 32K water. Native
+Metal stays
+very near real-time scale but misses the coupled P95 gate by `0.486-1.102 ms`.
+The 100-solid 16K stretch loses 69 of 16,384 particles and reports two body-
+contribution overflows on native, so timing is ineligible and the dependent
+Browser row did not run. Raw 32K water is a qualified local frontier, not a
+physical-mobile or full-product claim. Accepted artifacts and the headless
+capture are retained under `evidence/p5.3-s43-fullframe-a5e5379/`; its verified
+manifest SHA-256 is
+`d93e1505ed0d32adc14c805819140473b831d8365fccd586c20747adee7389b9`.
 
 Local qualification passed warnings-denied production clippy; six liquid
 contract tests; five focused GPU particle mechanics/lifecycle tests; all three
 solver-route tests; 7 host-tool tests; 16 Android-tool tests; platform-boundary
 negatives; the ARM64 app check; the ARM64 standalone liquid benchmark build;
-and debug/release APK construction. The unsigned 8,781,957-byte release APK
-SHA-256 is
-`722574089fbaf00101eeaf42bbfa71de74ffbb527b713b4a5d083e3abe33935e`.
+and debug/release APK construction. The last unsigned 8,799,949-byte release
+APK SHA-256 is
+`1d8ccf04d8d6e9e58b603f4dabd4a074d68fa33ac24d0918ba249db82f32edc3`.
 A fresh one-step-per-submission headless liquid run passed 600 steps with
-finite, capacity-clean particles and produced PNG SHA-256
-`7ff592c21f118d92f43ddada1eaafe3f58eeb094a2a21e9bd21f94d3299aaf3c`.
+finite, capacity-clean particles and produced PNG/JSON SHA-256
+`55d5e3a51fe47c762da18c1968cc4f4630a6b0c23a799ba6dc9e2baa4aeb2ade` /
+`90542c5628e64f37502721815d9786de90cc76eb25c3ef0671dc3354770a6ee7`.
 The ordinary desktop host separately passed 600 interactive liquid steps at
 `1.010` effective scale over its ten simulated seconds; that is not the
 required 30-second target-topology claim.

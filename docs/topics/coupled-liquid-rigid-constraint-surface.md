@@ -206,6 +206,14 @@ benchmark source is version 2 and uses tier-specific initial motion so the
 same authored topology remains contained through the sustained window: the
 sparse tier keeps its upward traversal, while the dense tier starts at rest.
 
+Clean 30-second full-frame evidence at revision `a5e5379` validates that
+bound for both 8,192-particle tiers and the 20-solid 16,384-particle tier with
+exact final populations and zero overflow. It does not make the bound
+universal: the native 100-solid + 16,384-particle stretch row ended at 16,315
+live particles and reported two contribution overflows. That row is rejected,
+not timed, and a larger contribution layout is not admitted without a new
+mechanically justified capacity study.
+
 S35 opens a distinct fluid/solid contact-stabilization experiment after later
 review demonstrated that deliberately overlapped rigid bodies can recover in
 the dry control yet remain interpenetrating or re-enter penetration in water.

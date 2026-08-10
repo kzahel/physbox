@@ -1,6 +1,6 @@
 # Performance and scale contract
 
-Status: active contract with provisional targets, updated 2026-07-23.
+Status: active contract with provisional targets, updated 2026-08-10.
 
 Governing direction:
 [one GPU-resident 2D physics world](physbox5-unified-gpu-physics.md).
@@ -757,11 +757,24 @@ plane candidate adds another `327,680` bytes at 8,192 slots, keeps 92 particle
 dispatches, accepts four simultaneous generation-checked targets, and fails
 closed on a fifth. On the same version-2 dense-tier source, short two/four-record
 P50/P95 was `8.384/11.270 ms` versus `8.485/9.735 ms`; no performance
-regression is established. The four-record 100+8K native full-frame candidate
-retained all 8,192 particles with zero overflow over 1,800 steps and measured
-`11.306/14.464/16.164 ms` host P50/P95/P99, `0.999975` effective scale, and
-`0.000764` seconds slip. These are dirty-candidate results pending clean
-cross-host recapture, not a physical-mobile claim.
+regression is established. Clean revision `a5e5379` then retained exact,
+capacity-clean 8,192-particle populations for both 20- and 100-solid sources
+over 1,800 paced frames. Chrome WebGPU host P95 was `16.365/16.470 ms`, with
+effective scale `0.999914/0.999953`; both pass the strict local sustained gate.
+Native Metal P95 was `17.153/17.769 ms` at essentially 1.0 effective scale, so
+both miss the unchanged 16.667 ms P95 gate. The same revision passes 20-solid
++ 16K in Chrome at `16.305 ms` P95 and misses it on native at `17.555 ms`.
+The native 100-solid + 16K row is mechanically rejected after losing 69
+particles and reporting two contribution overflows, so its timing and the
+dependent Browser row are ineligible. These are shared world-renderer results
+without engine UI, not physical-mobile or complete product-frame claims.
+
+Raw 32K water is the qualified local frontier on that revision: native Metal
+and Chrome WebGPU sustain `14.301/16.255 ms` host P95 at
+`0.999957/0.999892` effective scale with exact populations and zero overflow.
+The result demonstrates that the raw liquid graph can carry 32K on both local
+WebGPU paths; it does not establish the 100-solid 16K stretch target or an
+Android envelope.
 
 Clean Browser WebGPU run `b6af663c-69a8-4f6a-ad4e-8f47b7cb0104` at source
 `3680714` completes 624 current product steps at effective scale `1.000046`
