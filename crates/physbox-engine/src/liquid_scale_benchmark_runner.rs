@@ -487,7 +487,8 @@ impl LiquidScaleBenchmarkSession {
         };
         artifact.validate().map_err(|error| {
             format!(
-                "{error}; finalActiveParticles={}; expected={}; finite={}; generationsAndLiveFlagsValid={}; capacityClean={}; overflowFlags={}; gridOverflow={}; commandDrops={}; bodyContributionOverflow={}",
+                "{error}; work={:?}; finalActiveParticles={}; expected={}; finite={}; generationsAndLiveFlagsValid={}; capacityClean={}; overflowFlags={}; gridOverflow={}; commandDrops={}; bodyContributionOverflow={}",
+                artifact.work,
                 artifact.correctness.final_active_particles,
                 artifact.correctness.expected_final_active_particles,
                 artifact.correctness.final_state_finite,

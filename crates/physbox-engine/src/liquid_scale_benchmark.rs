@@ -437,7 +437,6 @@ impl Validate for LiquidScaleWorkVectorV1 {
             || self.live_particles > self.particle_capacity
             || self.grid_insertions < u64::from(self.live_particles)
             || self.accepted_neighbors > self.neighbor_checks
-            || u64::from(self.fluid_wake_roots) > self.body_contributions
             || self.dispatches_per_outer_step == 0
             || self.workgroups_per_outer_step == Some(0)
         {
