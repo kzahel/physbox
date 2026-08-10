@@ -1680,7 +1680,6 @@ impl GpuBodyWorld {
         );
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
     pub fn copy_construction_graph_evidence(
         &self,
         encoder: &mut wgpu::CommandEncoder,

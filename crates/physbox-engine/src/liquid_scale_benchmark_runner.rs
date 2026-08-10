@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
 use std::mem::size_of;
+use std::sync::{Arc, Mutex};
+#[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
 
 use physbox_contracts::{
@@ -19,13 +21,13 @@ use crate::gpu_context::{
 };
 use crate::grab::empty_grab_intent_batch;
 use crate::particle_world::ParticleValidationLayout;
-use crate::renderer::map_buffer;
 use crate::{
     LIQUID_SCALE_ARTIFACT_VERSION, LIQUID_SCALE_PERCENTILE_METHOD, LiquidScaleBenchmarkArtifactV1,
-    LiquidScaleBenchmarkConfigV1, LiquidScaleCorrectnessV1, LiquidScaleGpuStageTimingV1,
-    LiquidScaleGpuStageV1, LiquidScaleGpuTimestampStatusV1, LiquidScaleHostKindV1,
-    LiquidScaleTimingModeV1, LiquidScaleTimingSeriesV1, LiquidScaleTimingsV1,
-    LiquidScaleWorkVectorV1, SolverProfileConfig, liquid_scale_benchmark_source,
+    LiquidScaleBenchmarkConfigV1, LiquidScaleBenchmarkSourceV1, LiquidScaleCorrectnessV1,
+    LiquidScaleGpuStageTimingV1, LiquidScaleGpuStageV1, LiquidScaleGpuTimestampStatusV1,
+    LiquidScaleHostKindV1, LiquidScaleTimingModeV1, LiquidScaleTimingSeriesV1,
+    LiquidScaleTimingsV1, LiquidScaleWorkVectorV1, SolverProfileConfig,
+    liquid_scale_benchmark_source,
 };
 
 const FRAME_QUERY_COUNT: u32 = 3;
@@ -35,140 +37,228 @@ pub struct LiquidScalePhysicsBenchmarkRun {
     pub adapter: AdapterDiagnostics,
 }
 
-pub async fn run_liquid_scale_physics_benchmark(
+pub struct LiquidScaleBenchmarkSession {
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    world: GpuBodyWorld,
+    source: LiquidScaleBenchmarkSourceV1,
+    scenario: physbox_contracts::CoupledScenarioV1,
+    scenario_hash: String,
     config: LiquidScaleBenchmarkConfigV1,
     host_kind: LiquidScaleHostKindV1,
-    mut provenance: ProvenanceV1,
-) -> Result<LiquidScalePhysicsBenchmarkRun, String> {
-    config.validate().map_err(|error| error.to_string())?;
-    if config.timing_mode != LiquidScaleTimingModeV1::PhysicsOnlyExplicitSteps {
-        return Err("native liquid physics benchmark requires explicit-step timing".to_owned());
-    }
-    if cfg!(feature = "box2d-comparator") {
-        return Err("liquid benchmark rejects a comparator-enabled build".to_owned());
-    }
-    if cfg!(debug_assertions) {
-        return Err("liquid benchmark requires a release build".to_owned());
-    }
-    let expected_host = if cfg!(target_os = "android") {
-        LiquidScaleHostKindV1::AndroidNative
-    } else {
-        LiquidScaleHostKindV1::NativeDesktop
-    };
-    if host_kind != expected_host {
-        return Err(format!(
-            "liquid benchmark host kind {host_kind:?} does not match {expected_host:?}"
-        ));
+    browser_version: Option<String>,
+    provenance: ProvenanceV1,
+    adapter: AdapterDiagnostics,
+    empty_batch: BodyCommandBatchV1,
+    grab_batch: physbox_contracts::GrabIntentBatchV1,
+    construction_batch: ConstructionIntentBatchV1,
+    particle_stages: Vec<GpuParticleTimingStage>,
+    timestamps: Option<TimestampResources>,
+    warmup_submitted: bool,
+    submitted_samples: u32,
+}
+
+impl LiquidScaleBenchmarkSession {
+    pub async fn new(
+        config: LiquidScaleBenchmarkConfigV1,
+        host_kind: LiquidScaleHostKindV1,
+        browser_version: Option<String>,
+        provenance: ProvenanceV1,
+    ) -> Result<Self, String> {
+        config.validate().map_err(|error| error.to_string())?;
+        if config.timing_mode != LiquidScaleTimingModeV1::PhysicsOnlyExplicitSteps {
+            return Err("liquid physics benchmark requires explicit-step timing".to_owned());
+        }
+        if cfg!(feature = "box2d-comparator") {
+            return Err("liquid benchmark rejects a comparator-enabled build".to_owned());
+        }
+        if cfg!(debug_assertions) {
+            return Err("liquid benchmark requires a release build".to_owned());
+        }
+        let expected_host = if cfg!(target_arch = "wasm32") {
+            LiquidScaleHostKindV1::BrowserWebGpu
+        } else if cfg!(target_os = "android") {
+            LiquidScaleHostKindV1::AndroidNative
+        } else {
+            LiquidScaleHostKindV1::NativeDesktop
+        };
+        if host_kind != expected_host {
+            return Err(format!(
+                "liquid benchmark host kind {host_kind:?} does not match {expected_host:?}"
+            ));
+        }
+        match host_kind {
+            LiquidScaleHostKindV1::BrowserWebGpu
+                if browser_version.as_deref().is_none_or(str::is_empty) =>
+            {
+                return Err("browser liquid benchmark requires a browser version".to_owned());
+            }
+            LiquidScaleHostKindV1::NativeDesktop | LiquidScaleHostKindV1::AndroidNative
+                if browser_version.is_some() =>
+            {
+                return Err("native liquid benchmark cannot carry a browser version".to_owned());
+            }
+            _ => {}
+        }
+
+        let source = liquid_scale_benchmark_source(config.solid_tier, config.particle_count)
+            .map_err(|error| error.to_string())?;
+        let total_steps = config
+            .warmup_steps
+            .checked_add(config.retained_samples)
+            .ok_or_else(|| "liquid benchmark step count overflowed".to_owned())?;
+        if total_steps > source.scenario.requested_steps {
+            return Err(format!(
+                "liquid benchmark requests {total_steps} steps from source window {}",
+                source.scenario.requested_steps
+            ));
+        }
+        let mut scenario = source.scenario.clone();
+        let profile = SolverProfileConfig::default();
+        profile.apply_to_scenario(&mut scenario.rigid)?;
+        scenario.validate().map_err(|error| error.to_string())?;
+        let scenario_hash = canonical_hash(&scenario).map_err(|error| error.to_string())?;
+
+        let instance = create_instance();
+        let adapter = request_adapter(&instance, None).await?;
+        let adapter_diagnostics = AdapterDiagnostics::from_adapter(&adapter);
+        let timestamps_available = adapter.features().contains(wgpu::Features::TIMESTAMP_QUERY);
+        let required_features = if timestamps_available {
+            wgpu::Features::TIMESTAMP_QUERY
+        } else {
+            wgpu::Features::empty()
+        };
+        let (device, queue) = request_device_with_features(&adapter, required_features).await?;
+        let world = GpuBodyWorld::new_coupled_with_configuration(
+            &device,
+            &scenario,
+            WorldCapacityPreset::Slots64,
+            profile.physics(),
+            FluidSolidCouplingQuality::Standard,
+        )?;
+        if world.body_capacity() != source.expected_body_capacity {
+            return Err(format!(
+                "liquid benchmark expected body capacity {}, created {}",
+                source.expected_body_capacity,
+                world.body_capacity()
+            ));
+        }
+        if world.initial_particle_count() != config.particle_count
+            || world.particle_capacity() != config.particle_count
+        {
+            return Err(
+                "liquid benchmark world did not create the exact particle population".to_owned(),
+            );
+        }
+        let particle_stages = world.particle_timestamp_stages_per_step();
+        if particle_stages.len() as u32 != world.particle_dispatches_per_step() {
+            return Err(
+                "liquid particle timestamp layout does not match dispatch count".to_owned(),
+            );
+        }
+        let query_count = FRAME_QUERY_COUNT
+            .checked_add(particle_stages.len() as u32)
+            .ok_or_else(|| "liquid timestamp query count overflowed".to_owned())?;
+        let timestamps = timestamps_available
+            .then(|| TimestampResources::new(&device, query_count, config.retained_samples));
+
+        Ok(Self {
+            device,
+            queue,
+            world,
+            source,
+            scenario,
+            scenario_hash,
+            config,
+            host_kind,
+            browser_version,
+            provenance,
+            adapter: adapter_diagnostics,
+            empty_batch: BodyCommandBatchV1 {
+                schema_version: SCHEMA_VERSION,
+                capacity_commands: BODY_COMMAND_CAPACITY,
+                attempted_commands: 0,
+                overflowed: false,
+                commands: Vec::new(),
+            },
+            grab_batch: empty_grab_intent_batch(),
+            construction_batch: empty_construction_intent_batch(),
+            particle_stages,
+            timestamps,
+            warmup_submitted: false,
+            submitted_samples: 0,
+        })
     }
 
-    let source = liquid_scale_benchmark_source(config.solid_tier, config.particle_count)
-        .map_err(|error| error.to_string())?;
-    let total_steps = config
-        .warmup_steps
-        .checked_add(config.retained_samples)
-        .ok_or_else(|| "liquid benchmark step count overflowed".to_owned())?;
-    if total_steps > source.scenario.requested_steps {
-        return Err(format!(
-            "liquid benchmark requests {total_steps} steps from source window {}",
-            source.scenario.requested_steps
-        ));
-    }
-    let mut scenario = source.scenario.clone();
-    let profile = SolverProfileConfig::default();
-    profile.apply_to_scenario(&mut scenario.rigid)?;
-    scenario.validate().map_err(|error| error.to_string())?;
-    let scenario_hash = canonical_hash(&scenario).map_err(|error| error.to_string())?;
-
-    let instance = create_instance();
-    let adapter = request_adapter(&instance, None).await?;
-    let adapter_diagnostics = AdapterDiagnostics::from_adapter(&adapter);
-    let timestamps_available = adapter.features().contains(wgpu::Features::TIMESTAMP_QUERY);
-    let required_features = if timestamps_available {
-        wgpu::Features::TIMESTAMP_QUERY
-    } else {
-        wgpu::Features::empty()
-    };
-    let (device, queue) = request_device_with_features(&adapter, required_features).await?;
-    let world = GpuBodyWorld::new_coupled_with_configuration(
-        &device,
-        &scenario,
-        WorldCapacityPreset::Slots64,
-        profile.physics(),
-        FluidSolidCouplingQuality::Standard,
-    )?;
-    if world.body_capacity() != source.expected_body_capacity {
-        return Err(format!(
-            "liquid benchmark expected body capacity {}, created {}",
-            source.expected_body_capacity,
-            world.body_capacity()
-        ));
-    }
-    if world.initial_particle_count() != config.particle_count
-        || world.particle_capacity() != config.particle_count
-    {
-        return Err(
-            "liquid benchmark world did not create the exact particle population".to_owned(),
-        );
-    }
-
-    let empty_batch = BodyCommandBatchV1 {
-        schema_version: SCHEMA_VERSION,
-        capacity_commands: BODY_COMMAND_CAPACITY,
-        attempted_commands: 0,
-        overflowed: false,
-        commands: Vec::new(),
-    };
-    let grab_batch = empty_grab_intent_batch();
-    let construction_batch = empty_construction_intent_batch();
-
-    encode_untimed_steps(
-        &device,
-        &queue,
-        &world,
-        config.warmup_steps,
-        &empty_batch,
-        &grab_batch,
-        &construction_batch,
-    )?;
-
-    let particle_stages = world.particle_timestamp_stages_per_step();
-    if particle_stages.len() as u32 != world.particle_dispatches_per_step() {
-        return Err("liquid particle timestamp layout does not match dispatch count".to_owned());
-    }
-    let query_count = FRAME_QUERY_COUNT
-        .checked_add(particle_stages.len() as u32)
-        .ok_or_else(|| "liquid timestamp query count overflowed".to_owned())?;
-    let timestamps = timestamps_available
-        .then(|| TimestampResources::new(&device, query_count, config.retained_samples));
-    let mut cpu_seconds = Vec::with_capacity(config.retained_samples as usize);
-    let mut host_seconds = Vec::with_capacity(config.retained_samples as usize);
-    for sample in 0..config.retained_samples {
-        let started = Instant::now();
-        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("physbox5_liquid_scale_sample"),
-        });
-        let ranges = [BodyCommandStepRange { start: 0, count: 0 }];
-        world.encode_steps_with_grab_intents(
-            &queue,
+    pub fn submit_warmup(&mut self) -> Result<(), String> {
+        if self.warmup_submitted || self.submitted_samples != 0 {
+            return Err("liquid benchmark warmup may be submitted exactly once".to_owned());
+        }
+        let ranges =
+            vec![BodyCommandStepRange { start: 0, count: 0 }; self.config.warmup_steps as usize];
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("physbox5_liquid_scale_warmup"),
+            });
+        self.world.encode_steps_with_grab_intents(
+            &self.queue,
             &mut encoder,
-            1,
+            self.config.warmup_steps,
             BodyStepPlan {
-                batch: &empty_batch,
+                batch: &self.empty_batch,
                 ranges: &ranges,
-                grab_batch: &grab_batch,
+                grab_batch: &self.grab_batch,
                 grab_ranges: &ranges,
-                construction_batch: &construction_batch,
+                construction_batch: &self.construction_batch,
                 construction_ranges: &ranges,
                 particle_commands: &[],
                 particle_ranges: &ranges,
-                frame_timestamps: timestamps.as_ref().map(|timestamps| GpuFrameTimestampPlan {
-                    query_set: &timestamps.query_set,
-                    query_base: 0,
-                    particle_query_base: Some(FRAME_QUERY_COUNT),
+                frame_timestamps: None,
+            },
+        )?;
+        self.queue.submit([encoder.finish()]);
+        self.warmup_submitted = true;
+        Ok(())
+    }
+
+    pub fn submit_sample(&mut self) -> Result<(), String> {
+        if !self.warmup_submitted {
+            return Err("liquid benchmark sample requires completed warmup submission".to_owned());
+        }
+        if self.submitted_samples >= self.config.retained_samples {
+            return Err("liquid benchmark sample exceeds retained count".to_owned());
+        }
+        let sample = self.submitted_samples;
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("physbox5_liquid_scale_sample"),
+            });
+        let ranges = [BodyCommandStepRange { start: 0, count: 0 }];
+        self.world.encode_steps_with_grab_intents(
+            &self.queue,
+            &mut encoder,
+            1,
+            BodyStepPlan {
+                batch: &self.empty_batch,
+                ranges: &ranges,
+                grab_batch: &self.grab_batch,
+                grab_ranges: &ranges,
+                construction_batch: &self.construction_batch,
+                construction_ranges: &ranges,
+                particle_commands: &[],
+                particle_ranges: &ranges,
+                frame_timestamps: self.timestamps.as_ref().map(|timestamps| {
+                    GpuFrameTimestampPlan {
+                        query_set: &timestamps.query_set,
+                        query_base: 0,
+                        particle_query_base: Some(FRAME_QUERY_COUNT),
+                    }
                 }),
             },
         )?;
-        if let Some(timestamps) = &timestamps {
+        if let Some(timestamps) = &self.timestamps {
             encoder.resolve_query_set(
                 &timestamps.query_set,
                 0..timestamps.query_count,
@@ -176,205 +266,364 @@ pub async fn run_liquid_scale_physics_benchmark(
                 u64::from(sample) * timestamps.sample_stride,
             );
         }
-        queue.submit([encoder.finish()]);
-        cpu_seconds.push(started.elapsed().as_secs_f64());
-        device
-            .poll(wgpu::PollType::Wait)
-            .map_err(|error| format!("wait for liquid benchmark sample {sample}: {error}"))?;
-        host_seconds.push(started.elapsed().as_secs_f64());
+        self.queue.submit([encoder.finish()]);
+        self.submitted_samples += 1;
+        Ok(())
     }
 
-    let particle_layout = world
-        .particle_validation_layout()
-        .ok_or_else(|| "liquid benchmark world has no particle validation layout".to_owned())?;
-    let particle_readback = readback_buffer(
-        &device,
-        "physbox5_liquid_scale_particle_readback",
-        particle_layout.total_bytes,
-    );
-    let body_bytes = u64::from(world.body_capacity()) * size_of::<[u32; 4]>() as u64 * 3;
-    let body_readback = readback_buffer(&device, "physbox5_liquid_scale_body_readback", body_bytes);
-    let graph_bytes = u64::from(COLLISION_CAPACITY_COUNTER_BYTES) * 4;
-    let graph_readback =
-        readback_buffer(&device, "physbox5_liquid_scale_graph_readback", graph_bytes);
-    let mut final_encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-        label: Some("physbox5_liquid_scale_final_readback"),
-    });
-    world.copy_particle_validation_state(&mut final_encoder, &particle_readback)?;
-    world.copy_full_validation_state(&mut final_encoder, &body_readback);
-    world.copy_construction_graph_evidence(&mut final_encoder, &graph_readback)?;
-    if let Some(timestamps) = &timestamps {
-        final_encoder.copy_buffer_to_buffer(
-            &timestamps.resolve,
-            0,
-            &timestamps.readback,
-            0,
-            timestamps.total_bytes,
+    pub fn begin_completion_fence(&self) -> PendingLiquidScaleCompletion {
+        let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("physbox5_liquid_scale_completion_fence"),
+            size: 4,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("physbox5_liquid_scale_completion_encoder"),
+            });
+        encoder.clear_buffer(&buffer, 0, None);
+        self.queue.submit([encoder.finish()]);
+        PendingLiquidScaleCompletion {
+            mapped: PendingMap::new(buffer),
+        }
+    }
+
+    pub fn begin_final_readback(&mut self) -> Result<PendingLiquidScaleReadback, String> {
+        if self.submitted_samples != self.config.retained_samples {
+            return Err(format!(
+                "liquid benchmark final readback requires {} samples, found {}",
+                self.config.retained_samples, self.submitted_samples
+            ));
+        }
+        let particle_layout = self
+            .world
+            .particle_validation_layout()
+            .ok_or_else(|| "liquid benchmark world has no particle validation layout".to_owned())?;
+        let particle_readback = readback_buffer(
+            &self.device,
+            "physbox5_liquid_scale_particle_readback",
+            particle_layout.total_bytes,
         );
+        let body_bytes = u64::from(self.world.body_capacity()) * size_of::<[u32; 4]>() as u64 * 3;
+        let body_readback = readback_buffer(
+            &self.device,
+            "physbox5_liquid_scale_body_readback",
+            body_bytes,
+        );
+        let graph_bytes = u64::from(COLLISION_CAPACITY_COUNTER_BYTES) * 4;
+        let graph_readback = readback_buffer(
+            &self.device,
+            "physbox5_liquid_scale_graph_readback",
+            graph_bytes,
+        );
+        let timestamps = self.timestamps.take();
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("physbox5_liquid_scale_final_readback"),
+            });
+        self.world
+            .copy_particle_validation_state(&mut encoder, &particle_readback)?;
+        self.world
+            .copy_full_validation_state(&mut encoder, &body_readback);
+        self.world
+            .copy_construction_graph_evidence(&mut encoder, &graph_readback)?;
+        if let Some(timestamps) = &timestamps {
+            encoder.copy_buffer_to_buffer(
+                &timestamps.resolve,
+                0,
+                &timestamps.readback,
+                0,
+                timestamps.total_bytes,
+            );
+        }
+        self.queue.submit([encoder.finish()]);
+        let timestamp_layout = timestamps.as_ref().map(TimestampResources::layout);
+        Ok(PendingLiquidScaleReadback {
+            particle: PendingMap::new(particle_readback),
+            body: PendingMap::new(body_readback),
+            graph: PendingMap::new(graph_readback),
+            timestamps: timestamps.map(|timestamps| PendingMap::new(timestamps.readback)),
+            particle_layout,
+            timestamp_layout,
+        })
     }
-    queue.submit([final_encoder.finish()]);
-    device
-        .poll(wgpu::PollType::Wait)
-        .map_err(|error| format!("wait for liquid benchmark final readback: {error}"))?;
 
-    let particle_bytes = mapped_bytes(&device, &particle_readback)?;
-    let body_state_bytes = mapped_bytes(&device, &body_readback)?;
-    let graph_state_bytes = mapped_bytes(&device, &graph_readback)?;
-    let timestamp_bytes = timestamps
-        .as_ref()
-        .map(|timestamps| mapped_bytes(&device, &timestamps.readback))
-        .transpose()?;
-    let particle_diagnostics = world.decode_particle_validation_state(&particle_bytes)?;
-    let (awake_bodies, bodies_finite, bodies_valid) = validate_body_state(
-        &scenario.rigid.bodies,
-        world.body_capacity(),
-        &body_state_bytes,
-    )?;
-    let graph = decode_construction_graph_evidence(&graph_state_bytes)?;
-    if graph.overflowed {
-        return Err("liquid benchmark final rigid graph overflowed".to_owned());
-    }
-    let state_hash = exact_state_hash(
-        particle_layout,
-        &particle_bytes,
-        &scenario.rigid.bodies,
-        world.body_capacity(),
-        &body_state_bytes,
-    )?;
-    let timings = benchmark_timings(
-        timestamps.as_ref(),
-        timestamp_bytes.as_deref(),
-        &particle_stages,
-        cpu_seconds,
-        host_seconds,
-        queue.get_timestamp_period(),
-    )?;
-    let mut capacities = world.benchmark_capacities(0, 0);
-    capacities.sort_by(|left, right| left.class.cmp(&right.class));
-    for capacity in &capacities {
-        capacity.validate().map_err(|error| error.to_string())?;
+    pub fn poll(&self) -> Result<(), String> {
+        self.device
+            .poll(wgpu::PollType::Poll)
+            .map(|_| ())
+            .map_err(|error| format!("poll liquid benchmark: {error}"))
     }
 
-    provenance.adapter = adapter_diagnostics.name.clone();
-    provenance.backend = adapter_diagnostics.backend.clone();
-    let reported_driver = format!(
-        "{} {}",
-        adapter_diagnostics.driver, adapter_diagnostics.driver_info
-    )
-    .trim()
-    .to_owned();
-    provenance.driver = if reported_driver.is_empty() {
-        "not-reported".to_owned()
-    } else {
-        reported_driver
-    };
-    let dispatches_per_outer_step = 1u32
-        .checked_add(world.solver_dispatches_per_step())
-        .and_then(|value| value.checked_add(world.particle_dispatches_per_step()))
-        .and_then(|value| value.checked_add(world.body_lifecycle_dispatches_per_step()))
-        .and_then(|value| value.checked_add(world.post_fluid_stabilization_dispatches_per_step()))
-        .ok_or_else(|| "liquid dispatch count overflowed".to_owned())?;
-    let live_bodies = source
-        .dynamic_solid_count
-        .checked_add(source.fixed_solid_count)
-        .ok_or_else(|| "liquid live-body count overflowed".to_owned())?;
-    let artifact = LiquidScaleBenchmarkArtifactV1 {
-        schema_version: SCHEMA_VERSION,
-        artifact_version: LIQUID_SCALE_ARTIFACT_VERSION,
-        scenario_id: source.id,
-        source_definition_hash: source.scenario_hash,
-        scenario_hash,
-        host_kind,
-        browser_version: None,
-        build_profile: "release".to_owned(),
-        comparator_enabled: cfg!(feature = "box2d-comparator"),
-        provenance,
-        config: config.clone(),
-        work: LiquidScaleWorkVectorV1 {
-            version: LIQUID_SCALE_ARTIFACT_VERSION,
-            dynamic_bodies: source.dynamic_solid_count,
-            fixed_bodies: source.fixed_solid_count,
-            live_bodies,
-            awake_bodies,
-            body_capacity: world.body_capacity(),
-            candidate_pairs: u64::from(graph.candidate_pairs),
-            manifolds: graph.manifolds,
-            contact_points: graph.contact_points,
-            particle_capacity: particle_diagnostics.capacity,
-            live_particles: particle_diagnostics.active_count,
-            grid_insertions: u64::from(particle_diagnostics.grid_insertions),
-            occupied_cells: particle_diagnostics.occupied_grid_cells,
-            neighbor_checks: u64::from(particle_diagnostics.neighbor_checks),
-            accepted_neighbors: u64::from(particle_diagnostics.accepted_neighbors),
-            particle_body_contacts: u64::from(particle_diagnostics.body_contacts),
-            body_contributions: u64::from(particle_diagnostics.body_contribution_edges),
-            fluid_wake_roots: particle_diagnostics.fluid_wake_roots,
-            dispatches_per_outer_step,
-            workgroups_per_outer_step: None,
-        },
-        capacities,
-        timings,
-        correctness: LiquidScaleCorrectnessV1 {
-            completed_outer_steps: config.retained_samples,
-            expected_final_active_particles: config.particle_count,
-            final_active_particles: particle_diagnostics.active_count,
-            final_state_finite: particle_diagnostics.state_finite && bodies_finite,
-            generations_and_live_flags_valid: bodies_valid
-                && particle_diagnostics.active_count == particle_diagnostics.active_flags_count,
-            capacity_clean: particle_diagnostics.capacity_clean,
-            state_hash,
-            effective_simulation_scale: None,
-            slipped_wall_seconds: None,
-            sustained_60_hz: false,
-        },
-    };
-    artifact.validate().map_err(|error| error.to_string())?;
-    Ok(LiquidScalePhysicsBenchmarkRun {
-        artifact,
-        adapter: adapter_diagnostics,
-    })
+    #[cfg(not(target_arch = "wasm32"))]
+    fn poll_wait(&self, label: &str) -> Result<(), String> {
+        self.device
+            .poll(wgpu::PollType::Wait)
+            .map(|_| ())
+            .map_err(|error| format!("wait for liquid benchmark {label}: {error}"))
+    }
+
+    pub fn complete(
+        self,
+        readback: LiquidScaleFinalReadback,
+        cpu_seconds: Vec<f64>,
+        host_seconds: Vec<f64>,
+    ) -> Result<LiquidScalePhysicsBenchmarkRun, String> {
+        if cpu_seconds.len() != self.config.retained_samples as usize
+            || host_seconds.len() != self.config.retained_samples as usize
+        {
+            return Err("liquid benchmark timing count mismatch".to_owned());
+        }
+        let particle_diagnostics = self
+            .world
+            .decode_particle_validation_state(&readback.particle_bytes)?;
+        let (awake_bodies, bodies_finite, bodies_valid) = validate_body_state(
+            &self.scenario.rigid.bodies,
+            self.world.body_capacity(),
+            &readback.body_bytes,
+        )?;
+        let graph = decode_construction_graph_evidence(&readback.graph_bytes)?;
+        if graph.overflowed {
+            return Err("liquid benchmark final rigid graph overflowed".to_owned());
+        }
+        let state_hash = exact_state_hash(
+            readback.particle_layout,
+            &readback.particle_bytes,
+            &self.scenario.rigid.bodies,
+            self.world.body_capacity(),
+            &readback.body_bytes,
+        )?;
+        let timings = benchmark_timings(
+            readback.timestamp_layout.as_ref(),
+            readback.timestamp_bytes.as_deref(),
+            &self.particle_stages,
+            cpu_seconds,
+            host_seconds,
+            self.queue.get_timestamp_period(),
+        )?;
+        let mut capacities = self.world.benchmark_capacities(0, 0);
+        capacities.sort_by(|left, right| left.class.cmp(&right.class));
+        for capacity in &capacities {
+            capacity.validate().map_err(|error| error.to_string())?;
+        }
+
+        let mut provenance = self.provenance;
+        provenance.adapter = reported_or(&self.adapter.name, "not-reported");
+        provenance.backend = reported_or(&self.adapter.backend, "not-reported");
+        let reported_driver = format!("{} {}", self.adapter.driver, self.adapter.driver_info)
+            .trim()
+            .to_owned();
+        provenance.driver = if reported_driver.is_empty() {
+            "not-reported".to_owned()
+        } else {
+            reported_driver
+        };
+        let dispatches_per_outer_step = 1u32
+            .checked_add(self.world.solver_dispatches_per_step())
+            .and_then(|value| value.checked_add(self.world.particle_dispatches_per_step()))
+            .and_then(|value| value.checked_add(self.world.body_lifecycle_dispatches_per_step()))
+            .and_then(|value| {
+                value.checked_add(self.world.post_fluid_stabilization_dispatches_per_step())
+            })
+            .ok_or_else(|| "liquid dispatch count overflowed".to_owned())?;
+        let live_bodies = self
+            .source
+            .dynamic_solid_count
+            .checked_add(self.source.fixed_solid_count)
+            .ok_or_else(|| "liquid live-body count overflowed".to_owned())?;
+        let artifact = LiquidScaleBenchmarkArtifactV1 {
+            schema_version: SCHEMA_VERSION,
+            artifact_version: LIQUID_SCALE_ARTIFACT_VERSION,
+            scenario_id: self.source.id,
+            source_definition_hash: self.source.scenario_hash,
+            scenario_hash: self.scenario_hash,
+            host_kind: self.host_kind,
+            browser_version: self.browser_version,
+            build_profile: "release".to_owned(),
+            comparator_enabled: cfg!(feature = "box2d-comparator"),
+            provenance,
+            config: self.config.clone(),
+            work: LiquidScaleWorkVectorV1 {
+                version: LIQUID_SCALE_ARTIFACT_VERSION,
+                dynamic_bodies: self.source.dynamic_solid_count,
+                fixed_bodies: self.source.fixed_solid_count,
+                live_bodies,
+                awake_bodies,
+                body_capacity: self.world.body_capacity(),
+                candidate_pairs: u64::from(graph.candidate_pairs),
+                manifolds: graph.manifolds,
+                contact_points: graph.contact_points,
+                particle_capacity: particle_diagnostics.capacity,
+                live_particles: particle_diagnostics.active_count,
+                grid_insertions: u64::from(particle_diagnostics.grid_insertions),
+                occupied_cells: particle_diagnostics.occupied_grid_cells,
+                neighbor_checks: u64::from(particle_diagnostics.neighbor_checks),
+                accepted_neighbors: u64::from(particle_diagnostics.accepted_neighbors),
+                particle_body_contacts: u64::from(particle_diagnostics.body_contacts),
+                body_contributions: u64::from(particle_diagnostics.body_contribution_edges),
+                fluid_wake_roots: particle_diagnostics.fluid_wake_roots,
+                dispatches_per_outer_step,
+                workgroups_per_outer_step: None,
+            },
+            capacities,
+            timings,
+            correctness: LiquidScaleCorrectnessV1 {
+                completed_outer_steps: self.config.retained_samples,
+                expected_final_active_particles: self.config.particle_count,
+                final_active_particles: particle_diagnostics.active_count,
+                final_state_finite: particle_diagnostics.state_finite && bodies_finite,
+                generations_and_live_flags_valid: bodies_valid
+                    && particle_diagnostics.active_count == particle_diagnostics.active_flags_count,
+                capacity_clean: particle_diagnostics.capacity_clean,
+                state_hash,
+                effective_simulation_scale: None,
+                slipped_wall_seconds: None,
+                sustained_60_hz: false,
+            },
+        };
+        artifact.validate().map_err(|error| error.to_string())?;
+        Ok(LiquidScalePhysicsBenchmarkRun {
+            artifact,
+            adapter: self.adapter,
+        })
+    }
 }
 
-fn encode_untimed_steps(
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    world: &GpuBodyWorld,
-    steps: u32,
-    batch: &BodyCommandBatchV1,
-    grab_batch: &physbox_contracts::GrabIntentBatchV1,
-    construction_batch: &ConstructionIntentBatchV1,
-) -> Result<(), String> {
-    let ranges = vec![BodyCommandStepRange { start: 0, count: 0 }; steps as usize];
-    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-        label: Some("physbox5_liquid_scale_warmup"),
-    });
-    world.encode_steps_with_grab_intents(
-        queue,
-        &mut encoder,
-        steps,
-        BodyStepPlan {
-            batch,
-            ranges: &ranges,
-            grab_batch,
-            grab_ranges: &ranges,
-            construction_batch,
-            construction_ranges: &ranges,
-            particle_commands: &[],
-            particle_ranges: &ranges,
-            frame_timestamps: None,
-        },
-    )?;
-    queue.submit([encoder.finish()]);
-    device
-        .poll(wgpu::PollType::Wait)
-        .map_err(|error| format!("wait for liquid benchmark warmup: {error}"))?;
-    Ok(())
+pub struct PendingLiquidScaleCompletion {
+    mapped: PendingMap,
+}
+
+impl PendingLiquidScaleCompletion {
+    pub fn is_ready(&self) -> bool {
+        self.mapped.is_ready()
+    }
+
+    pub fn finish(self) -> Result<(), String> {
+        let bytes = self.mapped.finish()?;
+        if bytes.len() != 4 {
+            return Err("liquid completion fence size mismatch".to_owned());
+        }
+        Ok(())
+    }
+}
+
+pub struct PendingLiquidScaleReadback {
+    particle: PendingMap,
+    body: PendingMap,
+    graph: PendingMap,
+    timestamps: Option<PendingMap>,
+    particle_layout: ParticleValidationLayout,
+    timestamp_layout: Option<TimestampLayout>,
+}
+
+impl PendingLiquidScaleReadback {
+    pub fn is_ready(&self) -> bool {
+        self.particle.is_ready()
+            && self.body.is_ready()
+            && self.graph.is_ready()
+            && self.timestamps.as_ref().is_none_or(PendingMap::is_ready)
+    }
+
+    pub fn finish(self) -> Result<LiquidScaleFinalReadback, String> {
+        Ok(LiquidScaleFinalReadback {
+            particle_bytes: self.particle.finish()?,
+            body_bytes: self.body.finish()?,
+            graph_bytes: self.graph.finish()?,
+            timestamp_bytes: self.timestamps.map(PendingMap::finish).transpose()?,
+            particle_layout: self.particle_layout,
+            timestamp_layout: self.timestamp_layout,
+        })
+    }
+}
+
+pub struct LiquidScaleFinalReadback {
+    particle_bytes: Vec<u8>,
+    body_bytes: Vec<u8>,
+    graph_bytes: Vec<u8>,
+    timestamp_bytes: Option<Vec<u8>>,
+    particle_layout: ParticleValidationLayout,
+    timestamp_layout: Option<TimestampLayout>,
+}
+
+struct PendingMap {
+    buffer: wgpu::Buffer,
+    result: Arc<Mutex<Option<Result<(), String>>>>,
+}
+
+impl PendingMap {
+    fn new(buffer: wgpu::Buffer) -> Self {
+        let result = Arc::new(Mutex::new(None));
+        let callback_result = Arc::clone(&result);
+        buffer
+            .slice(..)
+            .map_async(wgpu::MapMode::Read, move |mapped| {
+                *callback_result
+                    .lock()
+                    .expect("liquid readback callback lock") =
+                    Some(mapped.map_err(|error| error.to_string()));
+            });
+        Self { buffer, result }
+    }
+
+    fn is_ready(&self) -> bool {
+        self.result
+            .lock()
+            .expect("liquid readback readiness lock")
+            .is_some()
+    }
+
+    fn finish(self) -> Result<Vec<u8>, String> {
+        self.result
+            .lock()
+            .map_err(|_| "liquid readback result lock poisoned".to_owned())?
+            .take()
+            .ok_or_else(|| "liquid readback is not ready".to_owned())??;
+        let view = self.buffer.slice(..).get_mapped_range();
+        let bytes = view.to_vec();
+        drop(view);
+        self.buffer.unmap();
+        Ok(bytes)
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn run_liquid_scale_physics_benchmark(
+    config: LiquidScaleBenchmarkConfigV1,
+    host_kind: LiquidScaleHostKindV1,
+    provenance: ProvenanceV1,
+) -> Result<LiquidScalePhysicsBenchmarkRun, String> {
+    let mut session =
+        LiquidScaleBenchmarkSession::new(config.clone(), host_kind, None, provenance).await?;
+    session.submit_warmup()?;
+    session.poll_wait("warmup")?;
+    let mut cpu_seconds = Vec::with_capacity(config.retained_samples as usize);
+    let mut host_seconds = Vec::with_capacity(config.retained_samples as usize);
+    for sample in 0..config.retained_samples {
+        let started = Instant::now();
+        session.submit_sample()?;
+        cpu_seconds.push(started.elapsed().as_secs_f64());
+        session.poll_wait(&format!("sample {sample}"))?;
+        host_seconds.push(started.elapsed().as_secs_f64());
+    }
+    let pending = session.begin_final_readback()?;
+    session.poll_wait("final readback")?;
+    session.complete(pending.finish()?, cpu_seconds, host_seconds)
 }
 
 struct TimestampResources {
     query_set: wgpu::QuerySet,
     resolve: wgpu::Buffer,
     readback: wgpu::Buffer,
+    query_count: u32,
+    sample_stride: u64,
+    total_bytes: u64,
+}
+
+#[derive(Clone, Copy)]
+struct TimestampLayout {
     query_count: u32,
     sample_stride: u64,
     total_bytes: u64,
@@ -408,10 +657,18 @@ impl TimestampResources {
             total_bytes,
         }
     }
+
+    fn layout(&self) -> TimestampLayout {
+        TimestampLayout {
+            query_count: self.query_count,
+            sample_stride: self.sample_stride,
+            total_bytes: self.total_bytes,
+        }
+    }
 }
 
 fn benchmark_timings(
-    timestamps: Option<&TimestampResources>,
+    timestamps: Option<&TimestampLayout>,
     timestamp_bytes: Option<&[u8]>,
     particle_stages: &[GpuParticleTimingStage],
     cpu_seconds: Vec<f64>,
@@ -451,9 +708,20 @@ fn benchmark_timings(
         let rigid_end = values[1];
         let liquid_end = values[2];
         if rigid_end < frame_start || liquid_end < rigid_end {
-            return Err(format!(
-                "liquid GPU timestamp sample {sample} ran backwards"
-            ));
+            let rejected_delta = if rigid_end < frame_start {
+                rigid_end as i128 - frame_start as i128
+            } else {
+                liquid_end as i128 - rigid_end as i128
+            };
+            return Ok(LiquidScaleTimingsV1 {
+                percentile_method: LIQUID_SCALE_PERCENTILE_METHOD.to_owned(),
+                gpu_timestamp_status: LiquidScaleGpuTimestampStatusV1::AdvertisedUnusableOrder,
+                timestamp_quantization_seconds: Some(period_seconds),
+                gpu_stages: Vec::new(),
+                rejected_gpu_timestamp_raw_seconds: vec![rejected_delta as f64 * period_seconds],
+                cpu_encode_submit,
+                host_completion,
+            });
         }
         push_timing(
             &mut raw,
@@ -695,10 +963,11 @@ fn readback_buffer(device: &wgpu::Device, label: &'static str, size: u64) -> wgp
     })
 }
 
-fn mapped_bytes(device: &wgpu::Device, buffer: &wgpu::Buffer) -> Result<Vec<u8>, String> {
-    let mapped = map_buffer(device, buffer)?;
-    let bytes = mapped.to_vec();
-    drop(mapped);
-    buffer.unmap();
-    Ok(bytes)
+fn reported_or(value: &str, fallback: &str) -> String {
+    let value = value.trim();
+    if value.is_empty() {
+        fallback.to_owned()
+    } else {
+        value.to_owned()
+    }
 }

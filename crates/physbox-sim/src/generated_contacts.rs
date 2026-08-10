@@ -1458,7 +1458,6 @@ impl GpuGeneratedContactGraph {
         self.solver.color_status_source()
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
     pub fn copy_construction_graph_evidence(
         &self,
         encoder: &mut wgpu::CommandEncoder,
@@ -1490,7 +1489,6 @@ fn product_candidate_capacity(body_count: u32) -> Result<u32, String> {
         .max(1))
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 pub fn decode_construction_graph_evidence(
     bytes: &[u8],
 ) -> Result<GpuConstructionGraphEvidence, String> {

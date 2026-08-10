@@ -154,16 +154,28 @@ complete valid work vector for raw water and both solid lanes.
 
 ### S43.3 — Browser WebGPU and Android-native runners
 
-- [ ] Expose the same benchmark API to a separately built, smoke-gated Browser
+- [x] Expose the same benchmark API to a separately built, smoke-gated Browser
       observer without adding semantic policy to ordinary product JavaScript.
-- [ ] Build a Browser runner that performs fresh-world trials, retains raw
+- [x] Build a Browser runner that performs fresh-world trials, retains raw
       samples, records timestamp quantization, and writes the shared artifact.
-- [ ] Add a standalone Android ARM64 native benchmark binary using the same
+- [x] Add a standalone Android ARM64 native benchmark binary using the same
       Vulkan adapter path and JSON schema as native desktop.
-- [ ] Add device and AVD transport scripts with adapter guards, atomic pull,
+- [x] Add device and AVD transport scripts with adapter guards, atomic pull,
       clear success sentinels, and mandatory AVD shutdown.
 - [ ] Prove native desktop, Browser WebGPU, and Android runners select the same
       scenario hash, quality, work contract, and comparator-off graph.
+
+Implementation note, 2026-08-10: native desktop and Browser WebGPU completed
+the same dirty-tree `20 solids + 4K` smoke with identical source-definition,
+configured-scenario, configuration, capacity, and dispatch contracts. Chrome
+151 on macOS advertised timestamps but returned backward frame markers; the
+artifact rejects that clock as `advertised-unusable-order` and retains host
+completion samples. The ARM64 Android runner compiles and its transport was
+exercised on the available `jstorrent-tablet` AVD. The emulator lost its
+Vulkan device during first pipeline creation, so no Android artifact was
+accepted; teardown emitted `PHYSBOX5_ANDROID_AVD_SHUTDOWN_SUCCESS`. No physical
+Android device was attached. The cross-host proof item and S43.3 gate remain
+open until an Android artifact exists.
 
 Gate: one selected 4K row passes on native desktop, Browser WebGPU, Android
 ARM64 build, and a physical Android device when available; a hardware-backed

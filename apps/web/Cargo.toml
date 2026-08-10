@@ -23,6 +23,7 @@ console_error_panic_hook.workspace = true
 form_urlencoded.workspace = true
 js-sys.workspace = true
 physbox-box2d-comparator = { path = "../../crates/physbox-box2d-comparator", optional = true }
+physbox-contracts = { path = "../../crates/physbox-contracts" }
 physbox-engine = { path = "../../crates/physbox-engine", default-features = false }
 physbox-launch = { path = "../../crates/physbox-launch" }
 serde_json.workspace = true
@@ -32,4 +33,4 @@ wgpu.workspace = true
 
 [dependencies.web-sys]
 workspace = true
-features = ["History", "HtmlCanvasElement", "Performance", "Storage", "Window", "console"]
+features = ["History", "HtmlCanvasElement", "Location", "Performance", "Storage", "Window", "console"]

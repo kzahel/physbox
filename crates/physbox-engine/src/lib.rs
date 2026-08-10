@@ -48,7 +48,7 @@ mod grab;
 mod host;
 mod input;
 mod liquid_scale_benchmark;
-#[cfg(all(feature = "solver-lab", not(target_arch = "wasm32")))]
+#[cfg(feature = "solver-lab")]
 mod liquid_scale_benchmark_runner;
 mod pair_slot_persistence;
 mod particle_world;
@@ -231,8 +231,11 @@ pub use liquid_scale_benchmark::{
     LiquidScaleWorkVectorV1,
 };
 #[cfg(all(feature = "solver-lab", not(target_arch = "wasm32")))]
+pub use liquid_scale_benchmark_runner::run_liquid_scale_physics_benchmark;
+#[cfg(feature = "solver-lab")]
 pub use liquid_scale_benchmark_runner::{
-    LiquidScalePhysicsBenchmarkRun, run_liquid_scale_physics_benchmark,
+    LiquidScaleBenchmarkSession, LiquidScaleFinalReadback, LiquidScalePhysicsBenchmarkRun,
+    PendingLiquidScaleCompletion, PendingLiquidScaleReadback,
 };
 #[cfg(all(feature = "solver-lab", not(target_arch = "wasm32")))]
 pub use pair_slot_persistence::{

@@ -269,6 +269,7 @@ pub enum LiquidScaleGpuTimestampStatusV1 {
     Valid,
     QuantizedZeros,
     AdvertisedUnusableZero,
+    AdvertisedUnusableOrder,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -374,6 +375,25 @@ impl LiquidScaleTimingsV1 {
                 {
                     return Err(ContractError(
                         "unusable GPU timestamps must preserve only rejected zero samples"
+                            .to_owned(),
+                    ));
+                }
+            }
+            LiquidScaleGpuTimestampStatusV1::AdvertisedUnusableOrder => {
+                if !self.gpu_stages.is_empty()
+                    || self.rejected_gpu_timestamp_raw_seconds.is_empty()
+                    || self.timestamp_quantization_seconds.is_none()
+                    || self
+                        .rejected_gpu_timestamp_raw_seconds
+                        .iter()
+                        .any(|sample| !sample.is_finite())
+                    || !self
+                        .rejected_gpu_timestamp_raw_seconds
+                        .iter()
+                        .any(|sample| *sample < 0.0)
+                {
+                    return Err(ContractError(
+                        "unordered GPU timestamps must preserve a rejected negative delta"
                             .to_owned(),
                     ));
                 }

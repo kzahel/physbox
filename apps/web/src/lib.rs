@@ -1,5 +1,7 @@
 #![forbid(unsafe_code)]
 
+#[cfg(all(target_arch = "wasm32", feature = "solver-lab"))]
+use physbox_contracts::{NamedValueV1, ProvenanceV1};
 #[cfg(any(target_arch = "wasm32", test))]
 use physbox_engine::PointerButton;
 #[cfg(target_arch = "wasm32")]
@@ -8,7 +10,10 @@ use physbox_engine::{
     PointerPhase, StepRequest, SurfaceRenderer, WheelEvent, create_instance,
 };
 #[cfg(all(target_arch = "wasm32", feature = "solver-lab"))]
-use physbox_engine::{GpuBroadphaseBrowserSession, P5_3BroadphasePattern};
+use physbox_engine::{
+    GpuBroadphaseBrowserSession, LiquidScaleBenchmarkConfigV1, LiquidScaleBenchmarkSession,
+    LiquidScaleHostKindV1, LiquidScaleSolidTier, P5_3BroadphasePattern,
+};
 #[cfg(target_arch = "wasm32")]
 use physbox_launch::{WebPreferenceController, WebPreferenceStore};
 #[cfg(target_arch = "wasm32")]
@@ -361,6 +366,119 @@ pub async fn run_body_benchmark(
 }
 
 #[cfg(all(target_arch = "wasm32", feature = "solver-lab"))]
+#[wasm_bindgen(js_name = runLiquidScaleBenchmark)]
+#[allow(clippy::too_many_arguments)]
+pub async fn run_liquid_scale_benchmark(
+    solid_tier: String,
+    particle_count: u32,
+    warmup_steps: u32,
+    samples: u32,
+    run_id: String,
+    source_revision: String,
+    source_dirty: bool,
+    source_patch_digest: Option<String>,
+    browser_version: String,
+    host: String,
+    toolchain: String,
+) -> Result<String, JsValue> {
+    require_smoke_observer_query()?;
+    let solid_tier = parse_liquid_solid_tier(&solid_tier).map_err(js_error)?;
+    let config = LiquidScaleBenchmarkConfigV1::physics_only(
+        solid_tier,
+        particle_count,
+        warmup_steps,
+        samples,
+    );
+    let provenance = ProvenanceV1 {
+        run_id,
+        source_revision,
+        source_dirty,
+        source_patch_digest,
+        host,
+        adapter: "runtime-discovered".to_owned(),
+        backend: "runtime-discovered".to_owned(),
+        driver: "runtime-discovered".to_owned(),
+        toolchain,
+        build_options: vec![
+            NamedValueV1 {
+                name: "box2d-comparator".to_owned(),
+                value: "false".to_owned(),
+            },
+            NamedValueV1 {
+                name: "profile".to_owned(),
+                value: "release".to_owned(),
+            },
+        ],
+        runtime_settings: vec![
+            NamedValueV1 {
+                name: "coupling-quality".to_owned(),
+                value: "standard".to_owned(),
+            },
+            NamedValueV1 {
+                name: "outer-dt-seconds".to_owned(),
+                value: format!("{:.17}", config.outer_dt_seconds),
+            },
+            NamedValueV1 {
+                name: "timing-mode".to_owned(),
+                value: "physics-only-explicit-steps".to_owned(),
+            },
+        ],
+    };
+    let mut session = LiquidScaleBenchmarkSession::new(
+        config,
+        LiquidScaleHostKindV1::BrowserWebGpu,
+        Some(browser_version),
+        provenance,
+    )
+    .await
+    .map_err(js_error)?;
+    session.submit_warmup().map_err(js_error)?;
+    wait_for_liquid_completion(&session).await?;
+
+    let mut host_completion_seconds = Vec::with_capacity(samples as usize);
+    let mut cpu_encode_submit_seconds = Vec::with_capacity(samples as usize);
+    for _ in 0..samples {
+        let started = performance_now()?;
+        session.submit_sample().map_err(js_error)?;
+        cpu_encode_submit_seconds.push((performance_now()? - started) * 0.001);
+        wait_for_liquid_completion(&session).await?;
+        host_completion_seconds.push((performance_now()? - started) * 0.001);
+    }
+    let readback = session.begin_final_readback().map_err(js_error)?;
+    wait_for_liquid_readback(&session, &readback).await?;
+    let run = session
+        .complete(
+            readback.finish().map_err(js_error)?,
+            cpu_encode_submit_seconds,
+            host_completion_seconds,
+        )
+        .map_err(js_error)?;
+    serde_json::to_string(&run.artifact).map_err(|error| js_error(error.to_string()))
+}
+
+#[cfg(all(target_arch = "wasm32", feature = "solver-lab"))]
+fn parse_liquid_solid_tier(value: &str) -> Result<LiquidScaleSolidTier, String> {
+    match value {
+        "water-only" => Ok(LiquidScaleSolidTier::WaterOnly),
+        "20" => Ok(LiquidScaleSolidTier::Solids20),
+        "100" => Ok(LiquidScaleSolidTier::Solids100),
+        _ => Err("liquid solid tier must be water-only, 20, or 100".to_owned()),
+    }
+}
+
+#[cfg(all(target_arch = "wasm32", feature = "solver-lab"))]
+fn require_smoke_observer_query() -> Result<(), JsValue> {
+    let search = web_sys::window()
+        .ok_or_else(|| js_error("browser window is unavailable"))?
+        .location()
+        .search()?;
+    split_smoke_observer_query(&search)
+        .1
+        .then_some(())
+        .ok_or_else(|| js_error("liquid benchmark requires smoke-observer=1"))
+}
+
+#[cfg(all(target_arch = "wasm32", feature = "solver-lab"))]
 #[wasm_bindgen(js_name = runBroadphaseBrowserProbe)]
 pub async fn run_broadphase_browser_probe(
     counts_csv: String,
@@ -461,6 +579,36 @@ async fn wait_for_submission(session: &GpuBodyBenchmarkSession) -> Result<(), Js
     let completion = session.begin_completion_fence();
     wait_for_mapping(session, || completion.is_ready()).await?;
     completion.finish().map_err(js_error)
+}
+
+#[cfg(all(target_arch = "wasm32", feature = "solver-lab"))]
+async fn wait_for_liquid_completion(session: &LiquidScaleBenchmarkSession) -> Result<(), JsValue> {
+    let completion = session.begin_completion_fence();
+    let started = performance_now()?;
+    while !completion.is_ready() {
+        session.poll().map_err(js_error)?;
+        if performance_now()? - started > 60_000.0 {
+            return Err(js_error("browser liquid benchmark completion timed out"));
+        }
+        yield_browser().await?;
+    }
+    completion.finish().map_err(js_error)
+}
+
+#[cfg(all(target_arch = "wasm32", feature = "solver-lab"))]
+async fn wait_for_liquid_readback(
+    session: &LiquidScaleBenchmarkSession,
+    readback: &physbox_engine::PendingLiquidScaleReadback,
+) -> Result<(), JsValue> {
+    let started = performance_now()?;
+    while !readback.is_ready() {
+        session.poll().map_err(js_error)?;
+        if performance_now()? - started > 60_000.0 {
+            return Err(js_error("browser liquid benchmark readback timed out"));
+        }
+        yield_browser().await?;
+    }
+    Ok(())
 }
 
 #[cfg(all(target_arch = "wasm32", feature = "solver-lab"))]
