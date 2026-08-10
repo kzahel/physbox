@@ -2,6 +2,7 @@
 pub struct GpuFrameTimestampPlan<'a> {
     pub query_set: &'a wgpu::QuerySet,
     pub query_base: u32,
+    pub particle_query_base: Option<u32>,
 }
 
 impl<'a> GpuFrameTimestampPlan<'a> {
@@ -39,6 +40,32 @@ impl<'a> GpuFrameTimestampPlan<'a> {
     pub const fn ui_render_end(self) -> GpuTimestampMarker<'a> {
         self.marker(6)
     }
+
+    pub const fn particle_timestamps(self) -> Option<GpuParticleTimestampPlan<'a>> {
+        match self.particle_query_base {
+            Some(query_base) => Some(GpuParticleTimestampPlan {
+                query_set: self.query_set,
+                query_base,
+            }),
+            None => None,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct GpuParticleTimestampPlan<'a> {
+    pub query_set: &'a wgpu::QuerySet,
+    pub query_base: u32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum GpuParticleTimingStage {
+    IntegrationAndBoundary,
+    Grid,
+    DensityAndCorrection,
+    BodyReaction,
+    Velocity,
+    Compaction,
 }
 
 #[derive(Clone, Copy)]

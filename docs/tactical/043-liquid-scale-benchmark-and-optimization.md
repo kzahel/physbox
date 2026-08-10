@@ -136,17 +136,17 @@ incorrect final particle populations reject the row.
 
 ### S43.2 — physics-only native benchmark
 
-- [ ] Add a comparator-free release benchmark API around the actual
+- [x] Add a comparator-free release benchmark API around the actual
       `GpuBodyWorld`/`World` graph with explicit warmup and retained samples.
-- [ ] Time physics only with one outer step per sample, pipeline creation and
+- [x] Time physics only with one outer step per sample, pipeline creation and
       reset outside retained windows, and no rendering.
-- [ ] Record total GPU timestamps when supported plus grouped particle-stage
+- [x] Record total GPU timestamps when supported plus grouped particle-stage
       timestamps for rigid, integration/boundary, grid, density/correction,
       body reaction, velocity, and compaction work.
-- [ ] Record CPU encode/submit and host completion independently.
-- [ ] Map and validate final state once after timing; reject stale, incomplete,
+- [x] Record CPU encode/submit and host completion independently.
+- [x] Map and validate final state once after timing; reject stale, incomplete,
       comparator-enabled, overflowed, or mechanically invalid rows.
-- [ ] Provide an atomic JSON writer and a bounded CLI for selected/full
+- [x] Provide an atomic JSON writer and a bounded CLI for selected/full
       matrices.
 
 Gate: a clean native release baseline publishes raw retained samples and a

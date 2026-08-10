@@ -5,6 +5,10 @@ use crate::FrameTimingReport;
 pub(crate) use physbox_sim::__private::gpu_timing::{
     GpuFrameTimestampPlan, write_timestamp_marker,
 };
+#[cfg(test)]
+pub(crate) use physbox_sim::__private::gpu_timing::{
+    GpuParticleTimestampPlan, GpuParticleTimingStage,
+};
 
 pub(crate) const FRAME_TIMING_SAMPLE_INTERVAL_STEPS: u32 = 30;
 const TIMESTAMP_COUNT: u32 = 7;
@@ -144,6 +148,7 @@ impl SurfaceFrameTiming {
                     GpuFrameTimestampPlan {
                         query_set,
                         query_base: slot as u32 * TIMESTAMP_COUNT,
+                        particle_query_base: None,
                     },
                 )
             })

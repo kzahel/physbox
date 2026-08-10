@@ -7,6 +7,7 @@ pub const LIQUID_SCALE_ARTIFACT_VERSION: u32 = 1;
 pub const LIQUID_SCALE_PERCENTILE_METHOD: &str = "nearest-rank-ceil-v1";
 pub const LIQUID_SCALE_FIXED_DT_SECONDS: f64 = 1.0 / 60.0;
 pub const LIQUID_SCALE_RIGID_SUBSTEPS: u32 = 4;
+pub const LIQUID_SCALE_RIGID_ITERATIONS: u32 = 1;
 pub const LIQUID_SCALE_PARTICLE_SUBSTEPS: u32 = 2;
 pub const LIQUID_SCALE_PRESSURE_ITERATIONS: u32 = 2;
 pub const LIQUID_SCALE_COUPLING_ITERATIONS: u32 = 1;
@@ -45,6 +46,7 @@ pub struct LiquidScaleBenchmarkConfigV1 {
     pub outer_steps_per_sample: u32,
     pub outer_dt_seconds: f64,
     pub rigid_substeps: u32,
+    pub rigid_iterations: u32,
     pub particle_substeps: u32,
     pub pressure_iterations: u32,
     pub coupling_iterations: u32,
@@ -71,6 +73,7 @@ impl LiquidScaleBenchmarkConfigV1 {
             outer_steps_per_sample: 1,
             outer_dt_seconds: LIQUID_SCALE_FIXED_DT_SECONDS,
             rigid_substeps: LIQUID_SCALE_RIGID_SUBSTEPS,
+            rigid_iterations: LIQUID_SCALE_RIGID_ITERATIONS,
             particle_substeps: LIQUID_SCALE_PARTICLE_SUBSTEPS,
             pressure_iterations: LIQUID_SCALE_PRESSURE_ITERATIONS,
             coupling_iterations: LIQUID_SCALE_COUPLING_ITERATIONS,
@@ -92,6 +95,7 @@ impl Validate for LiquidScaleBenchmarkConfigV1 {
             || !self.outer_dt_seconds.is_finite()
             || self.outer_dt_seconds.to_bits() != LIQUID_SCALE_FIXED_DT_SECONDS.to_bits()
             || self.rigid_substeps != LIQUID_SCALE_RIGID_SUBSTEPS
+            || self.rigid_iterations != LIQUID_SCALE_RIGID_ITERATIONS
             || self.particle_substeps != LIQUID_SCALE_PARTICLE_SUBSTEPS
             || self.pressure_iterations != LIQUID_SCALE_PRESSURE_ITERATIONS
             || self.coupling_iterations != LIQUID_SCALE_COUPLING_ITERATIONS
@@ -401,7 +405,7 @@ pub struct LiquidScaleWorkVectorV1 {
     pub body_contributions: u64,
     pub fluid_wake_roots: u32,
     pub dispatches_per_outer_step: u32,
-    pub workgroups_per_outer_step: u64,
+    pub workgroups_per_outer_step: Option<u64>,
 }
 
 impl Validate for LiquidScaleWorkVectorV1 {
@@ -413,10 +417,9 @@ impl Validate for LiquidScaleWorkVectorV1 {
             || self.live_particles > self.particle_capacity
             || self.grid_insertions < u64::from(self.live_particles)
             || self.accepted_neighbors > self.neighbor_checks
-            || self.body_contributions < self.particle_body_contacts
-            || u64::from(self.fluid_wake_roots) > self.particle_body_contacts
+            || u64::from(self.fluid_wake_roots) > self.body_contributions
             || self.dispatches_per_outer_step == 0
-            || self.workgroups_per_outer_step == 0
+            || self.workgroups_per_outer_step == Some(0)
         {
             return Err(ContractError("invalid liquid scale work vector".to_owned()));
         }
@@ -501,6 +504,7 @@ pub struct LiquidScaleBenchmarkArtifactV1 {
     pub schema_version: u32,
     pub artifact_version: u32,
     pub scenario_id: String,
+    pub source_definition_hash: String,
     pub scenario_hash: String,
     pub host_kind: LiquidScaleHostKindV1,
     pub browser_version: Option<String>,
@@ -519,6 +523,7 @@ impl Validate for LiquidScaleBenchmarkArtifactV1 {
         if self.schema_version != SCHEMA_VERSION
             || self.artifact_version != LIQUID_SCALE_ARTIFACT_VERSION
             || self.scenario_id.is_empty()
+            || !is_sha256(&self.source_definition_hash)
             || !is_sha256(&self.scenario_hash)
             || self.build_profile != "release"
             || self.comparator_enabled
@@ -588,7 +593,7 @@ impl Validate for LiquidScaleBenchmarkArtifactV1 {
         }
         validate_required_capacity(
             &self.capacities,
-            "body-slots",
+            "bodies",
             u64::from(self.work.body_capacity),
             u64::from(self.work.live_bodies),
         )?;
@@ -670,6 +675,7 @@ mod tests {
             schema_version: SCHEMA_VERSION,
             artifact_version: LIQUID_SCALE_ARTIFACT_VERSION,
             scenario_id: "liquid-scale-solids-20-8192-v1".to_owned(),
+            source_definition_hash: "0".repeat(64),
             scenario_hash: "1".repeat(64),
             host_kind: LiquidScaleHostKindV1::NativeDesktop,
             browser_version: None,
@@ -715,11 +721,11 @@ mod tests {
                 body_contributions: 1,
                 fluid_wake_roots: 1,
                 dispatches_per_outer_step: 92,
-                workgroups_per_outer_step: 1,
+                workgroups_per_outer_step: Some(1),
             },
             capacities: vec![
                 CapacityRecordV1 {
-                    class: "body-slots".to_owned(),
+                    class: "bodies".to_owned(),
                     capacity_elements: 64,
                     used_elements: 23,
                     allocated_bytes: 1_024,

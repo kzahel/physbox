@@ -78,6 +78,11 @@ path = "src/bin/physbox-coupled-evidence.rs"
 test = false
 
 [[bin]]
+name = "physbox-liquid-scale"
+path = "src/bin/physbox-liquid-scale.rs"
+test = false
+
+[[bin]]
 name = "physbox-fluid-solid-overlap"
 path = "src/bin/physbox-fluid-solid-overlap.rs"
 test = false

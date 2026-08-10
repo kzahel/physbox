@@ -8,7 +8,11 @@ use physbox_contracts::{
 };
 use wgpu::util::DeviceExt;
 
-use crate::{GpuBodyStorage, body_lifecycle::KILL_ZONE_Y};
+use crate::{
+    GpuBodyStorage,
+    body_lifecycle::KILL_ZONE_Y,
+    gpu_timing::{GpuParticleTimestampPlan, GpuParticleTimingStage},
+};
 
 pub const MAX_PRODUCT_PARTICLE_CAPACITY: u32 = 32_768;
 pub const LIQUID_SANDBOX_PARTICLE_CAPACITY: u32 = 8_192;
@@ -64,6 +68,40 @@ pub struct GpuParticleDiagnosticsV4 {
     pub state_finite: bool,
     pub capacity_clean: bool,
     pub blocking_readback_for_advancement: bool,
+}
+
+struct ParticleTimestampCursor<'a> {
+    plan: Option<GpuParticleTimestampPlan<'a>>,
+    next_query: u32,
+}
+
+impl<'a> ParticleTimestampCursor<'a> {
+    const fn new(plan: Option<GpuParticleTimestampPlan<'a>>) -> Self {
+        Self {
+            plan,
+            next_query: 0,
+        }
+    }
+
+    fn next(
+        &mut self,
+        stage: GpuParticleTimingStage,
+    ) -> Option<wgpu::ComputePassTimestampWrites<'a>> {
+        let _ = stage;
+        let plan = self.plan?;
+        let query_offset = self.next_query;
+        self.next_query += 1;
+        let query_index = plan.query_base + query_offset;
+        Some(wgpu::ComputePassTimestampWrites {
+            query_set: plan.query_set,
+            beginning_of_pass_write_index: Some(query_index),
+            end_of_pass_write_index: None,
+        })
+    }
+
+    const fn query_count(&self) -> u32 {
+        self.next_query
+    }
 }
 
 #[repr(C)]
@@ -1141,12 +1179,23 @@ impl GpuParticleWorld {
     }
 
     pub fn encode_step(&self, encoder: &mut wgpu::CommandEncoder) {
+        self.encode_step_with_timestamps(encoder, None);
+    }
+
+    pub fn encode_step_with_timestamps(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        timestamp_plan: Option<GpuParticleTimestampPlan<'_>>,
+    ) {
+        let mut timestamps = ParticleTimestampCursor::new(timestamp_plan);
         self.dispatch(
             encoder,
             "particle_begin_step",
             &self.core_begin_step,
             &self.core_group,
             [1, 1, 1],
+            GpuParticleTimingStage::Compaction,
+            &mut timestamps,
         );
         for _ in 0..PARTICLE_SUBSTEPS {
             self.dispatch_capacity(
@@ -1154,71 +1203,105 @@ impl GpuParticleWorld {
                 "particle_integrate",
                 &self.core_integrate,
                 &self.core_group,
+                GpuParticleTimingStage::IntegrationAndBoundary,
+                &mut timestamps,
             );
-            self.encode_boundary_coupling(encoder, "particle_boundary_after_integrate");
+            self.encode_boundary_coupling(
+                encoder,
+                "particle_boundary_after_integrate",
+                &mut timestamps,
+            );
             for _ in 0..self.pressure_iterations {
-                self.encode_grid_rebuild(encoder);
+                self.encode_grid_rebuild(encoder, &mut timestamps);
                 self.dispatch_capacity(
                     encoder,
                     "particle_density",
                     &self.density_estimate,
                     &self.density_group,
+                    GpuParticleTimingStage::DensityAndCorrection,
+                    &mut timestamps,
                 );
-                self.encode_boundary_density(encoder, "particle_boundary_density");
-                self.encode_boundary_pressure_coupling(encoder);
+                self.encode_boundary_density(encoder, "particle_boundary_density", &mut timestamps);
+                self.encode_boundary_pressure_coupling(encoder, &mut timestamps);
                 self.dispatch_capacity(
                     encoder,
                     "particle_correction_gather",
                     &self.correction_gather,
                     &self.correction_group,
+                    GpuParticleTimingStage::DensityAndCorrection,
+                    &mut timestamps,
                 );
                 self.dispatch_capacity(
                     encoder,
                     "particle_correction_apply",
                     &self.correction_apply,
                     &self.correction_group,
+                    GpuParticleTimingStage::DensityAndCorrection,
+                    &mut timestamps,
                 );
-                self.encode_boundary_coupling(encoder, "particle_boundary_after_correction");
+                self.encode_boundary_coupling(
+                    encoder,
+                    "particle_boundary_after_correction",
+                    &mut timestamps,
+                );
             }
-            self.encode_grid_rebuild(encoder);
+            self.encode_grid_rebuild(encoder, &mut timestamps);
             self.dispatch_capacity(
                 encoder,
                 "particle_density_final",
                 &self.density_estimate,
                 &self.density_group,
+                GpuParticleTimingStage::DensityAndCorrection,
+                &mut timestamps,
             );
-            self.encode_boundary_density(encoder, "particle_boundary_density_final");
+            self.encode_boundary_density(
+                encoder,
+                "particle_boundary_density_final",
+                &mut timestamps,
+            );
             self.dispatch_capacity(
                 encoder,
                 "particle_velocity_reconstruct",
                 &self.velocity_reconstruct,
                 &self.velocity_group,
+                GpuParticleTimingStage::Velocity,
+                &mut timestamps,
             );
             self.dispatch_capacity(
                 encoder,
                 "particle_body_velocity",
                 &self.body_velocity_pipeline,
                 &self.body_velocity_group,
+                GpuParticleTimingStage::Velocity,
+                &mut timestamps,
             );
             self.encode_body_gather(
                 encoder,
                 "particle_body_velocity_gather",
                 &self.body_velocity_gather_pipeline,
+                &mut timestamps,
             );
             self.dispatch_capacity(
                 encoder,
                 "particle_viscosity_gather",
                 &self.velocity_gather,
                 &self.velocity_group,
+                GpuParticleTimingStage::Velocity,
+                &mut timestamps,
             );
             self.dispatch_capacity(
                 encoder,
                 "particle_viscosity_apply",
                 &self.velocity_apply,
                 &self.velocity_group,
+                GpuParticleTimingStage::Velocity,
+                &mut timestamps,
             );
         }
-        self.encode_active_compaction(encoder);
+        self.encode_active_compaction(encoder, &mut timestamps);
+        if timestamp_plan.is_some() {
+            debug_assert_eq!(timestamps.query_count(), self.dispatches_per_step());
+        }
     }
 
     pub fn encode_commands(
@@ -1250,11 +1333,14 @@ impl GpuParticleWorld {
         if commands.is_empty() {
             return Ok(());
         }
+        let mut timestamps = ParticleTimestampCursor::new(None);
         self.dispatch_capacity(
             encoder,
             "particle_tool_erase",
             &self.tools_erase,
             &self.tools_group,
+            GpuParticleTimingStage::Compaction,
+            &mut timestamps,
         );
         if has_spawn {
             self.dispatch(
@@ -1263,20 +1349,25 @@ impl GpuParticleWorld {
                 &self.tools_spawn,
                 &self.tools_group,
                 [1, 1, 1],
+                GpuParticleTimingStage::Compaction,
+                &mut timestamps,
             );
         }
-        self.encode_active_compaction(encoder);
+        self.encode_active_compaction(encoder, &mut timestamps);
         Ok(())
     }
 
     pub fn encode_reset(&self, encoder: &mut wgpu::CommandEncoder) {
+        let mut timestamps = ParticleTimestampCursor::new(None);
         self.dispatch_capacity(
             encoder,
             "particle_reset",
             &self.reset_pipeline,
             &self.reset_group,
+            GpuParticleTimingStage::Compaction,
+            &mut timestamps,
         );
-        self.encode_active_compaction(encoder);
+        self.encode_active_compaction(encoder, &mut timestamps);
     }
 
     #[cfg(any(feature = "engine-internal", all(test, not(feature = "sim-owner"))))]
@@ -1331,6 +1422,35 @@ impl GpuParticleWorld {
 
     pub fn dispatches_per_step(&self) -> u32 {
         1 + PARTICLE_SUBSTEPS * (4 + self.pressure_iterations * 14 + 12) + 3
+    }
+
+    pub fn timestamp_stages_per_step(&self) -> Vec<GpuParticleTimingStage> {
+        let mut stages = Vec::with_capacity(self.dispatches_per_step() as usize);
+        stages.push(GpuParticleTimingStage::Compaction);
+        for _ in 0..PARTICLE_SUBSTEPS {
+            stages.extend([
+                GpuParticleTimingStage::IntegrationAndBoundary,
+                GpuParticleTimingStage::IntegrationAndBoundary,
+                GpuParticleTimingStage::BodyReaction,
+                GpuParticleTimingStage::BodyReaction,
+            ]);
+            for _ in 0..self.pressure_iterations {
+                stages.extend([GpuParticleTimingStage::Grid; 4]);
+                stages.extend([GpuParticleTimingStage::DensityAndCorrection; 3]);
+                stages.extend([GpuParticleTimingStage::BodyReaction; 2]);
+                stages.extend([GpuParticleTimingStage::DensityAndCorrection; 2]);
+                stages.push(GpuParticleTimingStage::IntegrationAndBoundary);
+                stages.extend([GpuParticleTimingStage::BodyReaction; 2]);
+            }
+            stages.extend([GpuParticleTimingStage::Grid; 4]);
+            stages.extend([GpuParticleTimingStage::DensityAndCorrection; 2]);
+            stages.extend([GpuParticleTimingStage::Velocity; 2]);
+            stages.extend([GpuParticleTimingStage::BodyReaction; 2]);
+            stages.extend([GpuParticleTimingStage::Velocity; 2]);
+        }
+        stages.extend([GpuParticleTimingStage::Compaction; 3]);
+        debug_assert_eq!(stages.len(), self.dispatches_per_step() as usize);
+        stages
     }
 
     pub fn capacities(&self) -> Vec<CapacityRecordV1> {
@@ -1596,19 +1716,27 @@ impl GpuParticleWorld {
         })
     }
 
-    fn encode_grid_rebuild(&self, encoder: &mut wgpu::CommandEncoder) {
+    fn encode_grid_rebuild(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        timestamps: &mut ParticleTimestampCursor<'_>,
+    ) {
         self.dispatch(
             encoder,
             "particle_grid_clear",
             &self.grid_clear,
             &self.grid_group,
             [GRID_CELL_COUNT.div_ceil(PARTICLE_WORKGROUP_SIZE), 1, 1],
+            GpuParticleTimingStage::Grid,
+            timestamps,
         );
         self.dispatch_active(
             encoder,
             "particle_grid_count",
             &self.grid_count,
             &self.grid_group,
+            GpuParticleTimingStage::Grid,
+            timestamps,
         );
         self.dispatch(
             encoder,
@@ -1616,35 +1744,53 @@ impl GpuParticleWorld {
             &self.grid_scan_ranges,
             &self.grid_group,
             [1, 1, 1],
+            GpuParticleTimingStage::Grid,
+            timestamps,
         );
         self.dispatch_active(
             encoder,
             "particle_grid_scatter",
             &self.grid_scatter,
             &self.grid_group,
+            GpuParticleTimingStage::Grid,
+            timestamps,
         );
     }
 
-    fn encode_boundary_density(&self, encoder: &mut wgpu::CommandEncoder, label: &'static str) {
+    fn encode_boundary_density(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        label: &'static str,
+        timestamps: &mut ParticleTimestampCursor<'_>,
+    ) {
         self.dispatch_capacity(
             encoder,
             label,
             &self.boundary_density_pipeline,
             &self.boundary_density_group,
+            GpuParticleTimingStage::DensityAndCorrection,
+            timestamps,
         );
     }
 
-    fn encode_boundary_pressure_coupling(&self, encoder: &mut wgpu::CommandEncoder) {
+    fn encode_boundary_pressure_coupling(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        timestamps: &mut ParticleTimestampCursor<'_>,
+    ) {
         self.dispatch_capacity(
             encoder,
             "particle_boundary_pressure",
             &self.boundary_pressure_pipeline,
             &self.boundary_pressure_group,
+            GpuParticleTimingStage::DensityAndCorrection,
+            timestamps,
         );
         self.encode_body_gather(
             encoder,
             "particle_body_pressure_gather",
             &self.body_position_gather_pipeline,
+            timestamps,
         );
     }
 
@@ -1652,17 +1798,21 @@ impl GpuParticleWorld {
         &self,
         encoder: &mut wgpu::CommandEncoder,
         boundary_label: &'static str,
+        timestamps: &mut ParticleTimestampCursor<'_>,
     ) {
         self.dispatch_capacity(
             encoder,
             boundary_label,
             &self.boundary_project,
             &self.boundary_group,
+            GpuParticleTimingStage::IntegrationAndBoundary,
+            timestamps,
         );
         self.encode_body_gather(
             encoder,
             "particle_body_gather",
             &self.body_position_gather_pipeline,
+            timestamps,
         );
     }
 
@@ -1671,6 +1821,7 @@ impl GpuParticleWorld {
         encoder: &mut wgpu::CommandEncoder,
         gather_label: &'static str,
         gather_pipeline: &wgpu::ComputePipeline,
+        timestamps: &mut ParticleTimestampCursor<'_>,
     ) {
         self.dispatch(
             encoder,
@@ -1682,6 +1833,8 @@ impl GpuParticleWorld {
                 self.body_capacity.div_ceil(PARTICLE_WORKGROUP_SIZE),
                 1,
             ],
+            GpuParticleTimingStage::BodyReaction,
+            timestamps,
         );
         self.dispatch(
             encoder,
@@ -1689,22 +1842,32 @@ impl GpuParticleWorld {
             gather_pipeline,
             &self.body_gather_group,
             [self.body_capacity.div_ceil(PARTICLE_WORKGROUP_SIZE), 1, 1],
+            GpuParticleTimingStage::BodyReaction,
+            timestamps,
         );
     }
 
-    fn encode_active_compaction(&self, encoder: &mut wgpu::CommandEncoder) {
+    fn encode_active_compaction(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        timestamps: &mut ParticleTimestampCursor<'_>,
+    ) {
         self.dispatch(
             encoder,
             "particle_active_clear",
             &self.core_clear_active,
             &self.core_group,
             [1, 1, 1],
+            GpuParticleTimingStage::Compaction,
+            timestamps,
         );
         self.dispatch_capacity(
             encoder,
             "particle_active_compact",
             &self.core_compact_active,
             &self.core_group,
+            GpuParticleTimingStage::Compaction,
+            timestamps,
         );
         self.dispatch(
             encoder,
@@ -1712,6 +1875,8 @@ impl GpuParticleWorld {
             &self.core_finalize_active,
             &self.core_group,
             [1, 1, 1],
+            GpuParticleTimingStage::Compaction,
+            timestamps,
         );
     }
 
@@ -1721,6 +1886,8 @@ impl GpuParticleWorld {
         label: &'static str,
         pipeline: &wgpu::ComputePipeline,
         group: &wgpu::BindGroup,
+        stage: GpuParticleTimingStage,
+        timestamps: &mut ParticleTimestampCursor<'_>,
     ) {
         self.dispatch(
             encoder,
@@ -1728,6 +1895,8 @@ impl GpuParticleWorld {
             pipeline,
             group,
             [self.capacity.div_ceil(PARTICLE_WORKGROUP_SIZE), 1, 1],
+            stage,
+            timestamps,
         );
     }
 
@@ -1737,10 +1906,12 @@ impl GpuParticleWorld {
         label: &'static str,
         pipeline: &wgpu::ComputePipeline,
         group: &wgpu::BindGroup,
+        stage: GpuParticleTimingStage,
+        timestamps: &mut ParticleTimestampCursor<'_>,
     ) {
         let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some(label),
-            timestamp_writes: None,
+            timestamp_writes: timestamps.next(stage),
         });
         pass.set_pipeline(pipeline);
         pass.set_bind_group(0, group, &[]);
@@ -1750,6 +1921,7 @@ impl GpuParticleWorld {
         );
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn dispatch(
         &self,
         encoder: &mut wgpu::CommandEncoder,
@@ -1757,10 +1929,12 @@ impl GpuParticleWorld {
         pipeline: &wgpu::ComputePipeline,
         group: &wgpu::BindGroup,
         workgroups: [u32; 3],
+        stage: GpuParticleTimingStage,
+        timestamps: &mut ParticleTimestampCursor<'_>,
     ) {
         let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some(label),
-            timestamp_writes: None,
+            timestamp_writes: timestamps.next(stage),
         });
         pass.set_pipeline(pipeline);
         pass.set_bind_group(0, group, &[]);

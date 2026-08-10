@@ -1244,7 +1244,10 @@ impl GpuBodyWorld {
                             ..(particle_range.start + particle_range.count) as usize],
                     )?;
                 }
-                particles.encode_step(encoder);
+                particles.encode_step_with_timestamps(
+                    encoder,
+                    frame_timestamps.and_then(GpuFrameTimestampPlan::particle_timestamps),
+                );
                 if let Some(generated) = &self.generated_contacts {
                     generated.encode_post_fluid_stabilization(encoder);
                 }
@@ -1357,6 +1360,14 @@ impl GpuBodyWorld {
         self.particles
             .as_ref()
             .map_or(0, GpuParticleWorld::dispatches_per_step)
+    }
+
+    pub fn particle_timestamp_stages_per_step(
+        &self,
+    ) -> Vec<crate::gpu_timing::GpuParticleTimingStage> {
+        self.particles
+            .as_ref()
+            .map_or_else(Vec::new, GpuParticleWorld::timestamp_stages_per_step)
     }
 
     pub fn particle_validation_layout(
