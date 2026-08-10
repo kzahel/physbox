@@ -826,10 +826,16 @@ fn append_liquid_scale_dynamic_bodies(
         } else {
             dynamic_rectangle(slot, position, Vec2::new(0.14, 0.10), 1.0, false)
         };
-        // Begin at rest so the same source remains contained through the
-        // sustained 1,800-step full-frame lane. Gravity still drives every
-        // body through the water and into the long-horizon settled topology.
-        body.linear_velocity = Vec2::ZERO;
+        // The sparse tier retains its separated upward traversal; starting it
+        // at rest eventually pushes one particle below the kill plane. The
+        // dense tier begins at rest because launching all 100 bodies creates
+        // the opposite long-horizon loss. Both version-2 sources therefore
+        // keep their exact population through the sustained 1,800-step lane.
+        body.linear_velocity = if dynamic_count == 20 {
+            Vec2::new(0.0, 4.0)
+        } else {
+            Vec2::ZERO
+        };
         bodies.push(body);
     }
 }

@@ -755,7 +755,7 @@ Four-target particle/body correction, 2026-08-10: the first paced 1,800-step
 overflows despite retaining the full particle population. The selected four-
 plane candidate adds another `327,680` bytes at 8,192 slots, keeps 92 particle
 dispatches, accepts four simultaneous generation-checked targets, and fails
-closed on a fifth. On the same version-2 at-rest source, short two/four-record
+closed on a fifth. On the same version-2 dense-tier source, short two/four-record
 P50/P95 was `8.384/11.270 ms` versus `8.485/9.735 ms`; no performance
 regression is established. The four-record 100+8K native full-frame candidate
 retained all 8,192 particles with zero overflow over 1,800 steps and measured

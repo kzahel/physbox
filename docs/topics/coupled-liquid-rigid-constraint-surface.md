@@ -202,8 +202,9 @@ permanent focused fixture accepts four simultaneous dynamic targets and
 requires a fifth to fail closed. The wider planar layout does not add a
 dispatch or change pressure, integration, coupling, or reduction order. At
 8,192 particle slots it adds `327,680` bytes over the two-record layout. The
-benchmark source is version 2 and starts its separated solids at rest so the
-same authored topology remains contained through the sustained window.
+benchmark source is version 2 and uses tier-specific initial motion so the
+same authored topology remains contained through the sustained window: the
+sparse tier keeps its upward traversal, while the dense tier starts at rest.
 
 S35 opens a distinct fluid/solid contact-stabilization experiment after later
 review demonstrated that deliberately overlapped rigid bodies can recover in

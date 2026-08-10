@@ -447,8 +447,10 @@ passed 1,800 frames at `16.193 ms` host P95 and `0.999963` effective scale.
 The first 100+8K run rejected the two-record contribution capacity with 350
 overflows and 13 lost particles. A controlled at-rest source retained all
 particles but still exposed 372 overflows. The version-2 source therefore
-starts the separated solids at rest, and the admitted four-record bounded
-layout accepts four simultaneous targets while a fifth fails closed. Its dirty
+retains the sparse tier's upward traversal and starts only the dense tier at
+rest; both exact populations remain contained for 1,800 steps. The admitted
+four-record bounded layout accepts four simultaneous targets while a fifth
+fails closed. Its dirty
 candidate 100+8K native row retained all 8,192 particles, reported zero
 overflow, and measured `11.306/14.464/16.164 ms` host P50/P95/P99,
 `0.999975` effective scale, and `0.000764` seconds slip. Clean native and
