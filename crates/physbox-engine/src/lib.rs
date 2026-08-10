@@ -231,12 +231,14 @@ pub use liquid_scale_benchmark::{
     LiquidScaleTimingModeV1, LiquidScaleTimingSeriesV1, LiquidScaleTimingsV1,
     LiquidScaleWorkVectorV1,
 };
-#[cfg(all(feature = "solver-lab", not(target_arch = "wasm32")))]
-pub use liquid_scale_benchmark_runner::run_liquid_scale_physics_benchmark;
 #[cfg(feature = "solver-lab")]
 pub use liquid_scale_benchmark_runner::{
     LiquidScaleBenchmarkSession, LiquidScaleFinalReadback, LiquidScalePhysicsBenchmarkRun,
     PendingLiquidScaleCompletion, PendingLiquidScaleReadback,
+};
+#[cfg(all(feature = "solver-lab", not(target_arch = "wasm32")))]
+pub use liquid_scale_benchmark_runner::{
+    run_liquid_scale_full_frame_benchmark, run_liquid_scale_physics_benchmark,
 };
 #[cfg(all(feature = "solver-lab", not(target_arch = "wasm32")))]
 pub use pair_slot_persistence::{

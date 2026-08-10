@@ -6,7 +6,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use physbox_contracts::{NamedValueV1, ProvenanceV1};
 use physbox_engine::{
     LIQUID_SCALE_SUCCESS_SENTINEL, LiquidScaleBenchmarkConfigV1, LiquidScaleHostKindV1,
-    LiquidScaleSolidTier, run_liquid_scale_physics_benchmark,
+    LiquidScaleSolidTier, run_liquid_scale_full_frame_benchmark,
+    run_liquid_scale_physics_benchmark,
 };
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -14,6 +15,9 @@ use sha2::{Digest, Sha256};
 const SUITE_VERSION: u32 = 1;
 const DEFAULT_WARMUP_STEPS: u32 = 16;
 const DEFAULT_RETAINED_SAMPLES: u32 = 30;
+const FULL_FRAME_RETAINED_SAMPLES: u32 = 1_800;
+const FULL_FRAME_DURATION_SECONDS: f64 = 30.0;
+const FULL_FRAME_RENDER_EXTENT: [u32; 2] = [960, 600];
 
 #[derive(Clone, Debug)]
 struct Arguments {
@@ -21,6 +25,7 @@ struct Arguments {
     output: PathBuf,
     warmup_steps: u32,
     retained_samples: u32,
+    full_frame: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -106,13 +111,24 @@ fn execute_matrix(
     let rows = matrix_rows(&arguments.matrix);
     let mut artifacts = Vec::with_capacity(rows.len());
     for (solid_tier, particle_count, particle_capacity) in rows {
-        let config = LiquidScaleBenchmarkConfigV1::physics_only(
-            solid_tier,
-            particle_count,
-            arguments.warmup_steps,
-            arguments.retained_samples,
-        )
-        .with_particle_capacity(particle_capacity);
+        let config = if arguments.full_frame {
+            LiquidScaleBenchmarkConfigV1::full_frame(
+                solid_tier,
+                particle_count,
+                arguments.warmup_steps,
+                arguments.retained_samples,
+                FULL_FRAME_RENDER_EXTENT,
+                FULL_FRAME_DURATION_SECONDS,
+            )
+        } else {
+            LiquidScaleBenchmarkConfigV1::physics_only(
+                solid_tier,
+                particle_count,
+                arguments.warmup_steps,
+                arguments.retained_samples,
+            )
+            .with_particle_capacity(particle_capacity)
+        };
         let provenance = ProvenanceV1 {
             run_id: run_id.to_owned(),
             source_revision: source_revision.clone(),
@@ -144,7 +160,12 @@ fn execute_matrix(
                 },
                 NamedValueV1 {
                     name: "timing-mode".to_owned(),
-                    value: "physics-only-explicit-steps".to_owned(),
+                    value: if arguments.full_frame {
+                        "full-frame-interactive"
+                    } else {
+                        "physics-only-explicit-steps"
+                    }
+                    .to_owned(),
                 },
             ],
         };
@@ -153,9 +174,15 @@ fn execute_matrix(
         } else {
             LiquidScaleHostKindV1::NativeDesktop
         };
-        let run = pollster::block_on(run_liquid_scale_physics_benchmark(
-            config, host_kind, provenance,
-        ))?;
+        let run = if arguments.full_frame {
+            pollster::block_on(run_liquid_scale_full_frame_benchmark(
+                config, host_kind, provenance,
+            ))?
+        } else {
+            pollster::block_on(run_liquid_scale_physics_benchmark(
+                config, host_kind, provenance,
+            ))?
+        };
         let name = format!("{}.json", run.artifact.scenario_id);
         atomic_json(&staging.join(&name), &run.artifact)?;
         println!(
@@ -184,6 +211,7 @@ fn parse_arguments() -> Result<Arguments, String> {
     let mut values = std::env::args().skip(1).collect::<Vec<_>>();
     let mut warmup_steps = DEFAULT_WARMUP_STEPS;
     let mut retained_samples = DEFAULT_RETAINED_SAMPLES;
+    let mut samples_explicit = false;
     while values.len() >= 2 {
         let option_index = values.len() - 2;
         match values[option_index].as_str() {
@@ -193,14 +221,15 @@ fn parse_arguments() -> Result<Arguments, String> {
             }
             "--samples" => {
                 retained_samples = positive_u32("samples", &values[option_index + 1])?;
+                samples_explicit = true;
                 values.truncate(option_index);
             }
             _ => break,
         }
     }
-    let (matrix, output) = match values.as_slice() {
-        [mode, output] if mode == "selected" => (Matrix::Selected, PathBuf::from(output)),
-        [mode, output] if mode == "full" => (Matrix::Full, PathBuf::from(output)),
+    let (matrix, output, full_frame) = match values.as_slice() {
+        [mode, output] if mode == "selected" => (Matrix::Selected, PathBuf::from(output), false),
+        [mode, output] if mode == "full" => (Matrix::Full, PathBuf::from(output), false),
         [mode, tier, particles, output] if mode == "row" => (
             Matrix::Row {
                 solid_tier: parse_tier(tier)?,
@@ -208,6 +237,16 @@ fn parse_arguments() -> Result<Arguments, String> {
                 particle_capacity: parse_particles(particles)?,
             },
             PathBuf::from(output),
+            false,
+        ),
+        [mode, tier, particles, output] if mode == "full-frame" => (
+            Matrix::Row {
+                solid_tier: parse_tier(tier)?,
+                particle_count: parse_particles(particles)?,
+                particle_capacity: parse_particles(particles)?,
+            },
+            PathBuf::from(output),
+            true,
         ),
         [mode, tier, particles, capacity, output] if mode == "fixed-reserve" => (
             Matrix::Row {
@@ -216,19 +255,24 @@ fn parse_arguments() -> Result<Arguments, String> {
                 particle_capacity: parse_particles(capacity)?,
             },
             PathBuf::from(output),
+            false,
         ),
         _ => {
             return Err(
-                "usage: physbox-liquid-scale selected|full OUTPUT [--warmup N] [--samples N]\n       physbox-liquid-scale row water-only|20|100 1024|4096|8192|16384|32768 OUTPUT [--warmup N] [--samples N]\n       physbox-liquid-scale fixed-reserve water-only|20|100 0|1|1024|4096|8192 8192 OUTPUT [--warmup N] [--samples N]"
+                "usage: physbox-liquid-scale selected|full OUTPUT [--warmup N] [--samples N]\n       physbox-liquid-scale row|full-frame water-only|20|100 1024|4096|8192|16384|32768 OUTPUT [--warmup N] [--samples N]\n       physbox-liquid-scale fixed-reserve water-only|20|100 0|1|1024|4096|8192 8192 OUTPUT [--warmup N] [--samples N]"
                     .to_owned(),
             );
         }
     };
+    if full_frame && !samples_explicit {
+        retained_samples = FULL_FRAME_RETAINED_SAMPLES;
+    }
     Ok(Arguments {
         matrix,
         output,
         warmup_steps,
         retained_samples,
+        full_frame,
     })
 }
 
@@ -382,8 +426,8 @@ mod tests {
     fn full_matrix_keeps_32k_at_the_raw_capacity_frontier() {
         let rows = matrix_rows(&Matrix::Full);
         assert_eq!(rows.len(), 11);
-        assert!(rows.contains(&(LiquidScaleSolidTier::WaterOnly, 32_768)));
-        assert!(!rows.contains(&(LiquidScaleSolidTier::Solids20, 32_768)));
-        assert!(!rows.contains(&(LiquidScaleSolidTier::Solids100, 32_768)));
+        assert!(rows.contains(&(LiquidScaleSolidTier::WaterOnly, 32_768, 32_768)));
+        assert!(!rows.contains(&(LiquidScaleSolidTier::Solids20, 32_768, 32_768)));
+        assert!(!rows.contains(&(LiquidScaleSolidTier::Solids100, 32_768, 32_768)));
     }
 }

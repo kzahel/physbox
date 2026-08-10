@@ -11,15 +11,28 @@ const output = process.env.PHYSBOX5_LIQUID_SCALE_OUTPUT
   ?? "/tmp/physbox5-browser-liquid-scale.json";
 const temporary = `${output}.tmp`;
 const solidTier = process.env.PHYSBOX5_LIQUID_SOLIDS ?? "20";
+const timingMode = process.env.PHYSBOX5_LIQUID_TIMING_MODE ?? "physics-only";
 const particleCount = nonnegativeInteger("PHYSBOX5_LIQUID_PARTICLES", "4096");
 const particleCapacity = positiveInteger(
   "PHYSBOX5_LIQUID_CAPACITY",
   String(particleCount),
 );
 const warmupSteps = positiveInteger("PHYSBOX5_LIQUID_WARMUP", "16");
-const samples = positiveInteger("PHYSBOX5_LIQUID_SAMPLES", "30");
+const samples = positiveInteger(
+  "PHYSBOX5_LIQUID_SAMPLES",
+  timingMode === "full-frame" ? "1800" : "30",
+);
+const renderWidth = positiveInteger("PHYSBOX5_LIQUID_RENDER_WIDTH", "960");
+const renderHeight = positiveInteger("PHYSBOX5_LIQUID_RENDER_HEIGHT", "600");
+const interactiveDurationSeconds = positiveNumber(
+  "PHYSBOX5_LIQUID_DURATION_SECONDS",
+  "30",
+);
 if (!["water-only", "20", "100"].includes(solidTier)) {
   throw new Error("PHYSBOX5_LIQUID_SOLIDS must be water-only, 20, or 100");
+}
+if (!["physics-only", "full-frame"].includes(timingMode)) {
+  throw new Error("PHYSBOX5_LIQUID_TIMING_MODE must be physics-only or full-frame");
 }
 
 await rm(output, { force: true });
@@ -75,6 +88,10 @@ try {
         parameters.browserVersion,
         parameters.browserHost,
         parameters.toolchain,
+        parameters.timingMode,
+        parameters.renderWidth,
+        parameters.renderHeight,
+        parameters.interactiveDurationSeconds,
       ));
     },
     {
@@ -90,6 +107,10 @@ try {
       browserVersion,
       browserHost,
       toolchain: `${rustcVersion}; wasm-bindgen-cli 0.2.125`,
+      timingMode,
+      renderWidth,
+      renderHeight,
+      interactiveDurationSeconds,
     },
   );
   if (errors.length) throw new Error(`browser errors: ${errors.join("; ")}`);
@@ -113,6 +134,12 @@ function positiveInteger(name, fallback) {
 function nonnegativeInteger(name, fallback) {
   const value = Number(process.env[name] ?? fallback);
   if (!Number.isSafeInteger(value) || value < 0) throw new Error(`${name} must be nonnegative`);
+  return value;
+}
+
+function positiveNumber(name, fallback) {
+  const value = Number(process.env[name] ?? fallback);
+  if (!Number.isFinite(value) || value <= 0) throw new Error(`${name} must be positive`);
   return value;
 }
 

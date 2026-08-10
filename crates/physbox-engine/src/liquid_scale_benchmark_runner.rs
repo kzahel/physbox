@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::mem::size_of;
 use std::sync::{Arc, Mutex};
 #[cfg(not(target_arch = "wasm32"))]
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use physbox_contracts::{
     BodyCommandBatchV1, BodyStateV1, COLLISION_CAPACITY_COUNTER_BYTES, ConstructionIntentBatchV1,
@@ -21,6 +21,7 @@ use crate::gpu_context::{
 };
 use crate::grab::empty_grab_intent_batch;
 use crate::particle_world::ParticleValidationLayout;
+use crate::physics_render::{PhysicsRenderer, RenderOptions, RenderTarget, ViewTransform};
 use crate::{
     LIQUID_SCALE_ARTIFACT_VERSION, LIQUID_SCALE_PERCENTILE_METHOD, LiquidScaleBenchmarkArtifactV1,
     LiquidScaleBenchmarkConfigV1, LiquidScaleBenchmarkSourceV1, LiquidScaleCorrectnessV1,
@@ -54,8 +55,19 @@ pub struct LiquidScaleBenchmarkSession {
     construction_batch: ConstructionIntentBatchV1,
     particle_stages: Vec<GpuParticleTimingStage>,
     timestamps: Option<TimestampResources>,
+    renderer: Option<PhysicsRenderer>,
+    _render_texture: Option<wgpu::Texture>,
+    render_view: Option<wgpu::TextureView>,
+    render_transform: Option<ViewTransform>,
+    frame_index: u64,
     warmup_submitted: bool,
     submitted_samples: u32,
+}
+
+#[derive(Clone, Copy)]
+struct PacingEvidence {
+    effective_simulation_scale: f64,
+    slipped_wall_seconds: f64,
 }
 
 impl LiquidScaleBenchmarkSession {
@@ -66,9 +78,6 @@ impl LiquidScaleBenchmarkSession {
         provenance: ProvenanceV1,
     ) -> Result<Self, String> {
         config.validate().map_err(|error| error.to_string())?;
-        if config.timing_mode != LiquidScaleTimingModeV1::PhysicsOnlyExplicitSteps {
-            return Err("liquid physics benchmark requires explicit-step timing".to_owned());
-        }
         if cfg!(feature = "box2d-comparator") {
             return Err("liquid benchmark rejects a comparator-enabled build".to_owned());
         }
@@ -111,13 +120,18 @@ impl LiquidScaleBenchmarkSession {
             .warmup_steps
             .checked_add(config.retained_samples)
             .ok_or_else(|| "liquid benchmark step count overflowed".to_owned())?;
-        if total_steps > source.scenario.requested_steps {
+        if config.timing_mode == LiquidScaleTimingModeV1::PhysicsOnlyExplicitSteps
+            && total_steps > source.scenario.requested_steps
+        {
             return Err(format!(
                 "liquid benchmark requests {total_steps} steps from source window {}",
                 source.scenario.requested_steps
             ));
         }
         let mut scenario = source.scenario.clone();
+        if config.timing_mode == LiquidScaleTimingModeV1::FullFrameInteractive {
+            scenario.requested_steps = total_steps;
+        }
         let profile = SolverProfileConfig::default();
         profile.apply_to_scenario(&mut scenario.rigid)?;
         scenario.validate().map_err(|error| error.to_string())?;
@@ -126,7 +140,9 @@ impl LiquidScaleBenchmarkSession {
         let instance = create_instance();
         let adapter = request_adapter(&instance, None).await?;
         let adapter_diagnostics = AdapterDiagnostics::from_adapter(&adapter);
-        let timestamps_available = adapter.features().contains(wgpu::Features::TIMESTAMP_QUERY);
+        let timestamps_available = config.timing_mode
+            == LiquidScaleTimingModeV1::PhysicsOnlyExplicitSteps
+            && adapter.features().contains(wgpu::Features::TIMESTAMP_QUERY);
         let required_features = if timestamps_available {
             wgpu::Features::TIMESTAMP_QUERY
         } else {
@@ -154,6 +170,34 @@ impl LiquidScaleBenchmarkSession {
                 "liquid benchmark world did not create the exact particle population".to_owned(),
             );
         }
+        let (renderer, render_texture, render_view, render_transform) =
+            if config.timing_mode == LiquidScaleTimingModeV1::FullFrameInteractive {
+                let extent = config
+                    .render_extent
+                    .expect("validated full-frame liquid extent exists");
+                let format = wgpu::TextureFormat::Rgba8UnormSrgb;
+                let texture = device.create_texture(&wgpu::TextureDescriptor {
+                    label: Some("physbox5_liquid_scale_render_target"),
+                    size: wgpu::Extent3d {
+                        width: extent[0],
+                        height: extent[1],
+                        depth_or_array_layers: 1,
+                    },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format,
+                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                    view_formats: &[],
+                });
+                let view = texture.create_view(&Default::default());
+                let renderer = PhysicsRenderer::new(&device, format, world.engine_resources())
+                    .map_err(|error| error.to_string())?;
+                let transform = liquid_render_transform(&scenario, extent)?;
+                (Some(renderer), Some(texture), Some(view), Some(transform))
+            } else {
+                (None, None, None, None)
+            };
         let particle_stages = world.particle_timestamp_stages_per_step();
         if particle_stages.len() as u32 != world.particle_dispatches_per_step() {
             return Err(
@@ -189,6 +233,11 @@ impl LiquidScaleBenchmarkSession {
             construction_batch: empty_construction_intent_batch(),
             particle_stages,
             timestamps,
+            renderer,
+            _render_texture: render_texture,
+            render_view,
+            render_transform,
+            frame_index: 0,
             warmup_submitted: false,
             submitted_samples: 0,
         })
@@ -221,6 +270,7 @@ impl LiquidScaleBenchmarkSession {
                     frame_timestamps: None,
                 },
             )?;
+            self.encode_render(&mut encoder)?;
             self.queue.submit([encoder.finish()]);
         }
         self.warmup_submitted = true;
@@ -263,6 +313,7 @@ impl LiquidScaleBenchmarkSession {
                 }),
             },
         )?;
+        self.encode_render(&mut encoder)?;
         if let Some(timestamps) = &self.timestamps {
             encoder.resolve_query_set(
                 &timestamps.query_set,
@@ -273,6 +324,39 @@ impl LiquidScaleBenchmarkSession {
         }
         self.queue.submit([encoder.finish()]);
         self.submitted_samples += 1;
+        Ok(())
+    }
+
+    fn encode_render(&mut self, encoder: &mut wgpu::CommandEncoder) -> Result<(), String> {
+        let Some(renderer) = &self.renderer else {
+            return Ok(());
+        };
+        let extent = self
+            .config
+            .render_extent
+            .expect("full-frame liquid renderer has an extent");
+        renderer
+            .encode(
+                &self.queue,
+                encoder,
+                RenderTarget {
+                    color_view: self
+                        .render_view
+                        .as_ref()
+                        .expect("full-frame liquid renderer has a target view"),
+                    size: extent,
+                },
+                RenderOptions {
+                    frame_index: self.frame_index,
+                    view: self
+                        .render_transform
+                        .expect("full-frame liquid renderer has a view transform"),
+                    current_outer_step: self.frame_index.min(u64::from(u32::MAX)) as u32,
+                    ..RenderOptions::default()
+                },
+            )
+            .map_err(|error| error.to_string())?;
+        self.frame_index += 1;
         Ok(())
     }
 
@@ -377,6 +461,54 @@ impl LiquidScaleBenchmarkSession {
         cpu_seconds: Vec<f64>,
         host_seconds: Vec<f64>,
     ) -> Result<LiquidScalePhysicsBenchmarkRun, String> {
+        if self.config.timing_mode != LiquidScaleTimingModeV1::PhysicsOnlyExplicitSteps {
+            return Err("full-frame liquid benchmark requires pacing evidence".to_owned());
+        }
+        self.complete_with_pacing(readback, cpu_seconds, host_seconds, None)
+    }
+
+    pub fn complete_full_frame(
+        self,
+        readback: LiquidScaleFinalReadback,
+        cpu_seconds: Vec<f64>,
+        host_seconds: Vec<f64>,
+        elapsed_seconds: f64,
+    ) -> Result<LiquidScalePhysicsBenchmarkRun, String> {
+        if self.config.timing_mode != LiquidScaleTimingModeV1::FullFrameInteractive {
+            return Err("explicit-step liquid benchmark cannot carry pacing evidence".to_owned());
+        }
+        let requested_duration = self
+            .config
+            .interactive_duration_seconds
+            .expect("validated full-frame liquid duration exists");
+        if !elapsed_seconds.is_finite() || elapsed_seconds < requested_duration {
+            return Err(format!(
+                "full-frame liquid benchmark elapsed {elapsed_seconds:.6}s before its requested {requested_duration:.6}s duration"
+            ));
+        }
+        let simulated_seconds = f64::from(self.config.retained_samples)
+            * f64::from(self.config.outer_steps_per_sample)
+            * self.config.outer_dt_seconds;
+        let effective_simulation_scale = (simulated_seconds / elapsed_seconds).min(1.0);
+        let slipped_wall_seconds = (elapsed_seconds - simulated_seconds).max(0.0);
+        self.complete_with_pacing(
+            readback,
+            cpu_seconds,
+            host_seconds,
+            Some(PacingEvidence {
+                effective_simulation_scale,
+                slipped_wall_seconds,
+            }),
+        )
+    }
+
+    fn complete_with_pacing(
+        self,
+        readback: LiquidScaleFinalReadback,
+        cpu_seconds: Vec<f64>,
+        host_seconds: Vec<f64>,
+        pacing: Option<PacingEvidence>,
+    ) -> Result<LiquidScalePhysicsBenchmarkRun, String> {
         if cpu_seconds.len() != self.config.retained_samples as usize
             || host_seconds.len() != self.config.retained_samples as usize
         {
@@ -409,7 +541,11 @@ impl LiquidScaleBenchmarkSession {
             host_seconds,
             self.queue.get_timestamp_period(),
         )?;
-        let mut capacities = self.world.benchmark_capacities(0, 0);
+        let extent = self.config.render_extent.unwrap_or([0, 0]);
+        let mut capacities = self.world.benchmark_capacities(extent[0], extent[1]);
+        if let Some(renderer) = &self.renderer {
+            capacities.extend(renderer.capacity_records(extent[0], extent[1]));
+        }
         capacities.sort_by(|left, right| left.class.cmp(&right.class));
         for capacity in &capacities {
             capacity.validate().map_err(|error| error.to_string())?;
@@ -439,6 +575,11 @@ impl LiquidScaleBenchmarkSession {
             .dynamic_solid_count
             .checked_add(self.source.fixed_solid_count)
             .ok_or_else(|| "liquid live-body count overflowed".to_owned())?;
+        let sustained_60_hz = self.config.timing_mode
+            == LiquidScaleTimingModeV1::FullFrameInteractive
+            && self.config.interactive_duration_seconds.unwrap_or(0.0) >= 30.0
+            && pacing.is_some_and(|evidence| evidence.effective_simulation_scale >= 0.95)
+            && timings.host_completion.p95_seconds <= self.config.outer_dt_seconds;
         let artifact = LiquidScaleBenchmarkArtifactV1 {
             schema_version: SCHEMA_VERSION,
             artifact_version: LIQUID_SCALE_ARTIFACT_VERSION,
@@ -484,9 +625,10 @@ impl LiquidScaleBenchmarkSession {
                     && particle_diagnostics.active_count == particle_diagnostics.active_flags_count,
                 capacity_clean: particle_diagnostics.capacity_clean,
                 state_hash,
-                effective_simulation_scale: None,
-                slipped_wall_seconds: None,
-                sustained_60_hz: false,
+                effective_simulation_scale: pacing
+                    .map(|evidence| evidence.effective_simulation_scale),
+                slipped_wall_seconds: pacing.map(|evidence| evidence.slipped_wall_seconds),
+                sustained_60_hz,
             },
         };
         artifact.validate().map_err(|error| {
@@ -630,6 +772,55 @@ pub async fn run_liquid_scale_physics_benchmark(
     let pending = session.begin_final_readback()?;
     session.poll_wait("final readback")?;
     session.complete(pending.finish()?, cpu_seconds, host_seconds)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn run_liquid_scale_full_frame_benchmark(
+    config: LiquidScaleBenchmarkConfigV1,
+    host_kind: LiquidScaleHostKindV1,
+    provenance: ProvenanceV1,
+) -> Result<LiquidScalePhysicsBenchmarkRun, String> {
+    if config.timing_mode != LiquidScaleTimingModeV1::FullFrameInteractive {
+        return Err("full-frame liquid runner requires full-frame timing mode".to_owned());
+    }
+    let requested_duration = config
+        .interactive_duration_seconds
+        .expect("validated full-frame liquid duration exists");
+    let mut session =
+        LiquidScaleBenchmarkSession::new(config.clone(), host_kind, None, provenance).await?;
+    session.submit_warmup()?;
+    session.poll_wait("warmup")?;
+
+    let paced_started = Instant::now();
+    let mut cpu_seconds = Vec::with_capacity(config.retained_samples as usize);
+    let mut host_seconds = Vec::with_capacity(config.retained_samples as usize);
+    for sample in 0..config.retained_samples {
+        sleep_until(
+            paced_started + Duration::from_secs_f64(f64::from(sample) * config.outer_dt_seconds),
+        );
+        let started = Instant::now();
+        session.submit_sample()?;
+        cpu_seconds.push(started.elapsed().as_secs_f64());
+        session.poll_wait(&format!("full-frame sample {sample}"))?;
+        host_seconds.push(started.elapsed().as_secs_f64());
+    }
+    sleep_until(paced_started + Duration::from_secs_f64(requested_duration));
+    let elapsed_seconds = paced_started.elapsed().as_secs_f64();
+    let pending = session.begin_final_readback()?;
+    session.poll_wait("full-frame final readback")?;
+    session.complete_full_frame(
+        pending.finish()?,
+        cpu_seconds,
+        host_seconds,
+        elapsed_seconds,
+    )
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn sleep_until(deadline: Instant) {
+    if let Some(remaining) = deadline.checked_duration_since(Instant::now()) {
+        std::thread::sleep(remaining);
+    }
 }
 
 struct TimestampResources {
@@ -979,6 +1170,46 @@ fn readback_buffer(device: &wgpu::Device, label: &'static str, size: u64) -> wgp
         size,
         usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
         mapped_at_creation: false,
+    })
+}
+
+fn liquid_render_transform(
+    scenario: &physbox_contracts::CoupledScenarioV1,
+    extent: [u32; 2],
+) -> Result<ViewTransform, String> {
+    let lower_x = scenario
+        .regions
+        .iter()
+        .map(|region| region.lower.x)
+        .fold(f32::INFINITY, f32::min);
+    let lower_y = scenario
+        .regions
+        .iter()
+        .map(|region| region.lower.y)
+        .fold(f32::INFINITY, f32::min);
+    let upper_x = scenario
+        .regions
+        .iter()
+        .map(|region| region.upper.x)
+        .fold(f32::NEG_INFINITY, f32::max);
+    let upper_y = scenario
+        .regions
+        .iter()
+        .map(|region| region.upper.y)
+        .fold(f32::NEG_INFINITY, f32::max);
+    let aspect = extent[0] as f32 / extent[1] as f32;
+    let half_height =
+        (0.5 * (upper_y - lower_y) + 1.0).max(0.5 * (upper_x - lower_x) / aspect + 1.0);
+    let frame = crate::Camera2d::try_new_at_home(
+        [0.5 * (lower_x + upper_x), 0.5 * (lower_y + upper_y)],
+        half_height,
+    )
+    .map_err(|error| error.to_string())?
+    .resolve(extent)
+    .map_err(|error| error.to_string())?;
+    Ok(ViewTransform {
+        center: frame.center(),
+        half_extents: frame.half_extents(),
     })
 }
 

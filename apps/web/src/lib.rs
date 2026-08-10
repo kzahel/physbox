@@ -381,16 +381,42 @@ pub async fn run_liquid_scale_benchmark(
     browser_version: String,
     host: String,
     toolchain: String,
+    timing_mode: String,
+    render_width: u32,
+    render_height: u32,
+    interactive_duration_seconds: f64,
 ) -> Result<String, JsValue> {
     require_smoke_observer_query()?;
     let solid_tier = parse_liquid_solid_tier(&solid_tier).map_err(js_error)?;
-    let config = LiquidScaleBenchmarkConfigV1::physics_only(
-        solid_tier,
-        particle_count,
-        warmup_steps,
-        samples,
-    )
-    .with_particle_capacity(particle_capacity);
+    let full_frame = match timing_mode.as_str() {
+        "physics-only" => false,
+        "full-frame" => true,
+        _ => {
+            return Err(js_error(
+                "liquid timing mode must be physics-only or full-frame".to_owned(),
+            ));
+        }
+    };
+    let config = if full_frame {
+        LiquidScaleBenchmarkConfigV1::full_frame(
+            solid_tier,
+            particle_count,
+            warmup_steps,
+            samples,
+            [render_width, render_height],
+            interactive_duration_seconds,
+        )
+        .with_particle_capacity(particle_capacity)
+    } else {
+        LiquidScaleBenchmarkConfigV1::physics_only(
+            solid_tier,
+            particle_count,
+            warmup_steps,
+            samples,
+        )
+        .with_particle_capacity(particle_capacity)
+    };
+    let outer_dt_seconds = config.outer_dt_seconds;
     let provenance = ProvenanceV1 {
         run_id,
         source_revision,
@@ -422,7 +448,12 @@ pub async fn run_liquid_scale_benchmark(
             },
             NamedValueV1 {
                 name: "timing-mode".to_owned(),
-                value: "physics-only-explicit-steps".to_owned(),
+                value: if full_frame {
+                    "full-frame-interactive"
+                } else {
+                    "physics-only-explicit-steps"
+                }
+                .to_owned(),
             },
         ],
     };
@@ -439,23 +470,47 @@ pub async fn run_liquid_scale_benchmark(
 
     let mut host_completion_seconds = Vec::with_capacity(samples as usize);
     let mut cpu_encode_submit_seconds = Vec::with_capacity(samples as usize);
-    for _ in 0..samples {
+    let paced_started = performance_now()?;
+    for sample in 0..samples {
+        if full_frame {
+            wait_until_performance(paced_started + f64::from(sample) * outer_dt_seconds * 1_000.0)
+                .await?;
+        }
         let started = performance_now()?;
         session.submit_sample().map_err(js_error)?;
         cpu_encode_submit_seconds.push((performance_now()? - started) * 0.001);
         wait_for_liquid_completion(&session).await?;
         host_completion_seconds.push((performance_now()? - started) * 0.001);
     }
+    let elapsed_seconds = if full_frame {
+        wait_until_performance(paced_started + interactive_duration_seconds * 1_000.0).await?;
+        (performance_now()? - paced_started) * 0.001
+    } else {
+        0.0
+    };
     let readback = session.begin_final_readback().map_err(js_error)?;
     wait_for_liquid_readback(&session, &readback).await?;
-    let run = session
-        .complete(
-            readback.finish().map_err(js_error)?,
+    let readback = readback.finish().map_err(js_error)?;
+    let run = if full_frame {
+        session.complete_full_frame(
+            readback,
             cpu_encode_submit_seconds,
             host_completion_seconds,
+            elapsed_seconds,
         )
-        .map_err(js_error)?;
+    } else {
+        session.complete(readback, cpu_encode_submit_seconds, host_completion_seconds)
+    }
+    .map_err(js_error)?;
     serde_json::to_string(&run.artifact).map_err(|error| js_error(error.to_string()))
+}
+
+#[cfg(all(target_arch = "wasm32", feature = "solver-lab"))]
+async fn wait_until_performance(deadline_ms: f64) -> Result<(), JsValue> {
+    while performance_now()? < deadline_ms {
+        yield_browser().await?;
+    }
+    Ok(())
 }
 
 #[cfg(all(target_arch = "wasm32", feature = "solver-lab"))]

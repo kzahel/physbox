@@ -99,6 +99,23 @@ impl LiquidScaleBenchmarkConfigV1 {
     pub fn resolved_particle_capacity(&self) -> u32 {
         self.particle_capacity.unwrap_or(self.particle_count)
     }
+
+    pub fn full_frame(
+        solid_tier: LiquidScaleSolidTier,
+        particle_count: u32,
+        warmup_steps: u32,
+        retained_samples: u32,
+        render_extent: [u32; 2],
+        interactive_duration_seconds: f64,
+    ) -> Self {
+        let mut config =
+            Self::physics_only(solid_tier, particle_count, warmup_steps, retained_samples);
+        config.timing_mode = LiquidScaleTimingModeV1::FullFrameInteractive;
+        config.render_extent = Some(render_extent);
+        config.render_scale = Some(1.0);
+        config.interactive_duration_seconds = Some(interactive_duration_seconds);
+        config
+    }
 }
 
 impl Validate for LiquidScaleBenchmarkConfigV1 {
@@ -813,6 +830,25 @@ mod tests {
         let decoded: LiquidScaleBenchmarkArtifactV1 = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(decoded, artifact);
         decoded.validate().unwrap();
+    }
+
+    #[test]
+    fn liquid_scale_artifact_accepts_full_frame_pacing_evidence() {
+        let mut artifact = artifact();
+        artifact.config = LiquidScaleBenchmarkConfigV1::full_frame(
+            LiquidScaleSolidTier::Solids20,
+            8_192,
+            16,
+            3,
+            [960, 600],
+            30.0,
+        );
+        artifact.correctness.effective_simulation_scale = Some(1.0 / 600.0);
+        artifact.correctness.slipped_wall_seconds = Some(29.95);
+        artifact.validate().unwrap();
+
+        artifact.correctness.effective_simulation_scale = None;
+        assert!(artifact.validate().is_err());
     }
 
     #[test]
