@@ -1,6 +1,6 @@
 # Product capability status
 
-Status: current implementation ledger, 2026-07-23. This topic is the compact
+Status: current implementation ledger, 2026-08-10. This topic is the compact
 answer to “what does PhysBox 5 actually support now?” It records product
 capability rather than historical research completion. Update it in the same
 change that materially changes a feature status or product claim.
@@ -75,7 +75,7 @@ quality. Known limitations remain part of the row.
 
 | ID | Capability | Status | Current boundary / next gate |
 | --- | --- | --- | --- |
-| SCALE-1 | Small-world rigid scenes | **Implemented** | The safe 64-slot default, authored-scene headroom, and explicit 256/1K/10K opt-ins use selected SAP and reserve-independent active work; the 100-body diagnostic buckets execute correctly but are not sustained-rate claims on every device. |
+| SCALE-1 | Small-world rigid scenes | **Implemented** | The safe 64-slot default, authored-scene headroom, and explicit 256/1K/10K opt-ins use selected SAP and reserve-independent active work. Initial live populations through 128 bodies use the qualified island schedule even in a larger reserve; larger initial worlds retain the scalable per-color route. Clean native/Browser 100-solid liquid rows pass the local physics objective, but are not sustained-rate claims on every device. |
 | SCALE-2 | Scalable broadphase | **Implemented** | SAP is selected and integrated; exact native 100/1K/10K curves, a zero-slip 100-body browser row, and physical Pixel bootstrap/bucket execution pass. This does not establish a 1K-plus rendered product-world rate. |
 | SCALE-3 | 1K-100K product-world claims | **Not implemented** | Existing authored-contact/isolated-solver measurements are not scalable end-to-end body claims. |
 | SCALE-4 | Mostly-sleeping scale | **Limited** | Valid named-adapter 1%/10%/100% awake curves show solver work and GPU time falling with awake bodies/points, and reserve probes remain bounded through 10K capacity. Live pair processing is retained; no rendered 10K/100K, 60 Hz, or cross-adapter product-rate claim exists. |
@@ -90,7 +90,7 @@ quality. Known limitations remain part of the row.
 
 | ID | Capability | Status | Current boundary / next gate |
 | --- | --- | --- | --- |
-| FLUID-1 | GPU liquid particles | **Implemented** | The shared product path owns one water material, a 3,952-particle sandbox in an 8,192-slot preview reserve, a separate capacity-clean 32K frontier, compact cell ranges, density/correction/velocity passes, deterministic reset/spawn/erase/reuse, fixed boundaries, direct rendering, and final-only diagnostics. Clean Browser WebGPU and authorized hardware-backed AVD mechanics/pixel lanes pass, but sleeping-on/exact AVD pacing is currently about 0.44 effective scale. This is not a 32K-at-60, physical-phone-speed, or multi-material claim. |
+| FLUID-1 | GPU liquid particles | **Implemented** | The shared product path owns one water material, a 3,952-particle sandbox in an 8,192-slot preview reserve, a separate capacity-clean 32K frontier, compact cell ranges, density/correction/velocity passes, deterministic reset/spawn/erase/reuse, fixed boundaries, direct rendering, and final-only diagnostics. The shared benchmark now covers raw water and 20/100-solid 1K–32K definitions plus fixed-reserve `0/1/1K/4K/8K` trials on native, Browser, and ARM64-native runner paths. Clean local native/Browser 20/100-solid 8K/16K physics P95 is below 12 ms, but physical Android and 30-second target-topology full-frame rates are unmeasured. This is not a 32K-at-60, physical-phone-speed, or multi-material claim. |
 | FLUID-2 | Two-way rigid/liquid coupling | **Limited** | The PhysBox GPU path exchanges bounded equal-and-opposite boundary-density/pressure, non-penetration, and surface-relative velocity response with dynamic circles/rectangles in the same outer step, including torque, stable tiled body gathering, generation checks, GPU fluid-wake requests, sleeping-off/local-4/local-8/exact qualification, and explicit multi-body overflow. Invariants pass, but measured PhysBox 3 final-body disagreements still require human behavior-band and subjective-feel disposition. Box2D stays rigid-only. |
 | FLUID-3 | PhysBox 3/LiquidFun coupled oracle | **Implemented** | Separate process-isolated native PhysBox 3/Box2D v3 and original LiquidFun/Box2D 2.3 executables consume the shared seven-source projection. Each supports six rows and explicitly rejects grabbed-boundary. Joined evidence records population, centroid, body, exchange, overflow, and replay deltas without majority voting. |
 | BREADTH-1 | Ragdolls, machines, soft bodies | **Deferred** | Depend on general joints, broader shapes, accepted scale, and stable rigid behavior. |
@@ -99,8 +99,9 @@ quality. Known limitations remain part of the row.
 
 1. Review the measured PhysBox 3 behavior deltas and subjective pouring,
    floating, wave-impact, grab-through-water, and construction feel.
-2. Reduce the demonstrated Android liquid/exact-sleep dispatch cost without
-   changing fixed-step pacing, coupling, or the S32 default by assumption.
+2. Run the S43 native/Browser target matrix on a physical Android device and
+   add matched 30-second full-frame pacing before turning the local physics
+   result into a mobile or sustained-rate claim.
 3. Decide whether the 4K sandbox, Water/Surface tools, and direct particle
    style become ordinary defaults or remain explicit preview choices.
 4. Open smooth-water rendering, multiple materials, scene save/load, or

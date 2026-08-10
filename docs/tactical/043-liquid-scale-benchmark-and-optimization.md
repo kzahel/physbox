@@ -1,8 +1,10 @@
 # S43 — Liquid scale benchmark and optimization
 
-Status: active, 2026-08-10. Human direction authorizes continuous execution,
-proportional validation, and coherent commits through the final evidence and
-disposition. The work starts from clean `main` at
+Status: local implementation and physics-target qualification complete;
+physical Android, matched full-frame target rows, and two maintained-host
+gate failures remain open, 2026-08-10. Human direction authorizes continuous
+execution, proportional validation, and coherent commits through the final
+evidence and disposition. The work starts from clean `main` at
 `6696c1a97c19e8ff53ea48496a4d3d096aaaf1e9`.
 
 Governing performance contract:
@@ -395,21 +397,70 @@ target miss, the six rebuilds and portable pass boundaries remain selected.
 
 ### S43.10 — target qualification and closure
 
-- [ ] Re-run the complete accepted native matrix with raw samples and clean
+- [x] Re-run the complete accepted native matrix with raw samples and clean
       provenance.
-- [ ] Re-run selected Browser WebGPU 20/100-solid 8K/16K rows and interactive
-      30-second pacing gates.
-- [ ] Run `npm run test:fast`, production warnings-denied clippy, focused
+- [x] Re-run selected Browser WebGPU 20/100-solid 8K/16K physics-only rows.
+- [ ] Run matched full-frame Browser target rows and interactive 30-second
+      pacing gates.
+- [x] Run `npm run test:fast`, production warnings-denied clippy, focused
       `physbox-sim`/benchmark tests, and one fresh headless coupled artifact.
-- [ ] Run the ARM64 Android check, release APK where shared product code
-      changed, standalone native benchmark, and physical Pixel native/browser
-      matrix; use and shut down an AVD only for an otherwise unavailable
-      portability question.
-- [ ] Update the governing topics, capability ledger, README where warranted,
-      tactical index, and this document with measured results and retained
-      limitations.
-- [ ] Record each target as passed, missed, or unmeasured. Do not weaken a
+- [x] Run the ARM64 Android check, release APK, and standalone native benchmark
+      build.
+- [ ] Run the physical Pixel native/Browser matrix; use and shut down an AVD
+      only for an otherwise unavailable portability question.
+- [x] Update the governing topics, capability ledger, tactical index, and this
+      document with measured results and retained limitations.
+- [x] Record each target as passed, missed, or unmeasured. Do not weaken a
       target because an optimization underperforms.
+
+Final local physics checkpoint, 2026-08-10: clean revision `9c6c659` produced
+the complete eleven-row native matrix plus the four selected Chrome 151 rows,
+using 16 warmups and 30 raw retained samples. The native manifest SHA-256 is
+`f60e22832ad1e0d1e59baea9dfdb08d39a69847aa1210a7ba7283c27ddc2d225`.
+The retained local package is under `evidence/p5.3-s43-final-9c6c659/`.
+
+| Host | Dynamic solids | Particles | Dispatches | Host P50 | Host P95 | Physics target |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| Native Metal | 20 | 8K | 273 | 6.820 ms | 8.473 ms | pass |
+| Native Metal | 20 | 16K | 273 | 6.998 ms | 8.458 ms | pass |
+| Native Metal | 100 | 8K | 277 | 7.935 ms | 8.421 ms | pass |
+| Native Metal | 100 | 16K | 277 | 8.487 ms | 8.750 ms | pass |
+| Chrome WebGPU | 20 | 8K | 273 | 10.420 ms | 11.245 ms | pass |
+| Chrome WebGPU | 20 | 16K | 273 | 10.395 ms | 11.010 ms | pass |
+| Chrome WebGPU | 100 | 8K | 277 | 10.445 ms | 11.375 ms | pass |
+| Chrome WebGPU | 100 | 16K | 277 | 10.375 ms | 11.090 ms | pass |
+
+Thus the ordinary, strong, headline, and stretch targets all pass the declared
+12 ms physics-only objective on local native Metal and Browser WebGPU. Native
+raw-water 32K also remains capacity-clean at `8.163 ms` P95, but it is still a
+bounded frontier result rather than a sustained or cross-host product claim.
+Matched rigid-only controls, 30-second target-topology full-frame pacing, and
+all physical Android rates remain unmeasured.
+
+Local qualification passed warnings-denied production clippy; six liquid
+contract tests; five focused GPU particle mechanics/lifecycle tests; all three
+solver-route tests; 7 host-tool tests; 16 Android-tool tests; platform-boundary
+negatives; the ARM64 app check; the ARM64 standalone liquid benchmark build;
+and debug/release APK construction. The unsigned 8,781,957-byte release APK
+SHA-256 is
+`722574089fbaf00101eeaf42bbfa71de74ffbb527b713b4a5d083e3abe33935e`.
+A fresh one-step-per-submission headless liquid run passed 600 steps with
+finite, capacity-clean particles and produced PNG SHA-256
+`7ff592c21f118d92f43ddada1eaafe3f58eeb094a2a21e9bd21f94d3299aaf3c`.
+The ordinary desktop host separately passed 600 interactive liquid steps at
+`1.010` effective scale over its ten simulated seconds; that is not the
+required 30-second target-topology claim.
+
+Two maintained local gates did not pass for pre-existing timing/test-host
+reasons. `npm run test:fast` SIGTRAPed in parallel Metal execution; a
+serialized rerun passed the preceding 41 tests and then hung in
+`frozen_settled_water_pixels_ignore_active_list_order`. The standalone Browser
+smoke reached its final timing wait but timed out because Chrome's advertised
+timestamp clock produced backward markers. The four comparator-off release
+Browser benchmark rows themselves completed successfully with real WebGPU and
+correctly rejected that clock. No `adb` device was attached. The earlier AVD
+attempt lost its Vulkan device during pipeline creation and was shut down, so
+it is not substituted for physical evidence.
 
 Gate: every selected optimization has a same-revision control, required host
 evidence, complete work/capacity records, and no unexplained quality change.

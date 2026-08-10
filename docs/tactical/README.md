@@ -317,7 +317,7 @@ This README remains the unnumbered index.
 | S40 | Interactive showcase tooling and telemetry | [040-interactive-showcase-tooling-and-telemetry.md](040-interactive-showcase-tooling-and-telemetry.md) | complete; 1K–10K settling stress, sleep tint, Water/camera fixes, and 4K–16K water tiers pass; stalled 32K preset rejected, 2026-07-28 |
 | S41 | Private open-source preparation | [041-private-open-source-preparation.md](041-private-open-source-preparation.md) | complete; main-only candidate, legacy Pages repair, MIT/README/history audit accepted before S42 publication, 2026-07-28 |
 | S42 | Public repository and Web Showcase Pages | [042-public-repository-and-web-showcase-pages.md](042-public-repository-and-web-showcase-pages.md) | complete; public MIT repository, byte-reproducible Pages showcase, deployed Browser WebGPU, and independent advanced workbench pass, 2026-07-28 |
-| S43 | Liquid scale benchmark and optimization | [043-liquid-scale-benchmark-and-optimization.md](043-liquid-scale-benchmark-and-optimization.md) | active; shared 0/20/100-solid native, Browser WebGPU, and Android-native baseline first, then measured structural optimization, 2026-08-10 |
+| S43 | Liquid scale benchmark and optimization | [043-liquid-scale-benchmark-and-optimization.md](043-liquid-scale-benchmark-and-optimization.md) | local implementation and native/Browser physics targets complete; physical Android, matched full-frame targets, and maintained Metal/Browser timing gates remain open, 2026-08-10 |
 
 ## Conventions
 

@@ -185,6 +185,42 @@ Together with the failed single-pass differential, this leaves the six
 compact rebuilds and existing visibility boundaries selected for this
 workstream.
 
+### Final local S43 physics targets
+
+Clean revision `9c6c659e8cad0513df494856a4b60fd4fe63e7c1` retained the
+complete native matrix and the four selected Chrome 151 target rows with 16
+warmups and 30 raw samples. Both timestamp clocks remained unusable, so this
+table compares host completion without inventing GPU-stage values.
+
+| Host | Dynamic solids | Particles | Dispatches | Host P50 | Host P95 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Native Metal | 20 | 8K | 273 | 6.820 ms | 8.473 ms |
+| Native Metal | 20 | 16K | 273 | 6.998 ms | 8.458 ms |
+| Native Metal | 100 | 8K | 277 | 7.935 ms | 8.421 ms |
+| Native Metal | 100 | 16K | 277 | 8.487 ms | 8.750 ms |
+| Chrome WebGPU | 20 | 8K | 273 | 10.420 ms | 11.245 ms |
+| Chrome WebGPU | 20 | 16K | 273 | 10.395 ms | 11.010 ms |
+| Chrome WebGPU | 100 | 8K | 277 | 10.445 ms | 11.375 ms |
+| Chrome WebGPU | 100 | 16K | 277 | 10.375 ms | 11.090 ms |
+
+Every ordinary, strong, headline, and stretch row passes the declared 12 ms
+physics-only objective on these two local hosts. Native raw-water 32K is also
+capacity-clean at `8.163 ms` P95, but remains a bounded frontier. This is not
+a 60 Hz full-frame or physical-mobile claim. Matched rigid-only controls,
+30-second target-topology presentation, and a physical Pixel native/Browser
+matrix remain open. The retained package is
+`evidence/p5.3-s43-final-9c6c659/`; its native manifest SHA-256 is
+`f60e22832ad1e0d1e59baea9dfdb08d39a69847aa1210a7ba7283c27ddc2d225`.
+
+The ARM64 app check, standalone ARM64 benchmark build, and debug/release APK
+builds pass. No physical device was attached. The earlier AVD run lost its
+Vulkan device during pipeline creation and was shut down, so no Android speed
+row is accepted. Production clippy and the focused liquid, particle, and
+solver-route tests pass. The maintained fast lane still SIGTRAPs or hangs in
+an existing Metal render test, and the ordinary Browser smoke times out after
+Chrome reports backward timestamp markers; the comparator-off release Browser
+benchmark rows themselves complete and explicitly reject that clock.
+
 ### S43 clean cross-host physics baseline
 
 The first clean S43 matrix at revision `f6b5682d3744fcc6c017b24b7350836da5ebd222`
