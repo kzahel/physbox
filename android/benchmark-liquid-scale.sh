@@ -15,6 +15,11 @@ SOLID_TIER="20"
 PARTICLES=4096
 WARMUP=16
 SAMPLES=30
+SAMPLES_SET=0
+TIMING_MODE=physics-only
+RENDER_WIDTH=960
+RENDER_HEIGHT=600
+DURATION_SECONDS=30
 SKIP_BUILD=0
 while (($#)); do
     case "$1" in
@@ -24,13 +29,19 @@ while (($#)); do
         --solid-tier) SOLID_TIER="${2:?--solid-tier requires a value}"; shift 2 ;;
         --particles) PARTICLES="${2:?--particles requires a value}"; shift 2 ;;
         --warmup) WARMUP="${2:?--warmup requires a value}"; shift 2 ;;
-        --samples) SAMPLES="${2:?--samples requires a value}"; shift 2 ;;
+        --samples) SAMPLES="${2:?--samples requires a value}"; SAMPLES_SET=1; shift 2 ;;
+        --timing-mode) TIMING_MODE="${2:?--timing-mode requires a value}"; shift 2 ;;
+        --render-width) RENDER_WIDTH="${2:?--render-width requires a value}"; shift 2 ;;
+        --render-height) RENDER_HEIGHT="${2:?--render-height requires a value}"; shift 2 ;;
+        --duration-seconds) DURATION_SECONDS="${2:?--duration-seconds requires a value}"; shift 2 ;;
         --skip-build) SKIP_BUILD=1; shift ;;
-        *) echo "Usage: $0 (--avd|--device) [--serial SERIAL] [--output PATH] [--solid-tier water-only|20|100] [--particles N] [--warmup N] [--samples N] [--skip-build]" >&2; exit 2 ;;
+        *) echo "Usage: $0 (--avd|--device) [--serial SERIAL] [--output PATH] [--solid-tier water-only|20|100] [--particles N] [--warmup N] [--samples N] [--timing-mode physics-only|full-frame] [--render-width N] [--render-height N] [--duration-seconds N] [--skip-build]" >&2; exit 2 ;;
     esac
 done
 [[ -n "$MODE" ]] || { echo "error: choose --avd or --device" >&2; exit 2; }
 case "$SOLID_TIER" in water-only|20|100) ;; *) echo "error: unsupported solid tier: $SOLID_TIER" >&2; exit 2 ;; esac
+case "$TIMING_MODE" in physics-only|full-frame) ;; *) echo "error: unsupported timing mode: $TIMING_MODE" >&2; exit 2 ;; esac
+if [[ "$TIMING_MODE" = "full-frame" && "$SAMPLES_SET" -eq 0 ]]; then SAMPLES=1800; fi
 if [[ -z "$OUTPUT" ]]; then OUTPUT="/tmp/physbox5-android-liquid-scale-$MODE.json"; fi
 [[ ! -e "$OUTPUT" ]] || { echo "error: output must be fresh: $OUTPUT" >&2; exit 1; }
 
@@ -97,7 +108,7 @@ LOG="$(mktemp /tmp/physbox5-android-liquid-log.XXXXXX)"
 STAGING="$OUTPUT.tmp-$RUN_ID"
 mkdir -p "$(dirname "$OUTPUT")"
 rm -f "$STAGING"
-if ! "$ADB" -s "$SERIAL" shell "$REMOTE_BINARY --run-id $RUN_ID --source-revision $REVISION --source-dirty $DIRTY --source-patch-digest $PATCH_DIGEST --host $HOST --toolchain $TOOLCHAIN --solid-tier $SOLID_TIER --particles $PARTICLES --warmup $WARMUP --samples $SAMPLES --output $REMOTE_OUTPUT" | tr -d '\r' >"$LOG"; then
+if ! "$ADB" -s "$SERIAL" shell "$REMOTE_BINARY --run-id $RUN_ID --source-revision $REVISION --source-dirty $DIRTY --source-patch-digest $PATCH_DIGEST --host $HOST --toolchain $TOOLCHAIN --solid-tier $SOLID_TIER --particles $PARTICLES --warmup $WARMUP --samples $SAMPLES --timing-mode $TIMING_MODE --render-width $RENDER_WIDTH --render-height $RENDER_HEIGHT --duration-seconds $DURATION_SECONDS --output $REMOTE_OUTPUT" | tr -d '\r' >"$LOG"; then
     cat "$LOG" >&2
     echo "error: Android liquid benchmark failed; see $LOG" >&2
     exit 1
@@ -117,14 +128,16 @@ printf '%s\n' "$ADAPTER" | node -e '
 "$ADB" -s "$SERIAL" pull "$REMOTE_OUTPUT" "$STAGING" >/dev/null
 node -e '
   const fs = require("fs");
-  const [path, tier, particles, revision] = process.argv.slice(1);
+  const [path, tier, particles, revision, timingMode] = process.argv.slice(1);
   const artifact = JSON.parse(fs.readFileSync(path, "utf8"));
   if (artifact.hostKind !== "android-native" || artifact.comparatorEnabled) throw new Error("invalid Android liquid host/build identity");
   if (artifact.config.particleCount !== Number(particles)) throw new Error("Android liquid particle count drifted");
   const expectedTier = tier === "water-only" ? "water-only" : `solids${tier}`;
   if (artifact.config.solidTier !== expectedTier) throw new Error("Android liquid solid tier drifted");
+  const expectedTimingMode = timingMode === "full-frame" ? "full-frame-interactive" : "physics-only-explicit-steps";
+  if (artifact.config.timingMode !== expectedTimingMode) throw new Error("Android liquid timing mode drifted");
   if (artifact.provenance.sourceRevision !== revision) throw new Error("Android liquid revision drifted");
-' "$STAGING" "$SOLID_TIER" "$PARTICLES" "$REVISION"
+' "$STAGING" "$SOLID_TIER" "$PARTICLES" "$REVISION" "$TIMING_MODE"
 mv "$STAGING" "$OUTPUT"
 "$ADB" -s "$SERIAL" shell rm -f "$REMOTE_OUTPUT" "$REMOTE_BINARY"
 cat "$LOG"

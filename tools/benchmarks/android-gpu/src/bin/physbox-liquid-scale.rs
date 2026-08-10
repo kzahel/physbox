@@ -3,7 +3,8 @@ use std::path::{Path, PathBuf};
 use physbox_contracts::{NamedValueV1, ProvenanceV1};
 use physbox_engine::{
     LIQUID_SCALE_SUCCESS_SENTINEL, LiquidScaleBenchmarkConfigV1, LiquidScaleHostKindV1,
-    LiquidScaleSolidTier, run_liquid_scale_physics_benchmark,
+    LiquidScaleSolidTier, run_liquid_scale_full_frame_benchmark,
+    run_liquid_scale_physics_benchmark,
 };
 
 fn main() {
@@ -15,13 +16,25 @@ fn main() {
 
 fn run() -> Result<(), String> {
     let arguments = Arguments::parse()?;
-    let config = LiquidScaleBenchmarkConfigV1::physics_only(
-        arguments.solid_tier,
-        arguments.particle_count,
-        arguments.warmup,
-        arguments.samples,
-    )
-    .with_particle_capacity(arguments.particle_capacity);
+    let config = if arguments.full_frame {
+        LiquidScaleBenchmarkConfigV1::full_frame(
+            arguments.solid_tier,
+            arguments.particle_count,
+            arguments.warmup,
+            arguments.samples,
+            arguments.render_extent,
+            arguments.interactive_duration_seconds,
+        )
+        .with_particle_capacity(arguments.particle_capacity)
+    } else {
+        LiquidScaleBenchmarkConfigV1::physics_only(
+            arguments.solid_tier,
+            arguments.particle_count,
+            arguments.warmup,
+            arguments.samples,
+        )
+        .with_particle_capacity(arguments.particle_capacity)
+    };
     let provenance = ProvenanceV1 {
         run_id: arguments.run_id.clone(),
         source_revision: arguments.source_revision,
@@ -53,15 +66,28 @@ fn run() -> Result<(), String> {
             },
             NamedValueV1 {
                 name: "timing-mode".to_owned(),
-                value: "physics-only-explicit-steps".to_owned(),
+                value: if arguments.full_frame {
+                    "full-frame-interactive"
+                } else {
+                    "physics-only-explicit-steps"
+                }
+                .to_owned(),
             },
         ],
     };
-    let run = pollster::block_on(run_liquid_scale_physics_benchmark(
-        config,
-        LiquidScaleHostKindV1::AndroidNative,
-        provenance,
-    ))?;
+    let run = if arguments.full_frame {
+        pollster::block_on(run_liquid_scale_full_frame_benchmark(
+            config,
+            LiquidScaleHostKindV1::AndroidNative,
+            provenance,
+        ))?
+    } else {
+        pollster::block_on(run_liquid_scale_physics_benchmark(
+            config,
+            LiquidScaleHostKindV1::AndroidNative,
+            provenance,
+        ))?
+    };
     let json = serde_json::to_vec_pretty(&run.artifact).map_err(|error| error.to_string())?;
     write_atomic(&arguments.output, &json, &arguments.run_id)?;
     println!(
@@ -92,6 +118,9 @@ struct Arguments {
     particle_capacity: u32,
     warmup: u32,
     samples: u32,
+    full_frame: bool,
+    render_extent: [u32; 2],
+    interactive_duration_seconds: f64,
     output: PathBuf,
 }
 
@@ -108,6 +137,10 @@ impl Arguments {
         let mut particle_capacity = None;
         let mut warmup = None;
         let mut samples = None;
+        let mut timing_mode = None;
+        let mut render_width = None;
+        let mut render_height = None;
+        let mut interactive_duration_seconds = None;
         let mut output = None;
         let mut arguments = std::env::args().skip(1);
         while let Some(argument) = arguments.next() {
@@ -126,6 +159,12 @@ impl Arguments {
                 "--capacity" => particle_capacity = Some(parse_u32(&value, "capacity")?),
                 "--warmup" => warmup = Some(parse_u32(&value, "warmup")?),
                 "--samples" => samples = Some(parse_u32(&value, "samples")?),
+                "--timing-mode" => timing_mode = Some(parse_timing_mode(&value)?),
+                "--render-width" => render_width = Some(parse_u32(&value, "render width")?),
+                "--render-height" => render_height = Some(parse_u32(&value, "render height")?),
+                "--duration-seconds" => {
+                    interactive_duration_seconds = Some(parse_positive_f64(&value, "duration")?)
+                }
                 "--output" => output = Some(PathBuf::from(value)),
                 _ => return Err(format!("unknown argument {argument}")),
             }
@@ -143,6 +182,9 @@ impl Arguments {
             particle_capacity: particle_capacity.unwrap_or(particle_count),
             warmup: required(warmup, "--warmup")?,
             samples: required(samples, "--samples")?,
+            full_frame: timing_mode.unwrap_or(false),
+            render_extent: [render_width.unwrap_or(960), render_height.unwrap_or(600)],
+            interactive_duration_seconds: interactive_duration_seconds.unwrap_or(30.0),
             output: required(output, "--output")?,
         })
     }
@@ -181,6 +223,22 @@ fn parse_bool(value: &str) -> Result<bool, String> {
         "false" => Ok(false),
         _ => Err(format!("invalid boolean: {value}")),
     }
+}
+
+fn parse_timing_mode(value: &str) -> Result<bool, String> {
+    match value {
+        "physics-only" => Ok(false),
+        "full-frame" => Ok(true),
+        _ => Err("timing mode must be physics-only or full-frame".to_owned()),
+    }
+}
+
+fn parse_positive_f64(value: &str, label: &str) -> Result<f64, String> {
+    value
+        .parse::<f64>()
+        .ok()
+        .filter(|value| value.is_finite() && *value > 0.0)
+        .ok_or_else(|| format!("{label} must be finite and positive"))
 }
 
 fn write_atomic(path: &Path, bytes: &[u8], run_id: &str) -> Result<(), String> {
