@@ -194,30 +194,31 @@ impl LiquidScaleBenchmarkSession {
         if self.warmup_submitted || self.submitted_samples != 0 {
             return Err("liquid benchmark warmup may be submitted exactly once".to_owned());
         }
-        let ranges =
-            vec![BodyCommandStepRange { start: 0, count: 0 }; self.config.warmup_steps as usize];
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("physbox5_liquid_scale_warmup"),
-            });
-        self.world.encode_steps_with_grab_intents(
-            &self.queue,
-            &mut encoder,
-            self.config.warmup_steps,
-            BodyStepPlan {
-                batch: &self.empty_batch,
-                ranges: &ranges,
-                grab_batch: &self.grab_batch,
-                grab_ranges: &ranges,
-                construction_batch: &self.construction_batch,
-                construction_ranges: &ranges,
-                particle_commands: &[],
-                particle_ranges: &ranges,
-                frame_timestamps: None,
-            },
-        )?;
-        self.queue.submit([encoder.finish()]);
+        let ranges = [BodyCommandStepRange { start: 0, count: 0 }];
+        for _ in 0..self.config.warmup_steps {
+            let mut encoder = self
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("physbox5_liquid_scale_warmup"),
+                });
+            self.world.encode_steps_with_grab_intents(
+                &self.queue,
+                &mut encoder,
+                1,
+                BodyStepPlan {
+                    batch: &self.empty_batch,
+                    ranges: &ranges,
+                    grab_batch: &self.grab_batch,
+                    grab_ranges: &ranges,
+                    construction_batch: &self.construction_batch,
+                    construction_ranges: &ranges,
+                    particle_commands: &[],
+                    particle_ranges: &ranges,
+                    frame_timestamps: None,
+                },
+            )?;
+            self.queue.submit([encoder.finish()]);
+        }
         self.warmup_submitted = true;
         Ok(())
     }
