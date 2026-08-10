@@ -16,7 +16,7 @@ pub const FLUID_SOLID_OVERLAP_RECOVERY_STEPS: u32 = 120;
 pub const FLUID_SOLID_OVERLAP_SAMPLE_STRIDE: u32 = 4;
 pub const FLUID_SOLID_OVERLAP_PHASE_OFFSETS: [f32; FLUID_SOLID_OVERLAP_PHASE_COUNT] =
     [0.0, 0.025, 0.05, 0.075];
-pub const LIQUID_SCALE_BENCHMARK_VERSION: u32 = 1;
+pub const LIQUID_SCALE_BENCHMARK_VERSION: u32 = 2;
 pub const LIQUID_SCALE_PARTICLE_COUNTS: [u32; 5] = [1_024, 4_096, 8_192, 16_384, 32_768];
 pub const LIQUID_SCALE_FIXED_RESERVE_CAPACITY: u32 = 8_192;
 pub const LIQUID_SCALE_FIXED_RESERVE_LIVE_COUNTS: [u32; 5] = [0, 1, 1_024, 4_096, 8_192];
@@ -681,10 +681,10 @@ pub fn liquid_scale_benchmark_source_with_capacity(
     let upper = Vec2::new(lower.x + width + upper_x_guard, lower.y + height);
     let center_y = 0.5 * (lower.y + upper.y);
     let id = if particle_count == particle_capacity {
-        format!("liquid-scale-{}-{particle_count}-v1", solid_tier.id())
+        format!("liquid-scale-{}-{particle_count}-v2", solid_tier.id())
     } else {
         format!(
-            "liquid-scale-{}-{particle_count}-of-{particle_capacity}-v1",
+            "liquid-scale-{}-{particle_count}-of-{particle_capacity}-v2",
             solid_tier.id()
         )
     };
@@ -826,11 +826,10 @@ fn append_liquid_scale_dynamic_bodies(
         } else {
             dynamic_rectangle(slot, position, Vec2::new(0.14, 0.10), 1.0, false)
         };
-        // Keep the retained 46-step trial focused on coupled motion rather
-        // than turning its last rows into a dense floor pile. Equal upward
-        // launch preserves the authored separation while gravity reverses the
-        // bodies through the surrounding water during the measured window.
-        body.linear_velocity = Vec2::new(0.0, 4.0);
+        // Begin at rest so the same source remains contained through the
+        // sustained 1,800-step full-frame lane. Gravity still drives every
+        // body through the water and into the long-horizon settled topology.
+        body.linear_velocity = Vec2::ZERO;
         bodies.push(body);
     }
 }

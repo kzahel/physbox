@@ -174,10 +174,10 @@ the same effective-mass terms as direct particle/body contact: particle
 translation, body translation, and the contact lever arm against body inverse
 inertia. The resulting bounded positional impulse moves the particle and body
 in opposite directions before later iterations consume the new pose. One
-particle may target up to two dynamic bodies per pass. The generation-checked
-records use primary and secondary particle planes so ordinary one-target
-reduction retains contiguous access and reads the secondary plane only when a
-bit on the primary record declares it. A third dynamic target invalidates the
+particle may target up to four dynamic bodies per pass. The generation-checked
+records use four planar particle lanes so ordinary one-target reduction
+retains contiguous access and reads the additional planes only when a bit on
+the primary record declares them. A fifth dynamic target invalidates the
 particle's records and reports body-contribution overflow rather than dropping
 an unreported reaction.
 
@@ -193,6 +193,17 @@ circle overlap. A separate 16-row gap/phase characterization is finite,
 capacity-clean, and non-overlapping. This is a contribution-capacity fix, not
 a new pressure coefficient, rigid iteration count, damping policy, or coupled
 schedule.
+
+S43 superseded the earlier two-target capacity on 2026-08-10 after the first
+1,800-step 100-solid benchmark exposed `372` final-step reaction overflows
+with all `8,192` particles otherwise contained. Four records retained all
+`8,192` particles with zero overflow for the same 30-second source; the
+permanent focused fixture accepts four simultaneous dynamic targets and
+requires a fifth to fail closed. The wider planar layout does not add a
+dispatch or change pressure, integration, coupling, or reduction order. At
+8,192 particle slots it adds `327,680` bytes over the two-record layout. The
+benchmark source is version 2 and starts its separated solids at rest so the
+same authored topology remains contained through the sustained window.
 
 S35 opens a distinct fluid/solid contact-stabilization experiment after later
 review demonstrated that deliberately overlapped rigid bodies can recover in
@@ -516,9 +527,9 @@ rows are finite and capacity-clean with zero overflow. The 32K row is a
 capacity frontier on this named adapter, not a portable sustained-60-Hz
 product claim.
 
-The 2026-07-24 two-target correction retains the 8,192-slot reserve and 92
-dispatches but adds one 16-byte contribution plus one four-byte generation
-record per slot. Against current clean HEAD, declared particle allocation
+The historical 2026-07-24 two-target correction retained the 8,192-slot
+reserve and 92 dispatches but added one 16-byte contribution plus one
+four-byte generation record per slot. Against its clean HEAD, declared particle allocation
 rises from `889,988` to `1,053,828` bytes (`+163,840`, `+18.4%`). An initial
 360-sample control/candidate window measured host P50/P95
 `6.120/7.591 ms` versus `6.307/7.908 ms`; a later bimodal
@@ -528,6 +539,16 @@ not show a significant host-time regression, so the correctness change was
 retained without changing particle count, dispatches, pressure coefficients,
 rigid iterations, or the coupled schedule. These dirty-candidate samples are a
 regression check, not a replacement clean throughput baseline.
+
+The 2026-08-10 four-target correction adds two more 16-byte contribution
+records and two more four-byte generation records per particle slot. The
+8,192-slot delta from the two-target layout is `327,680` bytes. A same-source
+46-step control/candidate probe measured host P95 `11.270/9.735 ms`; the
+different final hashes are expected because the two-record control can
+overflow on earlier steps even when its final-step diagnostic is clean. The
+durable acceptance evidence is therefore the explicit four-target/fifth-
+target fail-closed fixture and the zero-overflow sustained target row, not a
+claim of bit identity with the incomplete two-record path.
 
 Current Browser WebGPU run `b6af663c-69a8-4f6a-ad4e-8f47b7cb0104`
 completed 624 product-scene steps at effective scale `1.000046` with zero slip

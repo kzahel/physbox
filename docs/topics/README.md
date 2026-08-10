@@ -14,8 +14,8 @@ a running log.
 - [Coupled liquid/rigid constraint surface](coupled-liquid-rigid-constraint-surface.md)
   — implemented-preview decision, S35 fluid/solid contact-stabilization
   experiments, one-GPU-world coupling and wake invariants,
-  compact particle grid/capacity evidence, bounded two-target particle/body
-  response with explicit third-target overflow, measured PhysBox 3/LiquidFun
+  compact particle grid/capacity evidence, bounded four-target particle/body
+  response with explicit fifth-target overflow, measured PhysBox 3/LiquidFun
   disagreements, PhysBox 4 reuse boundary, rigid-only Box2D comparison
   semantics, first water/tool/render scope, and final human-review gate.
 - [Liquid dispatch and capacity performance](liquid-dispatch-and-capacity-performance.md)

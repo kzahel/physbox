@@ -7,8 +7,8 @@ primary cause of the reported mobile liquid slowdown. The 92-dispatch particle
 graph is a separate material cost at the ordinary 64-body tier. S43 has now
 qualified and selected the existing workgroup-per-island rigid dispatch form
 through the 128-live-body tier and removed reserved capacity from interactive
-solver-graph selection. The particle graph remains active work. The two-target
-contribution change below is a correctness-capacity fix.
+solver-graph selection. The particle graph remains active work. The bounded
+four-target contribution change below is a correctness-capacity fix.
 
 Governing performance contract:
 [performance and scale](performance-and-scale.md).
@@ -166,8 +166,8 @@ giant-body fallback without a material measured tier cost. The complete
 full-body scan remains the authority until a matched physical-device row
 shows otherwise.
 
-The current two-record floating-point body contribution path also remains
-selected. An attempted active-tile reduction changed particle position by as
+The floating-point body contribution path also remains selected. An attempted
+active-tile reduction changed particle position by as
 much as `0.17270756` after three steps and failed the state differential before
 timing. A keyed or fixed-point replacement was not admitted after the clean
 100-solid rows showed only `704` final contributions at 8K and `429` at 16K
@@ -511,18 +511,18 @@ implementation is corrected. Total GPU time remains useful.
 
 ## Current decisions
 
-Correctness-capacity update, 2026-07-24: a minimized submerged-circle failure
-required two generation-checked body-contribution records per particle rather
-than one. The selected primary/secondary planar layout keeps ordinary primary
-reads contiguous and consults the secondary plane only when the primary record
-declares it. It retains the complete 92-dispatch graph. At the 8,192-slot
-product reserve it raises declared particle allocation from the current
-clean-HEAD `889,988` bytes to `1,053,828` bytes (`+163,840`, `+18.4%`).
-Same-machine control/candidate/control timing was bimodal but showed no
-significant host regression: the later aggregated host P50/P95 was
-`13.561/18.865 ms` for control and `12.987/19.273 ms` for the candidate. This
-does not remediate or materially worsen the independently diagnosed dispatch
-cost, and it creates no new throughput claim.
+Correctness-capacity update, 2026-08-10: the earlier two-record path was
+sufficient for its minimized 2026-07-24 submerged-circle fixture, but the
+first sustained 100-solid row exposed `372` final-step overflows over 1,800
+steps. Four generation-checked planar records retain all 8,192 particles with
+zero overflow on the same source, while a fifth simultaneous target still
+fails closed in the focused fixture. This adds `327,680` bytes at 8,192 slots
+over the two-record layout and retains the complete 92-dispatch graph. A
+same-source 46-step probe measured two/four-record host P95 at
+`11.270/9.735 ms`; it shows no regression but is not a throughput promotion.
+The four-record source then sustained native full-frame 100+8K at `14.464 ms`
+P95 and `0.999975` effective scale in a dirty candidate run. Clean and Browser
+recapture remain required before final qualification.
 
 1. Keep 64 rigid-body slots as the ordinary cross-host default. Particle
    capacity remains independent.

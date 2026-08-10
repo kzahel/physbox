@@ -25,7 +25,7 @@ const GRID_HEIGHT: u32 = 68;
 const GRID_CELL_COUNT: u32 = GRID_WIDTH * GRID_HEIGHT;
 const PARTICLE_WORKGROUP_SIZE: u32 = 64;
 const PARTICLE_SUBSTEPS: u32 = 2;
-const PARTICLE_BODY_CONTRIBUTIONS_PER_PARTICLE: u32 = 2;
+const PARTICLE_BODY_CONTRIBUTIONS_PER_PARTICLE: u32 = 4;
 const PARTICLE_BYTES_PER_SLOT: u64 = 64;
 pub const GPU_PARTICLE_DIAGNOSTICS_VERSION: u32 = 4;
 
@@ -2666,32 +2666,41 @@ mod tests {
     }
 
     #[test]
-    fn gpu_boundary_pressure_supports_two_and_rejects_three_dynamic_targets() {
+    fn gpu_boundary_pressure_supports_four_and_rejects_five_dynamic_targets() {
         let instance = crate::create_instance();
         let adapter = pollster::block_on(crate::gpu_context::request_adapter(&instance, None))
             .expect("test GPU adapter");
         let (device, queue) =
             pollster::block_on(crate::gpu_context::request_device(&adapter)).unwrap();
-        let two =
-            particle_target_scenario(&[Vec2::ZERO, Vec2::new(1.24, 0.0)], Vec2::new(0.62, 0.0));
-        let diagnostics = run_particle_scenario(&device, &queue, &two);
-        assert!(diagnostics.boundary_density_contacts >= 2);
-        assert!(diagnostics.boundary_pressure_edges >= 2);
-        assert_eq!(diagnostics.body_contribution_overflow, 0);
-        assert_eq!(diagnostics.overflow_flags & (1 << 4), 0);
-        assert!(diagnostics.capacity_clean);
-
         let particle = Vec2::new(0.525, 0.303_109);
-        let three = particle_target_scenario(
+        let four = particle_target_scenario(
             &[
                 Vec2::ZERO,
                 Vec2::new(1.05, 0.0),
                 Vec2::new(0.525, 0.909_327),
+                Vec2::new(0.525, -0.303_109),
             ],
             particle,
         );
-        let diagnostics = run_particle_scenario(&device, &queue, &three);
-        assert!(diagnostics.boundary_density_contacts >= 3);
+        let diagnostics = run_particle_scenario(&device, &queue, &four);
+        assert!(diagnostics.boundary_density_contacts >= 4);
+        assert!(diagnostics.boundary_pressure_edges >= 4);
+        assert_eq!(diagnostics.body_contribution_overflow, 0);
+        assert_eq!(diagnostics.overflow_flags & (1 << 4), 0);
+        assert!(diagnostics.capacity_clean);
+
+        let five = particle_target_scenario(
+            &[
+                Vec2::ZERO,
+                Vec2::new(1.05, 0.0),
+                Vec2::new(0.525, 0.909_327),
+                Vec2::new(0.525, -0.303_109),
+                Vec2::new(-0.05, 0.303_109),
+            ],
+            particle,
+        );
+        let diagnostics = run_particle_scenario(&device, &queue, &five);
+        assert!(diagnostics.boundary_density_contacts >= 5);
         assert!(diagnostics.body_contribution_overflow > 0);
         assert_ne!(diagnostics.overflow_flags & (1 << 4), 0);
         assert!(!diagnostics.capacity_clean);

@@ -26,8 +26,8 @@ const BODY_FLAG_LIVE: u32 = 1u << 0u;
 const BODY_FLAG_FIXED: u32 = 1u << 2u;
 const BODY_FLAG_RECTANGLE: u32 = 1u << 8u;
 const BODY_FLAG_CIRCLE: u32 = 1u << 9u;
-const BODY_CONTRIBUTIONS_PER_PARTICLE: u32 = 2u;
-const HAS_SECOND_BODY_BIT: u32 = 1u << 30u;
+const BODY_CONTRIBUTIONS_PER_PARTICLE: u32 = 4u;
+const HAS_ADDITIONAL_BODY_BIT: u32 = 1u << 30u;
 const BODY_INDEX_MASK: u32 = 0x3fffffffu;
 // This identity is bitcast through a float storage lane. Keep the bit pattern
 // finite so every WebGPU WGSL frontend accepts the constant.
@@ -75,28 +75,21 @@ fn solve_body_velocity(@builtin(global_invocation_id) invocation: vec3u) {
     let first_prior = contributions[particle_index];
     let first_encoded_body = bitcast<u32>(first_prior.w);
     if first_encoded_body == NO_BODY {
-        contributions[particle_index] = empty_contribution;
-        contributions[particle_index + params.counts.x] = empty_contribution;
+        for (var slot = 0u; slot < BODY_CONTRIBUTIONS_PER_PARTICLE; slot += 1u) {
+            contributions[particle_index + slot * params.counts.x] = empty_contribution;
+        }
         return;
     }
     let contact_count =
         select(1u, BODY_CONTRIBUTIONS_PER_PARTICLE,
-            (first_encoded_body & HAS_SECOND_BODY_BIT) != 0u);
-    var second_prior = empty_contribution;
-    if contact_count > 1u {
-        second_prior = contributions[particle_index + params.counts.x];
-    }
-    for (var slot = 0u; slot < BODY_CONTRIBUTIONS_PER_PARTICLE; slot += 1u) {
-        contributions[particle_index + slot * params.counts.x] = empty_contribution;
-    }
+            (first_encoded_body & HAS_ADDITIONAL_BODY_BIT) != 0u);
 
     var particle_velocity = velocities[particle_index];
     var emitted_contributions = 0u;
     for (var slot = 0u; slot < contact_count; slot += 1u) {
-        var prior = first_prior;
-        if slot > 0u {
-            prior = second_prior;
-        }
+        let prior_index = particle_index + slot * params.counts.x;
+        let prior = contributions[prior_index];
+        contributions[prior_index] = empty_contribution;
         let body_index = bitcast<u32>(prior.w) & BODY_INDEX_MASK;
         if body_index >= params.counts.y {
             continue;
@@ -156,7 +149,7 @@ fn solve_body_velocity(@builtin(global_invocation_id) invocation: vec3u) {
         let first = contributions[particle_index];
         contributions[particle_index] = vec4f(
             first.xyz,
-            bitcast<f32>(bitcast<u32>(first.w) | HAS_SECOND_BODY_BIT),
+            bitcast<f32>(bitcast<u32>(first.w) | HAS_ADDITIONAL_BODY_BIT),
         );
     }
     velocities[particle_index] = particle_velocity;

@@ -731,7 +731,7 @@ mod tests {
         LiquidScaleBenchmarkArtifactV1 {
             schema_version: SCHEMA_VERSION,
             artifact_version: LIQUID_SCALE_ARTIFACT_VERSION,
-            scenario_id: "liquid-scale-solids-20-8192-v1".to_owned(),
+            scenario_id: "liquid-scale-solids-20-8192-v2".to_owned(),
             source_definition_hash: "0".repeat(64),
             scenario_hash: "1".repeat(64),
             host_kind: LiquidScaleHostKindV1::NativeDesktop,

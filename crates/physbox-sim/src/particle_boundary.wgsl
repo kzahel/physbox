@@ -31,8 +31,8 @@ const COUNTER_BODY_CONTACTS: u32 = 6u;
 const COUNTER_BODY_CONTRIBUTIONS: u32 = 16u;
 const COUNTER_BODY_CONTRIBUTION_OVERFLOW: u32 = 18u;
 const OVERFLOW_BODY_CONTRIBUTIONS: u32 = 1u << 4u;
-const BODY_CONTRIBUTIONS_PER_PARTICLE: u32 = 2u;
-const HAS_SECOND_BODY_BIT: u32 = 1u << 30u;
+const BODY_CONTRIBUTIONS_PER_PARTICLE: u32 = 4u;
+const HAS_ADDITIONAL_BODY_BIT: u32 = 1u << 30u;
 // This identity is bitcast through a float storage lane. Keep the bit pattern
 // finite so every WebGPU WGSL frontend accepts the constant.
 const NO_BODY: u32 = 0x7f7fffffu;
@@ -151,7 +151,7 @@ fn project_boundaries(@builtin(global_invocation_id) invocation: vec3u) {
             let first = contributions[index];
             contributions[index] = vec4f(
                 first.xyz,
-                bitcast<f32>(bitcast<u32>(first.w) | HAS_SECOND_BODY_BIT),
+                bitcast<f32>(bitcast<u32>(first.w) | HAS_ADDITIONAL_BODY_BIT),
             );
         }
         atomicAdd(&counters[COUNTER_BODY_CONTRIBUTIONS], dynamic_contacts);

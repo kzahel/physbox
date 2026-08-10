@@ -1,7 +1,7 @@
 # S43 — Liquid scale benchmark and optimization
 
 Status: local implementation and physics-target qualification complete;
-physical Android, matched full-frame target rows, and two maintained-host
+physical Android, matched Browser/16K full-frame target rows, and two maintained-host
 gate failures remain open, 2026-08-10. Human direction authorizes continuous
 execution, proportional validation, and coherent commits through the final
 evidence and disposition. The work starts from clean `main` at
@@ -364,7 +364,10 @@ beyond the pre-existing atomic-grid jitter, so it was reverted before timing.
 A fixed-point or keyed replacement would additionally need new translation,
 torque, quantization, generation, contention, and overflow proofs to save a
 small number of dispatches that is not visible in complete-step timing. The
-current bounded two-record floating-point path remains selected.
+current bounded floating-point path remains selected. The later sustained
+S43.10 lane supersedes its two-record capacity with four planar records after
+the 100+8K row exposed long-horizon overflows; this is a correctness-capacity
+change, not an accumulator optimization.
 
 ### S43.9 — conservative grid-rebuild reuse and bounded fusion
 
@@ -434,8 +437,22 @@ Thus the ordinary, strong, headline, and stretch targets all pass the declared
 12 ms physics-only objective on local native Metal and Browser WebGPU. Native
 raw-water 32K also remains capacity-clean at `8.163 ms` P95, but it is still a
 bounded frontier result rather than a sustained or cross-host product claim.
-Matched rigid-only controls, 30-second target-topology full-frame pacing, and
-all physical Android rates remain unmeasured.
+Matched rigid-only controls, clean Browser and 16K target-topology full-frame
+pacing, and all physical Android rates remain unmeasured.
+
+Full-frame implementation/capacity checkpoint, 2026-08-10: the new matched
+runner submits exactly one fixed outer step plus the shared world renderer per
+paced frame at 960×600 and never catches up. The original 20+8K native source
+passed 1,800 frames at `16.193 ms` host P95 and `0.999963` effective scale.
+The first 100+8K run rejected the two-record contribution capacity with 350
+overflows and 13 lost particles. A controlled at-rest source retained all
+particles but still exposed 372 overflows. The version-2 source therefore
+starts the separated solids at rest, and the admitted four-record bounded
+layout accepts four simultaneous targets while a fifth fails closed. Its dirty
+candidate 100+8K native row retained all 8,192 particles, reported zero
+overflow, and measured `11.306/14.464/16.164 ms` host P50/P95/P99,
+`0.999975` effective scale, and `0.000764` seconds slip. Clean native and
+Browser recapture remain the qualification gate.
 
 Local qualification passed warnings-denied production clippy; six liquid
 contract tests; five focused GPU particle mechanics/lifecycle tests; all three

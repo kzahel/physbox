@@ -27,8 +27,8 @@ const BODY_FLAG_LIVE: u32 = 1u << 0u;
 const BODY_FLAG_RECTANGLE: u32 = 1u << 8u;
 const BODY_FLAG_CIRCLE: u32 = 1u << 9u;
 const PRESSURE_BODY_BIT: u32 = 1u << 31u;
-const BODY_CONTRIBUTIONS_PER_PARTICLE: u32 = 2u;
-const HAS_SECOND_BODY_BIT: u32 = 1u << 30u;
+const BODY_CONTRIBUTIONS_PER_PARTICLE: u32 = 4u;
+const HAS_ADDITIONAL_BODY_BIT: u32 = 1u << 30u;
 // These identities are bitcast through a float storage lane. Keep both bit
 // patterns finite and outside every supported body capacity.
 const OVERFLOW_BODY: u32 = 0x7f7ffffeu;
@@ -156,7 +156,7 @@ fn project_boundary_pressure(@builtin(global_invocation_id) invocation: vec3u) {
         let first = contributions[index];
         contributions[index] = vec4f(
             first.xyz,
-            bitcast<f32>(bitcast<u32>(first.w) | HAS_SECOND_BODY_BIT),
+            bitcast<f32>(bitcast<u32>(first.w) | HAS_ADDITIONAL_BODY_BIT),
         );
     }
     let previous = positions[index];

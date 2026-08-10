@@ -750,6 +750,19 @@ regression, but it also does not create a new clean throughput baseline or
 portable performance claim. The memory increase, raw samples, and unchanged
 dispatch count remain the durable cost record.
 
+Four-target particle/body correction, 2026-08-10: the first paced 1,800-step
+100-solid + 8K row invalidated the two-record capacity with `372` final-step
+overflows despite retaining the full particle population. The selected four-
+plane candidate adds another `327,680` bytes at 8,192 slots, keeps 92 particle
+dispatches, accepts four simultaneous generation-checked targets, and fails
+closed on a fifth. On the same version-2 at-rest source, short two/four-record
+P50/P95 was `8.384/11.270 ms` versus `8.485/9.735 ms`; no performance
+regression is established. The four-record 100+8K native full-frame candidate
+retained all 8,192 particles with zero overflow over 1,800 steps and measured
+`11.306/14.464/16.164 ms` host P50/P95/P99, `0.999975` effective scale, and
+`0.000764` seconds slip. These are dirty-candidate results pending clean
+cross-host recapture, not a physical-mobile claim.
+
 Clean Browser WebGPU run `b6af663c-69a8-4f6a-ad4e-8f47b7cb0104` at source
 `3680714` completes 624 current product steps at effective scale `1.000046`
 with zero slip. It retains 3,952 authored particles in the 8,192-slot reserve
