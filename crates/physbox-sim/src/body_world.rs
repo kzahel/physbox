@@ -183,7 +183,7 @@ impl GpuBodyWorld {
         world_capacity: WorldCapacityPreset,
     ) -> Result<Self, String> {
         let fixed_step_hz = scenario_fixed_step_hz(scenario)?;
-        let scheduling_policy = selected_interactive_scheduling(scenario, world_capacity)?;
+        let scheduling_policy = selected_interactive_scheduling(scenario)?;
         Self::new_with_generated_contacts(
             device,
             scenario,
@@ -216,7 +216,7 @@ impl GpuBodyWorld {
         identity_policy: ContactIdentityPolicyV1,
     ) -> Result<Self, String> {
         let fixed_step_hz = scenario_fixed_step_hz(scenario)?;
-        let scheduling_policy = selected_interactive_scheduling(scenario, world_capacity)?;
+        let scheduling_policy = selected_interactive_scheduling(scenario)?;
         Self::new_with_generated_contacts(
             device,
             scenario,
@@ -243,7 +243,7 @@ impl GpuBodyWorld {
             physics.sleep_grouping,
         );
         if physics.solver_profile == physbox_sim::SolverProfileName::HardDirect {
-            let scheduling_policy = selected_interactive_scheduling(scenario, world_capacity)?;
+            let scheduling_policy = selected_interactive_scheduling(scenario)?;
             return Self::new_with_generated_contacts(
                 device,
                 scenario,
@@ -260,9 +260,10 @@ impl GpuBodyWorld {
         }
         let initial_body_count = u32::try_from(scenario.bodies.len())
             .map_err(|_| "GPU body count exceeds u32".to_owned())?;
-        let scheduling_policy = GpuSolverSchedulingPolicyV1::authority_gpu_probe_for_body_capacity(
-            interactive_body_capacity(initial_body_count, world_capacity)?,
-        );
+        let scheduling_policy =
+            GpuSolverSchedulingPolicyV1::authority_gpu_probe_for_live_body_count(
+                initial_body_count,
+            );
         Self::new_with_generated_contacts(
             device,
             scenario,
@@ -300,7 +301,7 @@ impl GpuBodyWorld {
             if physics.solver_profile == physbox_sim::SolverProfileName::HardDirect {
                 (
                     GpuSolverExecutionV4::SELECTED,
-                    selected_interactive_scheduling(&scenario.rigid, world_capacity)?,
+                    selected_interactive_scheduling(&scenario.rigid)?,
                     false,
                 )
             } else {
@@ -308,8 +309,8 @@ impl GpuBodyWorld {
                     .map_err(|_| "GPU body count exceeds u32".to_owned())?;
                 (
                     GpuSolverExecutionV4::AUTHORITY_GPU_PROBE,
-                    GpuSolverSchedulingPolicyV1::authority_gpu_probe_for_body_capacity(
-                        interactive_body_capacity(initial_body_count, world_capacity)?,
+                    GpuSolverSchedulingPolicyV1::authority_gpu_probe_for_live_body_count(
+                        initial_body_count,
                     ),
                     true,
                 )
@@ -373,14 +374,22 @@ impl GpuBodyWorld {
         let generated_contacts = generated_solver_configuration
             .map(|(execution, scheduling_policy)| {
                 if branch_robust_tunable && post_fluid_stabilization {
-                    GpuGeneratedContactGraph::new_branch_robust_tunable_with_post_fluid_stabilization(
-                        device, &storage, scenario,
+                    GpuGeneratedContactGraph::new_branch_robust_tunable_with_post_fluid_stabilization_and_scheduling(
+                        device, &storage, scenario, scheduling_policy,
                     )
                 } else if branch_robust_tunable {
-                    GpuGeneratedContactGraph::new_branch_robust_tunable(device, &storage, scenario)
+                    GpuGeneratedContactGraph::new_branch_robust_tunable_with_scheduling(
+                        device,
+                        &storage,
+                        scenario,
+                        scheduling_policy,
+                    )
                 } else if post_fluid_stabilization {
-                    GpuGeneratedContactGraph::new_with_post_fluid_stabilization(
-                        device, &storage, scenario,
+                    GpuGeneratedContactGraph::new_with_post_fluid_stabilization_and_scheduling(
+                        device,
+                        &storage,
+                        scenario,
+                        scheduling_policy,
                     )
                 } else if execution == GpuSolverExecutionV4::SELECTED
                     && scheduling_policy
@@ -1930,13 +1939,11 @@ fn scenario_fixed_step_hz(scenario: &ScenarioV1) -> Result<u32, String> {
 
 fn selected_interactive_scheduling(
     scenario: &ScenarioV1,
-    world_capacity: WorldCapacityPreset,
 ) -> Result<GpuSolverSchedulingPolicyV1, String> {
     let initial_live_count = u32::try_from(scenario.bodies.len())
         .map_err(|_| "GPU body count exceeds u32".to_owned())?;
-    let body_capacity = interactive_body_capacity(initial_live_count, world_capacity)?;
-    Ok(GpuSolverSchedulingPolicyV1::selected_for_body_capacity(
-        body_capacity,
+    Ok(GpuSolverSchedulingPolicyV1::selected_for_live_body_count(
+        initial_live_count,
     ))
 }
 

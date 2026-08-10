@@ -412,6 +412,7 @@ pub struct GpuSolverSchedulingPolicyV1 {
 
 impl GpuSolverSchedulingPolicyV1 {
     pub const SMALL_WORLD_BODY_CAPACITY_MAX: u32 = 128;
+    pub const QUALIFIED_ISLAND_LIVE_BODY_MAX: u32 = Self::SMALL_WORLD_BODY_CAPACITY_MAX;
 
     pub const SERIAL_CONTROL: Self = Self {
         version: GPU_SOLVER_SCHEDULING_POLICY_VERSION,
@@ -509,6 +510,22 @@ impl GpuSolverSchedulingPolicyV1 {
             Self::SELECTED_SMALL_WORLD
         } else {
             Self::SELECTED
+        }
+    }
+
+    pub const fn selected_for_live_body_count(live_body_count: u32) -> Self {
+        if live_body_count <= Self::QUALIFIED_ISLAND_LIVE_BODY_MAX {
+            Self::SELECTED_SMALL_WORLD
+        } else {
+            Self::SELECTED
+        }
+    }
+
+    pub const fn authority_gpu_probe_for_live_body_count(live_body_count: u32) -> Self {
+        if live_body_count <= Self::QUALIFIED_ISLAND_LIVE_BODY_MAX {
+            Self::AUTHORITY_GPU_PROBE_SMALL_WORLD
+        } else {
+            Self::AUTHORITY_GPU_PROBE
         }
     }
 

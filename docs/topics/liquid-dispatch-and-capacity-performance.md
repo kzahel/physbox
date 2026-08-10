@@ -6,9 +6,9 @@ updated 2026-08-10. Physical Pixel
 primary cause of the reported mobile liquid slowdown. The 92-dispatch particle
 graph is a separate material cost at the ordinary 64-body tier. S43 has now
 qualified and selected the existing workgroup-per-island rigid dispatch form
-through the 128-slot/100-dynamic-body tier; live-count routing above larger
-reserves and the particle graph remain active work. The two-target contribution
-change below is a correctness-capacity fix.
+through the 128-live-body tier and removed reserved capacity from interactive
+solver-graph selection. The particle graph remains active work. The two-target
+contribution change below is a correctness-capacity fix.
 
 Governing performance contract:
 [performance and scale](performance-and-scale.md).
@@ -69,13 +69,25 @@ workaround, not closure of either scaling problem.
 
 ### Selected 128-slot rigid dispatch tier
 
-S43 qualified the existing `WorkgroupPerIsland` dispatch form through 128
-reserved body slots. The selected solver equations, substeps, iterations,
-contact coloring, and compacted color order are unchanged. A focused
+S43 qualified the existing `WorkgroupPerIsland` dispatch form through 128 live
+bodies. Interactive worlds select one graph from their known initial live
+population, while all subsequent work counts and island topology remain
+GPU-resident. Reserved capacity no longer selects the solver graph. Initial
+populations above 128 retain the per-color fallback. The selected solver
+equations, substeps, iterations, contact coloring, and compacted color order
+are unchanged. A focused
 100-dynamic-circle bucket differential was bit-exact for bodies, manifolds,
 cache, contacts, color assignment, and compacted work order against the
-`PerColorIndirect` form. The 129-slot-and-above construction tier keeps the
-existing scalable per-color fallback.
+`PerColorIndirect` form.
+
+A 256-slot rigid-floor world with two initial bodies now declares 186 solver
+dispatches instead of the old 553; the ordinary 64-slot graph declares 175.
+The remaining 11-dispatch difference is capacity-sensitive broadphase setup,
+not the per-color solver cliff. A zero-gravity construction differential then
+grew the initially island-routed world from one to 129 live bodies in two GPU
+construction batches. Its final body snapshot was bit-exact with a 129-body
+world that selected the scalable fallback at construction. The route remained
+fixed, exactly one solver ran, and no CPU observation or readback selected it.
 
 Pre-commit candidate probes on the 100-solid + 8K liquid source produced:
 
@@ -87,9 +99,9 @@ Pre-commit candidate probes on the 100-solid + 8K liquid source produced:
 | Chrome WebGPU | island candidate | 277 | 10.365 ms | 11.025 ms |
 
 These dirty-tree rows select the implementation candidate but are not final
-claim evidence. S43 retains a clean same-revision recapture, live-count routing
-for oversized reserves, rigid-only/full-frame controls, and physical Android
-qualification as separate gates.
+claim evidence. S43 retains a clean same-revision recapture,
+rigid-only/full-frame controls, and physical Android qualification as separate
+gates.
 
 ### S43 clean cross-host physics baseline
 

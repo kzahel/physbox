@@ -271,6 +271,22 @@ impl GpuGeneratedContactGraph {
         storage: &GpuBodyStorage,
         scenario: &ScenarioV1,
     ) -> Result<Self, String> {
+        Self::new_with_post_fluid_stabilization_and_scheduling(
+            device,
+            storage,
+            scenario,
+            GpuSolverSchedulingPolicyV1::selected_for_body_capacity(
+                storage.layout().capacity_elements,
+            ),
+        )
+    }
+
+    pub fn new_with_post_fluid_stabilization_and_scheduling(
+        device: &wgpu::Device,
+        storage: &GpuBodyStorage,
+        scenario: &ScenarioV1,
+        scheduling_policy: GpuSolverSchedulingPolicyV1,
+    ) -> Result<Self, String> {
         validate_selected_settings(scenario)?;
         let persistence_topology = GpuContactPersistenceTopology::StablePairSlot;
         Self::new_with_topologies_execution_scheduling_identity_extended_and_authority_mode(
@@ -283,9 +299,7 @@ impl GpuGeneratedContactGraph {
             false,
             u32::MAX,
             GpuSolverExecutionV4::SELECTED,
-            GpuSolverSchedulingPolicyV1::selected_for_body_capacity(
-                storage.layout().capacity_elements,
-            ),
+            scheduling_policy,
             ContactIdentityPolicyV1::SELECTED,
             crate::GpuSoftFeedbackPolicyV1::SELECTED,
             crate::GpuNormalRelaxationPolicyV1::SELECTED,
@@ -602,6 +616,22 @@ impl GpuGeneratedContactGraph {
         storage: &GpuBodyStorage,
         scenario: &ScenarioV1,
     ) -> Result<Self, String> {
+        Self::new_branch_robust_tunable_with_scheduling(
+            device,
+            storage,
+            scenario,
+            GpuSolverSchedulingPolicyV1::authority_gpu_probe_for_body_capacity(
+                storage.layout().capacity_elements,
+            ),
+        )
+    }
+
+    pub fn new_branch_robust_tunable_with_scheduling(
+        device: &wgpu::Device,
+        storage: &GpuBodyStorage,
+        scenario: &ScenarioV1,
+        scheduling_policy: GpuSolverSchedulingPolicyV1,
+    ) -> Result<Self, String> {
         crate::branch_robust_gpu_promotion::validate_branch_robust_tunable_settings(
             &scenario.settings,
         )?;
@@ -615,9 +645,7 @@ impl GpuGeneratedContactGraph {
             false,
             u32::MAX,
             GpuSolverExecutionV4::AUTHORITY_GPU_PROBE,
-            GpuSolverSchedulingPolicyV1::authority_gpu_probe_for_body_capacity(
-                storage.layout().capacity_elements,
-            ),
+            scheduling_policy,
             ContactIdentityPolicyV1::SELECTED,
             crate::GpuSoftFeedbackPolicyV1::EveryBiasedIteration,
             crate::GpuNormalRelaxationPolicyV1::PointSequential,
@@ -635,6 +663,22 @@ impl GpuGeneratedContactGraph {
         storage: &GpuBodyStorage,
         scenario: &ScenarioV1,
     ) -> Result<Self, String> {
+        Self::new_branch_robust_tunable_with_post_fluid_stabilization_and_scheduling(
+            device,
+            storage,
+            scenario,
+            GpuSolverSchedulingPolicyV1::authority_gpu_probe_for_body_capacity(
+                storage.layout().capacity_elements,
+            ),
+        )
+    }
+
+    pub fn new_branch_robust_tunable_with_post_fluid_stabilization_and_scheduling(
+        device: &wgpu::Device,
+        storage: &GpuBodyStorage,
+        scenario: &ScenarioV1,
+        scheduling_policy: GpuSolverSchedulingPolicyV1,
+    ) -> Result<Self, String> {
         crate::branch_robust_gpu_promotion::validate_branch_robust_tunable_settings(
             &scenario.settings,
         )?;
@@ -648,9 +692,7 @@ impl GpuGeneratedContactGraph {
             false,
             u32::MAX,
             GpuSolverExecutionV4::AUTHORITY_GPU_PROBE,
-            GpuSolverSchedulingPolicyV1::authority_gpu_probe_for_body_capacity(
-                storage.layout().capacity_elements,
-            ),
+            scheduling_policy,
             ContactIdentityPolicyV1::SELECTED,
             crate::GpuSoftFeedbackPolicyV1::EveryBiasedIteration,
             crate::GpuNormalRelaxationPolicyV1::PointSequential,

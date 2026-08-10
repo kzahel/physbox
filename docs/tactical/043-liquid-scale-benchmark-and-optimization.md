@@ -219,9 +219,9 @@ samples; no optimization starts from an unmeasured attribution assumption.
 - [x] Qualify workgroup-per-island execution through the bounded 128-slot,
       100-dynamic-body benchmark topology without changing solver equations or
       color/order semantics.
-- [ ] Route from GPU-visible live/topology work rather than reserved capacity,
+- [x] Route from GPU-visible live/topology work rather than reserved capacity,
       with exactly one selected route and a fail-closed scalable fallback.
-- [ ] Prove runtime growth/churn can cross the route bound without CPU
+- [x] Prove runtime growth/churn can cross the route bound without CPU
       observation, duplicate solving, dropped work, or watchdog exposure.
 - [ ] Compare native, Browser, and physical Android 20/100 rigid-only and 8K
       coupled rows on the same revision.
@@ -234,7 +234,18 @@ compacted order between both dispatch forms. No solver equation, iteration,
 color, or order changed. Dirty-tree candidate probes reduced the 100-solid +
 8K row from 644 to 277 dispatches. Native host P95 changed from `10.933` to
 `8.685 ms`; Chrome WebGPU changed from `16.070` to `11.025 ms`. Clean
-same-revision evidence and the live-count routing/growth work remain open.
+same-revision cross-host evidence remains open.
+
+Live-routing checkpoint, 2026-08-10: interactive construction now selects one
+solver graph from the known initial live-body population, not its reserve. The
+selected graph consumes the existing GPU compact live-body/topology counts for
+every later step; initial populations above 128 select the scalable per-color
+fallback. A 256-slot rigid-floor world starting with two live bodies now
+declares 186 solver dispatches rather than the old 553 (the 64-slot form is
+175). A zero-gravity differential grew an initially island-routed world from 1
+to 129 live bodies in two 64-command GPU construction batches. Its final body
+snapshot was bit-exact with a 129-body world that selected the fallback at
+construction. No readback selected or changed either graph.
 
 Gate: the selected route is mechanically equivalent, capacity-clean, portable,
 and materially reduces the diagnosed 128-slot mobile rigid cost; otherwise it

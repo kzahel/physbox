@@ -1329,6 +1329,34 @@ mod tests {
     }
 
     #[test]
+    fn oversized_body_reserve_does_not_select_rigid_work_from_capacity() {
+        let physics = physbox_launch::PhysicsConfigurationV3::SOFT_COUPLED;
+        let dispatches = |world_capacity| {
+            let mut renderer = pollster::block_on(OffscreenRenderer::new(
+                320,
+                200,
+                EngineConfig {
+                    scenario: ValidationScenario::RigidFloor,
+                    world_capacity,
+                    solver_profile: crate::SolverProfileConfig::from_physics(physics).unwrap(),
+                    ..Default::default()
+                },
+            ))
+            .unwrap();
+            renderer
+                .render(FrameInput::exact(1))
+                .scene_contract
+                .solver_dispatches_per_step
+        };
+
+        let ordinary = dispatches(physbox_launch::WorldCapacityPreset::Slots64);
+        let oversized = dispatches(physbox_launch::WorldCapacityPreset::Slots256);
+        assert_eq!(ordinary, 175);
+        assert_eq!(oversized, 186);
+        assert!(oversized < 200);
+    }
+
+    #[test]
     fn sleeping_floor_pass_evidence_clears_zero_work_topology() {
         let mut physics = physbox_launch::PhysicsConfigurationV3::SOFT_COUPLED;
         physics.sleeping_enabled = true;
