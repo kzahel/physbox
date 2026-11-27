@@ -169,6 +169,12 @@ The S40 showcase toolbar remains deliberately compact:
 - **Max water** selects `None` or a bounded particle capacity.
 - **Physics** selects only 30 or 60 Hz.
 - **Pause** and **Reset** control the current world.
+- **Fullscreen** uses the display while keeping the scene picker and controls
+  available. The canvas fills the viewport below the controls in windowed
+  mode as well.
+
+Selecting or resetting a scene starts playback. Each scene describes its
+initial motion and what happens as it settles.
 
 Capacity and physics-rate changes are pending configuration. They take effect
 only when Reset is pressed or a new scene is selected because they determine
@@ -188,14 +194,17 @@ drag submits throttled neutral emission commands; raw pointer frequency may
 not become an unbounded GPU command stream. Tool size, body material editing,
 water erasure, and persisted configurations are deferred.
 
-Two consumer-owned scenes extend the catalog:
+Consumer-owned stress scenes extend the catalog:
 
 - **Rigid stress 1K/2K/5K/10K** author the exact named live-body count into a
-  matching default capacity. Each field uses many isolated stacks of at most
-  five dynamics on fixed pads, retaining at least 80 percent dynamic bodies
-  while allowing the default exact sleeping policy to settle independent
-  components. Rigid stress above 10K is not part of the public showcase after
-  direct human review.
+  matching default capacity. Isolated stacks of up to five dynamic boxes
+  start at staggered heights above fixed pads. The impact and ensuing sleep
+  are visible as the stacks land at different times. At least 80 percent of
+  the total bodies are dynamic.
+- **Rigid rain 1K** and **Rigid avalanche 2K** drop mixed circles and boxes
+  onto five ramps. Rain starts from a repeating profile. Avalanche doubles
+  the total body count and slopes the starting positions for a wave of impacts
+  across the tray. Counts include the static ramps and boundaries.
 - **Water stress 4K/8K/16K** fills approximately 80 percent of its named
   particle capacity, while reserving slots for the water tool.
 
@@ -445,8 +454,8 @@ S42 publication completed on 2026-07-28 from source
 ## Replayable tower drop
 
 The regular scene picker offers a 13,122-particle pool and a 32,640-particle
-pool beneath the same ten-block tower. Drop tower releases the staged scene.
-Reset restores the initial pose. The public GPU observation supplies every
+pool beneath the same ten-block tower. The tower begins falling on selection,
+and Reset replays the drop. The public GPU observation supplies every
 particle in the half-resolution thickness pass. The showcase owns the scene
 and surface shading, and the physics library owns the high-count water preset.
 The physical Pixel measurements and repeatable capture command are in

@@ -59,6 +59,8 @@ enum SceneName {
     RigidStress2k,
     RigidStress5k,
     RigidStress10k,
+    RigidRain1k,
+    RigidAvalanche2k,
     WaterStress4k,
     WaterStress8k,
     WaterStress16k,
@@ -77,6 +79,8 @@ impl SceneName {
             RIGID_STRESS_2K => Ok(Self::RigidStress2k),
             RIGID_STRESS_5K => Ok(Self::RigidStress5k),
             RIGID_STRESS_10K => Ok(Self::RigidStress10k),
+            "rigid-rain-1k" => Ok(Self::RigidRain1k),
+            "rigid-avalanche-2k" => Ok(Self::RigidAvalanche2k),
             WATER_STRESS_4K => Ok(Self::WaterStress4k),
             WATER_STRESS_8K => Ok(Self::WaterStress8k),
             WATER_STRESS_16K => Ok(Self::WaterStress16k),
@@ -95,6 +99,8 @@ impl SceneName {
             Self::RigidStress2k => RIGID_STRESS_2K,
             Self::RigidStress5k => RIGID_STRESS_5K,
             Self::RigidStress10k => RIGID_STRESS_10K,
+            Self::RigidRain1k => "rigid-rain-1k",
+            Self::RigidAvalanche2k => "rigid-avalanche-2k",
             Self::WaterStress4k => WATER_STRESS_4K,
             Self::WaterStress8k => WATER_STRESS_8K,
             Self::WaterStress16k => WATER_STRESS_16K,
@@ -135,6 +141,15 @@ impl SceneName {
             _ => None,
         }
     }
+
+    #[cfg(target_arch = "wasm32")]
+    const fn rigid_drop_body_count(self) -> Option<u32> {
+        match self {
+            Self::RigidRain1k => Some(1_000),
+            Self::RigidAvalanche2k => Some(2_000),
+            _ => None,
+        }
+    }
 }
 
 #[cfg(any(target_arch = "wasm32", test))]
@@ -156,8 +171,8 @@ impl ShowcaseConfig {
     const fn for_scene(name: SceneName) -> Self {
         let body_capacity = match name {
             SceneName::TowerDrop13k | SceneName::TowerDrop32k => WorldCapacity::Slots64,
-            SceneName::RigidStress1k => WorldCapacity::Slots1000,
-            SceneName::RigidStress2k => WorldCapacity::Slots2000,
+            SceneName::RigidStress1k | SceneName::RigidRain1k => WorldCapacity::Slots1000,
+            SceneName::RigidStress2k | SceneName::RigidAvalanche2k => WorldCapacity::Slots2000,
             SceneName::RigidStress5k => WorldCapacity::Slots5000,
             SceneName::RigidStress10k => WorldCapacity::Slots10000,
             _ => Self::DEFAULT.body_capacity,
@@ -541,7 +556,7 @@ impl Scene {
             last_steps: 1,
             effective_simulation_scale: 0.0,
             last_timestamp_ms: None,
-            paused: name.tower_drop(),
+            paused: false,
             pending_box_target: None,
             pending_water_target: None,
             tool_notice: None,
@@ -1600,12 +1615,12 @@ fn rigid_stress_layout(target_bodies: u32) -> RigidStressLayout {
         .div_ceil(MAX_DYNAMIC_BODIES_PER_STACK + 1)
         .max(1);
     let dynamic_bodies = field_bodies.saturating_sub(stack_count);
-    let lower = [-14.0, -8.6];
-    let upper = [14.0, 8.8];
-    let width = upper[0] - lower[0];
-    let height = upper[1] - lower[1];
-    let columns = ((stack_count as f32 * width / height).sqrt().ceil() as u32).max(1);
+    let columns = ((stack_count as f32 * 1.7).sqrt().ceil() as u32).max(1);
     let rows = stack_count.div_ceil(columns).max(1);
+    // Keep the clearance and box thickness in world units as the field grows.
+    let half_width = columns as f32 * 1.8;
+    let lower = [-half_width, -8.6];
+    let upper = [half_width, lower[1] + rows as f32 * 3.6];
     RigidStressLayout {
         target_bodies,
         stack_count,
@@ -1618,11 +1633,93 @@ fn rigid_stress_layout(target_bodies: u32) -> RigidStressLayout {
 }
 
 #[cfg(target_arch = "wasm32")]
+const DROP_RAMP_COUNT: u32 = 5;
+#[cfg(target_arch = "wasm32")]
+const DROP_COLUMNS: u32 = 60;
+
+#[cfg(target_arch = "wasm32")]
+fn rigid_drop_top(name: SceneName, body_count: u32) -> f32 {
+    let rows = (body_count - 3 - DROP_RAMP_COUNT).div_ceil(DROP_COLUMNS);
+    let stagger = if name == SceneName::RigidAvalanche2k {
+        8.0
+    } else {
+        2.2
+    };
+    0.6 + (rows - 1) as f32 * 0.72 + stagger + 1.0
+}
+
+#[cfg(target_arch = "wasm32")]
+fn add_rigid_drop(
+    world: &mut World,
+    visuals: &mut [ShapeVisual],
+    name: SceneName,
+    body_count: u32,
+) -> Result<(), String> {
+    for index in 0..DROP_RAMP_COUNT {
+        let alternate = index % 2 == 0;
+        add_body(
+            world,
+            visuals,
+            BodyDef::fixed()
+                .with_position([
+                    (index as f32 - 2.0) * 10.0,
+                    if alternate { -4.0 } else { -5.5 },
+                ])
+                .with_angle(if alternate { -0.32 } else { 0.32 }),
+            ShapeDef::rectangle([2.8, 0.22]).with_friction(0.48),
+            [0.27, 0.36, 0.47, 1.0],
+        )?;
+    }
+    let avalanche = name == SceneName::RigidAvalanche2k;
+    for index in 0..(body_count - 3 - DROP_RAMP_COUNT) {
+        let column = index % DROP_COLUMNS;
+        let row = index / DROP_COLUMNS;
+        let stagger = if avalanche {
+            8.0 * (1.0 - column as f32 / (DROP_COLUMNS - 1) as f32)
+        } else {
+            (column % 12) as f32 * 0.2
+        };
+        let x = (column as f32 - (DROP_COLUMNS - 1) as f32 * 0.5) * 0.9 + (row % 2) as f32 * 0.22;
+        let y = 0.6 + row as f32 * 0.72 + stagger;
+        let shape = if (row + column).is_multiple_of(2) {
+            ShapeDef::circle(0.27)
+        } else {
+            ShapeDef::rectangle([0.29, 0.22])
+        };
+        add_body(
+            world,
+            visuals,
+            BodyDef::dynamic()
+                .with_position([x, y])
+                .with_angle(((column + row * 3) % 7) as f32 * 0.09 - 0.27)
+                .with_linear_velocity([if avalanche { 0.7 } else { 0.0 }, -2.0]),
+            shape
+                .with_density(0.8)
+                .with_friction(0.42)
+                .with_restitution(0.18),
+            palette((row / 2 + column / 6) as usize),
+        )?;
+    }
+    debug_assert_eq!(world.counters().live_bodies, body_count);
+    Ok(())
+}
+
+#[cfg(target_arch = "wasm32")]
 fn build_scene(
     device: &wgpu::Device,
     name: SceneName,
     config: ShowcaseConfig,
 ) -> Result<(World, Vec<ShapeVisual>, [f32; 4], u32), String> {
+    let rigid_stress_count = name.rigid_stress_body_count();
+    let rigid_drop_count = name.rigid_drop_body_count();
+    if let Some(count) = rigid_stress_count.or(rigid_drop_count)
+        && count > config.body_capacity.slots()
+    {
+        return Err(format!(
+            "{} requires Max bodies of at least {count}",
+            name.slug()
+        ));
+    }
     let definition = WorldDef {
         capacity: config.body_capacity,
         quality: physbox_sim::QualityDef {
@@ -1636,16 +1733,8 @@ fn build_scene(
     };
     let mut world = World::new(device, definition).map_err(|error| error.to_string())?;
     let mut visuals = vec![ShapeVisual::zeroed(); config.body_capacity.slots() as usize];
-    let rigid_stress_layout = name.rigid_stress_body_count().map(rigid_stress_layout);
-    if let Some(layout) = rigid_stress_layout
-        && layout.target_bodies > config.body_capacity.slots()
-    {
-        return Err(format!(
-            "{} requires Max bodies of at least {}",
-            name.slug(),
-            layout.target_bodies
-        ));
-    }
+    let rigid_stress_layout = rigid_stress_count.map(rigid_stress_layout);
+    let drop_top = rigid_drop_count.map(|count| rigid_drop_top(name, count));
     let water_stress_region = if name.water_stress_capacity().is_some() {
         config.particle_capacity.map(water_stress_region)
     } else {
@@ -1653,8 +1742,15 @@ fn build_scene(
     };
     let camera = if name.tower_drop() {
         [0.0, 3.2, 14.2, 12.4]
-    } else if rigid_stress_layout.is_some() {
-        [0.0, 0.1, 15.0, 10.0]
+    } else if let Some(layout) = rigid_stress_layout {
+        [
+            0.0,
+            (layout.lower[1] + layout.upper[1]) * 0.5,
+            layout.upper[0] + 1.2,
+            (layout.upper[1] - layout.lower[1]) * 0.5 + 1.2,
+        ]
+    } else if let Some(top) = drop_top {
+        [0.0, (top - 9.6) * 0.5, 30.0, (top + 9.6) * 0.5]
     } else {
         water_stress_region.map_or([0.0, 0.0, 8.0, 5.0], |(lower, upper, _)| {
             let left = lower[0] - 0.8;
@@ -1672,6 +1768,13 @@ fn build_scene(
     let (floor_position, floor_half_extents, left_position, wall_half_extents) =
         if name.tower_drop() {
             ([0.0, -8.3], [13.3, 0.3], [-13.1, 2.7], [0.2, 11.0])
+        } else if let Some(top) = drop_top {
+            (
+                [0.0, -8.65],
+                [29.0, 0.35],
+                [-28.8, (top - 8.65) * 0.5],
+                [0.2, (top + 8.65) * 0.5],
+            )
         } else if let Some(layout) = rigid_stress_layout {
             let floor_y = layout.lower[1] - 0.3;
             let wall_top = layout.upper[1] + 0.4;
@@ -1769,7 +1872,7 @@ fn build_scene(
                 add_body(
                     &mut world,
                     &mut visuals,
-                    BodyDef::dynamic().with_position([0.0, -3.55 + index as f32 * 0.86]),
+                    BodyDef::dynamic().with_position([0.0, -2.75 + index as f32 * 0.86]),
                     ShapeDef::rectangle([0.58, 0.4])
                         .with_density(0.9)
                         .with_friction(0.62)
@@ -1781,7 +1884,7 @@ fn build_scene(
                 add_body(
                     &mut world,
                     &mut visuals,
-                    BodyDef::dynamic().with_position([x, -3.55]),
+                    BodyDef::dynamic().with_position([x, -2.75 + 0.2 * (index % 2) as f32]),
                     ShapeDef::circle(0.42)
                         .with_density(0.8)
                         .with_friction(0.5)
@@ -1915,7 +2018,7 @@ fn build_scene(
             let cell_width = (layout.upper[0] - layout.lower[0]) / layout.columns as f32;
             let cell_height = (layout.upper[1] - layout.lower[1]) / layout.rows as f32;
             let platform_half_extents = [cell_width * 0.38, cell_height * 0.028];
-            let dynamic_half_extents = [cell_width * 0.3, cell_height * 0.065];
+            let dynamic_half_extents = [cell_width * 0.28, cell_height * 0.048];
             let base_stack_height = layout.dynamic_bodies / layout.stack_count;
             let taller_stack_count = layout.dynamic_bodies % layout.stack_count;
             let mut authored_dynamics = 0u32;
@@ -1943,10 +2046,12 @@ fn build_scene(
                 let bodies_in_stack =
                     base_stack_height + u32::from(stack_index < taller_stack_count);
                 let platform_top = platform_position[1] + platform_half_extents[1];
+                let drop_clearance = cell_height * (0.12 + 0.045 * ((column + row) % 7) as f32);
                 for level in 0..bodies_in_stack {
                     let position = [
                         platform_position[0],
                         platform_top
+                            + drop_clearance
                             + dynamic_half_extents[1]
                             + level as f32 * dynamic_half_extents[1] * 2.0,
                     ];
@@ -1958,13 +2063,22 @@ fn build_scene(
                             .with_density(0.8)
                             .with_friction(0.65)
                             .with_restitution(0.0),
-                        palette(authored_dynamics as usize),
+                        palette(((column + 2 * row) % 6 + level) as usize),
                     )?;
                     authored_dynamics += 1;
                 }
             }
             debug_assert_eq!(authored_dynamics, layout.dynamic_bodies);
             debug_assert_eq!(world.counters().live_bodies, layout.target_bodies);
+            0
+        }
+        SceneName::RigidRain1k | SceneName::RigidAvalanche2k => {
+            add_rigid_drop(
+                &mut world,
+                &mut visuals,
+                name,
+                rigid_drop_count.expect("drop scenes have a body count"),
+            )?;
             0
         }
         SceneName::WaterStress4k | SceneName::WaterStress8k | SceneName::WaterStress16k => {
@@ -2214,8 +2328,8 @@ mod tests {
             assert!(layout.dynamic_bodies >= target * 4 / 5);
             assert!(layout.dynamic_bodies <= layout.stack_count * 5);
             assert!(layout.columns * layout.rows >= layout.stack_count);
-            assert!(layout.lower[0] >= -16.0 && layout.lower[1] >= -10.0);
-            assert!(layout.upper[0] <= 16.0 && layout.upper[1] <= 24.0);
+            assert!(layout.upper[0] - layout.lower[0] >= 3.59 * layout.columns as f32);
+            assert!(layout.upper[1] - layout.lower[1] >= 3.59 * layout.rows as f32);
         }
     }
 

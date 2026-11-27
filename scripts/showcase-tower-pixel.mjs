@@ -73,8 +73,7 @@ try {
   const result = await page.evaluate(async (mode) => {
     const state = () => window.__physboxShowcase;
     const canvas = document.querySelector("canvas");
-    const button = document.querySelector("#pause-button");
-    if (button.textContent !== "Drop tower") throw Error("Tower not staged");
+    const reset = document.querySelector("#reset-button");
     const adapter = await navigator.gpu.requestAdapter();
     if (!adapter || adapter.info.isFallbackAdapter)
       throw Error("Hardware adapter required");
@@ -91,9 +90,23 @@ try {
       stopped = new Promise((r) => (recorder.onstop = r));
       recorder.start();
     }
-    await new Promise((r) => setTimeout(r, 700));
-    const initial = state();
+    reset.click();
+    const [initial, initialTime] = await new Promise((resolve) => {
+      requestAnimationFrame((t) => resolve([state(), t]));
+    });
     const samples = [];
+    function collect(s, t) {
+      samples.push({
+        t,
+        frame: s.frames,
+        step: s.fixedSteps - initial.fixedSteps,
+        live: s.particleCount,
+        dropped: s.droppedParticles,
+        gpuPhysicsMs: s.gpuPhysicsMs,
+        gpuRenderMs: s.gpuRenderMs,
+      });
+    }
+    collect(initial, initialTime);
     const endStep = mode === "film" ? 480 : 240;
     await new Promise((done, reject) => {
       const timer = setTimeout(
@@ -107,16 +120,7 @@ try {
           return;
         }
         const s = state();
-        samples.push({
-          t,
-          frame: s.frames,
-          step: s.fixedSteps - initial.fixedSteps,
-          live: s.particleCount,
-          dropped: s.droppedParticles,
-          gpuPhysicsMs: s.gpuPhysicsMs,
-          gpuRenderMs: s.gpuRenderMs,
-        });
-        if (samples.length === 1) button.click();
+        collect(s, t);
         if (s.fixedSteps - initial.fixedSteps >= endStep) {
           clearTimeout(timer);
           done();
@@ -309,15 +313,11 @@ async function verifyReplayAndDrag(page, result) {
   await page.locator("#reset-button").evaluate((b) => b.click());
   await page.waitForFunction(
     (count) =>
-      window.__physboxShowcase.frames >= 8 &&
-      window.__physboxShowcase.fixedSteps <= 1 &&
+      window.__physboxShowcase.fixedSteps >= 8 &&
+      window.__physboxShowcase.frames < 100 &&
       window.__physboxShowcase.liveBodies === 13 &&
       window.__physboxShowcase.particleCount === count,
     result.initial.particleCount,
   );
-  await page
-    .getByRole("button", { name: "Drop tower" })
-    .evaluate((b) => b.click());
-  await page.waitForFunction(() => window.__physboxShowcase.fixedSteps >= 8);
   return { pick: point, heldSteps: 15, released: true, replayed: true };
 }

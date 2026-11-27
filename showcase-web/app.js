@@ -4,76 +4,88 @@ import { webGpuUnavailableMessage } from "./startup-diagnostics.js";
 const scenes = {
   playground: {
     title: "Playground",
-    description: "Mixed circles and boxes share one GPU-resident rigid world.",
+    description: "Circles and boxes tumble into a pile. Drag a resting body to wake it up.",
     defaultBodies: 256,
     defaultWater: 0,
   },
   "stack-and-sleep": {
     title: "Stack and sleep",
-    description: "A compact stability stack settles, groups, and sleeps entirely on the GPU.",
+    description: "The stack settles, then takes on a muted tint as the bodies go to sleep. Drag a box to wake them.",
     defaultBodies: 256,
     defaultWater: 0,
   },
   "water-and-rigid": {
     title: "Water and rigid bodies",
     description:
-      "Preview water and rigid shapes exchange motion in one coupled GPU world.",
+      "Watch preview water spread under the falling shapes. Drag a body through the pool to make waves.",
     defaultBodies: 256,
     defaultWater: 4096,
   },
   "tower-drop-13k": {
     title: "Tower drop · 13K",
-    description: "Drop ten masonry blocks into the pool. Reset sets up the same shot.",
+    description: "Ten blocks splash into 13,122 water particles. Watch the wave rebound off the walls and settle. Reset replays the drop.",
     defaultBodies: 64,
     defaultWater: 16384,
-    staged: true,
+    defaultPhysics: 60,
   },
   "tower-drop-32k": {
     title: "Tower drop · 32K",
-    description: "The same tower and waterline with a denser pool.",
+    description: "Ten blocks splash into 32,640 water particles. The wave may unfold in slow motion before settling. Reset replays the drop.",
     defaultBodies: 64,
     defaultWater: 32768,
-    staged: true,
+    defaultPhysics: 60,
   },
   "rigid-stress-1k": {
     title: "Rigid stress 1K",
-    description: "Authors exactly 1,000 bodies in independent settling stacks.",
+    description: "Rows of boxes drop onto separate pads and go still once they settle. Muted boxes are asleep. Drag one to wake it.",
     defaultBodies: 1000,
     defaultWater: 0,
   },
   "rigid-stress-2k": {
     title: "Rigid stress 2K",
-    description: "Authors exactly 2,000 bodies in independent settling stacks.",
+    description: "Staggered rows of stacks land on their pads, then go still as they sleep. Drag a box to wake its stack.",
     defaultBodies: 2000,
     defaultWater: 0,
   },
   "rigid-stress-5k": {
     title: "Rigid stress 5K",
-    description: "Authors exactly 5,000 bodies; raise Max bodies for placement headroom.",
+    description: "Thousands of boxes land in waves across the pads. Once the stacks stop moving, zoom in and drag a box to wake it.",
     defaultBodies: 5000,
     defaultWater: 0,
   },
   "rigid-stress-10k": {
     title: "Rigid stress 10K",
-    description: "Authors exactly 10,000 bodies; use Pan and wheel/trackpad zoom to inspect.",
+    description: "This dense field may drop in slow motion under load. The stacks go still as they sleep. Zoom in to inspect or disturb them.",
     defaultBodies: 10000,
+    defaultWater: 0,
+  },
+  "rigid-rain-1k": {
+    title: "Rigid rain · 1K",
+    description: "A sheet of circles and boxes rains onto five ramps. Watch them bounce and pile up, then drag a body once the pile settles.",
+    defaultBodies: 1000,
+    defaultWater: 0,
+  },
+  "rigid-avalanche-2k": {
+    title: "Rigid avalanche · 2K",
+    description: "A sloped cloud of circles and boxes hits the ramps from right to left. The pile may build in slow motion before settling.",
+    defaultBodies: 2000,
     defaultWater: 0,
   },
   "water-stress-4k": {
     title: "Water stress 4K",
-    description: "Fills about 80% of the 4K water tier with coupled rigid shapes.",
+    description: "Watch eight shapes move through a tank of water. Once it quiets down, drag a shape to stir it.",
     defaultBodies: 256,
     defaultWater: 4096,
   },
   "water-stress-8k": {
     title: "Water stress 8K",
-    description: "Fills about 80% of the 8K water tier with coupled rigid shapes.",
+    description: "A taller column of water swirls around eight shapes. Drag a shape to disturb the water again once it quiets down.",
     defaultBodies: 256,
     defaultWater: 8192,
   },
   "water-stress-16k": {
     title: "Water stress 16K",
-    description: "Heavy: fills about 80% of the 16K water tier.",
+    description: "Watch eight shapes disturb the tallest water column. The flow may play in slow motion before settling.",
     defaultBodies: 256,
     defaultWater: 16384,
   },
@@ -92,13 +104,13 @@ const sceneDescription = document.querySelector("#scene-description");
 const sceneHint = document.querySelector("#scene-hint");
 const pauseButton = document.querySelector("#pause-button");
 const resetButton = document.querySelector("#reset-button");
+const fullscreenButton = document.querySelector("#fullscreen-button");
 const configState = document.querySelector("#config-state");
 const statusText = document.querySelector("#status-text");
 const fatalError = document.querySelector("#fatal-error");
 
 let app;
 let paused = false;
-let waitingForDrop = false;
 let failed = false;
 let configDirty = false;
 let pointerActive = false;
@@ -126,7 +138,6 @@ async function boot() {
   resizeCanvas();
   app = await start(canvas, scene);
   app.setSleepVisualization(sleepVisualization);
-  setInitialPlayback(scene);
   installControls();
   installPointerInput();
   installKeyboardInput();
@@ -141,9 +152,12 @@ function installControls() {
   sceneSelect.addEventListener("change", () => {
     const scene = sceneSelect.value;
     applySceneDefaults(scene);
-    applyConfiguration(scene);
-    history.replaceState(null, "", `#${scene}`);
-    updateSceneCopy(scene);
+    if (applyConfiguration(scene)) {
+      history.replaceState(null, "", `#${scene}`);
+      updateSceneCopy(scene);
+    } else {
+      sceneSelect.value = app.scene;
+    }
   });
   for (const button of toolButtons) {
     button.addEventListener("click", () => setTool(button.dataset.tool));
@@ -161,12 +175,27 @@ function installControls() {
     });
   }
   pauseButton.addEventListener("click", () => {
-    waitingForDrop = false;
     paused = !paused;
     app.setPaused(paused);
     updatePause();
   });
   resetButton.addEventListener("click", () => applyConfiguration(sceneSelect.value));
+  fullscreenButton.hidden = !document.fullscreenEnabled;
+  fullscreenButton.addEventListener("click", async () => {
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+      } else {
+        await document.body.requestFullscreen();
+      }
+    } catch {
+      sceneHint.textContent = "Fullscreen is unavailable in this window";
+    }
+  });
+  document.addEventListener("fullscreenchange", () => {
+    fullscreenButton.textContent = document.fullscreenElement ? "Exit fullscreen" : "Fullscreen";
+    updateHint();
+  });
   sleepVisualsInput.addEventListener("change", () => {
     sleepVisualization = sleepVisualsInput.checked;
     app.setSleepVisualization(sleepVisualization);
@@ -256,15 +285,17 @@ function applyConfiguration(scene) {
     configState.textContent = error instanceof Error ? error.message : String(error);
     configState.classList.remove("pending");
     configState.classList.add("error");
-    return;
+    return false;
   }
   configDirty = false;
   configState.textContent = "";
   configState.classList.remove("pending");
   configState.classList.remove("error");
-  setInitialPlayback(scene);
+  paused = false;
+  updatePause();
   updateToolAvailability();
   updateHint();
+  return true;
 }
 
 function xFromEvent(event) {
@@ -369,7 +400,7 @@ function updateSceneCopy(scene) {
 }
 
 function applySceneDefaults(scene) {
-  if (scenes[scene].staged) physicsSelect.value = "60";
+  if (scenes[scene].defaultPhysics) physicsSelect.value = String(scenes[scene].defaultPhysics);
   bodyCapacitySelect.value = String(scenes[scene].defaultBodies);
   waterCapacitySelect.value = String(scenes[scene].defaultWater);
 }
@@ -400,7 +431,7 @@ function updateToolButtons() {
 
 function updateHint() {
   const hints = {
-    drag: "Drag any moving body",
+    drag: "Drag a body · wheel or trackpad to zoom",
     box: "Click to place a standard box",
     water: "Click or drag to add preview water",
     pan: "Drag to pan; wheel or trackpad to zoom",
@@ -409,15 +440,8 @@ function updateHint() {
   canvas.dataset.tool = selectedTool;
 }
 
-function setInitialPlayback(scene) {
-  waitingForDrop = Boolean(scenes[scene].staged);
-  paused = waitingForDrop;
-  app.setPaused(paused);
-  updatePause();
-}
-
 function updatePause() {
-  pauseButton.textContent = waitingForDrop ? "Drop tower" : paused ? "Resume" : "Pause";
+  pauseButton.textContent = paused ? "Resume" : "Pause";
   pauseButton.setAttribute("aria-pressed", String(paused));
 }
 

@@ -98,6 +98,19 @@ try {
   ) {
     throw new Error(`invalid default water state: ${JSON.stringify(state)}`);
   }
+  const viewport = page.viewportSize();
+  for (const size of [viewport, { width: 1280, height: 740 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(size);
+    const canvas = await canvasBounds(page);
+    if (canvas.width !== size.width || Math.abs(canvas.y + canvas.height - size.height) > 1) {
+      throw new Error(`showcase canvas does not fill ${size.width}×${size.height}: ${JSON.stringify(canvas)}`);
+    }
+  }
+  await page.setViewportSize(viewport);
+  await page.getByRole("button", { name: "Fullscreen", exact: true }).click();
+  await page.waitForFunction(() => document.fullscreenElement === document.body);
+  await page.getByRole("button", { name: "Exit fullscreen" }).click();
+  await page.waitForFunction(() => document.fullscreenElement === null);
   const sceneOptions = await page
     .locator("#scene-select option")
     .evaluateAll((options) => options.map((option) => option.value));
@@ -106,6 +119,8 @@ try {
     "rigid-stress-2k",
     "rigid-stress-5k",
     "rigid-stress-10k",
+    "rigid-rain-1k",
+    "rigid-avalanche-2k",
   ]) {
     if (!sceneOptions.includes(scene)) {
       throw new Error(`showcase scene catalog is missing ${scene}`);
@@ -297,11 +312,12 @@ try {
   await page.locator("#reset-button").click();
   await waitForState(
     page,
-    (candidate) =>
+    (candidate, home) =>
       candidate.scene === "rigid-stress-2k" &&
-      Math.abs(candidate.cameraCenterX) < 0.001 &&
-      Math.abs(candidate.cameraCenterY - 0.1) < 0.001 &&
-      Math.abs(candidate.cameraHalfHeight - 10) < 0.001,
+      candidate.cameraCenterX === home.cameraCenterX &&
+      candidate.cameraCenterY === home.cameraCenterY &&
+      candidate.cameraHalfHeight === home.cameraHalfHeight,
+    cameraBefore,
   );
 
   const cameraBeforeArrow = await currentState(page);
@@ -343,15 +359,39 @@ try {
     throw new Error(`invalid 10K stress state: ${JSON.stringify(state)}`);
   }
 
+  for (const [scene, count, description] of [
+    ["rigid-stress-5k", 5_000, /land in waves/],
+    ["rigid-rain-1k", 1_000, /rains onto five ramps/],
+    ["rigid-avalanche-2k", 2_000, /hits the ramps/],
+  ]) {
+    await page.locator("#scene-select").selectOption(scene);
+    await waitForState(
+      page,
+      (s, expected) => s.scene === expected.scene &&
+        s.liveBodies === expected.count && s.bodyCapacity === expected.count &&
+        s.particleCapacity === 0 && s.fixedSteps >= 6,
+      { scene, count },
+    );
+    if (!description.test(await page.locator("#scene-description").textContent())) {
+      throw new Error(`missing scene explanation for ${scene}`);
+    }
+  }
+
   for (const [scene, count] of [["tower-drop-13k", 13_122], ["tower-drop-32k", 32_640]]) {
     await page.locator("#scene-select").selectOption(scene);
     await waitForState(page, (s, expected) => s.scene === expected.scene &&
       s.particleCount === expected.count && s.liveBodies === 13 &&
-      s.physicsHz === 60 && s.frames >= 5 && s.fixedStepsThisFrame === 0, {scene,count});
-    await page.getByRole("button", {name:"Drop tower"}).click();
-    await waitForState(page, s => s.fixedSteps >= 6);
+      s.physicsHz === 60 && s.fixedSteps >= 12, { scene, count });
+    if (!(await page.locator("#scene-description").textContent()).includes(count.toLocaleString("en-US"))) {
+      throw new Error(`missing particle count in explanation for ${scene}`);
+    }
+    await page.getByRole("button", { name: "Pause", exact: true }).click();
+    const beforeReset = await currentState(page);
     await page.locator("#reset-button").click();
-    await waitForState(page, s => s.frames >= 4 && s.fixedSteps <= 1 && s.fixedStepsThisFrame === 0);
+    await waitForState(page, (s, frames) => s.fixedSteps >= 4 && s.frames < frames, beforeReset.frames);
+    if ((await page.locator("#pause-button").textContent()) !== "Pause") {
+      throw new Error(`reset did not restart ${scene}`);
+    }
   }
   // The remaining stress checks exercise the manually selected 30 Hz configuration.
   await page.locator("#physics-select").selectOption("30");

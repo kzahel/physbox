@@ -27,7 +27,8 @@ node scripts/showcase-tower-pixel.mjs target/tower /tmp/tower 32k film
 ```
 
 Each run opens its own foreground Chrome tab over USB on the attached Android
-device. Timing runs measure rendered showcase frames and admitted fixed steps
+device. The current runner resets the auto-playing scene to start a fresh shot.
+Timing runs measure rendered showcase frames and admitted fixed steps
 over four windows after release, with boundaries at steps 0, 30, 80, 150 and
 240. Film runs continue through step 480. The canvas recorder incurs extra
 GPU work, so each timing run disables it.

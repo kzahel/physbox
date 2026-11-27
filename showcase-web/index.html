@@ -26,7 +26,7 @@
       </div>
       <form class="controls" aria-label="Showcase controls" onsubmit="return false">
         <label for="scene-select">Scene:</label>
-        <select id="scene-select">
+        <select id="scene-select" aria-describedby="scene-description">
           <option value="playground">Playground</option>
           <option value="stack-and-sleep">Stack and sleep</option>
           <option value="water-and-rigid" selected>Water and rigid bodies</option>
@@ -36,6 +36,8 @@
           <option value="rigid-stress-2k">Rigid stress 2K</option>
           <option value="rigid-stress-5k">Rigid stress 5K</option>
           <option value="rigid-stress-10k">Rigid stress 10K</option>
+          <option value="rigid-rain-1k">Rigid rain · 1K</option>
+          <option value="rigid-avalanche-2k">Rigid avalanche · 2K</option>
           <option value="water-stress-4k">Water stress 4K</option>
           <option value="water-stress-8k">Water stress 8K</option>
           <option value="water-stress-16k">Water stress 16K</option>
@@ -126,6 +128,7 @@
         </span>
         <button id="pause-button" type="button" aria-pressed="false">Pause</button>
         <button id="reset-button" type="button">Reset</button>
+        <button id="fullscreen-button" type="button" hidden>Fullscreen</button>
       </form>
       <span id="config-state" aria-live="polite"></span>
     </header>
@@ -137,10 +140,10 @@
             <strong id="scene-heading">Water and rigid bodies</strong>
             <span aria-hidden="true"> — </span>
             <span id="scene-description">
-              Preview water and rigid shapes exchange motion in one coupled GPU world.
+              Watch preview water spread under the falling shapes. Drag a body through the pool to make waves.
             </span>
           </p>
-          <p class="hint" id="scene-hint">Drag any moving body</p>
+          <p class="hint" id="scene-hint">Drag a body · wheel or trackpad to zoom</p>
         </div>
         <div class="canvas-shell">
           <canvas
