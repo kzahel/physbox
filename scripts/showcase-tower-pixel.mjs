@@ -1,4 +1,4 @@
-// node scripts/showcase-tower-pixel.mjs BUILD_DIR OUTPUT_DIR [13k|32k] [time|film]
+// node scripts/showcase-tower-pixel.mjs BUILD_DIR OUTPUT_DIR [13k|32k] [time|film|profile]
 import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -7,14 +7,16 @@ import { PNG } from "pngjs";
 import { chromium } from "playwright";
 import { startServer } from "./server.mjs";
 
+import { installTowerGpuProfile } from "./tower-gpu-profile.mjs";
+
 const [build, output, tier = "13k", mode = "time"] = process.argv.slice(2);
 if (
   !build ||
   !output ||
   !["13k", "32k"].includes(tier) ||
-  !["time", "film"].includes(mode)
+  !["time", "film", "profile"].includes(mode)
 ) {
-  throw Error("Expected BUILD_DIR OUTPUT_DIR [13k|32k] [time|film]");
+  throw Error("Expected BUILD_DIR OUTPUT_DIR [13k|32k] [time|film|profile]");
 }
 const adb = (...args) =>
   execFileSync("adb", ["-d", ...args], { encoding: "utf8" }).trim();
@@ -67,6 +69,7 @@ try {
     scene,
     { timeout: 45000 },
   );
+  if (mode === "profile") await page.evaluate(installTowerGpuProfile);
   const result = await page.evaluate(async (mode) => {
     const state = () => window.__physboxShowcase;
     const canvas = document.querySelector("canvas");
@@ -161,6 +164,7 @@ try {
       initial,
       final: state(),
       canvas: [canvas.width, canvas.height],
+      timestampQuery: adapter.features.has("timestamp-query"),
       adapter: [adapter.info.vendor, adapter.info.architecture],
       phases,
       samples,
@@ -168,6 +172,13 @@ try {
     };
   }, mode);
 
+  if (mode === "profile") {
+    result.gpuProfile = await page.evaluate(async () => {
+      const {frames, errors, pending} = window.towerGpuProfile;
+      await Promise.all(pending);
+      return {frames, errors};
+    });
+  }
   if (result.video) {
     writeFileSync(prefix + ".webm", Buffer.from(result.video, "base64"));
     delete result.video;
@@ -192,6 +203,15 @@ try {
       2,
     ),
   );
+  if (mode === "profile") {
+    const { frames, errors } = result.gpuProfile;
+    for (let step = 80; step < 150; step += 5) {
+      if (!frames.some(f => f.step === step && f.passes.some(p => p.label === "particle_correction_gather"))) {
+        throw Error("Missing GPU profile for step " + step + " in " + prefix);
+      }
+    }
+    if (errors.length) throw Error(errors.join("\n"));
+  }
   const expectedCount = tier === "32k" ? 32_640 : 13_122;
   if (
     result.initial.particleCount !== expectedCount ||
