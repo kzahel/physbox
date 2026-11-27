@@ -1,4 +1,5 @@
-import { cp, mkdir, rm } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { cp, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, join, resolve } from "node:path";
@@ -6,10 +7,12 @@ import { spawnSync } from "node:child_process";
 
 const root = resolve(import.meta.dirname, "..");
 let release = false;
+let pages = false;
 let output = join(root, "target", "showcase-web");
 for (let index = 2; index < process.argv.length; index += 1) {
   const argument = process.argv[index];
   if (argument === "--release") release = true;
+  else if (argument === "--pages") pages = true;
   else if (argument === "--output") {
     if (!process.argv[index + 1]) throw new Error("--output requires a path");
     output = resolve(root, process.argv[++index]);
@@ -25,7 +28,8 @@ const bindgen = join(
   "bin",
   process.platform === "win32" ? "wasm-bindgen.exe" : "wasm-bindgen",
 );
-const packageOutput = join(output, "pkg");
+const assets = pages ? join(output, "assets") : output;
+const packageOutput = join(assets, "pkg");
 const buildEnvironment = { ...process.env };
 const remapFlags = [
   `--remap-path-prefix=${root}=/physbox`,
@@ -66,7 +70,7 @@ if (!existsSync(bindgen)) {
 }
 await rm(output, { recursive: true, force: true });
 await mkdir(packageOutput, { recursive: true });
-await cp(join(root, "showcase-web"), output, { recursive: true });
+await cp(join(root, "showcase-web"), assets, { recursive: true });
 run(bindgen, [
   join(
     root,
@@ -80,7 +84,32 @@ run(bindgen, [
   "--out-dir",
   packageOutput,
 ]);
+if (pages) await packagePages();
 console.log(`${release ? "release" : "debug"} PhysBox Web Showcase ready at ${output}`);
+
+// Pages caches each URL separately. Relative imports (including bindgen's WASM
+// fetch) stay in one content-addressed directory for the lifetime of a page.
+async function packagePages() {
+  const indexPath = join(assets, "index.html");
+  const index = await readFile(indexPath, "utf8");
+  await rm(indexPath);
+  const digest = createHash("sha256");
+  const paths = (await readdir(assets, { recursive: true }))
+    .map((path) => path.replaceAll("\\", "/"))
+    .sort();
+  for (const path of paths) {
+    const file = join(assets, path);
+    if (!(await stat(file)).isFile()) continue;
+    const bytes = await readFile(file);
+    digest.update(`${path}\0${bytes.length}\0`);
+    digest.update(bytes);
+  }
+  const bundle = `assets-${digest.digest("hex").slice(0, 24)}`;
+  await rename(assets, join(output, bundle));
+  await writeFile(join(output, "index.html"), index
+    .replace('href="./styles.css"', `href="./${bundle}/styles.css"`)
+    .replace('src="./app.js"', `src="./${bundle}/app.js"`));
+}
 
 function run(command, args, environment = process.env) {
   const result = spawnSync(command, args, {

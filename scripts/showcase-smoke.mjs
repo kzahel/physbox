@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, stat, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import {
@@ -10,10 +10,6 @@ import {
 import { startServer } from "./server.mjs";
 
 const root = resolve(import.meta.dirname, "..");
-const artifactDirectory = resolve(
-  process.env.PHYSBOX_SHOWCASE_ARTIFACT_DIRECTORY ??
-    join(root, "target", "showcase-web"),
-);
 const serverRoot = resolve(
   process.env.PHYSBOX_SHOWCASE_SERVER_ROOT ?? join(root, "target"),
 );
@@ -62,6 +58,12 @@ try {
   });
   const pageUrl =
     externalBaseUrl ?? `http://127.0.0.1:${server.address().port}${urlPath}`;
+  let wasmResponse;
+  page.on("response", (response) => {
+    if (new URL(response.url()).pathname.endsWith("/pkg/physbox_showcase_web_bg.wasm")) {
+      wasmResponse = response;
+    }
+  });
   const response = await page.goto(pageUrl, {
     waitUntil: "networkidle",
   });
@@ -401,17 +403,8 @@ try {
       `browser problems: page=${errors.join("; ")} console=${consoleProblems.join("; ")}`,
     );
   }
-  const wasmBytes = externalBaseUrl
-    ? await page.evaluate(async () => {
-        const response = await fetch("./pkg/physbox_showcase_web_bg.wasm");
-        if (!response.ok) throw new Error(`WASM returned HTTP ${response.status}`);
-        return (await response.arrayBuffer()).byteLength;
-      })
-    : (
-        await stat(
-          join(artifactDirectory, "pkg", "physbox_showcase_web_bg.wasm"),
-        )
-      ).size;
+  if (!wasmResponse?.ok()) throw new Error("Missing showcase WASM response");
+  const wasmBytes = (await wasmResponse.body()).byteLength;
   const provenance = {
     runId: randomUUID(),
     host: "browser-webgpu",

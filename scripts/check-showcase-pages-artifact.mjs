@@ -4,9 +4,11 @@ import { relative, resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
 const directory = resolve(root, process.argv[2] ?? "dist-showcase");
+const index = await readFile(resolve(directory, "index.html"), "utf8");
+const bundle = index.match(/src="\.\/(assets-[a-f0-9]{24})\/app\.js"/u)?.[1];
+if (!bundle) throw new Error("Pages entry must load a versioned showcase bundle");
 const required = [
   "app.js",
-  "index.html",
   "pkg/physbox_showcase_web.js",
   "pkg/physbox_showcase_web_bg.wasm",
   "startup-diagnostics.js",
@@ -20,25 +22,30 @@ const forbiddenSourceMachineValues = [
   Buffer.from("C:\\Users\\"),
   Buffer.from(".ts.net"),
 ];
-const files = [];
+const names = new Set();
 
 await walk(directory);
-const names = new Set(files.map(({ path }) => relative(directory, path)));
 for (const name of required) {
-  if (!names.has(name)) throw new Error(`Pages artifact is missing ${name}`);
+  if (!names.has(`${bundle}/${name}`)) {
+    throw new Error(`Pages artifact is missing ${bundle}/${name}`);
+  }
 }
 if (names.has("_headers") || names.has("CNAME")) {
   throw new Error("Pages artifact unexpectedly configures headers or a custom domain");
 }
 
 const digest = createHash("sha256");
+const bundleDigest = createHash("sha256");
 let bytes = 0;
-for (const { path, size } of files.sort((left, right) =>
-  left.path.localeCompare(right.path),
-)) {
-  const name = relative(directory, path);
+for (const name of [...names].sort()) {
+  const path = resolve(directory, name);
   const content = await readFile(path);
+  const size = content.length;
   bytes += size;
+  if (name.startsWith(`${bundle}/`)) {
+    bundleDigest.update(`${name.slice(bundle.length + 1)}\0${size}\0`);
+    bundleDigest.update(content);
+  }
   digest.update(`${name}\0${size}\0`);
   digest.update(content);
   for (const forbidden of forbiddenSourceMachineValues) {
@@ -50,10 +57,12 @@ for (const { path, size } of files.sort((left, right) =>
   }
 }
 
-const index = await readFile(resolve(directory, "index.html"), "utf8");
+if (bundle !== `assets-${bundleDigest.digest("hex").slice(0, 24)}`) {
+  throw new Error("Pages bundle URL does not match its contents");
+}
+
 for (const expected of [
-  'href="./styles.css"',
-  'src="./app.js"',
+  `href="./${bundle}/styles.css"`,
   "https://github.com/kzahel/physbox",
 ]) {
   if (!index.includes(expected)) {
@@ -65,7 +74,7 @@ if (/(?:href|src)="\/(?!\/)/u.test(index)) {
 }
 
 console.log(
-  `PHYSBOX_SHOWCASE_ARTIFACT files=${files.length} bytes=${bytes} sha256=${digest.digest("hex")}`,
+  `PHYSBOX_SHOWCASE_ARTIFACT files=${names.size} bytes=${bytes} sha256=${digest.digest("hex")}`,
 );
 
 async function walk(path) {
@@ -76,7 +85,7 @@ async function walk(path) {
       throw new Error(`Pages artifact contains symlink ${relative(directory, child)}`);
     }
     if (metadata.isDirectory()) await walk(child);
-    else if (metadata.isFile()) files.push({ path: child, size: metadata.size });
+    else if (metadata.isFile()) names.add(relative(directory, child).replaceAll("\\", "/"));
     else {
       throw new Error(
         `Pages artifact contains unsupported entry ${relative(directory, child)}`,

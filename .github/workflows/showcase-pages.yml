@@ -56,7 +56,7 @@ jobs:
             ${{ runner.os }}-showcase-rust-1.92.0-bindgen-0.2.125-
 
       - name: Build release showcase
-        run: node scripts/build-showcase-web.mjs --release --output dist-showcase
+        run: npm run build:showcase:pages
 
       - name: Validate static artifact
         run: node scripts/check-showcase-pages-artifact.mjs dist-showcase
