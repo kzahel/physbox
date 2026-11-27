@@ -157,6 +157,9 @@ try {
         fps: (last.frame - first.frame) / seconds,
         stepsHz: (last.step - first.step) / seconds,
         p95Ms: intervals[Math.ceil(intervals.length * 0.95) - 1],
+        maxMs: intervals.at(-1),
+        intervals: intervals.length,
+        intervalsOver42Ms: intervals.filter((ms) => ms > 42).length,
       };
     }
     if (wake) await wake.release();
@@ -174,9 +177,9 @@ try {
 
   if (mode === "profile") {
     result.gpuProfile = await page.evaluate(async () => {
-      const {frames, errors, pending} = window.towerGpuProfile;
+      const { frames, errors, pending } = window.towerGpuProfile;
       await Promise.all(pending);
-      return {frames, errors};
+      return { frames, errors };
     });
   }
   if (result.video) {
@@ -206,7 +209,13 @@ try {
   if (mode === "profile") {
     const { frames, errors } = result.gpuProfile;
     for (let step = 80; step < 150; step += 5) {
-      if (!frames.some(f => f.step === step && f.passes.some(p => p.label === "particle_correction_gather"))) {
+      if (
+        !frames.some(
+          (f) =>
+            f.step === step &&
+            f.passes.some((p) => p.label === "particle_correction_gather"),
+        )
+      ) {
         throw Error("Missing GPU profile for step " + step + " in " + prefix);
       }
     }
