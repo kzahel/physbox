@@ -63,7 +63,7 @@ boundary pressure and retains its full neighbor stencil.
 | Drop the per-neighbor live flag read | 3 | 45.6–46.2 | 33.4 |
 | Also read cell counts through a read-only binding | 2 | 45.2–45.7 | 33.5–49.9 |
 | Cache positions in widened grid records | 3 | 47.7–48.3 | 33.4–33.5 |
-| Select spatial invocation order with original four-byte grid records | 3 | 60.0 | 16.7–16.8 |
+| Select spatial invocation order with original four-byte grid records | 4 | 60.0 | 16.7–16.8 |
 
 Each of the last three trials builds on removing the redundant flag read.
 The read-only binding did not improve cadence. Caching positions added
@@ -76,17 +76,19 @@ kept their full counts.
 On the selected GPU profile, the correction gather averaged 0.72 ms,
 viscosity 0.68 ms and both density gathers combined 1.18 ms. The two solid
 contact projections averaged 0.65 ms. The two controls had 7 and 10 rebound
-frame intervals over 42 ms. All 210 intervals across three selected runs
+frame intervals over 42 ms. All 280 intervals across four selected runs
 were at most 16.8 ms. Impact and settling averaged 60.0 FPS in those runs.
 Cold release averaged 51.4–56.3 FPS compared with 58.1 FPS in the controls.
 The phase contains only 30 steps and includes first-use work.
 
-The 13,122 tier also delivered 60.0 FPS from impact through settling in two
+The 13,122 tier also delivered 60.0 FPS from impact through settling in three
 runs. Separate 480-step Pixel recordings of both tiers show the cavity fill
 over the blocks, with every population sample at the starting count. Both
 post-capture block grabs, releases and resets passed. The MP4s are in the
 evidence root. The instrumented and recorded runs are excluded from the FPS
-table. The selected release WASM SHA-256 is
+table. The final repeat at both sizes in
+`committed/` records clean revision `1a1f04f`. The cold 32K release had one
+49.9 ms interval in that repeat. The selected release WASM SHA-256 is
 `3edffa789a8d8e3ce9d71a3c89d760abc8369699a43147487d8c291234895726`.
 
 The maintained fast lane passed in 52.64 s, including the partial-workgroup
