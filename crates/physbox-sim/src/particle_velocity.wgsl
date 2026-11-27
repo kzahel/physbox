@@ -16,20 +16,6 @@ struct ParticleParams {
 @group(0) @binding(6) var<storage, read_write> corrections: array<vec2f>;
 @group(0) @binding(7) var<uniform> params: ParticleParams;
 
-fn cell_for(position: vec2f) -> vec2i {
-    return vec2i(floor((position - params.grid.xy) / params.grid.z));
-}
-
-fn cell_is_valid(cell: vec2i) -> bool {
-    return all(cell >= vec2i(0)) &&
-        cell.x < i32(params.counts.z) &&
-        cell.y < i32(params.counts.w);
-}
-
-fn cell_index(cell: vec2i) -> u32 {
-    return u32(cell.y) * params.counts.z + u32(cell.x);
-}
-
 @compute @workgroup_size(64)
 fn reconstruct_velocity(@builtin(global_invocation_id) invocation: vec3u) {
     let index = invocation.x;
@@ -45,13 +31,19 @@ fn reconstruct_velocity(@builtin(global_invocation_id) invocation: vec3u) {
 
 @compute @workgroup_size(64)
 fn gather_viscosity(@builtin(global_invocation_id) invocation: vec3u) {
-    let index = invocation.x;
-    if index >= params.counts.x || atomicLoad(&active_flags[index]) == 0u {
-        if index < params.counts.x {
-            corrections[index] = vec2f(0.0);
-        }
+    let lane = invocation.x;
+    if lane >= params.counts.x {
         return;
     }
+    // Preserve cleared outputs for inactive slots. Live outputs have a single
+    // writer, selected below in spatial order from the compact cell records.
+    if atomicLoad(&active_flags[lane]) == 0u {
+        corrections[lane] = vec2f(0.0);
+    }
+    if lane >= grid_record_count() {
+        return;
+    }
+    let index = cell_records[lane];
     let position = positions[index].xy;
     let velocity = velocities[index].xy;
     let own_cell = cell_for(position);
@@ -71,7 +63,7 @@ fn gather_viscosity(@builtin(global_invocation_id) invocation: vec3u) {
             let stored = atomicLoad(&cell_counts[target_cell]);
             for (var slot = 0u; slot < stored; slot += 1u) {
                 let other = cell_records[start + slot];
-                if other == index || atomicLoad(&active_flags[other]) == 0u {
+                if other == index {
                     continue;
                 }
                 let distance = length(positions[other].xy - position);

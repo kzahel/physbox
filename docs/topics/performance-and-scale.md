@@ -498,6 +498,13 @@ shot and its 60 Hz fixed interval. The standard liquid scale benchmark owns
 general capacity and correctness claims. See
 [S47 tower drop](../tactical/047-showcase-tower-drop.md).
 
+S48 used existing grid records to give neighboring GPU lanes spatially close
+particles during the three neighbor gathers. Fresh S47 control runs on the
+same Pixel gave 36.2–36.8 FPS and 50.1 ms p95 over steps 80–150. The selected
+build gave 60.0 FPS and 16.7–16.8 ms p95. Both the 13,122 and 32,640 shots
+retained every observed particle through step 480. Cold release still showed
+missed frames. [Tower rebound evidence](../tactical/048-tower-rebound-performance.md).
+
 ## Capacity and memory contract
 
 Capacity is part of behavior. Track allocated and used bytes separately for at

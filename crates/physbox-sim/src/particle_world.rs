@@ -674,7 +674,10 @@ impl GpuParticleWorld {
         let density_shader = shader(
             device,
             "physbox5_particle_density",
-            include_str!("particle_density.wgsl"),
+            concat!(
+                include_str!("particle_density.wgsl"),
+                include_str!("particle_neighbor_grid.wgsl")
+            ),
         );
         let density_estimate = compute(
             device,
@@ -719,7 +722,10 @@ impl GpuParticleWorld {
         let correction_shader = shader(
             device,
             "physbox5_particle_correction",
-            include_str!("particle_correction.wgsl"),
+            concat!(
+                include_str!("particle_correction.wgsl"),
+                include_str!("particle_neighbor_grid.wgsl")
+            ),
         );
         let correction_gather = compute(
             device,
@@ -1022,7 +1028,10 @@ impl GpuParticleWorld {
         let velocity_shader = shader(
             device,
             "physbox5_particle_velocity",
-            include_str!("particle_velocity.wgsl"),
+            concat!(
+                include_str!("particle_velocity.wgsl"),
+                include_str!("particle_neighbor_grid.wgsl")
+            ),
         );
         let velocity_reconstruct = compute(
             device,
@@ -2591,6 +2600,45 @@ mod tests {
         );
         let expected_speed = 0.25 * (1.0 - 2.0 * damping).powi(PARTICLE_SUBSTEPS as i32);
         assert!((diagnostics.fluid_motion_rms - expected_speed).abs() < 1.0e-4);
+    }
+
+    #[test]
+    fn spatial_gathers_visit_live_slots_in_the_last_grid_cell_after_a_kill() {
+        let instance = crate::create_instance();
+        let adapter = pollster::block_on(crate::gpu_context::request_adapter(&instance, None))
+            .expect("test GPU adapter");
+        let (device, queue) =
+            pollster::block_on(crate::gpu_context::request_device(&adapter)).unwrap();
+        let mut scenario = particle_target_scenario(&[Vec2::ZERO], Vec2::ZERO);
+        let finite = |value| physbox_contracts::FiniteF32::new(value).unwrap();
+        scenario.materials[0].pressure_strength = finite(0.0);
+        scenario.materials[0].near_pressure_strength = finite(0.0);
+        scenario.particle_capacity = 65;
+        // Slot zero disappears on the first rebuild. Slots one and two share the
+        // last grid cell, and the remaining capacity includes a partial workgroup.
+        scenario.regions = [
+            (0, 0.0, KILL_ZONE_Y - 1.0),
+            (1, 15.7, 23.7),
+            (2, 15.8, 23.7),
+        ]
+        .map(|(id, x, y)| ParticleRegionV1 {
+            id,
+            material_id: 0,
+            lower: Vec2::new(x - 0.1, y - 0.1),
+            upper: Vec2::new(x + 0.1, y + 0.1),
+            spacing: finite(0.2),
+            initial_velocity: Vec2::ZERO,
+        })
+        .into();
+        let diagnostics = run_particle_scenario(&device, &queue, &scenario);
+        assert_eq!(diagnostics.killed_particles, 1);
+        assert_eq!(diagnostics.active_count, 2);
+        assert_eq!(diagnostics.occupied_grid_cells, 1);
+        assert_eq!(
+            u64::from(diagnostics.accepted_neighbors),
+            diagnostics.density_evaluations
+        );
+        assert!(diagnostics.capacity_clean);
     }
 
     #[test]
