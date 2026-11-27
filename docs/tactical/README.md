@@ -322,6 +322,7 @@ This README remains the unnumbered index.
 | S45 | Dense water stability | [045-dense-water-stability.md](045-dense-water-stability.md) | complete, first failures isolated and full-window particle check qualified, 2026-11-26 |
 | S46 | Showcase water density and motion | [046-showcase-water-density-and-motion.md](046-showcase-water-density-and-motion.md) | complete, local 13K/32K water preview measured on Pixel, 2026-11-26 |
 | S47 | Replayable tower drop | [047-showcase-tower-drop.md](047-showcase-tower-drop.md) | complete locally, 32,640 live particles at 59–60 FPS on impact and 37 FPS on rebound, 2026-11-27 |
+| S48 | Tower rebound performance | [048-tower-rebound-performance.md](048-tower-rebound-performance.md) | active, phase-specific Pixel profiling and optimization, 2026-11-27 |
 
 ## Conventions
 
