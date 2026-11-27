@@ -5,6 +5,7 @@ struct ParticleParams {
     grid: vec4f,
     counts: vec4u,
     limits: vec4u,
+    integration: vec4f,
 };
 
 @group(0) @binding(0) var<storage, read_write> positions: array<vec4f>;
@@ -69,7 +70,7 @@ fn integrate(@builtin(global_invocation_id) invocation: vec3u) {
     let dt = params.dt_gravity.x;
     let position = positions[index];
     let velocity = velocities[index];
-    let next_velocity = velocity.xy + params.dt_gravity.yz * params.dt_gravity.w * dt;
+    let next_velocity = velocity.xy * params.integration.x + params.dt_gravity.yz * params.dt_gravity.w * dt;
     let next_position = position.xy + next_velocity * dt;
     positions[index] = vec4f(next_position, position.xy);
     velocities[index] = vec4f(next_velocity, velocity.zw);

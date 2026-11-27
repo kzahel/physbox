@@ -318,6 +318,10 @@ This README remains the unnumbered index.
 | S41 | Private open-source preparation | [041-private-open-source-preparation.md](041-private-open-source-preparation.md) | complete; main-only candidate, legacy Pages repair, MIT/README/history audit accepted before S42 publication, 2026-07-28 |
 | S42 | Public repository and Web Showcase Pages | [042-public-repository-and-web-showcase-pages.md](042-public-repository-and-web-showcase-pages.md) | complete; public MIT repository, byte-reproducible Pages showcase, deployed Browser WebGPU, and independent advanced workbench pass, 2026-07-28 |
 | S43 | Liquid scale benchmark and optimization | [043-liquid-scale-benchmark-and-optimization.md](043-liquid-scale-benchmark-and-optimization.md) | active; local native/Browser matrix is dispositioned, Browser passes 20/100+8K, 20+16K, and raw 32K, while physical Android and maintained-host failures remain, 2026-08-10 |
+| S44 | Mobile water performance | [044-mobile-water-performance.md](044-mobile-water-performance.md) | complete, density and viscosity search qualified on Pixel and Radeon, 2026-11-26 |
+| S45 | Dense water stability | [045-dense-water-stability.md](045-dense-water-stability.md) | complete, first failures isolated and full-window particle check qualified, 2026-11-26 |
+| S46 | Showcase water density and motion | [046-showcase-water-density-and-motion.md](046-showcase-water-density-and-motion.md) | complete, local 13K/32K water preview measured on Pixel, 2026-11-26 |
+| S47 | Replayable tower drop | [047-showcase-tower-drop.md](047-showcase-tower-drop.md) | complete locally, 32,640 live particles at 59–60 FPS on impact and 37 FPS on rebound, 2026-11-27 |
 
 ## Conventions
 

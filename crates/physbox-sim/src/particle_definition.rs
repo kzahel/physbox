@@ -190,17 +190,27 @@ impl ParticleRegionDef {
     }
 }
 
+/// Preset for the particle integration and water material of one world.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum WaterProfile {
+    #[default]
+    Standard,
+    /// One fluid substep, a fine neighbor grid and reduced water gravity for dense displays.
+    HighCount,
+}
+
 /// Pre-step authoring for the current single-material preview-water system.
 ///
-/// This definition owns optional initial particle placement, not fluid solver
-/// tuning. An empty region list creates an initially empty system for runtime
-/// emission. It may be installed on a `World` exactly once before the first
+/// This definition owns the water profile and optional initial placement.
+/// An empty region list creates an initially empty system for runtime emission. It may be installed on a `World` exactly once before the first
 /// step.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ParticleSystemDef {
     capacity: u32,
     regions: Vec<ParticleRegionDef>,
+    profile: WaterProfile,
 }
 
 impl ParticleSystemDef {
@@ -208,7 +218,17 @@ impl ParticleSystemDef {
         Self {
             capacity,
             regions: Vec::new(),
+            profile: WaterProfile::Standard,
         }
+    }
+
+    pub const fn with_profile(mut self, profile: WaterProfile) -> Self {
+        self.profile = profile;
+        self
+    }
+
+    pub const fn profile(&self) -> WaterProfile {
+        self.profile
     }
 
     pub fn with_region(mut self, region: ParticleRegionDef) -> Self {

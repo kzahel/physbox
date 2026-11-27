@@ -341,6 +341,18 @@ try {
     throw new Error(`invalid 10K stress state: ${JSON.stringify(state)}`);
   }
 
+  for (const [scene, count] of [["tower-drop-13k", 13_122], ["tower-drop-32k", 32_640]]) {
+    await page.locator("#scene-select").selectOption(scene);
+    await waitForState(page, (s, expected) => s.scene === expected.scene &&
+      s.particleCount === expected.count && s.liveBodies === 13 &&
+      s.physicsHz === 60 && s.frames >= 5 && s.fixedStepsThisFrame === 0, {scene,count});
+    await page.getByRole("button", {name:"Drop tower"}).click();
+    await waitForState(page, s => s.fixedSteps >= 6);
+    await page.locator("#reset-button").click();
+    await waitForState(page, s => s.frames >= 4 && s.fixedSteps <= 1 && s.fixedStepsThisFrame === 0);
+  }
+  // The remaining stress checks exercise the manually selected 30 Hz configuration.
+  await page.locator("#physics-select").selectOption("30");
   for (const [scene, capacity] of [
     ["water-stress-4k", 4_096],
     ["water-stress-8k", 8_192],

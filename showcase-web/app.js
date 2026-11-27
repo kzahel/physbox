@@ -21,6 +21,20 @@ const scenes = {
     defaultBodies: 256,
     defaultWater: 4096,
   },
+  "tower-drop-13k": {
+    title: "Tower drop · 13K",
+    description: "Drop ten masonry blocks into the pool. Reset sets up the same shot.",
+    defaultBodies: 64,
+    defaultWater: 16384,
+    staged: true,
+  },
+  "tower-drop-32k": {
+    title: "Tower drop · 32K",
+    description: "The same tower and waterline with a denser pool.",
+    defaultBodies: 64,
+    defaultWater: 32768,
+    staged: true,
+  },
   "rigid-stress-1k": {
     title: "Rigid stress 1K",
     description: "Authors exactly 1,000 bodies in independent settling stacks.",
@@ -84,6 +98,7 @@ const fatalError = document.querySelector("#fatal-error");
 
 let app;
 let paused = false;
+let waitingForDrop = false;
 let failed = false;
 let configDirty = false;
 let pointerActive = false;
@@ -111,6 +126,7 @@ async function boot() {
   resizeCanvas();
   app = await start(canvas, scene);
   app.setSleepVisualization(sleepVisualization);
+  setInitialPlayback(scene);
   installControls();
   installPointerInput();
   installKeyboardInput();
@@ -145,6 +161,7 @@ function installControls() {
     });
   }
   pauseButton.addEventListener("click", () => {
+    waitingForDrop = false;
     paused = !paused;
     app.setPaused(paused);
     updatePause();
@@ -245,8 +262,7 @@ function applyConfiguration(scene) {
   configState.textContent = "";
   configState.classList.remove("pending");
   configState.classList.remove("error");
-  paused = false;
-  updatePause();
+  setInitialPlayback(scene);
   updateToolAvailability();
   updateHint();
 }
@@ -353,6 +369,7 @@ function updateSceneCopy(scene) {
 }
 
 function applySceneDefaults(scene) {
+  if (scenes[scene].staged) physicsSelect.value = "60";
   bodyCapacitySelect.value = String(scenes[scene].defaultBodies);
   waterCapacitySelect.value = String(scenes[scene].defaultWater);
 }
@@ -392,8 +409,15 @@ function updateHint() {
   canvas.dataset.tool = selectedTool;
 }
 
+function setInitialPlayback(scene) {
+  waitingForDrop = Boolean(scenes[scene].staged);
+  paused = waitingForDrop;
+  app.setPaused(paused);
+  updatePause();
+}
+
 function updatePause() {
-  pauseButton.textContent = paused ? "Resume" : "Pause";
+  pauseButton.textContent = waitingForDrop ? "Drop tower" : paused ? "Resume" : "Pause";
   pauseButton.setAttribute("aria-pressed", String(paused));
 }
 

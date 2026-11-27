@@ -1,7 +1,7 @@
 # Liquid dispatch and capacity performance
 
 Status: active diagnosed performance issue and measured optimization program,
-updated 2026-08-10. Physical Pixel
+updated 2026-11-26. Physical Pixel
 7a evidence identifies a reserved-body-capacity scheduling cliff as the
 primary cause of the reported mobile liquid slowdown. The 92-dispatch particle
 graph is a separate material cost at the ordinary 64-body tier. S43 has now
@@ -39,6 +39,33 @@ active-particle indirect execution, spatial particle/body candidates,
 bounded contribution accumulation, or conservative grid reuse. The fixed
 delta, particle substeps/iterations, same-step coupling invariant, sleeping
 default, and no-catch-up policy do not change to make a timing row pass.
+
+## Water neighbor search on Pixel 7a
+
+The shared density and viscosity passes now skip grid cells outside a
+particle's support radius. On the physical Pixel 7a in Chrome, the 6,497-water
+showcase improved from 35.6–36.1 to 50.7–51.1 fixed steps per wall second.
+The 13,104-water showcase improved from 15.8–15.9 to 23.2. A separate
+1,800-frame browser run retained exactly 8,192 particles with clean capacity.
+Pressure correction remains a separate experiment because boundary pressure
+can move particles after grid construction. The fixed-reserve sweep, Radeon
+comparison and next stability experiment are recorded in
+[S44 mobile water performance](../tactical/044-mobile-water-performance.md).
+
+## Dense water correctness limit
+
+With 100 dynamic solids and 16,384 water, the physical Pixel 7a and Radeon
+890M both lose particles during the full 1,800-frame benchmark. In two Radeon
+traces a fifth boundary-pressure target overflows the four reaction slots
+before the first particle loss. An eight-slot diagnostic arm clears that
+overflow but still loses particles in both trials. An isolated replay of the
+first escaping particle reproduces its flight over the open rim. The benchmark
+records particle count and overflow flags across the whole window. It also
+caught intermittent reaction-capacity failures at 100 solids and 8,192
+water on Radeon and Pixel. At that smaller tier the eight-slot candidate
+retained every particle throughout two Radeon traces and a native Pixel run.
+The Pixel candidate missed the full-frame P95 objective at 96.2 ms. Timings
+from failed rows remain ineligible. See [S45 dense water stability](../tactical/045-dense-water-stability.md).
 
 ## Conclusion
 

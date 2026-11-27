@@ -213,7 +213,7 @@ pub use interaction::{
 };
 pub use particle_definition::{
     MAX_PARTICLE_CAPACITY, MAX_PARTICLES_PER_EMISSION, PARTICLE_EMISSION_COMMAND_CAPACITY,
-    PREVIEW_WATER_RADIUS, ParticleEmissionDef, ParticleRegionDef, ParticleSystemDef,
+    PREVIEW_WATER_RADIUS, ParticleEmissionDef, ParticleRegionDef, ParticleSystemDef, WaterProfile,
 };
 pub use world::{
     BodySnapshot, BodySnapshotEntry, PARTICLE_COUNT_SNAPSHOT_VERSION, ParticleCountSnapshot,

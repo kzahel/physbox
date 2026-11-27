@@ -55,11 +55,14 @@ fn gather_viscosity(@builtin(global_invocation_id) invocation: vec3u) {
     let position = positions[index].xy;
     let velocity = velocities[index].xy;
     let own_cell = cell_for(position);
+    let reach = vec2f(params.material.y + 0.00001);
+    let first_cell = max(own_cell - vec2i(1), cell_for(position - reach));
+    let last_cell = min(own_cell + vec2i(1), cell_for(position + reach));
     var weighted_delta = vec2f(0.0);
     var weight_sum = 0.0;
-    for (var offset_y = -1; offset_y <= 1; offset_y += 1) {
-        for (var offset_x = -1; offset_x <= 1; offset_x += 1) {
-            let cell = own_cell + vec2i(offset_x, offset_y);
+    for (var cell_y = first_cell.y; cell_y <= last_cell.y; cell_y += 1) {
+        for (var cell_x = first_cell.x; cell_x <= last_cell.x; cell_x += 1) {
+            let cell = vec2i(cell_x, cell_y);
             if !cell_is_valid(cell) {
                 continue;
             }

@@ -4,7 +4,9 @@ Status: decided, locally qualified through completed S40, and published to
 GitHub Pages through completed S42 on 2026-07-28. Human review caps rigid
 stress at 10K, accepts 4K/8K/16K authored Water stress, requires
 stationary-click Water placement and arrow-key camera navigation, and retains
-32K only as a manually configurable allocation frontier. Box2D comparison
+32K as a manually configurable frontier for the standard water profile.
+S47 adds a locally qualified 13K/32K tower drop using the opt-in high-count
+water profile. Box2D comparison
 remains held for separate review.
 
 This topic defines the first-party PhysBox Web Showcase, its relationship to
@@ -102,8 +104,8 @@ an unqualified correctness, parity, or performance claim.
 consumer:
 
 - one pre-step `ParticleSystemDef` with a bounded capacity;
-- one selected version-1 water material using the current qualified preview
-  parameters;
+- the standard version-1 water material by default, with an opt-in
+  `WaterProfile::HighCount` execution and material preset for dense scenes;
 - zero or more validated rectangular `ParticleRegionDef` values with initial
   velocity, where zero creates an initially empty system for runtime emission;
 - `World::set_particle_system` before the first step; and
@@ -439,6 +441,16 @@ S42 publication completed on 2026-07-28 from source
 - `kzahel/physbox` is public under MIT while crate publication, a release/tag,
   analytics, custom Pages domains, Box2D comparison, and benchmark claims
   remain excluded.
+
+## Replayable tower drop
+
+The regular scene picker offers a 13,122-particle pool and a 32,640-particle
+pool beneath the same ten-block tower. Drop tower releases the staged scene.
+Reset restores the initial pose. The public GPU observation supplies every
+particle in the half-resolution thickness pass. The showcase owns the scene
+and surface shading, and the physics library owns the high-count water preset.
+The physical Pixel measurements and repeatable capture command are in
+[S47](../tactical/047-showcase-tower-drop.md).
 
 ## Alternatives rejected
 

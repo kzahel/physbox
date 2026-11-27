@@ -22,7 +22,6 @@ const PARTICLE_COUNTER_WORDS: u32 = 21;
 pub(crate) const PARTICLE_COUNT_SNAPSHOT_BYTES: u64 = 20;
 const GRID_WIDTH: u32 = 64;
 const GRID_HEIGHT: u32 = 68;
-const GRID_CELL_COUNT: u32 = GRID_WIDTH * GRID_HEIGHT;
 const PARTICLE_WORKGROUP_SIZE: u32 = 64;
 const PARTICLE_SUBSTEPS: u32 = 2;
 const PARTICLE_BODY_CONTRIBUTIONS_PER_PARTICLE: u32 = 4;
@@ -113,6 +112,8 @@ struct ParticleParamsRaw {
     grid: [f32; 4],
     counts: [u32; 4],
     limits: [u32; 4],
+    /// Per-substep velocity retention and reserved lanes, consumed by integration.
+    integration: [f32; 4],
 }
 
 #[repr(C)]
@@ -226,6 +227,8 @@ pub struct ParticleValidationLayout {
 pub struct GpuParticleWorld {
     capacity: u32,
     initial_count: u32,
+    grid_cell_count: u32,
+    substeps: u32,
     pressure_iterations: u32,
     material: ParticleMaterialV1,
     positions: wgpu::Buffer,
@@ -296,6 +299,27 @@ impl GpuParticleWorld {
         scenario: &CoupledScenarioV1,
         body_storage: &GpuBodyStorage,
     ) -> Result<Self, String> {
+        Self::with_profile(
+            device,
+            scenario,
+            body_storage,
+            physbox_sim::WaterProfile::Standard,
+        )
+    }
+
+    pub(crate) fn with_profile(
+        device: &wgpu::Device,
+        scenario: &CoupledScenarioV1,
+        body_storage: &GpuBodyStorage,
+        profile: physbox_sim::WaterProfile,
+    ) -> Result<Self, String> {
+        let (grid_width, grid_height, cell_size, substeps) = match profile {
+            physbox_sim::WaterProfile::Standard => {
+                (GRID_WIDTH, GRID_HEIGHT, 0.5, PARTICLE_SUBSTEPS)
+            }
+            physbox_sim::WaterProfile::HighCount => (192, 204, 1.0 / 6.0, 1),
+        };
+        let grid_cell_count = grid_width * grid_height;
         scenario.validate().map_err(|error| error.to_string())?;
         if scenario.materials.len() != 1 {
             return Err("first GPU particle world requires exactly one material".to_owned());
@@ -419,13 +443,13 @@ impl GpuParticleWorld {
         let cell_counts = empty_storage(
             device,
             "physbox5_particle_grid_counts",
-            u64::from(GRID_CELL_COUNT) * 4,
+            u64::from(grid_cell_count) * 4,
             wgpu::BufferUsages::COPY_SRC,
         );
         let cell_offsets = empty_storage(
             device,
             "physbox5_particle_grid_offsets",
-            u64::from(GRID_CELL_COUNT) * 4,
+            u64::from(grid_cell_count) * 4,
             wgpu::BufferUsages::COPY_SRC,
         );
         let cell_bins = empty_storage(
@@ -440,8 +464,13 @@ impl GpuParticleWorld {
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let substep_dt = scenario.rigid.settings.fixed_dt.get() / PARTICLE_SUBSTEPS as f32;
+        let substep_dt = scenario.rigid.settings.fixed_dt.get() / substeps as f32;
+        let retention = match profile {
+            physbox_sim::WaterProfile::Standard => 1.0,
+            physbox_sim::WaterProfile::HighCount => (-0.9 * substep_dt).exp(),
+        };
         let params_value = ParticleParamsRaw {
+            integration: [retention, 0.0, 0.0, 0.0],
             dt_gravity: [
                 substep_dt,
                 scenario.rigid.settings.gravity.x,
@@ -460,12 +489,12 @@ impl GpuParticleWorld {
                 material.radius.get() * material.max_pressure_displacement_multiplier.get(),
                 material.particle_mass().recip(),
             ],
-            grid: [-16.0, KILL_ZONE_Y, 0.5, KILL_ZONE_Y],
+            grid: [-16.0, KILL_ZONE_Y, cell_size, KILL_ZONE_Y],
             counts: [
                 capacity,
                 body_storage.layout().capacity_elements,
-                GRID_WIDTH,
-                GRID_HEIGHT,
+                grid_width,
+                grid_height,
             ],
             limits: [
                 capacity,
@@ -1113,6 +1142,8 @@ impl GpuParticleWorld {
         Ok(Self {
             capacity,
             initial_count,
+            substeps,
+            grid_cell_count,
             pressure_iterations: scenario.settings.pressure_iterations,
             material,
             positions,
@@ -1197,7 +1228,7 @@ impl GpuParticleWorld {
             GpuParticleTimingStage::Compaction,
             &mut timestamps,
         );
-        for _ in 0..PARTICLE_SUBSTEPS {
+        for _ in 0..self.substeps {
             self.dispatch_capacity(
                 encoder,
                 "particle_integrate",
@@ -1413,7 +1444,7 @@ impl GpuParticleWorld {
         u64::from(self.capacity)
             * (PARTICLE_BYTES_PER_SLOT + u64::from(PARTICLE_BODY_CONTRIBUTIONS_PER_PARTICLE) * 20)
             + u64::from(self.body_capacity) * u64::from(self.body_tile_count) * 16
-            + u64::from(GRID_CELL_COUNT) * 8
+            + u64::from(self.grid_cell_count) * 8
             + u64::from(self.capacity) * 4
             + size_of::<ParticleCommandBatchRaw>() as u64
             + u64::from(PARTICLE_COUNTER_WORDS) * 4
@@ -1421,13 +1452,13 @@ impl GpuParticleWorld {
     }
 
     pub fn dispatches_per_step(&self) -> u32 {
-        1 + PARTICLE_SUBSTEPS * (4 + self.pressure_iterations * 14 + 12) + 3
+        1 + self.substeps * (4 + self.pressure_iterations * 14 + 12) + 3
     }
 
     pub fn timestamp_stages_per_step(&self) -> Vec<GpuParticleTimingStage> {
         let mut stages = Vec::with_capacity(self.dispatches_per_step() as usize);
         stages.push(GpuParticleTimingStage::Compaction);
-        for _ in 0..PARTICLE_SUBSTEPS {
+        for _ in 0..self.substeps {
             stages.extend([
                 GpuParticleTimingStage::IntegrationAndBoundary,
                 GpuParticleTimingStage::IntegrationAndBoundary,
@@ -1481,8 +1512,8 @@ impl GpuParticleWorld {
             ),
             capacity(
                 "particle-grid-cell-ranges",
-                u64::from(GRID_CELL_COUNT),
-                u64::from(GRID_CELL_COUNT),
+                u64::from(self.grid_cell_count),
+                u64::from(self.grid_cell_count),
                 12,
             ),
             capacity(
@@ -1507,7 +1538,7 @@ impl GpuParticleWorld {
         let flags = self.capacity as u64 * 4;
         let density = self.capacity as u64 * 16;
         let counters = PARTICLE_COUNTER_WORDS as u64 * 4;
-        let cell_counts = GRID_CELL_COUNT as u64 * 4;
+        let cell_counts = self.grid_cell_count as u64 * 4;
         ParticleValidationLayout {
             capacity: self.capacity,
             positions_offset: 0,
@@ -1575,7 +1606,24 @@ impl GpuParticleWorld {
             0,
             destination,
             layout.cell_counts_offset,
-            u64::from(GRID_CELL_COUNT) * 4,
+            u64::from(self.grid_cell_count) * 4,
+        );
+    }
+
+    /// Copy active count and overflow flags before the next outer step clears its flags.
+    pub(crate) fn copy_step_status(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        destination: &wgpu::Buffer,
+        step_index: u32,
+    ) {
+        let stride = size_of::<[u32; 2]>() as u64;
+        encoder.copy_buffer_to_buffer(
+            &self.counters,
+            0,
+            destination,
+            u64::from(step_index) * stride,
+            stride,
         );
     }
 
@@ -1632,7 +1680,7 @@ impl GpuParticleWorld {
             &bytes[layout.cell_counts_offset as usize..layout.total_bytes as usize],
         )
         .map_err(|error| format!("decode particle grid-cell counts: {error}"))?;
-        if cell_counts.len() != GRID_CELL_COUNT as usize {
+        if cell_counts.len() != self.grid_cell_count as usize {
             return Err("particle validation readback has the wrong grid-cell count".to_owned());
         }
 
@@ -1683,10 +1731,10 @@ impl GpuParticleWorld {
             neighbor_checks: counters[4],
             accepted_neighbors: counters[5],
             density_evaluations: active
-                * u64::from(PARTICLE_SUBSTEPS)
+                * u64::from(self.substeps)
                 * u64::from(self.pressure_iterations + 1),
             correction_evaluations: active
-                * u64::from(PARTICLE_SUBSTEPS)
+                * u64::from(self.substeps)
                 * u64::from(self.pressure_iterations),
             body_contacts: counters[6],
             escaped_particles: counters[7],
@@ -1726,7 +1774,7 @@ impl GpuParticleWorld {
             "particle_grid_clear",
             &self.grid_clear,
             &self.grid_group,
-            [GRID_CELL_COUNT.div_ceil(PARTICLE_WORKGROUP_SIZE), 1, 1],
+            [self.grid_cell_count.div_ceil(PARTICLE_WORKGROUP_SIZE), 1, 1],
             GpuParticleTimingStage::Grid,
             timestamps,
         );
@@ -2504,6 +2552,45 @@ mod tests {
         assert!((positions[0][1] - expected.position.y).abs() <= 1.0e-6);
         assert!((velocities[0][0] - expected.velocity.x).abs() <= 1.0e-4);
         assert!((velocities[0][1] - expected.velocity.y).abs() <= 1.0e-4);
+    }
+
+    #[test]
+    fn density_and_viscosity_include_neighbors_across_a_grid_corner() {
+        let instance = crate::create_instance();
+        let adapter = pollster::block_on(crate::gpu_context::request_adapter(&instance, None))
+            .expect("test GPU adapter");
+        let (device, queue) =
+            pollster::block_on(crate::gpu_context::request_device(&adapter)).unwrap();
+        let mut scenario = particle_target_scenario(&[Vec2::new(5.0, 5.0)], Vec2::ZERO);
+        let finite = |value| physbox_contracts::FiniteF32::new(value).unwrap();
+        let material = &mut scenario.materials[0];
+        material.radius = finite(0.05);
+        material.pressure_strength = finite(0.0);
+        material.near_pressure_strength = finite(0.0);
+        let damping = material.damping_strength.get();
+        scenario.particle_capacity = 2;
+        // Two particles straddle (0, 0) in diagonally opposite grid cells.
+        // With one neighbor each, viscosity damps their opposite speeds by
+        // the same factor each substep.
+        scenario.regions = [(0, -0.05, 0.25), (1, 0.05, -0.25)]
+            .map(|(id, center, vx)| ParticleRegionV1 {
+                id,
+                material_id: 0,
+                lower: Vec2::new(center - 0.05, center - 0.05),
+                upper: Vec2::new(center + 0.05, center + 0.05),
+                spacing: finite(0.1),
+                initial_velocity: Vec2::new(vx, 0.0),
+            })
+            .into();
+        scenario.validate().unwrap();
+        let diagnostics = run_particle_scenario(&device, &queue, &scenario);
+        assert_eq!(diagnostics.active_count, 2);
+        assert_eq!(
+            u64::from(diagnostics.accepted_neighbors),
+            diagnostics.density_evaluations
+        );
+        let expected_speed = 0.25 * (1.0 - 2.0 * damping).powi(PARTICLE_SUBSTEPS as i32);
+        assert!((diagnostics.fluid_motion_rms - expected_speed).abs() < 1.0e-4);
     }
 
     #[test]

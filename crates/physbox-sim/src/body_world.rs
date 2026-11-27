@@ -290,6 +290,24 @@ impl GpuBodyWorld {
         physics: physbox_sim::PhysicsConfigurationV3,
         coupling_quality: FluidSolidCouplingQuality,
     ) -> Result<Self, String> {
+        Self::new_coupled_with_water_profile(
+            device,
+            scenario,
+            world_capacity,
+            physics,
+            coupling_quality,
+            physbox_sim::WaterProfile::Standard,
+        )
+    }
+
+    pub(crate) fn new_coupled_with_water_profile(
+        device: &wgpu::Device,
+        scenario: &physbox_contracts::CoupledScenarioV1,
+        world_capacity: WorldCapacityPreset,
+        physics: physbox_sim::PhysicsConfigurationV3,
+        coupling_quality: FluidSolidCouplingQuality,
+        profile: physbox_sim::WaterProfile,
+    ) -> Result<Self, String> {
         scenario.validate().map_err(|error| error.to_string())?;
         let sleep_config = SleepExecutionConfig::configured(
             physics.sleeping_enabled,
@@ -327,7 +345,7 @@ impl GpuBodyWorld {
                 sleep_config,
                 post_fluid_stabilization: coupling_quality == FluidSolidCouplingQuality::Stabilized,
             },
-            Some(scenario),
+            Some((scenario, profile)),
         )
     }
 
@@ -336,7 +354,10 @@ impl GpuBodyWorld {
         scenario: &ScenarioV1,
         world_capacity: WorldCapacityPreset,
         options: GeneratedContactBuildOptions,
-        coupled: Option<&physbox_contracts::CoupledScenarioV1>,
+        coupled: Option<(
+            &physbox_contracts::CoupledScenarioV1,
+            physbox_sim::WaterProfile,
+        )>,
     ) -> Result<Self, String> {
         let GeneratedContactBuildOptions {
             solver_configuration: generated_solver_configuration,
@@ -416,7 +437,9 @@ impl GpuBodyWorld {
             })
             .transpose()?;
         let particles = coupled
-            .map(|coupled| GpuParticleWorld::new(device, coupled, &storage))
+            .map(|(scenario, profile)| {
+                GpuParticleWorld::with_profile(device, scenario, &storage, profile)
+            })
             .transpose()?;
         let integration_params = IntegrationParamsRaw {
             dt_gravity: [
@@ -1385,6 +1408,20 @@ impl GpuBodyWorld {
         self.particles
             .as_ref()
             .map(GpuParticleWorld::validation_layout)
+    }
+
+    pub fn copy_particle_step_status(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        destination: &wgpu::Buffer,
+        step_index: u32,
+    ) -> Result<(), String> {
+        let particles = self
+            .particles
+            .as_ref()
+            .ok_or_else(|| "active GPU body world has no particle state".to_owned())?;
+        particles.copy_step_status(encoder, destination, step_index);
+        Ok(())
     }
 
     pub fn copy_particle_validation_state(

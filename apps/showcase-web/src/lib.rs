@@ -1,6 +1,9 @@
 #![forbid(unsafe_code)]
 
 #[cfg(target_arch = "wasm32")]
+mod water_surface;
+
+#[cfg(target_arch = "wasm32")]
 use std::mem::size_of;
 #[cfg(target_arch = "wasm32")]
 use std::sync::{Arc, Mutex};
@@ -50,6 +53,8 @@ enum SceneName {
     Playground,
     StackAndSleep,
     WaterAndRigid,
+    TowerDrop13k,
+    TowerDrop32k,
     RigidStress1k,
     RigidStress2k,
     RigidStress5k,
@@ -65,6 +70,8 @@ impl SceneName {
         match value {
             PLAYGROUND => Ok(Self::Playground),
             STACK_AND_SLEEP => Ok(Self::StackAndSleep),
+            "tower-drop-13k" => Ok(Self::TowerDrop13k),
+            "tower-drop-32k" => Ok(Self::TowerDrop32k),
             WATER_AND_RIGID => Ok(Self::WaterAndRigid),
             RIGID_STRESS_1K => Ok(Self::RigidStress1k),
             RIGID_STRESS_2K => Ok(Self::RigidStress2k),
@@ -81,6 +88,8 @@ impl SceneName {
         match self {
             Self::Playground => PLAYGROUND,
             Self::StackAndSleep => STACK_AND_SLEEP,
+            Self::TowerDrop13k => "tower-drop-13k",
+            Self::TowerDrop32k => "tower-drop-32k",
             Self::WaterAndRigid => WATER_AND_RIGID,
             Self::RigidStress1k => RIGID_STRESS_1K,
             Self::RigidStress2k => RIGID_STRESS_2K,
@@ -92,10 +101,19 @@ impl SceneName {
         }
     }
 
+    const fn tower_drop(self) -> bool {
+        matches!(self, Self::TowerDrop13k | Self::TowerDrop32k)
+    }
+
     const fn authors_water(self) -> bool {
         matches!(
             self,
-            Self::WaterAndRigid | Self::WaterStress4k | Self::WaterStress8k | Self::WaterStress16k
+            Self::TowerDrop13k
+                | Self::TowerDrop32k
+                | Self::WaterAndRigid
+                | Self::WaterStress4k
+                | Self::WaterStress8k
+                | Self::WaterStress16k
         )
     }
 
@@ -137,6 +155,7 @@ impl ShowcaseConfig {
 
     const fn for_scene(name: SceneName) -> Self {
         let body_capacity = match name {
+            SceneName::TowerDrop13k | SceneName::TowerDrop32k => WorldCapacity::Slots64,
             SceneName::RigidStress1k => WorldCapacity::Slots1000,
             SceneName::RigidStress2k => WorldCapacity::Slots2000,
             SceneName::RigidStress5k => WorldCapacity::Slots5000,
@@ -145,7 +164,11 @@ impl ShowcaseConfig {
         };
         Self {
             body_capacity,
-            particle_capacity: if let Some(capacity) = name.water_stress_capacity() {
+            particle_capacity: if matches!(name, SceneName::TowerDrop13k) {
+                Some(16_384)
+            } else if matches!(name, SceneName::TowerDrop32k) {
+                Some(32_768)
+            } else if let Some(capacity) = name.water_stress_capacity() {
                 Some(capacity)
             } else if name.authors_water() {
                 Some(4_096)
@@ -499,6 +522,7 @@ impl Scene {
             &observation,
             particle_observation.as_ref(),
             &visuals,
+            name.tower_drop(),
         );
         Ok(Self {
             name,
@@ -517,7 +541,7 @@ impl Scene {
             last_steps: 1,
             effective_simulation_scale: 0.0,
             last_timestamp_ms: None,
-            paused: false,
+            paused: name.tower_drop(),
             pending_box_target: None,
             pending_water_target: None,
             tool_notice: None,
@@ -804,6 +828,7 @@ impl Scene {
             None
         };
         self.renderer.encode(
+            device,
             queue,
             &mut encoder,
             target,
@@ -867,6 +892,7 @@ struct ParticleRenderer {
     pipeline: wgpu::RenderPipeline,
     capacity: u32,
     radius: f32,
+    surface: Option<water_surface::WaterSurface>,
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -877,6 +903,7 @@ impl BodyRenderer {
         observation: &GpuBodyObservation,
         particle_observation: Option<&GpuParticleObservation>,
         visuals: &[ShapeVisual],
+        water_surface: bool,
     ) -> Self {
         let shape_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("physbox_showcase_shape_visuals"),
@@ -958,8 +985,9 @@ impl BodyRenderer {
             multiview: None,
             cache: None,
         });
-        let particles = particle_observation
-            .map(|observation| ParticleRenderer::new(device, format, observation, &params));
+        let particles = particle_observation.map(|observation| {
+            ParticleRenderer::new(device, format, observation, &params, water_surface)
+        });
         Self {
             params,
             shape_buffer,
@@ -988,7 +1016,8 @@ impl BodyRenderer {
     }
 
     fn encode(
-        &self,
+        &mut self,
+        device: &wgpu::Device,
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
         target: &wgpu::TextureView,
@@ -1011,6 +1040,18 @@ impl BodyRenderer {
                 ],
             }),
         );
+        if let Some(particles) = &mut self.particles
+            && let Some(surface) = &mut particles.surface
+        {
+            surface.accumulate(
+                device,
+                encoder,
+                size,
+                &particles.pipeline,
+                &particles.bind_group,
+                particles.capacity,
+            );
+        }
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("physbox_showcase_render_pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -1031,9 +1072,13 @@ impl BodyRenderer {
             occlusion_query_set: None,
         });
         if let Some(particles) = &self.particles {
-            pass.set_pipeline(&particles.pipeline);
-            pass.set_bind_group(0, &particles.bind_group, &[]);
-            pass.draw(0..6, 0..particles.capacity);
+            if let Some(surface) = &particles.surface {
+                surface.draw(&mut pass);
+            } else {
+                pass.set_pipeline(&particles.pipeline);
+                pass.set_bind_group(0, &particles.bind_group, &[]);
+                pass.draw(0..6, 0..particles.capacity);
+            }
         }
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, &self.bind_group, &[]);
@@ -1048,6 +1093,7 @@ impl ParticleRenderer {
         format: wgpu::TextureFormat,
         observation: &GpuParticleObservation,
         params: &wgpu::Buffer,
+        use_surface: bool,
     ) -> Self {
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("physbox_showcase_particle_render_layout"),
@@ -1081,7 +1127,14 @@ impl ParticleRenderer {
         });
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("physbox_showcase_particle_shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("particle_render.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(
+                (if use_surface {
+                    include_str!("water_thickness.wgsl")
+                } else {
+                    include_str!("particle_render.wgsl")
+                })
+                .into(),
+            ),
         });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("physbox_showcase_particle_pipeline_layout"),
@@ -1101,8 +1154,23 @@ impl ParticleRenderer {
                 module: &shader,
                 entry_point: Some("particle_fragment"),
                 targets: &[Some(wgpu::ColorTargetState {
-                    format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    format: if use_surface {
+                        wgpu::TextureFormat::Rgba8Unorm
+                    } else {
+                        format
+                    },
+                    blend: Some(if use_surface {
+                        wgpu::BlendState {
+                            color: wgpu::BlendComponent {
+                                src_factor: wgpu::BlendFactor::One,
+                                dst_factor: wgpu::BlendFactor::One,
+                                operation: wgpu::BlendOperation::Add,
+                            },
+                            alpha: wgpu::BlendComponent::REPLACE,
+                        }
+                    } else {
+                        wgpu::BlendState::ALPHA_BLENDING
+                    }),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
                 compilation_options: Default::default(),
@@ -1117,6 +1185,7 @@ impl ParticleRenderer {
             bind_group,
             pipeline,
             capacity: observation.capacity(),
+            surface: use_surface.then(|| water_surface::WaterSurface::new(device, format)),
             radius: observation.particle_radius() * 1.15,
         }
     }
@@ -1582,7 +1651,9 @@ fn build_scene(
     } else {
         None
     };
-    let camera = if rigid_stress_layout.is_some() {
+    let camera = if name.tower_drop() {
+        [0.0, 3.2, 14.2, 12.4]
+    } else if rigid_stress_layout.is_some() {
         [0.0, 0.1, 15.0, 10.0]
     } else {
         water_stress_region.map_or([0.0, 0.0, 8.0, 5.0], |(lower, upper, _)| {
@@ -1599,7 +1670,9 @@ fn build_scene(
         })
     };
     let (floor_position, floor_half_extents, left_position, wall_half_extents) =
-        if let Some(layout) = rigid_stress_layout {
+        if name.tower_drop() {
+            ([0.0, -8.3], [13.3, 0.3], [-13.1, 2.7], [0.2, 11.0])
+        } else if let Some(layout) = rigid_stress_layout {
             let floor_y = layout.lower[1] - 0.3;
             let wall_top = layout.upper[1] + 0.4;
             (
@@ -1717,6 +1790,50 @@ fn build_scene(
                 )?;
             }
             0
+        }
+        SceneName::TowerDrop13k | SceneName::TowerDrop32k => {
+            // Offset each course so the tower opens up as it hits the water.
+            for row in 0..5 {
+                for column in 0..2 {
+                    let x = -5.1 + 0.45 * row as f32 + 2.65 * column as f32;
+                    let y = 8.2 + row as f32 * 1.42;
+                    add_body(
+                        &mut world,
+                        &mut visuals,
+                        BodyDef::dynamic()
+                            .with_position([x, y])
+                            .with_linear_velocity([1.0 + 0.6 * row as f32, -6.0])
+                            .with_angular_velocity(-0.18 - 0.08 * row as f32),
+                        ShapeDef::rectangle([1.28, 0.67])
+                            .with_density(1.3)
+                            .with_friction(0.48)
+                            .with_restitution(0.08),
+                        palette((row * 2 + column) as usize),
+                    )?;
+                }
+            }
+            if let Some(mut particles) = particle_definition.take() {
+                particles = particles.with_profile(physbox_sim::WaterProfile::HighCount);
+                let capacity = particles.capacity();
+                let spacing = match capacity {
+                    32_768 => 0.1,
+                    16_384 => 0.1575,
+                    8_192 => 0.205,
+                    _ => 0.29,
+                };
+                particles = particles.with_region(ParticleRegionDef::rectangle(
+                    [-12.75, -7.99],
+                    [12.76, 4.82],
+                    spacing,
+                ));
+                let count = particles
+                    .initial_particle_count()
+                    .map_err(|e| e.to_string())?;
+                particle_definition = Some(particles);
+                count
+            } else {
+                0
+            }
         }
         SceneName::WaterAndRigid => {
             add_body(
@@ -2019,6 +2136,14 @@ mod tests {
                 .water_stress_capacity(),
             Some(16_384)
         );
+        for (slug, capacity) in [("tower-drop-13k", 16_384), ("tower-drop-32k", 32_768)] {
+            let scene = SceneName::parse(slug).unwrap();
+            assert_eq!(scene.slug(), slug);
+            assert!(scene.tower_drop());
+            let config = ShowcaseConfig::for_scene(scene);
+            assert_eq!(config.body_capacity.slots(), 64);
+            assert_eq!(config.particle_capacity, Some(capacity));
+        }
         assert!(!SceneName::RigidStress10k.authors_water());
         assert!(SceneName::WaterStress16k.authors_water());
         assert!(SceneName::parse("water-stress-32k").is_err());

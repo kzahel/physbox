@@ -483,6 +483,21 @@ following is true:
 
 Invalid runs remain useful failure artifacts. They never become a speed claim.
 
+The shared liquid-scale benchmark records active particle count and overflow
+flags on the GPU after every outer step, including warmup. It checks the
+complete window at final readback. A transient overflow disqualifies the row
+even when the endpoint is finite, at the requested population and clear of
+flags. Earlier endpoint-only artifacts cannot certify this stronger check.
+See [S45 dense water stability](../tactical/045-dense-water-stability.md).
+
+The separate S47 visual showcase uses an opt-in water profile and per-phase
+foreground frame measurements on Pixel 7a. At 32,640 actual live particles,
+two runs gave 58.8–60.0 FPS at impact and 36.8–37.5 FPS during rebound.
+A 480-step capture retained every particle. These figures describe the tower
+shot and its 60 Hz fixed interval. The standard liquid scale benchmark owns
+general capacity and correctness claims. See
+[S47 tower drop](../tactical/047-showcase-tower-drop.md).
+
 ## Capacity and memory contract
 
 Capacity is part of behavior. Track allocated and used bytes separately for at

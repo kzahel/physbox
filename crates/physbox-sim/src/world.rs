@@ -485,14 +485,15 @@ impl World {
         }
         if self.inner.is_none() {
             let scenario = self.initial_scenario()?;
-            self.inner = Some(if self.particle_system.is_some() {
+            self.inner = Some(if let Some(system) = &self.particle_system {
                 let coupled = self.initial_coupled_scenario(scenario)?;
-                GpuBodyWorld::new_coupled_with_configuration(
+                GpuBodyWorld::new_coupled_with_water_profile(
                     device,
                     &coupled,
                     self.definition.capacity,
                     self.definition.quality.physics,
                     self.definition.quality.fluid_solid_coupling,
+                    system.profile(),
                 )
                 .map_err(WorldError::new)?
             } else {
@@ -911,6 +912,12 @@ impl World {
             })
             .collect::<Result<Vec<_>, WorldError>>()?;
         let mut settings = CoupledSettingsV1::initial();
+        if definition.profile() == crate::WaterProfile::HighCount {
+            settings.pressure_iterations = 1;
+            material.pressure_strength = finite(350.0)?;
+            material.near_pressure_strength = finite(450.0)?;
+            material.gravity_scale = finite(0.12)?;
+        }
         settings.schedule = CoupledScheduleV1::RigidThenCoupledBatch;
         Ok(CoupledScenarioV1 {
             schema_version: SCHEMA_VERSION,

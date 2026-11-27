@@ -42,6 +42,7 @@ pub struct LiquidScaleBenchmarkSession {
     device: wgpu::Device,
     queue: wgpu::Queue,
     world: GpuBodyWorld,
+    particle_step_status: wgpu::Buffer,
     source: LiquidScaleBenchmarkSourceV1,
     scenario: physbox_contracts::CoupledScenarioV1,
     scenario_hash: String,
@@ -211,7 +212,22 @@ impl LiquidScaleBenchmarkSession {
         let timestamps = timestamps_available
             .then(|| TimestampResources::new(&device, query_count, config.retained_samples));
 
+        let status_bytes = u64::from(total_steps) * size_of::<[u32; 2]>() as u64;
+        let particle_layout = world
+            .particle_validation_layout()
+            .ok_or_else(|| "liquid benchmark world has no particle validation layout".to_owned())?;
+        if particle_layout.total_bytes + status_bytes > device.limits().max_buffer_size {
+            return Err("liquid benchmark step history exceeds the device buffer limit".to_owned());
+        }
+        // Write on the GPU each step and read once with the final validation snapshot.
+        let particle_step_status = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("physbox5_liquid_scale_step_status"),
+            size: status_bytes,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
         Ok(Self {
+            particle_step_status,
             device,
             queue,
             world,
@@ -249,7 +265,7 @@ impl LiquidScaleBenchmarkSession {
             return Err("liquid benchmark warmup may be submitted exactly once".to_owned());
         }
         let ranges = [BodyCommandStepRange { start: 0, count: 0 }];
-        for _ in 0..self.config.warmup_steps {
+        for step_index in 0..self.config.warmup_steps {
             let mut encoder = self
                 .device
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -272,6 +288,11 @@ impl LiquidScaleBenchmarkSession {
                 },
             )?;
             self.encode_render(&mut encoder)?;
+            self.world.copy_particle_step_status(
+                &mut encoder,
+                &self.particle_step_status,
+                step_index,
+            )?;
             self.queue.submit([encoder.finish()]);
         }
         self.warmup_submitted = true;
@@ -323,6 +344,11 @@ impl LiquidScaleBenchmarkSession {
                 u64::from(sample) * timestamps.sample_stride,
             );
         }
+        self.world.copy_particle_step_status(
+            &mut encoder,
+            &self.particle_step_status,
+            self.config.warmup_steps + sample,
+        )?;
         self.queue.submit([encoder.finish()]);
         self.submitted_samples += 1;
         Ok(())
@@ -394,7 +420,7 @@ impl LiquidScaleBenchmarkSession {
         let particle_readback = readback_buffer(
             &self.device,
             "physbox5_liquid_scale_particle_readback",
-            particle_layout.total_bytes,
+            particle_layout.total_bytes + self.particle_step_status.size(),
         );
         let body_bytes = u64::from(self.world.body_capacity()) * size_of::<[u32; 4]>() as u64 * 3;
         let body_readback = readback_buffer(
@@ -416,6 +442,13 @@ impl LiquidScaleBenchmarkSession {
             });
         self.world
             .copy_particle_validation_state(&mut encoder, &particle_readback)?;
+        encoder.copy_buffer_to_buffer(
+            &self.particle_step_status,
+            0,
+            &particle_readback,
+            particle_layout.total_bytes,
+            self.particle_step_status.size(),
+        );
         self.world
             .copy_full_validation_state(&mut encoder, &body_readback);
         self.world
@@ -515,9 +548,12 @@ impl LiquidScaleBenchmarkSession {
         {
             return Err("liquid benchmark timing count mismatch".to_owned());
         }
+        let (particle_bytes, step_bytes) = readback
+            .particle_bytes
+            .split_at(readback.particle_layout.total_bytes as usize);
         let particle_diagnostics = self
             .world
-            .decode_particle_validation_state(&readback.particle_bytes)?;
+            .decode_particle_validation_state(particle_bytes)?;
         let (awake_bodies, bodies_finite, bodies_valid) = validate_body_state(
             &self.scenario.rigid.bodies,
             self.world.body_capacity(),
@@ -529,7 +565,7 @@ impl LiquidScaleBenchmarkSession {
         }
         let state_hash = exact_state_hash(
             readback.particle_layout,
-            &readback.particle_bytes,
+            particle_bytes,
             &self.scenario.rigid.bodies,
             self.world.body_capacity(),
             &readback.body_bytes,
@@ -632,9 +668,12 @@ impl LiquidScaleBenchmarkSession {
                 sustained_60_hz,
             },
         };
+        let history: &[[u32; 2]] = bytemuck::try_cast_slice(step_bytes)
+            .map_err(|error| format!("decode liquid benchmark step status: {error}"))?;
+        let step_failure = first_particle_step_failure(history, self.config.particle_count);
         artifact.validate().map_err(|error| {
             format!(
-                "{error}; work={:?}; finalActiveParticles={}; expected={}; finite={}; generationsAndLiveFlagsValid={}; capacityClean={}; overflowFlags={}; gridOverflow={}; commandDrops={}; escapedParticles={}; killedParticles={}; bodyContributionOverflow={}",
+                "{error}; work={:?}; finalActiveParticles={}; expected={}; finite={}; generationsAndLiveFlagsValid={}; capacityClean={}; overflowFlags={}; gridOverflow={}; commandDrops={}; escapedParticles={}; killedParticles={}; bodyContributionOverflow={}; firstParticleStepFailure={}",
                 artifact.work,
                 artifact.correctness.final_active_particles,
                 artifact.correctness.expected_final_active_particles,
@@ -647,13 +686,28 @@ impl LiquidScaleBenchmarkSession {
                 particle_diagnostics.escaped_particles,
                 particle_diagnostics.killed_particles,
                 particle_diagnostics.body_contribution_overflow,
+                step_failure.as_deref().unwrap_or("none"),
             )
         })?;
+        if let Some(error) = step_failure {
+            return Err(error);
+        }
         Ok(LiquidScalePhysicsBenchmarkRun {
             artifact,
             adapter: self.adapter,
         })
     }
+}
+
+fn first_particle_step_failure(history: &[[u32; 2]], expected: u32) -> Option<String> {
+    let (index, [active, flags]) = history
+        .iter()
+        .enumerate()
+        .find(|(_, status)| **status != [expected, 0])?;
+    Some(format!(
+        "outer step {} (including warmup): activeParticles={active}, expected={expected}, overflowFlags={flags}",
+        index + 1
+    ))
 }
 
 pub struct PendingLiquidScaleCompletion {
@@ -1222,5 +1276,20 @@ fn reported_or(value: &str, fallback: &str) -> String {
         fallback.to_owned()
     } else {
         value.to_owned()
+    }
+}
+
+#[cfg(test)]
+mod particle_history_tests {
+    use super::first_particle_step_failure;
+
+    #[test]
+    fn early_overflow_rejects_a_clean_endpoint() {
+        assert!(first_particle_step_failure(&[[0, 0], [0, 0]], 0).is_none());
+        let error = first_particle_step_failure(&[[8, 0], [8, 16], [8, 0]], 8).unwrap();
+        assert!(error.contains("outer step 2"));
+        assert!(error.contains("overflowFlags=16"));
+        let error = first_particle_step_failure(&[[8, 0], [7, 0]], 8).unwrap();
+        assert!(error.contains("activeParticles=7"));
     }
 }

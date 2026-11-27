@@ -829,8 +829,8 @@ fn append_liquid_scale_dynamic_bodies(
         // The sparse tier retains its separated upward traversal; starting it
         // at rest eventually pushes one particle below the kill plane. The
         // dense tier begins at rest because launching all 100 bodies creates
-        // the opposite long-horizon loss. Both version-2 sources therefore
-        // keep their exact population through the sustained 1,800-step lane.
+        // the opposite long-horizon loss. The dense 16K tier still loses
+        // particles in sustained runs (S43 and S45).
         body.linear_velocity = if dynamic_count == 20 {
             Vec2::new(0.0, 4.0)
         } else {
