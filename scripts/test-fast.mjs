@@ -23,6 +23,8 @@ const lanes = [
       "physbox-engine/production-validation",
       "--",
       "--nocapture",
+      // Concurrent offscreen GPU tests can crash the Linux test process.
+      ...(process.platform === "linux" ? ["--test-threads=1"] : []),
     ],
   },
   {
