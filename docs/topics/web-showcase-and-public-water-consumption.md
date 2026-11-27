@@ -199,6 +199,12 @@ a chain of impacts down four terraces. **Marble pegboard** scatters 64 marbles
 through staggered pegs into bins. **Water surge** releases a column into a
 shallow pool and shows how two light rafts and a heavy block respond.
 
+**Seesaw launch** uses a free beam on a pivot to toss a marble into a tray.
+**Breakwater** compares identical water releases in open and protected tanks.
+**Bounce trio** drops three otherwise identical balls with distinct
+restitution. **Pull a brick** settles a staggered tower and invites the
+visitor to drag a lower brick sideways.
+
 Consumer-owned stress scenes extend the catalog:
 
 - **Rigid stress 1K/2K/5K/10K** author the exact named live-body count into a

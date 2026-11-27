@@ -39,6 +39,30 @@ const scenes = {
     defaultBodies: 64,
     defaultWater: 4096,
   },
+  "seesaw-launch": {
+    title: "Seesaw launch",
+    description: "The gold block drops onto a loose plank and launches the blue marble toward the tray. Try lifting and dropping the block from a different spot.",
+    defaultBodies: 64,
+    defaultWater: 0,
+  },
+  breakwater: {
+    title: "Breakwater",
+    description: "The same preview-water wave starts in both tanks. The right tank has two barriers. Watch how far each pair of gold floats travels.",
+    defaultBodies: 64,
+    defaultWater: 4096,
+  },
+  "bounce-trio": {
+    title: "Bounce trio",
+    description: "Three balls drop from the same height. The blue one barely rebounds, the gold one bounces a few times, and the pink one keeps going.",
+    defaultBodies: 64,
+    defaultWater: 0,
+  },
+  "pull-a-brick": {
+    title: "Pull a brick",
+    description: "Let the tower settle, then pull a green brick in the second row from the bottom sideways. See how much of the tower comes down.",
+    defaultBodies: 64,
+    defaultWater: 0,
+  },
   "tower-drop-13k": {
     title: "Tower drop · 13K",
     description: "Ten blocks splash into 13,122 water particles. Watch the wave rebound off the walls and settle. Reset replays the drop.",

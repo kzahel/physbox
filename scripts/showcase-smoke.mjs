@@ -397,6 +397,29 @@ try {
       check: (bodies) => bodies.length === 3 && bodies[0].x > 2 &&
         bodies[0].y > bodies[2].y + 0.75 && bodies[2].y < -3.3,
     },
+    {
+      scene: "seesaw-launch", bodies: 11, particles: 0, steps: 190,
+      check: (bodies) => {
+        const marble = bodies[2];
+        return bodies.length === 3 && marble.x > 3 && marble.x < 6.45 &&
+          marble.y > -3.2 && marble.y < -2.25;
+      },
+    },
+    {
+      scene: "breakwater", bodies: 10, particles: 3106, steps: 150,
+      check: (bodies) => {
+        if (bodies.length !== 4) return false;
+        const [openNear, openFar, protectedNear, protectedFar] = bodies;
+        const openTravel = (openNear.x + 4.6) + (openFar.x + 2.7);
+        const protectedTravel = (protectedNear.x - 9.6) + (protectedFar.x - 11.5);
+        return openTravel > protectedTravel + 2;
+      },
+    },
+    {
+      scene: "bounce-trio", bodies: 6, particles: 0, steps: 118,
+      check: (bodies) => bodies.length === 3 && bodies[1].y > bodies[0].y + 0.75 &&
+        bodies[2].y > bodies[1].y + 1.25,
+    },
   ];
   for (const { scene, bodies, particles, steps, check } of motionDemos) {
     await page.locator("#scene-select").selectOption(scene);
@@ -408,6 +431,7 @@ try {
     }
     console.log(`verified motion in ${scene}`);
   }
+  await verifyBrickRemoval(page);
 
   for (const [scene, count] of [["tower-drop-13k", 13_122], ["tower-drop-32k", 32_640]]) {
     await page.locator("#scene-select").selectOption(scene);
@@ -502,6 +526,38 @@ try {
 
 async function currentState(page) {
   return page.evaluate(() => globalThis.__physboxShowcase);
+}
+
+async function verifyBrickRemoval(page) {
+  await page.locator("#scene-select").selectOption("pull-a-brick");
+  await waitForState(page, s => s.scene === "pull-a-brick" && s.liveBodies === 33 && s.fixedSteps >= 150);
+  await selectTool(page, "drag");
+  const settled = await page.evaluate(() => globalThis.__testObserveBodies());
+  const brick = settled[3];
+  const bounds = await canvasBounds(page);
+  const aspect = bounds.width / bounds.height;
+  const halfHeight = Math.max(5, 8 / aspect);
+  const halfWidth = halfHeight * aspect;
+  const point = (x, y) => [
+    bounds.x + bounds.width * (0.5 + x / (2 * halfWidth)),
+    bounds.y + bounds.height * (0.5 - y / (2 * halfHeight)),
+  ];
+  await page.mouse.move(...point(brick.x, brick.y));
+  await page.mouse.down();
+  await waitForState(page, s => s.dragging);
+  await page.mouse.move(...point(-4.6, brick.y), { steps: 18 });
+  const held = await currentState(page);
+  await waitForState(page, (s, start) => s.fixedSteps >= start + 65, held.fixedSteps);
+  await page.mouse.up();
+  await waitForState(page, (s, start) => !s.dragging && s.fixedSteps >= start + 220, held.fixedSteps);
+  const after = await page.evaluate(() => globalThis.__testObserveBodies());
+  const startingTop = Math.max(...settled.map(body => body.y));
+  const endingTop = Math.max(...after.map(body => body.y));
+  if (settled.length !== 30 || startingTop < 1 || after.length !== 30 ||
+      after[3].x > brick.x - 1.5 || endingTop > startingTop - 0.5) {
+    throw new Error(`brick removal did not topple the tower: top ${startingTop} -> ${endingTop}`);
+  }
+  console.log("verified drag and collapse in pull-a-brick");
 }
 
 function installBodyObservation() {
