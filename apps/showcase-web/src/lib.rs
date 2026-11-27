@@ -1,6 +1,8 @@
 #![forbid(unsafe_code)]
 
 #[cfg(target_arch = "wasm32")]
+mod demos;
+#[cfg(target_arch = "wasm32")]
 mod water_surface;
 
 #[cfg(target_arch = "wasm32")]
@@ -53,6 +55,9 @@ enum SceneName {
     Playground,
     StackAndSleep,
     WaterAndRigid,
+    DominoRun,
+    MarblePegboard,
+    WaterSurge,
     TowerDrop13k,
     TowerDrop32k,
     RigidStress1k,
@@ -75,6 +80,9 @@ impl SceneName {
             "tower-drop-13k" => Ok(Self::TowerDrop13k),
             "tower-drop-32k" => Ok(Self::TowerDrop32k),
             WATER_AND_RIGID => Ok(Self::WaterAndRigid),
+            "domino-run" => Ok(Self::DominoRun),
+            "marble-pegboard" => Ok(Self::MarblePegboard),
+            "water-surge" => Ok(Self::WaterSurge),
             RIGID_STRESS_1K => Ok(Self::RigidStress1k),
             RIGID_STRESS_2K => Ok(Self::RigidStress2k),
             RIGID_STRESS_5K => Ok(Self::RigidStress5k),
@@ -95,6 +103,9 @@ impl SceneName {
             Self::TowerDrop13k => "tower-drop-13k",
             Self::TowerDrop32k => "tower-drop-32k",
             Self::WaterAndRigid => WATER_AND_RIGID,
+            Self::DominoRun => "domino-run",
+            Self::MarblePegboard => "marble-pegboard",
+            Self::WaterSurge => "water-surge",
             Self::RigidStress1k => RIGID_STRESS_1K,
             Self::RigidStress2k => RIGID_STRESS_2K,
             Self::RigidStress5k => RIGID_STRESS_5K,
@@ -117,6 +128,7 @@ impl SceneName {
             Self::TowerDrop13k
                 | Self::TowerDrop32k
                 | Self::WaterAndRigid
+                | Self::WaterSurge
                 | Self::WaterStress4k
                 | Self::WaterStress8k
                 | Self::WaterStress16k
@@ -170,7 +182,10 @@ impl ShowcaseConfig {
 
     const fn for_scene(name: SceneName) -> Self {
         let body_capacity = match name {
-            SceneName::TowerDrop13k | SceneName::TowerDrop32k => WorldCapacity::Slots64,
+            SceneName::TowerDrop13k
+            | SceneName::TowerDrop32k
+            | SceneName::DominoRun
+            | SceneName::WaterSurge => WorldCapacity::Slots64,
             SceneName::RigidStress1k | SceneName::RigidRain1k => WorldCapacity::Slots1000,
             SceneName::RigidStress2k | SceneName::RigidAvalanche2k => WorldCapacity::Slots2000,
             SceneName::RigidStress5k => WorldCapacity::Slots5000,
@@ -537,7 +552,7 @@ impl Scene {
             &observation,
             particle_observation.as_ref(),
             &visuals,
-            name.tower_drop(),
+            name.tower_drop() || name == SceneName::WaterSurge,
         );
         Ok(Self {
             name,
@@ -1742,6 +1757,8 @@ fn build_scene(
     };
     let camera = if name.tower_drop() {
         [0.0, 3.2, 14.2, 12.4]
+    } else if name == SceneName::DominoRun {
+        [0.0, -0.85, 11.6, 3.8]
     } else if let Some(layout) = rigid_stress_layout {
         [
             0.0,
@@ -1768,6 +1785,10 @@ fn build_scene(
     let (floor_position, floor_half_extents, left_position, wall_half_extents) =
         if name.tower_drop() {
             ([0.0, -8.3], [13.3, 0.3], [-13.1, 2.7], [0.2, 11.0])
+        } else if name == SceneName::DominoRun {
+            ([0.0, -4.45], [11.2, 0.35], [-11.0, -0.85], [0.2, 3.4])
+        } else if name == SceneName::WaterSurge {
+            ([0.0, -4.45], [7.85, 0.35], [-7.35, 0.35], [0.4, 4.55])
         } else if let Some(top) = drop_top {
             (
                 [0.0, -8.65],
@@ -1832,6 +1853,17 @@ fn build_scene(
     )?;
     let mut particle_definition = config.particle_capacity.map(ParticleSystemDef::water);
     let initial_particle_count = match name {
+        SceneName::DominoRun => {
+            demos::add_domino_run(&mut world, &mut visuals)?;
+            0
+        }
+        SceneName::MarblePegboard => {
+            demos::add_marble_pegboard(&mut world, &mut visuals)?;
+            0
+        }
+        SceneName::WaterSurge => {
+            demos::add_water_surge(&mut world, &mut visuals, &mut particle_definition)?
+        }
         SceneName::Playground => {
             for row in 0..3 {
                 for column in 0..6 {

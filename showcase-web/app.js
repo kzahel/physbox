@@ -21,6 +21,24 @@ const scenes = {
     defaultBodies: 256,
     defaultWater: 4096,
   },
+  "domino-run": {
+    title: "Domino run",
+    description: "The first domino tips into the next. Follow the chain reaction down four steps.",
+    defaultBodies: 64,
+    defaultWater: 0,
+  },
+  "marble-pegboard": {
+    title: "Marble pegboard",
+    description: "64 marbles scatter through staggered pegs and collect in bins. Try dragging a marble back to the top.",
+    defaultBodies: 256,
+    defaultWater: 0,
+  },
+  "water-surge": {
+    title: "Water surge",
+    description: "A column of preview water breaks from left to right. Watch how the green rafts and the heavier gold block respond to the surge.",
+    defaultBodies: 64,
+    defaultWater: 4096,
+  },
   "tower-drop-13k": {
     title: "Tower drop · 13K",
     description: "Ten blocks splash into 13,122 water particles. Watch the wave rebound off the walls and settle. Reset replays the drop.",

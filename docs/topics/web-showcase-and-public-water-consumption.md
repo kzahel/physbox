@@ -194,6 +194,11 @@ drag submits throttled neutral emission commands; raw pointer frequency may
 not become an unbounded GPU command stream. Tool size, body material editing,
 water erasure, and persisted configurations are deferred.
 
+Three small scenes show different kinds of interaction. **Domino run** carries
+a chain of impacts down four terraces. **Marble pegboard** scatters 64 marbles
+through staggered pegs into bins. **Water surge** releases a column into a
+shallow pool and shows how two light rafts and a heavy block respond.
+
 Consumer-owned stress scenes extend the catalog:
 
 - **Rigid stress 1K/2K/5K/10K** author the exact named live-body count into a

@@ -48,6 +48,7 @@ try {
     deviceScaleFactor: 2,
   });
   page.setDefaultTimeout(180_000);
+  await page.addInitScript(installBodyObservation);
   const errors = [];
   const consoleProblems = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -377,6 +378,37 @@ try {
     }
   }
 
+  await page.locator("#physics-select").selectOption("60");
+  const motionDemos = [
+    {
+      scene: "domino-run", bodies: 47, particles: 0, steps: 600,
+      check: (bodies) => bodies.length === 40 && bodies.every(({ angle }) => angle < -0.5),
+    },
+    {
+      scene: "marble-pegboard", bodies: 153, particles: 0, steps: 300,
+      check: (bodies) => {
+        const collected = bodies.filter(({ y }) => y < -2.8);
+        const bins = new Set(collected.map(({ x }) => Math.floor(x / 1.24)));
+        return bodies.length === 64 && collected.length >= 56 && bins.size >= 6;
+      },
+    },
+    {
+      scene: "water-surge", bodies: 6, particles: 3414, steps: 125,
+      check: (bodies) => bodies.length === 3 && bodies[0].x > 2 &&
+        bodies[0].y > bodies[2].y + 0.75 && bodies[2].y < -3.3,
+    },
+  ];
+  for (const { scene, bodies, particles, steps, check } of motionDemos) {
+    await page.locator("#scene-select").selectOption(scene);
+    await waitForState(page, (s, expected) => s.scene === expected.scene &&
+      s.liveBodies === expected.bodies && s.particleCount === expected.particles &&
+      s.droppedParticles === 0 && s.fixedSteps >= expected.steps, { scene, bodies, particles, steps });
+    if (!check(await page.evaluate(() => globalThis.__testObserveBodies()))) {
+      throw new Error(`${scene} did not complete its expected motion`);
+    }
+    console.log(`verified motion in ${scene}`);
+  }
+
   for (const [scene, count] of [["tower-drop-13k", 13_122], ["tower-drop-32k", 32_640]]) {
     await page.locator("#scene-select").selectOption(scene);
     await waitForState(page, (s, expected) => s.scene === expected.scene &&
@@ -470,6 +502,46 @@ try {
 
 async function currentState(page) {
   return page.evaluate(() => globalThis.__physboxShowcase);
+}
+
+function installBodyObservation() {
+  if (!globalThis.GPUDevice) return;
+  const createBuffer = GPUDevice.prototype.createBuffer;
+  let observation;
+  GPUDevice.prototype.createBuffer = function (descriptor) {
+    const buffer = createBuffer.call(this, descriptor);
+    if (descriptor.label === "physbox_sim_public_body_observation") {
+      observation = { device: this, buffer };
+    }
+    return buffer;
+  };
+  globalThis.__testObserveBodies = async () => {
+    const { device, buffer } = observation;
+    const readback = device.createBuffer({
+      size: buffer.size,
+      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+    });
+    try {
+      const encoder = device.createCommandEncoder();
+      encoder.copyBufferToBuffer(buffer, 0, readback, 0, buffer.size);
+      device.queue.submit([encoder.finish()]);
+      await readback.mapAsync(GPUMapMode.READ);
+      const bytes = readback.getMappedRange();
+      const floats = new Float32Array(bytes);
+      const words = new Uint32Array(bytes);
+      const bodies = [];
+      // Public GpuBodyObservationRecord has 12 words, with live/fixed flags in word nine.
+      for (let i = 0; i < words.length; i += 12) {
+        const flags = words[i + 9];
+        if ((flags & 1) && !(flags & 4)) {
+          bodies.push({ x: floats[i], y: floats[i + 1], angle: floats[i + 2] });
+        }
+      }
+      return bodies;
+    } finally {
+      readback.destroy();
+    }
+  };
 }
 
 async function waitForState(page, predicate, argument = null) {
